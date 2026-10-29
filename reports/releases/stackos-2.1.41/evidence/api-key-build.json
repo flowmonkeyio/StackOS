@@ -1,0 +1,21 @@
+{
+  "mode": "build",
+  "version": "2.1.41",
+  "command": [
+    "pnpm",
+    "--dir",
+    "desktop",
+    "run",
+    "dist:mac:release"
+  ],
+  "started_at": "2026-10-29T02:50:20.029570+00:00",
+  "finished_at": "2026-10-29T03:22:51.444525+00:00",
+  "exit_code": 0,
+  "log": "/tmp/stackos-release-2141-20261028/api-key-build.log",
+  "signing_required": true,
+  "notarization_bypassed": false,
+  "authentication_method": "existing Apple API key",
+  "configuration_source": "/Users/sergeyrura/Bin/content-stack/.env.local",
+  "alternate_authentication_methods_cleared": true,
+  "update_url": "https://stackos.flowmonkey.io/StackOS/"
+}

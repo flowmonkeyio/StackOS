@@ -1,0 +1,130 @@
+{
+  "reviewed_at_utc": "2026-10-29T03:22:23.845174+00:00",
+  "reviewer": "/root/navigation_review",
+  "release": "2.1.41",
+  "source_commit": "b78a7c39b2f35293597575b57d8b3f7f84c786a8",
+  "scope": "Independent finalized built app and ZIP content, trust, identity and extraction review; DMG build remains pending.",
+  "verdict": "pass_app_and_zip_for_installed_smoke",
+  "required_repairs": [],
+  "artifact": {
+    "file": "stackos-2.1.41-mac-arm64.zip",
+    "bytes": 490271232,
+    "sha256": "89ba6a16d27fe85487c9dcafafa2e9b588c36f1be3e85b6ee70ea26d53f6261d",
+    "sha512_base64": "QkEEJT4fLZq9CflymqfwfoLQLhf1QOSUDZNsR3z7TD46pvLjaay8R72kf0hvWdRxfGOkbW9/rgvfhWIUbBFHQg==",
+    "blockmap": {
+      "blockmap_bytes": 504983,
+      "blockmap_sha256": "25d42ca7ab30bb0ff0fda5f7d6b86521664e0d61411c812c25d503c5b41ba66b",
+      "version": "2",
+      "files": [
+        {
+          "name": "file",
+          "offset": 0,
+          "checksums": 23244,
+          "sizes": 23244,
+          "sum_sizes": 490271232
+        }
+      ]
+    }
+  },
+  "identity": {
+    "bundle_identifier": "io.stackos.desktop",
+    "version": "2.1.41",
+    "payload": {
+      "name": "stackos",
+      "version": "2.1.41",
+      "buildId": "20261029T025156Z",
+      "builtAt": "2026-10-29T02:51:56Z"
+    },
+    "asar_sha256": "aa8b0217edf4da2ccfc83e9e55744d6d6075e35fe7281a420a0adfc1948345ac",
+    "signing_authority": "Developer ID Application: SERGEY RURA (TSHN26FR48)",
+    "team_identifier": "TSHN26FR48",
+    "architecture": "arm64",
+    "hardened_runtime": true,
+    "code_directory_hash": "2762f9c69d8081a7afd2820b27f91aef6514fb9b"
+  },
+  "checks": {
+    "committed_python_files": 533,
+    "bundled_assets": 101,
+    "ui_files": 89,
+    "electron_source_files": 9,
+    "all_first_party_bytes_match_commit": true,
+    "package_and_extracted_zip_identity_match": true,
+    "zip_entry_count": 25387,
+    "unsafe_zip_paths": [],
+    "escaping_zip_symlinks": [],
+    "zip_blockmap": "Version 2; 23,244 checksums/sizes, contiguous total 490271232 bytes matching the ZIP.",
+    "production_update_url": "https://stackos.flowmonkey.io/StackOS/",
+    "zip_unchanged_during_review": true,
+    "package_receipt_sha256": "8334b0fe5997de22a271b1de9218b718fd7a9112c0554451d8942c63939d8399",
+    "zip_content_receipt_sha256": "0568a39109a7d3e6673cfc17d3891f10c9f06c4f2527dac86983a0df65b15893"
+  },
+  "commands": {
+    "built_app_codesign": {
+      "chunk_id": "9e683c",
+      "wall_time_seconds": 0.000004709,
+      "exit_code": 0,
+      "original_token_count": 782,
+      "output": "--prepared:/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper (Renderer).app\n--prepared:/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper.app\n--validated:/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper (Renderer).app\n--validated:/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper.app\n--prepared:/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper (GPU).app\n--prepared:/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper (Plugin).app\n--validated:/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper (GPU).app\n--validated:/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/StackOS Helper (Plugin).app\n--prepared:/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Mantle.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/ReactiveObjC.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Squirrel.framework/Versions/Current/.\n--validated:/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Mantle.framework/Versions/Current/.\n--validated:/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/ReactiveObjC.framework/Versions/Current/.\n--validated:/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Squirrel.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/Helpers/chrome_crashpad_handler\n--validated:/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/Helpers/chrome_crashpad_handler\n--validated:/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/.\n/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app: valid on disk\n/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app: satisfies its Designated Requirement\n"
+    },
+    "built_app_gatekeeper": {
+      "chunk_id": "f53ed2",
+      "wall_time_seconds": 0.000002917,
+      "exit_code": 0,
+      "original_token_count": 33,
+      "output": "/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app: accepted\nsource=Notarized Developer ID\n"
+    },
+    "built_app_staple": {
+      "chunk_id": "b8fc4e",
+      "wall_time_seconds": 0.1405495,
+      "exit_code": 0,
+      "original_token_count": 33,
+      "output": "Processing: /private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app\nThe validate action worked!\n"
+    },
+    "built_app_identity": {
+      "chunk_id": "9f2fcf",
+      "wall_time_seconds": 0.052333709,
+      "exit_code": 0,
+      "original_token_count": 299,
+      "output": "Executable=/private/tmp/stackos-release-2141-20261028/release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/MacOS/StackOS\nIdentifier=io.stackos.desktop\nFormat=app bundle with Mach-O thin (arm64)\nCodeDirectory v=20500 size=446 flags=0x10000(runtime) hashes=3+7 location=embedded\nVersionPlatform=1\nVersionMin=786432\nVersionSDK=1703936\nHash type=sha256 size=32\nCandidateCDHash sha256=2762f9c69d8081a7afd2820b27f91aef6514fb9b\nCandidateCDHashFull sha256=2762f9c69d8081a7afd2820b27f91aef6514fb9bc44cf57851af9907a3eb4385\nHash choices=sha256\nCMSDigest=2762f9c69d8081a7afd2820b27f91aef6514fb9bc44cf57851af9907a3eb4385\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=16384\nExecutable Segment flags=0x1\nPage size=16384\nCDHash=2762f9c69d8081a7afd2820b27f91aef6514fb9b\nSignature size=8972\nAuthority=Developer ID Application: SERGEY RURA (TSHN26FR48)\nAuthority=Developer ID Certification Authority\nAuthority=Apple Root CA\nTimestamp=Oct 28, 2026 at 7:57:51 PM\nNotarization Ticket=stapled\nInfo.plist entries=33\nTeamIdentifier=TSHN26FR48\nRuntime Version=26.0.0\nSealed Resources version=2 rules=13 files=20967\nInternal requirements count=1 size=180\nTotal signatures=1\nChosen signature=1\n"
+    },
+    "zip_app_codesign": {
+      "chunk_id": "1ed50d",
+      "wall_time_seconds": 0.757632,
+      "exit_code": 0,
+      "original_token_count": 677,
+      "output": "--prepared:/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app/Contents/Frameworks/StackOS Helper.app\n--validated:/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app/Contents/Frameworks/StackOS Helper.app\n--prepared:/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app/Contents/Frameworks/ReactiveObjC.framework/Versions/Current/.\n--validated:/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app/Contents/Frameworks/ReactiveObjC.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app/Contents/Frameworks/Squirrel.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app/Contents/Frameworks/StackOS Helper (Renderer).app\n--validated:/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app/Contents/Frameworks/Squirrel.framework/Versions/Current/.\n--validated:/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app/Contents/Frameworks/StackOS Helper (Renderer).app\n--prepared:/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app/Contents/Frameworks/StackOS Helper (GPU).app\n--validated:/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app/Contents/Frameworks/StackOS Helper (GPU).app\n--prepared:/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app/Contents/Frameworks/StackOS Helper (Plugin).app\n--validated:/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app/Contents/Frameworks/StackOS Helper (Plugin).app\n--prepared:/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app/Contents/Frameworks/Mantle.framework/Versions/Current/.\n--validated:/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app/Contents/Frameworks/Mantle.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/.\n--prepared:/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/Helpers/chrome_crashpad_handler\n--validated:/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/Helpers/chrome_crashpad_handler\n--validated:/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/.\n/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app: valid on disk\n/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app: satisfies its Designated Requirement\n"
+    },
+    "zip_app_gatekeeper": {
+      "chunk_id": "aad8c8",
+      "wall_time_seconds": 0.623030875,
+      "exit_code": 0,
+      "original_token_count": 28,
+      "output": "/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app: accepted\nsource=Notarized Developer ID\n"
+    },
+    "zip_app_staple": {
+      "chunk_id": "81ec1d",
+      "wall_time_seconds": 0.193277083,
+      "exit_code": 0,
+      "original_token_count": 28,
+      "output": "Processing: /private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app\nThe validate action worked!\n"
+    },
+    "zip_app_identity": {
+      "chunk_id": "c692c0",
+      "wall_time_seconds": 0.031801792,
+      "exit_code": 0,
+      "original_token_count": 293,
+      "output": "Executable=/private/tmp/stackos-release-2141-20261028/review-zip-app/StackOS.app/Contents/MacOS/StackOS\nIdentifier=io.stackos.desktop\nFormat=app bundle with Mach-O thin (arm64)\nCodeDirectory v=20500 size=446 flags=0x10000(runtime) hashes=3+7 location=embedded\nVersionPlatform=1\nVersionMin=786432\nVersionSDK=1703936\nHash type=sha256 size=32\nCandidateCDHash sha256=2762f9c69d8081a7afd2820b27f91aef6514fb9b\nCandidateCDHashFull sha256=2762f9c69d8081a7afd2820b27f91aef6514fb9bc44cf57851af9907a3eb4385\nHash choices=sha256\nCMSDigest=2762f9c69d8081a7afd2820b27f91aef6514fb9bc44cf57851af9907a3eb4385\nCMSDigestType=2\nExecutable Segment base=0\nExecutable Segment limit=16384\nExecutable Segment flags=0x1\nPage size=16384\nCDHash=2762f9c69d8081a7afd2820b27f91aef6514fb9b\nSignature size=8972\nAuthority=Developer ID Application: SERGEY RURA (TSHN26FR48)\nAuthority=Developer ID Certification Authority\nAuthority=Apple Root CA\nTimestamp=Oct 28, 2026 at 7:57:51 PM\nNotarization Ticket=stapled\nInfo.plist entries=33\nTeamIdentifier=TSHN26FR48\nRuntime Version=26.0.0\nSealed Resources version=2 rules=13 files=20967\nInternal requirements count=1 size=180\nTotal signatures=1\nChosen signature=1\n"
+    }
+  },
+  "reused_receipts": [
+    "review-preparation.json",
+    "review-package-content.json",
+    "review-zip-content.json",
+    "review-zip-safety.json"
+  ],
+  "limits": [
+    "No DMG, feed, stable alias, installed lifecycle or publication acceptance.",
+    "No app launch, installed runtime change, source/git/provider mutation or competing build.",
+    "Only reviewer-owned temporary extraction and review receipts/scripts were written."
+  ]
+}

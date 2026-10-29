@@ -1,0 +1,13 @@
+{
+  "captured_at": "2026-10-29T03:23:27.481074+00:00",
+  "version": "2.1.41",
+  "source_commit": "b78a7c39b2f35293597575b57d8b3f7f84c786a8",
+  "passed": true,
+  "from_version": "2.1.40",
+  "zip_bytes": 490271232,
+  "zip_sha512": "QkEEJT4fLZq9CflymqfwfoLQLhf1QOSUDZNsR3z7TD46pvLjaay8R72kf0hvWdRxfGOkbW9/rgvfhWIUbBFHQg==",
+  "zip_sha256": "89ba6a16d27fe85487c9dcafafa2e9b588c36f1be3e85b6ee70ea26d53f6261d",
+  "prior_blockmap_included": true,
+  "feed_directory": "/private/tmp/stackos-release-2141-20261028/update-feed",
+  "metadata_scope": "Local update smoke; unchanged canonical ZIP entry only. No public metadata changes."
+}

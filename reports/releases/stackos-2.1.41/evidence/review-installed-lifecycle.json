@@ -1,0 +1,98 @@
+{
+  "reviewed_at_utc": "2026-10-29 03:35:38 UTC",
+  "reviewer": "/root/navigation_review",
+  "release": "2.1.41",
+  "source_commit": "b78a7c39b2f35293597575b57d8b3f7f84c786a8",
+  "scope": "Independent read-only review of completed installed lifecycle evidence, accepted artifact continuity and publication readiness.",
+  "verdict": "pass_to_publish_with_recorded_limits",
+  "required_repairs": [],
+  "checks": {
+    "source_commit_bound": true,
+    "build_identity": true,
+    "root_manifest_matches_review": true,
+    "all_checks_exit_zero": true,
+    "doctor_all27_pass": true,
+    "identity_sets_exactly_equal": true,
+    "custody_configuration_schema_unchanged": true,
+    "launchd_installed_running": true,
+    "one_normal_app": true,
+    "temporary_ports_closed": true,
+    "production_update_url_restored": true,
+    "normal_window_and_installed_daemon_ui_observed": true,
+    "electron_sources_unchanged_since_previous_release": true
+  },
+  "artifacts": {
+    "stackos-2.1.41-mac-arm64.zip": {
+      "bytes": 490271232,
+      "sha256": "89ba6a16d27fe85487c9dcafafa2e9b588c36f1be3e85b6ee70ea26d53f6261d",
+      "sha512_base64": "QkEEJT4fLZq9CflymqfwfoLQLhf1QOSUDZNsR3z7TD46pvLjaay8R72kf0hvWdRxfGOkbW9/rgvfhWIUbBFHQg==",
+      "feed_matches": true
+    },
+    "stackos-2.1.41-mac-arm64.dmg": {
+      "bytes": 485555719,
+      "sha256": "1a42cd1ba232bb2f2f0bfa6f6991979269575a860a0dee3e427aa4f218b21ab1",
+      "sha512_base64": "3diNpUnUuLKOW8FhiHqjkO80wX5hRg/qLdJo3k2C1/CYqVc0cZas9hwqQempoDdmon2EfnhScp8RiDe0gq7PDg==",
+      "feed_matches": true
+    },
+    "stackos-2.1.41-mac-arm64.dmg.blockmap": {
+      "bytes": 505310,
+      "sha256": "db70707a2e1124389760fda4861fcf8c2cff53475549bfa1340f2ccca1469752"
+    },
+    "stackos-2.1.41-mac-arm64.zip.blockmap": {
+      "bytes": 504983,
+      "sha256": "25d42ca7ab30bb0ff0fda5f7d6b86521664e0d61411c812c25d503c5b41ba66b"
+    },
+    "stackos-latest-mac-arm64.dmg": {
+      "bytes": 485555719,
+      "sha256": "1a42cd1ba232bb2f2f0bfa6f6991979269575a860a0dee3e427aa4f218b21ab1"
+    },
+    "latest-mac.yml": {
+      "bytes": 513,
+      "sha256": "6413511556f1438382b4fb21dc64df56730d9c6ad2c17838f83d01696046addd"
+    }
+  },
+  "observed_lifecycle": "Installed 2.1.40 downloaded the exact accepted 2.1.41 ZIP and updater replaced the signed app. Root explicitly reopened the normal installed app; startup prepared the matching payload and daemon. Repair, restart, signature and 27 Doctor checks passed.",
+  "evidence_scope": {
+    "installed_rendering": "Root inspected actual installed-daemon Board and task popup via authorized StackOS browser; no console errors. Normal native app window presence was independently recorded by root.",
+    "preservation": "Reviewer compared before/final fingerprint arrays: exact identity-set equality, custody/configuration hashes and schema unchanged. This is not a claim that the entire live database was byte-identical.",
+    "updater_and_desktop_code": "No nonmetadata desktop changes since accepted 2.1.40; nine packaged Electron source hashes identical. Prior negative-feed evidence is reusable on unchanged updater code; no new negative-feed run is claimed."
+  },
+  "recorded_limits": [
+    {
+      "item": "Automatic relaunch",
+      "disposition": "Unproven. Normal reopen was explicit; do not describe this run as a demonstrated automatic relaunch."
+    },
+    {
+      "item": "Native pixels",
+      "disposition": "OS screenshot capture failed after bounded attempts; native window geometry restored. Installed-daemon rendering and native window presence are distinct evidence. Do not claim captured native pixels."
+    },
+    {
+      "item": "Transient diagnostic",
+      "disposition": "Initial splash data-URL ERR_ABORTED warning was observed; subsequent download/native update-downloaded and normal startup succeeded. No current product failure demonstrated by this warning alone."
+    }
+  ],
+  "evidence_sha256": {
+    "installed-lifecycle.json": "2ecf34dc42a35c79e35712692ed953ecd63c6e6b05bfa72cd745e067de90d4ea",
+    "installed-ui-observed.json": "68362b14e3a795566ecfd106eaf616245ce0b38f544d96a78eb6d9eb1cad9f3e",
+    "state-preservation-final.json": "1a7d4801bd6d5af2139d7f93737184cb8bb47b824ad60cde954cca49e76fb0b6",
+    "installed-final-doctor.log": "6a7b91a42b02b6909ca275ccadc571024c1205017dd4b8f52242f87c29121b26",
+    "installed-repair.json": "6dd8d6d7864f9114aee617177a96e38ef0476bf783969d3056b1f06a7bd7362f",
+    "installed-restart.json": "2ef8da34c92342534f2ff86b0d43c4442fca28810035083407929331d350f64b",
+    "installed-final-signature.json": "2e55134d49faf683a93924f4caadaddb7d615fa229c3d65065c058ce055e67d9",
+    "update-feed-receipt.json": "b2965f863923e521b355269dc09f9dc519671e1b17125e62ebd0d442479e6452",
+    "review-final-artifacts.json": "601d6642889fe3ee37a1e41d1f49039e36b3999e7a4a3f93d5fa51c4abe834df",
+    "review-app-zip.json": "26f8f62987607c85b07c3f8dfab8959bf7c00a4b4268103758ef4d1229ddc8a3",
+    "capture_installed.py": "5f5b5c5fa16de53fc9ef37aa9106cf9dd3edcbad1fb87b94dd9713c4f686375f",
+    "state_fingerprint.py": "4424b7edc524af31a8e505ec8effbad69648dcc324701a11b3c3ba5a28222436",
+    "record_installed_check.py": "c19e756d2c9a3e73dd30a09a4e3ef699609fd823d688aec51e7a540490b06e6b"
+  },
+  "reused_receipts": [
+    "review-final-artifacts.json",
+    "review-app-zip.json",
+    "review-package-content.json",
+    "reports/releases/stackos-2.1.40/review-final-artifacts.json"
+  ],
+  "authority": "User authorized the release; root owns external staging, publication, promotion and final claims. This receipt authorizes no independent reviewer mutation.",
+  "remaining_obligation": "After publication, verify exact versioned artifacts, blockmaps, stable DMG alias and update feed over public HTTPS against the accepted hashes before final closeout.",
+  "independence": "No runtime/browser/provider/source/git changes or broad tests; reviewer inspected immutable package evidence, root lifecycle scripts and completed receipts, then wrote only this review receipt."
+}

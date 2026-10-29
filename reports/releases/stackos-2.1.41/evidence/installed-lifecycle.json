@@ -1,0 +1,67 @@
+{
+  "captured_at": "2026-10-29T03:32:56.499825+00:00",
+  "version": "2.1.41",
+  "source_commit": "b78a7c39b2f35293597575b57d8b3f7f84c786a8",
+  "passed": true,
+  "payload": {
+    "name": "stackos",
+    "version": "2.1.41",
+    "buildId": "20261029T025156Z",
+    "builtAt": "2026-10-29T02:51:56Z"
+  },
+  "install_key": "2.1.41:2.1.41:20261029T025156Z:packaged:/Applications/StackOS.app/Contents/Resources/stackos/bin/stackos",
+  "health": {
+    "version": "2.1.41"
+  },
+  "doctor": {
+    "ok": true,
+    "check_count": 27
+  },
+  "launchd": {
+    "loaded": true,
+    "running": true,
+    "installed_program": true
+  },
+  "app_process_count": 1,
+  "temporary_ports_listening": {
+    "8765": false,
+    "9238": false
+  },
+  "command_exit_codes": {
+    "installed-repair": 0,
+    "installed-restart": 0,
+    "installed-final-doctor": 0,
+    "installed-final-signature": 0
+  },
+  "state_preservation": {
+    "captured_at": "2026-10-29T03:32:53.291683+00:00",
+    "version": "2.1.41",
+    "source_commit": "b78a7c39b2f35293597575b57d8b3f7f84c786a8",
+    "phase": "final",
+    "installed_version": "2.1.41",
+    "counts": {
+      "projects": 20,
+      "credentials": 26,
+      "account_links": 6,
+      "project_attachments": 32,
+      "encrypted_record_ids": 26
+    },
+    "identities_preserved": {
+      "projects": true,
+      "credentials": true,
+      "account_links": true,
+      "project_attachments": true,
+      "encrypted_record_ids": true
+    },
+    "files_unchanged": {
+      "seed.bin": true,
+      "auth.token": true,
+      "backup-policy.json": true,
+      "backup-key-exclusions.json": true
+    },
+    "schema_unchanged": true,
+    "passed": true
+  },
+  "production_update_url": "https://stackos.flowmonkey.io/StackOS/",
+  "visual_observation": "Separate root-owned native UI observation required; this helper does not claim visual acceptance or an observed ready prompt."
+}

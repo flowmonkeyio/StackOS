@@ -1,0 +1,82 @@
+{
+  "reviewed_at_utc": "2026-10-29T03:50:00.503702+00:00",
+  "reviewer": "/root/navigation_review",
+  "release": "2.1.41",
+  "source_commit": "b78a7c39b2f35293597575b57d8b3f7f84c786a8",
+  "verdict": "pass_publication",
+  "required_repairs": [],
+  "checks": {
+    "raw_provider_receipts_verified": true,
+    "all_actions_successful_real_writes": true,
+    "upload_paths_sizes_and_scope_match_accepted_artifacts": true,
+    "all_six_staged_objects_fully_downloaded_over_https_and_match": true,
+    "old_2140_feed_preserved_until_promotion": true,
+    "order": "uploads -> six HTTPS checks -> unchanged 2.1.40 precondition -> stable alias rename12968 -> feed rename12969 -> full live feed/alias HTTPS checks",
+    "live_feed_and_full_stable_dmg_match": true,
+    "public_feed_sha512_matches_accepted_artifacts": true,
+    "tag_record_peels_to_reviewed_commit": true,
+    "independent_remote_tag_read_passed": true,
+    "remote_tag_evidence": "review-remote-tag.json",
+    "prior_versioned_paths_unmodified_by_reviewed_actions": true
+  },
+  "provider_actions": [
+    {
+      "id": 12965,
+      "operation": "file.upload",
+      "status": "success",
+      "completed_at": "2026-10-29T03:37:12.792420",
+      "receipt_sha256": "2a694f56c391b0bf90faebbd311bcc554480bc02763a6fe0c1f12710dc359b8a"
+    },
+    {
+      "id": 12966,
+      "operation": "file.upload",
+      "status": "success",
+      "completed_at": "2026-10-29T03:39:01.311625",
+      "receipt_sha256": "e2295469854f716fb496aa3b9e114328feee5d4ee67799f32615a9094922fc3f"
+    },
+    {
+      "id": 12967,
+      "operation": "file.upload",
+      "status": "success",
+      "completed_at": "2026-10-29T03:40:49.626949",
+      "receipt_sha256": "bb1a9927bdb3274c78888e82db30bd52099ede37ffc5583ba18d7fb54a008549"
+    },
+    {
+      "id": 12968,
+      "operation": "path.rename",
+      "status": "success",
+      "completed_at": "2026-10-29T03:46:45.648161",
+      "receipt_sha256": "4613098b6341d1ef575096926f2b9881b91ef78b8e51b0c65b8ad9a2f3a08123"
+    },
+    {
+      "id": 12969,
+      "operation": "path.rename",
+      "status": "success",
+      "completed_at": "2026-10-29T03:46:59.546643",
+      "receipt_sha256": "74f5df7cd48575a9ce4ab3f40f94a1eb0fa15f9b809b79e48dfbc6e24e9234d7"
+    }
+  ],
+  "urls": {
+    "installer": "https://stackos.flowmonkey.io/StackOS/stackos-latest-mac-arm64.dmg",
+    "feed": "https://stackos.flowmonkey.io/StackOS/latest-mac.yml"
+  },
+  "evidence_sha256": {
+    "publication.json": "8b2db59edb07a2797a8d591ce160f9f3287dfdb919ad2e02dbddb12589f4ba59",
+    "public-staged.json": "f98dca350b24b45bf123bfe152c00bd6c0c946cd1da1958272898ca6e9329193",
+    "public-channel.json": "54a157ce5a6ae46a3b317e40e8009e331c717bd40ef1bfe4c1599ab402330088",
+    "channel-precondition.json": "34376b24fe0961a6b0c1ef8d1ce71609c42c76ebb26e3550dda26c9afb48538c",
+    "tag.json": "e39f1d521fe7e1effc8f1b9c544dea03694d2c5f22addc9c9275fc9dc048c7f9",
+    "public-staged-latest-mac.yml": "6413511556f1438382b4fb21dc64df56730d9c6ad2c17838f83d01696046addd",
+    "public-channel-latest-mac.yml": "6413511556f1438382b4fb21dc64df56730d9c6ad2c17838f83d01696046addd",
+    "previous-latest-mac.yml": "81628f8811491baa78e628447f64a8d848f6ced578a502bef91ade7432b04dad",
+    "verify_public.py": "f35522311062898f291c97684f75ca6afe860c846ea5af29109f6c9d5d67cbad",
+    "check_channel_precondition.py": "f785a4f6351ebcadc6c1f59cd48fdd620b8f3e009bb0ac9092c2d23adab749c4",
+    "review-installed-lifecycle.json": "bd8ea6925bc2361eae248b3c68d1ed416274e7b19f2e35899695752e57132762",
+    "review-final-artifacts.json": "601d6642889fe3ee37a1e41d1f49039e36b3999e7a4a3f93d5fa51c4abe834df"
+  },
+  "independence": "Read-only receipt/code/hash review; no duplicate large downloads, provider/runtime/source/Git mutation. Independent small remote tag read recorded separately.",
+  "retained_lifecycle_limits": [
+    "Automatic relaunch was not observed; explicit normal reopen succeeded.",
+    "Native pixel capture unavailable; installed-daemon rendering and native window presence were separately observed."
+  ]
+}

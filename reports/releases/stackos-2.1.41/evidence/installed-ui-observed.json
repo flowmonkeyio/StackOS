@@ -1,0 +1,20 @@
+{
+  "captured_at": "2026-10-29T03:33:35.002767+00:00",
+  "version": "2.1.41",
+  "source_commit": "b78a7c39b2f35293597575b57d8b3f7f84c786a8",
+  "normal_native_window": {
+    "count": 1,
+    "title": "StackOS"
+  },
+  "native_screen_capture": "unavailable: macOS screencapture could not create image from rect; bounded resize retry failed and original window geometry was restored",
+  "installed_browser_url": "http://127.0.0.1:5180/projects/1/tasks",
+  "installed_browser_visual_review": "Root opened and inspected board and task popup captures; seven fixed columns, inline Board/Graph, 356 actual task cards, contained page width and stable task dialog were present.",
+  "browser_console_errors": [],
+  "screenshots_kept_private": true,
+  "ready_prompt_observed": true,
+  "ready_prompt_note": "Normal page remount refreshed the earlier available notice to Update ready to install; direct preload download had completed. Preliminary available notice retained as history.",
+  "automatic_relaunch_observed": false,
+  "relaunch_method": "Explicit normal open -a /Applications/StackOS.app after the updater replaced the signed app; normal startup ran install/repair and restarted daemon to 2.1.41.",
+  "observed_transient_diagnostic": "Initial splash data-URL ERR_ABORTED warning; subsequent updater download and native update-downloaded succeeded.",
+  "scope": "Installed-daemon rendering and normal native window presence are separate observations; native pixels after normal reopen were not captured."
+}
