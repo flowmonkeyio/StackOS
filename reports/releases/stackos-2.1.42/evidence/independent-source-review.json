@@ -1,0 +1,95 @@
+{
+  "reviewer": "/root/navigation_review",
+  "verdict": "approve",
+  "run_plan_id": 726,
+  "run_id": 720,
+  "step_id": 7619,
+  "ticket_id": 14778,
+  "attempt_id": "dep726-javascript-2",
+  "contract_revision": 5,
+  "base_commit": "3200cd97aaf2f8738fe920aec74f6279ee1c64d2",
+  "candidate": {
+    "accepted_parent_sha256": "36f9b65f5692f2c1915c28df40a0f259b2756a8f49d7cdb7e7213a1ce499e9b5",
+    "ui_repair_source_sha256": "c53052e04ee0a02332d328b16d158d7212d0df7f7d6be1b4c6ccf16d120af1da",
+    "ui_bundle_sha256": "d70fb8190a011759e9d24a519b83ac63ae5ab193942522b68724f101b27e6daa",
+    "repair_receipt": "ui-proof/ui-repair-rev5-candidate.json",
+    "repair_receipt_sha256": "801b1d63e0191bebaa759d392cfd77ddbd4b83c19237f9566d87197e4467ca23",
+    "tree": "/private/tmp/stackos-dependency-update-20261028/integration-tree",
+    "binding": "Approval applies to the accepted parent source plus the exact eleven-file rev5 repair and exact rebuilt 89-file UI bundle."
+  },
+  "review_scope": {
+    "independent": true,
+    "implementation_involvement": "None; reviewer wrote only review evidence and bounded audit scripts.",
+    "work": "Combined source-only integration review, reusing accepted runtime/Python/JavaScript reviews and reviewing the admitted UI repair deltas and actual fresh proof.",
+    "not_repeated": "No redundant full baseline audit, broad test run, browser session, production operation, or lifecycle action."
+  },
+  "freshness": {
+    "evidence": "ui-proof/review-rev5-final-freshness.json",
+    "source_file_hashes_verified": 11,
+    "bundle_file_hashes_verified": 89,
+    "both_aggregate_identities_recomputed": true,
+    "source_mismatches": [],
+    "bundle_mismatches": [],
+    "unexpected_bundle_files": [],
+    "rev4_to_rev5_delta": "Exactly six expected files: two existing E2E files and DataTable/TicketStatusChart with their tests.",
+    "prior_parent_review": "The accepted parent contained the exact union of the three accepted child manifests: 25 source paths. Agent contracts and operation surfaces remained unchanged.",
+    "root_scope_check": "Root independently reports all prior source entries unchanged except the eleven admitted repair paths; cancelled desktop build introduced no tracked source drift."
+  },
+  "requirements": [
+    {
+      "scope": "Dependency compatibility and ownership",
+      "result": "pass",
+      "evidence": ["python-review.json", "python-repair-review.json", "runtime-review.json", "javascript-review.json"],
+      "assessment": "Direct version bounds and explicitly admitted transitive exceptions remain enforced. Canonical installer, dependency manifests, lockfiles and packaged cookbook own their existing responsibilities. No parallel runtime or new abstraction was introduced."
+    },
+    {
+      "scope": "Agent contracts, security and data boundaries",
+      "result": "pass",
+      "assessment": "All 230 operation descriptions and 73 OpenAPI paths remain exactly equal. No agent operation, grant, credential, schema, migration, or database behavior change. The bounded repository type repairs preserve normal behavior and reject invalid/missing IDs through existing helpers."
+    },
+    {
+      "scope": "Accessible visible labels",
+      "result": "pass",
+      "assessment": "Brand label includes visible text. Project switcher and Home ticket counts use native visible names with minimal screen-reader-only action/unit text. Status counts, click dispatch, selected aria-pressed state, and project switching remain intact."
+    },
+    {
+      "scope": "Responsive table semantics",
+      "result": "pass",
+      "assessment": "Mobile button-role cards no longer expose unsupported aria-selected. Checked selection inputs, aria-current, active styling, existing keyboard handlers, and desktop row selection semantics remain unchanged. The regression fails against the previous source and passes after repair."
+    },
+    {
+      "scope": "Browser proof and navigation coverage",
+      "result": "pass",
+      "assessment": "Audit synchronization uses the existing reduced-motion preference and waits for aria-busy completion; Account panel audits wait for opacity 1. No accessibility rules, routes or viewport coverage were removed. Stale headings/routes match unchanged canonical owners. Home status coverage proves the current Board filter, rejects a nonmatching task, and opens the exact ticket popup."
+    },
+    {
+      "scope": "Cleanup, documentation and scope",
+      "result": "pass",
+      "assessment": "Runtime pin documentation and cookbook match accepted code. No CSS tokens, dependency locks, backend contracts or product routes were changed by the UI repair. No obsolete implementation or replacement compatibility layer was added. Existing owned test environment teardown reports session784 stopped and ports5188/5189 free; unrelated production/live state was not activated."
+    }
+  ],
+  "before_change_now_why": {
+    "before": "New dependency tooling exposed actual visible-name/ARIA defects, animation-sensitive accessibility sampling and stale tests referring to already replaced navigation.",
+    "change": "Small canonical component label/ARIA fixes and test readiness/navigation corrections, with regression coverage and unchanged styling or lifecycle behavior.",
+    "now": "The complete 23-case UI browser suite passes on the rebuilt candidate; all 802 UI unit tests pass. Existing source-only dependency, runtime, API and website evidence remains valid.",
+    "why": "This resolves observed compatibility and accessibility failures without expanding the product model or bypassing tests."
+  },
+  "proof": {
+    "integrated_make_signoff": {"receipt": "integrated-signoff.json", "exit_code": 0, "python_passed": 5479, "python_version": "3.12.16", "static": "Ruff, format and mypy passed", "reuse": "No Python/runtime/website source changed during UI repairs."},
+    "current_ui_units": {"receipt": "javascript-evidence/integration-ui-repair-r5-units-final.json", "exit_code": 0, "passed": 802, "files": 117},
+    "current_ui_e2e": {"receipt": "javascript-evidence/integration-ui-repair-r5-e2e-final.json", "exit_code": 0, "passed": 23, "failed": 0, "skipped": 0, "finished_at": "2026-10-29T05:33:35.890Z"},
+    "current_focused": {"components_passed": 25, "browser_cases_passed": 5, "types": "passed", "affected_lint": "passed", "build": "passed", "diff_check": "passed"},
+    "website_reused": "53 passed, three existing conditional duplicate-context skips; 607 generated routes, 196 SEO checks and generated-artifact/input evidence accepted in javascript-review.json.",
+    "native_runtime_reused": "Accepted candidate runtime/native browser proof and source integration manual UI evidence; no new browser action by reviewer.",
+    "history": "Initial15/8 and rev3 19/4 E2E failures, rev4 focused2/2, and rev5 red component evidence remain preserved; final pass does not erase them."
+  },
+  "findings": [],
+  "closed_findings": ["UI-R3-1", "UI-R3-2", "UI-R4-1", "UI-R4-2", "UI-R4-3"],
+  "required_repairs": [],
+  "residuals": [
+    "Existing lint warnings, Vue Router fixture warnings, Vite chunk-size warning and synthetic-daemon slow-request logs remain nonblocking; no new diagnostic was suppressed.",
+    "Source and test signoff does not claim installed app activation, package behavior, automatic updater behavior or public release verification."
+  ],
+  "authority": "Latest operator amendment limits work to dependency source updates and test signoff. Signing, notarization, packaging, installation, restart, rollback/synthetic-update scaffolding, version bump and publication are excluded and are not remaining gates.",
+  "next_disposition": "Main agent may accept the reviewed source-only integration, preserve this exact source/bundle binding when applying the overlay, and close the run within current authority. Main owns durable state and final claims."
+}

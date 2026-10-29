@@ -1,0 +1,33 @@
+{
+  "version": "2.1.42",
+  "status": "released",
+  "source_commit": "58fec8c5ee2739eb6fe678d70cf30de465339d01",
+  "tag": "v2.1.42",
+  "installer_url": "https://stackos.flowmonkey.io/StackOS/stackos-latest-mac-arm64.dmg",
+  "versioned_installer_url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.42-mac-arm64.dmg",
+  "update_feed_url": "https://stackos.flowmonkey.io/StackOS/latest-mac.yml",
+  "changes": [
+    "gstack 1.91.242.0 and Bun 1.4.4",
+    "Packaged CPython 3.12.16",
+    "21 Python and 30 JavaScript direct dependency updates",
+    "Narrow typing, accessibility and test compatibility repairs"
+  ],
+  "signoff": "Independent source, scope/simplicity, version and artifact reviews approved; no unresolved required repairs or agent/API contract changes.",
+  "installation": {
+    "captured_at": "2026-10-29T06:16:24.111372+00:00",
+    "operator_instruction": "Do not replace; deploy only. Operator will install and report back.",
+    "installation_status": "operator_owned",
+    "earlier_replacement_attempt": "failed with OS permission denied before app modification",
+    "existing_version": "2.1.41",
+    "service_restore": "canonical restart succeeded; HTTP health returned2.1.41",
+    "administrator_prompt_attempted": false,
+    "installed_release_claimed": false,
+    "existing_app_signature_verified": true
+  },
+  "residuals": [
+    "Earlier website QA runs may have forwarded synthetic analytics events; final runs blocked direct and proxied collection.",
+    "Operator will install the release and report back; no 2.1.42 installed-app verification is claimed."
+  ],
+  "evidence_directory": "evidence",
+  "captured_at": "2026-10-29T06:23:56.869202+00:00"
+}

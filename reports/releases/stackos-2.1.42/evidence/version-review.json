@@ -1,0 +1,26 @@
+{
+  "reviewer": "/root/navigation_review",
+  "verdict": "approve",
+  "version": "2.1.42",
+  "candidate_sha256": "44a65ff13cbda1f107f1abb66acdeeaa528be511bd236c2aea6a7dc1f03d78bf",
+  "parent_candidate_sha256": "ebb97b50d5615526a7c9aa9ea9e91c3d7ca0926830e086d12b5f0fcb0eae3064",
+  "candidate_receipt_sha256": "56cf98557ae79617cc37261d178baf4a8cd7f4ec929b82a337747e3fb864b605",
+  "scope": "Independent metadata-only delta and source freshness review; no repeated broad tests or build/runtime mutations.",
+  "delta": ["pyproject.toml", "stackos/__init__.py", "desktop/package.json", "uv.lock"],
+  "evidence": {
+    "audit": "review-release-metadata-audit.json",
+    "actual_changed_paths_equal_declared_four": true,
+    "one_version_replacement_per_file": true,
+    "reverse_version_replacement_recovers_each_parent_hash": true,
+    "main_and_build_tree_match": true,
+    "all2209_source_entries_verified": true,
+    "unexpected_source_mismatches": [],
+    "ui_bundle_unchanged": true,
+    "version_alignment": "release-version-alignment.json: exit0"
+  },
+  "prior_approvals_reused": ["integrated-review.json", "scope-simplicity-review.json"],
+  "findings": [],
+  "required_repairs": [],
+  "limit": "Approval covers version metadata and preserved source signoff. Final signed/notarized package and publication evidence remain a separate review after artifacts are complete.",
+  "next_disposition": "Continue the authorized normal release; reviewer available for final artifact review."
+}
