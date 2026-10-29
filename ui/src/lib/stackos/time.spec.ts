@@ -6,10 +6,25 @@ import {
   formatDurationBetween,
   formatDurationMinutes,
   formatRelativeDateTime,
+  formatShortDate,
   newestFirst,
 } from './time'
 
 const NOW = new Date('2026-06-09T12:00:00Z')
+
+describe('formatShortDate', () => {
+  it('keeps older years distinguishable and normalizes daemon UTC timestamps', () => {
+    const current = formatShortDate('2026-06-09T12:00:00', NOW)
+    expect(current).toBe(formatShortDate('2026-06-09T12:00:00Z', NOW))
+    expect(current).not.toContain('2026')
+    expect(formatShortDate('2025-06-09T12:00:00Z', NOW)).toContain('2025')
+  })
+
+  it('handles absent and malformed creation dates', () => {
+    expect(formatShortDate(null, NOW)).toBe('-')
+    expect(formatShortDate('not-a-date', NOW)).toBe('not-a-date')
+  })
+})
 
 describe('formatRelativeDateTime', () => {
   it('handles empty and invalid values', () => {

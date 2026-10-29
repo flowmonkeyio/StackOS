@@ -33,6 +33,7 @@ const viewOptions = [{ key: 'board', label: 'Board' }, { key: 'graph', label: 'G
   <UiToolbar
     aria-label="Work view controls"
     class="tracker-command-panel"
+    :variant="viewMode === 'board' ? 'plain' : 'default'"
   >
     <UiSegmentedControl
       class="tracker-command-panel__views"
@@ -118,7 +119,7 @@ const viewOptions = [{ key: 'board', label: 'Board' }, { key: 'graph', label: 'G
 .tracker-command-panel__search { flex: 0 1 280px; min-width: 120px; }
 .tracker-command-panel__filter { flex: 0 1 180px; min-width: 110px; }
 .tracker-command-panel__assignee { flex-basis: 160px; }
-.tracker-command-panel__task { flex: 1 1 480px; max-width: 640px; min-width: 160px; }
+.tracker-command-panel__task { flex: 1 1 0; min-width: 160px; }
 .tracker-command-panel__count { margin-left: auto; flex: none; white-space: nowrap; }
 @media (max-width: 1100px) {
   .tracker-command-panel__count { display: none; }

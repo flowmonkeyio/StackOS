@@ -556,8 +556,12 @@ The Work UI provides two views, Board and Graph. It renders:
   and `skipped`. Cards cannot be dragged between columns or change status.
 - an inline Board / Graph switch in the same desktop toolbar as the
   current view's controls. There are no separate Stories or Tickets views.
-- project-wide task cards with title, owner, workflow, blockers, and completed
-  ticket count. Only `complete` tickets count as complete; other terminal
+- project-wide task cards with a leading title and a compact footer for task
+  ID, creation date, completed ticket count, and owner. Recognized agent owners
+  use the same logos as Overview; other owners use neutral initials. Workflow
+  source and ticket dependency/blocker details remain in inspection rather than
+  appearing as task labels. An unmet child dependency does not label the whole
+  task blocked. Only `complete` tickets count as complete; other terminal
   statuses do not. Search, workflow and assignee filters narrow the Board.
   Task-status filters apply to tasks; `ticket_status` links explicitly filter
   tasks containing tickets with that status.

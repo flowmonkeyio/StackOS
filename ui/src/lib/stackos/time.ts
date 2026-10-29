@@ -52,6 +52,18 @@ export function formatAbsoluteDateTime(value: string | null | undefined): string
   return date.toLocaleString()
 }
 
+/** Compact calendar date for card metadata; retain the year for older records. */
+export function formatShortDate(value: string | null | undefined, now: Date = new Date()): string {
+  if (!value) return '-'
+  const date = parseStackOsDate(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    ...(date.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' as const }),
+  })
+}
+
 /** "45s" / "14m" / "2h 22m" / "1d 4h" from a minute or second count. */
 export function formatDurationMinutes(minutes: number | null | undefined): string {
   if (minutes === null || minutes === undefined || Number.isNaN(minutes)) return '-'

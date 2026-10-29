@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { UiBadge, UiIcon } from '@/components/ui'
+import { UiIcon } from '@/components/ui'
 import { trackerStatus } from '@/design/status'
-import { formatAbsoluteDateTime, formatRelativeDateTime } from '@/lib/stackos/time'
+import { resolveAgentOwnerLogo } from '@/lib/stackos/agentIdentity'
+import { formatAbsoluteDateTime, formatShortDate } from '@/lib/stackos/time'
 import type { TrackerStatus } from '@/lib/task-tracker/types'
 import type { TaskProgressRow } from './viewTypes'
 
@@ -49,74 +50,47 @@ function initials(owner: string): string {
           class="tracker-board__card focus-ring"
           :class="{ 'tracker-board__card--selected': selectedTaskKey === row.key }"
           :aria-label="`Open task #${row.id}: ${row.task.title}`"
+          @focus="($event.currentTarget as HTMLElement).scrollIntoView({ block: 'nearest', inline: 'nearest' })"
           @click="$emit('openTask', row.key)"
         >
-          <span class="flex min-w-0 items-center justify-between gap-2">
-            <span class="font-mono text-xs text-fg-muted">#{{ row.id }}</span>
+          <span
+            class="tracker-board__title"
+            :title="row.task.title"
+          >{{ row.task.title }}</span>
+          <span class="tracker-board__meta">
+            <span class="tracker-board__identity">
+              <span class="tracker-board__id">#{{ row.id }}</span>
+              <span aria-hidden="true">·</span>
+              <time
+                :datetime="row.task.created_at"
+                :title="`Created ${formatAbsoluteDateTime(row.task.created_at)}`"
+              ><span class="sr-only">Created </span>{{ formatShortDate(row.task.created_at) }}</time>
+            </span>
+            <span
+              v-if="row.totalCount > 0"
+              class="tracker-board__progress"
+              :title="`${row.completedCount} of ${row.totalCount} tickets complete`"
+            >
+              <UiIcon
+                name="tasks"
+                class="h-3.5 w-3.5 shrink-0"
+              />
+              {{ row.completedCount }}/{{ row.totalCount }}
+            </span>
             <span
               v-if="row.task.owner"
               class="tracker-board__owner"
+              :class="{ 'tracker-board__owner--agent': resolveAgentOwnerLogo(row.task.owner) }"
               :title="row.task.owner"
-            >{{ initials(row.task.owner) }}</span>
-          </span>
-          <span class="flex min-w-0 items-start gap-2">
-            <UiIcon
-              :name="trackerStatus[column.status].icon"
-              class="mt-0.5 h-4 w-4 shrink-0"
-              :style="{ color: `var(--color-${trackerStatus[column.status].tone}-fg)` }"
-            />
-            <span
-              class="tracker-board__title"
-              :title="row.task.title"
-            >{{ row.task.title }}</span>
-          </span>
-          <span class="flex min-w-0 flex-wrap items-center gap-1.5">
-            <UiBadge
-              class="tracker-board__source"
-              variant="outline"
-              :title="row.workflowLabel"
             >
-              <template #iconLeft>
-                <UiIcon
-                  :name="row.task.source_kind === 'workflow' ? 'git-branch' : 'file-text'"
-                  class="h-3.5 w-3.5 shrink-0"
-                />
-              </template>
-              {{ row.workflowLabel }}
-            </UiBadge>
-            <UiBadge
-              v-if="row.blockedCount"
-              tone="warning"
-            >
-              <template #iconLeft>
-                <UiIcon
-                  name="alert-triangle"
-                  class="h-3 w-3 shrink-0"
-                />
-              </template>
-              Blocked
-            </UiBadge>
-          </span>
-          <span class="tracker-board__meta">
-            <time
-              class="min-w-0 truncate"
-              :datetime="row.task.created_at"
-              :title="`Created ${formatAbsoluteDateTime(row.task.created_at)}`"
-            >Created {{ formatRelativeDateTime(row.task.created_at) }}</time>
-            <UiBadge
-              v-if="row.totalCount > 0"
-              variant="outline"
-              class="shrink-0 tabular-nums"
-              :title="`${row.completedCount} of ${row.totalCount} tickets complete`"
-            >
-              <template #iconLeft>
-                <UiIcon
-                  name="tasks"
-                  class="h-3.5 w-3.5 shrink-0"
-                />
-              </template>
-              {{ row.completedCount }}/{{ row.totalCount }}
-            </UiBadge>
+              <img
+                v-if="resolveAgentOwnerLogo(row.task.owner)"
+                :src="resolveAgentOwnerLogo(row.task.owner)!"
+                :alt="row.task.owner"
+                class="tracker-board__owner-logo"
+              >
+              <template v-else>{{ initials(row.task.owner) }}</template>
+            </span>
           </span>
         </button>
         <p
@@ -131,18 +105,21 @@ function initials(owner: string): string {
 </template>
 
 <style scoped>
-.tracker-board { display: grid; grid-template-columns: repeat(7, minmax(256px, 1fr)); flex: 1 1 auto; min-width: 0; min-height: 360px; overflow: auto; overscroll-behavior: contain; }
-.tracker-board__column { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--color-border-subtle); }
-.tracker-board__column:last-child { border-right: 0; }
-.tracker-board__heading { display: flex; flex: none; align-items: center; gap: 8px; padding: 12px; }
-.tracker-board__cards { display: grid; flex: 1 1 auto; align-content: start; gap: 8px; padding: 0 8px 12px; overflow-y: auto; min-height: 0; }
-.tracker-board__card { display: grid; gap: 10px; width: 100%; padding: 12px; border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); background: var(--color-bg-surface); box-shadow: var(--shadow-xs); text-align: left; }
-.tracker-board__card:hover { border-color: var(--color-border-strong); background: var(--color-bg-surface-alt); box-shadow: var(--shadow-sm); }
+.tracker-board { display: grid; grid-template-columns: repeat(7, minmax(300px, 1fr)); column-gap: 12px; flex: 1 1 auto; min-width: 0; min-height: 360px; overflow: auto; overscroll-behavior: contain; }
+.tracker-board__column { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.tracker-board__heading { display: flex; flex: none; align-items: center; gap: 8px; padding: 12px 8px; }
+.tracker-board__cards { display: grid; flex: 1 1 auto; align-content: start; gap: 8px; padding: 4px 4px 12px; overflow-y: auto; min-height: 0; scrollbar-width: thin; }
+.tracker-board__card { position: relative; display: grid; gap: 12px; width: 100%; padding: 12px; border: 1px solid transparent; border-radius: var(--radius-lg); background: var(--color-bg-surface); text-align: left; scroll-margin: 4px; }
+.tracker-board__card:hover { border-color: var(--color-border-default); background: var(--color-bg-surface-alt); }
 .tracker-board__card--selected { border-color: var(--color-border-focus); }
-.tracker-board__title { min-width: 0; color: var(--color-fg-strong); font-size: 14px; font-weight: 500; line-height: 20px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.tracker-board__owner { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; flex: none; border-radius: var(--radius-full); background: var(--color-accent-primary-subtle); color: var(--color-accent-primary-fg); font-size: 10px; font-weight: 600; }
-.tracker-board__source { max-width: 100%; font-size: 11px; font-weight: 400; }
-.tracker-board__source :deep(.ui-badge__label) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.tracker-board__meta { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; padding-top: 2px; color: var(--color-fg-muted); font-size: 12px; line-height: 18px; }
+.tracker-board__title { min-width: 0; color: var(--color-fg-strong); font-size: 14px; font-weight: 500; line-height: 20px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tracker-board__meta { display: flex; min-width: 0; min-height: 20px; align-items: center; gap: 12px; color: var(--color-fg-muted); font-size: 12px; line-height: 18px; }
+.tracker-board__identity { display: flex; min-width: 0; align-items: center; gap: 8px; margin-right: auto; white-space: nowrap; }
+.tracker-board__identity time { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tracker-board__id { flex: none; font-variant-numeric: tabular-nums; }
+.tracker-board__progress { display: inline-flex; flex: none; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
+.tracker-board__owner { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; flex: none; border-radius: var(--radius-full); background: var(--color-bg-surface-alt); color: var(--color-fg-muted); font-size: 9px; font-weight: 600; }
+.tracker-board__owner--agent { border-radius: var(--radius-xs); background: transparent; }
+.tracker-board__owner-logo { width: 100%; height: 100%; border-radius: inherit; object-fit: contain; }
 .tracker-board__empty { padding: 16px 4px; color: var(--color-fg-subtle); font-size: 12px; text-align: center; }
 </style>

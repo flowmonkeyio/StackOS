@@ -26,7 +26,7 @@ describe('Work board presentation', () => {
     expect(wrapper.emitted('openTask')).toEqual([['board-task']])
   })
 
-  it('shows real owner/source/date and counts only complete tickets in its checklist chip', () => {
+  it('shows real owner/date and counts only complete tickets without labeling the task blocked', () => {
     const record = { ...task('in-progress'), owner: 'delivery.agent', source_kind: 'workflow', source_json: { template_key: 'engineering.tracked-delivery' } }
     record.ticket_summary = { ...record.ticket_summary!, total_count: 3, terminal_count: 3, blocked_count: 1, status_counts: { complete: 1, failed: 1, skipped: 1 } }
     const rows = buildTaskProgressRows([record], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
@@ -34,13 +34,12 @@ describe('Work board presentation', () => {
     const card = wrapper.get('button')
     expect(card.get('.tracker-board__owner').text()).toBe('DA')
     expect(card.get('.tracker-board__owner').attributes('title')).toBe('delivery.agent')
-    expect(card.get('.tracker-board__source').text()).toBe('engineering.tracked-delivery')
-    expect(card.get('.tracker-board__source').findComponent(UiIcon).props('name')).toBe('git-branch')
+    expect(card.find('.tracker-board__source').exists()).toBe(false)
+    expect(card.text()).not.toContain('engineering.tracked-delivery')
     expect(card.get('time').attributes('datetime')).toBe(record.created_at)
     expect(card.get('time').attributes('title')).toBe(`Created ${formatAbsoluteDateTime(record.created_at)}`)
     expect(card.get('time').text()).toMatch(/^Created /)
-    expect(card.text()).toContain('Blocked')
-    expect(card.find('.text-warning-fg svg').exists()).toBe(true)
+    expect(card.text()).not.toContain('Blocked')
     expect(card.get('[title="1 of 3 tickets complete"]').text()).toBe('1/3')
     expect(card.text()).not.toContain('3/3')
   })
@@ -55,8 +54,34 @@ describe('Work board presentation', () => {
     expect(card.find('.tracker-board__owner').exists()).toBe(false)
     expect(card.text()).not.toContain('0/0')
     expect(card.text()).not.toContain('Blocked')
-    expect(card.get('.tracker-board__source').text()).toBe('manual')
-    expect(card.get('.tracker-board__source').findComponent(UiIcon).props('name')).toBe('file-text')
+    expect(card.text()).not.toContain('manual')
+  })
+
+  it.each([
+    ['Codex', '/images/openai.webp'],
+    ['codex-main', '/images/openai.webp'],
+    ['Claude', '/images/claude.webp'],
+    ['Claude Code', '/images/claude-code.webp'],
+    ['Gemini', '/images/gemini.webp'],
+    ['Hermes', '/images/hermes.webp'],
+  ])('uses the shared Overview logo for %s owners', (owner, logo) => {
+    const record = { ...task('in-progress'), owner }
+    const rows = buildTaskProgressRows([record], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
+    const wrapper = mount(TrackerBoardPanel, { props: { rows } })
+    const mark = wrapper.get('.tracker-board__owner img')
+    expect(mark.attributes('src')).toBe(logo)
+    expect(mark.attributes('alt')).toBe(owner)
+    expect(wrapper.get('.tracker-board__owner').attributes('title')).toBe(owner)
+  })
+
+  it('keeps a human name as initials instead of guessing an agent brand', () => {
+    const record = { ...task('in-progress'), owner: 'Claude Monet' }
+    record.ticket_summary = { ...record.ticket_summary!, blocked_count: 1 }
+    const rows = buildTaskProgressRows([record], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
+    const wrapper = mount(TrackerBoardPanel, { props: { rows } })
+    expect(wrapper.get('.tracker-board__owner').text()).toBe('CM')
+    expect(wrapper.find('.tracker-board__owner img').exists()).toBe(false)
+    expect(wrapper.get('button').text()).not.toMatch(/manual|Blocked/)
   })
 
   it('renders only Board and Graph, with the task picker exclusive to the graph', async () => {

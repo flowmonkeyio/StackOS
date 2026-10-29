@@ -40,7 +40,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `UiDiffBlock` | unified + side-by-side |
 | `UiPageHeader` | title + slug + description + actions |
 | `UiSectionHeader` | inside cards/panels; action slots stack below copy on narrow screens |
-| `UiToolbar` | sticky action bar |
+| `UiToolbar` | sticky action bar; default, sunken, or plain treatment for controls directly on a page |
 | `UiFilterBar` | search + chips + filters |
 | `UiBulkActionBar` | generic primitive only; not used in observer-mode product views |
 | `UiMetricCard` | label + value + delta |

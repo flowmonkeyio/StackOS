@@ -34,6 +34,7 @@ describe('agent host presentation', () => {
     expect(agentHostLogo(host({ host_key: 'claude-desktop' }))).toBe('/images/claude.webp')
     expect(agentHostLogo(host({ host_key: 'gemini-cli' }))).toBe('/images/gemini.webp')
     expect(agentHostLogo(host({ host_key: 'hermes' }))).toBe('/images/hermes.webp')
+    expect(agentHostLogo(host({ host_key: 'unknown-host' }))).toBe('/images/stackos-icon.png')
   })
 
   it('describes the StackOS connection instead of claiming a host is installed', () => {
