@@ -458,24 +458,19 @@ the start, then dependency-bridge them into the step chain. Ordinary non-workflo
 tasks may still have several independent roots when the work is genuinely
 parallel.
 
-For engineering SDLC workflow work, the mirrored tickets should preserve the
-requirements-to-release order instead of collapsing everything into one
-implementation ticket:
+New engineering tracked-delivery plans mirror the five actual checkpoints:
 
 ```text
 scope-work
--> define-requirements
--> discover-impact
--> plan-tickets
--> design-approach
--> review-design
--> design-tests
 -> deliver-tickets
 -> verify-delivery
 -> review-delivery
--> audit-tracker
 -> release-closeout
 ```
+
+Older run plans keep their frozen step order and tracker mirrors. Use child
+tickets and dependency edges only for real delegated work; attachment to a
+workflow step does not by itself establish readiness.
 
 The tracker is the durable execution map. It is not the proof that work is
 correct. Completion evidence should point to the code, commands, manual checks,

@@ -75,17 +75,16 @@ turns each workflow into the required and recommended role contracts; use those
 communications, support, and engineering roles as one curated project-adapted
 agent set without overlapping responsibilities.
 
-Engineering preparation establishes the requested behavior and a brief
-verification approach before executable ticket planning; it does not require
-writing tests before implementation. If intended behavior becomes ambiguous,
-the main agent asks the operator and pauses only the affected work. Inside one
-active delivery step, the main agent coordinates bounded specialist assignments
-and immediate independent ticket review. It owns durable lifecycle writes, integrates reviewed
-candidates and accepts tickets; specialists return evidence. Implementation and
-affected docs precede sanity checks. Final verification observes the relevant
-consumer or runtime (the loaded app for app behavior); closeout compares it
-with the original request and states unproved gaps instead of treating green
-unit tests as completion.
+New engineering tracked-delivery plans have five checkpoints: clarify intent,
+implement and document, verify actual behavior, independent review, and
+truthful handoff. If intended behavior becomes ambiguous at any point, the main
+agent asks the operator and pauses only affected work. It owns lifecycle
+writes, integration and final claims; bounded specialists return evidence.
+Implementation and affected docs precede sanity checks. Verification observes
+the relevant integrated consumer or loaded app for app behavior. The handoff
+compares that observation with the original request and states unproved gaps;
+green unit tests alone are not completion. Existing plans retain their frozen
+order and contracts.
 See [engineering delegation](./agent-presets.md#engineering-delegation-and-acceptance)
 for ownership, concurrency, model-selection and evidence rules. These are plugin
 operating contracts, not a second scheduler inside StackOS core.

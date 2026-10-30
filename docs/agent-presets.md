@@ -151,18 +151,11 @@ the operator asks for task/dependency tracking without invoking a workflow.
 The tracked-delivery workflow uses this baseline:
 
 ```text
-scope
--> requirements and flow definition
--> codebase impact discovery
--> architecture/design
--> test and verification design
--> executable ticket planning
--> delivery readiness review (design, proof and ticket plan)
--> delegated delivery with immediate independent ticket review
--> integrated verification
--> integrated delivery review
--> tracker truth audit
--> release closeout
+clarify original intent
+-> implement and document
+-> verify actual behavior
+-> independently review the exact candidate
+-> hand off observed result, gaps and release state
 ```
 
 The customer feedback/support workflow chain uses this baseline:
@@ -238,65 +231,25 @@ discovery task. Generated workflow step mirrors retain their phase gates.
 
 ### Engineering Delegation And Acceptance
 
-The workflow owns phase order and gates; the
-`stackos.sdlc.delivery-orchestrator` skill preset owns scheduling, model choice,
-recovery and acceptance. Specialist presets own bounded task behavior. The
-main agent reads their complete applicable contracts before execution. Compact
-preset resolution is useful for routing and may truncate adaptation text;
-request targeted raw resolution or description when it omits instructions.
-The resulting assignment can still be bounded and reference only relevant
-context. The
-main agent stays in the existing thread with its current model/settings and
-selects supported child models and reasoning effort per assignment. Generic
-presets carry no model/version pins. Host capabilities, operator preferences,
-risk and observed performance guide selection; a requested model and its
-effective fallback must not be reported as the same when the host overrides it.
+For new tracked-delivery plans, the required specialists are delivery and an
+independent reviewer. The main agent clarifies intent, controls run/tracker
+lifecycle, integrates work, adjudicates findings and owns final claims. Give
+each specialist only the original request and current assignment context it
+needs; use extra roles or child tickets only when the work warrants them.
 
-The orchestrator coordinates at most three active ticket assignments by
-default, including implementation, queued review, review and repair. Ready
-reviews take priority over starting new tickets. Capacity must allow an
-independent reviewer: reserve and reuse a reviewer slot when completed agent
-threads cannot be retired. A reviewer can review multiple tickets, but cannot
-review work it implemented. Each agent has one active assignment; queue work
-without retasking a busy reviewer.
+Delivery completes implementation and affected docs, then returns an exact
+candidate and sanity observations. A different agent reviews that candidate
+against the original request, including missing behavior and unproved claims.
+The main agent repairs and rechecks affected behavior before acceptance. For
+app behavior, the loaded app must be observed when authorized; unit tests alone
+are insufficient. A reviewer summary does not authenticate execution or
+reviewer identity. The main agent must say unfinished when actual behavior was
+not demonstrated.
 
-The ticket packet includes current operator and acceptance refs, design,
-accepted prerequisites, contract/assignment identity, owned paths and shared
-resources, proof steps and expected results, authorized environment, and return
-and stop conditions. Read the full targeted `tracker.brief` with
-`response_mode="raw"` when compact navigation omits required fields, then send
-the specialist a bounded packet. Keep durable facts in existing run/ticket
-context and evidence, and reference them from schema-valid phase outputs.
-
-Ticket-local acceptance must be distinct from integration-only obligations.
-An interface ticket can pass its contract checks before a consumer is built;
-the complete user journey remains an open workflow obligation. Readiness
-checks coverage against authoritative operator input as well as derived
-criteria, and rejects dependencies that make a ticket's required proof depend
-on its own blocked consumers.
-
-Implementation and self-check produce a candidate. A separate reviewer checks
-that candidate against the assigned requirements and actual evidence. The main
-agent adjudicates findings, routes repairs, integrates the reviewed result,
-rechecks affected evidence, then marks the ticket complete. Until acceptance,
-the ticket stays `in-progress`. There is no separate review ticket by default
-and no new tracker status. Main-agent scheduling and acceptance are guidance,
-not daemon-enforced leases or semantic verification.
-
-Review must identify its candidate, assignment attempt, contract revision and
-relevant environment. Disjoint file ownership does not prove independence: a
-check may import another ticket's unaccepted helper or use a shared fixture.
-Wait for the actual dependency or isolate and rerun against an accepted base.
-Final verification/review covers assembled behavior and remaining obligations,
-reusing valid ticket receipts instead of automatically repeating them.
-
-Source upgrades do not rewrite existing run-plan snapshots or host-local
-files. Existing runs keep their frozen structure and output contracts. Local
-adaptations record the version they actually implement and are refreshed only
-in an authorized adaptation phase; a source-only change must not relabel old
-local prompts as current. During a scoped source revision, use an explicit
-current session packet where needed. The workflow's required outputs remain
-schema-valid even when preparation is concise.
+Existing run plans and their mirror tickets keep their frozen steps, grants,
+output contracts and history. A source upgrade does not update an installed
+daemon or previously loaded host guidance. These role contracts are guidance,
+not an autonomous scheduler or a new source of authority.
 
 The main agent should detect or read the host convention before writing local
 agents. For Codex-style projects, inspect `.codex/config.toml` and existing

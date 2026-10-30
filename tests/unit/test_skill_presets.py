@@ -66,110 +66,42 @@ def test_generic_workflow_orchestrator_keeps_the_normal_loop_small() -> None:
 
 def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     loaded = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator")
-    contract = loaded.preset.operating_contract
-    action = loaded.preset.project_adaptation.required_agent_action.lower()
-
-    assert loaded.preset.version == "0.4.2"
-    assert loaded.preset.project_adaptation.required is True
-    assert loaded.preset.project_adaptation.do_not_use_verbatim is True
-    assert "canonical owner" in action
-    assert "workflow-backed run plan before" in action
-    assert "existing run/ticket" in action
-    assert "rehydrate" in action
-    assert "targeted raw resolution/description" in action
-    assert "subagent role" in " ".join(contract.responsibilities)
-    assert "schema-valid" in " ".join(contract.required_outputs).lower()
-    assert "tracker.brief" in loaded.preset.recommended_tools
-    assert "tracker.reopen" in loaded.preset.recommended_tools
-
-    calibration = loaded.preset.metadata_json["delivery_calibration"]
-    assert calibration["required_before_execution"] is True
-    assert set(calibration["lifecycle_depths"]) == {
-        "micro",
-        "standard",
-        "high_risk",
-        "blocked",
-    }
-    # Micro depth reduces preparation and proof breadth, not ticket independence.
-    micro = " ".join(calibration["lifecycle_depths"]["micro"]["expected_shape"])
-    assert "independent ticket review" in micro
-    assert (
-        "Broad suites require a stated risk reason"
-        in (calibration["proof_selection"]["broad_test_rule"])
-    )
-    assert "independent ticket verification" in calibration["agent_selection"]["principle"]
+    preset = loaded.preset
+    assert preset.version == "0.5.0"
+    assert preset.project_adaptation.required
+    assert preset.project_adaptation.do_not_use_verbatim
+    assert "original request" in preset.project_adaptation.required_agent_action
+    assert "not a subagent role" in " ".join(preset.operating_contract.responsibilities)
+    assert "runPlan.claimStep" in preset.recommended_tools
+    assert preset.metadata_json["boundary"]["not_a_subagent"] is True
 
 
 def test_sdlc_orchestrator_defines_bounded_delegation_and_acceptance() -> None:
     preset = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
-    policy = preset.metadata_json["delegation"]
-    contract = preset.operating_contract
-    required = " ".join(contract.must_do)
-    boundaries = " ".join(contract.must_not_do)
-
-    assert policy["max_active_tickets"] == 3
-    assert set(policy["count_includes"]) == {
-        "implementation",
-        "queued_review",
-        "review",
-        "repair",
-    }
-    assert policy["agent_assignment_limit"] == 1
-    assert policy["durable_owner"] == "main_agent"
-    assert policy["reviewer_priority"] == "before_new_delivery"
-    assert "not daemon-enforced" in policy["state_owner"]
-    assert "explicit unassigned ticket keys" in required
-    assert "one active assignment per agent" in required
-    assert "Idle or interrupted agents do not necessarily release slots" in required
-    assert "Never retask a busy reviewer" in required
-    assert "only the main agent marks complete" in required
-    assert "Integrate the reviewed candidate before acceptance" in required
-    assert "waive required ticket independence because work is micro" in boundaries
-    assert "did not implement" in policy["independence"]
-    assert "response_mode=raw" in required
-
-    # Per-ticket proof cannot require its blocked consumer, nor claim final proof.
-    assert "ticket-local acceptance or integration proof" in required
-    assert "reject proof/dependency cycles" in required
-    assert "authoritative operator-request and amendment refs" in required
-    assert "unaccepted sibling work" in required
-    assert "explicit coverage of every final review obligation" in required
+    required = " ".join(preset.operating_contract.must_do)
+    boundaries = " ".join(preset.operating_contract.must_not_do)
+    assert "ambiguous" in required
+    assert "Implement and document" in required
+    assert "loaded app" in required
+    assert "different agent" in required
+    assert "unit tests alone are insufficient" in required
+    assert "authenticated receipts" in boundaries
 
 
 def test_sdlc_orchestrator_preserves_model_authority_and_recovery_identity() -> None:
     preset = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
-    contract = preset.operating_contract
-    required = " ".join(contract.must_do)
-    responsibilities = " ".join(contract.responsibilities)
-    boundaries = " ".join(contract.must_not_do)
-
-    assert "Keep the main thread's model and reasoning settings" in responsibilities
-    assert "Select available child models and effort per assignment" in responsibilities
-    assert "requested/effective selection" in required
-    assert "pin model versions" in boundaries
-    assert set(preset.metadata_json["delegation"]["receipt_identity"]) == {
-        "ticket_ref",
-        "attempt_id",
-        "contract_revision",
-        "candidate_ref",
-        "evidence_refs",
-    }
-    assert "frozen order, grants and output schemas" in required
-    assert "preserve receipts outside step result_json" in required
-    assert "quiesce all agents/processes/in-flight actions" in required
-    assert "not child acceptance" in required
-    assert "invalidate/reopen affected children and dependents" in required
-    assert "delayed receipts from superseded attempts as historical" in required
-    assert "re-evaluate authorization and approval freshness" in boundaries
-    assert "replace rather than deep-merge" in required
+    required = " ".join(preset.operating_contract.must_do)
+    assert "frozen plan" in required
+    assert "Preserve scoped grants" in required
+    assert "failed attempts and unknown effects" in required
+    assert "existing run and tracker" in preset.metadata_json["state_owner"]
 
 
 def test_codex_sdlc_orchestrator_tracks_source_and_existing_project_references() -> None:
     root = Path(__file__).resolve().parents[2]
     text = (root / ".codex/orchestrator/sdlc-delivery-orchestrator.md").read_text()
     preset = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
-    assert f"Source skill preset: `{preset.key}` v{preset.version}" in text
-    assert "Requirement: required main-agent guidance" in text
+    assert f"Source: `{preset.key}` v{preset.version}" in text
     assert "not a subagent" in text
     config = tomllib.loads((root / ".codex/config.toml").read_text())
     assert all("orchestrator" not in role for role in config["agents"])
@@ -184,24 +116,13 @@ def test_codex_sdlc_orchestrator_preserves_local_execution_boundaries() -> None:
         .read_text()
         .split()
     )
-    # These are critical local materialization invariants; semantic completeness
-    # still requires independent review of the source and adapted contracts.
-    assert "design-tests -> plan-tickets -> review-design -> deliver-tickets" in text
-    assert "at most three active ticket lifecycles" in text
-    assert "queued review, review and repair" in text
-    assert "two implementers and one reusable reviewer" in text
-    assert "Only the main agent accepts" in text
-    assert "before new delivery" in text
-    assert "Local SDLC roles omit `model` and `model_reasoning_effort`" in text
-    assert "main thread's model and reasoning settings" in text
-    assert "not child acceptance" in text
-    assert "preserve" in text.lower() and "step `result_json`" in text
-    assert "setup_existing" in text and "no execution-state creation" in text
-    assert "frozen order, grants and output schemas" in text
-    assert "provisional breakdown" in text
-    assert "do not require proof from a future step" in text
-    assert "before any delivery dispatch" in text
-    assert "response_mode=raw" in text
+    assert "scope-work" in text and "release-closeout" in text
+    assert "stop the affected work and ask" in text
+    assert "Complete implementation and affected docs before sanity checks" in text
+    assert "loaded app" in text
+    assert "different agent" in text
+    assert "Existing plans retain their frozen steps" in text
+    assert "No workflow result grants publication" in text
 
 
 def test_branding_skill_preset_names_evidence_lock_and_level2_boundary() -> None:

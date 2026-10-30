@@ -284,70 +284,25 @@ feedback -> route and media preflight -> canonical Slack thread -> intake reacti
 -> task-created reaction -> engineering.tracked-delivery
 ```
 
-The baseline separates method from specialization. Requirements define what
-must be true, discovery and architecture map how the current project actually
-works, and verification planning names post-implementation sanity checks and
-the relevant integrated consumer or app flow. It does not require writing
-tests before delivery. The orchestrator chooses proof depth by reasoning
-from quality, production risk, and user/business impact, not by optimizing for
-speed. That depth may be no manual step, a narrow smoke, full manual signoff, a
-browser/user walkthrough, a provider live check, a migration rehearsal, or an
-operator-owned release gate. Delivery changes the repo, verification executes
-or truthfully marks every relevant proof item, and reviewers challenge
-behavior, test evidence, and durable tracker truth. A template may compact or
-skip optional specialist roles for small work, but it should not erase
-acceptance criteria, dependencies, evidence, or closeout truth from the run
-plan. Green unit checks alone do not prove an app-behavior request.
+New `engineering.tracked-delivery` plans use five checkpoints: clarify intent,
+implement and document, verify actual behavior, independent review, and truthful
+handoff. The main agent asks the operator if intended behavior is ambiguous at
+intake or later, pausing only the affected work. It owns the run and tracker;
+the required delivery and reviewer agents return bounded evidence. Additional
+specialists and tickets are used only when the work actually needs them.
 
-Tracked delivery keeps planning and delivery roles required while architecture,
-test-design, and delivery-review specialists are recommended depth tools. The
-main agent selects them from architectural and production risk, records a
-reason when omitting them, and still produces each workflow disposition. This
-keeps the SDLC complete without forcing a subagent or ceremony for every small
-change.
+Implementation and affected docs precede sanity verification. For a requested
+app behavior, the agent observes the loaded app when authorized; green unit
+tests alone do not establish completion. The reviewer checks the exact candidate
+and observations against the original request. The handoff states what changed,
+what was observed, gaps, and release authority. Self-authored output fields do
+not authenticate execution or reviewer identity.
 
-`engineering.tracked-delivery` compiles material operator input into one
-effective, precedence-aware contract. Current invariants, product decisions,
-implementation constraints, prohibitions, authority, deferrals, supersession,
-and acceptance cases retain the traceability needed for the delivery. Retired
-entries remain auditable but are not supplied beside current requirements as if
-both still applied. Material unresolved contradictions block implementation.
-
-For repository-bound delivery, the agent identifies the integrated candidate
-covered by verification. Executed evidence records its HEAD commit, staged and
-unstaged diff checksums, untracked-file manifest checksum, covered paths,
-migration head, generated-contract revision, and capture time. A material
-covered change makes affected proof stale and returns the workflow to the
-earliest affected gate. StackOS validates the declared output and evidence
-contracts; the agent decides which evidence was affected from project context.
-
-The test design itself must be verified before implementation starts, either by
-the main orchestrator or a designated reviewer. A mechanical "manual smoke" is
-not a test design when the risk calls for full signoff or a production-like
-rehearsal. Manual proof scenarios should name preconditions, exact user or
-agent steps, expected outcomes, evidence such as screenshots/logs/artifacts,
-and whether each scenario is closeout-blocking, residual, or operator-owned.
-For browser-assisted platform flows that require login, those preconditions
-must also name the stable StackOS browser `profile_key`, state whether the
-operator must log in once, and say whether reusing the resulting cookies/session
-is required for closeout or remains an operator-owned prerequisite.
-
-Reviewer output is evidence to adjudicate, not truth to copy into tickets. The
-orchestrator should classify each reviewer claim before action: valid
-unresolved issue, fixed issue, unsupported/false-positive claim, residual risk,
-or informational note. Status markers should be contextual: ✅ means verified
-good, fixed, or passing; ❌ means an unresolved blocker or failed required
-check; ⚠️ means residual risk, coverage gap, or operator-owned gate; ℹ️ means
-context or a rejected/unsupported claim.
-
-For workflow-backed tracker work, attachment is not readiness. A ticket created
-with `run_plan_id` and `step_id` is contained under the mirrored workflow step,
-but no execution dependency exists until the agent adds dependency edges.
-Tracked-delivery planning must bridge child tickets into the workflow spine:
-an `activates` edge makes the first executable child ready while its parent
-step is active, `blocks` edges hold work until real prerequisites complete, the
-next step blocks on the prior step's terminal child tickets, and
-verification/docs/signoff work cannot float as a ready branch beside delivery.
+Existing run plans retain their frozen step order, grants, output schemas,
+approvals and history. A new source template applies only to future plans after
+the installed workflow is updated. Workflow-backed child tickets still need
+real dependency edges where their order matters; attaching a ticket to a step
+is provenance, not readiness.
 
 The customer feedback baseline is deliberately split. Slack is the canonical
 thread for support work, even when feedback originates in Telegram or another
