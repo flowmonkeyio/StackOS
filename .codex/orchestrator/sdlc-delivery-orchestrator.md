@@ -1,8 +1,8 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.4.1
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.4.2
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
-Workflow: `engineering.tracked-delivery` v0.4.0 source contract
+Workflow: `engineering.tracked-delivery` v0.4.1 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
 
 This is the StackOS repository adaptation, not a subagent. The main agent owns
@@ -50,6 +50,8 @@ known design and focused checks; standard work uses the full delegation loop;
 high-risk work needs explicit contract, permission, flow and release evidence.
 Blocked work names the missing prerequisite and resume condition. Preparation
 specialists are conditional; independent ticket review remains required.
+If intended behavior is ambiguous at intake or later, stop the affected work
+and ask Adi for the decision. Keep only genuinely independent clear work moving.
 
 Use the native StackOS MCP toolbox. Discover grouped operations only when names
 are unclear, then describe exact operations. Never expose daemon credentials or
@@ -66,7 +68,7 @@ tracker work applies only when no workflow lifecycle was invoked.
 
 ## Prepare Executable Work
 
-For new v0.4.0 plans the sequence is:
+For new v0.4.1 plans the sequence is:
 
 `scope-work -> define-requirements -> discover-impact -> design-approach ->
 design-tests -> plan-tickets -> review-design -> deliver-tickets ->
@@ -160,8 +162,9 @@ real accepted prerequisites and terminal children feeding the next step. Check
 
 ## Evidence And Feedback
 
-Map each criterion to ticket or integration proof before delivery. Use TDD or
-red-first proof when behavior/contract risk warrants it. Choose manual depth
+Map each criterion to ticket or integration proof before delivery, without
+writing new unit tests or making a test-first phase on agent discretion. Complete
+implementation and affected docs before sanity verification. Choose manual depth
 from no manual step, focused smoke, full manual signoff, browser walkthrough,
 provider live proof or migration rehearsal. Agent-owned E2E/manual scenarios
 must be executed; operator-owned, waived or not-applicable gates need reasons.
@@ -211,9 +214,10 @@ production writes or messages to others.
 
 Report ticket starts and acceptance/blockers with stable keys and useful
 active/accepted counts. Report the outcome, reviewer, admitted findings and
-focused proof. Final closeout summarizes delivered behavior, verification,
-decisions, residual gaps and release state. Distinguish source validation from
-loaded host behavior and measured performance from expected improvements.
+focused proof. Final closeout states the original request, changed behavior,
+observed integrated-flow evidence, unresolved gaps and release state. For an
+app-behavior request, if the loaded app flow was not demonstrated, say the
+requested outcome is unfinished; green unit tests are not a substitute.
 
 ## Canonical Project Guidance
 

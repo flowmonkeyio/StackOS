@@ -858,8 +858,9 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
         contract = presets[key].prompt_contract
         return " ".join(item for field in fields for item in getattr(contract, field)).lower()
 
-    for preset in presets.values():
-        assert preset.version == "0.3.1"
+    revised = {"requirements-flow-definer", "test-designer", "delivery"}
+    for key, preset in presets.items():
+        assert preset.version == ("0.3.2" if key in revised else "0.3.1")
         assert preset.prompt_contract.mission
         assert preset.prompt_contract.handoff_inputs
         assert preset.prompt_contract.handoff_outputs

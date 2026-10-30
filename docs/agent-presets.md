@@ -208,7 +208,7 @@ The core support and engineering preset subset is deliberately small:
 | `stackos.sdlc.codebase-explorer` | Maps real execution paths, ownership, downstream fallout, tests, and docs before changes. |
 | `stackos.sdlc.planning` | Converts requirements, impact, design and proof into actionable ticket packets with ownership and dependencies. |
 | `stackos.sdlc.architecture` | Chooses and challenges the project-native design, canonical owner, contracts, rollout, and validation plan. |
-| `stackos.sdlc.test-designer` | Owns the full proof plan: TDD/red-first gates, automated checks, risk-appropriate manual proof, expected outcomes, and signoff evidence. |
+| `stackos.sdlc.test-designer` | Names post-implementation sanity checks, the relevant integrated flow, expected outcomes, and signoff evidence. |
 | `stackos.sdlc.delivery` | Implements assigned tickets, self-checks, repairs admitted findings and returns candidate evidence for acceptance. |
 | `stackos.sdlc.delivery-reviewer` | Independently reviews readiness, individual tickets or integrated delivery within an explicit scope; returns findings without repairing implementation or accepting tickets. |
 
@@ -218,12 +218,13 @@ the communications intake role; support investigation uses the support
 investigator and may use codebase exploration; delivery task handoff uses the
 support handoff role and may use planning; tracked delivery uses requirements,
 discovery, planning, architecture, test design, delivery, delivery review, and
-release closeout coordinated by the main agent. Test design is the single owner
-for test planning: it maps accepted requirements to automated proof, red-first
-TDD slices when needed, manual proof depth, expected outcomes, and evidence
-links, screenshots, or logs. The main orchestrator chooses that proof depth by reasoning from
-quality, production risk, and user/business impact; a quick smoke is not a
-substitute for full manual signoff or rehearsal when the risk calls for it.
+release closeout coordinated by the main agent. Verification planning names
+the smallest checks and actual consumer or app flow that can demonstrate the
+request after implementation and documentation. New tests are not a generic
+phase or an agent-selected substitute for that flow. The main orchestrator
+chooses depth from quality, production risk, and user/business impact; a quick
+smoke is not a substitute for full manual signoff or rehearsal when the risk
+calls for it.
 When browser-assisted platform work depends on login state, the test plan must
 name the stable StackOS browser `profile_key`, whether the operator must log in
 once, whether cookies/session reuse is expected, and whether that precondition

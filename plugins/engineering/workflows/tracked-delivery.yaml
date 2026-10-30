@@ -1,24 +1,24 @@
 schema_version: stackos.workflow-template.v1
 key: engineering.tracked-delivery
 name: Engineering Tracked Delivery
-version: 0.4.0
-description: Reusable SDLC workflow for requirements, project-native design and proof planning, executable ticket breakdown, delegated delivery with immediate independent review, integrated verification, and truthful release closeout.
+version: 0.4.1
+description: Reusable engineering workflow for clear intent, project-native implementation, independent review, integrated verification, and truthful closeout.
 domain: engineering
 owner:
   team: StackOS
 experience:
   problem: "Engineering requests fail when requirements, dependencies, verification, and review live only in chat or are compressed into implementation."
-  outcome: "A change checked against the original request, with test results, independent review and a recorded release status. The record shows what was completed and what still needs attention."
+  outcome: "A documented change checked against the original request through its actual consumer or runtime and independent review, with unproved work and release state stated plainly."
   why_ai: "AI can coordinate discovery, implementation, testing, and review across a long-running change while StackOS preserves dependencies and proof."
   operator_path:
     - "Describe the desired outcome, constraints, and authority boundary."
     - "Review material design choices or production-risk gates."
     - "Inspect verification, review findings, and residual risk before release."
   agent_path:
-    - "Clarify the request, affected users and systems, constraints, and what will count as a successful result."
-    - "Inspect the existing code, choose an approach and checks, then plan tasks in dependency order. Review the plan before implementation."
-    - "Implement authorized tasks, running independent work in parallel when useful. Test and independently review each result before starting dependent work, then check that the pieces work together."
-    - "Compare the finished change with the original request, record test and review results, and state whether it was released or what remains. Close the work only when the evidence supports that status."
+    - "Understand the original request and success condition. If intended behavior becomes ambiguous, stop the affected work and ask the operator; continue only independent work."
+    - "Inspect the existing app, select its canonical owner, and plan the smallest implementation and documentation change."
+    - "Implement and document the change, then sanity-check it and independently review the actual diff."
+    - "Exercise the relevant integrated consumer or runtime; for app behavior, use the loaded app. Compare observations with the original request and report changes, gaps and release state."
   progress_signals:
     - "Requirements defined"
     - "Impact discovered"
@@ -292,7 +292,7 @@ steps:
       - Confirm which project guidance, local skills, host-agent format, tracker/run-plan state, and release expectations apply.
       - Lock the delivery mode, typed operator constraints, forbidden environments/actions, deferrals, release authority, outcome, in-scope work, and non-goals under one constraint revision.
       - When scope or authority changes, increment constraint_revision, identify affected downstream outputs/evidence, mark them superseded or invalidated, and reopen the earliest affected gate.
-      - Surface missing context before planning if a reasonable project-specific assumption would be risky.
+      - If intended behavior or an authority boundary is ambiguous, stop the affected work and ask the operator before choosing a path; independent clear work may continue.
     input_refs:
       - goal
       - repo_context
@@ -324,6 +324,7 @@ steps:
       - Compile material current operator input and accepted decisions into typed contract entries; retain source, scope, precedence, supersession, and verification ownership when they affect delivery truth.
       - Keep retired or superseded requirements auditable but exclude them from the effective current contract supplied to delivery work.
       - Treat contradictory current contract entries as blocking unresolved decisions; do not ask implementation to reconcile them implicitly.
+      - Treat unclear intent as an operator question, not a design choice; pause the affected work until answered.
       - Keep the brief project-adapted and implementation-aware, but avoid importing domain assumptions from another project.
       - Name the proof surface expected for each acceptance criterion.
       - Trace the original operator request and subsequent clarifications to current acceptance criteria; distinguish ticket-local obligations from combined business outcomes whose proof belongs to integration.
@@ -387,21 +388,13 @@ steps:
       - The design avoids duplicate logic and names every touched contract boundary.
       - Future agents can implement without guessing architecture or validation.
   - id: design-tests
-    title: Design Tests, TDD, And Manual Scenarios
-    purpose: "Own the full proof plan before delivery: TDD/red-first automated tests, verification commands, agent-executed E2E/manual flow scenarios, expected outcomes, and signoff requirements."
+    title: Plan Verification
+    purpose: "Name how the completed implementation will be sanity-checked and observed in its actual consumer or runtime, without making test writing a pre-implementation phase."
     instructions:
-      - Own all test planning for this delivery, including automated tests, red-first/TDD gates, E2E/manual flow proof, docs/tracker checks, and signoff evidence.
-      - Start from the flow_design and map every changed or at-risk user flow, data flow, system flow, and business-rule flow to an automated, E2E, or manual proof item.
-      - "Let the orchestrator reason about the manual proof depth needed for the risk profile: no manual step, narrow smoke, full manual signoff, browser/user walkthrough, provider live check, migration rehearsal, or operator-owned release gate."
-      - Treat E2E/manual flow scenarios as agent-executed and closeout-blocking by default; mark a scenario operator-owned, residual, skipped, or not applicable only with an explicit reason.
-      - For risky behavior, define the one narrow failing proof that should be locked before runtime edits.
-      - A TDD claim requires an immutable red receipt captured before runtime implementation and a later green receipt for the same command; without the red receipt, classify the result as tests added rather than TDD completed.
-      - For manual scenarios, name preconditions, exact user/agent steps, expected outcomes, evidence links, screenshots, or logs, and whether the scenario is required for closeout or residual/operator-owned.
-      - For browser-assisted platform flows that depend on login state, name the stable StackOS browser profile_key, operator login precondition, cookie/session reuse expectation, and whether that precondition blocks closeout.
-      - Prefer targeted checks first and broaden based on blast radius.
-      - Include docs/tracker/signoff verification when the project makes them part of done.
-      - Separate locally provable ticket obligations from the combined user/business acceptance proof, identifying accepted baseline state, environments, shared fixtures, and evidence that remains valid across unrelated changes.
-      - Submit the proof plan to the delivery readiness review after ticket breakdown; treat an unverified or incomplete proof plan as a blocker before implementation unless explicitly waived.
+      - Identify the smallest sanity checks and integrated consumer/runtime flow that can demonstrate the original request after implementation and documentation.
+      - Record environment, authority, expected behavior and evidence; when the requested outcome is app behavior, distinguish source checks from loaded-app evidence.
+      - Follow the operator's test constraints. Do not make new unit tests or a test-first phase a generic prerequisite.
+      - Keep unrun or unavailable integrated checks visible as gaps rather than replacing them with green unit tests.
     policy_refs:
       - evidence_over_assertion
       - quality_over_speed
@@ -413,12 +406,8 @@ steps:
     output_refs:
       - test_plan
     success_criteria:
-      - Every acceptance criterion has an automated or manual proof surface.
-      - Every changed or at-risk user/data/system/business flow has E2E/manual or automated proof coverage, or an explicit closeout waiver.
-      - Manual scenarios include steps, expected outcomes, and evidence requirements.
-      - Browser-login scenarios state whether a stable profile_key and persisted cookies/session are required, already satisfied, or operator-owned.
-      - The test design is complete enough for ticket planning and delivery readiness review; implementation remains gated on its verification or explicit waiver.
-      - Delivery knows which checks prove the change and which checks are residual.
+      - The planned sanity checks and relevant integrated flow name expected behavior and evidence without requiring new tests before implementation.
+      - Unavailable environments, permissions, and operator-owned validation remain explicit.
   - id: plan-tickets
     title: Plan Tracker Tickets
     purpose: Turn the completed design and proof plan into executable assignments with dependencies, exclusive ownership, acceptance criteria, review instructions, and integration obligations.
@@ -493,7 +482,8 @@ steps:
       - Bind assignments and receipts to ticket, attempt, contract revision, candidate, covered paths, accepted dependencies, environment, and time. Reject delayed results from superseded assignments and evidence that relies on unaccepted sibling changes.
       - The reviewer checks the candidate against the current requirements, accepted design, and proof plan, returning criterion-level evidence, concrete findings, missing proof, and a verdict. The main agent adjudicates findings and routes required repairs to the delivery agent for focused independent re-verification.
       - Integrate the reviewed result, resolve conflicts and recheck any affected proof, then record the independent review and main-agent acceptance before completing the ticket. Dependents may use only that accepted result.
-      - For red-first work, prove the red is trustworthy before production edits and rerun the same slice to green.
+      - Complete the implementation and affected documentation before running the planned ticket-local sanity checks; do not create a unit-test phase merely because the workflow has a verification step.
+      - If intended behavior becomes ambiguous during delivery, stop that affected work and ask the operator; keep independent clear work moving.
       - At integration points, compare actual changed paths, migrations, generated contracts, cross-package imports, and test layers with planned ticket ownership; material drift reopens impact, design, and test planning.
       - When the delivery changes repository state, identify the integrated release candidate and capture the repository fingerprint needed to keep later verification truthful.
       - Keep unrelated user changes intact and record blockers instead of hiding them in chat.
@@ -522,13 +512,14 @@ steps:
       - Every completed executable child has current independent review and main-agent acceptance of its integrated result; required review or repair remains visible as unfinished work.
   - id: verify-delivery
     title: Verify Delivery
-    purpose: Prove the assembled outcome, cross-ticket interactions, remaining requirements, and mandatory project checks using current ticket receipts plus the remaining integrated proof.
+    purpose: Sanity-check the completed implementation and documentation, then observe assembled behavior through its actual consumer or runtime.
     instructions:
       - Classify changed surfaces and choose the smallest convincing checks first.
       - Map accepted ticket receipts to the approved proof plan and verify their candidate, prerequisite, environment, and scope freshness. Reuse valid receipts; execute remaining combined-flow checks and recheck only evidence invalidated by relevant changes, failures, or project requirements.
       - Record enough structured evidence to reproduce and judge each check. Repository-bound executed checks identify the covered candidate; other checks identify their exact run, environment, scope, time, result, and lifecycle.
       - Execute, update, or explicitly mark every automated and manual proof item from the test plan; do not silently replace the test design with ad hoc checks.
       - Execute the agent-owned E2E/manual flow scenarios from the test plan before signoff, capturing evidence for changed user, data, system, and business flows.
+      - Green unit or source checks alone do not prove an app-behavior request. If the relevant integrated consumer or loaded app cannot be exercised, mark that outcome unproved and delivery unfinished.
       - For browser-assisted platform proof, reuse the profile_key specified by the test plan so persisted cookies/session state is tested intentionally.
       - Widen to project signoff when contracts, grants, adapters, migrations, UI, provider, or release behavior crosses boundaries.
       - Derive passed status only when failed checks are empty and every required check executed; an attempted failure stays failed and cannot be relabeled deferred.
@@ -630,7 +621,8 @@ steps:
     title: Release Closeout
     purpose: Confirm final signoff, docs, known limitations, commit/release state, rollback/watch notes, and post-release checks.
     instructions:
-      - Compare final release claims to tracker audit and verification evidence.
+      - Fill release_summary.outcome_check with the original request, changed consumer or app behavior, integrated-flow evidence, gaps and demonstrated/unproved status. If the requested behavior was not demonstrated, say unfinished.
+      - Compare final release claims to tracker audit and verification evidence; test counts alone do not establish completion.
       - Require explicit release, deployment, production-write, and external-write authority; never infer authority from technical readiness.
       - Summarize the before/change/now/why flow-regression evidence for non-micro work.
       - Name limitations, deferred work, rollback/watch notes, and post-release checks for externally visible changes.
@@ -649,8 +641,8 @@ steps:
     output_refs:
       - release_summary
     success_criteria:
-      - Release readiness reflects tracker reality and verification evidence.
-      - Deferred scope and post-release checks are explicit.
+      - The handoff compares the original request with observed integrated behavior and names unproved work.
+      - Release readiness reflects tracker reality, authority, and verification evidence.
 
 outputs:
   - key: scope_summary
@@ -879,10 +871,10 @@ outputs:
         residual_risk: {type: array}
         evidence_refs: {type: array}
   - key: test_plan
-    name: Test Plan
+    name: Verification Plan
     type: object
     required: true
-    description: Risk-based automated and agent-executed scenarios, fixtures, commands, TDD expectations, ticket-local acceptance and combined requirement proof, submitted to readiness review after ticket planning.
+    description: Brief post-implementation sanity and integrated-consumer flow plan, with expected behavior, environment and unrun gates.
     schema:
       type: object
       required:
@@ -901,7 +893,6 @@ outputs:
         fixtures: {type: array}
         commands: {type: array}
         acceptance_evidence: {type: object}
-        tdd_expectations: {type: array}
   - key: delivery_summary
     name: Delivery Summary
     type: object
@@ -918,7 +909,6 @@ outputs:
         checks: {type: array}
         remaining_work: {type: array}
         scope_comparison: {type: object}
-        tdd_receipts: {type: array}
         ticket_receipts: {type: array}
         release_candidate: {type: object}
   - key: verification_summary
@@ -1054,7 +1044,7 @@ outputs:
     name: Release Summary
     type: object
     required: true
-    description: Release decision, authority, changed behavior, verification, deployment state, recovery, residual risk, and process learning.
+    description: Release decision plus an explicit original-request outcome check, observed integrated evidence or unproved gap, authority and state.
     schema:
       type: object
       required:
@@ -1066,6 +1056,7 @@ outputs:
         - deployment_state
         - recovery_plan
         - residual_risk
+        - outcome_check
       properties:
         decision: {type: string, enum: [released, ready, held, not_applicable]}
         reason: {type: string, minLength: 1}
@@ -1075,6 +1066,20 @@ outputs:
         deployment_state: {type: object}
         recovery_plan: {type: object}
         residual_risk: {type: array}
+        outcome_check:
+          type: object
+          required: [original_request, observed_behavior, evidence_refs, gaps, status]
+          properties:
+            original_request: {type: string, minLength: 1}
+            observed_behavior: {type: string, minLength: 1}
+            evidence_refs: {type: array, items: {type: string}}
+            gaps: {type: array}
+            status: {type: string, enum: [demonstrated, unproved, not_applicable]}
+          allOf:
+            - if: {properties: {status: {const: demonstrated}}}
+              then: {properties: {evidence_refs: {minItems: 1}}}
+            - if: {properties: {status: {const: unproved}}}
+              then: {properties: {gaps: {minItems: 1}}}
         process_learning:
           type: object
           properties:

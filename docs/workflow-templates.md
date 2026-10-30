@@ -286,10 +286,9 @@ feedback -> route and media preflight -> canonical Slack thread -> intake reacti
 
 The baseline separates method from specialization. Requirements define what
 must be true, discovery and architecture map how the current project actually
-works, and test design owns the full proof plan before delivery begins. That
-test design includes TDD/red-first proof when needed, targeted automated checks,
-risk-appropriate manual proof, expected outcomes, and the evidence artifacts
-needed for signoff. The orchestrator chooses manual proof depth by reasoning
+works, and verification planning names post-implementation sanity checks and
+the relevant integrated consumer or app flow. It does not require writing
+tests before delivery. The orchestrator chooses proof depth by reasoning
 from quality, production risk, and user/business impact, not by optimizing for
 speed. That depth may be no manual step, a narrow smoke, full manual signoff, a
 browser/user walkthrough, a provider live check, a migration rehearsal, or an
@@ -298,7 +297,7 @@ or truthfully marks every relevant proof item, and reviewers challenge
 behavior, test evidence, and durable tracker truth. A template may compact or
 skip optional specialist roles for small work, but it should not erase
 acceptance criteria, dependencies, evidence, or closeout truth from the run
-plan.
+plan. Green unit checks alone do not prove an app-behavior request.
 
 Tracked delivery keeps planning and delivery roles required while architecture,
 test-design, and delivery-review specialists are recommended depth tools. The

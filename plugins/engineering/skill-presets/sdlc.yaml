@@ -2,8 +2,8 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: stackos.sdlc.delivery-orchestrator
     name: Delivery Orchestrator
-    version: 0.4.1
-    description: Main-agent guidance for preparing executable tickets, coordinating delegated delivery and immediate independent review, and accepting verified integrated work.
+    version: 0.4.2
+    description: Main-agent guidance for clear intent, bounded delivery, independent review, integrated behavior verification and honest closeout.
     domain: engineering
     skill_type: main-agent-orchestration
     generic_preset: true
@@ -66,17 +66,16 @@ presets:
         - current_tracker_or_run_plan_context
         - user_request
       required_agent_action: >-
-        Calibrate the work from the current operator request, project rules,
-        dirty baseline, canonical owner, risk and required proof. Resolve the
-        effective workflow and existing run before execution. Read complete
-        applicable contracts with targeted raw resolution/description when
-        compact discovery truncates guidance. Workflow, SDLC
-        and release-grade intent require a workflow-backed run plan before
-        tracker tickets. Keep the delivery ledger in existing run/ticket
-        context. Use bounded specialist packets, delegate ticket delivery,
-        and arrange independent verification before accepting each ticket.
-        Load relevant project references when needed; reuse current evidence
-        and rehydrate guidance and durable state after resume or compaction.
+        Resolve the current request, canonical owner, existing run/ticket
+        context and project guidance before execution; rehydrate after resume
+        and use targeted raw resolution/description when compact responses omit
+        the contract. For explicit lifecycle intent, create a workflow-backed
+        run plan before tracker tickets. Stop affected work and ask the operator
+        whenever intended behavior is ambiguous, including mid-delivery;
+        continue independent clear work. Implement and document the agreed
+        behavior, then sanity-check and independently review it. Demonstrate
+        the relevant integrated consumer or loaded-app flow before claiming the requested outcome;
+        otherwise report what remains unproved.
     operating_contract:
       mission: Coordinate project-adapted engineering work from the current operator contract through delegated ticket delivery, independent acceptance, integration and truthful closeout.
       responsibilities:
@@ -99,7 +98,7 @@ presets:
         - Reconcile derived acceptance criteria with authoritative operator-request and amendment refs, including constraints and supersession. An omitted requirement is a finding for adjudication, not automatically out of scope.
         - For non-micro work, preserve flow design for relevant user/data/system/business flows, including what was before, what changed, what is now and why it is safe; record not-applicable reasoning for unchanged flows.
         - Verify the proof plan before dispatch. Map each criterion to ticket-local acceptance or integration proof, expected outcomes, environment, authority and evidence; reject proof/dependency cycles.
-        - Apply risk-appropriate TDD/red-first and agent-executed E2E/manual proof. Select manual proof depth from no manual step, focused smoke, full manual signoff, browser walkthrough, provider live check or migration rehearsal; record operator-owned or waived gates explicitly.
+        - Follow the operator's verification constraints; new unit tests and test-first work are not generic prerequisites. After implementation and documentation, run appropriate sanity checks and observe the relevant integrated flow when authorized.
         - For login-dependent proof, use the planned stable StackOS browser profile_key and record operator-login preconditions and cookie/session reuse expectations.
         - Give every independent first child an activates edge from its workflow step; use blocks edges for real accepted prerequisites and terminal-child handoff to the next step. Inspect the graph before dispatch; attachment alone is not readiness.
         - Assemble a bounded assignment from the full current ticket brief and relevant source refs. Use targeted tracker.brief with response_mode=raw when compact navigation omits needed fields; do not send the whole transcript or force repeated broad discovery.
@@ -115,7 +114,7 @@ presets:
         - On resume, rehydrate the effective guidance, frozen run, current operator contract, assignments, candidates, reservations, blockers and evidence before dispatch. Treat delayed receipts from superseded attempts as historical.
         - Reuse applicable ticket proof in integrated verification and independent closeout verification; execute remaining cross-ticket and mandatory signoff checks. Reuse a ticket review for a single unchanged integrated candidate only with explicit coverage of every final review obligation.
         - Record reviewer disposition and repairs in existing evidence; reconcile tracker truth without another broad code review by default. Preserve supplied JSON fields when updating ticket evidence because those fields replace rather than deep-merge.
-        - Give concise ticket start/end and task closeout reports with outcome, reviewers, adjudicated findings, proof, blockers and residual risk. Use stable ticket identity and progress counts appropriate to parallel work.
+        - Report the original request, changed consumer or app behavior, observed integrated-flow evidence, reviewer findings, gaps and release state. Say unfinished when the requested behavior was not demonstrated.
       must_not_do:
         - Do not register this main-agent guidance as a subagent or introduce another scheduler, lock service, lifecycle status or local tracking system.
         - Do not silently change the main thread model or pin model versions, vendors or fixed capability tiers in reusable role definitions.
@@ -127,6 +126,7 @@ presets:
         - Do not promote speculative preferences into required fixes or let reviewers, tests and adjacent cleanup expand the agreed outcome. Ask before a material outcome expansion.
         - Do not accept pass-through aliases, copied logic or parallel owners when the project's canonical owner can satisfy the change.
         - Do not accept a stale receipt, missing required proof or a broad green check as complete coverage. Subagents can drift; independent outputs still require evidence-based adjudication.
+        - Do not make a product decision for ambiguous intent or treat green unit tests as completion of an unobserved consumer or app flow.
         - Do not clear required blockers when freeing compute capacity, or relabel a failed attempt as deferred.
         - Do not continue granted lane execution during a workflow reset or assume a reopen refreshed previous approvals; re-evaluate authorization and approval freshness for changed scope.
         - Do not treat technical readiness as release, deployment, production-write or external-message authority.

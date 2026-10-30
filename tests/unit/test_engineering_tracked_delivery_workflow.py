@@ -70,13 +70,13 @@ def _impact_map() -> dict:
     }
 
 
-def test_tracked_delivery_v040_keeps_one_key_and_twelve_steps() -> None:
+def test_tracked_delivery_v041_keeps_one_key_and_twelve_steps() -> None:
     workflow = _workflow()
     validation = validate_workflow_template_obj(workflow)
 
     assert validation.valid is True, validation.errors
     assert workflow["key"] == "engineering.tracked-delivery"
-    assert workflow["version"] == "0.4.0"
+    assert workflow["version"] == "0.4.1"
     assert [step["id"] for step in workflow["steps"]] == [
         "scope-work",
         "define-requirements",
@@ -238,6 +238,13 @@ def test_dedicated_review_and_release_outputs_require_explicit_disposition() -> 
         "deployment_state": {"status": "not_authorized"},
         "recovery_plan": {"summary": "No release side effect occurred."},
         "residual_risk": [],
+        "outcome_check": {
+            "original_request": "Deliver the requested app change.",
+            "observed_behavior": "Loaded-app behavior was not checked.",
+            "evidence_refs": [],
+            "gaps": ["Installed flow is unverified."],
+            "status": "unproved",
+        },
     }
     assert list(Draft202012Validator(release_schema).iter_errors(held_release)) == []
 

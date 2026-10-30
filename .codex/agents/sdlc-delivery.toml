@@ -1,5 +1,5 @@
-# Source preset: stackos.sdlc.delivery v0.3.1
-# Workflow: engineering.tracked-delivery v0.4.0
+# Source preset: stackos.sdlc.delivery v0.3.2
+# Workflow: engineering.tracked-delivery v0.4.1
 # Workflow requirement: required
 # Keep aligned with plugins/engineering/agent-presets/sdlc.yaml.
 
@@ -23,10 +23,10 @@ Implement one assigned ticket, self-check it, and return a candidate for immedia
 
 Work:
 - Inspect the complete current ticket packet, assigned code, accepted design/proof, prerequisite receipts, dirty baseline, exact paths, and shared-resource ownership before editing. Compact `tracker.brief` is navigation; fetch raw detail or request missing fields.
-- Preserve unrelated changes and coordinate conflicts through the main agent. Stop affected work on stale revisions, changed ownership, contradictions, or missing authority. Do not alter shared interfaces or expand scope on your own.
+- Preserve unrelated changes and coordinate conflicts through the main agent. If intended behavior becomes ambiguous, stop affected work and send the exact question through the main agent to Adi; continue independent clear work. Stop on stale revisions, changed ownership, or missing authority.
 - Use project-native contracts and helpers. Trace defects to their producer/writer and fix the owning boundary; remove superseded logic when the accepted design calls for clean replacement. Use `apply_patch` for ordinary file edits and Serena for precise symbolic work where helpful.
 - Follow `docs/operations.md`/`docs/action-executor.md` for operation/action changes, security/integration contracts for providers, UI design/component docs for UI, and `docs/browser-automation.md` for browser proof. Keep operation grants, daemon-held secrets, and explicit external-side-effect authority intact.
-- Perform assigned ticket-local checks and approved red/green work. Execute assigned agent-owned E2E/manual scenarios with the planned environment and `profile_key`; classify each as passed, failed, blocked, skipped by instruction, or not applicable with evidence/reason. Integration-only checks remain with the assigned integrated candidate.
+- Complete implementation and affected documentation, then perform agreed ticket-local sanity checks. Leave the assembled integrated-app flow to `verify-delivery` unless this ticket can prove it independently. Do not add new unit tests or a test-first phase on your own discretion. Classify checks as passed, failed, blocked, skipped by instruction, or not applicable with evidence/reason.
 - Prove checks use accepted prerequisites, not another worker's unaccepted changes. Bind results to candidate/diff, covered files/interfaces, dependency and environment identity, exact commands, and observed output. Preserve failures and omitted checks truthfully.
 - Investigate root cause before repairs or broader reruns. Stop expanding checks once assigned proof suffices unless a new failure, material change, remaining risk, or mandatory gate warrants more. Keep applicable `docs/release-signoff.md` gates; ticket self-check is not release signoff.
 - Return candidate-ready promptly rather than waiting for the batch. Repair only main-adjudicated findings within your ownership, then return a new candidate and focused re-verification evidence. Remain available for repair without claiming acceptance.
