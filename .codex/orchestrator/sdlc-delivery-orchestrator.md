@@ -1,8 +1,8 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.4.1
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.4.2
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
-Workflow: `engineering.tracked-delivery` v0.4.0 source contract
+Workflow: `engineering.tracked-delivery` v0.4.1 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
 
 This is the StackOS repository adaptation, not a subagent. The main agent owns
@@ -66,7 +66,7 @@ tracker work applies only when no workflow lifecycle was invoked.
 
 ## Prepare Executable Work
 
-For new v0.4.0 plans the sequence is:
+For new v0.4.1 plans the sequence is:
 
 `scope-work -> define-requirements -> discover-impact -> design-approach ->
 design-tests -> plan-tickets -> review-design -> deliver-tickets ->
@@ -115,6 +115,26 @@ real accepted prerequisites and terminal children feeding the next step. Check
 
 ## Dispatch And Review Each Ticket
 
+Choose terminal-managed delegation or explicit `tracker.startDelivery` handoff.
+For automatic delivery, resolve agent identity, instructions, harness and model
+from engineering `ProjectPlugin.config_json.delivery` defaults and task overrides
+by role into one task snapshot. Defaults use existing local-admin `plugin.enable`;
+no ticket settings or required `.codex` folder. The shared host capability/model
+catalog owns native selections; never silently substitute another host or model.
+Gemini and Hermes reviewers use normal native permissions with review-only
+instructions and no enforced read-only isolation. Retain supported native review
+controls and record the actual mode in launch receipts.
+
+Each repository ticket produces a separate scoped commit after focused checks,
+then receives independent exact-commit review. Both receipts name full
+`commit_sha`. Protected `.git`/`.codex` writes use normal approval review; stop on
+denial. Automatic delivery mechanically records approved child results and
+advances serially; rejection or failure stops the same task without retry.
+Main retains scope, workflow phase gates, integration, findings adjudication and
+final claims. Do not compete with the automatic loop for ticket lifecycle writes.
+
+The following dispatch and acceptance steps apply to terminal-managed delivery:
+
 1. The main agent is the sole durable writer of run/step lifecycle, ticket
    status and acceptance evidence during tracked delegation. Assign explicit
    unassigned keys. `tracker.next` can include active work and `tracker.pick`
@@ -135,8 +155,8 @@ real accepted prerequisites and terminal children feeding the next step. Check
    Use inheritance when appropriate, respect the host's spawn/fork constraints,
    and record requested/effective settings and any supported fallback truthfully.
    Never silently change the main model or invent an unavailable child option.
-5. A worker implements within ownership, self-checks and returns a candidate
-   receipt. Keep its ticket in-progress. Dispatch a separate reviewer at the
+5. A worker implements within ownership, self-checks, creates a separate scoped
+   commit and returns its full `commit_sha` in the candidate receipt. Keep its ticket in-progress. Dispatch a separate reviewer at the
    next scheduling opportunity, before new delivery; queue ready reviews in
    existing ticket context while the reviewer is busy. Do not wait for a batch.
 6. Every executable child, including explicitly ticketed discovery, receives

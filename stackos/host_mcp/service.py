@@ -135,6 +135,15 @@ def run_agent(
     )
 
 
+def agent_review_sandbox(host_key: str) -> AgentSandbox:
+    """Choose the declared native review mode; normal mode adds no isolation."""
+    definition = _definition_by_key(host_key)
+    if definition is not None and definition.policy.agent_execution.review_sandbox is not None:
+        return definition.policy.agent_execution.review_sandbox
+    # Unsupported hosts still fail the shared selection validation before launch.
+    return "read-only"
+
+
 def agent_selection_error(
     host_key: str,
     *,
@@ -367,6 +376,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 "automatic",
                 AgentCapabilities(
                     sandboxes=("workspace-write", "read-only"),
+                    review_sandbox="read-only",
                     models=("gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"),
                     provider_selection=True,
                     auth_status_command=("codex", "login", "status"),
@@ -388,6 +398,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 "automatic",
                 AgentCapabilities(
                     sandboxes=("workspace-write", "read-only"),
+                    review_sandbox="read-only",
                     models=(
                         "claude-opus-5-5",
                         "claude-sonnet-5-5",
@@ -427,7 +438,8 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 "Gemini CLI",
                 "automatic",
                 AgentCapabilities(
-                    sandboxes=("workspace-write",),
+                    sandboxes=("workspace-write", "normal"),
+                    review_sandbox="normal",
                     models=(
                         "gemini-3.1-pro-preview",
                         "gemini-3-pro-preview",
@@ -437,7 +449,8 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                     ),
                     notes=(
                         "Delivery uses auto_edit; unapproved shell calls are denied. "
-                        "Strict read-only review and auth-status CLI are unverified."
+                        "Review uses normal native permissions with review-only instructions; "
+                        "no enforced read-only isolation. Auth-status CLI is unverified."
                     ),
                     sources=(
                         "https://geminicli.com/docs/cli/headless/",
@@ -455,7 +468,8 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 "Hermes",
                 "explicit",
                 AgentCapabilities(
-                    sandboxes=("workspace-write",),
+                    sandboxes=("workspace-write", "normal"),
+                    review_sandbox="normal",
                     custom_models=True,
                     provider_selection=True,
                     profile_selection=True,
@@ -463,7 +477,8 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                     auth_status_command=("hermes", "auth", "status"),
                     notes=(
                         "Explicit provider/model; native approvals retained. "
-                        "Strict read-only review is unsupported. "
+                        "Review uses normal native permissions with review-only instructions; "
+                        "no enforced read-only isolation. "
                         "Installed shims may not be runnable."
                     ),
                     sources=(
@@ -495,6 +510,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 "automatic",
                 AgentCapabilities(
                     sandboxes=("workspace-write", "read-only"),
+                    review_sandbox="read-only",
                     models=("grok-build",),
                     custom_models=True,
                     notes=(

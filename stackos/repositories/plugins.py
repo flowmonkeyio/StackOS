@@ -231,7 +231,8 @@ class PluginRepository:
             )
         else:
             row.enabled = True
-            row.config_json = config_json if config_json is not None else row.config_json
+            if config_json is not None:
+                row.config_json = {**(row.config_json or {}), **config_json}
             row.enabled_at = now
             row.disabled_at = None
             row.updated_at = now
@@ -240,6 +241,16 @@ class PluginRepository:
         self._s.refresh(row)
         self._disabled_plugin_ids_cache.clear()
         return Envelope(data=self._project_plugin_out(row, plugin), project_id=project_id)
+
+    def get_project_config(self, *, project_id: int, plugin_slug: str) -> dict[str, Any]:
+        """Read saved project configuration without synchronizing the plugin catalog."""
+        self._require_project(project_id)
+        row = self._s.exec(
+            select(ProjectPlugin)
+            .join(Plugin, col(ProjectPlugin.plugin_id) == col(Plugin.id))
+            .where(ProjectPlugin.project_id == project_id, Plugin.slug == plugin_slug)
+        ).first()
+        return dict(row.config_json or {}) if row else {}
 
     def disable(self, *, project_id: int, plugin_slug: str) -> Envelope[ProjectPluginOut]:
         self.sync_builtin_plugins()

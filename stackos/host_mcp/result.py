@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from jsonschema import ValidationError, validate
 
-AgentSandbox = Literal["read-only", "workspace-write"]
+AgentSandbox = Literal["read-only", "workspace-write", "normal"]
 
 
 @dataclass(frozen=True)
@@ -44,6 +44,7 @@ class AgentCapabilities:
     """Native execution facts attached to the existing host registry."""
 
     sandboxes: tuple[AgentSandbox, ...] = ()
+    review_sandbox: AgentSandbox | None = None
     models: tuple[str, ...] = ()
     custom_models: bool = False
     provider_selection: bool = False

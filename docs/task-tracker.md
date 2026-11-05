@@ -56,7 +56,31 @@ The planner chooses this optional path by calling `tracker.startDelivery` after
 preparing a task's self-contained tickets and dependencies. The existing
 terminal-managed path continues to use the normal tracker operations.
 
-The handoff is task-level:
+Project agent defaults live in the engineering plugin's existing
+`ProjectPlugin.config_json.delivery` object. An operator saves them through
+local-admin `plugin.enable` setup (the local-admin REST route is
+`POST /api/v1/projects/{project_id}/plugins/engineering/enable`, with
+`config_json` in its body). Ordinary MCP/system grants do not allow this setup:
+
+```json
+{
+  "plugin_slug": "engineering",
+  "config_json": {
+    "delivery": {
+      "host_key": "codex",
+      "delivery_agent": {"name": "builder", "instructions": "Implement, check and commit the assigned ticket."},
+      "review_agent": {"name": "reviewer", "instructions": "Independently review the exact commit; do not change files or commits."}
+    }
+  }
+}
+```
+
+`plugin.enable` merges supplied top-level configuration keys, preserving other
+keys; a supplied `delivery` object replaces that key, so include all intended
+defaults when updating it. Instructions must be adapted to the project.
+
+The handoff is task-level; role objects and their fields can be omitted when
+project defaults supply them:
 
 ```json
 {
@@ -78,12 +102,18 @@ The handoff is task-level:
 ```
 
 The workspace bridge supplies `project_id`; REST and CLI callers supply it
-explicitly. Agent instructions come from the planner's project adaptation.
+explicitly. Agent identity and instructions come from project defaults or the
+planner's task adaptation. Task overrides merge field by field within each role;
+an explicit null clears an optional role selection (model/provider/profile/host),
+while a resolved name or instructions cannot be missing, null or empty.
 Projects need no `.codex` folder, and StackOS does not substitute generic presets
 for those instructions. Harness and role choices are stored once under the
-task's `metadata_json.delivery`, with other task metadata preserved.
+task's `metadata_json.delivery`, with other task metadata preserved. Launches use
+that effective snapshot even if project defaults later change. Tickets carry no
+agent settings. Invalid resolved roles or model selections reject before scheduling.
 Each role may override `host_key`, `model`, `provider`, and (for Hermes)
-`profile`. The role host overrides the task host, whose default is `codex`.
+`profile`. The merged role host overrides the task host, then the project host,
+then `codex`. Clearing a role host uses that task/project host chain.
 Omitting the model preserves native host settings. Explicit selections reach
 native CLI arguments and launch evidence; StackOS never substitutes another
 host or model after a failure. Hermes requires an explicit provider/model pair,
@@ -160,15 +190,20 @@ and capability notes appear in host status `agent_execution`. Current selections
 | --- | --- | --- |
 | Codex | `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6.1-terra`, `gpt-6-luna`; configured provider models with `provider` | Automatic approval review / native read-only sandbox |
 | Claude Code | `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1` | `auto` permissions / `dontAsk`, only Read/Glob/Grep, MCP tools denied |
-| Gemini CLI | `gemini-3.1-pro-preview`, `gemini-3-pro-preview`, `gemini-3-flash-preview`, `gemini-2.5-pro`, `gemini-2.5-flash` | `auto_edit`, unapproved shell denied / unsupported |
-| Hermes | Explicit provider's model ID; no Hermes model family | Native one-shot approvals / unsupported |
+| Gemini CLI | `gemini-3.1-pro-preview`, `gemini-3-pro-preview`, `gemini-3-flash-preview`, `gemini-2.5-pro`, `gemini-2.5-flash` | `auto_edit`, unapproved shell denied / normal native permissions, review-only instructions |
+| Hermes | Explicit provider's model ID; no Hermes model family | Native one-shot approvals / normal native permissions, review-only instructions |
 | Grok | CLI selections from `grok models`, including configured aliases such as `grok-build`; distinct from API ID `grok-4.7` | `workspace` sandbox, `auto` / `read-only` sandbox, `dontAsk` |
 | Claude Desktop | None for headless execution | Unsupported |
 
 Claude review uses native tool restrictions, not an OS sandbox; it cannot run
 shell-based tests. Gemini plan mode can leave plan mode in headless execution,
-and Hermes has no established strict read-only switch. Choose a supported review
-host for those delivery hosts. Unsupported role choices reject before scheduling.
+and Hermes has no established strict read-only switch. Both support independent
+review through normal native sessions with instructions to avoid changing files
+or commits; these instructions provide no enforced read-only isolation. The shared
+host capability owner selects the mode (`review_sandbox`); launch receipts record
+`sandbox: "normal"` for these reviews. Gemini review adds no approval-mode override;
+Hermes retains native one-shot permissions. Native read-only controls remain for
+Codex, Claude Code and Grok. Unsupported hosts still reject before scheduling.
 Native permissions may deny required work, including committing; a structured
 blocked result stops the task even if the process exit code is zero.
 

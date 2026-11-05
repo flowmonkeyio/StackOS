@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: stackos.sdlc.delivery-orchestrator
     name: Delivery Orchestrator
-    version: 0.4.1
+    version: 0.4.2
     description: Main-agent guidance for preparing executable tickets, coordinating delegated delivery and immediate independent review, and accepting verified integrated work.
     domain: engineering
     skill_type: main-agent-orchestration
@@ -82,7 +82,7 @@ presets:
       responsibilities:
         - Own scope, workflow selection, dispatch, integration and final claims in the existing main thread; this skill is not a subagent role.
         - Be the sole feedback gatekeeper; adjudicate reviewer claims against authoritative operator input, accepted deliverables, actual code and evidence before admitting required work.
-        - Keep StackOS tasks, tickets and run plans canonical. In tracked delegation, serialize durable lifecycle and evidence writes through the main agent; specialists return bounded packets.
+        - Keep StackOS tasks, tickets and run plans canonical. In terminal-managed tracked delegation, serialize durable lifecycle and evidence writes through the main agent; specialists return bounded packets. After explicit tracker.startDelivery handoff, StackOS owns mechanical child-ticket progression; main retains workflow phase gates, scope, integration and final claims.
         - Establish project-native ownership, active consumers and existing patterns. A new abstraction needs a demonstrated gap, rejected alternatives, a canonical owner and migration/removal implications.
         - Use preparation specialists when they add useful depth; the main agent may perform concise preparation without spawning an agent for every workflow step.
         - Prepare design and proof before ticket breakdown. Review requirements, design, proof, decomposition, dependencies and prerequisites together at delivery readiness.
@@ -107,9 +107,11 @@ presets:
         - Dispatch explicit unassigned ticket keys and one active assignment per agent. tracker.next can include in-progress work and tracker.pick is not an exclusive lease. Keep worker processes quiescent before reuse or reassignment.
         - Resolve host slot and model constraints before spawning. Reserve or reclaim capacity for an independent reviewer; reuse bounded delivery/reviewer slots when appropriate. Idle or interrupted agents do not necessarily release slots. Record requested/effective selection and supported fallback truthfully.
         - Dispatch ready reviews at the next scheduling opportunity before new delivery; queue them durably if the reviewer is busy. Never retask a busy reviewer or wait for a whole implementation batch.
+        - Require a separate scoped commit per repository ticket before independent exact-commit review; bind both receipts to the full commit_sha. Use normal host approval for protected writes and stop on denial. For automatic delivery, review approval of that SHA permits mechanical advancement; rejection or failure stops the same task without retry.
+        - Resolve automated agent identity, instructions, harness and model from engineering ProjectPlugin.config_json.delivery defaults with task overrides merged by role into one task snapshot. Setup uses existing local-admin plugin.enable; no ticket settings, required .codex folder, or silent host/model substitution. The shared host capability owner selects review execution mode; Gemini and Hermes use normal native permissions with review-only instructions, while supported native read-only controls remain in place. Report the actual mode and limitations.
         - Verify candidates against the accepted base and relevant dirty-tree, dependency, fixture and environment state. Freeze the covered scope or isolate it; if proof relies on unaccepted sibling work, add the real dependency and wait or re-run against an accepted base.
         - Keep the ticket in-progress through delivery, review and repair. Bind delivery/review receipts to current attempt, contract and candidate; reviewers inspect requirements and actual work independently, while the main agent adjudicates findings and routes scoped repairs.
-        - Integrate the reviewed candidate before acceptance. Recheck affected proof when integration or dependencies change; only the main agent marks complete and releases dependents after current independent verification.
+        - Integrate the reviewed candidate before acceptance. Recheck affected proof when integration or dependencies change; in terminal-managed delivery only the main agent marks complete and releases dependents after current independent verification. Automatic delivery records approved child results mechanically; it never completes workflow phases or final signoff.
         - Preserve failed attempts as history and distinguish passed, failed, blocked, skipped and not-applicable checks. Park blocked work with a resume condition after quiescence; retain the required blocker and escalate repeated unsuccessful repairs to bounded diagnosis or replanning.
         - Before a workflow rewind, preserve receipts outside step result_json, quiesce all agents/processes/in-flight actions, and use tracker.reopen at the earliest affected step. It resets that and later steps, not child acceptance; explicitly invalidate/reopen affected children and dependents, reclaim the step and rebuild current handoffs.
         - On resume, rehydrate the effective guidance, frozen run, current operator contract, assignments, candidates, reservations, blockers and evidence before dispatch. Treat delayed receipts from superseded attempts as historical.
@@ -188,6 +190,7 @@ presets:
         agent_selection:
           principle: Preparation specialists add conditional depth; delegated delivery and independent ticket verification are the tracked-delivery default.
       delegation:
+        path: terminal-managed
         max_active_tickets: 3
         count_includes: [implementation, queued_review, review, repair]
         durable_owner: main_agent
@@ -196,7 +199,7 @@ presets:
         independence: Reviewer did not implement the work being reviewed; reuse across other tickets is allowed.
         model_selection: Main agent resolves supported model and effort per assignment; presets have no model/version pins.
         receipt_identity: [ticket_ref, attempt_id, contract_revision, candidate_ref, evidence_refs]
-        state_owner: Existing run context and ticket metadata/evidence; these rules guide agents and are not daemon-enforced scheduling or acceptance.
+        state_owner: Existing run context and ticket metadata/evidence; these terminal-managed rules guide agents and are not daemon-enforced scheduling or acceptance. Explicit tracker.startDelivery handoff instead uses the existing serial task loop; main retains workflow phase gates and final claims.
       progress_reporting:
         ticket_start: Report stable ticket identity, assigned scope and active/accepted counts when useful.
         ticket_end: Report acceptance or blocker, independent reviewer, adjudicated findings and focused proof; candidate-ready is not ticket-done.

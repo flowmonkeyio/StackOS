@@ -87,14 +87,21 @@ operating contracts, not a second scheduler inside StackOS core.
 
 For an independently prepared task, the planner can instead call
 `tracker.startDelivery` after creating self-contained tickets and dependencies.
-It supplies the project directory, harness, and named delivery/review instruction
-packets once for the task. The planner adapts these instructions from the
+It supplies the project directory and task choices, merged by role with engineering
+`ProjectPlugin.config_json.delivery` defaults into one effective task snapshot.
+The planner adapts named delivery/review instructions from the
 project's available guidance; agent files are optional sources, not a launch
 requirement. StackOS passes the instructions to the harness and follows the
-fixed delivery/review sequence. Review approval completes a ticket and releases
-its dependents; rejection or failure stops execution with evidence. The initial
-path supports Codex and does not accept workflow-mirrored tasks or resume jobs
-after daemon restart. See [task handoff](task-tracker.md#automated-task-delivery).
+fixed delivery/review sequence. Each repository ticket creates a separate scoped
+commit, followed by independent exact-commit review. Approval completes a ticket
+and releases its dependents; rejection or failure stops the same task with evidence.
+For a workflow task, hand off one running step's executable children. Mechanical
+advancement does not complete workflow phases: main retains scope, phase gates,
+integration and final claims. Jobs do not resume after daemon restart. The shared
+host capability owner selects review mode; Gemini and Hermes use normal native
+sessions with review-only instructions and no enforced read-only isolation.
+Native read-only controls remain where supported. See
+[task handoff](task-tracker.md#automated-task-delivery).
 
 Local agent installation is outside the StackOS daemon boundary. StackOS
 describes generic presets and workflow role requirements, but the host/project

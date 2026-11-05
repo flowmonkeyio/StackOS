@@ -168,6 +168,13 @@ def _assert_sdlc_materializations(agent_dir: Path) -> None:
     assert "provisional breakdown" in planning
     assert "enrich the same ticket packets" in planning
     delivery = instructions["sdlc_delivery"]
+    for prompt in (planning, delivery, instructions["sdlc_delivery_reviewer"]):
+        assert "scoped commit" in prompt
+        assert "exact-commit review" in prompt or "exact scoped commit" in prompt
+        assert "commit_sha" in prompt
+        assert "mechanical" in prompt
+        assert "workflow phase gates" in prompt
+    assert "no enforced read-only guarantee" in instructions["sdlc_delivery_reviewer"]
     assert "Return candidate-ready promptly" in delivery
     assert "Do not call `tracker.pick`" in delivery
     assert "unaccepted changes" in delivery
@@ -773,7 +780,7 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
     delivery = loader.describe_preset(key="stackos.sdlc.delivery").preset
     reviewer = loader.describe_preset(key="stackos.sdlc.delivery-reviewer").preset
 
-    assert architecture.version == "0.3.1"
+    assert architecture.version == "0.3.2"
     architecture_text = " ".join(
         [
             *architecture.prompt_contract.responsibilities,
@@ -859,7 +866,7 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
         return " ".join(item for field in fields for item in getattr(contract, field)).lower()
 
     for preset in presets.values():
-        assert preset.version == "0.3.1"
+        assert preset.version == "0.3.2"
         assert preset.prompt_contract.mission
         assert preset.prompt_contract.handoff_inputs
         assert preset.prompt_contract.handoff_outputs
@@ -874,6 +881,8 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     assert "contract revision" in shared
     assert "stale, or contradictory inputs" in shared
     assert "other workflows or standalone assignments" in shared
+    assert "mechanically records ticket results" in shared
+    assert "workflow phase gates" in shared
 
     requirements = contract_text("requirements-flow-definer", "responsibilities", "must_not_do")
     assert "subsequent clarifications" in requirements
@@ -941,6 +950,11 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     ):
         assert boundary in reviewer
     assert lifecycle_tools.isdisjoint(presets["delivery-reviewer"].recommended_tools)
+    for text in (planning, delivery, reviewer):
+        assert "scoped commit" in text
+    assert "commit_sha" in delivery and "commit_sha" in reviewer
+    assert "gemini and hermes" in reviewer and "normal native sessions" in reviewer
+    assert "no enforced read-only guarantee" in reviewer
     # The unused release role is intentionally outside this source revision.
     assert loader.describe_preset(key="stackos.sdlc.release-ops").preset.version == "0.2.1"
 

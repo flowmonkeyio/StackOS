@@ -112,11 +112,61 @@ def test_native_command_and_structured_result(
 
 
 @pytest.mark.parametrize("host", ["gemini-cli", "hermes", "claude-desktop"])
-def test_unsupported_review_does_not_launch(project, monkeypatch, host):
+def test_unsupported_native_read_only_does_not_launch(project, monkeypatch, host):
     monkeypatch.setattr(subprocess, "run", lambda *a, **kw: pytest.fail("must not launch"))
     result = run_agent(host, project, "Review", "packet", SCHEMA, sandbox="read-only")
     assert not result.ok
     assert "support" in result.error.lower()
+
+
+@pytest.mark.parametrize("host", ["gemini-cli", "hermes"])
+@pytest.mark.parametrize("valid", [True, False])
+def test_normal_review_uses_native_permissions_and_review_schema(project, monkeypatch, host, valid):
+    from stackos.plugins.builtin_engineering import task_delivery
+
+    fake_native_discovery(monkeypatch)
+    calls = []
+    value = {"decision": "approve", "summary": "Reviewed", "commit_sha": "a" * 40}
+    if not valid:
+        value["decision"] = "complete"
+
+    def execute(command, **kwargs):
+        calls.append(command)
+        prompt = " ".join(command) + kwargs.get("input", "")
+        assert "Do not change files or commits" in prompt
+        assert "exact committed candidate" in prompt
+        assert all(
+            flag not in command
+            for flag in ("--sandbox", "--approval-mode", "--yolo", "--always-approve")
+        )
+        if host == "gemini-cli":
+            assert command[command.index("--output-format") + 1] == "json"
+            envelope = {"response": json.dumps(value)}
+        else:
+            assert "--oneshot" in command
+            assert command[command.index("--format") + 1] == "stream-json"
+            envelope = {"type": "result", "exit_code": 0, "text": json.dumps(value)}
+        return subprocess.CompletedProcess(command, 0, json.dumps(envelope), "")
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    mode = service.agent_review_sandbox(host)
+    assert mode == "normal"
+    result = run_agent(
+        host,
+        project,
+        "Independent review. Do not change files or commits.",
+        "Review the exact committed candidate",
+        task_delivery().REVIEW_SCHEMA,
+        sandbox=mode,
+        model="provider/model-id" if host == "hermes" else "gemini-3.1-pro-preview",
+        provider="openrouter" if host == "hermes" else None,
+    )
+    assert result.ok is valid
+    assert len(calls) == 1
+    if valid:
+        assert result.result == value
+    else:
+        assert result.error
 
 
 @pytest.mark.parametrize("host", ["claude-code", "grok"])
@@ -449,6 +499,12 @@ def test_discovery_and_execution_use_same_capability_catalog():
         assert capability["credential_status"] == capability["model_access"] == "not_checked"
         assert capability["checked_on"] == "2026-11-05"
         assert capability["sources"]
+        if definition.run_agent is not None:
+            mode = service.agent_review_sandbox(key)
+            assert capability["review_sandbox"] == mode
+            assert mode == ("normal" if key in {"gemini-cli", "hermes"} else "read-only")
+            if mode == "normal":
+                assert "no enforced read-only isolation" in capability["notes"]
         for model in capability["models"]:
             assert (
                 service.agent_selection_error(key, sandbox="workspace-write", model=model) is None

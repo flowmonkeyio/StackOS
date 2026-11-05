@@ -58,9 +58,9 @@ def run_agent(
         structured_prompt(instructions + "\n\n" + prompt, output_schema),
         "--output-format",
         "json",
-        "--approval-mode",
-        "auto_edit",
     ]
+    if sandbox == "workspace-write":
+        command += ["--approval-mode", "auto_edit"]
     if model is not None:
         command += ["--model", model]
     return execute_json_agent(command, project_dir, "", output_schema, "Gemini CLI", _agent_result)

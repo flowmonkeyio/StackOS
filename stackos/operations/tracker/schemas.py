@@ -28,16 +28,23 @@ from stackos.mcp.contract import MCPInput
 TrackerResponseMode = Literal["compact", "raw", "standard", "verbose"]
 
 
-class TaskDeliveryAgent(BaseModel):
-    """A planner-resolved project agent contract, independent of host file layout."""
+class TaskDeliveryAgentOverride(BaseModel):
+    """Task choices may omit fields supplied by project defaults."""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    name: str = Field(min_length=1)
-    instructions: str = Field(min_length=1)
+    name: str | None = Field(default=None, min_length=1)
+    instructions: str | None = Field(default=None, min_length=1)
     host_key: str | None = Field(default=None, min_length=1)
     model: str | None = Field(default=None, min_length=1)
     provider: str | None = Field(default=None, min_length=1)
     profile: str | None = Field(default=None, min_length=1)
+
+
+class TaskDeliveryAgent(TaskDeliveryAgentOverride):
+    """A resolved project agent contract, independent of host file layout."""
+
+    name: str = Field(min_length=1)
+    instructions: str = Field(min_length=1)
 
 
 class TrackerStartDeliveryInput(MCPInput):
@@ -45,9 +52,9 @@ class TrackerStartDeliveryInput(MCPInput):
     project_id: int
     task_key: str = Field(min_length=1)
     project_dir: str = Field(min_length=1)
-    host_key: str = "codex"
-    delivery_agent: TaskDeliveryAgent
-    review_agent: TaskDeliveryAgent
+    host_key: str | None = Field(default=None, min_length=1)
+    delivery_agent: TaskDeliveryAgentOverride | None = None
+    review_agent: TaskDeliveryAgentOverride | None = None
     run_plan_id: int | None = Field(default=None, ge=1)
     step_id: str | None = Field(default=None, min_length=1)
     response_mode: TrackerResponseMode = "compact"

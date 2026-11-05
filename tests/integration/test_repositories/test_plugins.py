@@ -105,6 +105,24 @@ def test_builtin_plugins_sync_and_list(session: Session) -> None:
     assert finance.resources == []
 
 
+def test_project_config_read_and_enable_preserve_unrelated_keys(
+    session: Session, project_id: int
+) -> None:
+    repo = PluginRepository(session)
+    assert repo.get_project_config(project_id=project_id, plugin_slug="engineering") == {}
+    repo.enable(
+        project_id=project_id, plugin_slug="engineering", config_json={"unrelated": {"keep": True}}
+    )
+    delivery = {"review_agent": {"name": "reviewer", "instructions": "Review"}}
+    repo.enable(
+        project_id=project_id, plugin_slug="engineering", config_json={"delivery": delivery}
+    )
+    expected = {"unrelated": {"keep": True}, "delivery": delivery}
+    assert repo.get_project_config(project_id=project_id, plugin_slug="engineering") == expected
+    repo.enable(project_id=project_id, plugin_slug="engineering")
+    assert repo.get_project_config(project_id=project_id, plugin_slug="engineering") == expected
+
+
 def test_project_enable_disable_plugin(session: Session, project_id: int) -> None:
     repo = PluginRepository(session)
 

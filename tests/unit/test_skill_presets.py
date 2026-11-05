@@ -7,6 +7,8 @@ import shutil
 import tomllib
 from pathlib import Path
 
+import yaml
+
 import stackos.agents.loader as agent_loader_module
 import stackos.skill_presets.loader as loader_module
 from stackos.agents import AgentPresetLoader
@@ -69,7 +71,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     contract = loaded.preset.operating_contract
     action = loaded.preset.project_adaptation.required_agent_action.lower()
 
-    assert loaded.preset.version == "0.4.1"
+    assert loaded.preset.version == "0.4.2"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "canonical owner" in action
@@ -107,6 +109,7 @@ def test_sdlc_orchestrator_defines_bounded_delegation_and_acceptance() -> None:
     required = " ".join(contract.must_do)
     boundaries = " ".join(contract.must_not_do)
 
+    assert policy["path"] == "terminal-managed"
     assert policy["max_active_tickets"] == 3
     assert set(policy["count_includes"]) == {
         "implementation",
@@ -124,6 +127,10 @@ def test_sdlc_orchestrator_defines_bounded_delegation_and_acceptance() -> None:
     assert "Never retask a busy reviewer" in required
     assert "only the main agent marks complete" in required
     assert "Integrate the reviewed candidate before acceptance" in required
+    assert "independent exact-commit review" in required
+    assert "ProjectPlugin.config_json.delivery" in required
+    assert "Gemini and Hermes" in required and "normal native permissions" in required
+    assert "never completes workflow phases" in required
     assert "waive required ticket independence because work is micro" in boundaries
     assert "did not implement" in policy["independence"]
     assert "response_mode=raw" in required
@@ -169,6 +176,10 @@ def test_codex_sdlc_orchestrator_tracks_source_and_existing_project_references()
     text = (root / ".codex/orchestrator/sdlc-delivery-orchestrator.md").read_text()
     preset = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
     assert f"Source skill preset: `{preset.key}` v{preset.version}" in text
+    workflow = yaml.safe_load(
+        (root / "plugins/engineering/workflows/tracked-delivery.yaml").read_text()
+    )
+    assert f"Workflow: `{workflow['key']}` v{workflow['version']}" in text
     assert "Requirement: required main-agent guidance" in text
     assert "not a subagent" in text
     config = tomllib.loads((root / ".codex/config.toml").read_text())
@@ -191,6 +202,9 @@ def test_codex_sdlc_orchestrator_preserves_local_execution_boundaries() -> None:
     assert "queued review, review and repair" in text
     assert "two implementers and one reusable reviewer" in text
     assert "Only the main agent accepts" in text
+    assert "independent exact-commit review" in text
+    assert "no enforced read-only isolation" in text
+    assert "Automatic delivery mechanically records approved child results" in text
     assert "before new delivery" in text
     assert "Local SDLC roles omit `model` and `model_reasoning_effort`" in text
     assert "main thread's model and reasoning settings" in text

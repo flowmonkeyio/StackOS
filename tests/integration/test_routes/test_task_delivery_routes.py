@@ -17,12 +17,14 @@ from tests.integration.test_repositories.test_task_delivery import commit, git
 
 
 @pytest.mark.parametrize("workflow", [False, True])
+@pytest.mark.parametrize("defaults", [False, True])
 def test_real_operation_returns_while_scheduler_delivers(
     api: TestClient,
     project_id: int,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     workflow: bool,
+    defaults: bool,
 ) -> None:
     tmp_path = tmp_path / "project"
     tmp_path.mkdir()
@@ -100,6 +102,19 @@ def test_real_operation_returns_while_scheduler_delivers(
         "delivery_agent": {"name": "builder", "instructions": "Deliver the project ticket."},
         "review_agent": {"name": "reviewer", "instructions": "Review the project ticket."},
     }
+    if defaults:
+        enabled = api.post(
+            f"/api/v1/projects/{project_id}/plugins/engineering/enable",
+            json={
+                "config_json": {
+                    "delivery": {
+                        "delivery_agent": arguments.pop("delivery_agent"),
+                        "review_agent": arguments.pop("review_agent"),
+                    }
+                }
+            },
+        )
+        assert enabled.status_code == 200, enabled.text
     try:
         receipt = operation("tracker.startDelivery", **arguments)
         assert receipt["status"] == "queued"
@@ -107,6 +122,10 @@ def test_real_operation_returns_while_scheduler_delivers(
         # This is an ordinary system-authorized MCP caller, not the test grant sentinel.
         mcp = MCPClient(api, api.headers["Authorization"].removeprefix("Bearer "))
         assert "tracker.startDelivery" in {tool["name"] for tool in mcp.list_tools()}
+        denied = mcp.call_tool_error(
+            "plugin.enable", {"project_id": project_id, "plugin_slug": "engineering"}
+        )
+        assert denied["code"] == -32007
         duplicate = mcp.call_tool_structured(
             "tracker.startDelivery", {"project_id": project_id, **arguments}
         )
@@ -117,6 +136,11 @@ def test_real_operation_returns_while_scheduler_delivers(
     snapshot = operation("tracker.get", task_key=task_key, response_mode="raw")
     assert snapshot["tasks"][0]["status"] == ("in-progress" if workflow else "complete")
     assert snapshot["tasks"][0]["metadata_json"]["delivery"]["status"] == "complete"
+    assert snapshot["tasks"][0]["metadata_json"]["delivery"]["review_agent"] == {
+        "name": "reviewer",
+        "instructions": "Review the project ticket.",
+        "host_key": "codex",
+    }
     assert [
         ticket["status"] for ticket in snapshot["tickets"] if ticket["key"] in {"first", "second"}
     ] == ["complete", "complete"]

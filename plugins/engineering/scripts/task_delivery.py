@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from apscheduler.schedulers.base import BaseScheduler
+from pydantic import ValidationError as SchemaValidationError
 from sqlmodel import Session
 
 from stackos.db.models import (
@@ -22,8 +23,10 @@ from stackos.db.models import (
     TrackerTicketKind,
 )
 from stackos.host_mcp.result import AgentSandbox
-from stackos.host_mcp.service import agent_selection_error, run_agent
+from stackos.host_mcp.service import agent_review_sandbox, agent_selection_error, run_agent
+from stackos.operations.tracker.schemas import TaskDeliveryAgent
 from stackos.repositories.base import NotFoundError, ValidationError
+from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.tracker import TrackerRepository
 
 DELIVERY_SCHEMA = {
@@ -147,9 +150,9 @@ def start_delivery(
     project_id: int,
     task_key: str,
     project_dir: str,
-    host_key: str,
-    delivery_agent: dict[str, Any],
-    review_agent: dict[str, Any],
+    host_key: str | None = None,
+    delivery_agent: dict[str, Any] | None = None,
+    review_agent: dict[str, Any] | None = None,
     run_plan_id: int | None = None,
     step_id: str | None = None,
 ) -> dict[str, Any]:
@@ -166,13 +169,33 @@ def start_delivery(
     directory = Path(project_dir).expanduser().resolve()
     if not directory.is_dir():
         raise ValidationError("project_dir must be an existing working directory")
-    roles: tuple[tuple[dict[str, Any], AgentSandbox], ...] = (
-        (delivery_agent, "workspace-write"),
-        (review_agent, "read-only"),
+    defaults = (
+        PluginRepository(session)
+        .get_project_config(project_id=project_id, plugin_slug="engineering")
+        .get("delivery", {})
     )
-    for agent, sandbox in roles:
+    if not isinstance(defaults, dict):
+        raise ValidationError("Engineering delivery defaults must be an object")
+    host_key = host_key or defaults.get("host_key") or "codex"
+    if not isinstance(host_key, str):
+        raise ValidationError("Engineering delivery host_key must be a string")
+    resolved = {}
+    for role, override in (("delivery_agent", delivery_agent), ("review_agent", review_agent)):
+        default_agent = defaults.get(role, {})
+        if not isinstance(default_agent, dict):
+            raise ValidationError(f"Engineering delivery {role} must be an object")
+        try:
+            agent = TaskDeliveryAgent.model_validate(
+                {**default_agent, **(override or {})}
+            ).model_dump(exclude_none=True)
+        except SchemaValidationError as schema_error:
+            raise ValidationError(f"Resolved {role} is invalid: {schema_error}") from schema_error
+        agent["host_key"] = agent.get("host_key") or host_key
+        sandbox: AgentSandbox = (
+            agent_review_sandbox(agent["host_key"]) if role == "review_agent" else "workspace-write"
+        )
         error = agent_selection_error(
-            agent.get("host_key") or host_key,
+            agent["host_key"],
             sandbox=sandbox,
             model=agent.get("model"),
             provider=agent.get("provider"),
@@ -180,6 +203,7 @@ def start_delivery(
         )
         if error:
             raise ValidationError(error)
+        resolved[role] = agent
     state = _update_delivery(
         repo,
         project_id,
@@ -189,8 +213,8 @@ def start_delivery(
         reason=None,
         project_dir=str(directory),
         host_key=host_key,
-        delivery_agent=delivery_agent,
-        review_agent=review_agent,
+        delivery_agent=resolved["delivery_agent"],
+        review_agent=resolved["review_agent"],
         run_plan_id=run_plan_id,
         step_id=step_id,
         job_ref=f"engineering-delivery:{project_id}:{task.id}",
@@ -289,7 +313,13 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
 
             phases: tuple[tuple[str, dict[str, Any], AgentSandbox], ...] = (
                 ("delivery", DELIVERY_SCHEMA, "workspace-write"),
-                ("review", REVIEW_SCHEMA, "read-only"),
+                (
+                    "review",
+                    REVIEW_SCHEMA,
+                    agent_review_sandbox(
+                        state["review_agent"].get("host_key") or state["host_key"]
+                    ),
+                ),
             )
             for phase, schema, sandbox in phases:
                 agent = state[f"{phase}_agent"]

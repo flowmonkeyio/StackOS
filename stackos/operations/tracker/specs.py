@@ -113,7 +113,7 @@ def operation_specs() -> list[OperationSpec]:
             ),
             purpose=(
                 "Select automated delivery for a prepared task or one running workflow step. "
-                "The planner supplies project delivery/review instructions once at task level. "
+                "Resolve engineering project delivery defaults with task overrides by role once. "
                 "The daemon requires a new committed candidate and independent approval of its "
                 "exact SHA before advancing. Rejection or failure stops the same task."
             ),
@@ -122,10 +122,15 @@ def operation_specs() -> list[OperationSpec]:
                 "For a workflow task, supply run_plan_id and step_id for its running step; "
                 "only executable children of that step are selected. The main agent retains "
                 "workflow phase lifecycle control.",
-                "Supply the project directory and resolved agents. Optional per-role host_key, "
+                "Supply the project directory. Role fields may be omitted when saved in "
+                "engineering ProjectPlugin.config_json.delivery through local-admin plugin.enable. "
+                "Task choices merge by role into one effective snapshot; no ticket settings or "
+                "required .codex folder. Resolved names and instructions must be complete. "
+                "Optional per-role host_key, "
                 "model, provider and Hermes profile use the host_mcp capability catalog. "
-                "Omitted host/model keeps the Codex/inherited-model path. Codex, Claude Code "
-                "and Grok support review; Gemini CLI and Hermes support delivery only. "
+                "Without defaults, omitted host/model keeps the Codex/inherited-model path. "
+                "Codex, Claude Code and Grok retain native review controls; Gemini CLI and Hermes "
+                "review with normal native permissions and review-only behavioral instructions. "
                 "Claude Desktop cannot run headlessly. Unsupported choices fail without fallback.",
             ),
             returns=(
@@ -135,6 +140,18 @@ def operation_specs() -> list[OperationSpec]:
                 "completion releases dependencies. No automatic retries or replacement tasks.",
             ),
             examples=(
+                OperationExample(
+                    title="Use saved project defaults with a task reviewer override",
+                    arguments={
+                        "project_id": 1,
+                        "task_key": "feature",
+                        "project_dir": "/work/project",
+                        "review_agent": {
+                            "host_key": "gemini-cli",
+                            "model": "gemini-3.1-pro-preview",
+                        },
+                    },
+                ),
                 OperationExample(
                     title="Deliver children of the selected running workflow step",
                     arguments={

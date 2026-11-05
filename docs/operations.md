@@ -488,8 +488,12 @@ stackos tracker patch --project 1 --input tracker-patch.json
 
 Use `tracker.startDelivery` for a task-level background handoff of an independent
 task whose tickets and dependencies are prepared. The `handoff.json` input file
-contains the task handoff (task key, project directory, and project delivery/review
-agent instructions); see [Automated Task Delivery](task-tracker.md#automated-task-delivery)
+contains the task handoff (task key, project directory, and optional delivery/review
+role overrides). Project defaults use engineering `ProjectPlugin.config_json.delivery`
+through existing local-admin `plugin.enable`; omitted role fields inherit those
+defaults and resolved roles must be complete. Task overrides merge by role once,
+preserving unrelated metadata. No ticket settings or permission expansion is needed.
+See [Automated Task Delivery](task-tracker.md#automated-task-delivery)
 for its structure. The call returns immediately while the daemon runs ready tickets
 sequentially through delivery and review. Inspect progress with `tracker.get`
 using `response_mode="raw"`.

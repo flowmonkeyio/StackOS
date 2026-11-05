@@ -60,8 +60,12 @@ async def tracker_start_delivery(
         task_key=inp.task_key,
         project_dir=inp.project_dir,
         host_key=inp.host_key,
-        delivery_agent=inp.delivery_agent.model_dump(),
-        review_agent=inp.review_agent.model_dump(),
+        delivery_agent=inp.delivery_agent.model_dump(exclude_unset=True)
+        if inp.delivery_agent is not None
+        else None,
+        review_agent=inp.review_agent.model_dump(exclude_unset=True)
+        if inp.review_agent is not None
+        else None,
         run_plan_id=inp.run_plan_id,
         step_id=inp.step_id,
     )

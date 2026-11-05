@@ -274,10 +274,20 @@ checks coverage against authoritative operator input as well as derived
 criteria, and rejects dependencies that make a ticket's required proof depend
 on its own blocked consumers.
 
-Implementation and self-check produce a candidate. A separate reviewer checks
-that candidate against the assigned requirements and actual evidence. The main
+Repository implementation and self-check produce a separate scoped commit per
+ticket. A separate reviewer checks that exact commit against the assigned
+requirements and actual evidence, returning the full `commit_sha`. The main
 agent adjudicates findings, routes repairs, integrates the reviewed result,
-rechecks affected evidence, then marks the ticket complete. Until acceptance,
+rechecks affected evidence, then marks the ticket complete in terminal-managed
+delivery. An explicit `tracker.startDelivery` handoff instead lets StackOS
+mechanically complete approved child tickets and advance serially; rejection
+or failure stops that task. Main retains scope, workflow phase gates, integration
+and final claims. Defaults use engineering `ProjectPlugin.config_json.delivery`
+via local-admin `plugin.enable`, merged with task overrides by role once; local
+agent files are optional sources. Reusable roles never pin models. The shared
+host capability owner preserves native review controls where supported and uses
+normal native sessions for Gemini and Hermes reviewers with review-only
+instructions, truthfully reporting no enforced read-only isolation. Until acceptance,
 the ticket stays `in-progress`. There is no separate review ticket by default
 and no new tracker status. Main-agent scheduling and acceptance are guidance,
 not daemon-enforced leases or semantic verification.

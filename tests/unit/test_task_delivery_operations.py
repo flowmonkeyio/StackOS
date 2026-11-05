@@ -13,7 +13,7 @@ def test_delivery_operation_has_one_contract_and_no_ack():
     assert spec.surfaces.mcp.enabled and spec.surfaces.rest.enabled and spec.surfaces.cli.enabled
     assert spec.effective_response_policy.allowed_modes == ("compact", "raw")
     schema = spec.input_model.model_json_schema()
-    assert "delivery_agent" in schema["required"] and "review_agent" in schema["required"]
+    assert {"delivery_agent", "review_agent", "host_key"}.isdisjoint(schema["required"])
     assert {"run_plan_id", "step_id"} <= schema["properties"].keys()
     with pytest.raises(ValueError):
         spec.input_model.model_validate(
@@ -25,6 +25,23 @@ def test_delivery_operation_has_one_contract_and_no_ack():
                 "review_agent": {"name": "y", "instructions": "Review"},
             }
         )
+
+
+def test_partial_role_choices_and_local_admin_defaults_contract():
+    registry = build_operation_registry()
+    spec = registry.get("tracker.startDelivery")
+    inp = spec.input_model.model_validate(
+        {
+            "project_id": 1,
+            "task_key": "one",
+            "project_dir": "/tmp",
+            "review_agent": {"model": "gemini-3.1-pro-preview"},
+        }
+    )
+    assert inp.delivery_agent is None
+    assert inp.review_agent.model_dump(exclude_unset=True) == {"model": "gemini-3.1-pro-preview"}
+    enable = registry.get("plugin.enable")
+    assert enable.grant_policy == "local-admin-plugin-write"
 
 
 @pytest.mark.parametrize("scope", [{"run_plan_id": 1}, {"step_id": "deliver"}])

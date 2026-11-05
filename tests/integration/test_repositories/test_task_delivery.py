@@ -18,6 +18,7 @@ from stackos.mcp.context import MCPContext
 from stackos.operations.tracker.schemas import TrackerStartDeliveryInput
 from stackos.operations.tracker.write_handlers import tracker_start_delivery
 from stackos.repositories.base import NotFoundError, ValidationError
+from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
 
@@ -81,7 +82,7 @@ def submit(session: Session, project_id: int, tmp_path: Path, scheduler: QueuedS
         project_id=project_id,
         task_key=task_key,
         project_dir=str(tmp_path),
-        host_key="codex",
+        host_key=scope.pop("host_key", None),
         delivery_agent=scope.pop(
             "delivery_agent", {"name": "project-builder", "instructions": "Build the ticket."}
         ),
@@ -164,17 +165,193 @@ def test_role_host_model_provider_reach_launch_and_receipt(
 def test_unsupported_reviewer_rejects_before_scheduling(session, project_id, tmp_path):
     prepared_task(session, project_id)
     scheduler = QueuedScheduler()
-    with pytest.raises(ValidationError, match="does not support read-only"):
+    with pytest.raises(ValidationError, match="does not support headless"):
         submit(
             session,
             project_id,
             tmp_path,
             scheduler,
-            review_agent={"name": "review", "instructions": "Review", "host_key": "gemini-cli"},
+            review_agent={"name": "review", "instructions": "Review", "host_key": "claude-desktop"},
         )
     assert not scheduler.jobs
     task = TrackerRepository(session).get(project_id=project_id, task_key="deliver").tasks[0]
     assert task.metadata_json == {"keep": "yes"}
+
+
+def test_project_defaults_merge_by_role_and_freeze_before_launch(
+    session, project_id, tmp_path, monkeypatch
+):
+    from stackos.plugins.builtin_engineering import task_delivery
+
+    prepared_task(session, project_id)
+    plugins = PluginRepository(session)
+    defaults = {
+        "host_key": "claude-code",
+        "delivery_agent": {"name": "builder", "instructions": "Saved build instructions"},
+        "review_agent": {
+            "name": "reviewer",
+            "instructions": "Saved review instructions",
+            "host_key": "gemini-cli",
+            "model": "gemini-2.5-pro",
+        },
+    }
+    plugins.enable(
+        project_id=project_id, plugin_slug="engineering", config_json={"delivery": defaults}
+    )
+    scheduler = QueuedScheduler()
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        delivery_agent=None,
+        review_agent={"model": "gemini-3.1-pro-preview"},
+    )
+    state = (
+        TrackerRepository(session)
+        .get(project_id=project_id, task_key="deliver")
+        .tasks[0]
+        .metadata_json
+    )
+    assert state["keep"] == "yes"
+    assert state["delivery"]["delivery_agent"] == {
+        **defaults["delivery_agent"],
+        "host_key": "claude-code",
+    }
+    assert state["delivery"]["review_agent"] == {
+        **defaults["review_agent"],
+        "model": "gemini-3.1-pro-preview",
+    }
+    # An edit after submission cannot change the effective task snapshot.
+    plugins.enable(
+        project_id=project_id,
+        plugin_slug="engineering",
+        config_json={"delivery": {"review_agent": {"instructions": "Changed later"}}},
+    )
+    duplicate = submit(
+        session, project_id, tmp_path, scheduler, delivery_agent=None, review_agent=None
+    )
+    assert duplicate["status"] == "queued" and len(scheduler.jobs) == 1
+    calls = []
+
+    def run_agent(host, directory, instructions, prompt, schema, *, sandbox, **selection):
+        calls.append((host, instructions, sandbox, selection))
+        key = json.loads(prompt)["brief"]["ticket"]["key"]
+        if sandbox == "workspace-write":
+            value = {"status": "complete", "commit_sha": commit(tmp_path, key)}
+        else:
+            value = {"decision": "approve", "commit_sha": git(tmp_path, "rev-parse", "HEAD")}
+        return AgentRunResult(0, result={**value, "summary": "Checked"})
+
+    monkeypatch.setattr(task_delivery(), "run_agent", run_agent)
+    scheduler.run()
+    assert (
+        calls
+        == [
+            ("claude-code", "Saved build instructions", "workspace-write", {}),
+            (
+                "gemini-cli",
+                "Saved review instructions",
+                "normal",
+                {"model": "gemini-3.1-pro-preview"},
+            ),
+        ]
+        * 2
+    )
+    assert not (tmp_path / ".codex").exists()
+
+
+@pytest.mark.parametrize(
+    "defaults,override,reason",
+    [
+        ({}, None, "Resolved delivery_agent is invalid"),
+        (
+            {"delivery_agent": {"name": "builder", "instructions": "Build"}},
+            None,
+            "Resolved review_agent is invalid",
+        ),
+        (
+            {"delivery_agent": {"name": "builder", "instructions": "Build", "model": "unknown"}},
+            None,
+            "native model catalog",
+        ),
+        (
+            {"delivery_agent": {"name": "builder", "instructions": "Build"}},
+            {"instructions": None},
+            "Resolved delivery_agent is invalid",
+        ),
+    ],
+)
+def test_incomplete_or_invalid_resolved_defaults_never_schedule(
+    session, project_id, tmp_path, defaults, override, reason
+):
+    prepared_task(session, project_id)
+    PluginRepository(session).enable(
+        project_id=project_id, plugin_slug="engineering", config_json={"delivery": defaults}
+    )
+    scheduler = QueuedScheduler()
+    with pytest.raises(ValidationError, match=reason):
+        submit(session, project_id, tmp_path, scheduler, delivery_agent=override, review_agent=None)
+    assert not scheduler.jobs
+    task = TrackerRepository(session).get(project_id=project_id, task_key="deliver").tasks[0]
+    assert task.metadata_json == {"keep": "yes"}
+
+
+@pytest.mark.parametrize("host", ["gemini-cli", "hermes"])
+@pytest.mark.parametrize("failure", [None, "reject", "native", "mutation"])
+def test_normal_review_receipts_and_same_task_failure(
+    session, project_id, tmp_path, monkeypatch, host, failure
+):
+    from stackos.plugins.builtin_engineering import task_delivery
+
+    prepared_task(session, project_id)
+    scheduler = QueuedScheduler()
+    calls = []
+
+    def run_agent(selected_host, directory, instructions, prompt, schema, *, sandbox, **selection):
+        packet = json.loads(prompt)
+        key = packet["brief"]["ticket"]["key"]
+        calls.append((key, selected_host, sandbox))
+        if sandbox == "workspace-write":
+            value = {"status": "complete", "commit_sha": commit(tmp_path, key)}
+        else:
+            assert sandbox == "normal" and selected_host == host
+            assert "Do not change files or commits" in packet["assignment"]
+            assert schema == task_delivery().REVIEW_SCHEMA
+            if failure == "native":
+                return AgentRunResult(1, error="Native review access denied")
+            value = {
+                "decision": "reject" if failure == "reject" else "approve",
+                "commit_sha": packet["candidate"]["commit_sha"],
+            }
+            if failure == "mutation":
+                (tmp_path / "review-edit").write_text("unauthorized review change")
+        return AgentRunResult(0, result={**value, "summary": "Reviewed"})
+
+    monkeypatch.setattr(task_delivery(), "run_agent", run_agent)
+    review = {"name": "reviewer", "instructions": "Independent review only", "host_key": host}
+    if host == "hermes":
+        review.update(provider="openrouter", model="provider/model")
+    submit(session, project_id, tmp_path, scheduler, review_agent=review)
+    scheduler.run()
+    session.expire_all()
+    repo = TrackerRepository(session)
+    first = repo.brief(project_id=project_id, ticket_key="first").ticket
+    evidence = first.completion_evidence_json["automatic_delivery"]
+    assert evidence["review"]["launch"]["sandbox"] == "normal"
+    assert evidence["review"]["launch"]["host_key"] == host
+    assert first.status.value == ("failed" if failure else "complete")
+    state = repo.get(project_id=project_id, task_key="deliver").tasks[0].metadata_json["delivery"]
+    assert state["status"] == ("stopped" if failure else "complete")
+    assert len(calls) == (2 if failure else 4)
+    if failure:
+        assert (
+            repo.brief(project_id=project_id, ticket_key="second").ticket.status.value
+            == "not-started"
+        )
+    assert (
+        repo.brief(project_id=project_id, ticket_key="other").ticket.status.value == "not-started"
+    )
 
 
 def test_two_tickets_run_in_order_after_submission_returns(
