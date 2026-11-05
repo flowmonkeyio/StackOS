@@ -1,0 +1,166 @@
+{
+  "date": "2026-10-05",
+  "status": "Review and three concepts complete; awaiting direction selection",
+  "tracker_task": "website-template-design-review-20261005",
+  "browser": {
+    "provider": "StackOS gstack",
+    "version": "1.84.1.0",
+    "session_ref": "browser-session:project-1:deployment-audit:website-design-review-20261005",
+    "desktop_viewport": [
+      1440,
+      1000
+    ],
+    "mobile_viewport": [
+      390,
+      844
+    ],
+    "consent": "Initial captures preserve consent overlay; chose Not now for subsequent mobile and clean workflow captures. No analytics accepted."
+  },
+  "scope": "Eight representative public pages; source map includes shared orchestrator template. No production code changed or deployed.",
+  "reviewed_pages": [
+    {
+      "key": "home",
+      "url": "https://stackos.flowmonkey.io/",
+      "finding": "Distinctive identity and concrete opening, but the same promotional scale is overused on internal pages.",
+      "recommendation": "Reserve the strongest brand expression for this page; favor genuine product evidence over abstract diagrams."
+    },
+    {
+      "key": "library",
+      "url": "https://stackos.flowmonkey.io/library/",
+      "finding": "Tall hero and count grid delay the three useful entry points.",
+      "recommendation": "Bring Learn, Connect and Start to the opening; show concise links to useful jobs."
+    },
+    {
+      "key": "catalog",
+      "url": "https://stackos.flowmonkey.io/library/workflows/",
+      "finding": "No workflow results or filters in the first desktop or mobile viewport. Repeated decorative cards dominate the long page.",
+      "recommendation": "Compact title, immediate filters and compact results; move the general definition beneath browsing."
+    },
+    {
+      "key": "workflow",
+      "url": "https://stackos.flowmonkey.io/library/workflows/seo-content-refresh/",
+      "finding": "Starting request and required inputs follow a large hero and oversized problem statement. Many boxed reference sections compete.",
+      "recommendation": "Show request, inputs and output first; use a contents rail and compact stages; keep recovery and role details accessible further down."
+    },
+    {
+      "key": "article",
+      "url": "https://stackos.flowmonkey.io/library/articles/how-to-do-keyword-research-for-ai-search/",
+      "finding": "Large left-aligned hero leaves unused right space; reading begins in a differently aligned column. Mobile table handling needs focused follow-up.",
+      "recommendation": "Align title, metadata and prose; modest heading scale; reuse contents navigation where useful; ensure tables scroll clearly on mobile."
+    },
+    {
+      "key": "agent",
+      "url": "https://stackos.flowmonkey.io/library/agents/branding-voice-reviewer/",
+      "finding": "Generic diagram repeats workflow treatment; many long boxed contract bullets.",
+      "recommendation": "Compact mission, responsibilities and input/output summary; linked workflows and detailed contract follow."
+    },
+    {
+      "key": "integration",
+      "url": "https://stackos.flowmonkey.io/library/integrations/google-search-console/",
+      "finding": "Oversized identity and repeated provider heading delay setup/actions. Secondary helper text appears difficult to read.",
+      "recommendation": "Show supported work and connection requirements first, then searchable action reference; improve text contrast."
+    },
+    {
+      "key": "guide",
+      "url": "https://stackos.flowmonkey.io/getting-started/",
+      "finding": "Helpful contents rail already exists, but the opening consumes nearly the entire desktop viewport.",
+      "recommendation": "Keep the guide rail and step structure; reduce opening height and expose the first step sooner."
+    }
+  ],
+  "cross_template_findings": [
+    {
+      "priority": "high",
+      "finding": "Task-specific information arrives too late.",
+      "evidence": [
+        "screenshots/catalog-desktop.png",
+        "screenshots/workflow-desktop-clean.png",
+        "screenshots/integration-desktop.png"
+      ],
+      "change": "Use smaller internal-page titles and remove repeated generic diagrams."
+    },
+    {
+      "priority": "high",
+      "finding": "Diagrams misattribute planning and role selection to StackOS.",
+      "evidence": [
+        "screenshots/workflow-desktop.png",
+        "screenshots/agent-desktop.png",
+        "../../../docs/product-direction.md"
+      ],
+      "change": "Describe agent reasoning and StackOS scope, explicit execution and records accurately."
+    },
+    {
+      "priority": "medium",
+      "finding": "Two navigation bars plus breadcrumbs consume space; mobile category strip hides later items off-screen.",
+      "evidence": [
+        "screenshots/workflow-mobile.png",
+        "screenshots/catalog-mobile.png"
+      ],
+      "change": "Simplify navigation hierarchy and provide clear mobile access to every category."
+    },
+    {
+      "priority": "medium",
+      "finding": "Consent competes with page content, especially on mobile.",
+      "evidence": [
+        "screenshots/workflow-mobile-consent.png"
+      ],
+      "change": "Retain clear choices in a more compact accessible composition."
+    },
+    {
+      "priority": "medium",
+      "finding": "Small labels and low-contrast secondary text risk poor readability.",
+      "evidence": [
+        "screenshots/integration-desktop.png",
+        "screenshots/workflow-mobile.png"
+      ],
+      "change": "Measure contrast and keyboard/focus behavior during implementation; increase diagram-label readability or remove diagrams."
+    }
+  ],
+  "preserve": [
+    "StackOS mark and ink/paper/lime/cobalt palette",
+    "Real source-backed content, useful links and evidence tables",
+    "Public URLs, headings, server-rendered text, canonical metadata and internal links",
+    "Current source owners: workflow/preset public fields and article Markdown",
+    "Current approved voice; concept copy is not a new brand foundation"
+  ],
+  "limits": [
+    "Visual review is not a full accessibility audit or measured usability study.",
+    "Homepage full-page capture may contain off-screen animation/lazy-render states; empty regions are not established rendering defects.",
+    "Orchestrator template was mapped from source but no separate live orchestrator screenshot was captured.",
+    "ImageGen concepts are raster design proposals. Generated helper text must be reconciled with approved source copy during implementation.",
+    "No ranking or conversion improvement is established by this design review."
+  ],
+  "concepts": [
+    {
+      "display_order": 1,
+      "key": "field-guide",
+      "file": "concepts/01-field-guide.png",
+      "generated_source": "/Users/sergeyrura/.codex/generated_images/01a0e998-e0d6-7661-bc8d-38747f2dfc64/exec-f52b3afe-7eee-43d7-acac-b5b526b177ea.png"
+    },
+    {
+      "display_order": 2,
+      "key": "working-brief",
+      "file": "concepts/02-working-brief.png",
+      "generated_source": "/Users/sergeyrura/.codex/generated_images/01a0e998-e0d6-7661-bc8d-38747f2dfc64/exec-22093881-e9a2-421b-9d37-5b4051eb6335.png"
+    },
+    {
+      "display_order": 3,
+      "key": "editorial-notebook",
+      "file": "concepts/03-editorial-notebook.png",
+      "generated_source": "/Users/sergeyrura/.codex/generated_images/01a0e998-e0d6-7661-bc8d-38747f2dfc64/exec-c62d892e-1539-47d7-876b-efdeedd1b61b.png"
+    }
+  ],
+  "generation": {
+    "mode": "built-in image_gen",
+    "intent": "generate from image references",
+    "count": 3,
+    "prompts": "prompts.json",
+    "primary_reference": "screenshots/workflow-desktop-clean.png",
+    "brand_reference": "../../../website/public/images/stackos-icon.png"
+  },
+  "next_sequence": [
+    "Choose a visual direction.",
+    "Adapt it to catalog, workflow, article, integration and role templates while preserving their different reader tasks.",
+    "Implement shared navigation/type/spacing first, then templates, through the existing engineering workflow.",
+    "Verify desktop/mobile, keyboard access, contrast, crawlable content and URL/metadata preservation before release."
+  ]
+}

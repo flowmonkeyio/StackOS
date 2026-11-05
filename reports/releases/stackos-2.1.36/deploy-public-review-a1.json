@@ -1,0 +1,105 @@
+{
+  "attempt": "deploy-605-a1-public-review",
+  "reviewer": "/root/global_readiness_review",
+  "contract_revision": "r4",
+  "project_id": 1,
+  "run_plan_id": 605,
+  "run_id": 599,
+  "candidate_commit": "54b9c1dc913b4da399a6aef8df279bad1c65d72c",
+  "version": "2.1.36",
+  "scope": "Independent canonical public HTTPS stable DMG full stream checksum and update-feed verification after promotion; reused fresh four-versioned-file HTTPS proof",
+  "prior_versioned_proof": {
+    "path": "/tmp/stackos-global-planning-605/deploy-prepromotion-review-a2.json",
+    "sha256": "b91f1d6ff030eed5c7eedee08607edd22e5727c03c66dc0c7d23e4a366fd42bd"
+  },
+  "manifest": "/Users/sergeyrura/Bin/content-stack/desktop/dist/release-2.1.36/release-manifest.json",
+  "manifest_sha256": "8d1d245f697d9d9184d9e2987764d6f1823bde4eb7d62ecdc36767a611429d79",
+  "results": [
+    {
+      "url": "https://stackos.flowmonkey.io/StackOS/stackos-latest-mac-arm64.dmg",
+      "name": "stackos-latest-mac-arm64.dmg",
+      "expected": {
+        "name": "stackos-latest-mac-arm64.dmg",
+        "bytes": 489828933,
+        "sha256": "28fa77c603bf49832165d9f1ebefb8da225268d0fa0714d46df992d0553d3750"
+      },
+      "started_at": "2026-10-10T01:02:00.447925+00:00",
+      "status": 200,
+      "final_url": "https://stackos.flowmonkey.io/StackOS/stackos-latest-mac-arm64.dmg",
+      "headers": {
+        "Content-Length": "489828933",
+        "Content-Type": "application/x-apple-diskimage",
+        "ETag": "\"1d323245-6ac98d8b-fe8848d1f829a78;;;\"",
+        "Last-Modified": "Sat, 10 Oct 2026 00:57:47 GMT"
+      },
+      "bytes": 489828933,
+      "sha256": "28fa77c603bf49832165d9f1ebefb8da225268d0fa0714d46df992d0553d3750",
+      "sha512": "KI6xjtt0ZgVYh5XIQ2Km3UPs+X1PcSpgjh3YKJFzGeaQuGgDNc3T72z0ziZgC7Q89dTc9w/9noweTzGZo1066g==",
+      "passed": true,
+      "completed_at": "2026-10-10T01:02:44.547609+00:00"
+    },
+    {
+      "url": "https://stackos.flowmonkey.io/StackOS/latest-mac.yml",
+      "name": "latest-mac.yml",
+      "expected": {
+        "name": "latest-mac.yml",
+        "bytes": 513,
+        "sha256": "01eba8d5b17e50f102aef5e7cec6dc5cbb24800876d61d0b3547bc85cb5e75ff"
+      },
+      "started_at": "2026-10-10T01:02:44.547682+00:00",
+      "status": 200,
+      "final_url": "https://stackos.flowmonkey.io/StackOS/latest-mac.yml",
+      "headers": {
+        "Content-Length": "513",
+        "Content-Type": "text/plain",
+        "ETag": "\"201-6ac98d8b-1e86b06f60b73387;;;\"",
+        "Last-Modified": "Sat, 10 Oct 2026 00:57:47 GMT"
+      },
+      "bytes": 513,
+      "sha256": "01eba8d5b17e50f102aef5e7cec6dc5cbb24800876d61d0b3547bc85cb5e75ff",
+      "sha512": "JzgTMFlXHExSjM/SHfPLvG/JImHBYiPMLGJYl4ZNLYCcRB5GY2VsuOxGNCekZWkjOMCJy/eoJHfHD5iprMidtg==",
+      "passed": true,
+      "feed": {
+        "version": "2.1.36",
+        "files": [
+          {
+            "url": "stackos-2.1.36-mac-arm64.zip",
+            "sha512": "hxztKwtKt+GtVq/RB/IEgG8qka2dNpgLjV2oFYzyvobMKnyn+4qy2Vze3+kIkU53ZEyx9dkbz8QgTa41wOpP7g==",
+            "size": 494210680
+          },
+          {
+            "url": "stackos-2.1.36-mac-arm64.dmg",
+            "sha512": "KI6xjtt0ZgVYh5XIQ2Km3UPs+X1PcSpgjh3YKJFzGeaQuGgDNc3T72z0ziZgC7Q89dTc9w/9noweTzGZo1066g==",
+            "size": 489828933
+          }
+        ],
+        "path": "stackos-2.1.36-mac-arm64.zip",
+        "sha512": "hxztKwtKt+GtVq/RB/IEgG8qka2dNpgLjV2oFYzyvobMKnyn+4qy2Vze3+kIkU53ZEyx9dkbz8QgTa41wOpP7g==",
+        "releaseDate": "2026-10-10T00:28:50.015Z"
+      },
+      "completed_at": "2026-10-10T01:02:44.673061+00:00"
+    }
+  ],
+  "updater_metadata": {
+    "checks": [
+      {
+        "name": "stackos-2.1.36-mac-arm64.zip",
+        "passed": true
+      },
+      {
+        "name": "stackos-2.1.36-mac-arm64.dmg",
+        "passed": true
+      }
+    ],
+    "passed": true
+  },
+  "stable_matches_versioned_dmg": true,
+  "passed": true,
+  "disposition": "approve_public_artifact_deployment",
+  "completed_at": "2026-10-10T01:02:44.674432+00:00",
+  "limits": [
+    "No FTP write, installation, restart or lifecycle state mutation by reviewer",
+    "Does not prove installed-app auto-update execution or close remaining M1/M2 live-host obligations",
+    "Final remote-directory preservation and cleanup proof remains main-owned"
+  ]
+}

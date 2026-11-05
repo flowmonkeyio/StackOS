@@ -1,0 +1,87 @@
+{
+  "status": "candidate-ready",
+  "ticket_key": "website-content-evidence-layout-555",
+  "task_key": "workflow-555",
+  "run_plan_id": 555,
+  "run_id": 550,
+  "step_id": "deliver-tickets",
+  "attempt_id": "content-layout-a1",
+  "contract_revision": 1,
+  "project_id": 1,
+  "candidate_sha256": "97dc66f058dcac100801455a8e78071c8f2b5a15e19467d905e5f4ce7ed3b21b",
+  "prior_candidate_sha256": "aa2f7a40f72b54a32efd320cabe6eb3fb5d724839d4d8e6242eb0bd00e944155",
+  "prior_candidate_receipt": "delivery-receipt-aa2f7a40.json",
+  "repairs": [
+    { "finding": "QA-1", "severity": "P2", "adjudicated_by": "main", "defect": "Workflow body eyebrow text had contrast2.53:1 on paper at11px.", "fix": "Scoped .experience-grid/.readiness-grid .eyebrow--dark to existing var(--cobalt).", "source": "website/app/pages/library/workflows/[slug].vue", "source_sha256": "ae0a62b8532f3e017933630f1444fd87712e9cc1573d713a8e77e311e9062233", "original_visual_evidence": ["visual/content-555-workflow-desktop.png", "visual/content-555-workflow-mobile.png"] },
+    { "finding": "QA-2", "severity": "P2", "adjudicated_by": "main", "defect": "Integration facts heading eyebrow and explanatory paragraph had low contrast on the dark facts surface.", "fix": "Scoped .integration-facts heading eyebrow to existing var(--signal) and direct explanatory p to existing var(--ink-soft). Main confirmed --signal is the canonical lime token.", "source": "website/app/pages/library/integrations/[slug].vue", "source_sha256": "af6e1313184b1dc85595f925e2a94a717fa5ce53d7036bf159ac775229bf656a", "original_visual_evidence": ["visual/content-555-integration-facts-desktop.png"] }
+  ],
+  "candidate_manifest": "source-preservation.json",
+  "baseline_manifest": "baseline-manifest.json",
+  "selected_image_sha256": "06bbe2f18e59a43cbaa2a6a54a71bca89fa59f8ad6916a171eb49794915af2ce",
+  "consumed_sources": [
+    "AGENTS.md",
+    "docs/product-direction.md Product Thesis, Contract and Principles",
+    "docs/README.md",
+    "docs/agent-operating-model.md#canonical-project-guidance-consumption",
+    "docs/ui-design-system.md (operational UI applicability distinguished from public website)",
+    "docs/release-signoff.md bounded surface guidance",
+    ".codex/agents/sdlc-delivery.toml v0.3.1",
+    "website/README.md",
+    "packet.json, contract revision 1, independent readiness approved by main-agent dispatch",
+    "baseline-manifest.json and baseline source snapshots",
+    "../content-concepts/03-annotated-evidence.png, latest user-selected option 3"
+  ],
+  "changes": [
+    "Added a native MDC ArticleEvidenceRow definition-list component with exact source labels and named evidence/decision slots.",
+    "Converted only the first narrative table in the three assigned Markdown articles (4 + 5 + 5 records).",
+    "Added article-only reading modifiers: normal opening paragraph, wider body and spacing; retained comparison tables and guide base styles.",
+    "Changed detail-list items, workflow body groups/handoffs/specialist links, orchestrator links and integration facts/actions to open rows.",
+    "Removed integration description clamping and fixed action-card heights, retaining all filtering and pagination state.",
+    "Updated browser scenario source and added bounded generated SSR coverage for the three opted-in articles."
+  ],
+  "per_acceptance_condition": {
+    "AC1": "Source proof passed: route scripts/metadata and hero blocks match baseline, as do SiteHeader, LibraryFrame and main.css. Visual proof remains main-owned.",
+    "AC2": "Source and generated SSR proof passed for all14 records using dl/dt/dd with exact labels/evidence/decisions. Desktop/mobile layout proof remains main-owned.",
+    "AC3": "Article-only CSS modifiers and selected native component preserve getting-started source. Comparison-table fixtures retained; browser proof remains main-owned.",
+    "AC4": "Open body grouping implemented; integration script and controls unchanged, descriptions render in full. Search/pagination/focus proof remains main-owned.",
+    "AC5": "All source bytes outside the three first tables preserved, table cell and header text exactly preserved, all119 content/catalog/sync source hashes unchanged by generation. Generated SEO passed188routes/188sitemapURLs.",
+    "AC6": "Assigned source/build checks passed with tooling warnings; independent review and StackOS browser acceptance remain open."
+  },
+  "checks": [
+    { "command": "TPF_LLM_TOOL=codex tpf pnpm --dir website generate", "phase": "QA-1/QA-2 repair", "status": "passed", "exit_code": 0, "log": "generate-qa-repairs.log" },
+    { "command": "TPF_LLM_TOOL=codex tpf pnpm --dir website test:seo:generated", "phase": "QA-1/QA-2 repair", "status": "passed", "exit_code": 0, "log": "generated-seo-qa-repairs.log", "routes": 188, "sitemap_urls": 188, "sitemap_loc_lastmod_sha256": "a48935cad3bd9d2063511ca5b103cdcf0b6ed5e46ebcb73569288f038af4cf57" },
+    { "command": "TPF_LLM_TOOL=codex tpf python3 reports/design/2026-10-05-template-review/implementation/verify-preservation.py", "phase": "QA-1/QA-2 repair", "status": "passed", "exit_code": 0, "log": "preservation-qa-repairs.log", "structured_evidence": "source-preservation.json" },
+    { "command": "TPF_LLM_TOOL=codex tpf git diff --check -- website/app/pages/library/workflows/[slug].vue website/app/pages/library/integrations/[slug].vue", "phase": "QA-1/QA-2 repair", "status": "passed", "exit_code": 0, "log": "diff-check-qa-repairs.log" },
+    { "check": "Repair scope hash reconstruction", "phase": "QA-1/QA-2 repair", "status": "passed", "structured_evidence": "repair-scope.json", "result": "Removing exactly four added scoped CSS lines recreates both initial candidate file hashes; no copy, global token or hero change." },
+    { "command": "Repeat typecheck after QA-1/QA-2", "phase": "QA-1/QA-2 repair", "status": "not_applicable", "reason": "Main authorized omission for the four-line CSS-only repair; initial typecheck evidence retained below." },
+    { "command": "TPF_LLM_TOOL=codex tpf pnpm --dir website typecheck", "status": "passed_with_warning", "exit_code": 0, "log": "typecheck.log", "warning": "Vue router Volar sfc-route-blocks plugin failed to load (plugin is not a function). No TypeScript diagnostic errors were emitted; the optional plugin warning limits any claim about that plugin's checks." },
+    { "command": "TPF_LLM_TOOL=codex tpf pnpm --dir website generate", "status": "passed", "exit_code": 0, "log": "generate.log", "warnings": ["nuxt module preload sourcemap warning", "consola node:tty browser externalization/isatty warnings"] },
+    { "command": "TPF_LLM_TOOL=codex tpf pnpm --dir website test:seo:generated", "status": "passed", "exit_code": 0, "log": "generated-seo.log", "routes": 188, "sitemap_urls": 188 },
+    { "command": "TPF_LLM_TOOL=codex tpf python3 reports/design/2026-10-05-template-review/implementation/verify-preservation.py", "status": "passed", "exit_code": 0, "log": "preservation.log", "structured_evidence": "source-preservation.json" },
+    { "command": "TPF_LLM_TOOL=codex tpf git diff --check -- [all13 packet-owned paths]", "status": "passed", "exit_code": 0, "log": "diff-check.log" },
+    { "command": "Playwright browser suite", "status": "skipped_by_instruction", "reason": "Operator requires StackOS browser; main owns equivalent browser scenarios." }
+  ],
+  "environment": {
+    "workspace": "/Users/sergeyrura/Bin/content-stack",
+    "framework": "Nuxt4.4.8 / Nuxt Content3.15.0 / native MDC",
+    "public_build_configuration": "existing website/.env; values not copied into evidence",
+    "build_owner": "delivery specialist, sole writer until handoff",
+    "preview": "http://127.0.0.1:4173/ (main-owned server serving website/.output/public)",
+    "workspace_binding": "workspace.resolve confirmed project1"
+  },
+  "deviations": [
+    "Agent detail route required no direct edit; its body uses the shared detail-list owner.",
+    "Kept original table first-column headings as screen-reader text in semantic terms while preserving the selected visual layout."
+  ],
+  "remaining_integration_obligations": [
+    "Independent candidate review and main adjudication.",
+    "StackOS browser article desktop/mobile, comparison-table and getting-started regression proof.",
+    "Workflow, agent, orchestrator, GSC and long-integration catalog browser proof, including search/empty/clear/load more and keyboard/console checks.",
+    "Selected-image/context comparison and final design-qa.md acceptance."
+  ],
+  "residual_risks": [
+    "Visual fidelity and responsive behavior are not established by build/SSR checks alone."
+  ],
+  "external_actions": "None. No deployment, provider writes, install, runtime lifecycle mutation, browser execution or tracker/run lifecycle mutation.",
+  "next_disposition": "Independent review and main-owned focused workflow/facts visual recheck on regenerated97dc66f0; candidate-ready is not acceptance."
+}

@@ -1,0 +1,133 @@
+{
+  "ticket_key": "website-content-evidence-layout-555",
+  "run_plan_id": 555,
+  "run_id": 550,
+  "step_id": "deliver-tickets",
+  "attempt_id": "content-layout-a1",
+  "constraint_revision": 1,
+  "objective": "Implement selected option3 as a coherent content-only treatment for existing library pages.",
+  "selected_image": "reports/design/2026-10-05-template-review/content-concepts/03-annotated-evidence.png",
+  "selected_sha256": "06bbe2f18e59a43cbaa2a6a54a71bca89fa59f8ad6916a171eb49794915af2ce",
+  "user_sources": [
+    "Review page templates and improve design with ImageGen",
+    "Only content should be redesigned",
+    "Ideation should be coherent within existing whole-page context",
+    "Latest displayed option3 selected"
+  ],
+  "constraints": [
+    "Preserve header, navigation, hero, fonts, palette and all source copy/links/metadata",
+    "Content modifications only; avoid global h2/prose rules affecting getting-started",
+    "Preserve unrelated dirty files and prior edits within owned files",
+    "One canonical website rendering owner; no AST/VNode scraper or automatic table classifier",
+    "No deployment, provider actions, browser alternatives, installation or desktop work"
+  ],
+  "acceptance_conditions": [
+    {
+      "id": "AC1",
+      "text": "Shared shell, hero, navigation, fonts and palette preserve source behavior and visual context."
+    },
+    {
+      "id": "AC2",
+      "text": "Three named narrative evidence tables become semantic open rows: label left, evidence and decision stacked right; mobile stacking."
+    },
+    {
+      "id": "AC3",
+      "text": "Article body prose has selected readable rhythm without heavy opening callout; true comparison tables retain table semantics."
+    },
+    {
+      "id": "AC4",
+      "text": "Workflow/agent/orchestrator lists and integration facts/action body layout use lighter open grouping with no truncated descriptions; links/search/pagination intact."
+    },
+    {
+      "id": "AC5",
+      "text": "All existing source sentences, links, frontmatter, heading IDs, canonicals and SSR meaning preserved."
+    },
+    {
+      "id": "AC6",
+      "text": "Owned source checks, generated checks, independent review and StackOS browser desktop/mobile/keyboard/visual proof pass."
+    }
+  ],
+  "design": {
+    "article": "Add native MDC ArticleEvidenceRow.vue: semantic definition row (dl/dt/dd), record label prop and existing column-label props, named evidence/decision slots. No duplicated prose in JS. Group rows with existing parent/container only if semantic need; avoid extra framework. Repeat actual column headings as small text labels. Use roughly1000px maximum evidence width within same article body; desktop label around200px and rest prose+annotation; stack below mobile breakpoint. Cobalt thin decision rule; no boxed cards. Actual selected image is1122x1402 generated from1440x1800 reference; preserve existing shell dimensions rather than introduce screenshot-generated artifacts.",
+    "migrations": [
+      "first table in how-to-do-keyword-research-for-ai-search.md",
+      "first table in how-ai-orchestrators-triage-feedback.md",
+      "first table in how-to-refine-ai-agent-workflow.md"
+    ],
+    "article_css": "Add a class modifier on article route only; normal first paragraph instead of heavy callout. Existing global .article-prose is shared with getting-started and must not change there.",
+    "detail_css": "Body-only .detail-list, workflow experience/readiness/handoff/list links, orchestrator specialist links. Preserve existing content sequence and columns; clear numbered steps. Do not change .detail-body__narrow, .library-section__heading, .library-grid, CatalogCard, WorkflowMap, or hero rules globally.",
+    "integration": "Existing dl provider facts -> open aligned label/value rows. Existing action articles -> compact open rows with full description, labels in consistent positions. Preserve search/filter/pagination functions and data attributes. Update mobile overrides. Existing hero CSS variable is not available to sibling facts; use existing body token for contrast.",
+    "tests": "Update stale article-table test fixture (currently no table) to actual preserved comparison page. Update integration test's obsolete 3-column fixed card geometry to open-row/full-text/containment expectations. Add meaningful generated SSR preservation check for new MDC content; no CSS-mirroring unit tests."
+  },
+  "write_ownership": [
+    "website/app/assets/css/library.css",
+    "website/app/pages/library/articles/[slug].vue",
+    "website/app/pages/library/workflows/[slug].vue",
+    "website/app/pages/library/agents/[slug].vue",
+    "website/app/pages/library/orchestrators/[slug].vue",
+    "website/app/pages/library/integrations/[slug].vue",
+    "website/content/articles/how-to-do-keyword-research-for-ai-search.md",
+    "website/content/articles/how-ai-orchestrators-triage-feedback.md",
+    "website/content/articles/how-to-refine-ai-agent-workflow.md",
+    "website/tests/site.spec.ts",
+    "website/scripts/verify-generated-seo.mjs",
+    "website/app/components/content/ArticleEvidenceRow.vue",
+    "website/README.md"
+  ],
+  "baseline": "reports/design/2026-10-05-template-review/implementation/baseline-manifest.json",
+  "dirty_notes": "Integration detail and 2 narrative article sources already dirty; baseline copies preserve current exact state. Many other unrelated dirty files are excluded.",
+  "shared_resources": {
+    "css": "single worker",
+    "build": "single worker until handoff",
+    "browser": "main only, StackOS profile deployment-audit",
+    "preview": "main chooses and owns port"
+  },
+  "ticket_proof": [
+    "git diff --check for owned paths",
+    "pnpm --dir website typecheck",
+    "pnpm --dir website generate",
+    "pnpm --dir website test:seo:generated",
+    "Compare migrated copy/links/frontmatter to baseline; exact cells retained in rendered output; preserve header/hero blocks",
+    "Update browser acceptance scenarios, but do not run Playwright CLI/MCP because user requires StackOS browser"
+  ],
+  "integration_proof": {
+    "owner": "main",
+    "scenarios": [
+      "Selected article desktop in same page context and390x844 mobile",
+      "Preserved comparison table and getting-started",
+      "Workflow, agent/orchestrator and integration body",
+      "Integration search/empty/clear/load more; keyboard focus and console",
+      "Source and rendered screenshot in same comparison; design-qa.md final passed"
+    ]
+  },
+  "source_refs": [
+    "AGENTS.md",
+    "docs/product-direction.md",
+    "website/README.md",
+    ".codex/agents/sdlc-delivery.toml",
+    ".codex/agents/sdlc-delivery-reviewer.toml",
+    ".codex/orchestrator/sdlc-delivery-orchestrator.md"
+  ],
+  "guidance": {
+    "workflow": "engineering.tracked-delivery@0.4.0 (installed current)",
+    "orchestrator": "stackos.sdlc.delivery-orchestrator@0.4.1",
+    "agent_presets": "0.3.1",
+    "project_extension": "none",
+    "brand": "Exact approved source copy preserved; new material prose requires main decision and current foundation/review."
+  },
+  "review": "Independent reviewer checks exact candidate against selected design and source ACs. Main alone accepts/updates tracker. Candidate ready is not done.",
+  "stop_conditions": [
+    "Changed scope or discovered missing source words/links",
+    "Unexpected file change outside ownership",
+    "Need for other browser/deployment or new API",
+    "Another writer changes owned candidate"
+  ],
+  "return_fields": [
+    "ticket/attempt/contract IDs",
+    "changed file list and SHA256 candidate identity",
+    "per-AC proof",
+    "commands/results/failures",
+    "source-copy preservation",
+    "deviations and remaining integration proof"
+  ]
+}

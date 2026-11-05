@@ -1,0 +1,37 @@
+{
+  "mode": "preflight",
+  "command": [
+    "pnpm",
+    "--dir",
+    "desktop",
+    "run",
+    "release:preflight"
+  ],
+  "cwd": "/private/tmp/stackos-release-2135-20261006/host",
+  "host_commit": "2903fabfc82754753ae0311599b3f407c177b09a",
+  "host_version": "2.1.35",
+  "connector_version": "0.2.4",
+  "environment": {
+    "DEVELOPER_DIR": "/Applications/Xcode.app/Contents/Developer",
+    "CSC_NAME": "SERGEY RURA (TSHN26FR48)",
+    "APPLE_KEYCHAIN_PROFILE": "stackos-notary",
+    "STACKOS_UPDATE_URL": "https://stackos.flowmonkey.io/StackOS/",
+    "TDLIB_LIBRARY_PATH": "/Users/sergeyrura/Bin/content-stack/desktop/payload/stackos/telegram-tdlib-runtime/lib/libtdjson.dylib",
+    "UV_CACHE_DIR": "/Users/sergeyrura/.cache/uv",
+    "STACKOS_REQUIRE_SIGNING": "1",
+    "STACKOS_REQUIRE_UPDATE_URL": "1"
+  },
+  "started_at": "2026-10-06T22:24:19.597732+00:00",
+  "finished_at": "2026-10-06T22:24:23.033166+00:00",
+  "exit_code": 0,
+  "log": "/private/tmp/stackos-release-2135-20261006/release/release-preflight.log",
+  "log_sha256": "f0023fd484b4e98239563f4bbc2211868518b84bff5fcba280b1bfe3c7671bbe",
+  "local_app_activation": false,
+  "notary_transport": {
+    "executable": "/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool",
+    "wrapper": "/private/tmp/stackos-release-2135-20261006/release/bin/xcrun",
+    "wrapper_sha256": "7d3008800ff09c1e1444567baa3ef3af72227ee8c029fb1776e8ffbdc4f263ef",
+    "s3_acceleration": false,
+    "original_signing_and_notarization_gates_preserved": true
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "command": [
+    "/usr/bin/arch",
+    "-x86_64",
+    "/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool",
+    "submit",
+    "/private/tmp/stackos-release-2135-20261006/release/StackOS-2.1.35-notary.zip",
+    "--keychain-profile",
+    "stackos-notary",
+    "--no-s3-acceleration",
+    "--no-wait",
+    "--output-format",
+    "json"
+  ],
+  "started_at": "2026-10-06T22:42:23.691636+00:00",
+  "finished_at": "2026-10-06T22:42:38.291068+00:00",
+  "archive": "/private/tmp/stackos-release-2135-20261006/release/StackOS-2.1.35-notary.zip",
+  "archive_bytes": 515848394,
+  "archive_sha256": "68fd9c797344c32c7a436d053f4c77b0fce4da38b25e1935ecc3ca7ca0bec6d0",
+  "exit_code": 1,
+  "log": "/private/tmp/stackos-release-2135-20261006/release/app-notary-retry2.log",
+  "log_sha256": "eddf5930867b34d2e8b10a7303fd1b0ad8da245132b442ec5d04ce5fcc487fa2",
+  "prior_attempt": "app-notary-retry1.json",
+  "retry_reason": "Confirmed ARM notarytool SIGBUS. Use installed universal tool Intel variant and direct S3 endpoint.",
+  "host_commit": "2903fabfc82754753ae0311599b3f407c177b09a",
+  "local_app_activation": false
+}

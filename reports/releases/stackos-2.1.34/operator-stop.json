@@ -1,0 +1,16 @@
+{
+  "status": "stopped_by_operator",
+  "stopped_at": "2026-10-06T18:07:44.461952+00:00",
+  "build_processes_signaled": [
+    34074,
+    43287,
+    83883,
+    83886,
+    83895
+  ],
+  "publication_attempted": false,
+  "local_installation": false,
+  "connector_0_2_1_already_published": true,
+  "source_commits_already_pushed": true,
+  "resume": "Inspect retained build log and partial artifacts; do not publish them. Resume signed/notarized build with a distinct retry label, verify final artifacts, then publish through plan573."
+}

@@ -1,0 +1,48 @@
+{
+  "ticket": "work-board-ui",
+  "ticket_id": 14730,
+  "attempt": "a4",
+  "contract_revision": 1,
+  "project_id": 1,
+  "run_plan_id": 723,
+  "run_id": 717,
+  "step_id": 7582,
+  "disposition": "candidate-ready; graph repair frozen for review",
+  "base_head": "b3b358f6ffab4d9ea5cd127edb4266eb6357d73b",
+  "accepted_prerequisite": "A3 sha3ba6875f19055f02b0e0c31c822ad9ae65659174aee8261aa2519a14d6fc8811",
+  "adjudicated_finding": "Integrated Product Design P2: six nodes render209x124 with title~8.5px despite whitespace compared with selected dependency map concept.",
+  "sources": [
+    "Main A4 repair dispatch",
+    "/tmp/stackos-work-723/map-comparison.png",
+    "reports/design/2026-10-28-work-navigation/concepts/03-dependency-map.png",
+    "Existing canonical Dagre graph model and viewport owner"
+  ],
+  "repair": "Only small task graphs <=12 nodes reduce rank gap132->64; initial fit padding0.16->0.08 for <=12. Existing >12 graph spacing, focus behavior, and stored viewport remain.",
+  "checks": [
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui exec vitest run src/lib/task-tracker/graphModel.spec.ts src/views/task-tracker/TrackerGraphPanel.spec.ts",
+      "result": "PASS7tests/2files; small fork width<1400 no overlaps, 13node spacing unchanged, stored viewport retained."
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui type-check",
+      "result": "PASS"
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui exec eslint src/lib/task-tracker/graphModel.ts src/lib/task-tracker/graphModel.spec.ts src/views/task-tracker/TrackerGraphPanel.vue src/views/task-tracker/TrackerGraphPanel.spec.ts",
+      "result": "PASS no errors;4preexisting test-stub multi-component warnings."
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf git diff --check",
+      "result": "PASS"
+    }
+  ],
+  "preserved": "C1 eight files frozen and unchanged; no backend/run/tracker writes.",
+  "remaining": "Main browser capture validates visual effect; independent review/main acceptance required.",
+  "files": {
+    "ui/src/lib/task-tracker/graphModel.ts": "58f46858d19b71ce8d3255f121103211c41ce6328f1fcee56d3bfc465b538bbf",
+    "ui/src/lib/task-tracker/graphModel.spec.ts": "8ebb0f5baf96b3a21580cbf8540102d826be8677670d1897dec1e279cc686695",
+    "ui/src/views/task-tracker/TrackerGraphPanel.vue": "331a9e7e71eded7ea6c04a9c36882f472d5e6256276594c5078fb22d28c20a6b",
+    "ui/src/views/task-tracker/TrackerGraphPanel.spec.ts": "d1dc1c0642b1d29224d86cded3dfc96bf0dbc4204e01e70e7819d2f1ef4f7729"
+  },
+  "candidate_sha256": "67546571f33f49f2903e2839d74a2509050ac3ddc0d4ba9caf024d49f27a1eee"
+}

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>StackOS website template design review</title>
+<style>
+body{margin:0;background:#f3f1ea;color:#090b10;font:17px/1.6 system-ui,sans-serif}
+main{max-width:1120px;margin:auto;padding:48px 24px 80px}
+h1{font-size:42px;line-height:1.1;max-width:800px}h2{margin-top:48px;line-height:1.2}
+a{color:#2444b8}p{max-width:78ch}.meta{font-size:14px;color:#50555f}
+table{width:100%;border-collapse:collapse;font-size:15px}th,td{padding:16px 12px;border-bottom:1px solid #c8c7c1;text-align:left;vertical-align:top}
+th{background:#e9e7df}td:first-child{width:17%}
+img{display:block;width:100%;height:auto;border:1px solid #ccc;margin:12px 0 32px}
+figure{margin:20px 0}figcaption{font-size:15px}.gallery{display:grid;grid-template-columns:1fr 1fr;gap:24px}.gallery img{margin-bottom:0}
+code{font-size:13px}li{margin:8px 0}@media(max-width:700px){main{padding:28px 16px}h1{font-size:32px}.gallery{grid-template-columns:1fr}.table-wrap{overflow:auto}table{min-width:650px}}
+</style>
+<main>
+<p><strong>Superseded scope.</strong> The user requested content design inside the existing page. Use the <a href="content-review.html">current content design review</a>. The broad page redesign suggestions and initial concepts below are historical exploration only.</p>
+<p class="meta">Design review · October 5, 2026 · StackOS browser</p>
+<h1>StackOS website template design review</h1>
+<p><strong>The main problem is hierarchy.</strong> Oversized heroes, repeated diagrams and stacked containers delay the information each page exists to provide. Keep the recognizable brand, and organize each template around its reader's task.</p>
+<p>Reviewed eight representative public pages at 1440 × 1000, plus workflow, article and catalog openings at 390 × 844. Three independent ImageGen concepts use the same workflow page for comparison. Production remains unchanged.</p>
+<h2>Changes by template</h2>
+<div class="table-wrap"><table><thead><tr><th>Page</th><th>Observed issue</th><th>Proposed change</th></tr></thead><tbody>
+<tr><td><a href="https://stackos.flowmonkey.io/">Home</a><br><a href="screenshots/home-desktop.png">Screenshot</a> · <a href="screenshots/home-full.png">Full page</a></td><td>Distinctive identity and concrete opening, but the same promotional scale is overused on internal pages.</td><td>Reserve the strongest brand expression for this page; favor genuine product evidence over abstract diagrams.</td></tr>
+<tr><td><a href="https://stackos.flowmonkey.io/library/">Library</a><br><a href="screenshots/library-desktop.png">Screenshot</a> · <a href="screenshots/library-full.png">Full page</a></td><td>Tall hero and count grid delay the three useful entry points.</td><td>Bring Learn, Connect and Start to the opening; show concise links to useful jobs.</td></tr>
+<tr><td><a href="https://stackos.flowmonkey.io/library/workflows/">Catalog</a><br><a href="screenshots/catalog-desktop.png">Screenshot</a> · <a href="screenshots/catalog-full.png">Full page</a></td><td>No workflow results or filters in the first desktop or mobile viewport. Repeated decorative cards dominate the long page.</td><td>Compact title, immediate filters and compact results; move the general definition beneath browsing.</td></tr>
+<tr><td><a href="https://stackos.flowmonkey.io/library/workflows/seo-content-refresh/">Workflow</a><br><a href="screenshots/workflow-desktop.png">Screenshot</a> · <a href="screenshots/workflow-full.png">Full page</a></td><td>Starting request and required inputs follow a large hero and oversized problem statement. Many boxed reference sections compete.</td><td>Show request, inputs and output first; use a contents rail and compact stages; keep recovery and role details accessible further down.</td></tr>
+<tr><td><a href="https://stackos.flowmonkey.io/library/articles/how-to-do-keyword-research-for-ai-search/">Article</a><br><a href="screenshots/article-desktop.png">Screenshot</a> · <a href="screenshots/article-full.png">Full page</a></td><td>Large left-aligned hero leaves unused right space; reading begins in a differently aligned column. Mobile table handling needs focused follow-up.</td><td>Align title, metadata and prose; modest heading scale; reuse contents navigation where useful; ensure tables scroll clearly on mobile.</td></tr>
+<tr><td><a href="https://stackos.flowmonkey.io/library/agents/branding-voice-reviewer/">Agent</a><br><a href="screenshots/agent-desktop.png">Screenshot</a> · <a href="screenshots/agent-full.png">Full page</a></td><td>Generic diagram repeats workflow treatment; many long boxed contract bullets.</td><td>Compact mission, responsibilities and input/output summary; linked workflows and detailed contract follow.</td></tr>
+<tr><td><a href="https://stackos.flowmonkey.io/library/integrations/google-search-console/">Integration</a><br><a href="screenshots/integration-desktop.png">Screenshot</a> · <a href="screenshots/integration-full.png">Full page</a></td><td>Oversized identity and repeated provider heading delay setup/actions. Secondary helper text appears difficult to read.</td><td>Show supported work and connection requirements first, then searchable action reference; improve text contrast.</td></tr>
+<tr><td><a href="https://stackos.flowmonkey.io/getting-started/">Guide</a><br><a href="screenshots/guide-desktop.png">Screenshot</a> · <a href="screenshots/guide-full.png">Full page</a></td><td>Helpful contents rail already exists, but the opening consumes nearly the entire desktop viewport.</td><td>Keep the guide rail and step structure; reduce opening height and expose the first step sooner.</td></tr>
+</tbody></table></div>
+<h2>Shared priorities</h2>
+<ol><li><strong>Task-specific information arrives too late.</strong> Use smaller internal-page titles and remove repeated generic diagrams.</li>
+<li><strong>Diagrams misattribute planning and role selection to StackOS.</strong> Describe agent reasoning and StackOS scope, explicit execution and records accurately.</li>
+<li><strong>Two navigation bars plus breadcrumbs consume space; mobile category strip hides later items off-screen.</strong> Simplify navigation hierarchy and provide clear mobile access to every category.</li>
+<li><strong>Consent competes with page content, especially on mobile.</strong> Retain clear choices in a more compact accessible composition.</li>
+<li><strong>Small labels and low-contrast secondary text risk poor readability.</strong> Measure contrast and keyboard/focus behavior during implementation; increase diagram-label readability or remove diagrams.</li></ol>
+<p>Keep the article's readable central column, source links and evidence tables. Keep the workflow's useful distinction between the request, inputs, outputs, review and recovery. The redesign should make that information easier to find.</p>
+<h2>Current desktop and mobile evidence</h2>
+<div class="gallery">
+<figure><a href="screenshots/catalog-desktop.png"><img src="screenshots/catalog-desktop.png" alt="Current workflow catalog opening has a tall title and no catalog results visible"></a><figcaption>The catalog's first desktop screen contains no results or filters.</figcaption></figure>
+<figure><a href="screenshots/workflow-desktop-clean.png"><img src="screenshots/workflow-desktop-clean.png" alt="Current workflow opening shows large title diagram and problem statement"></a><figcaption>The starting request is below the hero and large problem statement.</figcaption></figure>
+</div>
+<p>Mobile captures: <a href="screenshots/workflow-mobile.png">workflow</a>, <a href="screenshots/article-mobile.png">article</a>, <a href="screenshots/catalog-mobile.png">catalog</a>, and <a href="screenshots/workflow-mobile-consent.png">initial consent overlay</a>. The initial banner remains in desktop evidence; “Not now” was selected before later mobile captures.</p>
+<h2>Three concepts</h2>
+<p>Numbered in the order displayed in chat. All are raster proposals generated with the built-in ImageGen tool, using the current workflow screenshot and actual StackOS icon. The <a href="prompts.json">complete prompts</a> are saved alongside the images.</p>
+<figure><figcaption><strong>Option 1</strong> · <a href="concepts/01-field-guide.png">Open original</a></figcaption><img src="concepts/01-field-guide.png" alt="Option 1 design concept for SEO Content Refresh"></figure>
+<figure><figcaption><strong>Option 2</strong> · <a href="concepts/02-working-brief.png">Open original</a></figcaption><img src="concepts/02-working-brief.png" alt="Option 2 design concept for SEO Content Refresh"></figure>
+<figure><figcaption><strong>Option 3</strong> · <a href="concepts/03-editorial-notebook.png">Open original</a></figcaption><img src="concepts/03-editorial-notebook.png" alt="Option 3 design concept for SEO Content Refresh"></figure>
+<h2>Implementation boundaries</h2>
+<ul><li>StackOS mark and ink/paper/lime/cobalt palette</li>
+<li>Real source-backed content, useful links and evidence tables</li>
+<li>Public URLs, headings, server-rendered text, canonical metadata and internal links</li>
+<li>Current source owners: workflow/preset public fields and article Markdown</li>
+<li>Current approved voice; concept copy is not a new brand foundation</li></ul>
+<p>These concepts introduce a proposed “Copy example request” convenience. They do not add workflow execution to the public website. Generated helper text remains draft material and must be reconciled with approved source copy before publication.</p>
+<h2>Next sequence</h2><ol><li>Choose a visual direction.</li>
+<li>Adapt it to catalog, workflow, article, integration and role templates while preserving their different reader tasks.</li>
+<li>Implement shared navigation/type/spacing first, then templates, through the existing engineering workflow.</li>
+<li>Verify desktop/mobile, keyboard access, contrast, crawlable content and URL/metadata preservation before release.</li></ol>
+<h2>Limits</h2><ul><li>Visual review is not a full accessibility audit or measured usability study.</li>
+<li>Homepage full-page capture may contain off-screen animation/lazy-render states; empty regions are not established rendering defects.</li>
+<li>Orchestrator template was mapped from source but no separate live orchestrator screenshot was captured.</li>
+<li>ImageGen concepts are raster design proposals. Generated helper text must be reconciled with approved source copy during implementation.</li>
+<li>No ranking or conversion improvement is established by this design review.</li></ul>
+<p class="meta">Source mapping and an independent screenshot critique were supplied by the design_template_map reviewer. Full structured record: <a href="audit.json">audit.json</a>. Tracker: <code>website-template-design-review-20261005</code>.</p>
+</main></html>

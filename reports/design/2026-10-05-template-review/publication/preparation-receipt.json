@@ -1,0 +1,26 @@
+{
+  "status": "prepared-locally",
+  "publication_run_plan_id": 556,
+  "execution_run_id": 551,
+  "accepted_source_candidate": "97dc66f058dcac100801455a8e78071c8f2b5a15e19467d905e5f4ce7ed3b21b",
+  "output_identity": "ebf26e1d0ff132febae6797d2d304201144cf32f630e84db190c1dc440d4a8bd",
+  "files_identity": "93ddde39ec07803e2cbfbb18c8d950d6029b6938e8ed346f35a1fbdc0a7aaefa",
+  "file_count": 460,
+  "bytes": 10601476,
+  "hashes": {
+    "upload-input.json": "37f7b0bc184a1e01f1316cc4f8b064c7db716dfcac0eb264fa029e8ec55dc6ed",
+    "upload-manifest.json": "d3d8a65964285c90ed5a2a33187e7df0894e46bfde2d61a4864dd4c8b57c883c",
+    "output-manifest.json": "50056e84414b8bcfa7e2ca8f5f1f81d1963ba5c8fc9d5816284029301f621a82",
+    "previous-output-manifest.json": "82abbce5ccd0cdba99d0611d02e8354c766384bad1bcf2a47c90cc3668182f86",
+    "stage.py": "1d2ae76ece94c2e28f812d80112d59a71fb6a1a98aed685f24450216db5d35e3",
+    "verify-public.py": "a8627932c3301412c76316ab4f61bef87f901ffc8d8381dd8959e1dafb915604"
+  },
+  "preflight_input_check": "passed;397planned requests;0network requests",
+  "provider_actions": 0,
+  "source_or_output_changes": 0,
+  "limitations": [
+    "Historical manifest is bound to successful publication551 evidence; live preflight must verify overwritten prior bytes before upload.",
+    "Desktop binaries and remote-only ownership are excluded. Obsolete remote assets are retained."
+  ],
+  "next": "Main executes public preflight, native uploads and postflight. Staging is frozen."
+}

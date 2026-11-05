@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "reviewer": "/root/day1_deploy_review",
+  "run_plan_id": 574,
+  "execution_id": 568,
+  "step": "integrate",
+  "assignment_attempt": 1,
+  "contract_revision": 3,
+  "disposition": "pass",
+  "scope": "Connector 0.2.4 QuickBooks setup metadata and CompanyInfo probe only; package publication recommendation, separate from host/relay/desktop acceptance.",
+  "candidate": {
+    "baseline_commit": "d8883b926c340229b18fb53e9001d58c83055303",
+    "commit": "c09ccf8e26f4d6f48b7db6bdd13779e62b31b8b4",
+    "version": "0.2.4",
+    "clean": true,
+    "worktree": "/private/tmp/stackos-release-2135-20261006/connectors",
+    "candidate_receipt_sha256": "7e8e4a24ad751e3497d62639d4afba4f727da99fecbd41a25677fa4e124687ce",
+    "patch_sha256": "65515c0e18d77b4315e5bc4ff109c24bb0013db33992689f11f5c3329964722f",
+    "wheel_sha256": "f1eebe5cee8de6af40fe447e60fb365ef6e8d4e0bc76d2a500740fc54dc755c7"
+  },
+  "independence": {
+    "implementation_or_test_authorship": false,
+    "writes": [
+      "connector024-evidence/independent-review.json"
+    ],
+    "external_actions": false
+  },
+  "sources": [
+    "evidence/quickbooks-rev3-scope.json",
+    "Repository product/auth/reviewer contracts consumed for current release",
+    "Full nine-file candidate diff including new probe and regression tests",
+    "Existing QuickBooks action and shared probe owner call paths",
+    "connector024-evidence/candidate-receipt.json",
+    "connector024-evidence/hashes.json",
+    "connector024-evidence/red-full.log",
+    "connector024-evidence/green.log",
+    "connector024-evidence/focused-slice.log",
+    "connector024-evidence/installed-wheel-smoke.json",
+    "connector024-evidence/build.log",
+    "connector024-evidence/ruff.log"
+  ],
+  "acceptance": [
+    {
+      "id": "setup",
+      "result": "pass",
+      "evidence": "Both existing methods have setup labels and explicit required nonsecret environment/realm fields. Environment is sandbox or production without a default. Numeric realm schema remains a string of 1\u201332 digits. Existing method and protocol choices are unchanged."
+    },
+    {
+      "id": "probe-owner",
+      "result": "pass",
+      "evidence": "Catalog binds the provider-local probe to the existing public CompanyInfo action. It reuses schema validation, fixed endpoints, response validation, credential-echo rejection, retry bounds, injected HTTP and rate limiter. No token acquisition, refresh, storage or scope policy is introduced."
+    },
+    {
+      "id": "evidence-truth",
+      "result": "pass",
+      "evidence": "Probe returns optional company display name, provider company_id and explicitly configured realm/environment context. provider_account_id remains null. No scope or grant evidence is inferred from read success; CompanyInfo.Id is not treated as realm attestation."
+    },
+    {
+      "id": "failure-boundary",
+      "result": "pass",
+      "evidence": "Probe exposes only fixed messages, an allowlisted reason and bounded integer status. Shared probe boundary sanitizes again. Focused tests cover malformed/duplicate response fields, credential echoes, provider 401/403/429/503 and unsafe exception details."
+    },
+    {
+      "id": "preservation",
+      "result": "pass",
+      "evidence": "Exactly two QuickBooks actions and their schemas/config remain unchanged. Existing actions.py, integration.py and response.py are byte-identical, retaining invoice precision. Google Indexing/GSC and shared auth source have no diff from accepted 0.2.3."
+    },
+    {
+      "id": "packaging",
+      "result": "pass",
+      "evidence": "Frozen commit is clean. Stored patch equals exact git diff. Every evidence-manifest hash matches. All 437 packaged source files match both frozen source and installed wheel environment; CRC is valid. Installed smoke confirms version 0.2.4, package origins and blocked live sockets."
+    }
+  ],
+  "assertion_ownership": {
+    "setup_facts": "Canonical connector catalog",
+    "probe_semantics": "QuickBooks probe delegates existing public action",
+    "validation_transport_parsing": "Existing QuickBooks action/integration/response and shared package client",
+    "credential_custody_callback_company_binding": "Host consumer; outside this package-only acceptance",
+    "permissions": "Provider enforces request permission; probe does not claim grants",
+    "publication_acceptance": "Root"
+  },
+  "checks": {
+    "independently_executed": [
+      "Read and assessed complete candidate diff and existing call paths",
+      "Verified frozen commit and clean status",
+      "Compared exact stored patch with git diff",
+      "Verified evidence/artifact hash manifest",
+      "Compared all 437 wheel members with source and installed package bytes; checked archive CRC",
+      "Compared preserved Google and QuickBooks source and catalog action/protocol data"
+    ],
+    "reused_worker_proof": [
+      "25 new regression cases: red before change, green afterward",
+      "342 focused QuickBooks/auth/catalog/packaging cases passed",
+      "Installed-wheel smoke passed with injected transport, forbidden implicit grants, network blocked and package-origin checks",
+      "Ruff and build passed"
+    ],
+    "test_reruns": 0
+  },
+  "findings": [],
+  "limits": [
+    "No live Intuit consent or resource call was made.",
+    "This review does not accept the host OAuth callback, public relay, final desktop artifact or release publication.",
+    "Package smoke uses a disposable environment; the installed StackOS runtime was unchanged."
+  ],
+  "next_disposition": "Root may accept and publish the exact connector candidate, then bind the published artifact into the separately reviewed host candidate.",
+  "scope_contract_sha256": "636861a8866f8ad58edc0070f1d4f4ced9ddaa9eb813341ae7137fcb8e2c1622"
+}

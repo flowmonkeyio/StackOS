@@ -1,0 +1,42 @@
+{
+  "app": "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/mac-arm64/StackOS.app",
+  "app_stability_sha256": "1317a81cb2f60168a46a2426d9c4a39bdeffa5703aa75ba344e2cebbba207e6d",
+  "app_stable_during_review": true,
+  "assignment_attempt": 1,
+  "checker_sha256": "5b0deebdb9d0f44e4d086a45220d0a61ed8baee44f6e37a8a97c1b9a03a3fc7d",
+  "connector_version": "0.2.4",
+  "contract_revision": 5,
+  "counts": {
+    "directories": 4145,
+    "files": 21186,
+    "ignored_macos_metadata": 0,
+    "symlinks": 31
+  },
+  "execution_id": 568,
+  "extraction": false,
+  "host_commit": "2903fabfc82754753ae0311599b3f407c177b09a",
+  "host_version": "2.1.35",
+  "limitations": [
+    "Trust commands reused from root receipt; not rerun.",
+    "DMG notarization/publication is outside this review."
+  ],
+  "local_activation": false,
+  "logical_manifest_sha256": "485e738b2d3fcc8ba7cbf6c61c4aed56cfa9fc53fce389a49d960a2ce5c20a74",
+  "network_access": false,
+  "reviewed_at": "2026-10-07T02:02:41.082382+00:00",
+  "run_plan_id": 574,
+  "scope": "Final local ZIP logical file, directory, symlink and content parity with stapled app",
+  "status": "passed",
+  "step": "package",
+  "trust_receipt": {
+    "log_hashes_verified": true,
+    "path": "/private/tmp/stackos-release-2135-20261006/release/trust-app.json",
+    "sha256": "42ab0a0e76d94e7d9a1d4b188e8c535f25921b25d5c25355d6bc87d98c93d559"
+  },
+  "zip": {
+    "bytes": 494276145,
+    "path": "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/stackos-2.1.35-mac-arm64.zip",
+    "sha256": "37b580aac1d28dce29f7c86dd584122cd54ca9f0ddeeab76a1b5dffe841c74da"
+  },
+  "zip_stable_during_review": true
+}

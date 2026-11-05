@@ -1,0 +1,1912 @@
+[
+  {
+    "path": "assets/__nuxt_content/articles/sql_dump.txt",
+    "sha256": "78fe7130891cc76d61a886c8af9f99b5fd6891b39eb919b99c1e3e321038e0dd",
+    "bytes": 76060
+  },
+  {
+    "path": "assets/__static-404/_payload.json",
+    "sha256": "b85ad07cd55690ee759fd101e820a2b8d1d7ca22513110c81f1ca76966669422",
+    "bytes": 69
+  },
+  {
+    "path": "assets/_nuxt/builds/latest.json",
+    "sha256": "5aa66d3ef81be33f8751ec134f756e29639ccd80c5914b3e1fb96a16dc6d0869",
+    "bytes": 71
+  },
+  {
+    "path": "assets/_payload.json",
+    "sha256": "a2715fbbb02d2d5a126dc96d102f056bab197de8700618888994299b582e5ed8",
+    "bytes": 69
+  },
+  {
+    "path": "assets/getting-started/_payload.json",
+    "sha256": "a9662529e2ffbc31f3ae0f6fe110f959ab7d1018a1cafda253d70584984963a0",
+    "bytes": 11995
+  },
+  {
+    "path": "assets/library/_payload.json",
+    "sha256": "75fce983e995a019afd802d4b6bcda657d621df314b75ae6857a7c7ef33fa76f",
+    "bytes": 47522
+  },
+  {
+    "path": "assets/library/agents/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/branding-channel-strategist/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/branding-claim-auditor/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/branding-evidence-curator/_payload.json",
+    "sha256": "5fa66948aed48f5a73733409a987d32b95c9961dbb02fd4c0688d8ea579624b5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/branding-narrative-writer/_payload.json",
+    "sha256": "5fa66948aed48f5a73733409a987d32b95c9961dbb02fd4c0688d8ea579624b5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/branding-profile-architect/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/branding-sanitization-reviewer/_payload.json",
+    "sha256": "5fa66948aed48f5a73733409a987d32b95c9961dbb02fd4c0688d8ea579624b5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/branding-voice-reviewer/_payload.json",
+    "sha256": "5fa66948aed48f5a73733409a987d32b95c9961dbb02fd4c0688d8ea579624b5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/communications-workflow-callback-follow-up/_payload.json",
+    "sha256": "5fa66948aed48f5a73733409a987d32b95c9961dbb02fd4c0688d8ea579624b5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/communications-workflow-customer-feedback-intake/_payload.json",
+    "sha256": "5fa66948aed48f5a73733409a987d32b95c9961dbb02fd4c0688d8ea579624b5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/communications-workflow-inbox-review/_payload.json",
+    "sha256": "5fa66948aed48f5a73733409a987d32b95c9961dbb02fd4c0688d8ea579624b5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/communications-workflow-outbound-notification/_payload.json",
+    "sha256": "5fa66948aed48f5a73733409a987d32b95c9961dbb02fd4c0688d8ea579624b5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/communications-workflow-rich-telegram-reply/_payload.json",
+    "sha256": "5fa66948aed48f5a73733409a987d32b95c9961dbb02fd4c0688d8ea579624b5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/gtm-workflow-account-research/_payload.json",
+    "sha256": "a0f2b09ec62780f5d7968f20d95277630054390a1d82be80acb8c29b5cef183b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/gtm-workflow-crm-export-handoff/_payload.json",
+    "sha256": "9982dd37be1ef8961777e9d6cce5a9d7bb623a92ffa8d90f2b67219f7add3c8c",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/gtm-workflow-crm-hygiene-pass/_payload.json",
+    "sha256": "092abd669b6aae2594f2bfb6c2b212100026466cda4c9f2177b3d59c3c8546ed",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/gtm-workflow-customer-follow-up/_payload.json",
+    "sha256": "fe99cbc6baf91305e92e008afd18182b3d84c67638b0513f04e7a2807b16108a",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/gtm-workflow-lead-enrichment-scoring/_payload.json",
+    "sha256": "10eab83b97c8a22f84f1a5e61fb633c3db6946590a69ef1ba0c28d033c0ab6cf",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/gtm-workflow-marketing-program-lifecycle/_payload.json",
+    "sha256": "37426c37eab50358ebccd398ccb526ee788aec6e85d241a5dbadacbe28fcf66f",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/gtm-workflow-outbound-sequence-preparation/_payload.json",
+    "sha256": "e4e2d8948c7748bf1b9a3c8a1b14cee6a2f3e2e17c0358ff3a1ab6c83d274840",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/gtm-workflow-pipeline-risk-review/_payload.json",
+    "sha256": "dd4b6937ec62efd82a218fa6b41fe27bf6832e66e0788334d70be339fa49c77a",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/marketing-campaign-brief-analyst/_payload.json",
+    "sha256": "5fa66948aed48f5a73733409a987d32b95c9961dbb02fd4c0688d8ea579624b5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/marketing-campaign-creative-director/_payload.json",
+    "sha256": "5fa66948aed48f5a73733409a987d32b95c9961dbb02fd4c0688d8ea579624b5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/marketing-campaign-landing-page-builder/_payload.json",
+    "sha256": "5fa66948aed48f5a73733409a987d32b95c9961dbb02fd4c0688d8ea579624b5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/marketing-campaign-media-producer/_payload.json",
+    "sha256": "5fa66948aed48f5a73733409a987d32b95c9961dbb02fd4c0688d8ea579624b5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/marketing-campaign-visual-signoff-reviewer/_payload.json",
+    "sha256": "5fa66948aed48f5a73733409a987d32b95c9961dbb02fd4c0688d8ea579624b5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/media-buying-workflow-budget-reallocation-review/_payload.json",
+    "sha256": "6c541f29f04a1b40ea99c1f56ff6b115b46d63bce69ec9c0052fc6d9e20f0ddb",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/media-buying-workflow-campaign-launch/_payload.json",
+    "sha256": "b68ee3f0ff0ce94e307a34e8ee6ce09bf464458aca57f7f27e56869972ae409d",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/media-buying-workflow-creative-variant-generation/_payload.json",
+    "sha256": "4472cfba655edc0e573d52e1d1ff5db79ae3d5ab3a7510f8b2c7b86cb26acbf7",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/media-buying-workflow-landing-page-creative-experiment/_payload.json",
+    "sha256": "b87439510a868ffcb39453bb95a98cc30f43e1e02e790a06ab89cc4bf0f58ed9",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/media-buying-workflow-performance-diagnosis/_payload.json",
+    "sha256": "32396fafe1cd3cac88013f4d7fbc885411a182393b542502026181c4b3f515c8",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/seo-workflow-content-refresh/_payload.json",
+    "sha256": "2ed3367c62bbf1c689ee2ee45722a85655892a47e84880e721fd919d2b58b282",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/seo-workflow-keyword-research/_payload.json",
+    "sha256": "d55a01ed33112d70882e3afa7cf1a73c8e5594f8355e8be4dcec0e23313c332e",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/seo-workflow-website-analysis/_payload.json",
+    "sha256": "357f9d8b57656ddbf5d2e70acace722766bdf20a175f5ef8b45024c2eaf07c5b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/stackos-finance-billing-collections-operator/_payload.json",
+    "sha256": "5fa66948aed48f5a73733409a987d32b95c9961dbb02fd4c0688d8ea579624b5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/stackos-finance-bookkeeping-preparer/_payload.json",
+    "sha256": "5fa66948aed48f5a73733409a987d32b95c9961dbb02fd4c0688d8ea579624b5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/stackos-finance-cashflow-preparer/_payload.json",
+    "sha256": "5fa66948aed48f5a73733409a987d32b95c9961dbb02fd4c0688d8ea579624b5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/stackos-finance-control-reviewer/_payload.json",
+    "sha256": "8740cfdf3e2c20f9d519d32a7b066e00c4f0338cf67c0a6a6b45571dc3f10f12",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/stackos-finance-receipt-operator/_payload.json",
+    "sha256": "86adff9d4236f48f967ba4b42772432ef2c44e5c68d376232bd07a712928ba4c",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/stackos-finance-tax-preparer/_payload.json",
+    "sha256": "a753c5f2dc9390863d3f54c9dbab8acca5ede8dba9a5ee7b5bd2bff9d90ed3a9",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/stackos-sdlc-architecture/_payload.json",
+    "sha256": "5fa66948aed48f5a73733409a987d32b95c9961dbb02fd4c0688d8ea579624b5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/stackos-sdlc-codebase-explorer/_payload.json",
+    "sha256": "5fa66948aed48f5a73733409a987d32b95c9961dbb02fd4c0688d8ea579624b5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/stackos-sdlc-delivery/_payload.json",
+    "sha256": "5fa66948aed48f5a73733409a987d32b95c9961dbb02fd4c0688d8ea579624b5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/stackos-sdlc-delivery-reviewer/_payload.json",
+    "sha256": "215b4852acba1da986329bd900be491e2444e3ae3332efd52d29db415a3f6862",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/stackos-sdlc-planning/_payload.json",
+    "sha256": "8b7955d4b076293f4dfc7589009353a48ca471b9c02363ba71f06ee37e48a73b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/stackos-sdlc-release-ops/_payload.json",
+    "sha256": "9e81fb6670263d6f9c18449c427b64ee7a1c12ea794c561bb393710daa6b4a00",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/stackos-sdlc-requirements-flow-definer/_payload.json",
+    "sha256": "56a85c56f575a6ec34022ee8195a1459e3976e1a157504df4c14734adfacb21a",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/stackos-sdlc-test-designer/_payload.json",
+    "sha256": "ddce10303d24de7f71734543747cfef22f270430cc2d37475841d2505ee8703a",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/stackos-workflow-project-memory-review/_payload.json",
+    "sha256": "7492b07e05dcd033d0d86da4b9879c3cd1e62bea3bf28367f21aca84238c503c",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/stackos-workflow-workflow-author/_payload.json",
+    "sha256": "c32ff39b07d0706723be7b3746c4b9dfd0aab1e097a0a0afa69abf9d12dc93ea",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/support-workflow-delivery-handoff/_payload.json",
+    "sha256": "3f9179f6caa5b0e94765861148a7804c9a6ac050f96cbe342e5a37bd20716ff3",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/support-workflow-issue-investigator/_payload.json",
+    "sha256": "5d04b6cd209f6fcba5da394df7b4a16a9f5d49b8b2bf47f5d5530e5b86e8e5cf",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/agents/trackbooth-agent-api-operator/_payload.json",
+    "sha256": "829c0212e939e20b9ffc39facb01098f416f59ec826746027178e910dff0c044",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/articles/_payload.json",
+    "sha256": "8d43fc441b95cd6b1d444c7c07e240c9556de7900d2a6413d0f0e5f525f81338",
+    "bytes": 195959
+  },
+  {
+    "path": "assets/library/articles/ai-agent-experience/_payload.json",
+    "sha256": "93cdca65b6e547791884f1a22f146c7a7138b514a611aa1db9d8b680376b404c",
+    "bytes": 198351
+  },
+  {
+    "path": "assets/library/articles/ai-agent-vs-workflow-vs-orchestrator/_payload.json",
+    "sha256": "6d027bd61e25e223fbe8ad4639ce697bb5cad4f270fa251bce911704d7ad411e",
+    "bytes": 198348
+  },
+  {
+    "path": "assets/library/articles/ai-workflow-automation/_payload.json",
+    "sha256": "cf4d349aab1f8389102ae527e6097fe46ed81bebe6f0b48e05ba838a0d56ceae",
+    "bytes": 197260
+  },
+  {
+    "path": "assets/library/articles/building-ai-finance-department-one-person-business/_payload.json",
+    "sha256": "a4c414781a47682f9ac3d01f5baa57bda983f8157a8dda66197e056434318dcd",
+    "bytes": 197289
+  },
+  {
+    "path": "assets/library/articles/customer-paid-invoice-still-open/_payload.json",
+    "sha256": "bf07232919b48d4a592f694e9a0dc09f516798779edea5857bf13196d33388ce",
+    "bytes": 196971
+  },
+  {
+    "path": "assets/library/articles/how-ai-agents-should-explain-blockers-to-humans/_payload.json",
+    "sha256": "08f6133a23998c82826d1c8db1c5b8695520383b64696a383ed617aa6495fe6c",
+    "bytes": 196818
+  },
+  {
+    "path": "assets/library/articles/how-ai-agents-use-accounts-safely/_payload.json",
+    "sha256": "2dcbc2f46911117d8468953d4328901c073ce3f20a649348c31b49e529de5c15",
+    "bytes": 198088
+  },
+  {
+    "path": "assets/library/articles/how-ai-orchestrators-triage-feedback/_payload.json",
+    "sha256": "54fc79212ceaef5c2fdebc974c3e7ce78776e1b97462c4f795a777d21296ac2e",
+    "bytes": 198300
+  },
+  {
+    "path": "assets/library/articles/how-to-build-ai-agent-workflow/_payload.json",
+    "sha256": "4ff3f0228f72f7f75623d6eeaa367bec1c084f69629246e57fa15db192d55dca",
+    "bytes": 199088
+  },
+  {
+    "path": "assets/library/articles/how-to-build-ai-content-workflow-that-does-not-sound-generic/_payload.json",
+    "sha256": "48ae83a859e2955f1937ac62fcca3e423ac60b72a225c7d0ae74fe0622e265e6",
+    "bytes": 198308
+  },
+  {
+    "path": "assets/library/articles/how-to-do-keyword-research-for-ai-search/_payload.json",
+    "sha256": "f414f26128dc84661fdc8d96a358599c96df763f9070701fc85ddc41dd1798f5",
+    "bytes": 197964
+  },
+  {
+    "path": "assets/library/articles/how-to-fact-check-ai-generated-content/_payload.json",
+    "sha256": "2768900f708c86dc4e84669718f2faed9c1be623b5df0e6e524d1e4f77fdd8bb",
+    "bytes": 198351
+  },
+  {
+    "path": "assets/library/articles/how-to-refine-ai-agent-workflow/_payload.json",
+    "sha256": "514d8fc70b5eac6ea64323ccfbc7b4231b65207eea33965bf20649b3b1ce95c3",
+    "bytes": 199493
+  },
+  {
+    "path": "assets/library/articles/how-to-separate-issue-investigation-from-implementation/_payload.json",
+    "sha256": "0ec1bbe0f7dd20d508650c8165f8e19168eef7c5d4c92697799fc5ee22d59237",
+    "bytes": 198382
+  },
+  {
+    "path": "assets/library/articles/how-to-use-product-evidence-without-writing-a-product-pitch/_payload.json",
+    "sha256": "b5f4d6b047045d33db150e54e9140a53fcfb5aee3a0dead351195148c1aa88c0",
+    "bytes": 197585
+  },
+  {
+    "path": "assets/library/articles/managing-a-solo-agency-with-ai-agents/_payload.json",
+    "sha256": "988b85f5fe8da73887e21f9ad8262927fd551b7c1311dc069d7a28036d20d0af",
+    "bytes": 197672
+  },
+  {
+    "path": "assets/library/articles/use-codex-claude-gemini-with-existing-tools/_payload.json",
+    "sha256": "5f6004ca877c08b9401a1fcf2a62169c011e009acbd9a69b37e2e4181581f32f",
+    "bytes": 198115
+  },
+  {
+    "path": "assets/library/articles/what-ai-agent-handoff-should-include/_payload.json",
+    "sha256": "f34249c59ba81ee39f83fbb3f0694c1abc0b653ec8d3e6b20876506d5c05bd24",
+    "bytes": 198765
+  },
+  {
+    "path": "assets/library/articles/what-is-an-agentic-workflow/_payload.json",
+    "sha256": "a877d4661a5c29703d132ce2371cdaa70ac85a5f9adea6cfb6aaed5dd194e027",
+    "bytes": 199175
+  },
+  {
+    "path": "assets/library/articles/when-is-a-receipt-actually-processed/_payload.json",
+    "sha256": "513a62ced403a167c49456263e9d5bdf0beade5c2aee0e1d2b4935767da574aa",
+    "bytes": 196947
+  },
+  {
+    "path": "assets/library/integrations/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/ahrefs/_payload.json",
+    "sha256": "b46f924d27c5b186605b60b7bfc6374ca06f874154c7a45bf6092425e6c96a1c",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/aignc/_payload.json",
+    "sha256": "e0193a34df25f6798a621638e98fd76c00220aa9dc828320a3c0b5e8aac596ef",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/alibaba-wan/_payload.json",
+    "sha256": "c2940a125c0cd392b53464fc8c88f051e2888595b55d78604e761851fe9f43fa",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/apollo/_payload.json",
+    "sha256": "7fcbc30fbddc5349be451209603176ab9fa9e2dd20f0a7c255ffbc3b65d4888c",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/aws-s3/_payload.json",
+    "sha256": "dea4267822952999a8910c92e8eca26229f1684f7c9c8140764d349a5ffde4de",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/byteplus-ark/_payload.json",
+    "sha256": "2a0f7fe50f92ea5174ac842adf07bef1adc51f28a7d44a83b059d1a37be2ff3b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/channel-metrics/_payload.json",
+    "sha256": "dd4445352231e3a036e2862f1141cc8084f1ca16303501395977ce7daa0e9302",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/clay/_payload.json",
+    "sha256": "9fdd4d10f29331c1101c8007e8dac694d3ebf3fc96c2cd2d25644a529f8800b1",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/clearbit-by-hubspot/_payload.json",
+    "sha256": "76fd579f899310674bb9a42bea23e0d0839f1ed9ead801cd827d7b35aab4709d",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/cloudflare/_payload.json",
+    "sha256": "190cb4b500e60601b68e5a5311981c97d71e3c3aa77939fd1ae8b0c374e7fc3f",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/custom-gtm-tool/_payload.json",
+    "sha256": "1c58dcc40c4dbeef53adeb8e54db01ff63810e2984ae256410053b0bf7061b92",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/custom-media-tool/_payload.json",
+    "sha256": "97b41ffa24456b593bdd92c2d3cc1acf867cfd30e8e63200ef99ea4fd367d2c9",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/dataforseo/_payload.json",
+    "sha256": "1e7aa26cd6fbc24ba402e47ce2c3e5a7f48ed416d74cf4267ee340fa8d14bb42",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/esp/_payload.json",
+    "sha256": "d264d405aab261831a6bcbaffd0dec307dc482a81c2cbb04eaf2a3c1c616f3e2",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/firecrawl/_payload.json",
+    "sha256": "a6bae0132832a624b9ccd3f30ecc94984da02c7de13a83f81512ea46354e3b15",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/ftp/_payload.json",
+    "sha256": "7d0b58e0f84a789a075523a845e8f060d9b1bbfd1afc35f623da3735c323f98f",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/ghost/_payload.json",
+    "sha256": "cd5aa9df7a838d05c6cddd2fd33667193653c72e64be76bd898ecb4e51201a3d",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/git-remote/_payload.json",
+    "sha256": "fad0d12cdee46b9ab7f3d3a110db206762a4aa7011429ec6a38f180ce4ee58e5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/google-ads/_payload.json",
+    "sha256": "e0192c150c5086d2cc393aaff4c3d251ba0ec094d2a079ba85d960a252a7b222",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/google-analytics/_payload.json",
+    "sha256": "0858791778d4fe7ef7c91ba37ecffb63e623a3f71b576d321f1d7f87f596567b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/google-gemini-image/_payload.json",
+    "sha256": "221a65aff3ed461bd50cc41e76e51330f2add805498c84c2f1ae6e0ae19c9e23",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/google-indexing/_payload.json",
+    "sha256": "f6018f33971ccfb2a3286b2741653ca64284be458c85c1508c3e892ff9b0ecd0",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/google-search-console/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/google-tag-manager/_payload.json",
+    "sha256": "b1d4c08e2a9e412a8a62f56cda847b7325a9ec25c94a28715353478c8d4a3de6",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/google-veo/_payload.json",
+    "sha256": "99396eb61f91354bb68792c8bde618a6bc089f5922db2a4b3d82c6f27ecffd49",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/google-workspace/_payload.json",
+    "sha256": "3fed29c093cb653883b855d02e1006661fc4551ab54f82b342f21bd74dc11693",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/hubspot/_payload.json",
+    "sha256": "8a36026ef0517d6af58856e3fd89ef817dc4b9e8302b57308edf9d1836035074",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/ideogram/_payload.json",
+    "sha256": "d23b82ff628e4b69a42232653c7d7bc480f5d2c1e25266b072fb32dfadc848d7",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/imap/_payload.json",
+    "sha256": "6f1a1ecf9c42699fbf49702950986b3dbd7fd61ca2f95c1cce27b1f9535c8f04",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/jina/_payload.json",
+    "sha256": "37f12cc208061b6b7043bdb915a1bd4be6dc0c83e9c3d670a1217340a6a80240",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/kling/_payload.json",
+    "sha256": "a6f17a809fc499afd58c78316a5aaac347a62f131c09bffdfd18f0b9623ac03c",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/linear/_payload.json",
+    "sha256": "a1df905f1cd715865df3f9b6e549009eda64f7dd3ca7c5f700b051728fd68183",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/linkedin-api/_payload.json",
+    "sha256": "cbf24b42459a6ba240fb33253e9f92c7d0879af0af980ad6888ce51c525a7be1",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/local-agent-chat/_payload.json",
+    "sha256": "440e2f5cd26c846e5f2c8def3af65cec462cd56d548c33da0556c9fbb9970de2",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/local-daemon/_payload.json",
+    "sha256": "f19d8c9bb4b72eb7b41f97ac9b5226e35fbea843beeeaf53c8640d47f4e0b7a6",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/meta-ads/_payload.json",
+    "sha256": "0d03ffb6b06783b506bb9138c83cb39df8ee6d5cd65299cd93620a4108cec107",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/microsoft-365/_payload.json",
+    "sha256": "ed7299965c467e1ea5f2361ef160badc7fd5704dfb35fe776ba02e1dfa624c02",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/mock-provider/_payload.json",
+    "sha256": "49f977868b701d596d69c18e5038d8154f2f85bd1f9eb7bd9e229b1d12bfe189",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/openai-images/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/openrouter/_payload.json",
+    "sha256": "997f8be03603b8fde2e2e04a00bf907021b6258f0a514bf25e84ae345f879c28",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/outbrain/_payload.json",
+    "sha256": "4440fdbd702f4e14158426d7e9d7989905dd700d65ea2b0965c270cd5d1d9544",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/outreach/_payload.json",
+    "sha256": "bc7b288ce7e0f61f58ca6fb3e95923732d8ddea384281d3cb58ccc9957b01a53",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/pipedrive/_payload.json",
+    "sha256": "1c896fe49c1139035c7c388e7f4dfd933903a054aa737c17e8905d2c32ce6779",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/plugins/branding/_payload.json",
+    "sha256": "7bd33b2785f4a37aea514264f1644a532015af24aaf29aec4a30dce9e4a245f3",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/plugins/communications/_payload.json",
+    "sha256": "7f9beab65ce9e1b26a69e760cd10d8106287eedcb579cbb01900cdd35fdbeecf",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/plugins/finance/_payload.json",
+    "sha256": "462925c186cbfe965bd7b97a0a4340010d3950eb767e9d5b69d2d6cbb73bc095",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/plugins/gtm/_payload.json",
+    "sha256": "ed272ac79752770b97d82fd48381c0e683819e73441898cf1382ee65a2cb0113",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/plugins/media-buying/_payload.json",
+    "sha256": "46eb02fd5e987b0c3d2f2fa24bf870d460e7c3f4330b078b3ba5b42b18cf63e5",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/plugins/publishing/_payload.json",
+    "sha256": "48ee537d606fece12fb79097e15d61022f19e85faffdd05180ac375ab3b79258",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/plugins/seo/_payload.json",
+    "sha256": "ac1d6bfa557a1e3ea55355b7f0106fa6906ea9e4de116f2f24f0fbfe439b6275",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/plugins/utils/_payload.json",
+    "sha256": "b2dbb1bf5162199eab79f45094c921bbe9d9179c18aed131dec2731969b25392",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/reddit/_payload.json",
+    "sha256": "ce47238dca8759d931f1d6621eb5ab8106f25a3da43d95edf7cae0b35d4ab0ff",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/reve/_payload.json",
+    "sha256": "c9979dbe4b513d2bd5300d6f9a7adde3e62c07bfb6b10c4f00c1b0f0e60261cb",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/salesforce/_payload.json",
+    "sha256": "edd1cf427649bedef420da4f327cba530c0a4c42fff7672afc0e18f5d14a7c48",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/salesloft/_payload.json",
+    "sha256": "91f3bd0ecca165a85ee561c0b98633ca8e9fec80c57f9711110d84114b35b12d",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/serper/_payload.json",
+    "sha256": "91d84b4bb567603c887f843d370ba3a39ced139a7a3223d482f17013ee005215",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/shopify/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/slack-bot/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/smtp/_payload.json",
+    "sha256": "2ca81fc24b145dc8512a7497e52a96ca610eb5b7355686f0881deec3c3216c48",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/stripe/_payload.json",
+    "sha256": "1dfa61900c1f339dd68d09d7fd6830f1ac15fd801196267ef9e37c8ded2f691f",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/taboola/_payload.json",
+    "sha256": "a8f84263cf3a7c08b4ed33a1220389cd1a100088305f99b686c56f7cb13ae51c",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/telegram/_payload.json",
+    "sha256": "ecf2b7a0f9dc423d4d5daaf0b434c2bda353085b9d11b995f85f544c18d2a281",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/trackbooth/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/video-generation/_payload.json",
+    "sha256": "63f11127182dc5b38919af4d75a0170745d3c574186c9f90660afe4ab0ede861",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/wordpress/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/x-api/_payload.json",
+    "sha256": "41f5a6f1ca8c5554cf22dbe450bec24cba5ff9473a4bd76bcec010dd4c366f3b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/integrations/xai-imagine/_payload.json",
+    "sha256": "bb2a9934c3f3f28cf8234e49f5450ec6e41e2767847064f65fa5a22b3ba6b5aa",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/orchestrators/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/orchestrators/branding-brand-orchestrator/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/orchestrators/marketing-campaign-production-orchestrator/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/orchestrators/stackos-finance-department-orchestrator/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/orchestrators/stackos-sdlc-delivery-orchestrator/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/orchestrators/stackos-workflow-orchestrator/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/agency-project-setup/_payload.json",
+    "sha256": "b0d801a55129ef834743caef63ad6d259fdd6da1ff6b04b6a4a1de9c72817938",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/agency-setup/_payload.json",
+    "sha256": "fdfbf3f0f95c4b9596a33bd4c564210827acdc010dd05bbc494646d068a52659",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/branding-brand-foundation-setup/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/branding-content-production/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/communications-callback-follow-up/_payload.json",
+    "sha256": "0920d17d8a91410442d3cdcdeb6789ba5737704399719f04dc8b883ca50377f4",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/communications-customer-feedback-intake/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/communications-inbox-review/_payload.json",
+    "sha256": "880c0ff46492632b639dd69e42598f89959eadd5522f1f8252297a79f52a1f83",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/communications-outbound-notification/_payload.json",
+    "sha256": "b29a487971630701599100e6952ba6019408cea31ef57daf5a0a979da1963963",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/communications-rich-telegram-reply/_payload.json",
+    "sha256": "46839624a8faf071dabc77678311d2f8b60491ec45cfd72205f3e06800aa9971",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/core-project-memory-review/_payload.json",
+    "sha256": "0b6acf3d5991ef3f38a01ecb125fb79936a8fe23660b46c48e7c097fa878ba82",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/engineering-tracked-delivery/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/finance-bookkeeping-close/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/finance-cashflow-management/_payload.json",
+    "sha256": "06321b06c99268d29e4eea032175620ff296db2b505a1634b352d2b20915447b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/finance-payment-request/_payload.json",
+    "sha256": "dd4f23e7ec575b1fcac1fde380a7d00bdc469115e2a46206bc0f9b6b40a9bc4b",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/finance-payment-request-followups/_payload.json",
+    "sha256": "9856298795da1336f617e05548ab534b66ad4b8b84c84c6aefa76bc3d1171164",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/finance-receipt-intake/_payload.json",
+    "sha256": "c3c94905db403cb509bf0777b94581317e6dd1fc1d33d4fcd51016c14f398843",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/finance-tax-estimates/_payload.json",
+    "sha256": "6f6c21402ebaf2467f960e945d1f0836788e132c39820ac72a2f3c4846014038",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/gtm-account-research/_payload.json",
+    "sha256": "ab95e51f69f07e9d747eeb2d4c4d7f80652dc996288aeb6c5317166899ac633d",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/gtm-crm-export-handoff/_payload.json",
+    "sha256": "a28688568faeccd4800fa2d1578fd2498b38eb8da932a23a185f31e77c893948",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/gtm-crm-hygiene-pass/_payload.json",
+    "sha256": "8937997dc7b7ad97e55b4556b72818c0ba6a4dd12dbf97204fe0c812ac28525e",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/gtm-customer-follow-up/_payload.json",
+    "sha256": "e135adc429c9c220dcc78c31327406173115163897d42b9e56eb673f14ddde39",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/gtm-lead-enrichment-scoring/_payload.json",
+    "sha256": "c6de459f6718ade8e3fc79c71a92d1db42476a315f737a56c29936b904b249ac",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/gtm-marketing-program-lifecycle/_payload.json",
+    "sha256": "14db210e36efead4b0701f2d46b7a5df087e88ad6c5e717b5756077826b90c4c",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/gtm-outbound-sequence-preparation/_payload.json",
+    "sha256": "545b3c3865dff822846170856c688682d3a6f4c7e5944f93cd8ead0c716883e8",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/gtm-pipeline-risk-review/_payload.json",
+    "sha256": "cf91345bda0dec6eae989dae83ee1b8920cf518bc23d547caccb4a7e11f5f3f9",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/marketing-campaign-production/_payload.json",
+    "sha256": "6e1b24eeeb81358f3faad75fe85ccc98f0fa06676143e7fdd46f7610a790d848",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/media-buying-budget-reallocation-review/_payload.json",
+    "sha256": "c7cbe016d878d479fb4ad84b1e8be692652671113b66b192aa96508f4a1e4764",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/media-buying-campaign-launch/_payload.json",
+    "sha256": "ff941cfac3bb01e0dbe29d201de2125ad4147d6746d71bb714d9e263dab3e33c",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/media-buying-creative-variant-generation/_payload.json",
+    "sha256": "1a5c339a311b57282a3ae2c8eb6f609c92934125abaf2ac61771a3c3b75d47da",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/media-buying-landing-page-creative-experiment/_payload.json",
+    "sha256": "8decfc400c34ec6eb996e2804a2428428588a88e03e390cc04e9dc6b0f6a2f6e",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/media-buying-performance-diagnosis/_payload.json",
+    "sha256": "7464141941a131c67b80b4d4366f5ffedc82370ae8ff5c3d5f7f5d2f2fdfefc7",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/seo-content-refresh/_payload.json",
+    "sha256": "79797418eb623c16cc19dd30739f6616a889d068de8ba0a12ba3ae665378ecdc",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/seo-keyword-research/_payload.json",
+    "sha256": "38af1f5edaedad96400688f32728df3374ad88bc6fa04cc1e963213159cc7c69",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/seo-website-analysis/_payload.json",
+    "sha256": "8a4b6a335522fc1f14c41328bab93cab1ec519658fcd2a520eb6ae74ac6ddea4",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/support-delivery-task-handoff/_payload.json",
+    "sha256": "b99ae489e4ae52bf79b36d3b5f7b3d7d6677527a5b0bb48673b9f97a7503f9f6",
+    "bytes": 69
+  },
+  {
+    "path": "assets/library/workflows/support-issue-investigation/_payload.json",
+    "sha256": "239aff131b6607f0ef9a05a086b4db7186092dc2267a9c87a122f044f027d0c9",
+    "bytes": 69
+  },
+  {
+    "path": "documents/200.html",
+    "sha256": "530d74b76e21547e2242eda2cc526fac8ed77a11eaadfaa4f67b8abb85bd42dd",
+    "bytes": 3974
+  },
+  {
+    "path": "documents/404.html",
+    "sha256": "bedc755491287a7aa92a5b1bfc25e423817110615672a955e0214897eb93a9ba",
+    "bytes": 9059
+  },
+  {
+    "path": "documents/getting-started/index.html",
+    "sha256": "0bc32340c799891234ffb5cd7d846b0a6497f97d355797df2b73e0af913759ef",
+    "bytes": 39899
+  },
+  {
+    "path": "documents/index.html",
+    "sha256": "aad17493d3e59d34bde4049badb61b7d4b8424b470a9e717360a77eaa6c8619c",
+    "bytes": 45336
+  },
+  {
+    "path": "documents/library/agents/branding-channel-strategist/index.html",
+    "sha256": "7a5e20c14a1f9b5a5c6fd966870d5485c81b474e97e5ca80b563e44e994bc568",
+    "bytes": 23535
+  },
+  {
+    "path": "documents/library/agents/branding-claim-auditor/index.html",
+    "sha256": "276dd444f5f171d08ce17c90077b8e12e6cab4184855931febfa00f5ede63695",
+    "bytes": 20169
+  },
+  {
+    "path": "documents/library/agents/branding-evidence-curator/index.html",
+    "sha256": "b352bae3675df0a4938b31c67b09eac975ed35fc69db13a3ebeb20c409074263",
+    "bytes": 23227
+  },
+  {
+    "path": "documents/library/agents/branding-narrative-writer/index.html",
+    "sha256": "0c294563aac7eeb7bad8e007a258c6c1b4aeb36c4e2cc4c24da719840f8d6a12",
+    "bytes": 24097
+  },
+  {
+    "path": "documents/library/agents/branding-profile-architect/index.html",
+    "sha256": "ec66792774d7974b1b86a74192dd2e7db125c3cd624d829b00b2a9a01e599654",
+    "bytes": 22299
+  },
+  {
+    "path": "documents/library/agents/branding-sanitization-reviewer/index.html",
+    "sha256": "33cd45e7a40e66f157b36d3d972f637197daaa6cb77736d8cc994579d41f5545",
+    "bytes": 19973
+  },
+  {
+    "path": "documents/library/agents/branding-voice-reviewer/index.html",
+    "sha256": "c3ec7bd461f627015707149b219a1a334575719411b16ded4a018bca57843698",
+    "bytes": 24054
+  },
+  {
+    "path": "documents/library/agents/communications-workflow-callback-follow-up/index.html",
+    "sha256": "e92eedc3e4265b59345657ae9ce36f2d142d631450672854f73dd79eb4a7b27b",
+    "bytes": 20857
+  },
+  {
+    "path": "documents/library/agents/communications-workflow-customer-feedback-intake/index.html",
+    "sha256": "c189412e19f72c1bb109d7084d0da594ed14a2c6328b2c4074f2e03a35ab6d95",
+    "bytes": 23190
+  },
+  {
+    "path": "documents/library/agents/communications-workflow-inbox-review/index.html",
+    "sha256": "2ece7ac94d0d00c0700bb70a1f407d2d16e1dc91e7ea5b0152596aa5a214e40a",
+    "bytes": 20768
+  },
+  {
+    "path": "documents/library/agents/communications-workflow-outbound-notification/index.html",
+    "sha256": "3fbfea05b82fce264c54532a50b2aace23d9835d3418fedfb2d889a6159da999",
+    "bytes": 20968
+  },
+  {
+    "path": "documents/library/agents/communications-workflow-rich-telegram-reply/index.html",
+    "sha256": "128a0cf18be3f9fea7087d743452c0f07b9fa2dd30869a8aec704da78b359110",
+    "bytes": 20831
+  },
+  {
+    "path": "documents/library/agents/gtm-workflow-account-research/index.html",
+    "sha256": "9421e460d3841fcad623975b0aa85f747918a2b269b3b30f369ffaf9ae720b00",
+    "bytes": 20489
+  },
+  {
+    "path": "documents/library/agents/gtm-workflow-crm-export-handoff/index.html",
+    "sha256": "6a25a3d8f2e3fc7f7ab509cad8f5090e83b5187c01390add2af2b71a60a7b732",
+    "bytes": 20701
+  },
+  {
+    "path": "documents/library/agents/gtm-workflow-crm-hygiene-pass/index.html",
+    "sha256": "756b8fb3e79b34076005a9a7700ee4d469ec15319806d2fd85d7cbbd42ccb177",
+    "bytes": 20267
+  },
+  {
+    "path": "documents/library/agents/gtm-workflow-customer-follow-up/index.html",
+    "sha256": "0fc47cd9afafefdfb67b16dae17d0452fce06e6cf1ef970e612a837ffd59001b",
+    "bytes": 21119
+  },
+  {
+    "path": "documents/library/agents/gtm-workflow-lead-enrichment-scoring/index.html",
+    "sha256": "f64dcbe931fa6db1461aa828c5762ef8177339990e94e5b472c98ab0c9926de2",
+    "bytes": 20579
+  },
+  {
+    "path": "documents/library/agents/gtm-workflow-marketing-program-lifecycle/index.html",
+    "sha256": "175edb23ecadae4bba0344563824de6b92f540dbac4be135e3d7953db945c1f4",
+    "bytes": 21144
+  },
+  {
+    "path": "documents/library/agents/gtm-workflow-outbound-sequence-preparation/index.html",
+    "sha256": "f531ef102c16a281ee5d8426183b289945a1000673ba80df26197818b687358b",
+    "bytes": 20709
+  },
+  {
+    "path": "documents/library/agents/gtm-workflow-pipeline-risk-review/index.html",
+    "sha256": "757ed5f3fd3074817d834b8266f665ba66bce4a751f953495063efb80a5ed554",
+    "bytes": 20607
+  },
+  {
+    "path": "documents/library/agents/index.html",
+    "sha256": "6dcd66f1ebf9eedb83890e91121b68353e2544f84ef655e3bfc88bd6a672f311",
+    "bytes": 58469
+  },
+  {
+    "path": "documents/library/agents/marketing-campaign-brief-analyst/index.html",
+    "sha256": "12901f0f491008e40742d923a65f7c0ace9d8a560171dff390b250e8416a09ca",
+    "bytes": 22266
+  },
+  {
+    "path": "documents/library/agents/marketing-campaign-creative-director/index.html",
+    "sha256": "79eb17e810f2391aa749b8cfc45648f8714d854399acde504f1650c70e5e1224",
+    "bytes": 23062
+  },
+  {
+    "path": "documents/library/agents/marketing-campaign-landing-page-builder/index.html",
+    "sha256": "93fdfa766d14a735f67c41a0aef40245a76a51ca5f13c6bb0591d5ec4ea447ae",
+    "bytes": 22672
+  },
+  {
+    "path": "documents/library/agents/marketing-campaign-media-producer/index.html",
+    "sha256": "4c41c2ad8ceed9bc1cfca1246bafacdc4dd2da4da0455da1e21c64dd42aa7c1b",
+    "bytes": 22604
+  },
+  {
+    "path": "documents/library/agents/marketing-campaign-visual-signoff-reviewer/index.html",
+    "sha256": "f3a55f7a221d724cdd61a419be9fc54943bf12731f1f8682d46e047ab06c9edd",
+    "bytes": 22314
+  },
+  {
+    "path": "documents/library/agents/media-buying-workflow-budget-reallocation-review/index.html",
+    "sha256": "fffb8e5c0006ac648d40fe811bf2d1a69eba01e231ff863124a16cc47a4c812a",
+    "bytes": 20772
+  },
+  {
+    "path": "documents/library/agents/media-buying-workflow-campaign-launch/index.html",
+    "sha256": "d8cbad43175ea6240661cdf639a6df2c864ace5004178f9b681d8d05489e312b",
+    "bytes": 20883
+  },
+  {
+    "path": "documents/library/agents/media-buying-workflow-creative-variant-generation/index.html",
+    "sha256": "95fb5983675c7e1284636632c95daa04b97724f079bb0d307c4058c2e713d9f8",
+    "bytes": 20850
+  },
+  {
+    "path": "documents/library/agents/media-buying-workflow-landing-page-creative-experiment/index.html",
+    "sha256": "ee1a8ea664514af3b1435cc6af39c0c45349305dbf42b9c35bae911a667d3f44",
+    "bytes": 21103
+  },
+  {
+    "path": "documents/library/agents/media-buying-workflow-performance-diagnosis/index.html",
+    "sha256": "85e9fed4fa22965a3c9a30e94250a9e8559e0a1aab5f5a9b3a2c1c74a507786b",
+    "bytes": 20869
+  },
+  {
+    "path": "documents/library/agents/seo-workflow-content-refresh/index.html",
+    "sha256": "56fc8b9035c62176a8ee21d6cdc1564ecf544ac15285be08e9c20a5be1c8c227",
+    "bytes": 23960
+  },
+  {
+    "path": "documents/library/agents/seo-workflow-keyword-research/index.html",
+    "sha256": "b87915dd8c1a8b2c9e44421fb677f5ba071b6e2c25e64e2835b19069ae236d71",
+    "bytes": 23122
+  },
+  {
+    "path": "documents/library/agents/seo-workflow-website-analysis/index.html",
+    "sha256": "96ce034b3c91bf0788d32ebd3f57dcf61840da07b66ab5d61e40820e0d6e727c",
+    "bytes": 25623
+  },
+  {
+    "path": "documents/library/agents/stackos-finance-billing-collections-operator/index.html",
+    "sha256": "e230d1a9fc3c940b2bb978e39f4203981bd453a3bd5259608f7daae7d585701e",
+    "bytes": 31598
+  },
+  {
+    "path": "documents/library/agents/stackos-finance-bookkeeping-preparer/index.html",
+    "sha256": "956fc63b8027231147c9dffb08269a6fa00fb15a05815c2f919a4735f43e2014",
+    "bytes": 23023
+  },
+  {
+    "path": "documents/library/agents/stackos-finance-cashflow-preparer/index.html",
+    "sha256": "ab47778c66f3870efaa62c8bd20606b47fce5a3d26d9e66140d5719f8f324629",
+    "bytes": 21417
+  },
+  {
+    "path": "documents/library/agents/stackos-finance-control-reviewer/index.html",
+    "sha256": "272940b28e00e357f20993990be89530c90bb57df390b0d5aa84b7018b1fec1d",
+    "bytes": 30884
+  },
+  {
+    "path": "documents/library/agents/stackos-finance-receipt-operator/index.html",
+    "sha256": "2ff3faf20c7f78b7e6384ed5e18a72d451b7fdf0561acf2760060cae28b8bfe0",
+    "bytes": 22877
+  },
+  {
+    "path": "documents/library/agents/stackos-finance-tax-preparer/index.html",
+    "sha256": "585e72de11dca795b4e80cf06fcc437af82caac0004e96c36fa158527fe1e785",
+    "bytes": 21717
+  },
+  {
+    "path": "documents/library/agents/stackos-sdlc-architecture/index.html",
+    "sha256": "3cfa16691a11c275c2be492f8f46794fe80671f28f371b00320d16a27b7bf614",
+    "bytes": 20174
+  },
+  {
+    "path": "documents/library/agents/stackos-sdlc-codebase-explorer/index.html",
+    "sha256": "4e3b7ecafefb55d18e618a653a80b18ffd9ca51d2a54c8963c1c8252435a11fa",
+    "bytes": 19468
+  },
+  {
+    "path": "documents/library/agents/stackos-sdlc-delivery/index.html",
+    "sha256": "155c389a37b5f79f2a65ff15f5575f35c93297ba31337b9e07609545ddd79b30",
+    "bytes": 21912
+  },
+  {
+    "path": "documents/library/agents/stackos-sdlc-delivery-reviewer/index.html",
+    "sha256": "302f17daf140d7a3c493fc7f799709915f7bfc507bb9eee0a770abf14f137c80",
+    "bytes": 23043
+  },
+  {
+    "path": "documents/library/agents/stackos-sdlc-planning/index.html",
+    "sha256": "602757f4ddd69ddb4a59e4f2c877e5ee5676e69e4ba1fa03c4bd5cf1e4d78612",
+    "bytes": 22617
+  },
+  {
+    "path": "documents/library/agents/stackos-sdlc-release-ops/index.html",
+    "sha256": "761270c8dc71a225a09ae64a143ca610ebbf1e4f2f474084ecdc4792fcbe9781",
+    "bytes": 19851
+  },
+  {
+    "path": "documents/library/agents/stackos-sdlc-requirements-flow-definer/index.html",
+    "sha256": "1af5e0b1f07a3a36d186f3a9cd62117aae1acbe2b5a7f915f792cedd7c90d8f4",
+    "bytes": 20109
+  },
+  {
+    "path": "documents/library/agents/stackos-sdlc-test-designer/index.html",
+    "sha256": "d8de58052fe32f0e09a908851eb0d624026020a5d4316bd054ad32f7dc15021c",
+    "bytes": 21307
+  },
+  {
+    "path": "documents/library/agents/stackos-workflow-project-memory-review/index.html",
+    "sha256": "8bfae5cdccd674aef946f401af9aa35132563180da8dfb61ab6806b70286e966",
+    "bytes": 20630
+  },
+  {
+    "path": "documents/library/agents/stackos-workflow-workflow-author/index.html",
+    "sha256": "5c9d9b9145dc8c50cfb22c88fd6f26a532f70582ba29c422f6ec614175ce1bba",
+    "bytes": 23374
+  },
+  {
+    "path": "documents/library/agents/support-workflow-delivery-handoff/index.html",
+    "sha256": "02eec620dd1d4863eeb2d2a4dba2c8a31e773deb023e3d0bd2034b8c97dfa226",
+    "bytes": 21618
+  },
+  {
+    "path": "documents/library/agents/support-workflow-issue-investigator/index.html",
+    "sha256": "5fb3159a5de9821b544281a0bdfdeef55b20222d5aface79feb14810c754d283",
+    "bytes": 22515
+  },
+  {
+    "path": "documents/library/agents/trackbooth-agent-api-operator/index.html",
+    "sha256": "e45a1b999c1afabe1971cf00d5ac641e8892698ca1c2e8d1eaff01d3df0fffd4",
+    "bytes": 22296
+  },
+  {
+    "path": "documents/library/articles/ai-agent-experience/index.html",
+    "sha256": "b031276e1d0a0e2b01db13d858a58f610b0113cc4a62895f250815bd8dfaac1e",
+    "bytes": 35321
+  },
+  {
+    "path": "documents/library/articles/ai-agent-vs-workflow-vs-orchestrator/index.html",
+    "sha256": "3538bf5ead79ed4e31d00efc1365297c1ccd757000f1509d9bc4ba4670f0bf37",
+    "bytes": 38796
+  },
+  {
+    "path": "documents/library/articles/ai-workflow-automation/index.html",
+    "sha256": "d36d6ccae1b127d34afd3c30248a5b23a7a2ed66851a99129b422845cc1e0a03",
+    "bytes": 29146
+  },
+  {
+    "path": "documents/library/articles/building-ai-finance-department-one-person-business/index.html",
+    "sha256": "49b3a22cd2930a81384de1de40e2498200566529f54119d35c8b2ed18d7f2317",
+    "bytes": 27828
+  },
+  {
+    "path": "documents/library/articles/customer-paid-invoice-still-open/index.html",
+    "sha256": "0569485aa8f64ece4a8f02739fce11a773cdf7f863284d49b59d536d6ca3d8b0",
+    "bytes": 23596
+  },
+  {
+    "path": "documents/library/articles/how-ai-agents-should-explain-blockers-to-humans/index.html",
+    "sha256": "2cdbe60dc7cf07a1b246ac9f5bcc8281e7b3187a6235f1a76adb41ea48d130df",
+    "bytes": 26767
+  },
+  {
+    "path": "documents/library/articles/how-ai-agents-use-accounts-safely/index.html",
+    "sha256": "dc7c332da977f07db893997c67807bfb2f6036cd6de33c19d0f96538986a4ced",
+    "bytes": 33939
+  },
+  {
+    "path": "documents/library/articles/how-ai-orchestrators-triage-feedback/index.html",
+    "sha256": "499fb9571089ad069981edf80928ab550f0d4154c71953c6575a7832cae60985",
+    "bytes": 30833
+  },
+  {
+    "path": "documents/library/articles/how-to-build-ai-agent-workflow/index.html",
+    "sha256": "8832fb084c888daf49e3046ef42f4b14089964aa8cda2b2559df0ecc9793b1b0",
+    "bytes": 40086
+  },
+  {
+    "path": "documents/library/articles/how-to-build-ai-content-workflow-that-does-not-sound-generic/index.html",
+    "sha256": "c9fc1d7a6c71cb5a62eec693a086ccd14de5be459f9a27651e7f9a8e3dcaeba1",
+    "bytes": 34503
+  },
+  {
+    "path": "documents/library/articles/how-to-do-keyword-research-for-ai-search/index.html",
+    "sha256": "4b50dad4f3f96227fe5ed36c6ff003134688526491f052dc3e2b0b9db5e3c6f6",
+    "bytes": 31024
+  },
+  {
+    "path": "documents/library/articles/how-to-fact-check-ai-generated-content/index.html",
+    "sha256": "74dab3748c3d0d2d13b87ce25fe895302f40581bce347b53add95045fa8e2430",
+    "bytes": 31625
+  },
+  {
+    "path": "documents/library/articles/how-to-refine-ai-agent-workflow/index.html",
+    "sha256": "d4c2cd86ef75006cb9ace847aa5b90f45421a76b975f67d1ea7044a897c11de6",
+    "bytes": 37915
+  },
+  {
+    "path": "documents/library/articles/how-to-separate-issue-investigation-from-implementation/index.html",
+    "sha256": "a8f1cb174f5c55a03d72e17d897b2081094e9fdd577f9abf9a80861de789b89f",
+    "bytes": 34227
+  },
+  {
+    "path": "documents/library/articles/how-to-use-product-evidence-without-writing-a-product-pitch/index.html",
+    "sha256": "a07ebbe2edb81009f18dba899eb4afb1def8c04144a02e309a6bb8fef4e12346",
+    "bytes": 29972
+  },
+  {
+    "path": "documents/library/articles/index.html",
+    "sha256": "837ecb7c4a221c54991f99e7b5e5de9cfd85a93ddfe1f9f8d78fa7c94e657e88",
+    "bytes": 38045
+  },
+  {
+    "path": "documents/library/articles/managing-a-solo-agency-with-ai-agents/index.html",
+    "sha256": "224c4fa8e02547301631c9969dd9059ce8f41d24e0138f50edc680b79bc05b95",
+    "bytes": 28234
+  },
+  {
+    "path": "documents/library/articles/use-codex-claude-gemini-with-existing-tools/index.html",
+    "sha256": "d688800a0a0ffc9d74052e78abbe038f179090cb61fe7aac5d88c9163f9baa32",
+    "bytes": 34751
+  },
+  {
+    "path": "documents/library/articles/what-ai-agent-handoff-should-include/index.html",
+    "sha256": "d2c2f6d0bb5439ec759bb922dca9a09ac75dfceb71d4d04b2fcaff4cd5a2703a",
+    "bytes": 37686
+  },
+  {
+    "path": "documents/library/articles/what-is-an-agentic-workflow/index.html",
+    "sha256": "d39d6e02074ef3469a7730ea47cb88014d6cda088054e2d170460ea0d02f6e11",
+    "bytes": 43330
+  },
+  {
+    "path": "documents/library/articles/when-is-a-receipt-actually-processed/index.html",
+    "sha256": "eca55ada9e67d0cff3b5ba7700fb57fd42b98f01d0b0d41ab1760a019b8aa033",
+    "bytes": 23265
+  },
+  {
+    "path": "documents/library/index.html",
+    "sha256": "4a75ad3f7de0a770e79d32dbc34c7a3200e28d2723791d265de8ec0e15323290",
+    "bytes": 40331
+  },
+  {
+    "path": "documents/library/integrations/ahrefs/index.html",
+    "sha256": "a32546825ae84732e80a0863d00bc92100d83a70fdf1cb46f4a3120f7f5dfa5d",
+    "bytes": 24741
+  },
+  {
+    "path": "documents/library/integrations/aignc/index.html",
+    "sha256": "dd54e133e255acca9afcc89c7391e6a324dc60f38aaf6e62b701887f8ae84f06",
+    "bytes": 25250
+  },
+  {
+    "path": "documents/library/integrations/alibaba-wan/index.html",
+    "sha256": "bbbe08a85e64fb5dd229b978eb244593ca1b3d131109707dd307addf2fa6ee62",
+    "bytes": 24050
+  },
+  {
+    "path": "documents/library/integrations/apollo/index.html",
+    "sha256": "2f4a54a6e80de6cea26f94b164ab7bbf8b209ffb38984d590dd6ab41d0f3d27e",
+    "bytes": 25605
+  },
+  {
+    "path": "documents/library/integrations/aws-s3/index.html",
+    "sha256": "8793c9fff5c05e40d8ba9451e4d49114ab4792374a64669adf6862648a8f480d",
+    "bytes": 26345
+  },
+  {
+    "path": "documents/library/integrations/byteplus-ark/index.html",
+    "sha256": "25fe2a918d14082b294a71c0d156705b348c538e149544714687af33d0807e29",
+    "bytes": 25171
+  },
+  {
+    "path": "documents/library/integrations/channel-metrics/index.html",
+    "sha256": "ca2e31f2f64f77ce24804a0a9a82400e7aa75e173bc070b07b2b90295934bfc4",
+    "bytes": 24056
+  },
+  {
+    "path": "documents/library/integrations/clay/index.html",
+    "sha256": "1e194f315cff530fa75043a7ba58da02c33477b1ba4e85cf508ac1d0aaa48d74",
+    "bytes": 24117
+  },
+  {
+    "path": "documents/library/integrations/clearbit-by-hubspot/index.html",
+    "sha256": "ddc07c6fa1c060c18fe3316b8799505e4614b32ec42e948cfdb5377907687209",
+    "bytes": 24439
+  },
+  {
+    "path": "documents/library/integrations/cloudflare/index.html",
+    "sha256": "dbc2cd62a51925ffae552f26f084227942a75fea8255c55f0d91b1e22c33684d",
+    "bytes": 26291
+  },
+  {
+    "path": "documents/library/integrations/custom-gtm-tool/index.html",
+    "sha256": "4ebc1f89edbdb730121dd063fcae08414645136ba0e9ca8e883906ace2e66ef1",
+    "bytes": 25981
+  },
+  {
+    "path": "documents/library/integrations/custom-media-tool/index.html",
+    "sha256": "c0cb0329a08db1c07a1862541141e14e68b6dda1499e43c72b7837b42f8e1659",
+    "bytes": 26174
+  },
+  {
+    "path": "documents/library/integrations/dataforseo/index.html",
+    "sha256": "041d85b51abc0257f8d1e8528f7a6d797d1449565c27a9c09e984d61be3557f1",
+    "bytes": 24861
+  },
+  {
+    "path": "documents/library/integrations/esp/index.html",
+    "sha256": "18de73ebf7f5b167197710cf6dd32d889de34a9995ec55bea5aa31d091e4432f",
+    "bytes": 24768
+  },
+  {
+    "path": "documents/library/integrations/firecrawl/index.html",
+    "sha256": "e4599653b124b5bb8b9d74f65fc5a23a79dd6d18b83317e7fc28a3fc36408b06",
+    "bytes": 24513
+  },
+  {
+    "path": "documents/library/integrations/ftp/index.html",
+    "sha256": "1afcc42501a62ed0ab155d186478cc6194690a7d112d38d04d4a6f149abe53d4",
+    "bytes": 26141
+  },
+  {
+    "path": "documents/library/integrations/ghost/index.html",
+    "sha256": "248aa103e20966b0c7d1ab47d40d36fd6fae74ab4ef7e687fb95616a59601693",
+    "bytes": 24802
+  },
+  {
+    "path": "documents/library/integrations/git-remote/index.html",
+    "sha256": "fb50f882bf5aacf1517b3667f0ebf43a60b3b56bcdba6d181831537f9503899b",
+    "bytes": 24108
+  },
+  {
+    "path": "documents/library/integrations/google-ads/index.html",
+    "sha256": "155879a67b0802145c047fcc6b3a31353f94425836c32c367ce675fe2bbeb880",
+    "bytes": 28369
+  },
+  {
+    "path": "documents/library/integrations/google-analytics/index.html",
+    "sha256": "f1b99eb1ff007fe96a215309e2a8974fc7255eb49142da8c9d49bd9558be3c01",
+    "bytes": 25537
+  },
+  {
+    "path": "documents/library/integrations/google-gemini-image/index.html",
+    "sha256": "22a698d1f1fa0aa076e99eff609508e2db2fa085a9a1b9940f09f26083e70549",
+    "bytes": 24623
+  },
+  {
+    "path": "documents/library/integrations/google-indexing/index.html",
+    "sha256": "4a9f849edccb893576ef881815f9f02738b243edcaf6e1d0f968c309ef0b4d72",
+    "bytes": 26534
+  },
+  {
+    "path": "documents/library/integrations/google-search-console/index.html",
+    "sha256": "5d9e660f487374ec92642614122cba976ed9539570882723f7b078e62d9ded8a",
+    "bytes": 34065
+  },
+  {
+    "path": "documents/library/integrations/google-tag-manager/index.html",
+    "sha256": "9df2c0ce8a01f090184a7a283c1145ff487de67c6c8161b3aa389f07f73a0ea1",
+    "bytes": 25857
+  },
+  {
+    "path": "documents/library/integrations/google-veo/index.html",
+    "sha256": "a3764a3a3e56535146402e3090491c6b0c174604e1de89fcc299950ece0b424e",
+    "bytes": 23864
+  },
+  {
+    "path": "documents/library/integrations/google-workspace/index.html",
+    "sha256": "8e00ddb61427e2fd9d8a3d0cfc4a7e593523c6aa8e320e3ada1dbd29553fa112",
+    "bytes": 25016
+  },
+  {
+    "path": "documents/library/integrations/hubspot/index.html",
+    "sha256": "eb1deb92ac9f4eb55045ebbade3faaafe31e228332a1b064587f586465d678ee",
+    "bytes": 36959
+  },
+  {
+    "path": "documents/library/integrations/ideogram/index.html",
+    "sha256": "3a84e889fbb2de3580c606df9432eee61239a8f5e7f6d6101996cbd1aa17f1aa",
+    "bytes": 23999
+  },
+  {
+    "path": "documents/library/integrations/imap/index.html",
+    "sha256": "b89a2d1e73027a06db6c583d1ea106c2576b6f09e618e443fb647b0669aa6b83",
+    "bytes": 25835
+  },
+  {
+    "path": "documents/library/integrations/index.html",
+    "sha256": "68a292412623191296d84be8b7516509cbad1523052c9855f083bbb2457d4b3d",
+    "bytes": 93129
+  },
+  {
+    "path": "documents/library/integrations/jina/index.html",
+    "sha256": "5f1f2ce7f0199430d15c0435c64185d7adf4327c5b9f615c2a60e9763c3c09d3",
+    "bytes": 23843
+  },
+  {
+    "path": "documents/library/integrations/kling/index.html",
+    "sha256": "db7236247bae9b4e74cf464af782a36ef6dbff83dca17e117db0796cd1b29b37",
+    "bytes": 23703
+  },
+  {
+    "path": "documents/library/integrations/linear/index.html",
+    "sha256": "b7eb7acad2275724765a2d6e9484626b695f0990e5903037d1029755a3ff1f2f",
+    "bytes": 30282
+  },
+  {
+    "path": "documents/library/integrations/linkedin-api/index.html",
+    "sha256": "40e1a96f526427dd1f8b5061ded149a93e4b9f120667ed1252a5a056a404aa95",
+    "bytes": 24440
+  },
+  {
+    "path": "documents/library/integrations/local-agent-chat/index.html",
+    "sha256": "d96f6adf31c9799f1ad463fcf2a56b8bc329d13c895341ceee8a8e9243e32b65",
+    "bytes": 23674
+  },
+  {
+    "path": "documents/library/integrations/local-daemon/index.html",
+    "sha256": "bbe44320b7911ce3544642db7fb20a0bebaa4be9e1759c5e90213fa9a885a796",
+    "bytes": 19952
+  },
+  {
+    "path": "documents/library/integrations/meta-ads/index.html",
+    "sha256": "9bf7fcf0342341cac3108f27a0081bd372c5cb5a68ca62e57fd977a7aa3b42d2",
+    "bytes": 29593
+  },
+  {
+    "path": "documents/library/integrations/microsoft-365/index.html",
+    "sha256": "9f5c789110d225711e9841ea74dfb6bc2308fd111870cae53d8e6478d1b04c0f",
+    "bytes": 24831
+  },
+  {
+    "path": "documents/library/integrations/mock-provider/index.html",
+    "sha256": "3d664ebefe85f8b4828a8707977176e5b09f6c7ac2947bde06877e92dca3b6df",
+    "bytes": 23716
+  },
+  {
+    "path": "documents/library/integrations/openai-images/index.html",
+    "sha256": "319c8b0f2f982f2b91adb124392bc72851099fe1cf5834287653bb108003805b",
+    "bytes": 24331
+  },
+  {
+    "path": "documents/library/integrations/openrouter/index.html",
+    "sha256": "b5fd2acf9f1c00908d7c80e9af8c144dd80f10763a7f816a86efbb7adcdfbe78",
+    "bytes": 23613
+  },
+  {
+    "path": "documents/library/integrations/outbrain/index.html",
+    "sha256": "d25dfbe845864e11878a3f842a7a1c09e0b289513e67d25e18c1fdc69f61fc34",
+    "bytes": 27519
+  },
+  {
+    "path": "documents/library/integrations/outreach/index.html",
+    "sha256": "c13394013b252afa0aaa9568ee71074b6ee88995f9ab440853aa4f850a16ea4e",
+    "bytes": 23743
+  },
+  {
+    "path": "documents/library/integrations/pipedrive/index.html",
+    "sha256": "47e126a9dde7cd8a64fc081c5a01685c9e0f2997a14563478da1cc7eb592a449",
+    "bytes": 24633
+  },
+  {
+    "path": "documents/library/integrations/plugins/branding/index.html",
+    "sha256": "f5d13ea2126e7e70bb74e6a6959d32c368896bec336da6076376329ee84e38c6",
+    "bytes": 20415
+  },
+  {
+    "path": "documents/library/integrations/plugins/communications/index.html",
+    "sha256": "709c6e651e65384af3200bdbe53dc284b0c351703b82e8376da6e36001e12834",
+    "bytes": 20371
+  },
+  {
+    "path": "documents/library/integrations/plugins/finance/index.html",
+    "sha256": "0b6efcfb73f0a3f965c350470fa42f884f439afd87de9ccc164ed06e3f43f2e5",
+    "bytes": 15786
+  },
+  {
+    "path": "documents/library/integrations/plugins/gtm/index.html",
+    "sha256": "908157cd7547e9d94d6f59f5e0159ec62fb1bcfadd0f4f04814974462ddc0070",
+    "bytes": 27841
+  },
+  {
+    "path": "documents/library/integrations/plugins/media-buying/index.html",
+    "sha256": "516dab2c5f93c8ef87d852589b28804b3aa7ab210aec4bcd799c31b22865647d",
+    "bytes": 20763
+  },
+  {
+    "path": "documents/library/integrations/plugins/publishing/index.html",
+    "sha256": "e14838f732a2e490d3f2762dca7ce249d21c3b9311fb318ab3a807f5229d4e9f",
+    "bytes": 16577
+  },
+  {
+    "path": "documents/library/integrations/plugins/seo/index.html",
+    "sha256": "9dc0f5610cfc5a42c9bee79a321555396bf2bc637d32a4b3f2f02e2aef49ad56",
+    "bytes": 22751
+  },
+  {
+    "path": "documents/library/integrations/plugins/utils/index.html",
+    "sha256": "11843b68e700376400bafab2a3745c177b3879d4a2dba192a75c388c7d5179e0",
+    "bytes": 36594
+  },
+  {
+    "path": "documents/library/integrations/reddit/index.html",
+    "sha256": "e9af9ccab564f51f31fad1fa267556b005f186a623b56323b4c68a63a004abf7",
+    "bytes": 24135
+  },
+  {
+    "path": "documents/library/integrations/reve/index.html",
+    "sha256": "55f88c1e1cad1ca4ebb6b63d96767d369f3db6f85beef321371e0e1eeef5cefb",
+    "bytes": 23901
+  },
+  {
+    "path": "documents/library/integrations/salesforce/index.html",
+    "sha256": "873a603c516dcfaae6c74307259d8643008cd8df1d9cb59e018a3d695aa4b8d9",
+    "bytes": 26410
+  },
+  {
+    "path": "documents/library/integrations/salesloft/index.html",
+    "sha256": "d7dc89e359f2eacb15b8d1df70c04682fde6269e6024cceb24abfd64509c71bd",
+    "bytes": 24012
+  },
+  {
+    "path": "documents/library/integrations/serper/index.html",
+    "sha256": "1b7403ef0c66a994c4a3f26cb50e855b77a9f1247e9550bd8dbe5aee45271a92",
+    "bytes": 23852
+  },
+  {
+    "path": "documents/library/integrations/shopify/index.html",
+    "sha256": "1b1bf3de8266e76c68b94a51e06b6ef76b57a94c6e7761506c1ea8e80f691dca",
+    "bytes": 33425
+  },
+  {
+    "path": "documents/library/integrations/slack-bot/index.html",
+    "sha256": "4c17e72bbdf28a15d8352916d8b4c2381e5674897e5ed4fcacb3448620184437",
+    "bytes": 27367
+  },
+  {
+    "path": "documents/library/integrations/smtp/index.html",
+    "sha256": "b836893266f4975f93d034b9b9add59fcb199d9ef1a610bdba53c1343700f545",
+    "bytes": 23641
+  },
+  {
+    "path": "documents/library/integrations/stripe/index.html",
+    "sha256": "95ac6c45d92711b14123efaa42ddbd2289a4222c05d58d2d04466673f5acc97e",
+    "bytes": 36709
+  },
+  {
+    "path": "documents/library/integrations/taboola/index.html",
+    "sha256": "57c25f1f8fdee31772d68f6fc6caaa826bf635e2c02e2f620aa8575c15aa4a0d",
+    "bytes": 27808
+  },
+  {
+    "path": "documents/library/integrations/telegram/index.html",
+    "sha256": "24620fb6331362849b1ee415f9431b5fe12d573d14012426f620b19361027418",
+    "bytes": 30689
+  },
+  {
+    "path": "documents/library/integrations/trackbooth/index.html",
+    "sha256": "08398b62f25938c5df8365013e7004911053c1dffe4e12cb1f10d740bcba0f3c",
+    "bytes": 30124
+  },
+  {
+    "path": "documents/library/integrations/video-generation/index.html",
+    "sha256": "3e0d4c603faf27ade8052d4eb0e67873f0019b087b070d743cb5059e3ea267eb",
+    "bytes": 23923
+  },
+  {
+    "path": "documents/library/integrations/wordpress/index.html",
+    "sha256": "ddfdddf2ea772d4a0ef12b5986212e419be2b177d9159cf8fd9271c935623a6f",
+    "bytes": 21889
+  },
+  {
+    "path": "documents/library/integrations/x-api/index.html",
+    "sha256": "a154183d5654c49e0c60aaf0750b2a3d17d340f8897044a9ff47fceb6faabf38",
+    "bytes": 24111
+  },
+  {
+    "path": "documents/library/integrations/xai-imagine/index.html",
+    "sha256": "8982a79f2a592ef002b4cb0e0f3c7c392ada0a0286bbb9f6b99a0035ac12ea54",
+    "bytes": 24828
+  },
+  {
+    "path": "documents/library/orchestrators/branding-brand-orchestrator/index.html",
+    "sha256": "1b13d1b4e67dbf36b75372ddb2a833e90995bfd6d740212f12f9bede4a8c9f06",
+    "bytes": 20059
+  },
+  {
+    "path": "documents/library/orchestrators/index.html",
+    "sha256": "674234d65cf47dcdcacda0ef244434f36772b7b054f68df16cb66b690876d88f",
+    "bytes": 21202
+  },
+  {
+    "path": "documents/library/orchestrators/marketing-campaign-production-orchestrator/index.html",
+    "sha256": "611c83666ca4f62c5f2ef4b7bef75c5841c1809069ba18ab4d30528495f8d97b",
+    "bytes": 19525
+  },
+  {
+    "path": "documents/library/orchestrators/stackos-finance-department-orchestrator/index.html",
+    "sha256": "cc741d9f7826839dfd24051341a910e0e97d0ec8b58ea40b8acf39d450fd7dc5",
+    "bytes": 24023
+  },
+  {
+    "path": "documents/library/orchestrators/stackos-sdlc-delivery-orchestrator/index.html",
+    "sha256": "bc6dd99c3c165b2d7d9b58e09a24c03c5536e0903ed2ac7c931afb31d0f7a4a9",
+    "bytes": 18376
+  },
+  {
+    "path": "documents/library/orchestrators/stackos-workflow-orchestrator/index.html",
+    "sha256": "b8fad89214ed9a3049cb4655d38fc2007198415663180556fad88d0ba6f39fb2",
+    "bytes": 37500
+  },
+  {
+    "path": "documents/library/workflows/agency-project-setup/index.html",
+    "sha256": "3ae4141b5291048f32a63f279ed978d4e73ea8631a875660ead7632202f751ea",
+    "bytes": 22531
+  },
+  {
+    "path": "documents/library/workflows/agency-setup/index.html",
+    "sha256": "dcb81fed5684f3a53a96e26209fd2abbb79e9a748853c432928dff5da68c7ab9",
+    "bytes": 21947
+  },
+  {
+    "path": "documents/library/workflows/branding-brand-foundation-setup/index.html",
+    "sha256": "af037290a9e63b4b40b410c44983a3dec63221e38e526b942d322f7d2a816471",
+    "bytes": 26216
+  },
+  {
+    "path": "documents/library/workflows/branding-content-production/index.html",
+    "sha256": "c264d1cdeb5c53677cb279eb9827b198c8d5572ea305803489e2cce8262da9b9",
+    "bytes": 28240
+  },
+  {
+    "path": "documents/library/workflows/communications-callback-follow-up/index.html",
+    "sha256": "fea2e87dc85ee204d418f60e9e262cf5ea096ba14a072a725745e7f1a3cafb02",
+    "bytes": 24779
+  },
+  {
+    "path": "documents/library/workflows/communications-customer-feedback-intake/index.html",
+    "sha256": "ec1eb61abde0a1528248e6e788760985b22eddd86b3a7fb442c1a8507aabba0b",
+    "bytes": 25857
+  },
+  {
+    "path": "documents/library/workflows/communications-inbox-review/index.html",
+    "sha256": "dd0ae4f6fa6ba4abd114bff49b0e8223f74e2b6a86ec525e1b6022296adc63cb",
+    "bytes": 25176
+  },
+  {
+    "path": "documents/library/workflows/communications-outbound-notification/index.html",
+    "sha256": "b9e85c08db064924273ae672e972ea94024e3bdfc74492b4f5c31a550472b4ce",
+    "bytes": 24734
+  },
+  {
+    "path": "documents/library/workflows/communications-rich-telegram-reply/index.html",
+    "sha256": "18c310daca0cbcf2c57d9c5264132296c8d29352d6c552f06e9fbcd93b20c5bf",
+    "bytes": 24536
+  },
+  {
+    "path": "documents/library/workflows/core-project-memory-review/index.html",
+    "sha256": "5ed686c1d2822230e84eb1bda0611580349fa2c2c0a0c9ef49d6eaa72d57a04d",
+    "bytes": 21488
+  },
+  {
+    "path": "documents/library/workflows/engineering-tracked-delivery/index.html",
+    "sha256": "763c2bc8b4417ef031a0fc98f8a94f3f8bc816bfe01ff49cf6b9c65f4fecbc7e",
+    "bytes": 27171
+  },
+  {
+    "path": "documents/library/workflows/finance-bookkeeping-close/index.html",
+    "sha256": "fea922afb2e96624a5461074f2530765b2f4b8eb84179e040048eba0ee2bedb6",
+    "bytes": 27576
+  },
+  {
+    "path": "documents/library/workflows/finance-cashflow-management/index.html",
+    "sha256": "e019cff6d225b09e47428717d9dd8faee10a84a11e425a0f7ea592c849056d80",
+    "bytes": 27133
+  },
+  {
+    "path": "documents/library/workflows/finance-payment-request/index.html",
+    "sha256": "030f68de7f7a1bc80186797de7c26ae57756d9e2045cc40949e9a838247d3d97",
+    "bytes": 29517
+  },
+  {
+    "path": "documents/library/workflows/finance-payment-request-followups/index.html",
+    "sha256": "33dbe70890aa765a1fc9bcffdadda153c2094b488385143145731a4cee69fa16",
+    "bytes": 30954
+  },
+  {
+    "path": "documents/library/workflows/finance-receipt-intake/index.html",
+    "sha256": "3f2ae893bb6717a777e14807272def5073abdc5536c96b011c55c355c70b9d1c",
+    "bytes": 27855
+  },
+  {
+    "path": "documents/library/workflows/finance-tax-estimates/index.html",
+    "sha256": "f11c98b1a771d944b6868c7b2442b83f814080dcfddebf659585f068430decec",
+    "bytes": 27670
+  },
+  {
+    "path": "documents/library/workflows/gtm-account-research/index.html",
+    "sha256": "58e33d7d6e3bcefeb96383d5bb84a90ad78e4397b8f221dd3c6c2dd58bef6215",
+    "bytes": 25201
+  },
+  {
+    "path": "documents/library/workflows/gtm-crm-export-handoff/index.html",
+    "sha256": "44383765058987b61dc6c5b2a279ce33f49bd134f54c3ba602abd4db7cc702ca",
+    "bytes": 25354
+  },
+  {
+    "path": "documents/library/workflows/gtm-crm-hygiene-pass/index.html",
+    "sha256": "a7b6438066116cbc22e7b9785b2d1319b4dce30dc93d7572d1401ae588e58f68",
+    "bytes": 24147
+  },
+  {
+    "path": "documents/library/workflows/gtm-customer-follow-up/index.html",
+    "sha256": "4861f010951de0679d89c75221e3c38d4825434c4f0370c6a80f9a79b965acc1",
+    "bytes": 25984
+  },
+  {
+    "path": "documents/library/workflows/gtm-lead-enrichment-scoring/index.html",
+    "sha256": "e9b19903f8e80c963392742ed7f619a6819feabf042fc7a166271c9be8e8daa6",
+    "bytes": 25051
+  },
+  {
+    "path": "documents/library/workflows/gtm-marketing-program-lifecycle/index.html",
+    "sha256": "e9a69ad1d6d35fcc610349eb318fe83749dda46566edecdcfeba9b72efda0709",
+    "bytes": 26496
+  },
+  {
+    "path": "documents/library/workflows/gtm-outbound-sequence-preparation/index.html",
+    "sha256": "e216cf3a6cac8d1eb05570d0bac92aefae8a38d3ac2230df60f115f24b15fccb",
+    "bytes": 24900
+  },
+  {
+    "path": "documents/library/workflows/gtm-pipeline-risk-review/index.html",
+    "sha256": "1b7a3f1950dac1ca1d8c01f0bd5106dcbca33f73f1fe5d92fba589e10c843f01",
+    "bytes": 25216
+  },
+  {
+    "path": "documents/library/workflows/index.html",
+    "sha256": "c6850c750c39db0baca89638cc4236b50e44411fd95c335be52da110e8fc0886",
+    "bytes": 55027
+  },
+  {
+    "path": "documents/library/workflows/marketing-campaign-production/index.html",
+    "sha256": "0c5ffec3dbe44080171f6bdf7338a2841bcec0b29b060658d656759bb5a636bb",
+    "bytes": 25911
+  },
+  {
+    "path": "documents/library/workflows/media-buying-budget-reallocation-review/index.html",
+    "sha256": "ea4e78d46cf2f41283fe755caf95cd28fb8b91b7ccdb6e691d8b7bb952829a08",
+    "bytes": 26472
+  },
+  {
+    "path": "documents/library/workflows/media-buying-campaign-launch/index.html",
+    "sha256": "4e901661f0ed97d6bc0bd56e8c1f6c716e298743fd61487f24939d8affe05059",
+    "bytes": 26413
+  },
+  {
+    "path": "documents/library/workflows/media-buying-creative-variant-generation/index.html",
+    "sha256": "f2b4a0a6c240f6767c8ae13fbd366cae7061b46f38b92599ee53c62db25ec1d4",
+    "bytes": 26970
+  },
+  {
+    "path": "documents/library/workflows/media-buying-landing-page-creative-experiment/index.html",
+    "sha256": "85320b2e36bf1274de09358fdda8808c4b295970f1fcfa5d4c1231b88a13d905",
+    "bytes": 26598
+  },
+  {
+    "path": "documents/library/workflows/media-buying-performance-diagnosis/index.html",
+    "sha256": "3294adb36a1c7cd092d2743eb5067eb5321d2e906a34da5726a83e9f7c3ed688",
+    "bytes": 27195
+  },
+  {
+    "path": "documents/library/workflows/seo-content-refresh/index.html",
+    "sha256": "2ce179726f62a822c69457080fb744ad38fcab755ab95ad7fe3b4db21bad9139",
+    "bytes": 29680
+  },
+  {
+    "path": "documents/library/workflows/seo-keyword-research/index.html",
+    "sha256": "ba04170555d34e5d291c1640ed32a795712d33278a979c0d6acc3d6702c9a310",
+    "bytes": 27291
+  },
+  {
+    "path": "documents/library/workflows/seo-website-analysis/index.html",
+    "sha256": "9466b56c3a0289afcb560aa7068802ef5ab0c9afacb5d2973af9c249bd7178a8",
+    "bytes": 29060
+  },
+  {
+    "path": "documents/library/workflows/support-delivery-task-handoff/index.html",
+    "sha256": "e3a7ead0d9de7d56270953036f19b2726ba0e8c9ac4cce661552e0d41cee0972",
+    "bytes": 24477
+  },
+  {
+    "path": "documents/library/workflows/support-issue-investigation/index.html",
+    "sha256": "4cbc33188bf66f891654613f6a4fdc21d0a777bc85b68f1bf7b71aaa0c5a0ea2",
+    "bytes": 24689
+  },
+  {
+    "path": "feeds/sitemap.xml",
+    "sha256": "354b5e640926f204861f55f803d5a388b26dfff2cd64fd2324dd1dc294652764",
+    "bytes": 35432
+  }
+]

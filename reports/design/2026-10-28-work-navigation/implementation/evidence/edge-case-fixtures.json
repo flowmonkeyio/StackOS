@@ -1,0 +1,39 @@
+{
+  "project_id": 3,
+  "project_slug": "work-edge-qa",
+  "tasks": [
+    {
+      "id": 21,
+      "key": "disconnected-tasks",
+      "title": "Disconnected tasks",
+      "status": "in-progress",
+      "ticket_count": 3,
+      "dependency_count": 0,
+      "tickets": [
+        {
+          "id": 7,
+          "key": "independent-first"
+        },
+        {
+          "id": 8,
+          "key": "independent-second"
+        },
+        {
+          "id": 9,
+          "key": "independent-third"
+        }
+      ]
+    },
+    {
+      "id": 22,
+      "key": "no-tickets",
+      "title": "Task without tickets",
+      "status": "not-started",
+      "ticket_count": 0,
+      "dependency_count": 0,
+      "tickets": []
+    }
+  ],
+  "command": "seed-edge-cases",
+  "database": "/private/tmp/stackos-work-723/data/stackos.db"
+}

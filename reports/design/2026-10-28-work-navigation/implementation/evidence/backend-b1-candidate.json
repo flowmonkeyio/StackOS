@@ -1,0 +1,147 @@
+{
+  "receipt_version": 1,
+  "receipt_kind": "backend_candidate",
+  "provenance": {
+    "source": "Original work_model B1 candidate-ready return and recorded check results, durably recorded at the main agent's request.",
+    "new_verification_performed_for_this_receipt": false,
+    "raw_test_log_paths": [],
+    "limitation": "This receipt preserves previously reported results; it does not substitute for independent review or final integrated signoff."
+  },
+  "scope": {
+    "project_id": 1,
+    "run_plan_id": 723,
+    "run_id": 717,
+    "ticket_id": 14731,
+    "ticket_key": "work-content-operation",
+    "attempt": "b1",
+    "contract_revision": 1,
+    "agent": "work_model",
+    "base_head": "b3b358f6ffab4d9ea5cd127edb4266eb6357d73b"
+  },
+  "candidate": {
+    "status_at_original_return": "candidate-ready",
+    "accepted_hash_reported_by_main": "02bd7f13a250660b79698ea438fdc6b2e945952e59c32a4b6328bb7877f6f22d",
+    "hash_algorithm": "sha256",
+    "hash_scope": "Concatenated file contents in the ordered_paths order, as calculated for the original candidate return.",
+    "recomputed_for_this_receipt": false,
+    "ordered_paths": [
+      "docs/operations.md",
+      "docs/security.md",
+      "docs/task-tracker.md",
+      "docs/ui-redesign-direction.md",
+      "stackos/operations/tracker/__init__.py",
+      "stackos/operations/tracker/schemas.py",
+      "stackos/operations/tracker/specs.py",
+      "stackos/operations/tracker/write_handlers.py",
+      "stackos/repositories/tracker/__init__.py",
+      "stackos/repositories/tracker/mutations.py",
+      "stackos/repositories/tracker/schema.py",
+      "tests/integration/test_repositories/test_tracker_content.py",
+      "tests/integration/test_routes/test_tracker_content_routes.py",
+      "tests/unit/test_tracker_content_operation.py",
+      "tests/unit/test_operations_registry.py"
+    ]
+  },
+  "implementation": {
+    "operation": "tracker.updateTaskContent",
+    "route": "POST /api/v1/operations/tracker.updateTaskContent/call",
+    "editable_fields": ["description", "additional_input"],
+    "additional_input_storage": "task.context_json.operator_inputs",
+    "server_actor": "local-user:operator",
+    "required_arguments": ["project_id", "task_key", "expected_updated_at", "idempotency_key"],
+    "content_limits": "At least one content field; each is a string of at most 20000 characters. Empty description clears it. Additional input must contain non-whitespace text. Null content values are rejected.",
+    "immutable_fields": ["title", "goal", "status", "lane", "priority", "owner", "dependencies", "run bindings", "source", "arbitrary context", "evidence"],
+    "surface_policy": {
+      "rest": "browser_safe",
+      "mcp": "disabled",
+      "grant_policy": "local-admin-console-write",
+      "response_policy": "raw-only; standard and verbose are aliases; compact and ack are rejected",
+      "idempotency_policy": "handler"
+    },
+    "response_shape": {
+      "data": {
+        "task": "TrackerTaskOut",
+        "rev": "number",
+        "input": "TrackerTaskInputOut or null",
+        "idempotency_key": "string",
+        "request_sha256": "string",
+        "replayed": "boolean"
+      },
+      "run_id": null,
+      "project_id": "number"
+    },
+    "integrity": [
+      "Uses the existing tracker repository owner and IdempotencyKey table; no schema migration or new table.",
+      "Reserves the SQLite writer with BEGIN IMMEDIATE before reading content, revision, or retry receipt.",
+      "Rejects stale expected_updated_at values and key reuse with changed request intent.",
+      "Saves task content, tracker revision, and canonical retry receipt atomically.",
+      "Appends inputs without invoking the broad task lifecycle patcher.",
+      "Preserves description and human input during workflow lifecycle mirror synchronization.",
+      "Uses canonical redaction for submitted description and input text.",
+      "Requires trusted REST invocation and rejects lifecycle fields and arbitrary extra payload fields."
+    ],
+    "ui_integration_notes": [
+      "Returned task.ticket_summary is null; preserve the current index summary or reload the index.",
+      "A replay returns its original task snapshot; refetch current detail before rendering current state.",
+      "No cross-window content SSE expansion was included. Existing lifecycle events remain unchanged."
+    ]
+  },
+  "original_verification": [
+    {
+      "check": "Preimplementation browser write boundary",
+      "result": "Observed the focused browser UI bearer request return 403 before the new operation was implemented."
+    },
+    {
+      "check": "Focused and adjacent tracker, registry, auth, route, repository and MCP tests",
+      "command": "TPF_LLM_TOOL=codex tpf .venv/bin/python -m pytest tests/integration/test_repositories/test_tracker.py tests/integration/test_repositories/test_tracker_content.py tests/integration/test_routes/test_tracker_operations_routes.py tests/integration/test_routes/test_tracker_content_routes.py tests/unit/test_tracker_content_operation.py tests/unit/test_operations_registry.py tests/unit/test_auth_route.py tests/integration/test_mcp/test_mcp_tracker.py -q",
+      "result": "97 passed, 63 warnings in 9.09s",
+      "warnings": "Preexisting Alembic and SQLite deprecation warnings."
+    },
+    {
+      "check": "Supplemental changed-task idempotency-key assertion",
+      "result": "Focused retry test passed: 1 passed in 4.31s after adding the assertion."
+    },
+    {
+      "check": "Ruff lint",
+      "scope": "Tracker operation and repository modules and owned tests",
+      "result": "Passed."
+    },
+    {
+      "check": "Ruff formatting",
+      "scope": "Owned changed files only",
+      "result": "Applied formatting; the final added test line was formatted before candidate hashing."
+    },
+    {
+      "check": "Mypy",
+      "command": "TPF_LLM_TOOL=codex tpf .venv/bin/python -m mypy stackos/operations/tracker stackos/repositories/tracker --follow-imports=silent",
+      "result": "No issues in 22 source files."
+    },
+    {
+      "check": "Scoped git diff --check",
+      "scope": "Owned changed paths",
+      "result": "Passed."
+    }
+  ],
+  "covered_boundaries": [
+    "UI bearer access to the narrow operation and denial of the generic task mutation",
+    "Strict payload and forbidden-field rejection",
+    "Wrong-project rejection",
+    "Stale snapshot conflict and intent-bound replay",
+    "Description and input persistence without lifecycle changes",
+    "Workflow mirror content preservation",
+    "Canonical content redaction and revision recording",
+    "Atomic rollback on failure",
+    "Two-thread file-backed SQLite contention: one stale-snapshot writer succeeds and one conflicts",
+    "Forged operation-context rejection",
+    "MCP operation disabled and registry visibility contract"
+  ],
+  "delivery_boundaries": {
+    "ui_files_changed_by_this_ticket": false,
+    "schema_migration_required": false,
+    "shared_daemon_restarted": false,
+    "run_or_tracker_workflow_records_mutated_by_child": false,
+    "commit_created": false,
+    "make_signoff_run_by_child": false,
+    "integration_and_final_signoff_owner": "main agent"
+  }
+}

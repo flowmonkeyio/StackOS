@@ -1,0 +1,35 @@
+{
+  "status": "passed",
+  "checked_at": "2026-10-05T21:09:59Z",
+  "candidate_sha256": "97dc66f058dcac100801455a8e78071c8f2b5a15e19467d905e5f4ce7ed3b21b",
+  "ticket": "website-content-evidence-layout-555",
+  "attempt_id": "content-layout-a1",
+  "constraint_revision": 1,
+  "browser": "StackOS native gstack 1.84.1.0",
+  "profile_key": "deployment-audit",
+  "session_ref": "browser-session:project-1:deployment-audit:website-design-review-20261005",
+  "tab_id": 1,
+  "origin": "http://127.0.0.1:4173",
+  "viewports": [[1440,1800],[1440,1100],[768,1024],[390,844]],
+  "device_pixel_ratio": 1,
+  "checks": [
+    {"id":"article-design","status":"passed","scope":["how-to-do-keyword-research-for-ai-search"],"evidence":["visual/article-desktop.png","visual/content-555-comparison-full-final.png","visual/content-555-comparison-focus-final.png","visual/content-555-article-mobile-rows.png","visual/content-555-article-tablet.png"],"observed":"Selected open rows, normal opening prose, original shell, loaded fonts, canonical URL and four evidence records. No page overflow."},
+    {"id":"other-evidence-articles","status":"passed","scope":["how-ai-orchestrators-triage-feedback","how-to-refine-ai-agent-workflow"],"evidence":["visual/content-555-triage-desktop.png","visual/content-555-triage-mobile.png","visual/content-555-refine-mobile.png"],"observed":"Five records each; long labels wrap; evidence and decision remain associated. Existing preformatted code uses contained scrolling, not page overflow."},
+    {"id":"workflow-content","status":"passed","scope":["seo-content-refresh"],"evidence":["visual/content-555-workflow-desktop-fixed.png","visual/content-555-workflow-mobile-fixed.png"],"observed":"Open ordered lists, preserved content and columns; mobile stacks. Four repaired labels compute rgb(49,83,214), 5.57:1 on paper."},
+    {"id":"agent-orchestrator","status":"passed","scope":["branding-voice-reviewer","branding-brand-orchestrator"],"evidence":["visual/content-555-agent-desktop.png","visual/content-555-agent-mobile.png","visual/content-555-orchestrator-desktop.png","visual/content-555-orchestrator-mobile.png"],"observed":"Readable open lists and link rows, no page overflow. Clicking Branding Narrative Writer reaches its expected local agent URL and heading."},
+    {"id":"integration-content","status":"passed","scope":["google-search-console"],"evidence":["visual/content-555-integration-facts-desktop-fixed.png","visual/content-555-integration-facts-mobile-fixed.png","visual/content-555-integration-actions-desktop.png","visual/content-555-integration-actions-mobile.png"],"observed":"Aligned semantic facts and full action descriptions stack on mobile. Repaired facts label rgb(217,255,99) and paragraph rgb(170,177,192), contrast16.70:1 and8.84:1."},
+    {"id":"integration-controls","status":"passed","scope":["trackbooth","shopify"],"observed":{"trackbooth_initial_rows":36,"after_load_more":72,"empty_search_rows":0,"empty_text":"No actions match that search.","after_keyboard_clear":36,"exact_title_search_rows":1,"exact_title":"Accept management invite","full_descriptions":true,"shopify_analytics_rows":15,"shopify_keyboard_customers_rows":9,"keyboard_focus_outline":"rgb(121,223,255) solid 2px","page_horizontal_overflow":0}},
+    {"id":"comparison-table","status":"passed","scope":["what-is-an-agentic-workflow"],"evidence":["visual/content-555-comparison-table-mobile.png"],"observed":{"rows":4,"column_headers":4,"tabindex":0,"table_scroll_width":720,"wrapper_client_width":341,"after_arrow_right_scroll_left":40,"page_horizontal_overflow":0}},
+    {"id":"guide-isolation","status":"passed","scope":["getting-started"],"evidence":["guide-before.json","guide-after.json"],"observed":"Exact JSON comparison passed: first two paragraphs retain source text and computed family, size, weight, line height, padding, border, background and max width."},
+    {"id":"console","status":"passed","evidence":["browser-console-final.log"],"observed":"No console errors in the fresh final verification window. Font-preload warnings remain; fonts report loaded and visual family is correct."}
+  ],
+  "resolved_findings": ["QA-1: workflow label contrast","QA-2: integration facts heading contrast"],
+  "repair_comparison": "visual/content-555-repair-comparison.png",
+  "capture_notes": [
+    "Initial wait selector matched several evidence rows; subsequent readiness waits used the unique h1 and DOM assertions.",
+    "Native fill with an empty string was rejected; clearing was successfully verified with click, Meta+A and Backspace.",
+    "Initial immediate link/table reads preceded navigation/scroll settling; separate follow-up reads verified the actual destination and40px scroll.",
+    "Historical shared-console401/404 entries were not used as final candidate proof. Fresh final window contains no errors."
+  ],
+  "limits": ["Local static preview only; no production deployment or field SEO outcome assessed.","Direct Playwright execution skipped by operator instruction; equivalent interactions used StackOS browser."]
+}

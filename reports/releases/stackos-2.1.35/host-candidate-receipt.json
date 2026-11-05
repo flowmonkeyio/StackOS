@@ -1,0 +1,130 @@
+{
+  "status": "candidate_ready_for_independent_review",
+  "captured_at": "2026-10-06T22:23:06.310785+00:00",
+  "run_plan_id": 574,
+  "execution_id": 568,
+  "step": "integrate",
+  "attempt": 1,
+  "contract_revision": 5,
+  "technical_scope_revision": 3,
+  "base_commit": "7d8dd4049065845661fcb3a544c9bbf5482d6475",
+  "source_manifest": {
+    "path": "/private/tmp/stackos-release-2135-20261006/evidence/quickbooks-rev3/candidate-source-manifest.json",
+    "sha256": "ee85dba9188f412dcd5f78b9f80f526139f097d40115973105889b0b1de5f228"
+  },
+  "input_manifest_sha256": "d54b15e5577716b17b563e1b4e951951a1895af7c3838f67ee3aa51e0d237010",
+  "revision2_source_manifest_sha256": "c8f26bffbe1736c0326a96b094bd4952238b9b549ad7d64a0b5ff94a0e868cb8",
+  "changed_files": [
+    "CHANGELOG.md",
+    "docs/action-executor.md",
+    "docs/auth-providers.md",
+    "docs/integration-contracts/connector-quality.md",
+    "docs/integration-contracts/quickbooks-online.md",
+    "docs/oauth-provider-setup.md",
+    "docs/release-signoff.md",
+    "plugins/finance/README.md",
+    "plugins/finance/plugin.yaml",
+    "pyproject.toml",
+    "stackos/actions/__init__.py",
+    "stackos/api/auth_providers.py",
+    "stackos/artifacts/redaction.py",
+    "stackos/auth_providers/repository/oauth.py",
+    "stackos/integrations/__init__.py",
+    "tests/integration/test_mcp/test_mcp_quickbooks.py",
+    "tests/integration/test_repositories/test_quickbooks_oauth.py",
+    "tests/integration/test_routes/test_quickbooks_callback.py",
+    "tests/unit/test_artifact_redaction.py",
+    "tests/unit/test_plugin_manifest.py",
+    "ui/src/api.ts",
+    "uv.lock",
+    "workers/oauth-callback-relay/README.md",
+    "workers/oauth-callback-relay/public/_headers",
+    "workers/oauth-callback-relay/public/index.html",
+    "workers/oauth-callback-relay/test/relay.test.mjs"
+  ],
+  "unrelated_baseline_files_preserved": true,
+  "dependency_parity": {
+    "path": "/private/tmp/stackos-release-2135-20261006/evidence/quickbooks-rev3/public-dependency-parity.json",
+    "sha256": "267d6c92773e3e83db16fdf3a087730f26a8829646951a604bc343e77dcfd48b"
+  },
+  "checks": {
+    "oauth-regressions": {
+      "path": "/private/tmp/stackos-release-2135-20261006/evidence/quickbooks-rev3/oauth-regressions.json",
+      "sha256": "35ae46c5e7688e9936634449dcd954538cfb921a2f2b22a63b0b39324bfb9bf8",
+      "passed": 85
+    },
+    "qbo-final": {
+      "path": "/private/tmp/stackos-release-2135-20261006/evidence/quickbooks-rev3/qbo-final.json",
+      "sha256": "8a0608323b3408999038b2dc072aee4a4e4db67a2b100da211752ccaa7d1f75a",
+      "passed": 59
+    },
+    "redaction-review-repair": {
+      "path": "/private/tmp/stackos-release-2135-20261006/evidence/quickbooks-rev3/redaction-review-repair.json",
+      "sha256": "ab80084c3a2a526ffebb592f30a8f1675656a04747f21f0f0a62c4450df58369",
+      "passed": 34
+    },
+    "finance-manifest-canonical": {
+      "path": "/private/tmp/stackos-release-2135-20261006/evidence/quickbooks-rev3/finance-manifest-canonical.json",
+      "sha256": "ccc082e1b80c3dd14ad8080b9b23e6aa9a5f7c9da4642445d835b3709ef45502",
+      "passed": 3
+    },
+    "relay-check": {
+      "path": "/private/tmp/stackos-release-2135-20261006/evidence/quickbooks-rev3/relay-check.json",
+      "sha256": "f667b793248a7b94b2b5a440023d2b401506f921ef2aa9014c3fd10628144cc5",
+      "passed": 25
+    },
+    "generated-api": {
+      "path": "/private/tmp/stackos-release-2135-20261006/evidence/quickbooks-rev3/generated-api.json",
+      "sha256": "182c179660349ff9e3dd937d0444b10bad501d7b3fc4718f17676f64b1223488",
+      "passed": null
+    },
+    "final-lint": {
+      "path": "/private/tmp/stackos-release-2135-20261006/evidence/quickbooks-rev3/final-lint.json",
+      "sha256": "b68407040cf8c6d0270bd3d93ca8b5daf7fdc7d36ec2bbaf42db3920635fe318",
+      "passed": null
+    },
+    "manifest-lint": {
+      "path": "/private/tmp/stackos-release-2135-20261006/evidence/quickbooks-rev3/manifest-lint.json",
+      "sha256": "36b7c3e1f89e0097a8bb631b35a4de31763f885d38d57dd7d25fef16a9ebff2d",
+      "passed": null
+    },
+    "lock-offline": {
+      "path": "/private/tmp/stackos-release-2135-20261006/evidence/quickbooks-rev3/lock-offline.json",
+      "sha256": "260a007f79f3ba05d21f4407c130fdef66f94c063e0ac8f342ad32a7dc156ad1",
+      "passed": null
+    },
+    "public-install": {
+      "path": "/private/tmp/stackos-release-2135-20261006/evidence/quickbooks-rev3/public-install.json",
+      "sha256": "f8526f1e1afefdcc6c15c6e11fa85d6c5d2248d398b716994be66155627755c8",
+      "passed": null
+    }
+  },
+  "distinct_pytest_cases": 151,
+  "relay_cases": 25,
+  "proof_reuse": "Unchanged OAuth/relay source retains prior checks; final redaction-review-repair supersedes qbo-final redactor hash and repeats all12 QBO MCP cases. Other QBO cases remain bound to unchanged callback/manifest sources.",
+  "repair_history": [
+    "Removed rejected redundant host config.docs override; package remains canonical provider setup owner.",
+    "Corrected unattached Account test to existing NotFoundError contract.",
+    "Repaired SyncToken text false positive; retained all existing compound/camelCase secret assignment matches after independent review found classifier mismatch.",
+    "Updated existing Finance/provider-count assertions and absent canonical Google Indexing setup verification date; no metadata fabricated.",
+    "Fresh registry package cache miss resolved with full refresh; unrelated greenlet artifact rows restored and offline lock checked."
+  ],
+  "relay": {
+    "status": "operator_deferred",
+    "bundle": "/private/tmp/stackos-release-2135-20261006/evidence/quickbooks-rev3/relay-public",
+    "files": {
+      "index.html": "b3a2901a2558f079bd749a90fa21b60b9d67e9b9d628939f99fbad3963c5ddb6",
+      "_headers": "ea8fd420a1d16db2051d8e5ac8b4235e3984770cc75b35c6a54ab8faf03fe58d"
+    }
+  },
+  "limitations": [
+    "No live Intuit consent or financial provider work performed.",
+    "Public relay deployment deferred by explicit operator instruction; interactive public callback needs that later deployment.",
+    "Root owns signing/notarization and website publication; operator owns download/install.",
+    "Existing host credential masking still applies inside raw_json; this limit is explicitly documented, with SyncToken/decimal preservation proven."
+  ],
+  "candidate_commit": "2903fabfc82754753ae0311599b3f407c177b09a",
+  "worktree_clean": true,
+  "committed_source_matches_manifest": true,
+  "candidate_patch_sha256": "b0805f62d8ff0ff7ffe2593716e41882050d17b160fa69d1234cca58b17ea117"
+}

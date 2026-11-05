@@ -1,0 +1,18 @@
+{
+  "reviewer": "independent navigation reviewer",
+  "result": "Navigation flow and illustrative task data are consistent across Board, task popup and Dependency map.",
+  "checks": [
+    "Only two view tabs; stable position.",
+    "No single-task selector on Board.",
+    "Task selector exists only in Dependency map.",
+    "Task #1082 and 3/6 complete agree across all states.",
+    "View dependencies connects the popup to the selected task's map.",
+    "Six ticket nodes and five edges match.",
+    "Full StackOS shell includes all three App footer links."
+  ],
+  "visual_followups": [
+    "Use the actual lime focus/selection token when implementing; the generated Board image depicts a blue card outline.",
+    "Carry the Blocked badge for Verify board behavior into the task ticket list, matching the map. Blocked is a derived condition, not a status."
+  ],
+  "limits": "Static concepts do not prove navigation, browser history, focus, keyboard access, filter/scroll persistence, saves, or live updates."
+}

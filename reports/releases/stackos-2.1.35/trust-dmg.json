@@ -1,0 +1,48 @@
+{
+  "status": "passed",
+  "target": "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/stackos-2.1.35-mac-arm64.dmg",
+  "checks": [
+    {
+      "command": [
+        "codesign",
+        "--verify",
+        "--deep",
+        "--strict",
+        "--verbose=2",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/stackos-2.1.35-mac-arm64.dmg"
+      ],
+      "exit_code": 0,
+      "log": "/private/tmp/stackos-release-2135-20261006/release/trust-dmg-0.log",
+      "sha256": "a8e5181e610fc4a03bf70d8985f91398405a906f89fb760230d06b186440e0b4"
+    },
+    {
+      "command": [
+        "spctl",
+        "--assess",
+        "--type",
+        "open",
+        "--context",
+        "context:primary-signature",
+        "--verbose=2",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/stackos-2.1.35-mac-arm64.dmg"
+      ],
+      "exit_code": 0,
+      "log": "/private/tmp/stackos-release-2135-20261006/release/trust-dmg-1.log",
+      "sha256": "9a3319f8d6f7f4323d2376773162a7c69866029cb0120b68ba15a75a66a2246c"
+    },
+    {
+      "command": [
+        "xcrun",
+        "stapler",
+        "validate",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/stackos-2.1.35-mac-arm64.dmg"
+      ],
+      "exit_code": 0,
+      "log": "/private/tmp/stackos-release-2135-20261006/release/trust-dmg-2.log",
+      "sha256": "7fb82318fd97490caf822416e890badb52a082f12ef8302c8f8a9f9f16ae860e"
+    }
+  ],
+  "checked_at": "2026-10-07T02:06:54.883120+00:00",
+  "local_activation": false,
+  "target_sha256": "2b53fb4c796e7310cfcccab3d39264e8604d5be33794cc2431ced6f5ac49905a"
+}

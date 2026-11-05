@@ -1,0 +1,45 @@
+{
+  "status": "passed",
+  "target": "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/mac-arm64/StackOS.app",
+  "checks": [
+    {
+      "command": [
+        "codesign",
+        "--verify",
+        "--deep",
+        "--strict",
+        "--verbose=2",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/mac-arm64/StackOS.app"
+      ],
+      "exit_code": 0,
+      "log": "/private/tmp/stackos-release-2135-20261006/release/trust-app-0.log",
+      "sha256": "5d110bcca7ddf59f50a2c0665ed86fa542ad544960cad4f3511e373555b8b0d6"
+    },
+    {
+      "command": [
+        "spctl",
+        "--assess",
+        "--type",
+        "execute",
+        "--verbose=2",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/mac-arm64/StackOS.app"
+      ],
+      "exit_code": 0,
+      "log": "/private/tmp/stackos-release-2135-20261006/release/trust-app-1.log",
+      "sha256": "9e61ab100943ee9e7a3cb77b0f26da4dcc18dfd95f0cee9910c80acc85331f6f"
+    },
+    {
+      "command": [
+        "xcrun",
+        "stapler",
+        "validate",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/mac-arm64/StackOS.app"
+      ],
+      "exit_code": 0,
+      "log": "/private/tmp/stackos-release-2135-20261006/release/trust-app-2.log",
+      "sha256": "cf7926b8dea03171d542238222deb1b36043193b538f2aaeb8cbb2e99d0d6204"
+    }
+  ],
+  "checked_at": "2026-10-07T01:59:08.773656+00:00",
+  "local_activation": false
+}

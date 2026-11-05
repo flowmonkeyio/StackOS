@@ -1,0 +1,16 @@
+{
+  "before_count": 124,
+  "after_count": 128,
+  "unchanged_old_files": 122,
+  "changed": [
+    "latest-mac.yml",
+    "stackos-latest-mac-arm64.dmg"
+  ],
+  "added": [
+    "stackos-2.1.36-mac-arm64.dmg",
+    "stackos-2.1.36-mac-arm64.dmg.blockmap",
+    "stackos-2.1.36-mac-arm64.zip",
+    "stackos-2.1.36-mac-arm64.zip.blockmap"
+  ],
+  "pending": []
+}

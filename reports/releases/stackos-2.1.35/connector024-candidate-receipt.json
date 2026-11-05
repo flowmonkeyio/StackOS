@@ -1,0 +1,92 @@
+{
+  "workflow_context": "run574 / execution568 / integrate attempt1 / contract3",
+  "baseline_commit": "d8883b926c340229b18fb53e9001d58c83055303",
+  "candidate_commit": "c09ccf8e26f4d6f48b7db6bdd13779e62b31b8b4",
+  "candidate_branch": "release/quickbooks-host-024",
+  "worktree": "/private/tmp/stackos-release-2135-20261006/connectors",
+  "working_tree_clean": true,
+  "version": "0.2.4",
+  "changed_files": [
+    "M\tREADME.md",
+    "M\tpyproject.toml",
+    "M\tsrc/stackos_connectors/connectors/quickbooks_online/catalog.json",
+    "M\tsrc/stackos_connectors/connectors/quickbooks_online/docs/auth.md",
+    "M\tsrc/stackos_connectors/connectors/quickbooks_online/docs/quickbooks-online.md",
+    "A\tsrc/stackos_connectors/connectors/quickbooks_online/probe.py",
+    "M\ttests/auth/test_probes.py",
+    "M\ttests/packaging/installed_auth_consumer.py",
+    "A\ttests/quickbooks_online/test_probe.py"
+  ],
+  "root_cause": "QuickBooks lacked method setup labels/environment/realm form fields and a canonical credential probe binding required by the host.",
+  "owner": "QuickBooks catalog owns setup facts; provider-local probe function delegates public CompanyInfo action and existing validator/transport. Shared probe boundary handles input validation and safe errors.",
+  "setup": "Both methods require explicit sandbox/production environment and string realm_id with numeric 1-32 digit schema; no defaults. External oauth2_token remains access-token-only, and OAuth protocol facts are unchanged.",
+  "probe": "Returns optional display_name plus metadata.company_id, configured_realm_id and environment; provider_account_id null, no grants/scopes. CompanyInfo.Id is not the realm. Errors retain only allowlisted reason and numeric status, with fixed safe messages.",
+  "preservation": {
+    "exactly_two_read_actions_unchanged": true,
+    "oauth_protocol_unchanged": true,
+    "existing_qbo_code_byte_identical": [
+      "actions.py",
+      "integration.py",
+      "response.py"
+    ],
+    "invoice_precision_and_endpoint_behavior": "Existing action/transport/response source unchanged; focused QBO regression tests passed."
+  },
+  "proof": {
+    "red": {
+      "result": "25 failed",
+      "command": "PYTHONPATH=src python -m pytest tests/quickbooks_online/test_probe.py -q",
+      "log": "red-full.log"
+    },
+    "green": {
+      "result": "25 passed in 7.97s",
+      "command": "PYTHONPATH=src python -m pytest tests/quickbooks_online/test_probe.py -q",
+      "log": "green.log"
+    },
+    "focused_slice": {
+      "result": "342 passed in 22.30s",
+      "command": "PYTHONPATH=src python -m pytest tests/quickbooks_online tests/auth tests/catalog tests/packaging -q",
+      "log": "focused-slice.log"
+    },
+    "lint": {
+      "result": "passed",
+      "log": "ruff.log"
+    },
+    "diff_check": "passed",
+    "installed_wheel": {
+      "status": "passed",
+      "version": "0.2.4",
+      "protocol_providers": 17,
+      "protocol_methods": 37,
+      "categories": [
+        "discovery",
+        "authorization",
+        "code",
+        "refresh",
+        "client_credentials",
+        "delegated_jwt",
+        "indexing_jwt",
+        "probe",
+        "action",
+        "telegram",
+        "slack_v0",
+        "hubspot_v3",
+        "quickbooks_exact_reads",
+        "quickbooks_company_probe"
+      ],
+      "network": "blocked; injected edges only",
+      "log": "installed-wheel-smoke.json",
+      "environment": "Disposable evidence/wheel-venv; dependency-only site path reused from connector development venv. Driver asserts all package origins inside wheel-venv purelib, no StackOS package, and blocks live sockets. No installed host/runtime environment changed."
+    },
+    "wheel_integrity": {
+      "zip_files": 441,
+      "package_files": 437,
+      "crc": "passed",
+      "every_package_file_matches_candidate_commit": true
+    }
+  },
+  "build": {
+    "command": "python -m build --no-isolation --outdir ../connector024-evidence/dist",
+    "log": "build.log"
+  },
+  "side_effects": "Only isolated connector branch/worktree, local commit, synthetic focused checks, distribution build and disposable wheel smoke environment. No full suite, live provider, publication, push, host source edit, lifecycle action or StackOS state mutation."
+}

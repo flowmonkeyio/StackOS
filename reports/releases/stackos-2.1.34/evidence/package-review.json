@@ -1,0 +1,87 @@
+{
+  "status": "pass",
+  "recommendation": "Connector 0.2.1 source candidate may proceed to package publication; host and packaged-artifact acceptance remain separate.",
+  "reviewer": "day1_deploy_review",
+  "independent": true,
+  "implementation_involvement": "none",
+  "run_plan_id": 572,
+  "execution_id": 567,
+  "step": "fix-review",
+  "tracker_ticket": "workflow-572-fix-review",
+  "attempt": 1,
+  "contract_revision": 1,
+  "reviewed_at": "2026-10-06T17:48:27.356241+00:00",
+  "candidate_manifest": "/private/tmp/stackos-gsc-hotfix-20261006/evidence/package-candidate.json",
+  "candidate_manifest_sha256": "bb7f50dd2c4aa057fb9516b8fe66c51e8a1a569a1071c0f525f54167c9c10dd1",
+  "verified_files": [
+    {
+      "path": "src/stackos_connectors/auth.py",
+      "sha256": "d544a39bd4c837c4014dd5bebe30d09deda36b87b48eb928743f21e2a89c9d90"
+    },
+    {
+      "path": "src/stackos_connectors/connectors/google_search_console/auth.py",
+      "sha256": "04bcc25f7f3f6bdcc98a115e1ccf37b92a7bb0f2427db73157d3e0893274e32d"
+    },
+    {
+      "path": "src/stackos_connectors/connectors/google_search_console/catalog.json",
+      "sha256": "5f50a4a743716f368fd32bbcf1eec1bcdb9826738354e5509e8773bc9e239121"
+    },
+    {
+      "path": "src/stackos_connectors/connectors/google_search_console/docs/auth.md",
+      "sha256": "78f22136225bf085731bb1fc0dc33a3d3cf47433becdd0b22630fec5f97d7ebb"
+    },
+    {
+      "path": "tests/auth/test_search_console_scopes.py",
+      "sha256": "6f2c33abbbcc6b7924e0160d90a36d5668638e197612e2db8f1bf5685c2f0854"
+    }
+  ],
+  "scope": "Five frozen connector files; root-owned version bump is outside the implementation manifest.",
+  "checks": [
+    {
+      "check": "All five frozen candidate file hashes",
+      "result": "pass"
+    },
+    {
+      "check": "All four methods default readonly; only explicit sitemap_write chooses webmasters; invalid mode fails without echoing input",
+      "result": "pass"
+    },
+    {
+      "check": "Catalog config schemas and shared setup metadata expose the same two modes for all four existing methods",
+      "result": "pass"
+    },
+    {
+      "check": "OAuth consent uses selected scope; existing JWT transport consumes get_auth_contract scopes",
+      "result": "pass"
+    },
+    {
+      "check": "scope_satisfies permits webmasters to satisfy webmasters.readonly only for google-search-console; preserves exact scope matches for other providers; readonly never satisfies write",
+      "result": "pass"
+    },
+    {
+      "check": "Auth selection reuses existing provider auth_implementation hook; package supplies protocol facts; consumer retains custody, renewal and enforcement",
+      "result": "pass"
+    },
+    {
+      "check": "Independent focused pytest: tests/auth/test_search_console_scopes.py tests/auth/test_google_service_account.py tests/auth/test_oauth_contracts.py",
+      "result": "67 passed in 2.45s"
+    },
+    {
+      "check": "Independent git diff --check",
+      "result": "pass"
+    }
+  ],
+  "findings": [],
+  "residual_limits": [
+    "Host renewal, token invalidation and action enforcement are not accepted by this connector-only review.",
+    "Built wheel contents and final desktop payload must bind the reviewed connector bytes.",
+    "Synthetic tests do not prove live Google property permissions or successful sitemap submission."
+  ],
+  "sources": [
+    ".codex/agents/sdlc-delivery-reviewer.toml v0.3.1",
+    "docs/product-direction.md",
+    "docs/auth-providers.md",
+    "docs/release-signoff.md",
+    "Native runPlan.get 572 constraint_revision 1",
+    "Operator authorization supplied by main: fix and signed notarized release, version bump, focused checks only"
+  ]
+}

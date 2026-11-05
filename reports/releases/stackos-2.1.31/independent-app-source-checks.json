@@ -1,0 +1,193 @@
+{
+  "scope": "Independent static app review; final DMG/feed/alias are excluded pending handoff",
+  "checked_at": "2026-09-30T04:35:39.174862+00:00",
+  "app": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app",
+  "feature_count": 15,
+  "features": [
+    {
+      "source_path": "plugins/seo/plugin.yaml",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/_assets/plugins/seo/plugin.yaml",
+      "expected_sha256": "94d475994a0e85bd264145c8108766b7451d8c0b387b91bfd8082775075b1aa2",
+      "actual_sha256": "94d475994a0e85bd264145c8108766b7451d8c0b387b91bfd8082775075b1aa2",
+      "matches": true
+    },
+    {
+      "source_path": "stackos/actions/__init__.py",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/actions/__init__.py",
+      "expected_sha256": "b2341f5948d7cd4303573a98294ead2c385ce90b9b3889abaa4bd02621d1d79c",
+      "actual_sha256": "b2341f5948d7cd4303573a98294ead2c385ce90b9b3889abaa4bd02621d1d79c",
+      "matches": true
+    },
+    {
+      "source_path": "stackos/actions/google_indexing.py",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/actions/google_indexing.py",
+      "expected_sha256": "3ac64e92980910f9e0ac1c5a20d36d0715ecb959fc66708cd177cf39bfdd4578",
+      "actual_sha256": "3ac64e92980910f9e0ac1c5a20d36d0715ecb959fc66708cd177cf39bfdd4578",
+      "matches": true
+    },
+    {
+      "source_path": "stackos/actions/google_search_console.py",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/actions/google_search_console.py",
+      "expected_sha256": "620e8d4e121cdd656cd0950ab8e22b958975010eb2789a63030c530e2f4527c7",
+      "actual_sha256": "620e8d4e121cdd656cd0950ab8e22b958975010eb2789a63030c530e2f4527c7",
+      "matches": true
+    },
+    {
+      "source_path": "stackos/auth_providers/google_service_account.py",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/auth_providers/google_service_account.py",
+      "expected_sha256": "178d76b0a4e2399eacaf3db5c5268461ca585c85f06aff0dc62ae59e5e1ef08b",
+      "actual_sha256": "178d76b0a4e2399eacaf3db5c5268461ca585c85f06aff0dc62ae59e5e1ef08b",
+      "matches": true
+    },
+    {
+      "source_path": "stackos/auth_providers/oauth_contracts.py",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/auth_providers/oauth_contracts.py",
+      "expected_sha256": "60a2f6c82b609af9b5dc7acbb66e3d58f2b20e1c083de08449d76ac3f2239e5c",
+      "actual_sha256": "60a2f6c82b609af9b5dc7acbb66e3d58f2b20e1c083de08449d76ac3f2239e5c",
+      "matches": true
+    },
+    {
+      "source_path": "stackos/auth_providers/repository/credentials.py",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/auth_providers/repository/credentials.py",
+      "expected_sha256": "2369ded1f5669bb64d3a2764bedbe7ec3595026371dae51fd717e3a64f4f4b3b",
+      "actual_sha256": "2369ded1f5669bb64d3a2764bedbe7ec3595026371dae51fd717e3a64f4f4b3b",
+      "matches": true
+    },
+    {
+      "source_path": "stackos/auth_providers/repository/oauth.py",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/auth_providers/repository/oauth.py",
+      "expected_sha256": "b609fa47c3f6b5b1f1b069755a99c4d7dc067461db34ace4cbc41aaa43fcb595",
+      "actual_sha256": "b609fa47c3f6b5b1f1b069755a99c4d7dc067461db34ace4cbc41aaa43fcb595",
+      "matches": true
+    },
+    {
+      "source_path": "stackos/auth_providers/repository/resolution.py",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/auth_providers/repository/resolution.py",
+      "expected_sha256": "f95c8f24805b692adfb5b050b6acc434d3a08a84e72c09100b3ef3fd87628e32",
+      "actual_sha256": "f95c8f24805b692adfb5b050b6acc434d3a08a84e72c09100b3ef3fd87628e32",
+      "matches": true
+    },
+    {
+      "source_path": "stackos/auth_providers/repository/testing.py",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/auth_providers/repository/testing.py",
+      "expected_sha256": "b40a3b8d6848e74ce81b0706bab9df42502ddf52e107b4bd9df608f65947bb46",
+      "actual_sha256": "b40a3b8d6848e74ce81b0706bab9df42502ddf52e107b4bd9df608f65947bb46",
+      "matches": true
+    },
+    {
+      "source_path": "stackos/integrations/__init__.py",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/integrations/__init__.py",
+      "expected_sha256": "4e2154f30a5a139dc8377698322fd5d734d742c0f36c39e0447f4e39db4bff87",
+      "actual_sha256": "4e2154f30a5a139dc8377698322fd5d734d742c0f36c39e0447f4e39db4bff87",
+      "matches": true
+    },
+    {
+      "source_path": "stackos/integrations/_base.py",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/integrations/_base.py",
+      "expected_sha256": "521ef1afabba9b2b8c8f5af61cf60b6b3e9364790c4efbdfa2631b838de542c8",
+      "actual_sha256": "521ef1afabba9b2b8c8f5af61cf60b6b3e9364790c4efbdfa2631b838de542c8",
+      "matches": true
+    },
+    {
+      "source_path": "stackos/integrations/google_batch.py",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/integrations/google_batch.py",
+      "expected_sha256": "1505b0c69ee5b8a1d4c4568408684139ed052f3e6e2f427b617f403309f23f4f",
+      "actual_sha256": "1505b0c69ee5b8a1d4c4568408684139ed052f3e6e2f427b617f403309f23f4f",
+      "matches": true
+    },
+    {
+      "source_path": "stackos/integrations/google_indexing.py",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/integrations/google_indexing.py",
+      "expected_sha256": "9d27772c7edf56b548ac9749f6a03a7ea8c8a157ce32172c952fa31c6b1a6701",
+      "actual_sha256": "9d27772c7edf56b548ac9749f6a03a7ea8c8a157ce32172c952fa31c6b1a6701",
+      "matches": true
+    },
+    {
+      "source_path": "stackos/integrations/google_search_console.py",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/integrations/google_search_console.py",
+      "expected_sha256": "ed81820db156040f5a68d95fb0e7b89136e64ab82b415021549e24caa8c05b8b",
+      "actual_sha256": "ed81820db156040f5a68d95fb0e7b89136e64ab82b415021549e24caa8c05b8b",
+      "matches": true
+    }
+  ],
+  "guidance_count": 10,
+  "guidance": [
+    {
+      "source_path": "plugins/branding/README.md",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/_assets/plugins/branding/README.md",
+      "expected_sha256": "0ac9bd512ac952dff1e3ad711676548dfb8e11d3ee58830f698ea9e6b9bd0588",
+      "actual_sha256": "0ac9bd512ac952dff1e3ad711676548dfb8e11d3ee58830f698ea9e6b9bd0588",
+      "matches": true
+    },
+    {
+      "source_path": "plugins/branding/agent-presets/branding.yaml",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/_assets/plugins/branding/agent-presets/branding.yaml",
+      "expected_sha256": "76b15d3b604b2d176367a5e3a8d6d9345285edeaa377b9a0a91688de4755a079",
+      "actual_sha256": "76b15d3b604b2d176367a5e3a8d6d9345285edeaa377b9a0a91688de4755a079",
+      "matches": true
+    },
+    {
+      "source_path": "plugins/branding/plugin.yaml",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/_assets/plugins/branding/plugin.yaml",
+      "expected_sha256": "76b4ef6279838baa61513b78df172a699b4d2679467be87c0fd64a84963b516e",
+      "actual_sha256": "76b4ef6279838baa61513b78df172a699b4d2679467be87c0fd64a84963b516e",
+      "matches": true
+    },
+    {
+      "source_path": "plugins/branding/references/natural-writing.md",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/_assets/plugins/branding/references/natural-writing.md",
+      "expected_sha256": "4e22e48a9d92b8a8ce90e73c53f87a27b2fef9080dc579894f96cf70c521d760",
+      "actual_sha256": "4e22e48a9d92b8a8ce90e73c53f87a27b2fef9080dc579894f96cf70c521d760",
+      "matches": true
+    },
+    {
+      "source_path": "plugins/branding/skill-presets/branding.yaml",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/_assets/plugins/branding/skill-presets/branding.yaml",
+      "expected_sha256": "29670fafe7903e27c5bafa7923cb2adc7d2e8baac64a52e5942298d231dd219f",
+      "actual_sha256": "29670fafe7903e27c5bafa7923cb2adc7d2e8baac64a52e5942298d231dd219f",
+      "matches": true
+    },
+    {
+      "source_path": "plugins/branding/workflows/brand-foundation-setup.yaml",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/_assets/plugins/branding/workflows/brand-foundation-setup.yaml",
+      "expected_sha256": "c803c8d6db66afd32feb25bb1f7926ece5a29b9311bc3b180ed61c4910852491",
+      "actual_sha256": "c803c8d6db66afd32feb25bb1f7926ece5a29b9311bc3b180ed61c4910852491",
+      "matches": true
+    },
+    {
+      "source_path": "plugins/branding/workflows/content-production.yaml",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/_assets/plugins/branding/workflows/content-production.yaml",
+      "expected_sha256": "413721eaf632f947085aa9c7d271a152aa6fbf944e0775f1838dc5add1eebf2b",
+      "actual_sha256": "413721eaf632f947085aa9c7d271a152aa6fbf944e0775f1838dc5add1eebf2b",
+      "matches": true
+    },
+    {
+      "source_path": "plugins/engineering/workflows/tracked-delivery.yaml",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/_assets/plugins/engineering/workflows/tracked-delivery.yaml",
+      "expected_sha256": "a47af90c8c64f3dbc73c3a812d0d24e8ece1578a062af5848833a71286b89ab7",
+      "actual_sha256": "a47af90c8c64f3dbc73c3a812d0d24e8ece1578a062af5848833a71286b89ab7",
+      "matches": true
+    },
+    {
+      "source_path": "plugins/seo/workflows/content-refresh.yaml",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/_assets/plugins/seo/workflows/content-refresh.yaml",
+      "expected_sha256": "fb551cb3f28454266b5ed11993afec49fb17a37c1eaf9ca8966be67390277681",
+      "actual_sha256": "fb551cb3f28454266b5ed11993afec49fb17a37c1eaf9ca8966be67390277681",
+      "matches": true
+    },
+    {
+      "source_path": "plugins/seo/workflows/website-analysis.yaml",
+      "packaged_path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/stackos/_assets/plugins/seo/workflows/website-analysis.yaml",
+      "expected_sha256": "661185fa380920626a272e52f37ad41ff74ac4b39b211266875a35051225a7ef",
+      "actual_sha256": "661185fa380920626a272e52f37ad41ff74ac4b39b211266875a35051225a7ef",
+      "matches": true
+    }
+  ],
+  "versions": {
+    "app_short_version": "2.1.31",
+    "app_bundle_version": "2.1.31",
+    "payload_version": "2.1.31",
+    "payload_build_id": "20260930T041843Z",
+    "packaged_init_equals_current": true
+  }
+}

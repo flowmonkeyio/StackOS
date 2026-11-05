@@ -1,0 +1,165 @@
+{
+  "timestamp": "2026-10-06 11:44:11.00 -0700",
+  "procName": "notarytool",
+  "exception": {
+    "codes": "0x0000000000000002, 0x000000016d19bfe0",
+    "rawCodes": [
+      2,
+      6125371360
+    ],
+    "type": "EXC_BAD_ACCESS",
+    "signal": "SIGBUS",
+    "subtype": "KERN_PROTECTION_FAILURE at 0x000000016d19bfe0"
+  },
+  "termination": {
+    "flags": 0,
+    "code": 10,
+    "namespace": "SIGNAL",
+    "indicator": "Bus error: 10",
+    "byProc": "exc handler",
+    "byPid": 8934
+  },
+  "faultingThread": 6,
+  "frames": [
+    {
+      "symbol": "__vfprintf",
+      "imageIndex": 9
+    },
+    {
+      "symbol": "_vsnprintf",
+      "imageIndex": 9
+    },
+    {
+      "symbol": "snprintf_l",
+      "imageIndex": 9
+    },
+    {
+      "symbol": "__CFStringAppendFormatCore",
+      "imageIndex": 5
+    },
+    {
+      "symbol": "_CFStringCreateWithFormatAndArgumentsReturningMetadata",
+      "imageIndex": 5
+    },
+    {
+      "symbol": "_CFStringCreateWithFormatAndArgumentsAux2",
+      "imageIndex": 5
+    },
+    {
+      "symbol": "NSString.__allocating_init(format:locale:arguments:)",
+      "imageIndex": 7
+    },
+    {
+      "symbol": "specialized withVaList<A>(_:_:)",
+      "imageIndex": 7
+    },
+    {
+      "symbol": "String.init(format:_:)",
+      "imageIndex": 7
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": "AWSSigner.signChunk(body:signingData:)",
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    },
+    {
+      "symbol": null,
+      "imageIndex": 0
+    }
+  ]
+}

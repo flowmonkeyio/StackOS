@@ -1,0 +1,82 @@
+{
+  "baseline_commit": "6f9cbaa66588354ef956d5fe260b94a6baa7f844",
+  "candidate_commit": "d8883b926c340229b18fb53e9001d58c83055303",
+  "candidate_branch": "release/google-indexing-023",
+  "worktree": "/private/tmp/stackos-release-2135-20261006/connectors",
+  "working_tree_clean": true,
+  "version": "0.2.3",
+  "changed_files": [
+    "M\tREADME.md",
+    "M\tpyproject.toml",
+    "M\tsrc/stackos_connectors/connectors/google_indexing/catalog.json",
+    "A\tsrc/stackos_connectors/connectors/google_indexing/docs/auth.md",
+    "M\tsrc/stackos_connectors/connectors/google_search_console/docs/auth.md",
+    "M\tsrc/stackos_connectors/shared/google/service_account.py",
+    "M\ttests/auth/test_google_service_account.py",
+    "M\ttests/auth/test_oauth_contracts.py",
+    "M\ttests/auth/test_probes.py",
+    "M\ttests/packaging/installed_auth_consumer.py",
+    "M\ttests/packaging/test_grouped_layout.py"
+  ],
+  "root_cause": "Google Indexing catalog omitted provider auth_protocol and service-account.protocol, so canonical get_auth_contract/request_token rejected the existing host service-account capability.",
+  "owner": "StackOSConnectors Google Indexing catalog plus shared Google supported-provider set; existing shared JWT signer/exchange reused unchanged.",
+  "supported_set_consumer": "Migrated host stackos/auth_providers/repository/credentials.py imports GOOGLE_SERVICE_ACCOUNT_PROVIDERS and validates service-account provider membership.",
+  "scope": "Fixed Google JWT endpoint, indexing scope, Bearer/expiry validation, oauth_response evidence, no delegation; provider action execution unchanged.",
+  "preservation": "No QuickBooks source changes; GSC executable sources unchanged, only obsolete Indexing documentation sentence replaced.",
+  "proof": {
+    "red": {
+      "result": "7 failed, 60 passed",
+      "command": "PYTHONPATH=src python -m pytest tests/auth/test_google_service_account.py tests/auth/test_oauth_contracts.py -q",
+      "log": "red-full.log"
+    },
+    "green": {
+      "result": "67 passed",
+      "command": "PYTHONPATH=src python -m pytest tests/auth/test_google_service_account.py tests/auth/test_oauth_contracts.py -q",
+      "log": "green.log"
+    },
+    "full_suite_already_completed": {
+      "result": "1403 passed in 51.08s",
+      "command": "PYTHONPATH=src python -m pytest -q",
+      "log": "full-suite.log"
+    },
+    "lint": {
+      "result": "passed",
+      "log": "ruff.log"
+    },
+    "diff_check": "passed",
+    "installed_wheel": {
+      "status": "passed",
+      "version": "0.2.3",
+      "protocol_providers": 17,
+      "protocol_methods": 37,
+      "categories": [
+        "discovery",
+        "authorization",
+        "code",
+        "refresh",
+        "client_credentials",
+        "delegated_jwt",
+        "indexing_jwt",
+        "probe",
+        "action",
+        "telegram",
+        "slack_v0",
+        "hubspot_v3",
+        "quickbooks_exact_reads"
+      ],
+      "network": "blocked; injected edges only",
+      "log": "installed-wheel-smoke.json",
+      "environment": "Package installed into evidence/wheel-venv; dependency-only site path reused from connector development venv. Driver asserts every stackos_connectors module comes from wheel-venv purelib, no StackOS package, and blocks live socket access."
+    },
+    "wheel_integrity": {
+      "files": 440,
+      "crc": "passed",
+      "catalog_and_supported_set_match_candidate": true
+    }
+  },
+  "build": {
+    "command": "python -m build --no-isolation --outdir ../connector-evidence/dist",
+    "log": "build.log"
+  },
+  "side_effects": "Local isolated branch/worktree, candidate commit, synthetic tests and distribution build only. No publishing, pushing, desktop actions or StackOS state writes."
+}

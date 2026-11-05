@@ -1,0 +1,125 @@
+{
+  "attempt": "release-artifact-review-605-a1",
+  "contract_revision": "r4",
+  "project_id": 1,
+  "run_plan_id": 605,
+  "run_id": 599,
+  "step_key": "verify-delivery",
+  "reviewer": "/root/global_readiness_review",
+  "independence": "Independent reviewer; no production, test, build, signing, installation, publication, or lifecycle mutations. Only bounded review evidence was written.",
+  "disposition": "approve_signed_release_artifact_readiness",
+  "candidate": {
+    "commit": "54b9c1dc913b4da399a6aef8df279bad1c65d72c",
+    "version": "2.1.36",
+    "build_id": "global605-2.1.36-54b9c1dc913b",
+    "source": "/private/tmp/stackos-global605-release",
+    "dist": "/private/tmp/stackos-global605-release/desktop/dist",
+    "precommit_candidate": "dec4a1b013f739428ce596d4b242eebe3ce6beb65dfc5078cd1c020104623833"
+  },
+  "scope": "Completed frozen canonical signed/notarized macOS release build: source provenance, packaged runtime and guidance, UI, artifact integrity, trust assessment, updater metadata, stable alias. Reuses accepted source and integration reviews; does not repeat their broad tests or claim live installation/public hosting.",
+  "sources": [
+    {
+      "path": "/tmp/stackos-global-planning-605/release-review-a2.json",
+      "sha256": "38ed6b11368ad14864911455cf0f691c78a98200febbf3e0c5756e2992ab2b40"
+    },
+    {
+      "path": "/private/tmp/stackos-global605-release-build/release-build-receipt.json",
+      "sha256": "8bea2c139f5b31a165b5fcdfb1c001fb6c089492c928bbca2d15f67c9c93df9f"
+    },
+    {
+      "path": "/private/tmp/stackos-global605-release-build/logs/release-build-a1.log",
+      "sha256": "53a0c09c1ef6bfc179def2840909d7a0ea1bc8c9a584c8fba3cb552df7ac46c8"
+    },
+    {
+      "path": "/private/tmp/stackos-global605-release-build/release-source-before.json",
+      "sha256": "87bd7f4cabf20198c76866716935b1fbef5880af6d5b5ddb9b9dec1e06af1393"
+    },
+    {
+      "path": "/private/tmp/stackos-global605-release-build/release-app-file-hashes.json",
+      "sha256": "13067369cf49c1bf501442b750801367f8bd2fc098ee852251903dc30c8e0fa2"
+    },
+    {
+      "path": "/private/tmp/stackos-global605-release-build/release-ui-file-hashes.json",
+      "sha256": "04e48537da643baa845624e97c3cc5d62a2316e2d4abad125c21d4d240febc34"
+    },
+    {
+      "path": "/Users/sergeyrura/Bin/content-stack/desktop/dist/release-2.1.36/release-manifest.json",
+      "sha256": "8d1d245f697d9d9184d9e2987764d6f1823bde4eb7d62ecdc36767a611429d79",
+      "scope": "Handoff manifest hash verified; copied-file verification is main-owned."
+    }
+  ],
+  "acceptance": [
+    {
+      "criterion": "Exact source provenance and version",
+      "result": "pass",
+      "evidence": "HEAD is expected commit, clean tracked worktree, all 38 precommit candidate hashes preserved; all 1845 source-before manifest paths independently matched after build. Final build-info reports 2.1.36 and expected build ID."
+    },
+    {
+      "criterion": "Packaged feature implementation and guidance",
+      "result": "pass",
+      "evidence": "Independently matched all 13 changed Python runtime files, including migration 0033 and version module, against source and across wheel, staged payload, final app, and ZIP. Both bundled StackOS skills matched across those four package surfaces."
+    },
+    {
+      "criterion": "UI and complete app artifact integrity",
+      "result": "pass",
+      "evidence": "All 89 UI hashes match source, staged payload and final app. Complete final app entry set plus hashes, byte counts, modes and symlink targets match the frozen 21219-entry manifest. Independent content check recorded zero discrepancies."
+    },
+    {
+      "criterion": "Canonical packaged CLI verification",
+      "result": "pass",
+      "evidence": "Independent node desktop/scripts/verify-stackos-cli.cjs against final app packaged CLI with expected 2.1.36 exited 0. Canonical build log confirms staged and final CLI/browser verification; worker verifier log hashes independently checked."
+    },
+    {
+      "criterion": "Signing, notarization and stapling",
+      "result": "pass",
+      "evidence": "Independent escalated read-only app codesign --verify --deep --strict passed; Gatekeeper app execute assessment and DMG primary-signature assessment accepted Notarized Developer ID; xcrun stapler validate DMG passed. Worker final trust-check logs match their hashes and identify expected team TSHN26FR48. Canonical build log records accepted notarization and completed stapling/validation."
+    },
+    {
+      "criterion": "Distributable and updater correspondence",
+      "result": "pass",
+      "evidence": "Independently recomputed all final artifact SHA256 values; parsed latest-mac.yml version 2.1.36 and recomputed ZIP/DMG SHA512 and sizes, including legacy ZIP path/hash. Stable alias equals the final stapled versioned DMG byte-for-byte."
+    }
+  ],
+  "independent_content_evidence": "/private/tmp/stackos-global605-release-build/independent-artifact-content-check.json",
+  "artifacts": {
+    "stackos-2.1.36-mac-arm64.dmg": {
+      "bytes": 489828933,
+      "sha256": "28fa77c603bf49832165d9f1ebefb8da225268d0fa0714d46df992d0553d3750"
+    },
+    "stackos-2.1.36-mac-arm64.dmg.blockmap": {
+      "bytes": 505123,
+      "sha256": "b2284dea59b93b561f1e9a732da64c5b5ee8ce25be030b0562025a950a723e58"
+    },
+    "stackos-2.1.36-mac-arm64.zip": {
+      "bytes": 494210680,
+      "sha256": "5d12b02a65b99aaeba09c9108aaa3faea0f3c60bb8c65bd7e2c3a9302702d913"
+    },
+    "stackos-2.1.36-mac-arm64.zip.blockmap": {
+      "bytes": 513232,
+      "sha256": "fd552545b1b0958f3539f4dc0b78219a62d538093f1e5d64f436160eb62d6082"
+    },
+    "latest-mac.yml": {
+      "bytes": 513,
+      "sha256": "01eba8d5b17e50f102aef5e7cec6dc5cbb24800876d61d0b3547bc85cb5e75ff"
+    },
+    "stackos-latest-mac-arm64.dmg": {
+      "bytes": 489828933,
+      "sha256": "28fa77c603bf49832165d9f1ebefb8da225268d0fa0714d46df992d0553d3750"
+    },
+    "stackos-2.1.36-py3-none-any.whl": {
+      "bytes": 4266770,
+      "sha256": "892d9c72cba6048b556a79782cc888d885cbb57c4df00440b12f7fbc4d9a2efb"
+    }
+  },
+  "findings": [],
+  "environment_observations": [
+    "Initial sandbox-only trust checks reported signature/LaunchServices errors. Identical authorized escalated read-only checks succeeded. These were environment limitations, not artifact defects.",
+    "One exploratory handoff-manifest parser assumed an artifacts key; it was corrected to inspect the actual files schema. No product or artifact was changed."
+  ],
+  "residual_gaps": [
+    "This review does not claim installation or restart of the signed 2.1.36 artifact, shared database or host-session changes, or completion of the outstanding live M1/M2 workflow obligations.",
+    "No public artifact upload, hosted update metadata retrieval, or installed signed auto-update rehearsal was performed. Artifact readiness does not itself establish those publication or installation outcomes.",
+    "Prior failed make invocations remain failed historical evidence; accepted selective recovery and source-proof reuse are documented in prior reviews, not relabeled as a successful full make invocation."
+  ],
+  "next_disposition": "Main agent may accept the signed release artifact evidence and provide the concrete local distributables under the user's commit/push/build authorization. Main retains lifecycle, publication authority and final workflow acceptance."
+}

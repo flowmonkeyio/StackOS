@@ -1,0 +1,22 @@
+{
+  "command": [
+    "make",
+    "-o",
+    "lint",
+    "-o",
+    "typecheck",
+    "-o",
+    "test-python",
+    "signoff"
+  ],
+  "cwd": "/tmp/stackos-work-723/signoff",
+  "exit_code": 0,
+  "log": "/tmp/stackos-work-723/signoff-final-ui.log",
+  "summary": [
+    "Test Files  117 passed (117)",
+    "Tests  777 passed (777)",
+    "> vue-tsc && vite build",
+    "\u2713 built in 2.33s"
+  ],
+  "reused": "Unchanged backend: make signoff lint/format/mypy and 5470 Python tests passed in signoff-network attempt. This executes all remaining and changed UI gates."
+}

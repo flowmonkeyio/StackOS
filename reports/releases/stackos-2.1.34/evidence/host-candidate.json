@@ -1,0 +1,53 @@
+{
+  "run_plan_id": 572,
+  "execution_id": 567,
+  "step": "fix-review",
+  "attempt": 1,
+  "contract_revision": 1,
+  "status": "candidate-ready",
+  "base": "568d94e35f03627f67c2b85de8cf1623e21c0996",
+  "files": [
+    {
+      "path": "stackos/auth_providers/repository/credentials.py",
+      "sha256": "c62108fbd63b419142ebdab0f2f33efaf1dee56722f94bf83ccbb918f1d61d00"
+    },
+    {
+      "path": "stackos/auth_providers/repository/resolution.py",
+      "sha256": "8b6fb744e574ba4d3a4750fec4259eb0c751ccac4eb7e202267b52d69c5efe4d"
+    },
+    {
+      "path": "plugins/seo/plugin.yaml",
+      "sha256": "ab4449eafe1592fb1e5f488e2888f1ffaf1b1014b13814107b4d845133df4eba"
+    },
+    {
+      "path": "tests/integration/test_repositories/test_search_console_scope_lifecycle.py",
+      "sha256": "52f96e5084f75395cc654f4fb4c7dde3929ef85f0a192fba44acb1364ac2c92f"
+    },
+    {
+      "path": "tests/unit/test_auth_catalog_normalization.py",
+      "sha256": "cc2f06328ef8fca1609fb3da16c1188babc8337cfe2056264984675bf95e58b4"
+    }
+  ],
+  "tests": {
+    "host_green": "81 passed in 19.59s",
+    "log": "/private/tmp/stackos-gsc-hotfix-20261006/evidence/host-green-v2.log",
+    "command": "PYTHONPATH=host:connectors/src /Users/sergeyrura/Bin/content-stack/.venv/bin/python -m pytest tests/integration/test_repositories/test_search_console_scope_lifecycle.py tests/integration/test_repositories/test_google_service_accounts.py tests/unit/test_auth_catalog_normalization.py -q"
+  },
+  "lint": "pass",
+  "diff_check": "pass",
+  "coverage": [
+    "Default readonly cannot submit or auto-promote",
+    "Explicit write survives expiry renewal and permits read scopes",
+    "Scope edits invalidate cached token and scope evidence; unchanged rename preserves it",
+    "Interactive OAuth scope edit requires renewed consent",
+    "An unexpired readonly token issued by2.1.33 is renewed for saved explicit write mode",
+    "Provider narrowed scopes stay authoritative without a refresh retry loop",
+    "Other provider scope checks remain exact",
+    "Invalidmode and public Account output do not disclose secrets"
+  ],
+  "pending_supplemental_check": "six existing oauth lifecycle compatibility tests; no candidate source edits planned",
+  "notes": [
+    "Provider requests mocked with synthetic keys; normal daemon untouched",
+    "Versions, lock, changelog are root-owned"
+  ]
+}

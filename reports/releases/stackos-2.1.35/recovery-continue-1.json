@@ -1,0 +1,177 @@
+{
+  "app_archive_equal_entries": 21216,
+  "app_code_resources_sha256": "a4c88cb182aac98847b8860d522b3c51facf9c78aadd4cb1e9cedac165fc1942",
+  "app_submission_id": "f0003c77-5049-4808-a868-857ff7d66dc4",
+  "config_sha256": "0a35446a99c0e9a4e0c3dd38f83df8e8631b950cf0beb70d24cde77ebec9f38b",
+  "connector_version": "0.2.4",
+  "dmg_submission_id": "a572d250-e57c-42fd-9a70-8c6bfdb30c20",
+  "finished_at": "2026-10-07T02:00:20.458092+00:00",
+  "host_commit": "2903fabfc82754753ae0311599b3f407c177b09a",
+  "host_version": "2.1.35",
+  "local_activation": false,
+  "phase": "continue",
+  "started_at": "2026-10-07T01:57:15.463395+00:00",
+  "status": "dmg_submitted_pending_acceptance",
+  "steps": [
+    {
+      "command": [
+        "/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool",
+        "info",
+        "f0003c77-5049-4808-a868-857ff7d66dc4",
+        "--keychain-profile",
+        "stackos-notary",
+        "--output-format",
+        "json"
+      ],
+      "exit_code": 0,
+      "finished_at": "2026-10-07T01:57:16.107574+00:00",
+      "log": "/private/tmp/stackos-release-2135-20261006/release/recovery-continue-1-00-app-notary-info.log",
+      "log_sha256": "a1ddba02c1d0e16295fb1479838287945b9899441a2825375e5f6a5bb8c538e6",
+      "name": "app-notary-info",
+      "started_at": "2026-10-07T01:57:15.463889+00:00"
+    },
+    {
+      "command": [
+        "codesign",
+        "--verify",
+        "--deep",
+        "--strict",
+        "--verbose=2",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/mac-arm64/StackOS.app"
+      ],
+      "exit_code": 0,
+      "finished_at": "2026-10-07T01:57:23.591896+00:00",
+      "log": "/private/tmp/stackos-release-2135-20261006/release/recovery-continue-1-01-app-signature.log",
+      "log_sha256": "e365c2e1f616d2211e63e49731ee44a4393c2a0987f16a345961324d03ae90f7",
+      "name": "app-signature",
+      "started_at": "2026-10-07T01:57:22.585977+00:00"
+    },
+    {
+      "command": [
+        "xcrun",
+        "stapler",
+        "staple",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/mac-arm64/StackOS.app"
+      ],
+      "exit_code": 0,
+      "finished_at": "2026-10-07T01:57:25.343601+00:00",
+      "log": "/private/tmp/stackos-release-2135-20261006/release/recovery-continue-1-02-app-staple.log",
+      "log_sha256": "d5d721b10b9e2d7ad942c65bccb9e4b62ce1a73053526d8db5e0d8b87e37261b",
+      "name": "app-staple",
+      "started_at": "2026-10-07T01:57:23.592406+00:00"
+    },
+    {
+      "command": [
+        "xcrun",
+        "stapler",
+        "validate",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/mac-arm64/StackOS.app"
+      ],
+      "exit_code": 0,
+      "finished_at": "2026-10-07T01:57:25.582943+00:00",
+      "log": "/private/tmp/stackos-release-2135-20261006/release/recovery-continue-1-03-app-staple-validate.log",
+      "log_sha256": "cf7926b8dea03171d542238222deb1b36043193b538f2aaeb8cbb2e99d0d6204",
+      "name": "app-staple-validate",
+      "started_at": "2026-10-07T01:57:25.344244+00:00"
+    },
+    {
+      "command": [
+        "spctl",
+        "--assess",
+        "--type",
+        "execute",
+        "--verbose=2",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/mac-arm64/StackOS.app"
+      ],
+      "exit_code": 0,
+      "finished_at": "2026-10-07T01:57:26.681049+00:00",
+      "log": "/private/tmp/stackos-release-2135-20261006/release/recovery-continue-1-04-app-gatekeeper.log",
+      "log_sha256": "9e61ab100943ee9e7a3cb77b0f26da4dcc18dfd95f0cee9910c80acc85331f6f",
+      "name": "app-gatekeeper",
+      "started_at": "2026-10-07T01:57:25.583643+00:00"
+    },
+    {
+      "command": [
+        "pnpm",
+        "exec",
+        "electron-builder",
+        "--mac",
+        "--arm64",
+        "--prepackaged",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/mac-arm64/StackOS.app",
+        "--config",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/.electron-builder.generated.json",
+        "--publish",
+        "never"
+      ],
+      "exit_code": 0,
+      "finished_at": "2026-10-07T01:58:23.284847+00:00",
+      "log": "/private/tmp/stackos-release-2135-20261006/release/recovery-continue-1-05-prepackaged.log",
+      "log_sha256": "1feeb26b6412f30f5f203df5e55dfe9457b359843d77b410518205ff9bcb5ae1",
+      "name": "prepackaged",
+      "started_at": "2026-10-07T01:57:26.684482+00:00"
+    },
+    {
+      "command": [
+        "node",
+        "scripts/verify-stackos-cli.cjs",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/bin/stackos",
+        "2.1.35"
+      ],
+      "exit_code": 0,
+      "finished_at": "2026-10-07T01:58:28.930931+00:00",
+      "log": "/private/tmp/stackos-release-2135-20261006/release/recovery-continue-1-06-packaged-cli.log",
+      "log_sha256": "fedef74f560eb23c7166ecda615814f9da59477d92d321c6110e76d36496bb87",
+      "name": "packaged-cli",
+      "started_at": "2026-10-07T01:58:23.291471+00:00"
+    },
+    {
+      "command": [
+        "node",
+        "scripts/verify-stackos-browser-cli.cjs",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/stackos/bin/stackos.browser"
+      ],
+      "exit_code": 0,
+      "finished_at": "2026-10-07T01:58:33.076678+00:00",
+      "log": "/private/tmp/stackos-release-2135-20261006/release/recovery-continue-1-07-packaged-browser-cli.log",
+      "log_sha256": "6229cd47f76f924f9ae36287e113fcc5a38c488f245e38307a8e3ce2e0d14112",
+      "name": "packaged-browser-cli",
+      "started_at": "2026-10-07T01:58:28.931654+00:00"
+    },
+    {
+      "command": [
+        "codesign",
+        "--verify",
+        "--deep",
+        "--strict",
+        "--verbose=2",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/stackos-2.1.35-mac-arm64.dmg"
+      ],
+      "exit_code": 0,
+      "finished_at": "2026-10-07T01:58:34.495332+00:00",
+      "log": "/private/tmp/stackos-release-2135-20261006/release/recovery-continue-1-08-dmg-signature.log",
+      "log_sha256": "a8e5181e610fc4a03bf70d8985f91398405a906f89fb760230d06b186440e0b4",
+      "name": "dmg-signature",
+      "started_at": "2026-10-07T01:58:33.077689+00:00"
+    },
+    {
+      "command": [
+        "/Applications/Xcode.app/Contents/Developer/usr/bin/notarytool",
+        "submit",
+        "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/stackos-2.1.35-mac-arm64.dmg",
+        "--keychain-profile",
+        "stackos-notary",
+        "--no-s3-acceleration",
+        "--no-wait",
+        "--output-format",
+        "json"
+      ],
+      "exit_code": 0,
+      "finished_at": "2026-10-07T02:00:20.456765+00:00",
+      "log": "/private/tmp/stackos-release-2135-20261006/release/recovery-continue-1-09-dmg-submit.log",
+      "log_sha256": "eef7570bc40043b4023706540657f3ea8ad543b845c7fb58750f6868c24ac518",
+      "name": "dmg-submit",
+      "started_at": "2026-10-07T01:58:34.703523+00:00"
+    }
+  ]
+}

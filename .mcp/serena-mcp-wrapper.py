@@ -206,6 +206,8 @@ def _start_serena() -> None:
             str(PROJECT),
             "--context",
             CONTEXT,
+            "--agent-interface",
+            "tools",
             "--enable-web-dashboard",
             "false",
             "--open-web-dashboard",

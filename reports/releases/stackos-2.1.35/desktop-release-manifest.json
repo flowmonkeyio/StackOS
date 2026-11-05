@@ -1,0 +1,84 @@
+{
+  "captured_at": "2026-10-07T02:07:02.570243+00:00",
+  "connector_version": "0.2.4",
+  "feed": {
+    "files": [
+      {
+        "sha512": "hrKplUBxsblkAo1K7k9+KOjMxZpd/+7BZESp2UfJ3LfIu1D72KT+RBQVSRgRprGv6sBCXZVEsVafQnNy3Rsiaw==",
+        "size": 494276145,
+        "url": "stackos-2.1.35-mac-arm64.zip"
+      },
+      {
+        "sha512": "fuO/scKDBoggNaNV2QHalvCQaEDWjz3VAKY7GCyS9KdnYPRH+hLqLnrA0cF/BvLkuR+QLzAhM92L/zNvTJmsFg==",
+        "size": 489994246,
+        "url": "stackos-2.1.35-mac-arm64.dmg"
+      }
+    ],
+    "path": "stackos-2.1.35-mac-arm64.zip",
+    "releaseDate": "2026-10-07T01:58:23.271Z",
+    "sha512": "hrKplUBxsblkAo1K7k9+KOjMxZpd/+7BZESp2UfJ3LfIu1D72KT+RBQVSRgRprGv6sBCXZVEsVafQnNy3Rsiaw==",
+    "version": "2.1.35"
+  },
+  "files": [
+    {
+      "name": "stackos-2.1.35-mac-arm64.dmg",
+      "path": "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/stackos-2.1.35-mac-arm64.dmg",
+      "sha256": "2b53fb4c796e7310cfcccab3d39264e8604d5be33794cc2431ced6f5ac49905a",
+      "sha512": "fuO/scKDBoggNaNV2QHalvCQaEDWjz3VAKY7GCyS9KdnYPRH+hLqLnrA0cF/BvLkuR+QLzAhM92L/zNvTJmsFg==",
+      "size": 489994246
+    },
+    {
+      "name": "stackos-2.1.35-mac-arm64.zip",
+      "path": "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/stackos-2.1.35-mac-arm64.zip",
+      "sha256": "37b580aac1d28dce29f7c86dd584122cd54ca9f0ddeeab76a1b5dffe841c74da",
+      "sha512": "hrKplUBxsblkAo1K7k9+KOjMxZpd/+7BZESp2UfJ3LfIu1D72KT+RBQVSRgRprGv6sBCXZVEsVafQnNy3Rsiaw==",
+      "size": 494276145
+    },
+    {
+      "block_count": 23376,
+      "name": "stackos-2.1.35-mac-arm64.dmg.blockmap",
+      "path": "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/stackos-2.1.35-mac-arm64.dmg.blockmap",
+      "sha256": "3a72df6005d433aa8db6db5e7a86b262f9af11e48a786fbfbe6ae1283a4c0b98",
+      "sha512": "g7483zJVIdaDh3ZO8O8uiktI7lkfV/g7O99OFJuCJPgcRxbHnrTNrVUYGzhvtOvIVRVFMqd9qJMn8eCQ9l0LzQ==",
+      "size": 507976
+    },
+    {
+      "block_count": 23512,
+      "name": "stackos-2.1.35-mac-arm64.zip.blockmap",
+      "path": "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/stackos-2.1.35-mac-arm64.zip.blockmap",
+      "sha256": "76c6ad8d9fa02699a9a18930d6e61c25d0294e5a47738a05e660d96da7c3dfa5",
+      "sha512": "diRxoOPOQ+8hRw29lqGquS3zzzP77hy50mLsD3nXzkKXzmHYcSNMWBlQMY7kfC3bXrPKcotsZLkwTtPKK0u6VQ==",
+      "size": 511964
+    },
+    {
+      "name": "stackos-latest-mac-arm64.dmg",
+      "path": "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/stackos-latest-mac-arm64.dmg",
+      "sha256": "2b53fb4c796e7310cfcccab3d39264e8604d5be33794cc2431ced6f5ac49905a",
+      "sha512": "fuO/scKDBoggNaNV2QHalvCQaEDWjz3VAKY7GCyS9KdnYPRH+hLqLnrA0cF/BvLkuR+QLzAhM92L/zNvTJmsFg==",
+      "size": 489994246
+    },
+    {
+      "name": "latest-mac.yml",
+      "path": "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/latest-mac.yml",
+      "sha256": "21a84a6966bb0d7c593703f93a8f28e47291815607ad55a7fbe886b528840a04",
+      "sha512": "Dos2Vk4BM9/NgMvYczu2V3X8EiW8P+n+T2d5oJEpeBVDz8S8ctNbyvuo477K4t8nDkCDnlUgKfi9+GrMsz5Ecg==",
+      "size": 513
+    }
+  ],
+  "host_commit": "2903fabfc82754753ae0311599b3f407c177b09a",
+  "host_version": "2.1.35",
+  "limits": "Local content/metadata parity only. Signing/notarization evidence is main-owned; no publication or activation performed.",
+  "status": "passed",
+  "trust_receipts": {
+    "app": {
+      "path": "/private/tmp/stackos-release-2135-20261006/release/trust-app.json",
+      "sha256": "42ab0a0e76d94e7d9a1d4b188e8c535f25921b25d5c25355d6bc87d98c93d559"
+    },
+    "dmg": {
+      "path": "/private/tmp/stackos-release-2135-20261006/release/trust-dmg.json",
+      "sha256": "3f5f1ef4679ac2e7ded13eba9a3abf713d834b40d4326fb0349286c1f0f0376a"
+    }
+  },
+  "update_url": "https://stackos.flowmonkey.io/StackOS/",
+  "zip_app_files_equal": 443
+}

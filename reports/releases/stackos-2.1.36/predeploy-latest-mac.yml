@@ -1,0 +1,11 @@
+version: 2.1.35
+files:
+  - url: stackos-2.1.35-mac-arm64.zip
+    sha512: hrKplUBxsblkAo1K7k9+KOjMxZpd/+7BZESp2UfJ3LfIu1D72KT+RBQVSRgRprGv6sBCXZVEsVafQnNy3Rsiaw==
+    size: 494276145
+  - url: stackos-2.1.35-mac-arm64.dmg
+    sha512: fuO/scKDBoggNaNV2QHalvCQaEDWjz3VAKY7GCyS9KdnYPRH+hLqLnrA0cF/BvLkuR+QLzAhM92L/zNvTJmsFg==
+    size: 489994246
+path: stackos-2.1.35-mac-arm64.zip
+sha512: hrKplUBxsblkAo1K7k9+KOjMxZpd/+7BZESp2UfJ3LfIu1D72KT+RBQVSRgRprGv6sBCXZVEsVafQnNy3Rsiaw==
+releaseDate: '2026-10-07T01:58:23.271Z'

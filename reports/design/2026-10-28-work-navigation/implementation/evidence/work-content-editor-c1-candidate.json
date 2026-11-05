@@ -1,0 +1,70 @@
+{
+  "disposition": "candidate-ready; frozen for independent review",
+  "ticket": "work-content-editor",
+  "ticket_id": 14732,
+  "attempt": "c1",
+  "contract_revision": 1,
+  "project_id": 1,
+  "run_plan_id": 723,
+  "run_id": 717,
+  "step_id": 7582,
+  "base_head": "b3b358f6ffab4d9ea5cd127edb4266eb6357d73b",
+  "accepted_prerequisites": {
+    "work_board_ui": "a3 3ba6875f19055f02b0e0c31c822ad9ae65659174aee8261aa2519a14d6fc8811",
+    "work_content_operation": "b1 02bd7f13a250660b79698ea438fdc6b2e945952e59c32a4b6328bb7877f6f22d"
+  },
+  "sources": [
+    "tracker.brief raw work-content-editor, project1, 2026-10-28",
+    ".codex/agents/sdlc-delivery.toml sourcepreset0.3.1 workflow0.4.0",
+    "docs/product-direction.md and docs/README.md; existing ui-design-system tokens/components",
+    "Product Design image-to-code/index/critical-overrides",
+    "reports/design/2026-10-28-work-navigation/concepts/02-task-popup.png",
+    "Latest user inline-toolbar amendment retained; no extension"
+  ],
+  "acceptance_evidence": {
+    "W05_W08": "Existing centered popup adds Edit content description-only editor plus Additional input composer/history. Goal/title/status stay read-only. Complete count retains actual completed tickets.",
+    "draft_protection": "Real-dialog route tests cover close, Back/history, ticket inspection, View dependencies, leaving Work and in-flight saving. Beforeunload protected. Native browser confirmation used for unsaved discard; only one active UiDialog.",
+    "save_contract": "Only tracker.updateTaskContent through generic operation client, strict narrow args. Empty description clears. Idempotency key frozen with exact intent for network uncertainty and post-save readback failure. Inputs locked until retry resolves. New intent gets new key.",
+    "conflicts": "409 retains text, blocks save until explicit current refresh; draft retained, latest saved description shown for comparison; next save uses new revision/key. Read/validation/auth errors retain drafts and readable action.",
+    "freshness": "Successful or replayed receipt always refetches tracker index and focused detail. Mutation response.task is not merged; current aggregate counts preserved.",
+    "UI_design": "Reuses UiDialog/UiButton/UiTextarea/UiFormField/UiCallout and tokens. Parent admitted exact canonical icons.ts PencilSquareIcon/edit addition."
+  },
+  "checks": [
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui exec vitest run src/views/task-tracker/useTrackerTaskContent.spec.ts src/views/TaskTrackerView.spec.ts src/views/task-tracker/TrackerTaskDetailDialog.spec.ts src/read-only-ui.spec.ts",
+      "result": "PASS 29 tests, 4 files"
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui type-check",
+      "result": "PASS"
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui exec eslint src/components/ui/icons.ts src/views/TaskTrackerView.vue src/views/TaskTrackerView.spec.ts src/views/task-tracker/TrackerTaskDetailDialog.vue src/views/task-tracker/TrackerTaskDetailDialog.spec.ts src/views/task-tracker/useTrackerTaskContent.ts src/views/task-tracker/useTrackerTaskContent.spec.ts src/read-only-ui.spec.ts",
+      "result": "PASS"
+    },
+    {
+      "command": "TPF_LLM_TOOL=codex tpf git diff --check",
+      "result": "PASS"
+    }
+  ],
+  "failures_resolved": [
+    "Initial typecheck found optional function prop with undefined default inferred as always present; changed default to explicit null; final typecheck passes."
+  ],
+  "environment": "Shared source workspace with accepted A3/B1; existing pnpm dependencies; vitest2.1.9. Parent owns isolated daemon5185/Vite5175/StackOSbrowser work-design tab3.",
+  "residuals": [
+    "Browser interaction/visual Product Design QA and full release signoff remain main-owned integration checks; not claimed by this ticket receipt."
+  ],
+  "changes_outside_original_paths": "Only icons.ts admitted explicitly by main for exact PencilSquareIcon/edit registry entry.",
+  "preserved": "All unrelated .mcp/.serena/reports/backend edits untouched. No commits or tracker/run writes.",
+  "files": {
+    "ui/src/components/ui/icons.ts": "a0f99b53fc6a407e60c848dac2fb570b8c604183bd43d9d842d332e5b099b803",
+    "ui/src/read-only-ui.spec.ts": "4dea44c6236f51851b2e86ff086b3931e4491db9a256c7ddf46977cf46d9e7e7",
+    "ui/src/views/TaskTrackerView.vue": "492d8eb1b52507d313c733be6a300746be3ac57252e7a126198ecfad0984e220",
+    "ui/src/views/TaskTrackerView.spec.ts": "774ff16b8458fd11e1efa0ee5d27e6a20a2de392a13d7102ebff9fe839a23404",
+    "ui/src/views/task-tracker/TrackerTaskDetailDialog.vue": "ca41b4e1788e8105f24272ccf7e62d59852ac7d3aaa30bd00fb15a78eaed119d",
+    "ui/src/views/task-tracker/TrackerTaskDetailDialog.spec.ts": "a06508d453095596212cbae03c29dbac4f1125bc03d8c710e6ab791f3abbb27f",
+    "ui/src/views/task-tracker/useTrackerTaskContent.ts": "56b48364f26077d6f3a69f527734376caf9dd24a9f82e43196f47acf5ea8ba07",
+    "ui/src/views/task-tracker/useTrackerTaskContent.spec.ts": "40a237da104ac8dfe05e1ef4d70f1a2e39f81a1b781f45c5117f4766cd70bc62"
+  },
+  "candidate_sha256": "1910f3585405b448a2025e57e91550f559efaea5296401b072dc322bfec14197"
+}

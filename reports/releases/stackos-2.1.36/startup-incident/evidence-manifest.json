@@ -1,0 +1,21 @@
+{
+  "captured_at": "2026-10-10T06:25:07.607607+00:00",
+  "files": {
+    "import-profile.json": "fe797db2587a2122bcfa7f906dc4ca4dae76ab5a87d88824222d42ea8e9db6e3",
+    "installed-recovery.json": "6be395309cdd60abac3c5f130a5395408f6d3c5f47db8a9552337325729d2194",
+    "manifest-stage-timing.json": "b8b54e34ae85454122f4ba2ab426064577c15f6f35efbf2397c58d7585c20f64",
+    "restart-delivery-a1.json": "649c905d3526893d00fce8aee4632e2cabf0b34466c481e1df5e419e4e97404e",
+    "restart-design-review-a1.json": "f8012fff70457ca005369bd7ef227b842952642e264d17dec9981ce125160906",
+    "restart-review-a1.json": "30d5023c046e62f91a74974a2980c3a412fdd91d5df83ad46f36c23f0de832f9",
+    "restart605-candidate-a1.json": "6148129e9e15d1fa98cf4dbeb1cfc9ab18e82e809e452d206c081cd7c9d0f80c",
+    "restart605-desktop-check-a3.log": "fc4efb5226af78a5d1c14222ea6f2e3a57942ccb1e7324465b5c3b36ffa94c57",
+    "restart605-red-a1.log": "6817135c0ad8442570e77c3e6b002c80e8edffebbaf2c91883f1dee061e4d9b8",
+    "timeline.json": "6dff2e3410287701adbb860835bfaa29d9791ef53734e5641cf44a58cf23e1a2"
+  },
+  "source_candidate": "eef0cd95be13a5991af9239b7347ff31ad97f3b5dafb10e7da6a0420a310b9c8",
+  "source_accepted": true,
+  "tracker_rev": 13750,
+  "resource_record_id": 1148,
+  "new_source_installed": false,
+  "new_source_released": false
+}

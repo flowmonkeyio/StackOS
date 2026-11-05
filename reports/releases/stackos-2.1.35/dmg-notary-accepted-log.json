@@ -1,0 +1,600 @@
+{
+  "logFormatVersion": 1,
+  "jobId": "a572d250-e57c-42fd-9a70-8c6bfdb30c20",
+  "status": "Accepted",
+  "statusSummary": "Ready for distribution",
+  "statusCode": 0,
+  "archiveFilename": "stackos-2.1.35-mac-arm64.dmg",
+  "uploadDate": "2026-10-07T02:00:20.352Z",
+  "sha256": "fdaf2093e3fbc682d55805a9c88ad753246efbb06100e7b148085b7624c0d848",
+  "ticketContents": [
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/StackOS Helper (GPU).app",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "fd6a106a5b28f47fc8648f8bb38c131f3c61d163",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/StackOS Helper (GPU).app/Contents/MacOS/StackOS Helper (GPU)",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "fd6a106a5b28f47fc8648f8bb38c131f3c61d163",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/StackOS Helper (Plugin).app",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "cdbb192beb7d71bc9ae895c3a870943278af4701",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/StackOS Helper (Plugin).app/Contents/MacOS/StackOS Helper (Plugin)",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "cdbb192beb7d71bc9ae895c3a870943278af4701",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/StackOS Helper (Renderer).app",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "7215a675e700461ede441d6a1acba82a2c01af0c",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/StackOS Helper (Renderer).app/Contents/MacOS/StackOS Helper (Renderer)",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "7215a675e700461ede441d6a1acba82a2c01af0c",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/StackOS Helper.app",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "2402dbaa920ef83e11f55f31021958a2ae2b5a05",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/StackOS Helper.app/Contents/MacOS/StackOS Helper",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "2402dbaa920ef83e11f55f31021958a2ae2b5a05",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Helpers/Google Chrome for Testing Helper (Alerts).app",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "0e723e43f375a4c1a451fe7c2ae95c5b49a7a932",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Helpers/Google Chrome for Testing Helper (Alerts).app/Contents/MacOS/Google Chrome for Testing Helper (Alerts)",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "0e723e43f375a4c1a451fe7c2ae95c5b49a7a932",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Helpers/Google Chrome for Testing Helper (GPU).app",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "45b9b8acb7f2d9cf0ad3bcfd6e8d220c334ad14a",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Helpers/Google Chrome for Testing Helper (GPU).app/Contents/MacOS/Google Chrome for Testing Helper (GPU)",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "45b9b8acb7f2d9cf0ad3bcfd6e8d220c334ad14a",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Helpers/Google Chrome for Testing Helper (Renderer).app",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "7553d50ee3002865bfabff99309486cbae40004c",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Helpers/Google Chrome for Testing Helper (Renderer).app/Contents/MacOS/Google Chrome for Testing Helper (Renderer)",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "7553d50ee3002865bfabff99309486cbae40004c",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Helpers/Google Chrome for Testing Helper.app",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "1c77a05d4484a8be53504c85f8c756e84ef24f9e",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Helpers/Google Chrome for Testing Helper.app/Contents/MacOS/Google Chrome for Testing Helper",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "1c77a05d4484a8be53504c85f8c756e84ef24f9e",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/Current/Helpers/Google Chrome for Testing Helper (GPU).app",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "45b9b8acb7f2d9cf0ad3bcfd6e8d220c334ad14a",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/Current/Helpers/Google Chrome for Testing Helper (Alerts).app",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "0e723e43f375a4c1a451fe7c2ae95c5b49a7a932",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/Current/Helpers/chrome_crashpad_handler",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "f23aac9c7a0582be5db8d34ae57b3c9f225064fa",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "8ffe31beb1a5ace2436a1ca30be3511512c4401e",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/Current/Helpers/app_mode_loader",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "4af3e041c463da85224454acbf266e6f0e648552",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/Current/Helpers/web_app_shortcut_copier",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "f7115b727daed5edcab88cd5b9f187b00a2e8cbd",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/Current/Helpers/Google Chrome for Testing Helper.app",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "1c77a05d4484a8be53504c85f8c756e84ef24f9e",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/Current",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "9350ea1a7989509b955b53504cf040e9d76ce2f7",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/Current/Helpers/Google Chrome for Testing Helper (Renderer).app",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "7553d50ee3002865bfabff99309486cbae40004c",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Google Chrome for Testing Framework",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "9350ea1a7989509b955b53504cf040e9d76ce2f7",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Helpers/app_mode_loader",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "4af3e041c463da85224454acbf266e6f0e648552",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Helpers/chrome_crashpad_handler",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "f23aac9c7a0582be5db8d34ae57b3c9f225064fa",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Helpers/web_app_shortcut_copier",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "f7115b727daed5edcab88cd5b9f187b00a2e8cbd",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Libraries/libEGL.dylib",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "9af260e248107c77ffc8b6af089550154f15e8bb",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Libraries/libGLESv2.dylib",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "3d75a7d2e54bbc0adcab75520f31932eeaf61a9c",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Libraries/libvk_swiftshader.dylib",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "4cc70260ac4d83288fc82eb3ca65c08d31fa7049",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Libraries/libvulkan.dylib",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "f4cd86e0cdfb9f06365fe683be36193f4b0bad9a",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/Frameworks/Google Chrome for Testing Framework.framework/Versions/151.0.7922.34/Libraries/WidevineCdm/_platform_specific/mac_arm64/libwidevinecdm.dylib",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "ef7a22cf7f08760787c78864fabb4e2cdefc819c",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/chromium-1234/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "8ffe31beb1a5ace2436a1ca30be3511512c4401e",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/Mantle.framework/Versions/Current",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "ab1e07fee50f7e7a1b28d64f1babbb297872e804",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current/Helpers/chrome_crashpad_handler",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "c52208d2c4204d4e268eb238728203b41a01b672",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/Squirrel.framework/Versions/Current",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "c50966a510b8087fd7b172509c3317365593345c",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "d3885a989bcb78aaddc54b63bc31bbc50a993f03",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/Current",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "a67d3fe7af150d8767bbb098f16032ff09b02f26",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/ReactiveObjC.framework/Versions/Current",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "b1d88914237194a32315c9cb51927ca6a1070599",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/StackOS Helper (Renderer).app",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "7215a675e700461ede441d6a1acba82a2c01af0c",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/StackOS Helper (GPU).app",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "fd6a106a5b28f47fc8648f8bb38c131f3c61d163",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/StackOS Helper (Plugin).app",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "cdbb192beb7d71bc9ae895c3a870943278af4701",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/StackOS Helper.app",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "2402dbaa920ef83e11f55f31021958a2ae2b5a05",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Electron Framework",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "a67d3fe7af150d8767bbb098f16032ff09b02f26",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Helpers/chrome_crashpad_handler",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "c52208d2c4204d4e268eb238728203b41a01b672",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libEGL.dylib",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "73df81daea217f7c57e2fa996d6b222532916f52",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libffmpeg.dylib",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "9fb77ec5c742a9bce8682530dc239b0b04943438",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libGLESv2.dylib",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "9093adbfe4beda137f320e9eb02ad8215c46b1e2",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/Electron Framework.framework/Versions/A/Libraries/libvk_swiftshader.dylib",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "f4b38a1d31e6b82b7d5309770d82ebb3f854134a",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/Mantle.framework/Versions/A/Mantle",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "ab1e07fee50f7e7a1b28d64f1babbb297872e804",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/ReactiveObjC.framework/Versions/A/ReactiveObjC",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "b1d88914237194a32315c9cb51927ca6a1070599",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/Squirrel.framework/Versions/A/Squirrel",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "c50966a510b8087fd7b172509c3317365593345c",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Frameworks/Squirrel.framework/Versions/A/Resources/ShipIt",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "37d9aacb68fc5aeb7d539fe4670f371e9a27fdf7",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/MacOS/StackOS",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "d3885a989bcb78aaddc54b63bc31bbc50a993f03",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/bin/python",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "4f05c15afa58c01164e2f4f05e005e29408099c9",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/libpython3.12.dylib",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "15138f4aa076313f0a216a26c2b1fbc66151305a",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/libtcl9.0.dylib",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "842a3d10f53c32222fa4bc1331a482b8dbf35de4",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/libtcl9tk9.0.dylib",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "e84c0268b02785a73ecf9ea1bcfcc009a3864dd3",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/itcl4.3.5/libitcl4.3.5.dylib",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "3c521826092cb1b42915942754663303c6c5b088",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/itcl4.3.5/libtcl9itcl4.3.5.dylib",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "8d1f2e7568bb551b54ab799ac7c4c4988561e6f3",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/lib-dynload/_crypt.cpython-312-darwin.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "cfc49e8e9594b6ec2874722b347d755a003a34c3",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/lib-dynload/_dbm.cpython-312-darwin.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "d614fe269c7a0ba4d79b8f3a7e275fe059e9e172",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/lib-dynload/_tkinter.cpython-312-darwin.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "c4a96bf9b1d7c6347c82df1305a329ec0c4840cd",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/_cffi_backend.cpython-312-darwin.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "0b3a6a0168e57a543d2f26a47b50ad2abb70047c",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/cryptography/hazmat/bindings/_rust.abi3.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "8e2ffa28e9bb7a554522d05e8fb4842d964774d2",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/fastar/fastar.cpython-312-darwin.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "a510b2d6da20691783d959a48b4325ebf0d1e23c",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/httptools/parser/parser.cpython-312-darwin.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "847cf4d688474d31f322b9debf98aee47e5dad71",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/httptools/parser/url_parser.cpython-312-darwin.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "cb6b0f3cf07ca15cda3a7d96aa5bad4f7236bbea",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/jiter/jiter.cpython-312-darwin.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "da6658719c34efd250bcf375cb632b0d695ed08e",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/markupsafe/_speedups.cpython-312-darwin.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "0465244c8d28a78c4b0f6dd9e974f3d1c5978892",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/pydantic_core/_pydantic_core.cpython-312-darwin.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "a5856cef11b2be98de2ba58960af844ebc20d44b",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/rignore/rignore.cpython-312-darwin.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "47b810cb2a8b5f919eeb42a3eb79f8770ee1104a",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/rpds/rpds.cpython-312-darwin.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "b56f4ce5668ac5a3557776e6b11de6d6d039aa8f",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/sqlalchemy/cyextension/collections.cpython-312-darwin.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "c3de24efd2ecaa60843884999680786595cbe9e6",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/sqlalchemy/cyextension/immutabledict.cpython-312-darwin.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "b9315e159915b610fb52cc4da45ff9d863789b76",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/sqlalchemy/cyextension/processors.cpython-312-darwin.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "fa60e7d838ad62751dc88a66a1cec190667d0ce4",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/sqlalchemy/cyextension/resultproxy.cpython-312-darwin.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "875474dcc879bc1467c3323c9f4778aeb5bff5c3",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/sqlalchemy/cyextension/util.cpython-312-darwin.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "1f6daa89d0e2911e82ae41b1e9851be1b53eb18a",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/uvloop/loop.cpython-312-darwin.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "c93164beb89d475e5386bc227d3c5c34f6372c5a",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/watchfiles/_rust_notify.cpython-312-darwin.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "e6a6b825f90a5e901a98bd1e3c1574899e814d55",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/websockets/speedups.cpython-312-darwin.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "fbb0d3fec1c59ded49ad4cbc0b129d7c887429f9",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/python3.12/site-packages/yaml/_yaml.cpython-312-darwin.so",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "64bcd4d1c7529f52b985ea8a2e2e185c9804ffe1",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/thread3.0.4/libtcl9thread3.0.4.dylib",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "487794a0e438660db00add8655d945bc88683a85",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/.venv/lib/thread3.0.4/libthread3.0.4.dylib",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "ac29d805fc9b4aa7d2722aa5a3a1ca035dc62fc5",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/bin/bun",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "f5099fef0bf6af43f44d580a112a17ad55cf7fbb",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/browsers/ffmpeg-1011/ffmpeg-mac",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "a5387108718509c77e56738311688dbcb5d2132b",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/gstack/browse/dist/browse",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "76557d36ca781b783587db1d50e4d9699bf1204c",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/gstack/node_modules/@img/sharp-darwin-arm64/lib/sharp-darwin-arm64-0.35.0.node",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "fe68f7c78a80e4fc005669cd08ee5b4072f90b3e",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/gstack/node_modules/@img/sharp-libvips-darwin-arm64/lib/libvips-cpp.8.18.3.dylib",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "84904d06bf7a9555ca985ffa7f72b528a0c1652a",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/gstack/node_modules/@ngrok/ngrok-darwin-arm64/ngrok.darwin-arm64.node",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "3bfa52cc757f6b303e40103f3393bfb408cfc99f",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/gstack/node_modules/@ngrok/ngrok-darwin-universal/ngrok.darwin-universal.node",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "4872ab1203c0424654fc7a0ca76b6e73e20dc57a",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/gstack/node_modules/fsevents/fsevents.node",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "97e480dd48053c805e7fda4e15b12532b78909f5",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/gstack/node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64/libonnxruntime.1.24.3.dylib",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "a75d89e3fea986abb90a5da3a9a478b135ff947b",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/browser-runtime/gstack/node_modules/onnxruntime-node/bin/napi-v6/darwin/arm64/onnxruntime_binding.node",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "bd7095c724cdcf203c735dbe0087ed0b358f076d",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg/StackOS.app/Contents/Resources/stackos/telegram-tdlib-runtime/lib/libtdjson.dylib",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "5e7b2c1bf7dc2ae39240d92123b0835387ddee80",
+      "arch": "arm64"
+    },
+    {
+      "path": "stackos-2.1.35-mac-arm64.dmg",
+      "digestAlgorithm": "SHA-256",
+      "cdhash": "5e942d5e93435674e7254214bf53be2165b05c5a"
+    }
+  ],
+  "issues": null
+}

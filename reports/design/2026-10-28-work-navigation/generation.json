@@ -1,0 +1,31 @@
+{
+  "tool": "Built-in image_gen.imagegen",
+  "visual_authority": "Current StackOS components and semantic tokens; generated images illustrate the agreed navigation, not replacement token values.",
+  "base_prompt": "Create a realistic production UI concept for StackOS, anchored to the ATTACHED LIVE APP screenshot, not a new visual system. Target 2080 x 1232 wide desktop, current date October 28 2026, illustrative data. One screen per image, no montage, caption, labels outside app or annotations. This screen belongs to a coherent Board → task popup → Dependency map flow using the SAME TASK #1082 \"Improve the Work view\", In Progress, 3 of 6 tickets complete. No implementation claims.\n\nSTRICT DESIGN SYSTEM: Match live screenshot's flat dark surfaces and typography. Sidebar #0b0b0e; page #121216; panels/nodes/cards #1a1a20; graph canvas #212128; fine border #242429; strong text #fafafa; body #d8d8dc; muted #9c9ca5. Inter system UI 13–14px/18–20px, keys mono 11px. Header20px, 32px controls, 6px control radii, 8px card radii, 10px dialog radii. Thin outline icons and small existing text status badges. NO gradients, luminous edges, oversized status circles, glass, floating decorative icons or extra rounded containers. Lime is reserved for interaction/focus, subdued. Complete emerald, In Progress blue, Deferred amber, Failed/Aborted red, Not Started/Skipped neutral gray. Selection does NOT fill buttons bright lime: existing neutral segmented tab style.\n\nEXACT APP SHELL: Preserve full-height 248px left sidebar, real StackOS icon + \"StackOS\" / \"Local runtime\", \"StackOS Local\" picker with lime SL and \"stackos-local\", selected Work under OPERATE. Nav includes Home, Attention, Work, Activity; CONFIGURE Connections/Automation/Spend/Plugins; EXECUTION Runs/Agent Requests/Action Calls; CATALOG Workflow Templates/Agent Presets/Capabilities/Operations. Project nav scrolls, lower groups may remain below fold. Reserve bottom 200px for APP with THREE VERTICAL ROWS \"Overview\", \"Accounts\", \"Backups\", followed by separate \"Dark theme\". Never arrange footer links side by side or omit Backups. Keep existing 32px main horizontal padding and 24px top inset. No global topbar or new breadcrumb masthead.\n\nSHARED WORK HEADER, IDENTICAL ACROSS STATES:\nAt main top x280 y24: \"Work\", followed by existing quiet subtitle \"What agents are building, what's blocked, and how work gets verified.\" Secondary Refresh button at top right.\nImmediately below header at y100 is ONLY a compact two-tab neutral segmented control at LEFT: \"Board\" and \"Dependency map\". Identical position and order in every screen. This is view navigation, independent from the view-specific controls below.\nNo \"Tickets\" tab anywhere. Tickets may appear as CONTENT inside task details, never as Work navigation.\nAt y152 is the VIEW-SPECIFIC TOOLBAR, subordinate to the two-tab switch. Board has broad task filters; map has its own single-task selector. Never place the task selector before or beside the primary two-tab switch.\n\nCORE UX:\nBoard displays all project tasks matching board filters, seven status columns. No selected-task dropdown on Board, no implicit single-task filter.\nTask-card click opens centered TASK POPUP; popup has \"View dependencies\" action that switches to Dependency map with that exact task selected.\nMap shows ONE selected task's TICKET dependencies, with task selector only in its own context row. Going back using Board restores board filters/scroll; map selection never filters Board.\nState stays read-only: no dragging or state dropdowns, no move/start/complete/retry controls, no add-task/column buttons, no hidden columns.\nUse quiet and readable hierarchy, no redundant status or metric strips from the old combined toolbar.\n",
+  "states": [
+    {
+      "name": "Board",
+      "image": "concepts/01-board.png",
+      "prompt_focus": "Project task board; no selected-task dropdown; fixed Board/Dependency map tabs; task filters below; seven fixed status columns; task1082 in progress,3/6 complete."
+    },
+    {
+      "name": "Task popup",
+      "image": "concepts/02-task-popup.png",
+      "prompt_focus": "Centered task1082 popup over the same board; explicit View dependencies; six ticket rows,3complete; content edit and additional input; no Tickets tab."
+    },
+    {
+      "name": "Dependency map",
+      "image": "concepts/03-dependency-map.png",
+      "prompt_focus": "Same shell/tabs; map-only task1082 selector;6tickets5edges; counts and ticket names consistent; no Board filters; preserve existing graph node styling."
+    }
+  ],
+  "source_images": [
+    "evidence/01-map.png",
+    "evidence/02-overview.png"
+  ],
+  "original_outputs": [
+    "/Users/sergeyrura/.codex-personal/generated_images/01a18449-7816-78d1-ab4c-8e82c894f658/exec-e5c6beb0-b035-4dfd-a11f-0589ddc39c8b.png",
+    "/Users/sergeyrura/.codex-personal/generated_images/01a18449-7816-78d1-ab4c-8e82c894f658/exec-780369c5-99a8-46ee-a823-56ab176c7ec0.png",
+    "/Users/sergeyrura/.codex-personal/generated_images/01a18449-7816-78d1-ab4c-8e82c894f658/exec-e23f290d-a321-4a95-bb90-e9e1a95589f0.png"
+  ]
+}

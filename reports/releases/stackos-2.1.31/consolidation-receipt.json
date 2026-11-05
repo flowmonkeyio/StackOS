@@ -1,0 +1,720 @@
+{
+  "status": "candidate-ready-for-independent-review",
+  "assignment": "release-consolidate-2.1.31-attempt-1",
+  "contract_revision": "main-assignment-2026-09-29",
+  "run_plan_id": 488,
+  "execution_id": 483,
+  "step_id": 5111,
+  "step_key": "prepare",
+  "started_at": "2026-09-30T04:13:33.893408+00:00",
+  "completed_at": "2026-09-30T04:13:33.909869+00:00",
+  "source": {
+    "worktree": "/private/tmp/stackos-seo-477",
+    "manifest": "/private/tmp/stackos-seo-477-evidence/integration-audit-repair-r4-1.json",
+    "manifest_sha256": "4715fc7219b9011782ad33e91ce805454222a0463364a3ed3772b8ddae5d219f",
+    "accepted_patch": "/private/tmp/stackos-seo-477-evidence/integrated-candidate.patch",
+    "accepted_patch_sha256": "2bd39145f9accf44f5b32aff2dfc96e5a61ca04082f9824dec2260d9fdf33592",
+    "release_head": "3121f4af370fbad273d08a9469d8961de2278534"
+  },
+  "consolidated_files": [
+    {
+      "path": "Makefile",
+      "before_sha256": "ab4435204bd91cea277eedc304f5cbe8a1357db0c3aa0c3d0959ee4e95962f71",
+      "after_sha256": "4f92e3d050b8525863a2fd3f4dbe95b59d5ffcf259fe12b6309f59e41a710cf9"
+    },
+    {
+      "path": "docs/action-executor.md",
+      "before_sha256": "380f64183c016e9c8d86001640903b479de0a4513ff66ef13831ab658060e23b",
+      "after_sha256": "21b20bf28969afac3477662deaddf7ec95b0bcdb9ffa9e74befda9601795301d"
+    },
+    {
+      "path": "docs/auth-providers.md",
+      "before_sha256": "e8b2be6ff68def64b170c10fa65650e6af4239d1312511c2824ba12475f0a869",
+      "after_sha256": "1ad1bb1e2f87ccf7d19941d4c4dbd6d24c17d27e43c129f9f38e6008dd879b71"
+    },
+    {
+      "path": "docs/integration-contracts/connector-quality.md",
+      "before_sha256": "f7339ee0d24daaf3611520578fdff675694729d0f522786dac7f8f254bb20251",
+      "after_sha256": "51c7e42b41bd7fa09cd567585673e53e86d0614ceeb9e33a90baf4c7627f88a0"
+    },
+    {
+      "path": "docs/integration-contracts/current-connectors.md",
+      "before_sha256": "b710d80e5ea455fb9dd907c77d7099e9eaa8c4de57fd3b657892cbcb5a5ce712",
+      "after_sha256": "6a459660613b19c3c41a98613448f7afc300495293989ec9acb1758adc812b2d"
+    },
+    {
+      "path": "docs/integration-contracts/google-indexing.md",
+      "before_sha256": null,
+      "after_sha256": "9fc25839a19c3b6988c2411a9e1963d780cb0aefa21d888eb652e1fc7f3b811e"
+    },
+    {
+      "path": "docs/integration-contracts/google-search-console.md",
+      "before_sha256": null,
+      "after_sha256": "585113e4d9f4e182265fb07e467add5477b1bda17cea1cd044f4cb69984fe046"
+    },
+    {
+      "path": "docs/integration-contracts/google-service-accounts.md",
+      "before_sha256": "1b82205d8145dfe73b7728c3e2882fc4e38fcc8d516d30415c6bf75d99433037",
+      "after_sha256": "59c9b6da867b2521a30932db3748fa00d905e2340026438bb9d12401cbd52734"
+    },
+    {
+      "path": "docs/release-signoff.md",
+      "before_sha256": "f5bb085208d3ea9ce6fa427950368b9cb82674ddf449c573f3ed61a87faf85b4",
+      "after_sha256": "2ce2747a64deb0acd0dd860f4a61fce93ae487939ca75a99d068cc3caa16177c"
+    },
+    {
+      "path": "plugins/seo/plugin.yaml",
+      "before_sha256": "f739751f04577a789f3e5486cdd1eb018f418caf0f2b981eadf45acb7bbade0d",
+      "after_sha256": "94d475994a0e85bd264145c8108766b7451d8c0b387b91bfd8082775075b1aa2"
+    },
+    {
+      "path": "stackos/actions/__init__.py",
+      "before_sha256": "cd60b3325482c1ada5b7211e916dee9d92ead4d52c2a7dc5ebb3b900cd069e9c",
+      "after_sha256": "b2341f5948d7cd4303573a98294ead2c385ce90b9b3889abaa4bd02621d1d79c"
+    },
+    {
+      "path": "stackos/actions/google_indexing.py",
+      "before_sha256": null,
+      "after_sha256": "3ac64e92980910f9e0ac1c5a20d36d0715ecb959fc66708cd177cf39bfdd4578"
+    },
+    {
+      "path": "stackos/actions/google_search_console.py",
+      "before_sha256": "97e98c3db2d33c7997d4c36e62a8f900ffeb9c472339be5046b4f730313b3e84",
+      "after_sha256": "620e8d4e121cdd656cd0950ab8e22b958975010eb2789a63030c530e2f4527c7"
+    },
+    {
+      "path": "stackos/auth_providers/google_service_account.py",
+      "before_sha256": "f55b3aa42c4bf7d45160515cd66a4b2e05d11606525829ab72cacf5d9586db1b",
+      "after_sha256": "178d76b0a4e2399eacaf3db5c5268461ca585c85f06aff0dc62ae59e5e1ef08b"
+    },
+    {
+      "path": "stackos/auth_providers/oauth_contracts.py",
+      "before_sha256": "b23b15e7e2b1b7b9479b9d476f83354840ff9ec3d8b50e86f49b916237d585e1",
+      "after_sha256": "60a2f6c82b609af9b5dc7acbb66e3d58f2b20e1c083de08449d76ac3f2239e5c"
+    },
+    {
+      "path": "stackos/auth_providers/repository/credentials.py",
+      "before_sha256": "96416f543bc71fc9e9a75dd869b82fb54e594f6b73c493ef98828c25c17d874d",
+      "after_sha256": "2369ded1f5669bb64d3a2764bedbe7ec3595026371dae51fd717e3a64f4f4b3b"
+    },
+    {
+      "path": "stackos/auth_providers/repository/oauth.py",
+      "before_sha256": "a898313c0b44eca33239f708c47029aa89ffe16a53007abfa7f3112ac4da154e",
+      "after_sha256": "b609fa47c3f6b5b1f1b069755a99c4d7dc067461db34ace4cbc41aaa43fcb595"
+    },
+    {
+      "path": "stackos/auth_providers/repository/resolution.py",
+      "before_sha256": "aea5d6686e21a0f6693e05e18d5c86693cb10fdd7e29798eb852861835798def",
+      "after_sha256": "f95c8f24805b692adfb5b050b6acc434d3a08a84e72c09100b3ef3fd87628e32"
+    },
+    {
+      "path": "stackos/auth_providers/repository/testing.py",
+      "before_sha256": "f78cb7e3cdcee062f60c105f37d57c68a64f7c877916cb2cc4e70dc3d0b07831",
+      "after_sha256": "b40a3b8d6848e74ce81b0706bab9df42502ddf52e107b4bd9df608f65947bb46"
+    },
+    {
+      "path": "stackos/integrations/__init__.py",
+      "before_sha256": "6766efcb2f6750d0b8db42f5a7baefc4f1fbf75ebb85d14deb8f5a80a930496d",
+      "after_sha256": "4e2154f30a5a139dc8377698322fd5d734d742c0f36c39e0447f4e39db4bff87"
+    },
+    {
+      "path": "stackos/integrations/_base.py",
+      "before_sha256": "15ceebf631240f03525d9cdc50d933311a3f6f9eb1f103f4595d8c3daae10c2f",
+      "after_sha256": "521ef1afabba9b2b8c8f5af61cf60b6b3e9364790c4efbdfa2631b838de542c8"
+    },
+    {
+      "path": "stackos/integrations/google_batch.py",
+      "before_sha256": null,
+      "after_sha256": "1505b0c69ee5b8a1d4c4568408684139ed052f3e6e2f427b617f403309f23f4f"
+    },
+    {
+      "path": "stackos/integrations/google_indexing.py",
+      "before_sha256": null,
+      "after_sha256": "9d27772c7edf56b548ac9749f6a03a7ea8c8a157ce32172c952fa31c6b1a6701"
+    },
+    {
+      "path": "stackos/integrations/google_search_console.py",
+      "before_sha256": "ec888323f1cce4c9862bc7fd5a856fc8c578b42b098f8d934c6928dd6ae5280f",
+      "after_sha256": "ed81820db156040f5a68d95fb0e7b89136e64ab82b415021549e24caa8c05b8b"
+    },
+    {
+      "path": "tests/integration/test_integrations/test_base_transport.py",
+      "before_sha256": null,
+      "after_sha256": "44e350da3425333961ecfca86ff90e6aa8d2211369d2cd814f1ae886058b6847"
+    },
+    {
+      "path": "tests/integration/test_integrations/test_google_indexing.py",
+      "before_sha256": null,
+      "after_sha256": "cb516de3c68b293b92a9900c451232051c8d8401a66080a9a2932cfa7448b7ed"
+    },
+    {
+      "path": "tests/integration/test_integrations/test_google_indexing_batch.py",
+      "before_sha256": null,
+      "after_sha256": "3a6af24776ed34d29b9aa1766670e637506f0cca28cf565a979538ef8e6a1162"
+    },
+    {
+      "path": "tests/integration/test_integrations/test_google_search_console.py",
+      "before_sha256": "756e8eba690a5c929bfbf51d33822c6ec53c88bd6282247b018fbcf3885f389a",
+      "after_sha256": "60a44811204b9a0b0074ff28df70dcdcd872fe2bb335ec3df1d00e32e03a7845"
+    },
+    {
+      "path": "tests/integration/test_integrations/test_google_search_console_batch.py",
+      "before_sha256": null,
+      "after_sha256": "9006bcdb22ea493c609d1bdf1a9fe995a2da23eb7c8a276d4c64e5395ee50403"
+    },
+    {
+      "path": "tests/integration/test_mcp/test_mcp_google_indexing.py",
+      "before_sha256": null,
+      "after_sha256": "7e8972dcfea97626363de5ffbfddf8bb829991f3e0dfc74b7944bab83a49a3a6"
+    },
+    {
+      "path": "tests/integration/test_mcp/test_mcp_google_service_accounts.py",
+      "before_sha256": "cd6c4fe487615879730479ea216ae633085d5870a256268c6129d3cf482b6a97",
+      "after_sha256": "df76a27ceddf341f7c04c99fb9cbaf1ebb0ca51e4e62c25f212b008de5ccb03b"
+    },
+    {
+      "path": "tests/integration/test_repositories/test_actions.py",
+      "before_sha256": "adfddca82a716bad7d21dd6de220900007fa59e71623eac6767cc064f2b9264a",
+      "after_sha256": "87ab1d3cb5360b68cba6ade6751bd9e2d82252c3a3e3a86e2b7c34840c863c76"
+    },
+    {
+      "path": "tests/integration/test_repositories/test_google_indexing_actions.py",
+      "before_sha256": null,
+      "after_sha256": "ca7637cf68fc13df7cfda22ace842a03d37a923f6dd56e0680468639dad5d31c"
+    },
+    {
+      "path": "tests/integration/test_repositories/test_google_service_accounts.py",
+      "before_sha256": "b9d5d899898bc731063f2bf3e9bbd58c9d01c13e2c41f07445431818eb937067",
+      "after_sha256": "5bd9a25c2de0a5a9c6f3482ed2d484aae1d67449ecc37bb68e9de933b985fa24"
+    },
+    {
+      "path": "tests/unit/test_google_service_account.py",
+      "before_sha256": "1cb7f3805bd5404cfd08481f1085dd9b717019a8f64f53699e022e09a75f5ce1",
+      "after_sha256": "33c9c89e64e08d049b36506c3502ab2a81bbfe7ac8364f1b1156dfcf6fcea005"
+    },
+    {
+      "path": "tests/unit/test_google_service_account_manifests.py",
+      "before_sha256": "ad4beb67b15b0fa8ce9cfa4dae4a70c748d7e25640c8a0ce3618ec6be8f557f1",
+      "after_sha256": "f99a52c18b417406ccabe66ec5a95e5026d079e882e6674338368a0ca0fe7443"
+    },
+    {
+      "path": "tests/unit/test_oauth_provider_contracts.py",
+      "before_sha256": "3995b2d2ed569dc456d850fb8c7ab58e43666a6ad8395eaaf9c0a782955fc8a9",
+      "after_sha256": "beb2b3de7b64eb8a5adc8cddc88dc03f419eff97fdff02317226befc6649dee5"
+    },
+    {
+      "path": "tests/unit/test_plugin_manifest.py",
+      "before_sha256": "b60a1d2d82989429ab8fdf6216703e673faf85132125103966bb301f3ce333fa",
+      "after_sha256": "dfc7fd573193ea351bcb5c6a9687bfb2cae6a5372ff69309b6beed2b02f2f058"
+    }
+  ],
+  "copied_file_count": 38,
+  "current_before_matches": 38,
+  "source_after_matches": 38,
+  "copied_after_matches": 38,
+  "version": "2.1.31",
+  "previous_version": "2.1.30",
+  "release_metadata_changes": [
+    {
+      "path": "pyproject.toml",
+      "before_sha256": "d54426071f443988d4c06b37020534b3b6bb25f1d6d42f4e95ee6ef33fd25b4e",
+      "after_sha256": "a47caf0b543e9d612423e4d1d36672578558b3b65b92394c55399b1bbb1f8cdd",
+      "change": "replace only StackOS version 2.1.30 with 2.1.31"
+    },
+    {
+      "path": "stackos/__init__.py",
+      "before_sha256": "ce6a7a18cd1c5e92f69a9e4f99cd7a119eee30e50b45c68a62747667313c8da5",
+      "after_sha256": "aac3f26e71112ad8f651bfdab0c1ccad1fcb15d00199fbbbab18970176b1f0a9",
+      "change": "replace only StackOS version 2.1.30 with 2.1.31"
+    },
+    {
+      "path": "desktop/package.json",
+      "before_sha256": "6acd2ce7724cc6bf2505c463f439577431f9ac12c76ba01dcb83b3900ec438ad",
+      "after_sha256": "31ad2f53ca309292c0f42c7824986a702956164daa18d0457b69479544d30a73",
+      "change": "replace only StackOS version 2.1.30 with 2.1.31"
+    },
+    {
+      "path": "uv.lock",
+      "before_sha256": "bba000adaee63da03a526fd16c78326f58c963f6d4cd2e042c731dc8bf2afef7",
+      "after_sha256": "7049b517027634058bb2429022fda307717eed3463e767be8aa087c00e53431f",
+      "change": "replace only StackOS version 2.1.30 with 2.1.31"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "before_sha256": "19dc027a6526ebf0a7d137bd0afd1ced27518034ec2ac7152625f43abbcc2eab",
+      "after_sha256": "fe6504030e4bba166b29389535aed254086db08e0c8bf757bf8e5ec0853fc901",
+      "change": "prepend release entry preserving prior content"
+    }
+  ],
+  "dirty_baseline": [
+    ".codex/agents/brand-channel-strategist.toml",
+    ".codex/agents/brand-claim-auditor.toml",
+    ".codex/agents/brand-evidence-curator.toml",
+    ".codex/agents/brand-narrative-writer.toml",
+    ".codex/agents/brand-profile-architect.toml",
+    ".codex/agents/brand-sanitization-reviewer.toml",
+    ".codex/agents/brand-voice-reviewer.toml",
+    ".codex/agents/seo-content-refresh.toml",
+    ".codex/orchestrator/branding-content-orchestrator.md",
+    "CHANGELOG.md",
+    "desktop/package.json",
+    "plugins/branding/README.md",
+    "plugins/branding/agent-presets/branding.yaml",
+    "plugins/branding/skill-presets/branding.yaml",
+    "plugins/branding/workflows/content-production.yaml",
+    "plugins/engineering/workflows/tracked-delivery.yaml",
+    "plugins/seo/workflows/content-refresh.yaml",
+    "plugins/seo/workflows/website-analysis.yaml",
+    "pyproject.toml",
+    "stackos/__init__.py",
+    "tests/integration/test_repositories/test_workflow_templates.py",
+    "tests/unit/test_agent_presets.py",
+    "tests/unit/test_skill_presets.py",
+    "uv.lock",
+    "website/CONTENT_OPERATIONS.md",
+    "website/app/components/CatalogIndex.vue",
+    "website/app/data/library-catalog.generated.json",
+    "website/app/pages/index.vue",
+    "website/app/pages/library/index.vue",
+    "website/app/pages/library/integrations/[slug].vue",
+    "website/app/pages/library/workflows/index.vue",
+    "website/content/articles/use-codex-claude-gemini-with-existing-tools.md",
+    "website/content/catalog/agents/branding-channel-strategist.json",
+    "website/content/catalog/agents/branding-evidence-curator.json",
+    "website/content/catalog/agents/branding-narrative-writer.json",
+    "website/content/catalog/agents/branding-voice-reviewer.json",
+    "website/content/catalog/agents/seo-workflow-content-refresh.json",
+    "website/content/catalog/agents/seo-workflow-keyword-research.json",
+    "website/content/catalog/agents/seo-workflow-website-analysis.json",
+    "website/content/catalog/agents/stackos-sdlc-architecture.json",
+    "website/content/catalog/agents/stackos-sdlc-codebase-explorer.json",
+    "website/content/catalog/agents/stackos-sdlc-delivery-reviewer.json",
+    "website/content/catalog/agents/stackos-sdlc-delivery.json",
+    "website/content/catalog/agents/stackos-sdlc-planning.json",
+    "website/content/catalog/agents/stackos-sdlc-requirements-flow-definer.json",
+    "website/content/catalog/agents/stackos-sdlc-test-designer.json",
+    "website/content/catalog/orchestrators/stackos-sdlc-delivery-orchestrator.json",
+    "website/content/catalog/workflows/engineering-tracked-delivery.json",
+    "website/content/catalog/workflows/marketing-campaign-production.json",
+    "website/content/catalog/workflows/seo-content-refresh.json",
+    "website/content/catalog/workflows/seo-keyword-research.json",
+    "website/content/catalog/workflows/seo-website-analysis.json",
+    "website/content/sitemap-lastmod.json",
+    "plugins/branding/references/natural-writing.md",
+    "reports/releases/stackos-2.1.30-2026-09-28.md",
+    "website/app/components/GscReportGuide.vue"
+  ],
+  "preservation": {
+    "status": "all unchanged",
+    "checked_file_count": 71,
+    "files": [
+      {
+        "path": ".codex/agents/brand-channel-strategist.toml",
+        "before_sha256": "bdddc39b7d67185e5716ae6f9787f96faa1161b18f2b737e354b99525a3d5283",
+        "after_sha256": "bdddc39b7d67185e5716ae6f9787f96faa1161b18f2b737e354b99525a3d5283"
+      },
+      {
+        "path": ".codex/agents/brand-claim-auditor.toml",
+        "before_sha256": "31f4ae3ef3d0d1533843f9ec8dea9425d8b96f1a72cda23531bcabe699c811a6",
+        "after_sha256": "31f4ae3ef3d0d1533843f9ec8dea9425d8b96f1a72cda23531bcabe699c811a6"
+      },
+      {
+        "path": ".codex/agents/brand-evidence-curator.toml",
+        "before_sha256": "06bed140fe1074dd8df64b21e637bff5c3654c112997eef9a4e4e027fab03479",
+        "after_sha256": "06bed140fe1074dd8df64b21e637bff5c3654c112997eef9a4e4e027fab03479"
+      },
+      {
+        "path": ".codex/agents/brand-narrative-writer.toml",
+        "before_sha256": "456374dc06d90162954db62c1b493fc79f8096f1b207a22b0ebe4ea8c7773dd5",
+        "after_sha256": "456374dc06d90162954db62c1b493fc79f8096f1b207a22b0ebe4ea8c7773dd5"
+      },
+      {
+        "path": ".codex/agents/brand-profile-architect.toml",
+        "before_sha256": "2a6f40872b7f3db72451dafd73bd2f6210d7b9a56106b0964a2df77eff9ff82a",
+        "after_sha256": "2a6f40872b7f3db72451dafd73bd2f6210d7b9a56106b0964a2df77eff9ff82a"
+      },
+      {
+        "path": ".codex/agents/brand-sanitization-reviewer.toml",
+        "before_sha256": "d6fa3aaec1730f23ac03bfe732163f85c9dd7aedf64d5e880ca6966176b1de02",
+        "after_sha256": "d6fa3aaec1730f23ac03bfe732163f85c9dd7aedf64d5e880ca6966176b1de02"
+      },
+      {
+        "path": ".codex/agents/brand-voice-reviewer.toml",
+        "before_sha256": "da555f65999595fb4fc8cbbc4ff51c16fa8ba72b1c3ff4412250318fa72effb2",
+        "after_sha256": "da555f65999595fb4fc8cbbc4ff51c16fa8ba72b1c3ff4412250318fa72effb2"
+      },
+      {
+        "path": ".codex/agents/finance-billing-collections-operator.toml",
+        "before_sha256": "75a85d75ef74cff049d5eadad0f01fd1b49e608682b5b501052b0b7524e4897b",
+        "after_sha256": "75a85d75ef74cff049d5eadad0f01fd1b49e608682b5b501052b0b7524e4897b"
+      },
+      {
+        "path": ".codex/agents/finance-bookkeeping-preparer.toml",
+        "before_sha256": "0e67c346eb8350ab66b103f6bcd9ea1cc3e58659826788458c1451e125c93bd7",
+        "after_sha256": "0e67c346eb8350ab66b103f6bcd9ea1cc3e58659826788458c1451e125c93bd7"
+      },
+      {
+        "path": ".codex/agents/finance-cashflow-preparer.toml",
+        "before_sha256": "b0ebe17ab9e035d35ec8df12c971bf606f17e9aa50919e3a930229cca5768466",
+        "after_sha256": "b0ebe17ab9e035d35ec8df12c971bf606f17e9aa50919e3a930229cca5768466"
+      },
+      {
+        "path": ".codex/agents/finance-control-reviewer.toml",
+        "before_sha256": "ea06cfd20a08c9858b1210c5234c6217c71e4ea4cd04889d58caeaf108e1baa1",
+        "after_sha256": "ea06cfd20a08c9858b1210c5234c6217c71e4ea4cd04889d58caeaf108e1baa1"
+      },
+      {
+        "path": ".codex/agents/finance-receipt-operator.toml",
+        "before_sha256": "f1c5875a76cbb72c9d8d5d8615e1a0438a72a4f6500052fdef4250ba86ac1648",
+        "after_sha256": "f1c5875a76cbb72c9d8d5d8615e1a0438a72a4f6500052fdef4250ba86ac1648"
+      },
+      {
+        "path": ".codex/agents/finance-tax-preparer.toml",
+        "before_sha256": "329aa757ec0dadb8382cf86ceecd56ec51a2f7402db49b62e78dee7640034a4a",
+        "after_sha256": "329aa757ec0dadb8382cf86ceecd56ec51a2f7402db49b62e78dee7640034a4a"
+      },
+      {
+        "path": ".codex/agents/sdlc-architecture.toml",
+        "before_sha256": "77b7f004f084fbec6b4d09bb716b2a446a7390451b3b658ef9d7b523f852a34f",
+        "after_sha256": "77b7f004f084fbec6b4d09bb716b2a446a7390451b3b658ef9d7b523f852a34f"
+      },
+      {
+        "path": ".codex/agents/sdlc-codebase-explorer.toml",
+        "before_sha256": "6ae84ba7b090702222f2ee0b098933b03540f7ae249469bf2cbe801c56dd172c",
+        "after_sha256": "6ae84ba7b090702222f2ee0b098933b03540f7ae249469bf2cbe801c56dd172c"
+      },
+      {
+        "path": ".codex/agents/sdlc-delivery-reviewer.toml",
+        "before_sha256": "e9b732d84f9337829f7aaee6892ef4d0c30b61bf03f1cbbee9d8191b068b3877",
+        "after_sha256": "e9b732d84f9337829f7aaee6892ef4d0c30b61bf03f1cbbee9d8191b068b3877"
+      },
+      {
+        "path": ".codex/agents/sdlc-delivery.toml",
+        "before_sha256": "eda5c94a30d2cc28fbbc226da89cdd334d8ca8adb2867349072d7b2472d70823",
+        "after_sha256": "eda5c94a30d2cc28fbbc226da89cdd334d8ca8adb2867349072d7b2472d70823"
+      },
+      {
+        "path": ".codex/agents/sdlc-planning.toml",
+        "before_sha256": "f2ceb35337ec0539af180d43e5b52fd77851b71d2480b7d2017c3c473747c08c",
+        "after_sha256": "f2ceb35337ec0539af180d43e5b52fd77851b71d2480b7d2017c3c473747c08c"
+      },
+      {
+        "path": ".codex/agents/sdlc-requirements-flow-definer.toml",
+        "before_sha256": "4b651a0537b74ed9af3254289bd87b4a0cd9ce69727b67014b442ff15439f972",
+        "after_sha256": "4b651a0537b74ed9af3254289bd87b4a0cd9ce69727b67014b442ff15439f972"
+      },
+      {
+        "path": ".codex/agents/sdlc-test-designer.toml",
+        "before_sha256": "eed7c739557607cf87907285ba2b98547754345d98b200d7580b327cab3462cc",
+        "after_sha256": "eed7c739557607cf87907285ba2b98547754345d98b200d7580b327cab3462cc"
+      },
+      {
+        "path": ".codex/agents/seo-content-refresh.toml",
+        "before_sha256": "848a18243192ff41b57e5b69a868120ed8a4dc8f2f3f7e848b58907d5a169e3f",
+        "after_sha256": "848a18243192ff41b57e5b69a868120ed8a4dc8f2f3f7e848b58907d5a169e3f"
+      },
+      {
+        "path": ".codex/agents/seo-keyword-research.toml",
+        "before_sha256": "6e9a949af5ffb04d808abfd4bb6ed01a4860754e8a04047b65bf370364a79698",
+        "after_sha256": "6e9a949af5ffb04d808abfd4bb6ed01a4860754e8a04047b65bf370364a79698"
+      },
+      {
+        "path": ".codex/agents/seo-website-analysis.toml",
+        "before_sha256": "0bca5f174bf3a8b4d7e783516682a94b71faef5ec9de4dce0a616aaf3dd177c6",
+        "after_sha256": "0bca5f174bf3a8b4d7e783516682a94b71faef5ec9de4dce0a616aaf3dd177c6"
+      },
+      {
+        "path": ".codex/orchestrator/branding-content-orchestrator.md",
+        "before_sha256": "50ffe9300cce149ddd76767707eb63a91ece5239c16ee0919612d9cc59406608",
+        "after_sha256": "50ffe9300cce149ddd76767707eb63a91ece5239c16ee0919612d9cc59406608"
+      },
+      {
+        "path": ".codex/orchestrator/finance-department-orchestrator.md",
+        "before_sha256": "20cb38c1bfcc6fa2e1b0e11e37a10674e2713e4cd9c30e04f0c1df4a6fc05acf",
+        "after_sha256": "20cb38c1bfcc6fa2e1b0e11e37a10674e2713e4cd9c30e04f0c1df4a6fc05acf"
+      },
+      {
+        "path": ".codex/orchestrator/sdlc-delivery-orchestrator.md",
+        "before_sha256": "c5bdb657da0eccd3f3750ac0a88a60622418fd7142876577390cee29b40dbd26",
+        "after_sha256": "c5bdb657da0eccd3f3750ac0a88a60622418fd7142876577390cee29b40dbd26"
+      },
+      {
+        "path": ".codex/orchestrator/workflow-orchestrator.md",
+        "before_sha256": "41ca47154912f08d73cfc9521039f7e08f3b6c47d4fc39057c4154f9c6736898",
+        "after_sha256": "41ca47154912f08d73cfc9521039f7e08f3b6c47d4fc39057c4154f9c6736898"
+      },
+      {
+        "path": "plugins/branding/README.md",
+        "before_sha256": "0ac9bd512ac952dff1e3ad711676548dfb8e11d3ee58830f698ea9e6b9bd0588",
+        "after_sha256": "0ac9bd512ac952dff1e3ad711676548dfb8e11d3ee58830f698ea9e6b9bd0588"
+      },
+      {
+        "path": "plugins/branding/agent-presets/branding.yaml",
+        "before_sha256": "76b15d3b604b2d176367a5e3a8d6d9345285edeaa377b9a0a91688de4755a079",
+        "after_sha256": "76b15d3b604b2d176367a5e3a8d6d9345285edeaa377b9a0a91688de4755a079"
+      },
+      {
+        "path": "plugins/branding/plugin.yaml",
+        "before_sha256": "76b4ef6279838baa61513b78df172a699b4d2679467be87c0fd64a84963b516e",
+        "after_sha256": "76b4ef6279838baa61513b78df172a699b4d2679467be87c0fd64a84963b516e"
+      },
+      {
+        "path": "plugins/branding/references/natural-writing.md",
+        "before_sha256": "4e22e48a9d92b8a8ce90e73c53f87a27b2fef9080dc579894f96cf70c521d760",
+        "after_sha256": "4e22e48a9d92b8a8ce90e73c53f87a27b2fef9080dc579894f96cf70c521d760"
+      },
+      {
+        "path": "plugins/branding/skill-presets/branding.yaml",
+        "before_sha256": "29670fafe7903e27c5bafa7923cb2adc7d2e8baac64a52e5942298d231dd219f",
+        "after_sha256": "29670fafe7903e27c5bafa7923cb2adc7d2e8baac64a52e5942298d231dd219f"
+      },
+      {
+        "path": "plugins/branding/workflows/brand-foundation-setup.yaml",
+        "before_sha256": "c803c8d6db66afd32feb25bb1f7926ece5a29b9311bc3b180ed61c4910852491",
+        "after_sha256": "c803c8d6db66afd32feb25bb1f7926ece5a29b9311bc3b180ed61c4910852491"
+      },
+      {
+        "path": "plugins/branding/workflows/content-production.yaml",
+        "before_sha256": "413721eaf632f947085aa9c7d271a152aa6fbf944e0775f1838dc5add1eebf2b",
+        "after_sha256": "413721eaf632f947085aa9c7d271a152aa6fbf944e0775f1838dc5add1eebf2b"
+      },
+      {
+        "path": "plugins/engineering/workflows/tracked-delivery.yaml",
+        "before_sha256": "a47af90c8c64f3dbc73c3a812d0d24e8ece1578a062af5848833a71286b89ab7",
+        "after_sha256": "a47af90c8c64f3dbc73c3a812d0d24e8ece1578a062af5848833a71286b89ab7"
+      },
+      {
+        "path": "plugins/seo/workflows/content-refresh.yaml",
+        "before_sha256": "fb551cb3f28454266b5ed11993afec49fb17a37c1eaf9ca8966be67390277681",
+        "after_sha256": "fb551cb3f28454266b5ed11993afec49fb17a37c1eaf9ca8966be67390277681"
+      },
+      {
+        "path": "plugins/seo/workflows/website-analysis.yaml",
+        "before_sha256": "661185fa380920626a272e52f37ad41ff74ac4b39b211266875a35051225a7ef",
+        "after_sha256": "661185fa380920626a272e52f37ad41ff74ac4b39b211266875a35051225a7ef"
+      },
+      {
+        "path": "reports/releases/stackos-2.1.30-2026-09-28.md",
+        "before_sha256": "9082285799f5c18431d641886e1fc9c983cf1cafa5d443ae76e39bf27b7158e2",
+        "after_sha256": "9082285799f5c18431d641886e1fc9c983cf1cafa5d443ae76e39bf27b7158e2"
+      },
+      {
+        "path": "tests/integration/test_repositories/test_workflow_templates.py",
+        "before_sha256": "2e4fc2871c02e0864f068500d25db8b3ff27b766cb055c7e4a11344fe05bf1f4",
+        "after_sha256": "2e4fc2871c02e0864f068500d25db8b3ff27b766cb055c7e4a11344fe05bf1f4"
+      },
+      {
+        "path": "tests/unit/test_agent_presets.py",
+        "before_sha256": "2721bc8023e5ce61294665ec2f74560912374e72b151a904eb0b9100268ab9f4",
+        "after_sha256": "2721bc8023e5ce61294665ec2f74560912374e72b151a904eb0b9100268ab9f4"
+      },
+      {
+        "path": "tests/unit/test_skill_presets.py",
+        "before_sha256": "7e04090ad1cf338926ecc9ccac7328b0be5575ca23f4a73e71ebb0235e1536bc",
+        "after_sha256": "7e04090ad1cf338926ecc9ccac7328b0be5575ca23f4a73e71ebb0235e1536bc"
+      },
+      {
+        "path": "website/CONTENT_OPERATIONS.md",
+        "before_sha256": "bf626d0f44b65736a6bee70d7d8e7d365518c758386108181170171360736077",
+        "after_sha256": "bf626d0f44b65736a6bee70d7d8e7d365518c758386108181170171360736077"
+      },
+      {
+        "path": "website/app/components/CatalogIndex.vue",
+        "before_sha256": "f22259d05e42620ba11f7d8eb677fd62d77ae4d7a81aa441e964e868717f7772",
+        "after_sha256": "f22259d05e42620ba11f7d8eb677fd62d77ae4d7a81aa441e964e868717f7772"
+      },
+      {
+        "path": "website/app/components/GscReportGuide.vue",
+        "before_sha256": "809b26f60751a5fb42f7cfbd1ed941b159e4e817d6f43c9125cbd0bf0d7bf55f",
+        "after_sha256": "809b26f60751a5fb42f7cfbd1ed941b159e4e817d6f43c9125cbd0bf0d7bf55f"
+      },
+      {
+        "path": "website/app/data/library-catalog.generated.json",
+        "before_sha256": "5ba706fb80b24c67fc57c154cbc0e5edc280a8467542932ad262cb9191e1c3db",
+        "after_sha256": "5ba706fb80b24c67fc57c154cbc0e5edc280a8467542932ad262cb9191e1c3db"
+      },
+      {
+        "path": "website/app/pages/index.vue",
+        "before_sha256": "87a61765f0a247c3f472a6dbc8de2fe8d09202f7a2a0c09dc87b82dff7117790",
+        "after_sha256": "87a61765f0a247c3f472a6dbc8de2fe8d09202f7a2a0c09dc87b82dff7117790"
+      },
+      {
+        "path": "website/app/pages/library/index.vue",
+        "before_sha256": "38c83f012b9935dce2bcfd1d74e692ec508fa6a67ce68707341f65580109aad0",
+        "after_sha256": "38c83f012b9935dce2bcfd1d74e692ec508fa6a67ce68707341f65580109aad0"
+      },
+      {
+        "path": "website/app/pages/library/integrations/[slug].vue",
+        "before_sha256": "23c46f0b62f54219b6064770f3e5779b6d60cdf96072b45645f430e667cc02f6",
+        "after_sha256": "23c46f0b62f54219b6064770f3e5779b6d60cdf96072b45645f430e667cc02f6"
+      },
+      {
+        "path": "website/app/pages/library/workflows/index.vue",
+        "before_sha256": "3cdac72c910d331120214ee3d96450519fa3e5c9ce6fa6c62967a9652fd36b48",
+        "after_sha256": "3cdac72c910d331120214ee3d96450519fa3e5c9ce6fa6c62967a9652fd36b48"
+      },
+      {
+        "path": "website/content/articles/use-codex-claude-gemini-with-existing-tools.md",
+        "before_sha256": "e7cb1be3515a75f53bdfb20f49f1749565b92f7472b1c4b5b7fa76cb1a3ec712",
+        "after_sha256": "e7cb1be3515a75f53bdfb20f49f1749565b92f7472b1c4b5b7fa76cb1a3ec712"
+      },
+      {
+        "path": "website/content/catalog/agents/branding-channel-strategist.json",
+        "before_sha256": "6e472ecfd71947e8f61f89719d00358c38bb91684f1093f690d2be3f1f86a86a",
+        "after_sha256": "6e472ecfd71947e8f61f89719d00358c38bb91684f1093f690d2be3f1f86a86a"
+      },
+      {
+        "path": "website/content/catalog/agents/branding-evidence-curator.json",
+        "before_sha256": "f0e8e4751263d2ac9632721ae8926eb747e743f760de462965711f91382a9f8b",
+        "after_sha256": "f0e8e4751263d2ac9632721ae8926eb747e743f760de462965711f91382a9f8b"
+      },
+      {
+        "path": "website/content/catalog/agents/branding-narrative-writer.json",
+        "before_sha256": "d95bc8a08343e9a33c3def749585c3eaf75cf1bc3c55612c2ef286f66e497fc1",
+        "after_sha256": "d95bc8a08343e9a33c3def749585c3eaf75cf1bc3c55612c2ef286f66e497fc1"
+      },
+      {
+        "path": "website/content/catalog/agents/branding-voice-reviewer.json",
+        "before_sha256": "3840e22c781f525ad8ce16de10b47e47375dc92bc6b32200f1aae89f67415203",
+        "after_sha256": "3840e22c781f525ad8ce16de10b47e47375dc92bc6b32200f1aae89f67415203"
+      },
+      {
+        "path": "website/content/catalog/agents/seo-workflow-content-refresh.json",
+        "before_sha256": "8440df3f30b3a5d6344efee43629f5239d129185d41f5ca119c330a2e6108df3",
+        "after_sha256": "8440df3f30b3a5d6344efee43629f5239d129185d41f5ca119c330a2e6108df3"
+      },
+      {
+        "path": "website/content/catalog/agents/seo-workflow-keyword-research.json",
+        "before_sha256": "0fa743bbfb8ee14908c87e7525adb24e3a900b53985ed766512aba7bf9195099",
+        "after_sha256": "0fa743bbfb8ee14908c87e7525adb24e3a900b53985ed766512aba7bf9195099"
+      },
+      {
+        "path": "website/content/catalog/agents/seo-workflow-website-analysis.json",
+        "before_sha256": "bd1e6b8f1863f9e6c7f1853696395f57a12e1bdc353fdfde4d99870fdb523e4a",
+        "after_sha256": "bd1e6b8f1863f9e6c7f1853696395f57a12e1bdc353fdfde4d99870fdb523e4a"
+      },
+      {
+        "path": "website/content/catalog/agents/stackos-sdlc-architecture.json",
+        "before_sha256": "2e19dab0fc26fa08e45b06c276b55d01d34e3d69cee1f34098b7094a7884bf53",
+        "after_sha256": "2e19dab0fc26fa08e45b06c276b55d01d34e3d69cee1f34098b7094a7884bf53"
+      },
+      {
+        "path": "website/content/catalog/agents/stackos-sdlc-codebase-explorer.json",
+        "before_sha256": "1acad7fb57314bd10f95e8fde48beb84d79a8d4b18a2d55af26247b734ba6d13",
+        "after_sha256": "1acad7fb57314bd10f95e8fde48beb84d79a8d4b18a2d55af26247b734ba6d13"
+      },
+      {
+        "path": "website/content/catalog/agents/stackos-sdlc-delivery-reviewer.json",
+        "before_sha256": "3bbdb7c9670aa466e662e514eeb04caff906d7a2f8ffe7ca04ed5f751a5d2abc",
+        "after_sha256": "3bbdb7c9670aa466e662e514eeb04caff906d7a2f8ffe7ca04ed5f751a5d2abc"
+      },
+      {
+        "path": "website/content/catalog/agents/stackos-sdlc-delivery.json",
+        "before_sha256": "4c775390f7b588e5cc7cfa4b5853c0828186bd9c6cbf36c67fffee178c85fd99",
+        "after_sha256": "4c775390f7b588e5cc7cfa4b5853c0828186bd9c6cbf36c67fffee178c85fd99"
+      },
+      {
+        "path": "website/content/catalog/agents/stackos-sdlc-planning.json",
+        "before_sha256": "53f4f5113bcbd26cf8c3d63ce7560bb88f39770b00394ee75143fbeae86391e5",
+        "after_sha256": "53f4f5113bcbd26cf8c3d63ce7560bb88f39770b00394ee75143fbeae86391e5"
+      },
+      {
+        "path": "website/content/catalog/agents/stackos-sdlc-requirements-flow-definer.json",
+        "before_sha256": "2b3e9373535e9c046cc81fdbe568fdb54127fb40e5b58a36ead210f8b9539d7a",
+        "after_sha256": "2b3e9373535e9c046cc81fdbe568fdb54127fb40e5b58a36ead210f8b9539d7a"
+      },
+      {
+        "path": "website/content/catalog/agents/stackos-sdlc-test-designer.json",
+        "before_sha256": "d184d00d3a21820febed59c16c11160bd15d4a6b36657aaf49ec734f36906b7c",
+        "after_sha256": "d184d00d3a21820febed59c16c11160bd15d4a6b36657aaf49ec734f36906b7c"
+      },
+      {
+        "path": "website/content/catalog/orchestrators/stackos-sdlc-delivery-orchestrator.json",
+        "before_sha256": "b7a1cdd361e2fc49348a7b5ecce7e5b436f688f111d76898d7e2764e4595aa85",
+        "after_sha256": "b7a1cdd361e2fc49348a7b5ecce7e5b436f688f111d76898d7e2764e4595aa85"
+      },
+      {
+        "path": "website/content/catalog/workflows/engineering-tracked-delivery.json",
+        "before_sha256": "2599532d372836635387f9c43408570e4ee4f3dab9605816dc8a8a129c0bb0a4",
+        "after_sha256": "2599532d372836635387f9c43408570e4ee4f3dab9605816dc8a8a129c0bb0a4"
+      },
+      {
+        "path": "website/content/catalog/workflows/marketing-campaign-production.json",
+        "before_sha256": "11ad3e90a23553c079ecfe4146797a6cb04d0367a04a679fe04362d4157f9588",
+        "after_sha256": "11ad3e90a23553c079ecfe4146797a6cb04d0367a04a679fe04362d4157f9588"
+      },
+      {
+        "path": "website/content/catalog/workflows/seo-content-refresh.json",
+        "before_sha256": "b81f61bf099f0337ca0724bdf810574a6415a230f2bcfa15585c4dce7e892773",
+        "after_sha256": "b81f61bf099f0337ca0724bdf810574a6415a230f2bcfa15585c4dce7e892773"
+      },
+      {
+        "path": "website/content/catalog/workflows/seo-keyword-research.json",
+        "before_sha256": "9484b18f1a3bbbc56b4a02fea8e7ac7b6cf02008d6fb6258f29dfd67345582f2",
+        "after_sha256": "9484b18f1a3bbbc56b4a02fea8e7ac7b6cf02008d6fb6258f29dfd67345582f2"
+      },
+      {
+        "path": "website/content/catalog/workflows/seo-website-analysis.json",
+        "before_sha256": "83e764200804f6c0bd44e05229695ae552f0211271e84d1b0417ebf34e47d038",
+        "after_sha256": "83e764200804f6c0bd44e05229695ae552f0211271e84d1b0417ebf34e47d038"
+      },
+      {
+        "path": "website/content/sitemap-lastmod.json",
+        "before_sha256": "5000ee4d3b0ab1e7a363c7e2319b8024f8f3c113d2e257857a0ed6233f51e11a",
+        "after_sha256": "5000ee4d3b0ab1e7a363c7e2319b8024f8f3c113d2e257857a0ed6233f51e11a"
+      }
+    ]
+  },
+  "existing_passed_evidence": [
+    {
+      "path": "/private/tmp/stackos-seo-477-evidence/signoff-r4-3-receipt.md",
+      "sha256": "403afea537963c0cdebbb93cb44946df053732843aab9489699eab3edb9cd631"
+    },
+    {
+      "path": "/private/tmp/stackos-seo-477-evidence/integration-audit-repair-r4-1-receipt.md",
+      "sha256": "016cf1876e4b93dc7e108b087631581905e7726ade92ff26d206beec30e922cf"
+    },
+    {
+      "path": "/private/tmp/stackos-seo-477-evidence/integration-audit-repair-r4-1-lint-typecheck-retry.log",
+      "sha256": "a2583be4049afc69fbcf3a7d285285a1a3a49b918140b3d6a67d074a4cf07e35"
+    },
+    {
+      "path": "/private/tmp/stackos-seo-477-evidence/integration-audit-repair-r4-1-affected.log",
+      "sha256": "fce874246f39458f5e1ac548fc4a9a294f2cb11111bd4492583022140554cea8"
+    },
+    {
+      "path": "/private/tmp/stackos-seo-477-evidence/packaged-source-verification.json",
+      "sha256": "4e3ccec954b55f9d9d5b9df57e93e7034db9cf6dba6fbd11b9b26ac18872eb0f"
+    }
+  ],
+  "existing_proof_summary": [
+    "Broad make signoff passed on pre-audit-repair candidate 3555dc9e690c19431ab8b858ec1d5854679dda36f4509a3798d6d89032e774ae; unchanged surfaces reuse it.",
+    "Final accepted repair candidate 2bd39145f9accf44f5b32aff2dfc96e5a61ca04082f9824dec2260d9fdf33592 has 224 affected tests passed, clean Ruff/formatting and mypy, and retained independent review context."
+  ],
+  "current_checks": [
+    "Accepted patch SHA-256 matched.",
+    "All 38 destination preimages matched and 38 source postimages matched immediately before copy.",
+    "All 38 destination postimages matched after copy.",
+    "Four canonical version owners aligned to 2.1.31; only the editable StackOS uv.lock entry changed.",
+    "All protected dirty files and adapted/branding guidance remained byte-identical."
+  ],
+  "test_reruns": "Not performed, per explicit operator instruction; prior passed evidence reused.",
+  "boundaries": {
+    "website_edits": false,
+    "new_behavior": false,
+    "build": false,
+    "install": false,
+    "restart": false,
+    "native_lifecycle_write": false,
+    "git_commit": false,
+    "git_push": false
+  },
+  "consumed_guidance": [
+    "AGENTS.md",
+    "docs/product-direction.md",
+    "docs/README.md",
+    ".codex/orchestrator/sdlc-delivery-orchestrator.md",
+    ".codex/agents/sdlc-delivery.toml"
+  ],
+  "next": "Independent review of exact consolidation and preservation, then main-agent release packaging and publication."
+}

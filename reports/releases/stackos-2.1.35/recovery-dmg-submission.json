@@ -1,0 +1,17 @@
+{
+  "apple_status": null,
+  "artifact": "/private/tmp/stackos-release-2135-20261006/host/desktop/dist/stackos-2.1.35-mac-arm64.dmg",
+  "artifact_bytes": 489991107,
+  "artifact_sha256": "fdaf2093e3fbc682d55805a9c88ad753246efbb06100e7b148085b7624c0d848",
+  "continuation_receipt": "/private/tmp/stackos-release-2135-20261006/release/recovery-continue-1.json",
+  "exit_code": 0,
+  "host_commit": "2903fabfc82754753ae0311599b3f407c177b09a",
+  "response_log": "/private/tmp/stackos-release-2135-20261006/release/recovery-continue-1-09-dmg-submit.log",
+  "response_log_sha256": "eef7570bc40043b4023706540657f3ea8ad543b845c7fb58750f6868c24ac518",
+  "stapled_artifact_sha256": "2b53fb4c796e7310cfcccab3d39264e8604d5be33794cc2431ced6f5ac49905a",
+  "stapled_at": "2026-10-07T02:06:29.986696+00:00",
+  "started_at": "2026-10-07T01:58:34.702613+00:00",
+  "status": "submitted",
+  "submission_id": "a572d250-e57c-42fd-9a70-8c6bfdb30c20",
+  "upload_completed": true
+}

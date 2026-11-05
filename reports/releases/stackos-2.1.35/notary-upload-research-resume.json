@@ -1,0 +1,109 @@
+{
+  "status": "research_complete",
+  "run_plan_id": 574,
+  "execution_id": 568,
+  "step": "package",
+  "assignment_attempt": 1,
+  "contract_revision": 5,
+  "reviewer": "/root/day1_deploy_review",
+  "read_only": true,
+  "accepted_host_commit": "2903fabfc82754753ae0311599b3f407c177b09a",
+  "archive_sha256": "68fd9c797344c32c7a436d053f4c77b0fce4da38b25e1935ecc3ca7ca0bec6d0",
+  "known_failed_routes": [
+    "ARM accelerated: SIGBUS",
+    "Intel accelerated: SIGBUS",
+    "ARM direct S3: connection reset during multipart upload",
+    "Intel direct S3: connection reset during multipart upload"
+  ],
+  "conclusion": "No documented non-invasive local flag or archive transformation was found that fixes this crash. The strongest supported new variable is network environment, preserving the signed app and archive.",
+  "next_supported_proposal": {
+    "priority": 1,
+    "action": "Use the same Mac, existing keychain profile, and exact archive on a materially different network, such as an operator-provided phone hotspot, with any VPN disabled by its operator. Do not repeat until that environment changes.",
+    "why": "Apple DTS explicitly recommends this diagnostic for Soto multipart failures. A related crash report identifies NWConnection state-update recursion and a reporter succeeded in another execution environment.",
+    "authority": "Root chooses and coordinates any local network change; reviewer changed nothing.",
+    "evidence_to_capture": [
+      "Changed network condition, without exporting network credentials",
+      "Existing archive hash unchanged",
+      "Distinct tool command and log, uploader exit and definitive completed upload",
+      "Only after upload completion: Accepted status/log and usual staples/trust"
+    ],
+    "uncertainty": "This is a diagnostic and plausible recovery, not a confirmed fix for StackOS. The same crash has also occurred on another Mac and occasionally CI."
+  },
+  "other_options": [
+    {
+      "option": "Newer installed notarytool",
+      "disposition": "Only worth one bounded attempt if root finds a materially newer installed version. Not a guaranteed fix: Apple DTS reproduced environmental differences with the same 1.1.3 (42) binary, newer than our 1.1.0 (39). No official fixed-version claim located."
+    },
+    {
+      "option": "Different existing Mac/runner",
+      "disposition": "The matching reporter succeeded on GitHub Actions. This requires an already authorized upload environment with its own available credentials; do not export secrets or create accounts just to try it."
+    },
+    {
+      "option": "Notary REST API with a different S3 uploader",
+      "disposition": "Officially supported alternative that avoids notarytool's SwiftNIO uploader, but it requires App Store Connect API authentication and secure handling of temporary upload credentials. It is a separate integration effort, not the smallest recovery within the present no-secret-export scope."
+    },
+    {
+      "option": "Submit signed DMG instead of ZIP",
+      "disposition": "Apple supports notarizing an outer container, but there is no evidence this fixes the upload crash/reset. It changes the archive and adds proof work while keeping the same failing transport; not recommended as the next blind retry."
+    }
+  ],
+  "rejected_or_unsupported_shortcuts": [
+    "Further permutations of the four already failed architecture/endpoint routes without another changed condition",
+    "Global defaults or arbitrary upload timeout tweaks: a matching reporter tried nt-upload-connection-timeout=300 without fixing the crash",
+    "Disabling Bluetooth/Handoff/awdl0 or suspending system daemons: reported only to alter failure timing, not to resolve it",
+    "Treating JSON/no-progress or verbose logging as a fix; no primary evidence supports that claim",
+    "Chunk-size/concurrency override: no documented notarytool control located in the primary sources reviewed",
+    "Rebuilding or re-signing the reviewed app to solve an uploader failure",
+    "Treating a submission ID/In Progress as proof that upload completed"
+  ],
+  "sources": [
+    {
+      "url": "https://developer.apple.com/forums/thread/829204",
+      "classification": "Apple DTS primary diagnosis plus clearly identified reporter experience",
+      "supported_facts": [
+        "DTS locates recursion in Network.framework stateUpdateHandler of NWConnection, with notarytool recursively exhausting its stack.",
+        "Reporter obtained Accepted results from a different runner; disabling local system-network activity did not completely fix local failures.",
+        "DTS distinguishes incomplete crashed submissions from genuine pending analysis."
+      ]
+    },
+    {
+      "url": "https://developer.apple.com/forums/thread/847649",
+      "classification": "Apple DTS primary follow-up",
+      "supported_facts": [
+        "The same archive and same notarytool version succeeded for DTS but failed for the reporter.",
+        "DTS calls the trigger environmental and offers no confirmed workaround."
+      ]
+    },
+    {
+      "url": "https://developer.apple.com/forums/thread/760421",
+      "classification": "Apple DTS primary operational advice",
+      "supported_facts": [
+        "For Soto multipart connectivity failures, try a different network; a phone hotspot is a valid test and a VPN should be disabled.",
+        "The reporter later succeeded after environment changes, but the exact causal change was not isolated."
+      ]
+    },
+    {
+      "url": "https://developer.apple.com/documentation/security/customizing-the-notarization-workflow",
+      "classification": "Apple official documentation",
+      "supported_facts": [
+        "Accelerated endpoint is notary-submissions-prod.s3-accelerate.amazonaws.com; --no-s3-acceleration uses notary-submissions-prod.s3.us-west-2.amazonaws.com.",
+        "Container notarization is supported; both known endpoint routes have already been tried here."
+      ]
+    },
+    {
+      "url": "https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution",
+      "classification": "Apple official documentation",
+      "supported_facts": [
+        "For nested distributions, Apple supports notarizing the outermost signed container; this is a valid packaging choice, not evidence of an upload-recovery fix."
+      ]
+    },
+    {
+      "url": "https://developer.apple.com/documentation/notaryapi/newsubmissionrequest",
+      "classification": "Apple official API documentation",
+      "supported_facts": [
+        "A submission includes the SHA256 of the exact software to upload to S3; direct Notary API exists as an alternative to the CLI."
+      ]
+    }
+  ],
+  "reviewer_actions": "Read public primary sources and wrote this evidence file. No upload, provider call, tool installation, network setting change, global environment change, credential access/export, source/artifact mutation, or account creation."
+}

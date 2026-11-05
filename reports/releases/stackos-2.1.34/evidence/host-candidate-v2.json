@@ -1,0 +1,79 @@
+{
+  "run_plan_id": 572,
+  "execution_id": 567,
+  "step": "fix-review",
+  "attempt": 1,
+  "contract_revision": 1,
+  "status": "candidate-ready",
+  "base": "568d94e35f03627f67c2b85de8cf1623e21c0996",
+  "files": [
+    {
+      "path": "stackos/auth_providers/repository/credentials.py",
+      "sha256": "c62108fbd63b419142ebdab0f2f33efaf1dee56722f94bf83ccbb918f1d61d00"
+    },
+    {
+      "path": "stackos/auth_providers/repository/resolution.py",
+      "sha256": "3b222d938acdfdded5404bf6755350eab14563406bfefb8fb23c3aad277a3d83"
+    },
+    {
+      "path": "plugins/seo/plugin.yaml",
+      "sha256": "ab4449eafe1592fb1e5f488e2888f1ffaf1b1014b13814107b4d845133df4eba"
+    },
+    {
+      "path": "tests/integration/test_repositories/test_search_console_scope_lifecycle.py",
+      "sha256": "3653643130ace219a6fdcaec8a1116c14dc33de05d51b40a01574e55f7117d92"
+    },
+    {
+      "path": "tests/unit/test_auth_catalog_normalization.py",
+      "sha256": "cc2f06328ef8fca1609fb3da16c1188babc8337cfe2056264984675bf95e58b4"
+    }
+  ],
+  "tests": {
+    "host_scope_service_account_catalog": "86 passed in21.60s",
+    "opt_in_final_assertions": "5 passed",
+    "logs": [
+      {
+        "path": "/private/tmp/stackos-gsc-hotfix-20261006/evidence/host-opt-in-red.log",
+        "sha256": "40c33ce80b6c577816977813ae8a50d75ef40721ea889b53278603029b7ee9f9"
+      },
+      {
+        "path": "/private/tmp/stackos-gsc-hotfix-20261006/evidence/host-green-v3.log",
+        "sha256": "87ae6f23c2456c234b1547c20b60d2011884758a189f203901fdf754687ec5a6"
+      },
+      {
+        "path": "/private/tmp/stackos-gsc-hotfix-20261006/evidence/host-opt-in-green.log",
+        "sha256": "1127a49a293bce2207e19814e53229ca4129641eebb7ef549ae5344f04db7966"
+      }
+    ]
+  },
+  "lint": "pass",
+  "diff_check": "pass",
+  "coverage": [
+    "Default readonly cannot submit or auto-promote",
+    "Explicit write survives expiry renewal and permits read scopes",
+    "Scope edits invalidate cached token and scope evidence; unchanged rename preserves it",
+    "Interactive OAuth scope edit requires renewed consent",
+    "An unexpired readonly token issued by2.1.33 is renewed for saved explicit write mode",
+    "Provider narrowed scopes stay authoritative without a refresh retry loop",
+    "Other provider scope checks remain exact",
+    "Invalidmode and public Account output do not disclose secrets",
+    "Providerreturnedbroadergrant does not override readonlyselection",
+    "All4methods allowreads but rejectwrite before any tokenrequest for both validcached andexpiredtokens"
+  ],
+  "notes": [
+    "Provider requests mocked with synthetic keys; normal daemon untouched",
+    "Versions, lock, changelog are root-owned"
+  ],
+  "candidate_revision": 2,
+  "supersedes": {
+    "path": "/private/tmp/stackos-gsc-hotfix-20261006/evidence/host-candidate.json",
+    "sha256": "e8198b7f182b5d66b1183a9362688983a8debe0c4d3be0f53663558d6d7c2e69"
+  },
+  "review_finding_repair": {
+    "finding": "Readonlyselection could use a broader Googlegrant forwrite",
+    "fix": "Enforce GSC selectedcanonicalcontract scope ceiling before tokenrenewal and actualgrantcheck",
+    "ownership": "Host enforces priorAccountoptinpolicy; package remains owner of mode-to-scopes mapping and scope compatibility",
+    "why_targeted": "Other providers can authorize optionalgrants beyond theirbasecontract; globalceiling would regress thoseflows",
+    "package_changed": false
+  }
+}

@@ -1,0 +1,1 @@
+import{d as e,t,o as a,c as o,B as r}from"./CHhb2Wy-.js";const _=e({__name:"__static-404",setup(s){return t({meta:[{property:"og:url",content:null}]}),(n,c)=>(a(),o(r,{error:{statusCode:404,statusMessage:"Page not found"}}))}});export{_ as default};

@@ -1,0 +1,38 @@
+{
+  "recommendation": "approve",
+  "reviewer": "navigation_review",
+  "independence": "Integrated evidence/source review only. No implementation, acceptance-test, build, browser, fixture, backend or tracker changes; only this report written. No redundant broad test run.",
+  "project_id": 1,
+  "run_plan_id": 724,
+  "run_id": 718,
+  "contract_revision": 2,
+  "candidate_sha256": "09c506038cc3c8f755e9887659694fef3c4f5942a5042f61131f3ca12527f75d",
+  "modal_candidate_sha256": "facaba3f908ed954f3b8c3d8eef96887346d19947563e1f5eebb99ba7661d804",
+  "scope": "Final integration of accepted M1 and D1/D2/D3 follow-up work over the previously accepted Work delivery. Unchanged broader baseline was not re-audited.",
+  "findings": [],
+  "checks": {
+    "source_freshness": "Pass. Independently recomputed the aggregate hash from the sorted overlay manifest. All 61 entries, including two deletions, match both the working tree and /tmp/stackos-work-724/signoff. Every entry maps to previous acceptance, M1 or D3 evidence with no uncovered delta.",
+    "build_freshness": "Pass. All 89 files match the build manifest in the tested signoff output, repository stackos/ui_dist and isolated preview bundle. No missing, extra or changed bundle files. Built smoke identifies index-Bz5kSfwx.js from this manifest.",
+    "mandatory_gate": "Pass. signoff.json binds complete make signoff exit0/session47582 to the frozen candidate: static checks, full Python/UI suites and production build. The earlier Connections recursion failure is preserved as historical evidence and repaired by independently accepted D3; it is not waived.",
+    "evidence_integrity": "Pass. Independently checked 21 visual/comparison/final-capture hashes. Read the reconciled browser observations, behavior research, current design-qa.md and final signoff receipt. Sampled final-built-task.png, compare-long-light-full.png and final-map-selected.png.",
+    "ownership_and_cleanup": "Pass. UiDialog owns the reusable stable detail layout and body portal; overlayStack is consumed only by UiDialog and UiSidePanel. Duplicate stack/overflow owners and ActionCalls stacking wrapper are removed. One TrackerTicketDetailContent is reused by Work and the existing map inspector. Deleted Stories/Tickets components are absent; remaining name references are negative cleanup assertions.",
+    "cross_view_flow": "Pass. Accepted M1 selection precedence, project scope, invalid URL and async proofs remain current. Board owns all task columns; only map owns task selection. Map node activation stays in canvas and explicit Details uses the existing inspector. Task details use one persistent popup; ticket Back preserves task context and final close returns to the Board opener.",
+    "modal_and_content_flow": "Pass. Retained frame, six-row access, scroll/disclosure/draft preservation, loading/error behavior and bounded content authority are covered by accepted ticket proofs. D2 closes offscreen feedback/focus loss with visible footer recovery and active-inspection guards. D3 preserves that flow while removing the shared lifecycle recursion.",
+    "design_and_keyboard": "Pass. Root Product Design evidence covers both themes, long content, 0/1/6/7/30 records, short/large desktop frames, exact close centering and backdrop coverage. Final built task/ticket frames are 672 by 752px at 1280 by 800px; overlay origin is0,0. Final keyboard evidence records Tab wrap, retained disclosure/body scroll153, original-card focus return and body unlock, with no console errors in the cleared built-smoke buffer.",
+    "documentation": "Pass. Tracker, design-system, inventory and page-layout documentation describe the actual shared owners, two-view navigation, persistent inspection, fixed footer feedback and unchanged atomic content submission.",
+    "authority": "Pass. Evidence and final claims remain limited to local source, verified production assets and the isolated preview. No installed-app/runtime upgrade, commit, public release, deployment or external message is claimed."
+  },
+  "reused_reviews": [
+    "map-M1-review.json",
+    "modal-D1-review.json: unaffected passing scope",
+    "modal-D2-review.json: D1-F1 closed",
+    "modal-D3-review.json: actual Connections regression closed",
+    "Previously accepted Work delivery source/backend evidence"
+  ],
+  "before_change_now_why": "Previously task/ticket inspection changed size, the ticket list was unbounded, the backdrop inherited page spacing, and map activation opened the wrong detail surface. The integrated candidate preserves a shared viewport-bounded detail frame, reading/draft context and accessible rows; restores map-local selection with explicit inspection; and places feedback near stable actions. Shared primitives own geometry, portals and overlay lifecycle, while Work owns navigation and content intent.",
+  "residuals": [
+    "Existing nonfatal Vue Router test-host, Python dependency/deprecation and Vite chunk-size warnings are recorded; no required finding remains.",
+    "Installed runtime and public distribution were outside this delivery. Preview/browser and full-gate observations are main-owned evidence; this reviewer independently checked freshness and the bounded source/test changes."
+  ],
+  "next_disposition": "Main may accept integrated delivery and close the workflow within the recorded local implementation scope."
+}

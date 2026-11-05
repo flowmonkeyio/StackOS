@@ -1,0 +1,46 @@
+{
+  "recommendation": "approve",
+  "reviewer": "navigation_review",
+  "independence": "Read-only source review and focused tests; only this review report written. No implementation/test edits, browser, fixture, build, backend or tracker actions.",
+  "ticket": "work-persistent-detail-modal",
+  "ticket_id": 14749,
+  "project_id": 1,
+  "run_plan_id": 724,
+  "run_id": 718,
+  "step_id": 7594,
+  "attempt": "D2",
+  "contract_revision": 2,
+  "candidate_sha256": "fb22c59208f84a14619e6d2a3c14d1e46ceeb5db307ce6d5ae2b98542e722db4",
+  "scope": "Focused closure of D1-F1 plus admitted precise edit/save labels; reuse unchanged D1 and accepted M1 evidence.",
+  "freshness": "All 22 file hashes and the aggregate candidate hash independently match. Exactly the six admitted paths differ from D1; shared overlay/preset/button/ActionCalls implementation is unchanged.",
+  "findings": [],
+  "closed_findings": [
+    {
+      "id": "D1-F1",
+      "status": "closed",
+      "evidence": "TrackerTaskDetailDialog.vue now renders progress, success, errors and conflict recovery in the fixed footer. runContentAction captures the originating task and focuses feedback only while the popup is open, the task/project still match, and no ticket inspection is active. Tests cover long input history, uncertain retry, conflict refresh, retained frame/body scroll and deferred-save completion during ticket inspection."
+    }
+  ],
+  "coverage": {
+    "visible_feedback_and_recovery": "Pass. Existing feedback and Load latest content action share the pinned footer with content actions; long history cannot move these into the body scroll region.",
+    "async_focus_scope": "Pass. Before/after request focus checks modelValue, absent ticketKey and captured task/project identity. During ticket inspection, async completion leaves heading focus unchanged. Unmounted feedback refs cannot be focused.",
+    "atomic_intent_and_labels": "Pass. Edit description, Save description, Add input, Save description and input, and Retry save follow existing canonical change/pending-intent flags. The controller change only exposes its existing readonly descriptionChanged computed. Request construction, idempotency, revisions and conflict behavior are unchanged; exact retry and combined payload assertions pass.",
+    "retained_state_and_authority": "Pass. Current route tests retain the persistent frame, reading/draft state, actual exit protection, scope/race guards and narrow content operation. Accepted M1 map behavior remains unchanged.",
+    "docs": "Pass. docs/task-tracker.md records pinned feedback, focus behavior and atomic submission labels."
+  },
+  "independent_checks": [
+    {
+      "command": "TPF_LLM_TOOL=codex tpf pnpm --dir ui exec vitest run src/views/task-tracker/TrackerTaskDetailDialog.spec.ts src/views/task-tracker/useTrackerTaskContent.spec.ts src/views/TaskTrackerView.spec.ts",
+      "result": "PASS: 44 tests in 3 files"
+    },
+    {
+      "check": "22 individual hashes, aggregate SHA-256 and D1 delta scope",
+      "result": "PASS: all match; exactly six admitted paths changed or added"
+    }
+  ],
+  "root_browser_evidence": "Main reports long-history save keeps the frame at 672 by 752px, feedback visible at y707..727 in the footer, focus on the feedback div inside the dialog, and body scroll0. Capture: after-save-feedback-light.png. Reviewer did not repeat browser actions.",
+  "remaining_integration_proof": [
+    "Main-owned final Product Design/behavior QA and full signoff remain pending; this is ticket acceptance evidence, not release approval."
+  ],
+  "next_disposition": "Main may accept D2 and continue integrated verification, reusing unaffected D1 and M1 evidence."
+}
