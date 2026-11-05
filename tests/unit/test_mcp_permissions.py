@@ -112,6 +112,8 @@ def test_check_grant_for_system_skill_covers_bootstrap_setup_operations() -> Non
     check_grant("tracker.verify", SYSTEM_SKILL)
     check_grant("tracker.createTask", SYSTEM_SKILL)
     check_grant("tracker.createTicket", SYSTEM_SKILL)
+    check_grant("tracker.startDelivery", SYSTEM_SKILL)
+    check_grant("tracker.startDelivery", RUN_PLAN_CONTROLLER_SKILL)
     check_grant("tracker.patch", SYSTEM_SKILL)
     check_grant("tracker.rejectTask", SYSTEM_SKILL)
     check_grant("tracker.reopen", SYSTEM_SKILL)

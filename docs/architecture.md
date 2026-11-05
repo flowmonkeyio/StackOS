@@ -88,6 +88,26 @@ grant policy, examples, and agent-facing guidance once. MCP tools, generic REST
 operation calls, and CLI `ops` commands are adapters over the same operation
 spec.
 
+## Optional Task Delivery
+
+`tracker.startDelivery` hands an independently prepared tracker task to the
+existing daemon scheduler. The engineering plugin owns one fixed sequence:
+ready ticket, delivery agent, review agent, completion on approval, next ticket.
+Rejection or failure stops the sequence and records the reason. Run-plan mirror
+lifecycle remains owned by `runPlan.*`.
+
+Task metadata holds the selected harness, project directory, named project-agent
+instruction packets, and execution progress. Canonical tracker briefs,
+dependencies, evidence, and completion rollup remain the work-state owners.
+There is no additional table or scheduler. The initial memory job continues
+after the submitting process exits but does not resume after a daemon restart.
+
+`stackos.host_mcp` owns the shared internal `run_agent` entry point through the
+same host registry used by Overview. Codex is the first execution adapter;
+additional adapters can implement that capability without changing the delivery
+loop. The planner supplies adapted project instructions, so launch requires no
+particular agent-file layout. Codex retains its normal project/global settings.
+
 ## Data Model
 
 Core StackOS tables include:

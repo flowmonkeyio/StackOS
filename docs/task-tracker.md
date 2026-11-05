@@ -50,6 +50,77 @@ intentionally not executed. Supersession is a relationship or disposition in
 metadata/links, not a lifecycle status; do not use `deferred` as a generic
 replacement for "moved elsewhere."
 
+## Automated Task Delivery
+
+The planner chooses this optional path by calling `tracker.startDelivery` after
+preparing a task's self-contained tickets and dependencies. The existing
+terminal-managed path continues to use the normal tracker operations.
+
+The handoff is task-level:
+
+```json
+{
+  "task_key": "prepared-task",
+  "project_dir": "/path/to/working-project",
+  "host_key": "codex",
+  "delivery_agent": {
+    "name": "project-delivery",
+    "instructions": "The project's adapted delivery instructions."
+  },
+  "review_agent": {
+    "name": "project-review",
+    "instructions": "The project's adapted independent review instructions."
+  }
+}
+```
+
+The workspace bridge supplies `project_id`; REST and CLI callers supply it
+explicitly. Agent instructions come from the planner's project adaptation.
+Projects need no `.codex` folder, and StackOS does not substitute generic presets
+for those instructions. Harness and role choices are stored once under the
+task's `metadata_json.delivery`, with other task metadata preserved.
+
+The call returns a task key, execution status, job reference, and a
+`tracker.get` inspection hint immediately. The daemon uses its existing memory
+scheduler to run one ready, unstarted ticket from that task at a time:
+
+```text
+ready ticket -> delivery -> fresh review -> approve -> complete -> next ticket
+                                |
+                              reject -> record reason and stop
+```
+
+The result contracts are `DELIVERY_SCHEMA` and `REVIEW_SCHEMA` in
+[`task_delivery.py`](../plugins/engineering/scripts/task_delivery.py). Delivery
+must return `status` (`complete` or `blocked`) and a string `summary`; review
+must return `decision` (`approve` or `reject`) and a string `summary`. Both
+fields are required for each result, and extra fields are forbidden. Agents
+return results only; StackOS updates ticket lifecycle from these results,
+completing a ticket only after successful delivery and review approval. See the
+[CLI handoff example](operations.md#cli-calls).
+
+Delivery result:
+
+```json
+{"status": "complete", "summary": "Implemented the ticket and passed its checks."}
+```
+
+Review result:
+
+```json
+{"decision": "approve", "summary": "Independently verified the changes and checks."}
+```
+
+Agent/process failure also stops the task's execution. Ticket evidence records
+both agent results and thread references. Completion uses the existing parent
+task rollup. An active duplicate handoff returns the current execution instead
+of scheduling another job. Inspect the full task metadata and ticket evidence
+with `tracker.get` using `response_mode="raw"`.
+
+This first slice supports independent tracker tasks and Codex. It does not
+execute workflow-mirror tasks, retry rejected work, or resume an interrupted job
+after daemon restart. `tracker.execute` remains a read-only brief operation.
+
 ## Workflow Mirroring
 
 `runPlan.create` automatically creates a tracker task and one ticket per

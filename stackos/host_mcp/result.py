@@ -3,7 +3,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Any, Literal
+
+AgentSandbox = Literal["read-only", "workspace-write"]
+
+
+@dataclass(frozen=True)
+class AgentRunResult:
+    """One host process result; the caller interprets the agent's decision."""
+
+    exit_code: int | None
+    thread_id: str | None = None
+    result: dict[str, Any] | None = None
+    error: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.exit_code == 0 and self.error is None and self.result is not None
+
 
 HostMcpStatus = Literal[
     "absent",

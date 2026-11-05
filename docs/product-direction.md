@@ -40,6 +40,11 @@ readiness, visibility, approvals, recovery, and audit.
   Their findings are inputs for main-agent adjudication, not product policy.
 - StackOS owns project scope, durable state, validation, scoped authority,
   daemon-held credentials, explicit execution, recovery state, and audit.
+- A planning agent may explicitly hand an independently prepared task to
+  automated delivery. It supplies the tickets, dependencies, and project-agent
+  instructions. StackOS then mechanically launches delivery and review through
+  an existing harness, completes approved tickets, and advances. Agents retain
+  engineering judgment; the terminal-managed path remains available.
 - Connectors own provider transport and protocol semantics. They do not invent
   workflow logic or business decisions.
 

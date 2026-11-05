@@ -6,11 +6,13 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from stackos.host_mcp.adapters import claude_code, claude_desktop, codex, gemini_cli, grok, hermes
 from stackos.host_mcp.bridge import MCP_SERVER_NAME, default_home, token_preflight
 from stackos.host_mcp.result import (
+    AgentRunResult,
+    AgentSandbox,
     HostMcpConnectionState,
     HostMcpResult,
     HostMcpSetupPolicy,
@@ -32,6 +34,18 @@ class HostMcpAdapter(Protocol):
     def remove(self, home: Path) -> HostMcpResult: ...
 
 
+class AgentRunner(Protocol):
+    def __call__(
+        self,
+        project_dir: Path,
+        instructions: str,
+        prompt: str,
+        output_schema: dict[str, Any],
+        *,
+        sandbox: AgentSandbox,
+    ) -> AgentRunResult: ...
+
+
 @dataclass(frozen=True)
 class HostMcpPolicy:
     host_key: str
@@ -48,6 +62,7 @@ class HostMcpDefinition:
     inspect_profile: ProfileAdapterFn | None = None
     register_profile: ProfileAdapterFn | None = None
     remove_profile: ProfileAdapterFn | None = None
+    run_agent: AgentRunner | None = None
 
 
 @dataclass(frozen=True)
@@ -72,6 +87,28 @@ class HostMcpAggregate:
             + (f" Repair: {result.repair}" if result.repair and not result.ok else "")
             for result in self.results
         ]
+
+
+def run_agent(
+    host_key: str,
+    project_dir: str | Path,
+    instructions: str,
+    prompt: str,
+    output_schema: dict[str, Any],
+    *,
+    sandbox: AgentSandbox = "workspace-write",
+) -> AgentRunResult:
+    """Run a project agent through the same host registry used by Overview."""
+    definition = _definition_by_key(host_key)
+    if definition is None or definition.run_agent is None:
+        return AgentRunResult(None, error=f"Host {host_key!r} does not support agent execution.")
+    return definition.run_agent(
+        Path(project_dir).expanduser().resolve(),
+        instructions,
+        prompt,
+        output_schema,
+        sandbox=sandbox,
+    )
 
 
 def inspect_all(*, home: Path | None = None) -> HostMcpAggregate:
@@ -269,6 +306,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
             codex,
             HostMcpPolicy("codex", "ChatGPT / Codex", "automatic"),
             force_register=lambda home, force: codex.register(home, force=force),
+            run_agent=codex.run_agent,
         ),
         HostMcpDefinition(
             claude_code,

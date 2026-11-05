@@ -256,6 +256,7 @@ _AGENT_SETUP_TOOLBOX_NAMES: frozenset[str] = frozenset(
         "tracker.reopen",
         "tracker.release",
         "tracker.search",
+        "tracker.startDelivery",
         "tracker.status",
         "tracker.updateTask",
         "tracker.updateTicket",

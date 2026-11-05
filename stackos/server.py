@@ -304,6 +304,10 @@ def _build_lifespan(
         # skipped) so re-running on every boot is fine.
         scheduler = build_scheduler(settings, engine)
         app.state.scheduler = scheduler
+        app.state.operation_services.update(
+            scheduler=scheduler,
+            session_factory=lambda: Session(engine),
+        )
 
         # Crash-recovery sweep: any ``status='running' AND
         # heartbeat_at < now - 5 min`` row gets ``aborted`` with

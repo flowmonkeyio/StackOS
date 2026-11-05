@@ -26,6 +26,7 @@ def _tracker_operations() -> OperationRegistry:
         "tracker.search",
         "tracker.createTask",
         "tracker.createTicket",
+        "tracker.startDelivery",
         "tracker.updateTask",
         "tracker.updateTicket",
         "tracker.patch",

@@ -486,6 +486,18 @@ stackos tracker pick --project 1 --assignee codex
 stackos tracker patch --project 1 --input tracker-patch.json
 ```
 
+Use `tracker.startDelivery` for a task-level background handoff of an independent
+task whose tickets and dependencies are prepared. The `handoff.json` input file
+contains the task handoff (task key, project directory, and project delivery/review
+agent instructions); see [Automated Task Delivery](task-tracker.md#automated-task-delivery)
+for its structure. The call returns immediately while the daemon runs ready tickets
+sequentially through delivery and review. Inspect progress with `tracker.get`
+using `response_mode="raw"`.
+
+```bash
+stackos ops call tracker.startDelivery --project 1 --input handoff.json --response-mode raw
+```
+
 Provider execution context stays outside endpoint payloads. Pass it directly
 with `--provider-context provider-context.json`, or store it once on an
 execution context and pass `--context-ref` on subsequent calls.
@@ -616,6 +628,7 @@ index for common core operations, not a replacement for registry discovery.
 - `tracker.brief`
 - `tracker.why`
 - `tracker.execute`
+- `tracker.startDelivery`
 - `tracker.verify`
 - `tracker.history`
 - `tracker.changed`

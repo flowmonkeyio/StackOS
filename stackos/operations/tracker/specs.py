@@ -43,6 +43,7 @@ from stackos.operations.tracker.schemas import (
     TrackerReleaseInput,
     TrackerReopenInput,
     TrackerSearchInput,
+    TrackerStartDeliveryInput,
     TrackerTicketCountsAllInput,
     TrackerTicketCountsInput,
     TrackerTicketInput,
@@ -52,6 +53,7 @@ from stackos.operations.tracker.schemas import (
 )
 from stackos.operations.tracker.spec_helpers import (
     _read_spec,
+    _surfaces,
     _write_spec,
 )
 from stackos.operations.tracker.write_handlers import (
@@ -63,6 +65,7 @@ from stackos.operations.tracker.write_handlers import (
     tracker_reject_task,
     tracker_release,
     tracker_reopen,
+    tracker_start_delivery,
     tracker_update_task,
     tracker_update_task_content,
     tracker_update_ticket,
@@ -92,6 +95,54 @@ _TICKET_COUNTS_RESPONSE_POLICY = OperationResponsePolicy(
 
 def operation_specs() -> list[OperationSpec]:
     return [
+        OperationSpec(
+            name="tracker.startDelivery",
+            summary="Start background task delivery and review using project agents.",
+            input_model=TrackerStartDeliveryInput,
+            output_model=WriteEnvelope[dict[str, Any]],
+            handler=tracker_start_delivery,
+            surfaces=_surfaces("tracker.startDelivery"),
+            mutating=True,
+            grant_policy="direct-tracker-write",
+            response_policy=OperationResponsePolicy(
+                default_mode="compact",
+                allowed_modes=("compact", "raw"),
+                compact_notes=(
+                    "Keep task, job, current ticket, launch status and inspection guidance.",
+                ),
+            ),
+            purpose=(
+                "Select the additional automated delivery path for one independent prepared task. "
+                "The planner supplies project delivery/review instructions once at task level. "
+                "The daemon runs ready tickets sequentially and stops on rejection or failure."
+            ),
+            prerequisites=(
+                "Prepare self-contained tickets and dependencies under an independent task.",
+                "Supply the project directory and its resolved agents; Codex is supported.",
+            ),
+            returns=(
+                "Returns task/job/status refs. Inspect tracker.get response_mode=raw for progress.",
+                "The existing daemon scheduler owns execution; jobs do not survive daemon restart.",
+            ),
+            examples=(
+                OperationExample(
+                    title="Start a prepared task with project agents",
+                    arguments={
+                        "project_id": 1,
+                        "task_key": "feature",
+                        "project_dir": "/work/project",
+                        "delivery_agent": {
+                            "name": "builder",
+                            "instructions": "Implement and verify the ticket acceptance criteria.",
+                        },
+                        "review_agent": {
+                            "name": "reviewer",
+                            "instructions": "Independently verify the ticket acceptance criteria.",
+                        },
+                    },
+                ),
+            ),
+        ),
         operation_spec(
             name="tracker.ticketCounts",
             summary="Read exact current ticket-status counts in the project's default tracker.",

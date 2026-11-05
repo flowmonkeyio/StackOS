@@ -7,6 +7,10 @@ import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Any
+
+from jsonschema import ValidationError, validate
 
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
@@ -18,7 +22,7 @@ from stackos.host_mcp.bridge import (
     token_preflight,
 )
 from stackos.host_mcp.discovery import resolve_cli_bins, subprocess_env_for_cli
-from stackos.host_mcp.result import HostMcpResult, looks_secretish
+from stackos.host_mcp.result import AgentRunResult, AgentSandbox, HostMcpResult, looks_secretish
 
 HOST_KEY = "codex"
 SURFACE = "shared-config"
@@ -44,6 +48,77 @@ MACOS_CODEX_APP_BUNDLE_CANDIDATES = (
     "/Applications/Codex.app/Contents/Resources/codex",
     "~/Applications/Codex.app/Contents/Resources/codex",
 )
+
+
+def run_agent(
+    project_dir: Path,
+    instructions: str,
+    prompt: str,
+    output_schema: dict[str, Any],
+    *,
+    sandbox: AgentSandbox = "workspace-write",
+) -> AgentRunResult:
+    """Run supplied project-agent instructions in a fresh Codex thread."""
+    if not instructions.strip():
+        return AgentRunResult(None, error="Project-agent instructions must not be empty.")
+
+    codex_bin = _select_codex_bin()
+    if codex_bin is None:
+        return AgentRunResult(None, error="No usable Codex CLI was found by host discovery.")
+    with TemporaryDirectory(prefix="stackos-agent-") as temporary:
+        schema_path = Path(temporary) / "schema.json"
+        result_path = Path(temporary) / "result.json"
+        schema_path.write_text(json.dumps(output_schema), encoding="utf-8")
+        command = [
+            codex_bin,
+            "exec",
+            "--json",
+            "--cd",
+            str(project_dir),
+            "--sandbox",
+            sandbox,
+            "--output-schema",
+            str(schema_path),
+            "-o",
+            str(result_path),
+            "-c",
+            f"developer_instructions={json.dumps(instructions, ensure_ascii=False)}",
+            "-",
+        ]
+        try:
+            process = subprocess.run(
+                command,
+                input=prompt,
+                cwd=project_dir,
+                env=subprocess_env_for_cli(codex_bin),
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        except OSError as exc:
+            return AgentRunResult(None, error=f"Could not launch Codex: {exc}")
+        thread_id = None
+        for line in process.stdout.splitlines():
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(event, dict) and event.get("type") == "thread.started":
+                thread_id = event.get("thread_id")
+        if process.returncode != 0:
+            return AgentRunResult(
+                process.returncode,
+                thread_id=thread_id,
+                error=process.stderr.strip() or "Codex exited unsuccessfully.",
+            )
+        try:
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            if not isinstance(result, dict):
+                raise ValueError("expected a JSON object")
+            validate(result, output_schema)
+        except (OSError, ValueError, ValidationError) as exc:
+            return AgentRunResult(0, thread_id=thread_id, error=f"Invalid Codex result: {exc}")
+        return AgentRunResult(0, thread_id=thread_id, result=result)
 
 
 def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:

@@ -161,6 +161,7 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "tracker.search",
         "tracker.createTask",
         "tracker.createTicket",
+        "tracker.startDelivery",
         "tracker.updateTask",
         "tracker.updateTicket",
         "tracker.patch",
@@ -293,6 +294,7 @@ _RUN_PLAN_CONTROL: frozenset[str] = frozenset(
         "tracker.search",
         "tracker.createTask",
         "tracker.createTicket",
+        "tracker.startDelivery",
         "tracker.updateTask",
         "tracker.updateTicket",
         "tracker.patch",
@@ -308,6 +310,7 @@ _RUN_PLAN_STEP_BOUND_CONTROL_TOOLS: frozenset[str] = frozenset(
     {
         "tracker.createTask",
         "tracker.createTicket",
+        "tracker.startDelivery",
         "tracker.updateTask",
         "tracker.updateTicket",
         "tracker.patch",

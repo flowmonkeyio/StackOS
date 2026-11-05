@@ -12,7 +12,7 @@ its host. StackOS does not grant that filesystem capability. StackOS resolves
 project scope, validates explicit inputs, executes daemon-side operations, and
 records audit.
 
-StackOS has two execution paths because agents do two different kinds of work:
+Workflow and direct action execution use two forms:
 
 1. **Workflow work**: multi-step, stateful, repeatable work that should be
    planned, granted, recorded, and reviewed.
@@ -84,6 +84,17 @@ and review cover assembled behavior and outstanding integration obligations.
 See [engineering delegation](./agent-presets.md#engineering-delegation-and-acceptance)
 for ownership, concurrency, model-selection and evidence rules. These are plugin
 operating contracts, not a second scheduler inside StackOS core.
+
+For an independently prepared task, the planner can instead call
+`tracker.startDelivery` after creating self-contained tickets and dependencies.
+It supplies the project directory, harness, and named delivery/review instruction
+packets once for the task. The planner adapts these instructions from the
+project's available guidance; agent files are optional sources, not a launch
+requirement. StackOS passes the instructions to the harness and follows the
+fixed delivery/review sequence. Review approval completes a ticket and releases
+its dependents; rejection or failure stops execution with evidence. The initial
+path supports Codex and does not accept workflow-mirrored tasks or resume jobs
+after daemon restart. See [task handoff](task-tracker.md#automated-task-delivery).
 
 Local agent installation is outside the StackOS daemon boundary. StackOS
 describes generic presets and workflow role requirements, but the host/project

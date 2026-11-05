@@ -192,6 +192,12 @@ compatibility candidate. The StackOS plugin is the forward ChatGPT/Codex
 distribution path and direct Codex registration keeps standalone and legacy app
 readiness; both use the same local bridge with `--runtime codex`.
 
+The optional [task delivery handoff](task-tracker.md#automated-task-delivery)
+uses this same host registry and CLI discovery. Codex is the first host with
+agent execution support. Connection readiness for another host does not imply
+that it can execute task delivery. The planner supplies the project's agent
+instructions; no `.codex` folder or additional agent installation is required.
+
 The host connection model has one brain:
 
 1. the shared bridge contract owns the local stdio command, runtime label,

@@ -20,10 +20,12 @@ from stackos.operations.tracker.schemas import (
     TrackerRejectTaskInput,
     TrackerReleaseInput,
     TrackerReopenInput,
+    TrackerStartDeliveryInput,
     TrackerUpdateTaskContentInput,
     TrackerUpdateTaskInput,
     TrackerUpdateTicketInput,
 )
+from stackos.plugins.builtin_engineering import task_delivery
 from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import (
@@ -39,6 +41,29 @@ def _safe_rejection_reason(reason: str) -> str:
     if not clean:
         raise ValidationError("reason is required to reject a task")
     return clean
+
+
+async def tracker_start_delivery(
+    inp: TrackerStartDeliveryInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[dict[str, Any]]:
+    scheduler = ctx.extras.get("scheduler")
+    session_factory = ctx.extras.get("session_factory")
+    if scheduler is None or session_factory is None:
+        raise ValidationError("Task delivery requires the running StackOS daemon")
+    result = task_delivery().start_delivery(
+        session=ctx.session,
+        session_factory=session_factory,
+        scheduler=scheduler,
+        project_id=inp.project_id,
+        task_key=inp.task_key,
+        project_dir=inp.project_dir,
+        host_key=inp.host_key,
+        delivery_agent=inp.delivery_agent.model_dump(),
+        review_agent=inp.review_agent.model_dump(),
+    )
+    return WriteEnvelope(data=result, run_id=ctx.run_id, project_id=inp.project_id)
 
 
 def _safe_reopen_reason(reason: str) -> str:
@@ -577,6 +602,7 @@ __all__ = [
     "tracker_reject_task",
     "tracker_release",
     "tracker_reopen",
+    "tracker_start_delivery",
     "tracker_update_task",
     "tracker_update_task_content",
     "tracker_update_ticket",

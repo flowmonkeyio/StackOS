@@ -285,6 +285,8 @@ class TrackerQueryMixin:
         limit: int = 5,
         assignee: str | None = None,
         include_blocked: bool = True,
+        task_key: str | None = None,
+        pending_only: bool = False,
     ) -> TrackerNextOut:
         tracker = self._tracker_or_none(project_id=project_id)
         if tracker is None:
@@ -294,6 +296,13 @@ class TrackerQueryMixin:
                 explanation="No tracker work exists for this project yet.",
             )
         tickets = self._ticket_rows(tracker.id)
+        if task_key is not None:
+            task = self._task_by_key(tracker.id, task_key)
+            tickets = [ticket for ticket in tickets if ticket.task_id == task.id]
+        if pending_only:
+            tickets = [
+                ticket for ticket in tickets if ticket.status == TrackerItemStatus.NOT_STARTED
+            ]
         if assignee is not None:
             tickets = [ticket for ticket in tickets if ticket.assignee in {None, assignee}]
         ready = self._ready_ticket_rows(tracker.id, tickets=tickets)

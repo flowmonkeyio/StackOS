@@ -9,6 +9,7 @@ from typing import (
 )
 
 from pydantic import (
+    BaseModel,
     ConfigDict,
     Field,
     StrictBool,
@@ -25,6 +26,26 @@ from stackos.db.models import (
 from stackos.mcp.contract import MCPInput
 
 TrackerResponseMode = Literal["compact", "raw", "standard", "verbose"]
+
+
+class TaskDeliveryAgent(BaseModel):
+    """A planner-resolved project agent contract, independent of host file layout."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    name: str = Field(min_length=1)
+    instructions: str = Field(min_length=1)
+
+
+class TrackerStartDeliveryInput(MCPInput):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    project_id: int
+    task_key: str = Field(min_length=1)
+    project_dir: str = Field(min_length=1)
+    host_key: str = "codex"
+    delivery_agent: TaskDeliveryAgent
+    review_agent: TaskDeliveryAgent
+    response_mode: TrackerResponseMode = "compact"
+
 
 TRACKER_STATUS_DESCRIPTION = (
     "Tracker lifecycle status. not-started = planned but not begun; "
@@ -664,6 +685,7 @@ class TrackerLinkRunPlanInput(MCPInput):
 
 
 __all__ = [
+    "TaskDeliveryAgent",
     "TrackerChangedInput",
     "TrackerCreateTaskInput",
     "TrackerCreateTicketInput",
@@ -679,6 +701,7 @@ __all__ = [
     "TrackerReopenInput",
     "TrackerResponseMode",
     "TrackerSearchInput",
+    "TrackerStartDeliveryInput",
     "TrackerTicketInput",
     "TrackerUpdateTaskContentInput",
     "TrackerUpdateTaskInput",
