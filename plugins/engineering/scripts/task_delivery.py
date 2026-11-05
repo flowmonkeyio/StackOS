@@ -22,7 +22,7 @@ from stackos.db.models import (
     TrackerTicketKind,
 )
 from stackos.host_mcp.result import AgentSandbox
-from stackos.host_mcp.service import run_agent
+from stackos.host_mcp.service import agent_selection_error, run_agent
 from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.tracker import TrackerRepository
 
@@ -148,8 +148,8 @@ def start_delivery(
     task_key: str,
     project_dir: str,
     host_key: str,
-    delivery_agent: dict[str, str],
-    review_agent: dict[str, str],
+    delivery_agent: dict[str, Any],
+    review_agent: dict[str, Any],
     run_plan_id: int | None = None,
     step_id: str | None = None,
 ) -> dict[str, Any]:
@@ -166,6 +166,20 @@ def start_delivery(
     directory = Path(project_dir).expanduser().resolve()
     if not directory.is_dir():
         raise ValidationError("project_dir must be an existing working directory")
+    roles: tuple[tuple[dict[str, Any], AgentSandbox], ...] = (
+        (delivery_agent, "workspace-write"),
+        (review_agent, "read-only"),
+    )
+    for agent, sandbox in roles:
+        error = agent_selection_error(
+            agent.get("host_key") or host_key,
+            sandbox=sandbox,
+            model=agent.get("model"),
+            provider=agent.get("provider"),
+            profile=agent.get("profile"),
+        )
+        if error:
+            raise ValidationError(error)
     state = _update_delivery(
         repo,
         project_id,
@@ -279,8 +293,15 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
             )
             for phase, schema, sandbox in phases:
                 agent = state[f"{phase}_agent"]
+                host_key = agent.get("host_key") or state["host_key"]
+                selection = {
+                    key: agent[key]
+                    for key in ("model", "provider", "profile")
+                    if agent.get(key) is not None
+                }
                 launch = {
-                    "host_key": state["host_key"],
+                    "host_key": host_key,
+                    **selection,
                     "project_dir": state["project_dir"],
                     "sandbox": sandbox,
                     "started_at": datetime.now(UTC).isoformat(),
@@ -308,7 +329,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                         actor=ACTOR,
                     )
                 result = run_agent(
-                    state["host_key"],
+                    host_key,
                     state["project_dir"],
                     agent["instructions"],
                     json.dumps(
@@ -333,6 +354,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                     ),
                     schema,
                     sandbox=sandbox,
+                    **selection,
                 )
                 evidence[phase] = {"agent": agent["name"], "launch": launch, **asdict(result)}
                 field, expected = (

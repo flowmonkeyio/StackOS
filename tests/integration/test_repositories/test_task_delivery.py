@@ -82,8 +82,12 @@ def submit(session: Session, project_id: int, tmp_path: Path, scheduler: QueuedS
         task_key=task_key,
         project_dir=str(tmp_path),
         host_key="codex",
-        delivery_agent={"name": "project-builder", "instructions": "Build the ticket."},
-        review_agent={"name": "project-reviewer", "instructions": "Review the ticket."},
+        delivery_agent=scope.pop(
+            "delivery_agent", {"name": "project-builder", "instructions": "Build the ticket."}
+        ),
+        review_agent=scope.pop(
+            "review_agent", {"name": "project-reviewer", "instructions": "Review the ticket."}
+        ),
         **scope,
     )
     context = MCPContext(
@@ -93,6 +97,84 @@ def submit(session: Session, project_id: int, tmp_path: Path, scheduler: QueuedS
         extras={"session_factory": lambda: Session(session.get_bind()), "scheduler": scheduler},
     )
     return asyncio.run(tracker_start_delivery(arguments, context, None)).data
+
+
+def test_role_host_model_provider_reach_launch_and_receipt(
+    session: Session, project_id: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from stackos.plugins.builtin_engineering import task_delivery
+
+    prepared_task(session, project_id)
+    scheduler = QueuedScheduler()
+    calls = []
+
+    def run_agent(host, directory, instructions, prompt, schema, *, sandbox, **selection):
+        calls.append((host, selection))
+        key = json.loads(prompt)["brief"]["ticket"]["key"]
+        sha = (
+            commit(tmp_path, key)
+            if sandbox == "workspace-write"
+            else git(tmp_path, "rev-parse", "HEAD")
+        )
+        value = {"status": "complete"} if sandbox == "workspace-write" else {"decision": "approve"}
+        return AgentRunResult(0, result={**value, "summary": "Checked", "commit_sha": sha})
+
+    monkeypatch.setattr(task_delivery(), "run_agent", run_agent)
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        delivery_agent={
+            "name": "builder",
+            "instructions": "Build",
+            "host_key": "hermes",
+            "model": "provider/model",
+            "provider": "openrouter",
+            "profile": "work",
+        },
+        review_agent={
+            "name": "reviewer",
+            "instructions": "Review",
+            "host_key": "claude-code",
+            "model": "claude-opus-5-5",
+        },
+    )
+    scheduler.run()
+    assert (
+        calls
+        == [
+            ("hermes", {"model": "provider/model", "provider": "openrouter", "profile": "work"}),
+            ("claude-code", {"model": "claude-opus-5-5"}),
+        ]
+        * 2
+    )
+    session.expire_all()
+    evidence = (
+        TrackerRepository(session)
+        .brief(project_id=project_id, ticket_key="first")
+        .ticket.completion_evidence_json["automatic_delivery"]
+    )
+    assert evidence["delivery"]["launch"]["provider"] == "openrouter"
+    assert evidence["delivery"]["launch"]["profile"] == "work"
+    assert evidence["review"]["launch"]["host_key"] == "claude-code"
+    assert evidence["review"]["launch"]["model"] == "claude-opus-5-5"
+
+
+def test_unsupported_reviewer_rejects_before_scheduling(session, project_id, tmp_path):
+    prepared_task(session, project_id)
+    scheduler = QueuedScheduler()
+    with pytest.raises(ValidationError, match="does not support read-only"):
+        submit(
+            session,
+            project_id,
+            tmp_path,
+            scheduler,
+            review_agent={"name": "review", "instructions": "Review", "host_key": "gemini-cli"},
+        )
+    assert not scheduler.jobs
+    task = TrackerRepository(session).get(project_id=project_id, task_key="deliver").tasks[0]
+    assert task.metadata_json == {"keep": "yes"}
 
 
 def test_two_tickets_run_in_order_after_submission_returns(

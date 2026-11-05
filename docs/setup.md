@@ -377,6 +377,15 @@ strategy and passes explicit inputs.
 
 ## Agent Setup From Any Repo
 
+Host connection discovery and automated agent execution share the existing
+`stackos.host_mcp` registry. Host status includes an `agent_execution` capability
+and model catalog with dated sources. Installation and MCP connection are
+separate from credential presence and model access, which remain `not_checked`
+until independently established. A discovered CLI can still fail to run (for
+example, a broken Hermes shim). StackOS performs no account or credential setup
+as part of task delivery. See [task harness choices](task-tracker.md#automated-task-delivery)
+for native delivery/review limits and per-role model/provider selection.
+
 After install, agents can use the `stackos` plugin from a business or
 website repository without copying setup files into that repo.
 

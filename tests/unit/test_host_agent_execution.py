@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from stackos.host_mcp import AgentRunResult, run_agent, service
-from stackos.host_mcp.adapters import codex
+from stackos.host_mcp.adapters import claude_code, codex, gemini_cli, grok, hermes
 
 SCHEMA = {
     "type": "object",
@@ -18,6 +18,158 @@ SCHEMA = {
     "required": ["summary"],
     "additionalProperties": False,
 }
+
+NATIVE_CASES = [
+    (
+        "claude-code",
+        "claude-sonnet-5-5",
+        None,
+        {
+            "type": "result",
+            "is_error": False,
+            "session_id": "native-thread",
+            "structured_output": {"summary": "delivered"},
+        },
+    ),
+    (
+        "gemini-cli",
+        "gemini-3.1-pro-preview",
+        None,
+        {"response": '{"summary":"delivered"}', "stats": {}},
+    ),
+    (
+        "hermes",
+        "provider/model-id",
+        "openrouter",
+        {
+            "type": "result",
+            "session_id": "native-thread",
+            "exit_code": 0,
+            "text": '{"summary":"delivered"}',
+        },
+    ),
+    (
+        "grok",
+        "grok-build",
+        None,
+        {"text": '{"summary":"delivered"}', "sessionId": "native-thread", "stopReason": "end_turn"},
+    ),
+]
+
+
+def fake_native_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(claude_code.claude_mcp, "resolve_claude_bin", lambda: "/fake/claude")
+    monkeypatch.setattr(gemini_cli, "resolve_gemini_bin", lambda: "/fake/gemini")
+    monkeypatch.setattr(hermes, "resolve_hermes_bin", lambda: "/fake/hermes")
+    monkeypatch.setattr(grok, "resolve_grok_bin", lambda _home: "/fake/grok")
+
+
+@pytest.mark.parametrize(("host", "model", "provider", "envelope"), NATIVE_CASES)
+def test_native_command_and_structured_result(
+    project, monkeypatch, host, model, provider, envelope
+):
+    fake_native_discovery(monkeypatch)
+    calls = []
+
+    def execute(command, **kwargs):
+        calls.append(command)
+        assert kwargs["cwd"] == project
+        assert command[command.index("--model") + 1] == model
+        assert "Project instructions" in " ".join(command) + kwargs.get("input", "")
+        assert "Ticket packet" in " ".join(command) + kwargs.get("input", "")
+        assert not any(arg in command for arg in ("--yolo", "--always-approve", "--bare"))
+        if host == "claude-code":
+            assert command[command.index("--permission-mode") + 1] == "auto"
+            assert json.loads(command[command.index("--json-schema") + 1]) == SCHEMA
+        elif host == "gemini-cli":
+            assert command[command.index("--approval-mode") + 1] == "auto_edit"
+        elif host == "hermes":
+            assert command[command.index("--provider") + 1] == provider
+            assert command[command.index("--profile") + 1] == "work"
+            assert command[command.index("--query-file") + 1] == "-"
+            assert "--oneshot" in command
+        elif host == "grok":
+            assert "--no-auto-update" in command
+            assert command[command.index("--sandbox") + 1] == "workspace"
+            assert command[command.index("--permission-mode") + 1] == "auto"
+        return subprocess.CompletedProcess(command, 0, json.dumps(envelope), "")
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    result = run_agent(
+        host,
+        project,
+        "Project instructions",
+        "Ticket packet",
+        SCHEMA,
+        model=model,
+        provider=provider,
+        profile="work" if host == "hermes" else None,
+    )
+    assert result.ok, result.error
+    assert result.result == {"summary": "delivered"}
+    assert len(calls) == 1
+    assert not (project / ".codex").exists()
+
+
+@pytest.mark.parametrize("host", ["gemini-cli", "hermes", "claude-desktop"])
+def test_unsupported_review_does_not_launch(project, monkeypatch, host):
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: pytest.fail("must not launch"))
+    result = run_agent(host, project, "Review", "packet", SCHEMA, sandbox="read-only")
+    assert not result.ok
+    assert "support" in result.error.lower()
+
+
+@pytest.mark.parametrize("host", ["claude-code", "grok"])
+def test_native_review_controls(project, monkeypatch, host):
+    fake_native_discovery(monkeypatch)
+
+    def execute(command, **kwargs):
+        assert command[command.index("--permission-mode") + 1] == "dontAsk"
+        if host == "claude-code":
+            assert command[command.index("--tools") + 1] == "Read,Glob,Grep"
+            assert command[command.index("--disallowedTools") + 1] == "mcp__*"
+            envelope = NATIVE_CASES[0][3]
+        else:
+            assert command[command.index("--sandbox") + 1] == "read-only"
+            envelope = NATIVE_CASES[3][3]
+        return subprocess.CompletedProcess(command, 0, json.dumps(envelope), "")
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    assert run_agent(host, project, "Review", "packet", SCHEMA, sandbox="read-only").ok
+
+
+@pytest.mark.parametrize(
+    ("host", "payload"),
+    [
+        ("claude-code", {"is_error": True, "result": "Account has no model access"}),
+        ("gemini-cli", {"error": {"message": "Account has no model access"}}),
+        ("hermes", {"type": "result", "exit_code": 1, "error": "Account has no model access"}),
+        ("grok", {"error": "Account has no model access"}),
+    ],
+)
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_native_stdout_failure_stops_without_retry(project, monkeypatch, host, payload, exit_code):
+    fake_native_discovery(monkeypatch)
+    calls = []
+
+    def execute(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, exit_code, json.dumps(payload), "")
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    result = run_agent(
+        host,
+        project,
+        "Instructions",
+        "packet",
+        SCHEMA,
+        model="provider/model-id" if host == "hermes" else None,
+        provider="openrouter" if host == "hermes" else None,
+    )
+    assert not result.ok
+    assert "no model access" in result.error
+    assert result.exit_code == exit_code
+    assert len(calls) == 1
 
 
 @pytest.fixture
@@ -167,3 +319,159 @@ def test_harness_settings_are_inherited_and_read_only_is_forwarded(
 
     monkeypatch.setattr(codex.subprocess, "run", execute)
     assert run_agent("codex", project, "delivery", "Review", SCHEMA, sandbox="read-only").ok
+
+
+def test_codex_native_model_and_provider_selectors(project, monkeypatch):
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fake/codex")
+
+    def execute(command, **kwargs):
+        assert command[command.index("--model") + 1] == "configured-model"
+        assert 'model_provider="local-provider"' in command
+        Path(command[command.index("-o") + 1]).write_text('{"summary":"selected"}')
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    assert run_agent(
+        "codex",
+        project,
+        "Instructions",
+        "packet",
+        SCHEMA,
+        model="configured-model",
+        provider="local-provider",
+    ).ok
+
+
+@pytest.mark.parametrize("event_type", ["error", "turn.failed"])
+def test_codex_stdout_error_wins_over_success_file(project, monkeypatch, event_type):
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fake/codex")
+
+    def execute(command, **kwargs):
+        Path(command[command.index("-o") + 1]).write_text('{"summary":"selected"}')
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            json.dumps({"type": event_type, "error": {"message": "Model access denied"}}),
+            "",
+        )
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    result = run_agent("codex", project, "Instructions", "packet", SCHEMA)
+    assert not result.ok
+    assert "Model access denied" in result.error
+
+
+@pytest.mark.parametrize(
+    ("host", "selection", "reason"),
+    [
+        ("codex", {"model": "invented-model"}, "catalog"),
+        ("claude-code", {"provider": "other"}, "provider selector"),
+        ("gemini-cli", {"profile": "work"}, "profile selector"),
+        ("hermes", {}, "explicit provider and model"),
+        ("grok", {"model": "--unsafe"}, "not a CLI option"),
+    ],
+)
+def test_invalid_selection_never_launches(project, monkeypatch, host, selection, reason):
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: pytest.fail("must not launch"))
+    result = run_agent(host, project, "Instructions", "packet", SCHEMA, **selection)
+    assert not result.ok
+    assert reason in result.error
+
+
+@pytest.mark.parametrize(("host", "model", "provider", "envelope"), NATIVE_CASES)
+@pytest.mark.parametrize("payload", ["not JSON", {"wrong": "schema"}])
+def test_native_results_share_schema_validation(
+    project, monkeypatch, host, model, provider, envelope, payload
+):
+    fake_native_discovery(monkeypatch)
+    value = dict(envelope)
+    field = {
+        "claude-code": "structured_output",
+        "gemini-cli": "response",
+        "hermes": "text",
+        "grok": "text",
+    }[host]
+    value[field] = (
+        payload if host == "claude-code" or isinstance(payload, str) else json.dumps(payload)
+    )
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda command, **kw: subprocess.CompletedProcess(command, 0, json.dumps(value), ""),
+    )
+    result = run_agent(
+        host, project, "Instructions", "packet", SCHEMA, model=model, provider=provider
+    )
+    assert not result.ok
+    assert "Invalid" in result.error
+
+
+def test_hermes_discovered_shim_failure_is_actionable(project, monkeypatch):
+    fake_native_discovery(monkeypatch)
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda command, **kw: subprocess.CompletedProcess(
+            command, 127, "", "hermes: command not found"
+        ),
+    )
+    result = run_agent(
+        "hermes",
+        project,
+        "Instructions",
+        "packet",
+        SCHEMA,
+        provider="openrouter",
+        model="provider/model",
+    )
+    assert result.exit_code == 127
+    assert "command not found" in result.error
+
+
+def test_discovery_and_execution_use_same_capability_catalog():
+    from stackos.host_mcp.result import HostMcpResult
+
+    for definition in service._definitions():
+        key = definition.policy.host_key
+        info = service.normalize_result(
+            HostMcpResult(
+                key,
+                "fixture",
+                "registered_current",
+                "Connected",
+                True,
+                True,
+            ),
+            definition.policy,
+        ).to_info()
+        capability = info["agent_execution"]
+        assert info["connection_state"] == "connected"
+        assert capability["credential_status"] == capability["model_access"] == "not_checked"
+        assert capability["checked_on"] == "2026-11-05"
+        assert capability["sources"]
+        for model in capability["models"]:
+            assert (
+                service.agent_selection_error(key, sandbox="workspace-write", model=model) is None
+            )
+        for sandbox in capability["sandboxes"]:
+            selection = (
+                {"provider": "openrouter", "model": "provider/model"} if key == "hermes" else {}
+            )
+            assert service.agent_selection_error(key, sandbox=sandbox, **selection) is None
+
+
+@pytest.mark.parametrize("host", ["codex", "claude-code", "gemini-cli", "hermes", "grok"])
+def test_plain_stdout_auth_failure_is_preserved_at_zero_exit(project, monkeypatch, host):
+    fake_native_discovery(monkeypatch)
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fake/codex")
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda command, **kw: subprocess.CompletedProcess(
+            command, 0, "No credentials for selected model", ""
+        ),
+    )
+    selection = {"provider": "openrouter", "model": "provider/model"} if host == "hermes" else {}
+    result = run_agent(host, project, "Instructions", "packet", SCHEMA, **selection)
+    assert not result.ok
+    assert "No credentials for selected model" in result.error

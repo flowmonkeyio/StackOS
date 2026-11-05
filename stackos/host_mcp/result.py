@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from jsonschema import ValidationError, validate
+
 AgentSandbox = Literal["read-only", "workspace-write"]
 
 
@@ -20,6 +22,37 @@ class AgentRunResult:
     @property
     def ok(self) -> bool:
         return self.exit_code == 0 and self.error is None and self.result is not None
+
+
+def validate_agent_result(
+    result: AgentRunResult, schema: dict[str, Any], host: str
+) -> AgentRunResult:
+    """All native adapters enforce the same caller-supplied result contract."""
+    if result.error is not None or result.exit_code != 0:
+        return result
+    try:
+        validate(result.result, schema)
+    except ValidationError as exc:
+        return AgentRunResult(
+            result.exit_code, thread_id=result.thread_id, error=f"Invalid {host} result: {exc}"
+        )
+    return result
+
+
+@dataclass(frozen=True)
+class AgentCapabilities:
+    """Native execution facts attached to the existing host registry."""
+
+    sandboxes: tuple[AgentSandbox, ...] = ()
+    models: tuple[str, ...] = ()
+    custom_models: bool = False
+    provider_selection: bool = False
+    profile_selection: bool = False
+    requires_provider_model: bool = False
+    auth_status_command: tuple[str, ...] = ()
+    notes: str = "Headless agent execution is unsupported."
+    sources: tuple[str, ...] = ()
+    checked_on: str = "2026-11-05"
 
 
 HostMcpStatus = Literal[
@@ -78,10 +111,12 @@ class HostMcpResult:
     setup_policy: HostMcpSetupPolicy | None = None
     target: dict[str, str] | None = None
     targets: list[dict[str, str]] = field(default_factory=list)
+    agent_execution: dict[str, Any] = field(default_factory=dict)
 
     def to_info(self) -> dict[str, object]:
         return {
             "host_key": self.host_key,
+            "agent_execution": self.agent_execution,
             "surface": self.surface,
             "status": self.status,
             "message": self.message,

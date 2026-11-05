@@ -2,18 +2,71 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import Any
 
 from stackos import claude_mcp
+from stackos.host_mcp.agent_execution import execute_json_agent, json_object
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
     is_stackos_bridge_command,
     resolve_bridge_command,
 )
-from stackos.host_mcp.result import HostMcpResult, looks_secretish
+from stackos.host_mcp.result import AgentRunResult, AgentSandbox, HostMcpResult, looks_secretish
 
 HOST_KEY = "claude-code"
 SURFACE = "cli"
+
+
+def run_agent(
+    project_dir: Path,
+    instructions: str,
+    prompt: str,
+    output_schema: dict[str, Any],
+    *,
+    sandbox: AgentSandbox = "workspace-write",
+    model: str | None = None,
+    provider: str | None = None,
+    profile: str | None = None,
+) -> AgentRunResult:
+    cli = claude_mcp.resolve_claude_bin()
+    if cli is None:
+        return AgentRunResult(None, error="No Claude Code CLI was found by host discovery.")
+    command = [
+        cli,
+        "-p",
+        "--output-format",
+        "json",
+        "--json-schema",
+        json.dumps(output_schema),
+        "--append-system-prompt",
+        instructions,
+        "--permission-mode",
+        "auto" if sandbox == "workspace-write" else "dontAsk",
+    ]
+    if sandbox == "read-only":
+        command += ["--tools", "Read,Glob,Grep", "--disallowedTools", "mcp__*"]
+    if model is not None:
+        command += ["--model", model]
+    return execute_json_agent(
+        command, project_dir, prompt, output_schema, "Claude Code", _agent_result
+    )
+
+
+def _agent_result(stdout: str) -> AgentRunResult:
+    value = json_object(stdout)
+    error = None
+    if value.get("is_error") or str(value.get("subtype", "")).startswith("error"):
+        error = str(value.get("errors") or value.get("result") or "Claude Code failed.")
+    elif value.get("permission_denials"):
+        error = "Claude Code denied required tool permissions."
+    return AgentRunResult(
+        0,
+        thread_id=value.get("session_id"),
+        result=value.get("structured_output"),
+        error=error,
+    )
 
 
 def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:

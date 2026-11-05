@@ -122,7 +122,11 @@ def operation_specs() -> list[OperationSpec]:
                 "For a workflow task, supply run_plan_id and step_id for its running step; "
                 "only executable children of that step are selected. The main agent retains "
                 "workflow phase lifecycle control.",
-                "Supply the project directory and its resolved agents; Codex is supported.",
+                "Supply the project directory and resolved agents. Optional per-role host_key, "
+                "model, provider and Hermes profile use the host_mcp capability catalog. "
+                "Omitted host/model keeps the Codex/inherited-model path. Codex, Claude Code "
+                "and Grok support review; Gemini CLI and Hermes support delivery only. "
+                "Claude Desktop cannot run headlessly. Unsupported choices fail without fallback.",
             ),
             returns=(
                 "Returns task/job/status refs. Inspect tracker.get response_mode=raw for progress.",
@@ -158,10 +162,14 @@ def operation_specs() -> list[OperationSpec]:
                         "delivery_agent": {
                             "name": "builder",
                             "instructions": "Implement and verify the ticket acceptance criteria.",
+                            "host_key": "claude-code",
+                            "model": "claude-sonnet-5-5",
                         },
                         "review_agent": {
                             "name": "reviewer",
                             "instructions": "Independently verify the ticket acceptance criteria.",
+                            "host_key": "codex",
+                            "model": "gpt-6.1-sol",
                         },
                     },
                 ),

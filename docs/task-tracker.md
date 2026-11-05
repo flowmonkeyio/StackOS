@@ -65,11 +65,14 @@ The handoff is task-level:
   "host_key": "codex",
   "delivery_agent": {
     "name": "project-delivery",
-    "instructions": "The project's adapted delivery instructions."
+    "instructions": "The project's adapted delivery instructions.",
+    "host_key": "claude-code",
+    "model": "claude-sonnet-5-5"
   },
   "review_agent": {
     "name": "project-review",
-    "instructions": "The project's adapted independent review instructions."
+    "instructions": "The project's adapted independent review instructions.",
+    "model": "gpt-6.1-sol"
   }
 }
 ```
@@ -79,6 +82,14 @@ explicitly. Agent instructions come from the planner's project adaptation.
 Projects need no `.codex` folder, and StackOS does not substitute generic presets
 for those instructions. Harness and role choices are stored once under the
 task's `metadata_json.delivery`, with other task metadata preserved.
+Each role may override `host_key`, `model`, `provider`, and (for Hermes)
+`profile`. The role host overrides the task host, whose default is `codex`.
+Omitting the model preserves native host settings. Explicit selections reach
+native CLI arguments and launch evidence; StackOS never substitutes another
+host or model after a failure. Hermes requires an explicit provider/model pair,
+for example `{"host_key":"hermes","provider":"openrouter","model":"<provider model ID>","profile":"work"}`.
+Codex also supports its configured `model_provider` selector. Other hosts reject
+`provider`; their existing native authentication/configuration remains in control.
 
 For a workflow task, also pass `run_plan_id` and `step_id` together, with the
 matching `task_key` (`workflow-<run_plan_id>`). The plan must be started and the
@@ -139,9 +150,52 @@ automatic approval review; authorized `.git` and `.codex` writes go through
 normal escalation and a denial stops delivery. The independent reviewer uses
 `--sandbox read-only` and `approval_policy="never"`. These modes follow the
 [Codex CLI contract](https://learn.chatgpt.com/docs/developer-commands#codex-exec)
-(checked 2026-11-05); model and reasoning settings remain inherited.
+(checked 2026-11-05); reasoning settings remain inherited.
 
-This slice supports Codex and does not retry rejected work or resume an
+The existing `stackos.host_mcp` registry owns execution capabilities and model
+IDs, reused by host discovery and launch validation. Its dated official sources
+and capability notes appear in host status `agent_execution`. Current selections:
+
+| Host | Native model IDs | Delivery / review |
+| --- | --- | --- |
+| Codex | `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6.1-terra`, `gpt-6-luna`; configured provider models with `provider` | Automatic approval review / native read-only sandbox |
+| Claude Code | `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1` | `auto` permissions / `dontAsk`, only Read/Glob/Grep, MCP tools denied |
+| Gemini CLI | `gemini-3.1-pro-preview`, `gemini-3-pro-preview`, `gemini-3-flash-preview`, `gemini-2.5-pro`, `gemini-2.5-flash` | `auto_edit`, unapproved shell denied / unsupported |
+| Hermes | Explicit provider's model ID; no Hermes model family | Native one-shot approvals / unsupported |
+| Grok | CLI selections from `grok models`, including configured aliases such as `grok-build`; distinct from API ID `grok-4.7` | `workspace` sandbox, `auto` / `read-only` sandbox, `dontAsk` |
+| Claude Desktop | None for headless execution | Unsupported |
+
+Claude review uses native tool restrictions, not an OS sandbox; it cannot run
+shell-based tests. Gemini plan mode can leave plan mode in headless execution,
+and Hermes has no established strict read-only switch. Choose a supported review
+host for those delivery hosts. Unsupported role choices reject before scheduling.
+Native permissions may deny required work, including committing; a structured
+blocked result stops the task even if the process exit code is zero.
+
+Source contracts checked 2026-11-05:
+[Codex models](https://learn.chatgpt.com/docs/models),
+[Claude CLI](https://code.claude.com/docs/en/cli-reference) and
+[models](https://platform.claude.com/docs/en/models/overview),
+[Gemini headless](https://geminicli.com/docs/cli/headless/) and
+[models](https://geminicli.com/docs/cli/model/),
+[Hermes CLI](https://hermes-agent.nousresearch.com/docs/reference/cli-commands),
+[Grok CLI](https://docs.x.ai/build/cli/reference) and
+[headless](https://docs.x.ai/build/cli/headless-scripting),
+[Claude Desktop](https://code.claude.com/docs/en/desktop).
+Grok's installed help and bundled headless documentation confirm its native
+JSON envelope (`text`, `sessionId`, `stopReason`), distinct from its Messages
+stream format. All adapters enforce the same caller-supplied result schema.
+
+Installed/MCP-connected status establishes neither credential presence nor
+model access. Discovery reports these as `not_checked` and provides documented
+native auth-status commands where available. `codex login status`,
+`claude auth status`, and `hermes auth status` (for the selected provider/profile)
+only report native authentication state, not entitlement to every model.
+Gemini/Grok auth-status support is unverified. Actual launch failures, including
+errors on stdout, missing credentials, inaccessible models, and broken CLI shims,
+stop the current task with their reason. No credential setup is performed.
+
+Automated delivery does not retry rejected work or resume an
 interrupted job after daemon restart. `tracker.execute` remains a read-only
 brief operation. Automated child delivery does not complete workflow phases.
 

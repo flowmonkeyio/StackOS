@@ -12,6 +12,7 @@ from typing import Any
 
 import yaml
 
+from stackos.host_mcp.agent_execution import execute_json_agent, json_object, structured_prompt
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
     daemon_preflight,
@@ -20,7 +21,7 @@ from stackos.host_mcp.bridge import (
     token_preflight,
 )
 from stackos.host_mcp.discovery import resolve_cli_bin, subprocess_env_for_cli
-from stackos.host_mcp.result import HostMcpResult, looks_secretish
+from stackos.host_mcp.result import AgentRunResult, AgentSandbox, HostMcpResult, looks_secretish
 
 HOST_KEY = "hermes"
 SURFACE = "profile-config"
@@ -33,6 +34,69 @@ COMMON_HERMES_CLI_CANDIDATES = (
     "/usr/local/bin/hermes",
 )
 UNSAFE_TRANSPORT_FIELDS = frozenset({"url", "headers", "auth", "env"})
+
+
+def run_agent(
+    project_dir: Path,
+    instructions: str,
+    prompt: str,
+    output_schema: dict[str, Any],
+    *,
+    sandbox: AgentSandbox = "workspace-write",
+    model: str | None = None,
+    provider: str | None = None,
+    profile: str | None = None,
+) -> AgentRunResult:
+    if sandbox == "read-only":
+        return AgentRunResult(None, error="Hermes does not support strict read-only review.")
+    if not model or not provider:
+        return AgentRunResult(None, error="Hermes execution requires explicit provider and model.")
+    cli = resolve_hermes_bin()
+    if cli is None:
+        return AgentRunResult(None, error="No Hermes CLI was found by host discovery.")
+    command = [
+        cli,
+        "--profile",
+        profile or "default",
+        "--in",
+        str(project_dir),
+        "chat",
+        "--oneshot",
+        "--query-file",
+        "-",
+        "--format",
+        "stream-json",
+        "--provider",
+        provider,
+        "--model",
+        model,
+    ]
+    return execute_json_agent(
+        command,
+        project_dir,
+        structured_prompt(instructions + "\n\n" + prompt, output_schema),
+        output_schema,
+        "Hermes",
+        _agent_result,
+    )
+
+
+def _agent_result(stdout: str) -> AgentRunResult:
+    events = [json_object(line) for line in stdout.splitlines() if line.strip()]
+    if not events or events[-1].get("type") != "result":
+        raise ValueError("Hermes did not return a terminal result event")
+    value = events[-1]
+    if value.get("error") or value.get("exit_code") != 0:
+        return AgentRunResult(
+            0,
+            thread_id=value.get("session_id"),
+            error=str(value.get("error") or "Hermes turn did not complete."),
+        )
+    return AgentRunResult(
+        0,
+        thread_id=value.get("session_id"),
+        result=json_object(value["text"]),
+    )
 
 
 def inspect(

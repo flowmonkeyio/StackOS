@@ -6,7 +6,9 @@ import json
 import subprocess
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
+from stackos.host_mcp.agent_execution import execute_json_agent, json_object, structured_prompt
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
     command_from_output_row,
@@ -17,7 +19,7 @@ from stackos.host_mcp.bridge import (
     token_preflight,
 )
 from stackos.host_mcp.discovery import resolve_cli_bin, subprocess_env_for_cli
-from stackos.host_mcp.result import HostMcpResult, looks_secretish
+from stackos.host_mcp.result import AgentRunResult, AgentSandbox, HostMcpResult, looks_secretish
 
 HOST_KEY = "gemini-cli"
 SURFACE = "cli-config"
@@ -32,6 +34,43 @@ COMMON_GEMINI_CLI_CANDIDATES = (
 GEMINI_COMPAT_WARNING = (
     "Gemini CLI support is compatibility-only while consumer Gemini CLI transitions."
 )
+
+
+def run_agent(
+    project_dir: Path,
+    instructions: str,
+    prompt: str,
+    output_schema: dict[str, Any],
+    *,
+    sandbox: AgentSandbox = "workspace-write",
+    model: str | None = None,
+    provider: str | None = None,
+    profile: str | None = None,
+) -> AgentRunResult:
+    if sandbox == "read-only":
+        return AgentRunResult(None, error="Gemini CLI does not support strict read-only review.")
+    cli = resolve_gemini_bin()
+    if cli is None:
+        return AgentRunResult(None, error="No Gemini CLI was found by host discovery.")
+    command = [
+        cli,
+        "-p",
+        structured_prompt(instructions + "\n\n" + prompt, output_schema),
+        "--output-format",
+        "json",
+        "--approval-mode",
+        "auto_edit",
+    ]
+    if model is not None:
+        command += ["--model", model]
+    return execute_json_agent(command, project_dir, "", output_schema, "Gemini CLI", _agent_result)
+
+
+def _agent_result(stdout: str) -> AgentRunResult:
+    value = json_object(stdout)
+    if value.get("error"):
+        return AgentRunResult(0, error=str(value["error"]))
+    return AgentRunResult(0, result=json_object(value["response"]))
 
 
 def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:

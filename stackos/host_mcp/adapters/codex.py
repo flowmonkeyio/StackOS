@@ -10,8 +10,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
-from jsonschema import ValidationError, validate
-
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
     command_from_output_row,
@@ -22,7 +20,13 @@ from stackos.host_mcp.bridge import (
     token_preflight,
 )
 from stackos.host_mcp.discovery import resolve_cli_bins, subprocess_env_for_cli
-from stackos.host_mcp.result import AgentRunResult, AgentSandbox, HostMcpResult, looks_secretish
+from stackos.host_mcp.result import (
+    AgentRunResult,
+    AgentSandbox,
+    HostMcpResult,
+    looks_secretish,
+    validate_agent_result,
+)
 
 HOST_KEY = "codex"
 SURFACE = "shared-config"
@@ -57,6 +61,9 @@ def run_agent(
     output_schema: dict[str, Any],
     *,
     sandbox: AgentSandbox = "workspace-write",
+    model: str | None = None,
+    provider: str | None = None,
+    profile: str | None = None,
 ) -> AgentRunResult:
     """Run supplied project-agent instructions in a fresh Codex thread."""
     if not instructions.strip():
@@ -75,6 +82,8 @@ def run_agent(
             "--json",
             "--cd",
             str(project_dir),
+            *(["--model", model] if model is not None else []),
+            *(["-c", f"model_provider={json.dumps(provider)}"] if provider is not None else []),
             *(
                 ["--approve-for-me"]
                 if sandbox == "workspace-write"
@@ -101,6 +110,7 @@ def run_agent(
         except OSError as exc:
             return AgentRunResult(None, error=f"Could not launch Codex: {exc}")
         thread_id = None
+        native_error = None
         for line in process.stdout.splitlines():
             try:
                 event = json.loads(line)
@@ -108,20 +118,27 @@ def run_agent(
                 continue
             if isinstance(event, dict) and event.get("type") == "thread.started":
                 thread_id = event.get("thread_id")
-        if process.returncode != 0:
+            if isinstance(event, dict) and event.get("type") in {"error", "turn.failed"}:
+                native_error = str(event.get("error") or event.get("message") or "Codex failed.")
+        if process.returncode != 0 or native_error:
             return AgentRunResult(
                 process.returncode,
                 thread_id=thread_id,
-                error=process.stderr.strip() or "Codex exited unsuccessfully.",
+                error=native_error
+                or process.stderr.strip()
+                or process.stdout.strip()
+                or "Codex exited unsuccessfully.",
             )
         try:
             result = json.loads(result_path.read_text(encoding="utf-8"))
             if not isinstance(result, dict):
                 raise ValueError("expected a JSON object")
-            validate(result, output_schema)
-        except (OSError, ValueError, ValidationError) as exc:
-            return AgentRunResult(0, thread_id=thread_id, error=f"Invalid Codex result: {exc}")
-        return AgentRunResult(0, thread_id=thread_id, result=result)
+        except (OSError, ValueError) as exc:
+            detail = process.stderr.strip() or process.stdout.strip() or str(exc)
+            return AgentRunResult(0, thread_id=thread_id, error=f"Invalid Codex result: {detail}")
+        return validate_agent_result(
+            AgentRunResult(0, thread_id=thread_id, result=result), output_schema, "Codex"
+        )
 
 
 def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:

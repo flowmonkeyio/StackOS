@@ -34,6 +34,10 @@ class TaskDeliveryAgent(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     name: str = Field(min_length=1)
     instructions: str = Field(min_length=1)
+    host_key: str | None = Field(default=None, min_length=1)
+    model: str | None = Field(default=None, min_length=1)
+    provider: str | None = Field(default=None, min_length=1)
+    profile: str | None = Field(default=None, min_length=1)
 
 
 class TrackerStartDeliveryInput(MCPInput):

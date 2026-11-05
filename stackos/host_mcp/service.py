@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
 from stackos.host_mcp.adapters import claude_code, claude_desktop, codex, gemini_cli, grok, hermes
 from stackos.host_mcp.bridge import MCP_SERVER_NAME, default_home, token_preflight
 from stackos.host_mcp.result import (
+    AgentCapabilities,
     AgentRunResult,
     AgentSandbox,
     HostMcpConnectionState,
@@ -43,6 +44,9 @@ class AgentRunner(Protocol):
         output_schema: dict[str, Any],
         *,
         sandbox: AgentSandbox,
+        model: str | None = None,
+        provider: str | None = None,
+        profile: str | None = None,
     ) -> AgentRunResult: ...
 
 
@@ -51,6 +55,7 @@ class HostMcpPolicy:
     host_key: str
     display_name: str
     setup_policy: HostMcpSetupPolicy
+    agent_execution: AgentCapabilities = field(default_factory=AgentCapabilities)
 
 
 @dataclass(frozen=True)
@@ -97,8 +102,22 @@ def run_agent(
     output_schema: dict[str, Any],
     *,
     sandbox: AgentSandbox = "workspace-write",
+    model: str | None = None,
+    provider: str | None = None,
+    profile: str | None = None,
 ) -> AgentRunResult:
     """Run a project agent through the same host registry used by Overview."""
+    if not instructions.strip():
+        return AgentRunResult(None, error="Project-agent instructions must not be empty.")
+    error = agent_selection_error(
+        host_key,
+        sandbox=sandbox,
+        model=model,
+        provider=provider,
+        profile=profile,
+    )
+    if error:
+        return AgentRunResult(None, error=error)
     definition = _definition_by_key(host_key)
     if definition is None or definition.run_agent is None:
         return AgentRunResult(None, error=f"Host {host_key!r} does not support agent execution.")
@@ -108,7 +127,45 @@ def run_agent(
         prompt,
         output_schema,
         sandbox=sandbox,
+        **{
+            key: value
+            for key, value in {"model": model, "provider": provider, "profile": profile}.items()
+            if value is not None
+        },
     )
+
+
+def agent_selection_error(
+    host_key: str,
+    *,
+    sandbox: AgentSandbox,
+    model: str | None = None,
+    provider: str | None = None,
+    profile: str | None = None,
+) -> str | None:
+    """Validate declared native choices without claiming installation or model access."""
+    definition = _definition_by_key(host_key)
+    if definition is None or definition.run_agent is None:
+        return f"Host {host_key!r} does not support headless agent execution."
+    capability = definition.policy.agent_execution
+    if sandbox not in capability.sandboxes:
+        return f"Host {host_key!r} does not support {sandbox} execution. {capability.notes}"
+    for key, value in {"model": model, "provider": provider, "profile": profile}.items():
+        if value is not None and (not value.strip() or value.startswith("-")):
+            return f"{key} must be a nonempty native selection, not a CLI option."
+    if provider is not None and not capability.provider_selection:
+        return f"Host {host_key!r} does not support a native provider selector."
+    if profile is not None and not capability.profile_selection:
+        return f"Host {host_key!r} does not support a native execution profile selector."
+    if capability.requires_provider_model and (not model or not provider):
+        return f"Host {host_key!r} requires explicit provider and model."
+    if (
+        model is not None
+        and model not in capability.models
+        and not (capability.custom_models or provider is not None)
+    ):
+        return f"Model {model!r} is not in the current {host_key} native model catalog."
+    return None
 
 
 def inspect_all(*, home: Path | None = None) -> HostMcpAggregate:
@@ -304,25 +361,118 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
     return (
         HostMcpDefinition(
             codex,
-            HostMcpPolicy("codex", "ChatGPT / Codex", "automatic"),
+            HostMcpPolicy(
+                "codex",
+                "ChatGPT / Codex",
+                "automatic",
+                AgentCapabilities(
+                    sandboxes=("workspace-write", "read-only"),
+                    models=("gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"),
+                    provider_selection=True,
+                    auth_status_command=("codex", "login", "status"),
+                    notes="Native sandbox; login status establishes credential presence only.",
+                    sources=(
+                        "https://learn.chatgpt.com/docs/models",
+                        "https://learn.chatgpt.com/docs/cli/reference",
+                    ),
+                ),
+            ),
             force_register=lambda home, force: codex.register(home, force=force),
             run_agent=codex.run_agent,
         ),
         HostMcpDefinition(
             claude_code,
-            HostMcpPolicy("claude-code", "Claude Code", "automatic"),
+            HostMcpPolicy(
+                "claude-code",
+                "Claude Code",
+                "automatic",
+                AgentCapabilities(
+                    sandboxes=("workspace-write", "read-only"),
+                    models=(
+                        "claude-opus-5-5",
+                        "claude-sonnet-5-5",
+                        "claude-haiku-5-5",
+                        "claude-fable-5-1",
+                    ),
+                    auth_status_command=("claude", "auth", "status"),
+                    notes=(
+                        "Review is file-only Read/Glob/Grep with MCP denied; "
+                        "native tool controls, not an OS sandbox."
+                    ),
+                    sources=(
+                        "https://code.claude.com/docs/en/cli-reference",
+                        "https://code.claude.com/docs/en/headless",
+                        "https://platform.claude.com/docs/en/models/overview",
+                    ),
+                ),
+            ),
+            run_agent=claude_code.run_agent,
         ),
         HostMcpDefinition(
             claude_desktop,
-            HostMcpPolicy("claude-desktop", "Claude Desktop", "automatic"),
+            HostMcpPolicy(
+                "claude-desktop",
+                "Claude Desktop",
+                "automatic",
+                AgentCapabilities(
+                    notes="Claude Desktop does not support scripting, --print or output-format.",
+                    sources=("https://code.claude.com/docs/en/desktop",),
+                ),
+            ),
         ),
         HostMcpDefinition(
             gemini_cli,
-            HostMcpPolicy("gemini-cli", "Gemini CLI", "automatic"),
+            HostMcpPolicy(
+                "gemini-cli",
+                "Gemini CLI",
+                "automatic",
+                AgentCapabilities(
+                    sandboxes=("workspace-write",),
+                    models=(
+                        "gemini-3.1-pro-preview",
+                        "gemini-3-pro-preview",
+                        "gemini-3-flash-preview",
+                        "gemini-2.5-pro",
+                        "gemini-2.5-flash",
+                    ),
+                    notes=(
+                        "Delivery uses auto_edit; unapproved shell calls are denied. "
+                        "Strict read-only review and auth-status CLI are unverified."
+                    ),
+                    sources=(
+                        "https://geminicli.com/docs/cli/headless/",
+                        "https://geminicli.com/docs/cli/model/",
+                        "https://geminicli.com/docs/cli/plan-mode/#non-interactive-execution",
+                    ),
+                ),
+            ),
+            run_agent=gemini_cli.run_agent,
         ),
         HostMcpDefinition(
             hermes,
-            HostMcpPolicy("hermes", "Hermes", "explicit"),
+            HostMcpPolicy(
+                "hermes",
+                "Hermes",
+                "explicit",
+                AgentCapabilities(
+                    sandboxes=("workspace-write",),
+                    custom_models=True,
+                    provider_selection=True,
+                    profile_selection=True,
+                    requires_provider_model=True,
+                    auth_status_command=("hermes", "auth", "status"),
+                    notes=(
+                        "Explicit provider/model; native approvals retained. "
+                        "Strict read-only review is unsupported. "
+                        "Installed shims may not be runnable."
+                    ),
+                    sources=(
+                        "https://hermes-agent.nousresearch.com/docs/reference/cli-commands",
+                        "https://hermes-agent.nousresearch.com/docs/user-guide/security",
+                    ),
+                ),
+            ),
+            run_agent=hermes.run_agent,
             repair=hermes.repair,
             inspect_profile=lambda home, profile: hermes.inspect_profile(
                 home,
@@ -339,7 +489,28 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
         ),
         HostMcpDefinition(
             grok,
-            HostMcpPolicy("grok", "Grok", "automatic"),
+            HostMcpPolicy(
+                "grok",
+                "Grok",
+                "automatic",
+                AgentCapabilities(
+                    sandboxes=("workspace-write", "read-only"),
+                    models=("grok-build",),
+                    custom_models=True,
+                    notes=(
+                        "Native sandbox. Use grok models for installed CLI selections, "
+                        "including configured aliases; grok-build is not the grok-4.7 API ID. "
+                        "Auth presence is unverified."
+                    ),
+                    sources=(
+                        "https://docs.x.ai/build/cli/reference",
+                        "https://docs.x.ai/build/cli/headless-scripting",
+                        "https://docs.x.ai/build/features/sandbox",
+                        "https://docs.x.ai/build/features/permissions",
+                    ),
+                ),
+            ),
+            run_agent=grok.run_agent,
         ),
     )
 
@@ -503,6 +674,11 @@ def normalize_result(result: HostMcpResult, policy: HostMcpPolicy) -> HostMcpRes
     ok = not blocking
     return replace(
         result,
+        agent_execution={
+            **asdict(policy.agent_execution),
+            "credential_status": "not_checked",
+            "model_access": "not_checked",
+        },
         display_name=policy.display_name,
         connection_state=state,
         status_label=labels[state],

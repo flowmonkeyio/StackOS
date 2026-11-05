@@ -13,7 +13,9 @@ import tomllib
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
+from typing import Any
 
+from stackos.host_mcp.agent_execution import execute_json_agent, json_object, structured_prompt
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
     is_stackos_bridge_command,
@@ -21,7 +23,7 @@ from stackos.host_mcp.bridge import (
     token_preflight,
 )
 from stackos.host_mcp.discovery import resolve_cli_bin, subprocess_env_for_cli
-from stackos.host_mcp.result import HostMcpResult, looks_secretish
+from stackos.host_mcp.result import AgentRunResult, AgentSandbox, HostMcpResult, looks_secretish
 from stackos.host_mcp.toml_config import remove_mcp_server
 
 HOST_KEY = "grok"
@@ -35,6 +37,59 @@ COMMON_GROK_CLI_CANDIDATES = (
     "/usr/local/bin/grok",
 )
 REPAIR = "Run `stackos install --mcp-only --mcp-host grok` or desktop Repair."
+
+
+def run_agent(
+    project_dir: Path,
+    instructions: str,
+    prompt: str,
+    output_schema: dict[str, Any],
+    *,
+    sandbox: AgentSandbox = "workspace-write",
+    model: str | None = None,
+    provider: str | None = None,
+    profile: str | None = None,
+) -> AgentRunResult:
+    cli = resolve_grok_bin(Path.home())
+    if cli is None:
+        return AgentRunResult(None, error="No Grok CLI was found by host discovery.")
+    command = [
+        cli,
+        "--no-auto-update",
+        "--cwd",
+        str(project_dir),
+        "--single",
+        structured_prompt(prompt, output_schema),
+        "--output-format",
+        "json",
+        "--rules",
+        instructions,
+        "--sandbox",
+        "workspace" if sandbox == "workspace-write" else "read-only",
+        "--permission-mode",
+        "auto" if sandbox == "workspace-write" else "dontAsk",
+    ]
+    if model is not None:
+        command += ["--model", model]
+    return execute_json_agent(command, project_dir, "", output_schema, "Grok", _agent_result)
+
+
+def _agent_result(stdout: str) -> AgentRunResult:
+    # Native --output-format json, not the separate streaming-messages-json envelope.
+    value = json_object(stdout)
+    if value.get("error") or value.get("type") == "error":
+        return AgentRunResult(
+            0,
+            thread_id=value.get("sessionId"),
+            error=str(value.get("error") or value.get("message") or "Grok failed."),
+        )
+    if value.get("stopReason") != "end_turn":
+        return AgentRunResult(
+            0,
+            thread_id=value.get("sessionId"),
+            error=f"Grok did not complete: {value.get('stopReason', 'missing stopReason')}",
+        )
+    return AgentRunResult(0, thread_id=value.get("sessionId"), result=json_object(value["text"]))
 
 
 def grok_home(home: Path) -> Path:
