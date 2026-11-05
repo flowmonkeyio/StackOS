@@ -75,20 +75,21 @@ def test_real_operation_returns_while_scheduler_delivers(
     calls = []
 
     def run_agent(_host, _directory, _instructions, prompt, _schema, *, sandbox):
-        calls.append((json.loads(prompt)["brief"]["ticket"]["key"], sandbox))
+        delivery = _schema == task_delivery().DELIVERY_SCHEMA
+        calls.append(
+            (json.loads(prompt)["brief"]["ticket"]["key"], "delivery" if delivery else "review")
+        )
         entered.set()
         assert release.wait(5), "Test did not release the background agent"
         result = (
             {"status": "complete", "summary": "Delivered"}
-            if sandbox == "workspace-write"
-            else {"decision": "approve", "summary": "Reviewed"}
+            if delivery
+            else {"decision": "approve", "summary": "Reviewed", "followups": []}
         )
         result["commit_sha"] = (
-            commit(tmp_path, calls[-1][0])
-            if sandbox == "workspace-write"
-            else git(tmp_path, "rev-parse", "HEAD")
+            commit(tmp_path, calls[-1][0]) if delivery else git(tmp_path, "rev-parse", "HEAD")
         )
-        return AgentRunResult(0, result=result)
+        return AgentRunResult(0, thread_id=f"{calls[-1][0]}-{delivery}", result=result)
 
     monkeypatch.setattr(task_delivery(), "run_agent", run_agent)
     api.app.state.scheduler.add_listener(
@@ -150,8 +151,8 @@ def test_real_operation_returns_while_scheduler_delivers(
         )
         assert mirror["status"] == "in-progress"
     assert calls == [
-        ("first", "workspace-write"),
-        ("first", "read-only"),
-        ("second", "workspace-write"),
-        ("second", "read-only"),
+        ("first", "delivery"),
+        ("first", "review"),
+        ("second", "delivery"),
+        ("second", "review"),
     ]

@@ -77,3 +77,42 @@ def test_launch_response_preserves_inspection_fields_and_rejects_ack():
     assert shape_operation_response(spec, payload, response_mode="raw") == payload
     with pytest.raises(Exception, match="response_mode"):
         resolve_response_mode(spec, {"response_mode": "ack"}, surface="mcp")
+
+
+@pytest.mark.parametrize("decision", ["approve", "reject", "blocked"])
+@pytest.mark.parametrize("followups", [[], [{"text": "Outside this ticket's scope"}]])
+def test_review_result_accepts_scoped_decisions_and_separate_followups(decision, followups):
+    from stackos.host_mcp.result import AgentRunResult, validate_agent_result
+    from stackos.plugins.builtin_engineering import task_delivery
+
+    result = AgentRunResult(
+        0,
+        thread_id="native-review",
+        result={
+            "decision": decision,
+            "summary": "Focused checks and scoped findings",
+            "commit_sha": "a" * 40,
+            "followups": followups,
+        },
+    )
+    assert validate_agent_result(result, task_delivery().REVIEW_SCHEMA, "codex").ok
+
+
+@pytest.mark.parametrize(
+    "followups", [None, "fix this", [{}], [{"text": ""}], [{"text": "note", "create_ticket": True}]]
+)
+def test_review_result_rejects_malformed_or_actionable_followup_fields(followups):
+    from stackos.host_mcp.result import AgentRunResult, validate_agent_result
+    from stackos.plugins.builtin_engineering import task_delivery
+
+    result = AgentRunResult(
+        0,
+        thread_id="native-review",
+        result={
+            "decision": "approve",
+            "summary": "Focused checks",
+            "commit_sha": "a" * 40,
+            "followups": followups,
+        },
+    )
+    assert not validate_agent_result(result, task_delivery().REVIEW_SCHEMA, "codex").ok

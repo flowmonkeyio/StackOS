@@ -6,6 +6,7 @@ import json
 import re
 import subprocess
 from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
@@ -22,7 +23,7 @@ from stackos.db.models import (
     TrackerSourceKind,
     TrackerTicketKind,
 )
-from stackos.host_mcp.result import AgentSandbox
+from stackos.host_mcp.result import AgentSandbox, validate_agent_result
 from stackos.host_mcp.service import agent_review_sandbox, agent_selection_error, run_agent
 from stackos.operations.tracker.schemas import TaskDeliveryAgent
 from stackos.repositories.base import NotFoundError, ValidationError
@@ -42,11 +43,20 @@ DELIVERY_SCHEMA = {
 REVIEW_SCHEMA = {
     "type": "object",
     "properties": {
-        "decision": {"type": "string", "enum": ["approve", "reject"]},
+        "decision": {"type": "string", "enum": ["approve", "reject", "blocked"]},
         "summary": {"type": "string"},
         "commit_sha": {"type": "string"},
+        "followups": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"text": {"type": "string", "minLength": 1}},
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+        },
     },
-    "required": ["decision", "summary", "commit_sha"],
+    "required": ["decision", "summary", "commit_sha", "followups"],
     "additionalProperties": False,
 }
 ACTOR = "engineering.task-delivery"
@@ -140,6 +150,45 @@ def _receipt(task_key: str, state: dict[str, Any]) -> dict[str, Any]:
         "recommended_tool": "tracker.get",
         "message": "Inspect this task with tracker.get, task_key and response_mode=raw.",
     }
+
+
+def _prompt_copy(value: Any) -> Any:
+    """Leave deferred notes canonical, but exclude them from every nested work receipt."""
+    if isinstance(value, dict):
+        return {key: _prompt_copy(item) for key, item in value.items() if key != "followups"}
+    if isinstance(value, list):
+        return [_prompt_copy(item) for item in value]
+    return value
+
+
+def _archive_attempt(evidence: dict[str, Any]) -> None:
+    if "delivery" in evidence or "review" in evidence:
+        evidence.setdefault("attempts", []).append(
+            {
+                key: deepcopy(evidence[key])
+                for key in ("attempt", "candidate", "delivery", "review")
+                if key in evidence
+            }
+        )
+    evidence.pop("delivery", None)
+    evidence.pop("review", None)
+    evidence["attempt"] = len(evidence.setdefault("attempts", [])) + 1
+
+
+def _save_evidence(repo, project_id, ticket_key, evidence, **patch) -> None:
+    ticket = repo.brief(project_id=project_id, ticket_key=ticket_key).ticket
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key=ticket_key,
+        patch_json={
+            "completion_evidence_json": {
+                **(ticket.completion_evidence_json or {}),
+                "automatic_delivery": evidence,
+            },
+            **patch,
+        },
+        actor=ACTOR,
+    )
 
 
 def start_delivery(
@@ -248,11 +297,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                 task = _task(repo, project_id, task_key)
                 state = (task.metadata_json or {})["delivery"]
                 parent_key = _workflow_scope(
-                    repo,
-                    project_id,
-                    task,
-                    state.get("run_plan_id"),
-                    state.get("step_id"),
+                    repo, project_id, task, state.get("run_plan_id"), state.get("step_id")
                 )
                 ready = repo.next(
                     project_id=project_id,
@@ -286,7 +331,10 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                     )
                     return
                 ticket_key = ready[0].key
-                evidence = {}
+                evidence = deepcopy(
+                    (ready[0].completion_evidence_json or {}).get("automatic_delivery", {})
+                )
+                _archive_attempt(evidence)
                 evidence["candidate"] = {"base_commit_sha": _committed_head(state["project_dir"])}
                 repo.update_ticket(
                     project_id=project_id,
@@ -300,171 +348,225 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                 _update_delivery(
                     repo, project_id, task_key, status="running", ticket_key=ticket_key
                 )
-                brief = repo.brief(project_id=project_id, ticket_key=ticket_key).model_dump(
-                    mode="json"
-                )
-                # The canonical brief supplies work context; task control instructions
-                # are supplied separately to the selected harness, once per agent.
-                brief["task"]["metadata_json"] = {
-                    key: value
-                    for key, value in (brief["task"]["metadata_json"] or {}).items()
-                    if key != "delivery"
-                }
 
-            phases: tuple[tuple[str, dict[str, Any], AgentSandbox], ...] = (
-                ("delivery", DELIVERY_SCHEMA, "workspace-write"),
-                (
-                    "review",
-                    REVIEW_SCHEMA,
-                    agent_review_sandbox(
-                        state["review_agent"].get("host_key") or state["host_key"]
-                    ),
-                ),
-            )
-            for phase, schema, sandbox in phases:
+            phase = "delivery"
+            while True:
+                schema = DELIVERY_SCHEMA if phase == "delivery" else REVIEW_SCHEMA
                 agent = state[f"{phase}_agent"]
                 host_key = agent.get("host_key") or state["host_key"]
+                sandbox: AgentSandbox = (
+                    "workspace-write" if phase == "delivery" else agent_review_sandbox(host_key)
+                )
                 selection = {
                     key: agent[key]
                     for key in ("model", "provider", "profile")
                     if agent.get(key) is not None
                 }
-                launch = {
+                identity = {
+                    "agent": agent["name"],
                     "host_key": host_key,
-                    **selection,
                     "project_dir": state["project_dir"],
+                    **selection,
+                }
+                sessions = evidence.setdefault("sessions", {})
+                native_session = sessions.get(phase)
+                resume_thread_id = None
+                if native_session is not None:
+                    if {
+                        key: value for key, value in native_session.items() if key != "thread_id"
+                    } != identity:
+                        raise ValidationError(
+                            "Ticket role session selection changed; cannot resume"
+                        )
+                    resume_thread_id = native_session["thread_id"]
+                elif any(phase in attempt for attempt in evidence["attempts"]):
+                    raise ValidationError(f"Cannot resume {phase}: missing native session ID")
+                launch = {
+                    **identity,
                     "sandbox": sandbox,
                     "started_at": datetime.now(UTC).isoformat(),
+                    **({"resume_thread_id": resume_thread_id} if resume_thread_id else {}),
                 }
                 evidence[phase] = {"agent": agent["name"], "launch": launch}
                 with session_factory() as session:
                     repo = TrackerRepository(session)
+                    task = _task(repo, project_id, task_key)
                     _workflow_scope(
-                        repo,
-                        project_id,
-                        _task(repo, project_id, task_key),
-                        state.get("run_plan_id"),
-                        state.get("step_id"),
+                        repo, project_id, task, state.get("run_plan_id"), state.get("step_id")
                     )
-                    ticket = repo.brief(project_id=project_id, ticket_key=ticket_key).ticket
-                    repo.update_ticket(
-                        project_id=project_id,
-                        ticket_key=ticket_key,
-                        patch_json={
-                            "completion_evidence_json": {
-                                **(ticket.completion_evidence_json or {}),
-                                "automatic_delivery": evidence,
-                            }
-                        },
-                        actor=ACTOR,
+                    _save_evidence(repo, project_id, ticket_key, evidence)
+                    brief = repo.brief(project_id=project_id, ticket_key=ticket_key).model_dump(
+                        mode="json"
                     )
+                    brief["task"]["metadata_json"] = {
+                        key: value
+                        for key, value in (brief["task"]["metadata_json"] or {}).items()
+                        if key != "delivery"
+                    }
+                prior_review = next(
+                    (
+                        attempt["review"]
+                        for attempt in reversed(evidence["attempts"])
+                        if "review" in attempt
+                    ),
+                    None,
+                )
                 result = run_agent(
                     host_key,
                     state["project_dir"],
                     agent["instructions"],
                     json.dumps(
-                        {
-                            "assignment": (
-                                "Deliver and commit only this ticket, then return its commit_sha. "
-                                "Use normal approval review for authorized .git/.codex writes; "
-                                "a denial stops this task. Never bypass it."
-                            )
-                            if phase == "delivery"
-                            else (
-                                "Independently review this exact committed candidate. "
-                                "Return the reviewed commit_sha. Do not change files or commits."
-                            ),
-                            "lifecycle": (
-                                "Return results only. StackOS owns ticket status and sequencing."
-                            ),
-                            "brief": brief,
-                            "delivery_result": evidence.get("delivery"),
-                            "candidate": evidence["candidate"],
-                        }
+                        _prompt_copy(
+                            {
+                                "assignment": (
+                                    "Deliver and commit only this ticket, "
+                                    "then return its commit_sha. "
+                                    "Use normal approval review for authorized .git/.codex writes; "
+                                    "a denial stops this task. Never bypass it. "
+                                    "When review_result is present, repair only "
+                                    "its scoped findings, run "
+                                    "focused checks and create a new descendant commit."
+                                )
+                                if phase == "delivery"
+                                else (
+                                    "Independently review this exact committed candidate. "
+                                    "Execute assigned specs and assess "
+                                    "relevant business regressions, "
+                                    "architecture, wiring and shared ownership. "
+                                    "Return the reviewed commit_sha. "
+                                    "Do not change files or commits. "
+                                    "Reject only for scoped repairs; "
+                                    "put unrelated findings in followups. "
+                                    "If a required check cannot run, return blocked. "
+                                    "Keep commands, results and scoped repairs in summary."
+                                ),
+                                "lifecycle": (
+                                    "Return results only. "
+                                    "StackOS owns ticket status and sequencing."
+                                ),
+                                "brief": brief,
+                                "delivery_result": evidence.get("delivery"),
+                                "review_result": prior_review,
+                                "candidate": evidence["candidate"],
+                            }
+                        )
                     ),
                     schema,
                     sandbox=sandbox,
                     **selection,
+                    **({"resume_thread_id": resume_thread_id} if resume_thread_id else {}),
                 )
+                # The shared schema owner also protects controlled/injected harnesses.
+                result = validate_agent_result(result, schema, host_key)
                 evidence[phase] = {"agent": agent["name"], "launch": launch, **asdict(result)}
-                field, expected = (
-                    ("status", "complete") if phase == "delivery" else ("decision", "approve")
-                )
-                accepted = result.ok and (result.result or {}).get(field) == expected
+                value = result.result or {}
+                decision = value.get("status" if phase == "delivery" else "decision")
                 validation_error = None
-                if accepted:
+                valid = result.ok
+                if valid:
                     try:
-                        sha = _candidate_commit(
-                            state["project_dir"],
-                            (result.result or {}).get("commit_sha"),
-                            evidence["candidate"]["base_commit_sha"],
+                        thread_id = result.thread_id
+                        if not isinstance(thread_id, str) or not thread_id.strip():
+                            raise ValidationError("Agent must return a native session ID")
+                        if resume_thread_id is not None and thread_id != resume_thread_id:
+                            raise ValidationError("Native session resume identity mismatch")
+                        other_session = sessions.get(
+                            "review" if phase == "delivery" else "delivery"
                         )
-                        if phase == "delivery":
-                            evidence["candidate"]["commit_sha"] = sha
-                        elif sha != evidence["candidate"]["commit_sha"]:
+                        if (
+                            other_session
+                            and host_key == other_session["host_key"]
+                            and thread_id == other_session["thread_id"]
+                        ):
                             raise ValidationError(
-                                "Review commit_sha differs from the delivery candidate"
+                                "Delivery and review require distinct native sessions"
                             )
+                        sessions[phase] = {**identity, "thread_id": thread_id}
+                        if decision != "blocked":
+                            sha = _candidate_commit(
+                                state["project_dir"],
+                                value.get("commit_sha"),
+                                evidence["candidate"]["base_commit_sha"],
+                            )
+                            if phase == "delivery":
+                                evidence["candidate"]["commit_sha"] = sha
+                            elif sha != evidence["candidate"]["commit_sha"]:
+                                raise ValidationError(
+                                    "Review commit_sha differs from the delivery candidate"
+                                )
                     except (ValidationError, OSError) as error:
                         validation_error = str(error)
                         evidence[phase]["validation_error"] = validation_error
-                        accepted = False
+                        valid = False
+                # Error receipts can still identify the exact native session for explicit requeue.
+                elif native_session is None and result.thread_id:
+                    sessions[phase] = {**identity, "thread_id": result.thread_id}
+
+                repair = (
+                    valid
+                    and phase == "review"
+                    and decision == "reject"
+                    and not evidence.get("repair_pass_used", False)
+                )
+                accepted = valid and decision == ("complete" if phase == "delivery" else "approve")
+                if repair:
+                    evidence["repair_pass_used"] = True
                 with session_factory() as session:
                     repo = TrackerRepository(session)
-                    ticket = repo.brief(project_id=project_id, ticket_key=ticket_key).ticket
+                    task = _task(repo, project_id, task_key)
                     _workflow_scope(
-                        repo,
-                        project_id,
-                        _task(repo, project_id, task_key),
-                        state.get("run_plan_id"),
-                        state.get("step_id"),
+                        repo, project_id, task, state.get("run_plan_id"), state.get("step_id")
                     )
-                    patch: dict[str, Any] = {
-                        "completion_evidence_json": {
-                            **(ticket.completion_evidence_json or {}),
-                            "automatic_delivery": evidence,
-                        },
-                    }
-                    if not accepted:
+                    if valid and phase == "review" and decision in {"approve", "reject"}:
+                        context = deepcopy(task.context_json or {})
+                        notes = context.setdefault("followups", [])
+                        notes.extend(
+                            {
+                                "text": note["text"],
+                                "source_ticket_key": ticket_key,
+                                "source_attempt": evidence["attempt"],
+                                "created_at": datetime.now(UTC).isoformat(),
+                            }
+                            for note in value["followups"]
+                        )
+                        repo.update_task(
+                            project_id=project_id,
+                            task_key=task_key,
+                            patch_json={"context_json": context},
+                            actor=ACTOR,
+                        )
+                    patch: dict[str, Any] = {}
+                    if not accepted and not repair:
                         reason = (
                             validation_error
                             or result.error
-                            or (result.result or {}).get("summary")
+                            or value.get("summary")
                             or f"{phase} failed"
                         )
                         patch.update(status="failed", outcome=reason)
-                    elif phase == "review":
-                        patch.update(
-                            status="complete", outcome=(result.result or {}).get("summary")
-                        )
-                    repo.update_ticket(
-                        project_id=project_id,
-                        ticket_key=ticket_key,
-                        patch_json=patch,
-                        actor=ACTOR,
-                    )
-                    if not accepted:
+                    elif accepted and phase == "review":
+                        patch.update(status="complete", outcome=value["summary"])
+                    _save_evidence(repo, project_id, ticket_key, evidence, **patch)
+                    if not accepted and not repair:
                         _update_delivery(
                             repo, project_id, task_key, status="stopped", reason=reason
                         )
                         return
+                if repair:
+                    rejected_sha = evidence["candidate"]["commit_sha"]
+                    _archive_attempt(evidence)
+                    evidence["candidate"] = {"base_commit_sha": rejected_sha}
+                    phase = "delivery"
+                elif phase == "delivery":
+                    phase = "review"
+                else:
+                    break
             ticket_key = None
     except Exception as error:
         with session_factory() as session:
             repo = TrackerRepository(session)
             if ticket_key is not None:
-                ticket = repo.brief(project_id=project_id, ticket_key=ticket_key).ticket
-                repo.update_ticket(
-                    project_id=project_id,
-                    ticket_key=ticket_key,
-                    patch_json={
-                        "status": "failed",
-                        "outcome": str(error),
-                        "completion_evidence_json": {
-                            **(ticket.completion_evidence_json or {}),
-                            "automatic_delivery": evidence,
-                        },
-                    },
-                    actor=ACTOR,
+                _save_evidence(
+                    repo, project_id, ticket_key, evidence, status="failed", outcome=str(error)
                 )
             _update_delivery(repo, project_id, task_key, status="stopped", reason=str(error))

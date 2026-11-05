@@ -112,13 +112,14 @@ def test_role_host_model_provider_reach_launch_and_receipt(
     def run_agent(host, directory, instructions, prompt, schema, *, sandbox, **selection):
         calls.append((host, selection))
         key = json.loads(prompt)["brief"]["ticket"]["key"]
-        sha = (
-            commit(tmp_path, key)
-            if sandbox == "workspace-write"
-            else git(tmp_path, "rev-parse", "HEAD")
+        delivery = schema == task_delivery().DELIVERY_SCHEMA
+        sha = commit(tmp_path, key) if delivery else git(tmp_path, "rev-parse", "HEAD")
+        value = {"status": "complete"} if delivery else {"decision": "approve", "followups": []}
+        return AgentRunResult(
+            0,
+            thread_id=f"{key}-{delivery}",
+            result={**value, "summary": "Checked", "commit_sha": sha},
         )
-        value = {"status": "complete"} if sandbox == "workspace-write" else {"decision": "approve"}
-        return AgentRunResult(0, result={**value, "summary": "Checked", "commit_sha": sha})
 
     monkeypatch.setattr(task_delivery(), "run_agent", run_agent)
     submit(
@@ -237,11 +238,17 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
     def run_agent(host, directory, instructions, prompt, schema, *, sandbox, **selection):
         calls.append((host, instructions, sandbox, selection))
         key = json.loads(prompt)["brief"]["ticket"]["key"]
-        if sandbox == "workspace-write":
+        if schema == task_delivery().DELIVERY_SCHEMA:
             value = {"status": "complete", "commit_sha": commit(tmp_path, key)}
         else:
-            value = {"decision": "approve", "commit_sha": git(tmp_path, "rev-parse", "HEAD")}
-        return AgentRunResult(0, result={**value, "summary": "Checked"})
+            value = {
+                "decision": "approve",
+                "followups": [],
+                "commit_sha": git(tmp_path, "rev-parse", "HEAD"),
+            }
+        return AgentRunResult(
+            0, thread_id=f"{key}-{sandbox}", result={**value, "summary": "Checked"}
+        )
 
     monkeypatch.setattr(task_delivery(), "run_agent", run_agent)
     scheduler.run()
@@ -323,10 +330,15 @@ def test_normal_review_receipts_and_same_task_failure(
             value = {
                 "decision": "reject" if failure == "reject" else "approve",
                 "commit_sha": packet["candidate"]["commit_sha"],
+                "followups": [],
             }
             if failure == "mutation":
                 (tmp_path / "review-edit").write_text("unauthorized review change")
-        return AgentRunResult(0, result={**value, "summary": "Reviewed"})
+        return AgentRunResult(
+            0,
+            thread_id=None if failure == "reject" and sandbox == "normal" else f"{key}-{sandbox}",
+            result={**value, "summary": "Reviewed"},
+        )
 
     monkeypatch.setattr(task_delivery(), "run_agent", run_agent)
     review = {"name": "reviewer", "instructions": "Independent review only", "host_key": host}
@@ -366,6 +378,7 @@ def test_two_tickets_run_in_order_after_submission_returns(
     def run_agent(host, project_dir, instructions, prompt, schema, *, sandbox):
         packet = json.loads(prompt)
         ticket_key = packet["brief"]["ticket"]["key"]
+        phase = "delivery" if schema == task_delivery().DELIVERY_SCHEMA else "review"
         assert "delivery" not in (packet["brief"]["task"]["metadata_json"] or {})
         assert host == "codex" and Path(project_dir) == tmp_path
         with Session(session.get_bind()) as check:
@@ -373,7 +386,6 @@ def test_two_tickets_run_in_order_after_submission_returns(
             brief = repo.brief(project_id=project_id, ticket_key=ticket_key)
             assert brief.ticket.status == "in-progress"
             evidence = brief.ticket.completion_evidence_json["automatic_delivery"]
-            phase = "delivery" if sandbox == "workspace-write" else "review"
             assert evidence[phase]["launch"]["sandbox"] == sandbox
             if phase == "review":
                 assert evidence["candidate"]["commit_sha"] == git(tmp_path, "rev-parse", "HEAD")
@@ -382,18 +394,18 @@ def test_two_tickets_run_in_order_after_submission_returns(
                     repo.brief(project_id=project_id, ticket_key="first").ticket.status
                     == "complete"
                 )
-        calls.append((ticket_key, instructions, sandbox))
+        calls.append((ticket_key, instructions, phase))
         sha = (
             commit(tmp_path, ticket_key)
-            if sandbox == "workspace-write"
+            if phase == "delivery"
             else git(tmp_path, "rev-parse", "HEAD")
         )
-        if sandbox == "read-only":
+        if phase == "review":
             assert packet["candidate"]["commit_sha"] == sha
         result = (
             {"status": "complete", "summary": "Implemented"}
-            if sandbox == "workspace-write"
-            else {"decision": "approve", "summary": "Verified"}
+            if phase == "delivery"
+            else {"decision": "approve", "summary": "Verified", "followups": []}
         )
         result["commit_sha"] = sha
         return AgentRunResult(0, thread_id=f"thread-{len(calls)}", result=result)
@@ -405,10 +417,10 @@ def test_two_tickets_run_in_order_after_submission_returns(
     assert calls == [] and len(scheduler.jobs) == 1
     scheduler.run()
     assert [(key, sandbox) for key, _, sandbox in calls] == [
-        ("first", "workspace-write"),
-        ("first", "read-only"),
-        ("second", "workspace-write"),
-        ("second", "read-only"),
+        ("first", "delivery"),
+        ("first", "review"),
+        ("second", "delivery"),
+        ("second", "review"),
     ]
     session.expire_all()
     snapshot = TrackerRepository(session).get(project_id=project_id, task_key="deliver")
@@ -443,12 +455,14 @@ def test_failure_stops_before_next_ticket(
     calls = []
 
     def run_agent(*args, sandbox, **kwargs):
-        calls.append(sandbox)
-        if failure == "delivery" or (failure == "review" and sandbox == "read-only"):
+        delivery = args[4] == task_delivery().DELIVERY_SCHEMA
+        calls.append(delivery)
+        if failure == "delivery" or (failure == "review" and not delivery):
             return AgentRunResult(1, error="Harness failed")
-        if sandbox == "workspace-write":
+        if delivery:
             return AgentRunResult(
                 0,
+                thread_id="delivery",
                 result={
                     "status": "blocked" if failure == "blocked" else "complete",
                     "summary": "Delivery result",
@@ -517,8 +531,9 @@ def test_commit_identity_failure_stops_same_task(
     calls = []
 
     def run_agent(*args, sandbox, **kwargs):
-        calls.append(sandbox)
-        if sandbox == "workspace-write":
+        delivery = args[4] == task_delivery().DELIVERY_SCHEMA
+        calls.append(delivery)
+        if delivery:
             sha = commit(tmp_path, "first")
             result = {"status": "complete", "summary": "Delivered", "commit_sha": sha}
             if failure == "missing":
@@ -537,12 +552,13 @@ def test_commit_identity_failure_stops_same_task(
                 "decision": "approve",
                 "summary": "Reviewed",
                 "commit_sha": base if failure == "review-sha" else sha,
+                "followups": [],
             }
             if failure in {"review-mutation", "review-new-sha"}:
                 new_sha = commit(tmp_path, "review-mutation")
                 if failure == "review-new-sha":
                     result["commit_sha"] = new_sha
-        return AgentRunResult(0, result=result)
+        return AgentRunResult(0, thread_id=f"thread-{delivery}", result=result)
 
     monkeypatch.setattr(task_delivery(), "run_agent", run_agent)
     scheduler = QueuedScheduler()
@@ -553,7 +569,10 @@ def test_commit_identity_failure_stops_same_task(
     assert [ticket.status for ticket in snapshot.tickets] == ["failed", "not-started"]
     assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "stopped"
     evidence = snapshot.tickets[0].completion_evidence_json["automatic_delivery"]
-    assert evidence["delivery"]["result"]["status"] == "complete"
+    if failure == "missing":
+        assert "Invalid codex result" in evidence["delivery"]["error"]
+    else:
+        assert evidence["delivery"]["result"]["status"] == "complete"
     assert len(calls) == (2 if failure.startswith("review-") else 1)
 
 
@@ -607,19 +626,16 @@ def test_workflow_delivers_only_selected_children_without_completing_step(
     def run_agent(*args, sandbox, **kwargs):
         packet = json.loads(args[3])
         calls.append(packet["brief"]["ticket"]["key"])
-        sha = (
-            commit(tmp_path, "selected")
-            if sandbox == "workspace-write"
-            else git(tmp_path, "rev-parse", "HEAD")
-        )
+        delivery = args[4] == task_delivery().DELIVERY_SCHEMA
+        sha = commit(tmp_path, "selected") if delivery else git(tmp_path, "rev-parse", "HEAD")
         return AgentRunResult(
             0,
+            thread_id=f"selected-{delivery}",
             result={
-                "status" if sandbox == "workspace-write" else "decision": "complete"
-                if sandbox == "workspace-write"
-                else "approve",
+                "status" if delivery else "decision": "complete" if delivery else "approve",
                 "summary": "Done",
                 "commit_sha": sha,
+                **({} if delivery else {"followups": []}),
             },
         )
 
@@ -699,3 +715,239 @@ def test_queued_workflow_stops_when_step_is_no_longer_running(
         next(ticket for ticket in snapshot.tickets if ticket.key == "selected").status
         == "not-started"
     )
+
+
+def feedback_harness(session, project_id, tmp_path, monkeypatch, decisions, *, fault=None):
+    """Real commits and durable tracker reads around each controlled native response."""
+    from stackos.plugins.builtin_engineering import task_delivery
+
+    calls = []
+    base = git(tmp_path, "rev-parse", "HEAD")
+
+    def run_agent(host, directory, instructions, prompt, schema, *, sandbox, **selection):
+        packet = json.loads(prompt)
+        key = packet["brief"]["ticket"]["key"]
+        phase = "delivery" if schema == task_delivery().DELIVERY_SCHEMA else "review"
+        resume = selection.get("resume_thread_id")
+        previous = [call for call in calls if call["key"] == key and call["phase"] == phase]
+        assert resume == (f"{key}-{phase}" if previous else None)
+        assert sandbox == "workspace-write"  # Both Codex roles execute focused specs.
+        assert "SIDE NOTE" not in prompt
+        assert packet["brief"]["task"]["context_json"]["operator_inputs"] == ["Keep input"]
+        if previous and phase == "delivery":
+            with Session(session.get_bind()) as check:
+                durable = TrackerRepository(check).brief(project_id=project_id, ticket_key=key)
+                evidence = durable.ticket.completion_evidence_json["automatic_delivery"]
+                assert evidence["repair_pass_used"] is True
+                assert evidence["attempts"][-1]["review"]["result"]["decision"] == "reject"
+            assert packet["review_result"]["result"]["summary"] == "Scoped repair"
+        calls.append({"key": key, "phase": phase, "resume": resume, "packet": packet})
+        identity = f"{key}-{phase}"
+        if phase == "delivery":
+            sha = commit(tmp_path, f"{key}-{len(calls)}")
+            value = {"status": "complete", "summary": "Checked specs", "commit_sha": sha}
+            if previous and fault == "stale-repair":
+                git(tmp_path, "reset", "--hard", packet["candidate"]["base_commit_sha"])
+                value["commit_sha"] = packet["candidate"]["base_commit_sha"]
+        else:
+            value = {
+                "decision": decisions.pop(0),
+                "summary": "Scoped repair",
+                "commit_sha": packet["candidate"]["commit_sha"],
+                "followups": [{"text": f"SIDE NOTE {key} {len(calls)}"}],
+            }
+            if fault == "stale-review":
+                value["commit_sha"] = base
+            elif fault == "wrong-review":
+                value["commit_sha"] = "0" * 40
+            elif fault == "dirty-review":
+                (tmp_path / "uncommitted").write_text("reviewer edit")
+            elif fault == "mutating-review":
+                value["commit_sha"] = commit(tmp_path, "reviewer-commit")
+            elif fault == "schema":
+                value.pop("followups")
+            elif fault == "native":
+                return AgentRunResult(1, thread_id=identity, error="Required check unavailable")
+        if fault == "missing-id" or (fault == "missing-review-id" and phase == "review"):
+            identity = None
+        elif resume and (
+            (fault == "wrong-id" and phase == "delivery")
+            or (fault == "wrong-review-id" and phase == "review")
+        ):
+            identity = "wrong-session"
+        elif fault == "shared-id" and phase == "review":
+            identity = f"{key}-delivery"
+        return AgentRunResult(0, thread_id=identity, result=value)
+
+    monkeypatch.setattr(task_delivery(), "run_agent", run_agent)
+    return calls
+
+
+def feedback_task(session, project_id):
+    prepared_task(session, project_id)
+    repo = TrackerRepository(session)
+    repo.update_task(
+        project_id=project_id,
+        task_key="deliver",
+        patch_json={
+            "context_json": {
+                "operator_inputs": ["Keep input"],
+                "other": "preserved",
+                "followups": [
+                    {
+                        "text": "SIDE NOTE existing",
+                        "source_ticket_key": "older",
+                        "source_attempt": 1,
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                    }
+                ],
+            }
+        },
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="first",
+        patch_json={
+            "completion_evidence_json": {
+                "unrelated": {"keep": True},
+                "prior_review": {"deep": {"followups": [{"text": "SIDE NOTE nested"}]}},
+            }
+        },
+    )
+
+
+def test_feedback_reject_repair_approve_preserves_sessions_attempts_and_notes(
+    session, project_id, tmp_path, monkeypatch
+):
+    feedback_task(session, project_id)
+    calls = feedback_harness(
+        session, project_id, tmp_path, monkeypatch, ["reject", "approve", "approve"]
+    )
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    assert [(call["key"], call["phase"], call["resume"]) for call in calls] == [
+        ("first", "delivery", None),
+        ("first", "review", None),
+        ("first", "delivery", "first-delivery"),
+        ("first", "review", "first-review"),
+        ("second", "delivery", None),
+        ("second", "review", None),
+    ]
+    session.expire_all()
+    snapshot = TrackerRepository(session).get(project_id=project_id, task_key="deliver")
+    assert [ticket.status for ticket in snapshot.tickets] == ["complete", "complete"]
+    first, second = snapshot.tickets
+    evidence = first.completion_evidence_json["automatic_delivery"]
+    assert first.completion_evidence_json["unrelated"] == {"keep": True}
+    assert "SIDE NOTE nested" in json.dumps(first.completion_evidence_json["prior_review"])
+    prior = evidence["attempts"][0]
+    assert prior["review"]["result"]["decision"] == "reject"
+    assert prior["candidate"]["commit_sha"] != evidence["candidate"]["commit_sha"]
+    assert evidence["candidate"]["base_commit_sha"] == prior["candidate"]["commit_sha"]
+    assert evidence["review"]["result"]["commit_sha"] == evidence["candidate"]["commit_sha"]
+    assert evidence["sessions"]["delivery"]["thread_id"] == "first-delivery"
+    assert evidence["sessions"]["review"]["thread_id"] == "first-review"
+    assert (
+        second.completion_evidence_json["automatic_delivery"]["sessions"]["review"]["thread_id"]
+        == "second-review"
+    )
+    context = snapshot.tasks[0].context_json
+    assert context["operator_inputs"] == ["Keep input"] and context["other"] == "preserved"
+    notes = context["followups"]
+    assert len(notes) == 4
+    assert [(n["source_ticket_key"], n["source_attempt"]) for n in notes[1:]] == [
+        ("first", 1),
+        ("first", 2),
+        ("second", 1),
+    ]
+    assert all(n["created_at"] for n in notes)
+    assert snapshot.tasks[0].metadata_json["keep"] == "yes"
+    assert len(snapshot.tickets) == 2 and second.dependency_keys == ["first"]
+
+
+@pytest.mark.parametrize("decision", ["approve", "blocked", "reject"])
+def test_feedback_followup_only_blocked_and_second_reject(
+    session, project_id, tmp_path, monkeypatch, decision
+):
+    feedback_task(session, project_id)
+    decisions = ["approve", "approve"] if decision == "approve" else [decision, decision]
+    calls = feedback_harness(session, project_id, tmp_path, monkeypatch, decisions)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    snapshot = TrackerRepository(session).get(project_id=project_id, task_key="deliver")
+    assert snapshot.tickets[0].status == ("complete" if decision == "approve" else "failed")
+    assert snapshot.tasks[0].metadata_json["delivery"]["status"] == (
+        "complete" if decision == "approve" else "stopped"
+    )
+    assert len(calls) == (2 if decision == "blocked" else 4)
+    if decision != "approve":
+        assert snapshot.tickets[1].status == "not-started"
+
+
+@pytest.mark.parametrize(
+    "fault,decision,expected_calls",
+    [
+        ("missing-id", "approve", 1),
+        ("missing-review-id", "approve", 2),
+        ("shared-id", "approve", 2),
+        ("wrong-id", "reject", 3),
+        ("wrong-review-id", "reject", 4),
+        ("stale-repair", "reject", 3),
+        ("stale-review", "reject", 2),
+        ("wrong-review", "reject", 2),
+        ("dirty-review", "reject", 2),
+        ("mutating-review", "reject", 2),
+        ("schema", "approve", 2),
+        ("native", "approve", 2),
+    ],
+)
+def test_feedback_identity_schema_and_check_failures_stop(
+    session, project_id, tmp_path, monkeypatch, fault, decision, expected_calls
+):
+    feedback_task(session, project_id)
+    calls = feedback_harness(
+        session, project_id, tmp_path, monkeypatch, [decision, "approve"], fault=fault
+    )
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    snapshot = TrackerRepository(session).get(project_id=project_id, task_key="deliver")
+    assert [ticket.status for ticket in snapshot.tickets] == ["failed", "not-started"]
+    assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "stopped"
+    assert len(calls) == expected_calls
+    assert len(snapshot.tasks[0].context_json["followups"]) == (2 if expected_calls >= 3 else 1)
+
+
+def test_feedback_requeue_preserves_consumed_repair_budget(
+    session, project_id, tmp_path, monkeypatch
+):
+    feedback_task(session, project_id)
+    calls = feedback_harness(
+        session, project_id, tmp_path, monkeypatch, ["reject", "reject", "reject"]
+    )
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    assert len(calls) == 4
+    session.expire_all()
+    repo = TrackerRepository(session)
+    repo.update_ticket(
+        project_id=project_id, ticket_key="first", patch_json={"status": "in-progress"}
+    )
+    repo.update_ticket(
+        project_id=project_id, ticket_key="first", patch_json={"status": "not-started"}
+    )
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    assert len(calls) == 6
+    session.expire_all()
+    snapshot = repo.get(project_id=project_id, task_key="deliver")
+    assert [ticket.status for ticket in snapshot.tickets] == ["failed", "not-started"]
+    evidence = snapshot.tickets[0].completion_evidence_json["automatic_delivery"]
+    assert evidence["repair_pass_used"] is True
+    assert len(evidence["attempts"]) == 2
+    assert [a["review"]["result"]["decision"] for a in evidence["attempts"]] == ["reject", "reject"]
