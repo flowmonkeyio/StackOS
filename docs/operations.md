@@ -394,6 +394,21 @@ safe refs/query/snapshot only, no actor/outbound spoofing, provider work or mode
 execution. Clear private search text and apply filters before analysis; read
 [the actual host and result protocol](../plugins/finance/references/workflow-handoffs.md#management-review-request-and-result).
 
+## Human task content
+
+`tracker.updateTaskContent` is an exact-path browser-safe REST/CLI operation
+with MCP disabled and `local-admin-console-write` authority. Its strict input
+accepts an existing project/task, `expected_updated_at`, a stable
+`idempotency_key`, and `description` and/or `additional_input`. It cannot write
+task title, goal, lifecycle, ownership, dependencies, run bindings or arbitrary
+JSON. The handler derives the operator actor and atomically persists the
+content, tracker revision and intent-bound retry receipt. Stale snapshots and
+reused keys with changed intent return structured conflicts without mutation.
+The raw-only response keeps the saved task, revision, input receipt and replay
+status; ACK and compact modes are not available. See [task content](task-tracker.md#ui)
+for storage and UI behavior. Broader tracker operations remain agent/controller
+surfaces and do not become browser-safe through this exception.
+
 ## CLI Calls
 
 The CLI uses the same REST operation adapter:
@@ -608,6 +623,7 @@ index for common core operations, not a replacement for registry discovery.
 - `tracker.createTask`
 - `tracker.createTicket`
 - `tracker.updateTask`
+- `tracker.updateTaskContent`
 - `tracker.updateTicket`
 - `tracker.patch`
 - `tracker.rejectTask`

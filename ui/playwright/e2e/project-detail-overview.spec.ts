@@ -26,12 +26,19 @@ test.describe('home — tickets and local service', () => {
     await expect(page.getByRole('heading', { name: 'Latest action calls', exact: true })).toHaveCount(0)
     await expect(page.getByText('Agents are working', { exact: true })).toHaveCount(0)
     await expect(page.getByText('Agents at work', { exact: true })).toHaveCount(0)
-    await page.getByRole('button', { name: 'In Progress: 1 tickets', exact: true }).click()
-    await expect(page).toHaveURL(/\/tasks\?.*status=in-progress/)
+    await page.getByRole('button', { name: 'In Progress 1 tickets', exact: true }).click()
+    await expect(page).toHaveURL(/\/tasks\?ticket_status=in-progress/)
     const destination = new URL(page.url())
-    expect(destination.searchParams.get('view')).toBe('tickets')
-    await expect(page.getByText('Active fixture ticket', { exact: true })).toBeVisible()
-    await expect(page.getByText('Completed fixture ticket', { exact: true })).toHaveCount(0)
+    expect(destination.searchParams.get('ticket_status')).toBe('in-progress')
+    await expect(page.getByRole('tab', { name: 'Board', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByText('Contains tickets: In Progress', { exact: true })).toBeVisible()
+    const matchingTask = page.getByRole('button', { name: /Open task #\d+: Fixture work$/ })
+    await expect(matchingTask).toBeVisible()
+    await expect(page.getByRole('button', { name: /Open task #\d+: Completed-only fixture work$/ })).toHaveCount(0)
+    await matchingTask.click()
+    await page.getByRole('dialog').getByRole('button', { name: /Active fixture ticket/ }).click()
+    await expect(page.getByRole('dialog', { name: 'Active fixture ticket', exact: true })).toBeVisible()
+    expect(new URL(page.url()).searchParams.get('ticket')).toBe('fixture-active')
     errors.assertNone()
   })
 
@@ -49,7 +56,7 @@ test.describe('home — tickets and local service', () => {
       await expect(service.getByRole('button', { name, exact: true })).toBeVisible()
       await expect(service.getByRole('button', { name, exact: true })).toBeDisabled()
     }
-    await page.getByRole('button', { name: 'In Progress: 1 tickets', exact: true }).first().click()
+    await page.getByRole('button', { name: 'In Progress 1 tickets', exact: true }).first().click()
     const portfolio = page.getByRole('table', { name: 'Project portfolio' })
     await expect(portfolio.getByText('Directory Project', { exact: true })).toBeVisible()
     await expect(portfolio.getByText('Another Project', { exact: true })).toHaveCount(0)
@@ -69,6 +76,8 @@ async function seedTickets(projectId: number): Promise<void> {
     ['tracker.createTask', { project_id: projectId, key: 'fixture-work', title: 'Fixture work' }],
     ['tracker.createTicket', { project_id: projectId, task_key: 'fixture-work', key: 'fixture-active', title: 'Active fixture ticket', status: 'in-progress' }],
     ['tracker.createTicket', { project_id: projectId, task_key: 'fixture-work', key: 'fixture-complete', title: 'Completed fixture ticket', status: 'complete' }],
+    ['tracker.createTask', { project_id: projectId, key: 'fixture-completed-only', title: 'Completed-only fixture work' }],
+    ['tracker.createTicket', { project_id: projectId, task_key: 'fixture-completed-only', key: 'fixture-completed-only-ticket', title: 'Completed-only fixture ticket', status: 'complete' }],
   ] as const) {
     const response = await fetch(`${getBaseUrl()}/api/v1/operations/${operation}/call`, {
       method: 'POST', headers, body: JSON.stringify({ arguments: args }),

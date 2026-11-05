@@ -10,7 +10,7 @@ defineProps<{
   /** Compact: tighter spacing, sm controls implied by children. */
   density?: 'compact' | 'comfortable';
   /** Visual treatment. */
-  variant?: 'default' | 'sunken';
+  variant?: 'default' | 'sunken' | 'plain';
   /** Sticky to the top of its scroll parent. */
   sticky?: boolean;
 }>();
@@ -22,8 +22,8 @@ defineProps<{
     :aria-label="ariaLabel"
     :class="[
       'ui-toolbar flex flex-wrap items-center',
-      density === 'comfortable' ? 'gap-3 px-4 py-3' : 'gap-2 px-3 py-2.5',
-      variant === 'sunken' ? 'bg-bg-surface-alt border-y border-subtle' : 'rounded-lg border border-default bg-bg-surface shadow-xs',
+      variant === 'plain' ? 'gap-2' : density === 'comfortable' ? 'gap-3 px-4 py-3' : 'gap-2 px-3 py-2.5',
+      variant === 'plain' ? '' : variant === 'sunken' ? 'bg-bg-surface-alt border-y border-subtle' : 'rounded-lg border border-default bg-bg-surface shadow-xs',
       sticky && 'sticky top-0 z-sticky',
     ]"
   >

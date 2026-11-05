@@ -1,0 +1,19 @@
+{
+  "recorded_at": "2026-11-05T04:24:56.818548+00:00",
+  "state": "held_after_two_independent_security_rejections",
+  "candidate_preserved": true,
+  "current_matches_frozen_r2": true,
+  "reviews": [
+    "independent-parser-review.md",
+    "independent-parser-review-r2.md"
+  ],
+  "blocker": "Protected-value normalization is applied to source admission but not consistently to task/prompt text, logs/ledger records, and post-JSON observation command arguments.",
+  "execution": {
+    "new_tests_written": false,
+    "tests_or_parser_run": false,
+    "software_or_app_installed": false,
+    "business_run_created_or_launched": false
+  },
+  "prior_lexer_stop_preserved": true,
+  "next_action": "Resolve the shared protected-value boundary design within stop authority before any further correction or test/install. Do not install this unapproved candidate."
+}

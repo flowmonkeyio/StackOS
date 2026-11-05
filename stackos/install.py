@@ -59,26 +59,23 @@ InstallMode = Literal["clone", "pipx"]
 MCP_SERVER_NAME = "stackos"
 BROWSER_LAUNCHER_NAME = "stackos.browser"
 BROWSER_LAUNCHER_MANAGED_HEADER = "# StackOS managed browser launcher v1\n"
-GSTACK_VERSION = "1.84.1.0"
-GSTACK_REVISION = "71f6048e8ada25180e61438abc1d98cb151fe9a7"
+GSTACK_VERSION = "1.91.242.0"
+GSTACK_REVISION = "6c3cf1baac93a794d37065da8b95340e14305126"
 GSTACK_SOURCE_ARCHIVE_URL = f"https://github.com/garrytan/gstack/archive/{GSTACK_REVISION}.tar.gz"
-GSTACK_SOURCE_ARCHIVE_SHA256 = "4740bfb9efb35fb407679496d890210bfc7c193bc8331f70cbf7d64bbf75cfb8"
-BUN_VERSION = "1.3.8"
+GSTACK_SOURCE_ARCHIVE_SHA256 = "151b4c651b56beb3059ce2a3e9a9dcdf7ea3981380d104e62030f2e953432b69"
+BUN_VERSION = "1.4.4"
 BUN_ARCHIVE_URL = (
     f"https://github.com/oven-sh/bun/releases/download/bun-v{BUN_VERSION}/bun-darwin-aarch64.zip"
 )
-BUN_ARCHIVE_SHA256 = "672a0a9a7b744d085a1d2219ca907e3e26f5579fca9e783a9510a4f98a36212f"
+BUN_ARCHIVE_SHA256 = "c240d7f0ccb90c263a849fcdb09b7ee62630d921348ed6aafda86b9d577bc510"
 GSTACK_PLAYWRIGHT_VERSION = "1.62.1"
 GSTACK_RUNTIME_MANIFEST_SCHEMA = 1
-GSTACK_PACKAGING_REVISION = 2
+GSTACK_PACKAGING_REVISION = 3
 # These pinned dev/test packages and foreign ONNX binaries are not used by
 # gstack's darwin/arm64 runtime. Keep Darwin ONNX, Transformers and sidebar assets.
 _GSTACK_EXCLUDED_DEPENDENCIES = (
     "@anthropic-ai/claude-agent-sdk",
     "@anthropic-ai/claude-agent-sdk-darwin-arm64",
-    "@anthropic-ai/sdk",
-    # Bun's SDK command link would otherwise point into the removed package.
-    ".bin/anthropic-ai-sdk",
     "onnxruntime-node/bin/napi-v6/linux",
     "onnxruntime-node/bin/napi-v6/win32",
 )
@@ -679,14 +676,23 @@ def _build_gstack_runtime(candidate: Path, *, timeout_seconds: int) -> None:
     env["PLAYWRIGHT_BROWSERS_PATH"] = str(browsers)
     gstack_dir = candidate / "gstack"
     _run_gstack_build(
-        [str(bun), "install", "--frozen-lockfile"],
+        [str(bun), "install", "--production", "--frozen-lockfile"],
         stage="gstack dependency installation",
         cwd=gstack_dir,
         env=env,
         timeout_seconds=timeout_seconds,
     )
     _run_gstack_build(
-        [str(bun), "build", "--compile", "browse/src/cli.ts", "--outfile", "browse/dist/browse"],
+        [
+            str(bun),
+            "build",
+            "--compile",
+            "--no-compile-autoload-dotenv",
+            "--no-compile-autoload-bunfig",
+            "browse/src/cli.ts",
+            "--outfile",
+            "browse/dist/browse",
+        ],
         stage="gstack CLI compilation",
         cwd=gstack_dir,
         env=env,
@@ -699,12 +705,10 @@ def _build_gstack_runtime(candidate: Path, *, timeout_seconds: int) -> None:
         env=env,
         timeout_seconds=timeout_seconds,
     )
-    _run_gstack_build(
-        ["bash", "scripts/write-version-files.sh", "browse/dist/.version"],
-        stage="gstack version metadata preparation",
-        cwd=gstack_dir,
-        env=env,
-        timeout_seconds=timeout_seconds,
+    # The verified archive has no .git directory. Upstream's version script
+    # would write an empty marker; record the authenticated source revision.
+    (gstack_dir / "browse" / "dist" / ".version").write_text(
+        GSTACK_REVISION + "\n", encoding="utf-8"
     )
     _run_gstack_build(
         [str(bun), "node_modules/playwright/cli.js", "install", "--no-shell", "chromium"],
@@ -864,6 +868,8 @@ def _mirror_traversable(
     source: Traversable,
     dest: Path,
     exclude_dirs: Iterable[str],
+    *,
+    preserve_extra: bool = False,
 ) -> None:
     """Copy every file under ``source`` (``Traversable``) into ``dest``.
 
@@ -881,6 +887,8 @@ def _mirror_traversable(
         target.write_bytes(node.read_bytes())
         seen.add(target.resolve())
 
+    if preserve_extra:
+        return
     # Sweep stale files / dirs.
     for existing in list(dest.rglob("*")):
         if existing.is_file() and existing.resolve() not in seen:
@@ -896,7 +904,9 @@ def _mirror_traversable(
             d.rmdir()
 
 
-def _mirror_path(source: Path, dest: Path, exclude_dirs: Iterable[str]) -> None:
+def _mirror_path(
+    source: Path, dest: Path, exclude_dirs: Iterable[str], *, preserve_extra: bool = False
+) -> None:
     """Copy a filesystem ``source`` tree into ``dest`` with ``--delete`` semantics."""
     dest.mkdir(parents=True, exist_ok=True)
     excluded = frozenset(exclude_dirs)
@@ -918,6 +928,8 @@ def _mirror_path(source: Path, dest: Path, exclude_dirs: Iterable[str]) -> None:
         shutil.copy2(src, target)
         seen.add(target.resolve())
 
+    if preserve_extra:
+        return
     for existing in list(dest.rglob("*")):
         if existing.is_file() and existing.resolve() not in seen:
             existing.unlink()
@@ -966,16 +978,183 @@ def copy_skills_to(target: Path) -> tuple[Path, int]:
     return target, count
 
 
-def copy_stackos_skill_to(skills_root: Path) -> Path:
+def copy_stackos_skill_to(skills_root: Path, *, preserve_extra: bool = False) -> Path:
     """Mirror only the canonical StackOS skill without touching sibling skills."""
 
     source_root = _resolve_source("skills")
     target = skills_root / "stackos"
     if isinstance(source_root, Path):
-        _mirror_path(source_root, target, exclude_dirs=())
+        _mirror_path(source_root, target, exclude_dirs=(), preserve_extra=preserve_extra)
     else:
-        _mirror_traversable(source_root, target, exclude_dirs=())
+        _mirror_traversable(source_root, target, exclude_dirs=(), preserve_extra=preserve_extra)
     return target
+
+
+def stackos_skill_is_current(skills_root: Path, *, allow_extra: bool = False) -> bool:
+    """Read-only check of the canonical skill mirror, including its references."""
+
+    target = skills_root / "stackos"
+    if skills_root.is_symlink() or target.is_symlink() or not target.is_dir():
+        return False
+    try:
+        expected = dict(_iter_traversable(_resolve_source("skills"), exclude_dirs=()))
+        if allow_extra:
+            return bool(expected) and all(
+                _managed_skill_file_is_safe(target, name)
+                and (target / name).is_file()
+                and (target / name).read_bytes() == source.read_bytes()
+                for name, source in expected.items()
+            )
+        if any(path.is_symlink() for path in target.rglob("*")):
+            return False
+        actual = dict(_iter_traversable(target, exclude_dirs=()))
+        return (
+            bool(expected)
+            and expected.keys() == actual.keys()
+            and all(
+                actual[name].read_bytes() == source.read_bytes()
+                for name, source in expected.items()
+            )
+        )
+    except OSError:
+        return False
+
+
+_STACKOS_SKILL_RECEIPT = ".stackos-ownership.json"
+
+
+def _managed_skill_file_is_safe(target: Path, relative: str) -> bool:
+    path = Path(relative)
+    if not path.parts or path.is_absolute() or any(part in {".", ".."} for part in path.parts):
+        return False
+    if path.as_posix() != relative or "\\" in relative:
+        return False
+    return not any((target / part).is_symlink() for part in (path, *path.parents))
+
+
+def _stackos_skill_receipt(skills_root: Path) -> dict | None:
+    """Validate the receipt and directory identity; a missing tree is retryable."""
+
+    target = skills_root / "stackos"
+    receipt = skills_root / _STACKOS_SKILL_RECEIPT
+    if skills_root.is_symlink() or target.is_symlink() or receipt.is_symlink():
+        return None
+    try:
+        data = json.loads(receipt.read_text(encoding="utf-8"))
+        if (
+            not isinstance(data, dict)
+            or data.get("version") != 1
+            or data.get("owner") != "stackos"
+            or data.get("skills_root") != str(skills_root.resolve())
+            or type(data.get("device")) is not int
+            or type(data.get("inode")) is not int
+            or not isinstance(data.get("paths"), list)
+            or not data["paths"]
+            or not all(
+                isinstance(name, str) and _managed_skill_file_is_safe(target, name)
+                for name in data["paths"]
+            )
+        ):
+            return None
+        if target.exists():
+            info = target.stat()
+            if not stat.S_ISDIR(info.st_mode) or (info.st_dev, info.st_ino) != (
+                data["device"],
+                data["inode"],
+            ):
+                return None
+        return data
+    except (OSError, ValueError):
+        return None
+
+
+def stackos_skill_is_owned(skills_root: Path) -> bool:
+    """Recognize a persisted mirror even when its files drift or disappear."""
+
+    return _stackos_skill_receipt(skills_root) is not None
+
+
+def _claim_stackos_skill(skills_root: Path, *, adopt_existing: bool) -> dict:
+    target = skills_root / "stackos"
+    receipt = skills_root / _STACKOS_SKILL_RECEIPT
+    current = _stackos_skill_receipt(skills_root)
+    if skills_root.is_symlink() or target.is_symlink() or receipt.is_symlink():
+        raise OSError("StackOS skill ownership path is unsafe")
+    if current is None and receipt.exists():
+        raise OSError("StackOS skill ownership receipt does not match its directory")
+    if target.exists() and (
+        not target.is_dir()
+        or not (current or adopt_existing or stackos_skill_is_current(skills_root))
+    ):
+        raise OSError("StackOS skill directory is not owned")
+    paths = {name for name, _ in _iter_traversable(_resolve_source("skills"), exclude_dirs=())}
+    if current:
+        paths.update(current["paths"])
+    if not paths or not all(_managed_skill_file_is_safe(target, name) for name in paths):
+        raise OSError("StackOS skill contains unsafe managed paths")
+    target.mkdir(parents=True, exist_ok=True)
+    info = target.stat()
+    data = dict(
+        version=1,
+        owner="stackos",
+        skills_root=str(skills_root.resolve()),
+        device=info.st_dev,
+        inode=info.st_ino,
+        paths=sorted(paths),
+    )
+    # Persist before copying: an interrupted install still owns its partial files.
+    with tempfile.NamedTemporaryFile(mode="w", dir=skills_root, delete=False) as handle:
+        temporary = Path(handle.name)
+        try:
+            json.dump(data, handle)
+            handle.flush()
+            os.fsync(handle.fileno())
+        except BaseException:
+            temporary.unlink(missing_ok=True)
+            raise
+    try:
+        temporary.replace(receipt)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return data
+
+
+def copy_managed_stackos_skill_to(skills_root: Path, *, adopt_existing: bool = False) -> Path:
+    """Claim and refresh the canonical mirror without deleting user additions."""
+
+    data = _claim_stackos_skill(skills_root, adopt_existing=adopt_existing)
+    expected = {name for name, _ in _iter_traversable(_resolve_source("skills"), exclude_dirs=())}
+    target = copy_stackos_skill_to(skills_root, preserve_extra=True)
+    for name in set(data["paths"]) - expected:
+        (target / name).unlink(missing_ok=True)
+    return target
+
+
+def remove_managed_stackos_skill_from(skills_root: Path, *, adopt_existing: bool = False) -> bool:
+    """Remove only receipted files; retain ownership evidence on partial failure."""
+
+    target = skills_root / "stackos"
+    receipt = skills_root / _STACKOS_SKILL_RECEIPT
+    if not target.exists() and not receipt.exists() and not target.is_symlink():
+        return not skills_root.is_symlink() and not receipt.is_symlink()
+    try:
+        data = _stackos_skill_receipt(skills_root)
+        if data is None:
+            data = _claim_stackos_skill(skills_root, adopt_existing=adopt_existing)
+        for name in data["paths"]:
+            path = target / name
+            if path.is_dir():
+                path.rmdir()
+            else:
+                path.unlink(missing_ok=True)
+        directories = {target / parent for name in data["paths"] for parent in Path(name).parents}
+        for directory in sorted(directories, key=lambda item: len(item.parts), reverse=True):
+            if directory.exists() and not any(directory.iterdir()):
+                directory.rmdir()
+        receipt.unlink()
+        return True
+    except (OSError, ValueError):
+        return False
 
 
 def remove_skills(
@@ -1232,6 +1411,7 @@ def _host_mcp_message(result: object) -> str:
 
 __all__ = [
     "InstallMode",
+    "copy_managed_stackos_skill_to",
     "copy_plugins",
     "copy_skills",
     "copy_skills_to",
@@ -1241,9 +1421,12 @@ __all__ = [
     "register_mcp_claude",
     "register_mcp_codex",
     "register_plugin_marketplace",
+    "remove_managed_stackos_skill_from",
     "remove_mcp_hosts",
     "remove_plugins",
     "remove_skills",
     "repair_mcp_hosts",
+    "stackos_skill_is_current",
+    "stackos_skill_is_owned",
     "verify_gstack_runtime",
 ]

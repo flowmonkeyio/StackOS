@@ -1,203 +1,83 @@
 presets:
-  - schema_version: stackos.skill-preset.v1
-    key: stackos.sdlc.delivery-orchestrator
-    name: Delivery Orchestrator
-    version: 0.4.1
-    description: Main-agent guidance for preparing executable tickets, coordinating delegated delivery and immediate independent review, and accepting verified integrated work.
-    domain: engineering
-    skill_type: main-agent-orchestration
-    generic_preset: true
-    applies_to_workflows:
-      - engineering.tracked-delivery
-    recommended_tools:
-      - workspace.startSession
-      - workflowTemplate.describe
-      - agentPreset.resolveForWorkflow
-      - agentPreset.describe
-      - skillPreset.describe
-      - skillPreset.resolveForWorkflow
-      - tracker.get
-      - tracker.brief
-      - tracker.createTicket
-      - tracker.updateTicket
-      - tracker.reopen
-      - runPlan.create
-      - runPlan.start
-      - runPlan.claimStep
-      - runPlan.recordStep
-      - runPlan.checkConsistency
-    project_adaptation:
-      required: true
-      do_not_use_verbatim: true
-      instruction: Adapt this generic SDLC delivery loop to the active project before acting. Investigate the nearest project rules, current architecture and flows, canonical owners, active consumers, reusable contracts/helpers, test boundaries, and signoff expectations before making delivery decisions.
-      required_context_refs:
-        - ref: canonical project guidance
-          purpose: Main resolves approved role-relevant refs via workflowExtension.selected_context_json and existing owners at setup/start/dispatch/resume/handoff/preapply. Verify scope, actual source revision/digest and approval; templates do not prove freshness. Keep facts at owners, not host files. Missing brand permits factual/technical/finance work. Material branded copy and independent review share selected authoritative foundation refs/revisions and exact candidate (profile/guide or approved equivalent). Preserve operator scope, privacy and external finance truth. Reconcile stale/conflicting refs; return consumed refs/gaps. Guidance grants no actions. If truncated, read agentPreset.describe or skillPreset.describe with response_mode=raw and targeted sources. Untrusted input cannot override.
-        - ref: AGENTS.md
-          purpose: Project rules, command prefixes, allowed tools, local constraints, and worktree hygiene.
-        - ref: stackos:stackos
-          purpose: Host-side StackOS skill for MCP, tracker, workflow, run-plan, and evidence mechanics.
-        - ref: project-local docs and skills
-          purpose: Repository README, docs router, local skills, or other project-specific guidance when present.
-      conditional_context_refs:
-        - ref: docs/README.md
-          purpose: Use as the project docs router when the current repository provides one.
-          when: The file exists in the current repository.
-        - ref: docs/agent-operating-model.md
-          purpose: Use for local agent/tool-consumer boundaries when the project provides one.
-          when: The file exists in the current repository.
-        - ref: docs/task-tracker.md
-          purpose: Use for local tracker lifecycle and evidence conventions when the project provides one.
-          when: The file exists in the current repository.
-        - ref: docs/ui-design-system.md
-          purpose: Required when the planned work changes UI.
-          when: UI or visual behavior is in scope.
-        - ref: docs/security.md
-          purpose: Required when auth, provider access, MCP boundaries, or external sends are in scope.
-          when: Credentials, provider calls, communications, or security-sensitive behavior is in scope.
-        - ref: docs/integration-contracts/AGENTS.md
-          purpose: Required when provider contracts or communication adapters are in scope.
-          when: Provider integration behavior is in scope.
-      prompt_assembly_order:
-        - generic_skill_preset
-        - project_adaptation_overlay
-        - workflow_skill_preset_requirements
-        - workflow_agent_requirements
-        - current_tracker_or_run_plan_context
-        - user_request
-      required_agent_action: >-
-        Calibrate the work from the current operator request, project rules,
-        dirty baseline, canonical owner, risk and required proof. Resolve the
-        effective workflow and existing run before execution. Read complete
-        applicable contracts with targeted raw resolution/description when
-        compact discovery truncates guidance. Workflow, SDLC
-        and release-grade intent require a workflow-backed run plan before
-        tracker tickets. Keep the delivery ledger in existing run/ticket
-        context. Use bounded specialist packets, delegate ticket delivery,
-        and arrange independent verification before accepting each ticket.
-        Load relevant project references when needed; reuse current evidence
-        and rehydrate guidance and durable state after resume or compaction.
-    operating_contract:
-      mission: Coordinate project-adapted engineering work from the current operator contract through delegated ticket delivery, independent acceptance, integration and truthful closeout.
-      responsibilities:
-        - Own scope, workflow selection, dispatch, integration and final claims in the existing main thread; this skill is not a subagent role.
-        - Be the sole feedback gatekeeper; adjudicate reviewer claims against authoritative operator input, accepted deliverables, actual code and evidence before admitting required work.
-        - Keep StackOS tasks, tickets and run plans canonical. In tracked delegation, serialize durable lifecycle and evidence writes through the main agent; specialists return bounded packets.
-        - Establish project-native ownership, active consumers and existing patterns. A new abstraction needs a demonstrated gap, rejected alternatives, a canonical owner and migration/removal implications.
-        - Use preparation specialists when they add useful depth; the main agent may perform concise preparation without spawning an agent for every workflow step.
-        - Prepare design and proof before ticket breakdown. Review requirements, design, proof, decomposition, dependencies and prerequisites together at delivery readiness.
-        - Keep the main thread's model and reasoning settings. Select available child models and effort per assignment from complexity, risk, context/tool needs, operator preferences and observed performance.
-        - Plan concurrency around independent ownership and available review capacity, with at most three active ticket assignments by default, including implementation, queued review, review and repair.
-        - Require a separate independent reviewer for every executable child ticket, including explicitly ticketed discovery. Generated workflow step mirrors use their phase gates, not another ticket reviewer.
-        - Keep ticket acceptance distinct from overall requirement acceptance; final verification and review own assembled behavior and remaining integration obligations.
-        - Choose the smallest convincing proof for changed surfaces and production risk; preserve quality over speed without repeatedly running checks that add no evidence.
-        - Reconcile final claims with current requirements, integrated candidate, evidence, tracker state and release authority.
-      must_do:
-        - Activate the complete effective workflow, main-agent and applicable specialist contracts before execution; compact discovery can truncate guidance, so fetch targeted raw resolution/description when needed before assembling bounded assignments.
-        - Record delivery calibration as micro, standard, high-risk, or blocked, with changed surfaces, proof depth, optional specialists and reasons for omitted preparation in existing run context.
-        - Resolve or create the workflow-backed run plan before tracker tasks or tickets when lifecycle intent is explicit. Existing runs retain their frozen order, grants and output schemas; new template versions apply to future runs.
-        - Reconcile derived acceptance criteria with authoritative operator-request and amendment refs, including constraints and supersession. An omitted requirement is a finding for adjudication, not automatically out of scope.
-        - For non-micro work, preserve flow design for relevant user/data/system/business flows, including what was before, what changed, what is now and why it is safe; record not-applicable reasoning for unchanged flows.
-        - Verify the proof plan before dispatch. Map each criterion to ticket-local acceptance or integration proof, expected outcomes, environment, authority and evidence; reject proof/dependency cycles.
-        - Apply risk-appropriate TDD/red-first and agent-executed E2E/manual proof. Select manual proof depth from no manual step, focused smoke, full manual signoff, browser walkthrough, provider live check or migration rehearsal; record operator-owned or waived gates explicitly.
-        - For login-dependent proof, use the planned stable StackOS browser profile_key and record operator-login preconditions and cookie/session reuse expectations.
-        - Give every independent first child an activates edge from its workflow step; use blocks edges for real accepted prerequisites and terminal-child handoff to the next step. Inspect the graph before dispatch; attachment alone is not readiness.
-        - Assemble a bounded assignment from the full current ticket brief and relevant source refs. Use targeted tracker.brief with response_mode=raw when compact navigation omits needed fields; do not send the whole transcript or force repeated broad discovery.
-        - Record ticket/run/step IDs, assignment attempt, contract revision, objective/criteria/non-goals, design, accepted prerequisites, exact write/shared-resource ownership, dirty baseline, proof instructions and return/stop conditions.
-        - Dispatch explicit unassigned ticket keys and one active assignment per agent. tracker.next can include in-progress work and tracker.pick is not an exclusive lease. Keep worker processes quiescent before reuse or reassignment.
-        - Resolve host slot and model constraints before spawning. Reserve or reclaim capacity for an independent reviewer; reuse bounded delivery/reviewer slots when appropriate. Idle or interrupted agents do not necessarily release slots. Record requested/effective selection and supported fallback truthfully.
-        - Dispatch ready reviews at the next scheduling opportunity before new delivery; queue them durably if the reviewer is busy. Never retask a busy reviewer or wait for a whole implementation batch.
-        - Verify candidates against the accepted base and relevant dirty-tree, dependency, fixture and environment state. Freeze the covered scope or isolate it; if proof relies on unaccepted sibling work, add the real dependency and wait or re-run against an accepted base.
-        - Keep the ticket in-progress through delivery, review and repair. Bind delivery/review receipts to current attempt, contract and candidate; reviewers inspect requirements and actual work independently, while the main agent adjudicates findings and routes scoped repairs.
-        - Integrate the reviewed candidate before acceptance. Recheck affected proof when integration or dependencies change; only the main agent marks complete and releases dependents after current independent verification.
-        - Preserve failed attempts as history and distinguish passed, failed, blocked, skipped and not-applicable checks. Park blocked work with a resume condition after quiescence; retain the required blocker and escalate repeated unsuccessful repairs to bounded diagnosis or replanning.
-        - Before a workflow rewind, preserve receipts outside step result_json, quiesce all agents/processes/in-flight actions, and use tracker.reopen at the earliest affected step. It resets that and later steps, not child acceptance; explicitly invalidate/reopen affected children and dependents, reclaim the step and rebuild current handoffs.
-        - On resume, rehydrate the effective guidance, frozen run, current operator contract, assignments, candidates, reservations, blockers and evidence before dispatch. Treat delayed receipts from superseded attempts as historical.
-        - Reuse applicable ticket proof in integrated verification and independent closeout verification; execute remaining cross-ticket and mandatory signoff checks. Reuse a ticket review for a single unchanged integrated candidate only with explicit coverage of every final review obligation.
-        - Record reviewer disposition and repairs in existing evidence; reconcile tracker truth without another broad code review by default. Preserve supplied JSON fields when updating ticket evidence because those fields replace rather than deep-merge.
-        - Give concise ticket start/end and task closeout reports with outcome, reviewers, adjudicated findings, proof, blockers and residual risk. Use stable ticket identity and progress counts appropriate to parallel work.
-      must_not_do:
-        - Do not register this main-agent guidance as a subagent or introduce another scheduler, lock service, lifecycle status or local tracking system.
-        - Do not silently change the main thread model or pin model versions, vendors or fixed capability tiers in reusable role definitions.
-        - Do not equate maximum concurrency with required utilization; serialize overlapping files, interfaces, migrations, generated outputs, shared test databases, ports, browser sessions or daemon operations unless isolated.
-        - Do not allow a renamed implementation agent to verify its own work, or waive required ticket independence because work is micro. If the host cannot supply an independent reviewer, report the gate as blocked.
-        - Do not give workers competing run-plan control or let them independently pull and complete tickets in tracked delegation.
-        - Do not create a separate review ticket for each implementation or duplicate planning/verification tickets for work already represented by phase outputs.
-        - Do not mechanically run every workflow phase as a new agent handoff or repeat broad tests and reviews merely because another phase exists; retain schema-valid required outputs with concise values and permitted evidence refs.
-        - Do not promote speculative preferences into required fixes or let reviewers, tests and adjacent cleanup expand the agreed outcome. Ask before a material outcome expansion.
-        - Do not accept pass-through aliases, copied logic or parallel owners when the project's canonical owner can satisfy the change.
-        - Do not accept a stale receipt, missing required proof or a broad green check as complete coverage. Subagents can drift; independent outputs still require evidence-based adjudication.
-        - Do not clear required blockers when freeing compute capacity, or relabel a failed attempt as deferred.
-        - Do not continue granted lane execution during a workflow reset or assume a reopen refreshed previous approvals; re-evaluate authorization and approval freshness for changed scope.
-        - Do not treat technical readiness as release, deployment, production-write or external-message authority.
-      required_outputs:
-        - Schema-valid workflow outputs with current scope, flow/design/proof refs and delivery calibration in existing run context.
-        - Actionable ticket briefs and dependency/ownership graph with bounded assignment and model-selection context.
-        - Current delivery, independent review and main acceptance receipts, with candidate/attempt identity, findings and blockers in ticket evidence.
-        - Integrated verification/review, tracker reconciliation and final readiness or release disposition referencing the same canonical evidence.
-        - Concise ticket start report, ticket end report and task closeout TLDR.
-      success_criteria:
-        - The original operator outcome is covered by the current contract, executable tickets and integrated proof without hidden gaps or proof/dependency cycles.
-        - Delivery and independent review progress within host capacity; each accepted child has current evidence for its own obligations and no unaccepted dependency.
-        - Scope, lifecycle writes, feedback and acceptance have one main-agent owner; specialist outputs remain bounded and project-adapted.
-        - Required proof, independent review and release authority remain explicit, while redundant preparation, matrices and repeated checks are removed.
-        - Final claims match the integrated candidate and durable state; residual risk, skipped proof and unmeasured performance remain visible.
-      self_check:
-        - Does the executable plan still cover the authoritative request, current constraints and relevant denied/failure flows?
-        - Can each agent act from its bounded packet, and can an independent reviewer verify that exact assignment?
-        - Is any apparent independence based only on filenames or tests contaminated by unaccepted sibling work?
-        - Can review start promptly without exhausting slots, overwriting an active assignment or self-review?
-        - Do the current candidate, assignment, contract and evidence agree before acceptance or resume?
-        - Are remaining integration obligations and release authority separate from ticket completion?
-    metadata_json:
-      delivery_calibration:
-        required_before_execution: true
-        lifecycle_depths:
-          micro:
-            use_when:
-              - Narrow wording, metadata, documentation or preset changes with understood contracts.
-            expected_shape:
-              - Reuse current requirements/design, fill concise valid phase outputs, run focused load/parse/resolve proof and independent ticket review.
-            avoid:
-              - Broad suites and extra preparation agents without a concrete risk.
-          standard:
-            use_when:
-              - Scoped behavior or guidance-contract changes with bounded blast radius.
-            expected_shape:
-              - Reviewed design/proof/ticket plan, delegated delivery, immediate independent review and applicable integrated checks.
-          high_risk:
-            use_when:
-              - Auth, permissions, providers, schemas, migrations, UI, production data or release-critical behavior.
-            expected_shape:
-              - Explicit flows, architecture and permission boundaries, risk-based automated and E2E/manual proof, independent review and current release authority.
-          blocked:
-            use_when:
-              - Required context, environment, authority or independent review is unavailable.
-            expected_shape:
-              - Record the blocker and resume condition, quiesce and park affected work, then continue only independent eligible work.
-        proof_selection:
-          principle: Use the smallest convincing proof for the actual changed surface.
-          broad_test_rule: Broad suites require a stated risk reason or mandatory project gate; reuse current proof unless covered state changes.
-          examples:
-            - change: Preset guidance or reporting structure.
-              proof: YAML load, affected skill/agent resolution and independent contract review.
-            - change: Workflow order or output/role contract.
-              proof: Template validation, derived run-plan and MCP resolution tests plus scenario review.
-            - change: UI, provider or authenticated browser flow.
-              proof: Targeted automation and the planned agent-executed flow proof, preserving login/session and environment requirements.
-        agent_selection:
-          principle: Preparation specialists add conditional depth; delegated delivery and independent ticket verification are the tracked-delivery default.
-      delegation:
-        max_active_tickets: 3
-        count_includes: [implementation, queued_review, review, repair]
-        durable_owner: main_agent
-        reviewer_priority: before_new_delivery
-        agent_assignment_limit: 1
-        independence: Reviewer did not implement the work being reviewed; reuse across other tickets is allowed.
-        model_selection: Main agent resolves supported model and effort per assignment; presets have no model/version pins.
-        receipt_identity: [ticket_ref, attempt_id, contract_revision, candidate_ref, evidence_refs]
-        state_owner: Existing run context and ticket metadata/evidence; these rules guide agents and are not daemon-enforced scheduling or acceptance.
-      progress_reporting:
-        ticket_start: Report stable ticket identity, assigned scope and active/accepted counts when useful.
-        ticket_end: Report acceptance or blocker, independent reviewer, adjudicated findings and focused proof; candidate-ready is not ticket-done.
-        task_end: Summarize delivered outcome, verification, important decisions, residual risks and release state; link evidence instead of repeating the audit.
+- schema_version: stackos.skill-preset.v1
+  key: stackos.sdlc.delivery-orchestrator
+  name: Delivery Orchestrator
+  version: 0.7.0
+  description: StackOS runs four separate model sessions for plan, implementation, independent code review, and post-approval tests.
+  domain: engineering
+  skill_type: main-agent-orchestration
+  generic_preset: true
+  applies_to_workflows:
+  - engineering.tracked-delivery
+  recommended_tools:
+  - workspace.startSession
+  - workflowTemplate.describe
+  - agentPreset.resolveForWorkflow
+  - tracker.get
+  - tracker.updateTicket
+  - runPlan.create
+  - runPlan.start
+  - runPlan.claimStep
+  - runPlan.recordStep
+  - runPlan.checkConsistency
+  project_adaptation:
+    required: true
+    do_not_use_verbatim: true
+    instruction: Apply the current project rules, exact frozen run, original operator request, and only the source
+      and tool context needed for this task.
+    required_context_refs:
+    - ref: AGENTS.md
+      purpose: Project rules and authority.
+    - ref: stackos:stackos
+      purpose: StackOS project, workflow, run and tracker mechanics.
+    - ref: project-local guidance
+      purpose: Relevant code and documentation for the affected behavior.
+    prompt_assembly_order:
+    - generic_skill_preset
+    - project_adaptation_overlay
+    - current_tracker_or_run_plan_context
+    - user_request
+    required_agent_action: Read the original request and current run. Stop affected work and ask the operator when intent is ambiguous.
+  operating_contract:
+    mission: Sequence four fresh configured sessions and record what actually works in one StackOS run.
+    responsibilities:
+    - StackOS owns run writes and launches distinct planner, executor, reviewer, and test-writer sessions.
+    - The reviewer receives original requirements and actual outcome only, with scoped inspection/run tools; no executor report, plan, host guidance or proposed observation specification.
+    - After tests and actual observations, resume the same isolated reviewer with actual argv/output/exit evidence; require outcome approval before handoff.
+    must_do:
+    - Read the effective workflow and frozen plan before execution or resume; new source versions never rewrite
+      existing runs.
+    - If the operator explicitly requests a StackOS workflow, resolve or create its real run before tracker tickets;
+      record a tooling failure and any manual fallback separately, never as flow completion.
+    - Understand the original request and current amendments. Stop affected work and ask the operator whenever intended
+      behavior is ambiguous, including mid-work.
+    - Start a fresh configured Astra planner, then a separate Luna executor by default; task model overrides take precedence over project defaults.
+    - Start a fresh configured Astra reviewer after code capture. A rejection blocks test writing.
+    - Only after approval, start a fresh configured Luna test writer to add relevant tests without changing reviewed code.
+    - Record original requirements, plan, prompts, model/session IDs, timing, progress, issues, failures, code digest, findings and gaps in the run.
+    - Observe the integrated consumer or loaded app when requested behavior concerns the app. Record candidate,
+      environment, failures and unproved gaps; unit tests alone are insufficient.
+    - Observe actual integrated behavior against each original requirement before claiming completion; tests and self-reports are insufficient.
+    - Resume only the same frozen run; inspect canonical handoff and continuation checkpoints before any replay. Older recovery schemas require explicit reconciliation.
+    - Have the original designer cite durable evidence and compare every prior failure episode; only a demonstrated distinct cause gets a new retry budget. Rewording, revision and replacement never reset recurrence caps.
+    - Give each settled failure one literal same-executor retry, then one designer-authorized final attempt with a replacement executor. Design revisions stay in the original designer thread.
+    - Route failed observations through read-only designer triage. Optional read_only confinement uses verified no-write/no-network execution; unconfined or uncertain effects and unresolved authority refusals remain held.
+    - Preserve scoped grants, ownership, approvals, failed attempts and unknown effects. Reconcile current run/tracker
+      state and release authority.
+    must_not_do:
+    - Do not invent a second scheduler, evidence store or policy layer, or call self-authored summaries authenticated
+      receipts.
+    - Do not treat technical readiness as publication, deployment, external-message or production-write authority.
+    - Do not claim completion from green tests, stale proof, blocked live flow or a reviewer who implemented the
+      candidate.
+    required_outputs:
+    - Four distinct role receipts and a truthful observed-outcome handoff in the existing run.
+    success_criteria:
+    - The demonstrated behavior matches the original request; otherwise the precise unfinished outcome and blocker
+      are visible.
+    self_check:
+    - Did we observe the requested behavior in the real consumer, or did we say exactly why it remains unproved?
+  metadata_json:
+    boundary:
+      not_a_subagent: true
+    state_owner: StackOS run; this preset is guidance, not the executable controller

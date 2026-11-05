@@ -1,0 +1,14 @@
+{
+  "command": [
+    "codesign",
+    "--verify",
+    "--deep",
+    "--strict",
+    "--verbose=2",
+    "/Applications/StackOS.app"
+  ],
+  "captured_at": "2026-10-28T17:18:13.871473+00:00",
+  "seconds": 1.011,
+  "exit_code": 0,
+  "log": "/tmp/stackos-release-20261028/installed-final-signature.log"
+}

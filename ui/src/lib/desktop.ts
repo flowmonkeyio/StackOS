@@ -105,6 +105,21 @@ export interface DesktopUpdateResult extends DesktopCommandResult {
   reason?: string
 }
 
+export interface DesktopBackupResult {
+  ok: boolean
+  status: 'completed' | 'cancelled' | 'partial' | 'failed'
+  message: string
+  code?: string
+  outputPath?: string
+}
+
+export type DesktopBackupAction =
+  | 'setupBackups'
+  | 'openBackupFolder'
+  | 'exportLatestBackup'
+  | 'exportRecoveryKey'
+  | 'restoreBackup'
+
 interface DesktopBridge {
   status(): Promise<DesktopStatus>
   installOrRepair(): Promise<DesktopCommandResult>
@@ -115,6 +130,11 @@ interface DesktopBridge {
   downloadUpdate(): Promise<DesktopUpdateResult>
   installUpdate(): Promise<DesktopUpdateResult>
   updateState(): Promise<DesktopUpdateState>
+  setupBackups?(): Promise<DesktopBackupResult>
+  openBackupFolder?(): Promise<DesktopBackupResult>
+  exportLatestBackup?(): Promise<DesktopBackupResult>
+  exportRecoveryKey?(): Promise<DesktopBackupResult>
+  restoreBackup?(): Promise<DesktopBackupResult>
 }
 
 function bridge(): DesktopBridge | null {
@@ -139,6 +159,14 @@ async function safe<T>(fn: (b: DesktopBridge) => Promise<T>): Promise<T | null> 
   }
 }
 
+function hasBackupAction(action: DesktopBackupAction): boolean {
+  return typeof bridge()?.[action] === 'function'
+}
+
+function runBackupAction(action: DesktopBackupAction): Promise<DesktopBackupResult | null> {
+  return safe((b) => b[action]?.() ?? Promise.resolve(null))
+}
+
 export const desktop = {
   isShell: isDesktopShell,
   status: () => safe((b) => b.status()),
@@ -150,4 +178,10 @@ export const desktop = {
   downloadUpdate: () => safe((b) => b.downloadUpdate()),
   installUpdate: () => safe((b) => b.installUpdate()),
   updateState: () => safe((b) => b.updateState()),
+  hasBackupAction,
+  setupBackups: () => runBackupAction('setupBackups'),
+  openBackupFolder: () => runBackupAction('openBackupFolder'),
+  exportLatestBackup: () => runBackupAction('exportLatestBackup'),
+  exportRecoveryKey: () => runBackupAction('exportRecoveryKey'),
+  restoreBackup: () => runBackupAction('restoreBackup'),
 }

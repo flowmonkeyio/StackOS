@@ -1,0 +1,13 @@
+[viewport] Viewport set to 640x800
+
+[goto] Navigated to http://127.0.0.1:5197/backup-qa?state=configured&theme=dark (200)
+
+[js] true
+
+[screenshot] Screenshot saved: /tmp/stackos-workflow-718/option3-qa/configured-640-dark.png
+
+[js] {
+  "mainClient": 618,
+  "mainScroll": 618,
+  "documentScroll": 629
+}

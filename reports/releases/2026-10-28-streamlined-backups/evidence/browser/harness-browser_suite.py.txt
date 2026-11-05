@@ -1,0 +1,99 @@
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+import subprocess
+
+root = Path('/tmp/stackos-workflow-718')
+out = root / 'option3-qa'
+prefix = ['stackos.browser', '--session', 'browser-session:project-1:backup-simplification-qa:workflow-718']
+
+def run(name, steps):
+    response = subprocess.run(prefix + ['chain', json.dumps(steps), '--tab-id', '1'], capture_output=True, text=True, timeout=40)
+    (out / (name + '.txt')).write_text(response.stdout + response.stderr)
+    assert response.returncode == 0 and 'ERROR:' not in response.stdout, name
+    return response.stdout
+
+cases = []
+for width in [1280, 390, 320]:
+    cases += [(f'setup-{state}-{width}', state, 'Enable backups', width) for state in ['fresh', 'partial', 'cancel']]
+    cases += [(f'configured-{key}-{width}', 'configured', action, width) for key, action in [
+        ('backup', 'Back up now'), ('archive', 'Export backup'), ('key', 'Export key'),
+        ('restore', 'Restore backup'), ('refresh', 'Refresh backups'),
+    ]]
+cases += [(f'failure-{state}-{action.split()[0]}', state, action, 1280) for state, action in [
+    ('error', 'Back up now'), ('error', 'Export key'), ('refresh-error', 'Refresh backups'),
+]]
+results = []
+failures = []
+for name, state, action, width in cases:
+    output = run(name, [
+        ['viewport', f'{width}x800'],
+        ['goto', f'http://127.0.0.1:5197/backup-qa?state={state}'],
+        ['js', 'new Promise(r=>setTimeout(()=>r(true),450))'],
+        ['js', 'window.qaAction=' + json.dumps(action)],
+        ['eval', str(out / 'measure-action.js')],
+    ])
+    data = json.loads(output.rsplit('[eval]', 1)[1].strip())
+    expected_focus = 'Back up now' if action == 'Enable backups' and state != 'cancel' else action
+    overflow = data['overflow']
+    issues = []
+    if data['shifts']: issues.append('retained control geometry changed')
+    if data['focus'] != expected_focus: issues.append('focus was not retained')
+    if overflow['mainScroll'] > overflow['mainClient'] or overflow['documentScroll'] > width: issues.append('horizontal overflow')
+    if any(c.get('name') == 'backup.configure' for c in data['calls']): issues.append('unexpected settings write')
+    record = {'case': name, 'action': action, 'frames': data['frames'], 'retained_controls': len(data['before']), 'shift_count': len(data['shifts']), 'focus': data['focus'], 'issues': issues, 'evidence': name + '.txt'}
+    results.append(record)
+    if issues: failures.append(record)
+    print(json.dumps(record), flush=True)
+
+captures = []
+for state, width, theme in [
+    ('configured', 1280, 'dark'), ('configured', 1280, 'light'),
+    ('fresh', 1280, 'dark'), ('paused', 1280, 'dark'), ('browser', 1280, 'dark'),
+    ('legacy-shell', 1280, 'dark'), ('initial-error', 1280, 'dark'),
+    ('configured', 390, 'dark'), ('configured', 320, 'dark'),
+    ('configured', 639, 'dark'), ('configured', 640, 'dark'),
+]:
+    name = f'{state}-{width}-{theme}'
+    path = out / (name + '.png')
+    output = run(name, [
+        ['viewport', f'{width}x800'],
+        ['goto', f'http://127.0.0.1:5197/backup-qa?state={state}&theme={theme}'],
+        ['js', 'new Promise(r=>setTimeout(()=>r(true),450))'],
+        ['screenshot', str(path)],
+        ['js', '({mainClient:document.querySelector("#cs-main").clientWidth,mainScroll:document.querySelector("#cs-main").scrollWidth,documentScroll:document.documentElement.scrollWidth})'],
+    ])
+    metrics = json.loads(output.rsplit('[js]', 1)[1].strip())
+    assert metrics['mainScroll'] <= metrics['mainClient'] and metrics['documentScroll'] <= width, name
+    captures.append(path.name)
+initial_cases = []
+for width in [1280, 390, 320]:
+    for state in ['fresh', 'configured', 'initial-error']:
+        name = f'initial-{state}-{width}'
+        output = run(name, [
+            ['viewport', f'{width}x800'],
+            ['goto', f'http://127.0.0.1:5197/backup-qa?state={state}&initialDelay=700'],
+            ['js', 'new Promise(r=>setTimeout(()=>r(true),1600))'],
+            ['js', '({frames:window.qaInitialFrames,calls:window.qaCalls,mainClient:document.querySelector("#cs-main").clientWidth,mainScroll:document.querySelector("#cs-main").scrollWidth})'],
+        ])
+        data = json.loads(output.rsplit('[js]', 1)[1].strip())
+        records = [item['frame'] for item in data['frames'] if 'Refresh backups' in item['frame']]
+        assert records, name
+        shifts = []
+        for control in ['Refresh backups', 'Export backup', 'Export key', 'Manage']:
+            first = next((frame[control] for frame in records if control in frame), None)
+            if first is None: continue
+            for frame in records:
+                if control in frame and any(abs(first[k] - frame[control][k]) > .25 for k in ['x','y','width','height']):
+                    shifts.append(control)
+        row = {'case': name, 'frames': len(records), 'shifts': sorted(set(shifts)), 'evidence': name + '.txt'}
+        initial_cases.append(row)
+        if shifts: failures.append(row)
+        assert data['mainScroll'] <= data['mainClient'], name
+        print(json.dumps(row), flush=True)
+summary = {'checked_at': datetime.now(timezone.utc).isoformat(), 'passed': not failures,
+    'cases': results, 'initial_cases': initial_cases, 'failures': failures, 'captures': captures,
+    'scope': 'Actual App and backup components with isolated synthetic operations/native dialogs; each retained main-area control measured frame-by-frame; live API forbidden.'}
+(out / 'browser-summary.json').write_text(json.dumps(summary, indent=2))
+assert not failures, failures
+print(json.dumps({'passed': True, 'cases': len(results), 'captures': len(captures)}))

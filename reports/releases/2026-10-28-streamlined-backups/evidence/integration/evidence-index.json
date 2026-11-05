@@ -1,0 +1,102 @@
+{
+  "scope": "integration",
+  "prepared_at": "2026-10-28T15:22:32.475827+00:00",
+  "project_id": 1,
+  "run_plan_id": 718,
+  "run_id": 712,
+  "integrated_candidate_sha256": "72935f7792c9a4c8f43db9991a831cec114c2592e26c697ca418fbce5ebc2ad7",
+  "ui_attempt_id": "ui-2",
+  "ui_contract_revision": 4,
+  "visual_design_revision": 3,
+  "technical_design_revision": 2,
+  "ui_repair_revision": 2,
+  "ui_candidate_id": "sha256:7aa28032f098fc13280d12fabb40de22e7e63a54c7042b5223a91bda47166bfe",
+  "source_to_durable_mapping": [
+    {
+      "file": "candidate-before-option3.json",
+      "source": "/tmp/stackos-workflow-718/option3-qa/candidate-before-option3.json",
+      "sha256": "4e22a764a1a3c5becd61036e5e90cd1e3b6e02b39fdd9eca51b062e80ee35dc8",
+      "bytes": 12810,
+      "disposition": "historical candidate metadata"
+    },
+    {
+      "file": "gate-delta.json",
+      "source": "/tmp/stackos-workflow-718/option3-qa/gate-delta.json",
+      "sha256": "a9984fcd88a6589b35fee8faff3ad804351bd0dd302eeb232c9075bed26aedda",
+      "bytes": 706,
+      "disposition": "current integrated metadata"
+    },
+    {
+      "file": "historical-integrated-b68ad4cea09a.json",
+      "source": "/tmp/stackos-workflow-718/option3-qa/historical-integrated-b68ad4cea09a.json",
+      "sha256": "10d44abdaa1e9707e14b0288a240ab07ad128224f0de4589f965bf2e50462f82",
+      "bytes": 13135,
+      "disposition": "historical candidate metadata"
+    },
+    {
+      "file": "integrated-candidate.json",
+      "source": "/tmp/stackos-workflow-718/option3-qa/integrated-candidate.json",
+      "sha256": "1e5c93f7eafba84c09fc9ce46fa489fac22418f7a2fbc5d785e887a27ac979cf",
+      "bytes": 13135,
+      "disposition": "current integrated metadata"
+    },
+    {
+      "file": "preservation.json",
+      "source": "/tmp/stackos-workflow-718/option3-qa/preservation.json",
+      "sha256": "ee27685473ec76b1cd78096ae1f57028ca18eb83ae432a706e658bb7210f9940",
+      "bytes": 377,
+      "disposition": "final root preservation check passed;2706 protected files and three live backup hashes unchanged"
+    },
+    {
+      "file": "source-manifest.json",
+      "source": "/tmp/stackos-workflow-718/option3-qa/source-manifest.json",
+      "sha256": "9acef3320399da938f478955af386b3bdf177c7bbe90a31d8165fe77cd4300e4",
+      "bytes": 2730,
+      "disposition": "current integrated metadata"
+    },
+    {
+      "file": "option3-ui-signoff.txt",
+      "source": "/tmp/stackos-workflow-718/option3-ui-signoff.txt",
+      "sha256": "e3bf0f747a1196310619e683c169772dccd88e2a8c5c48061cea5487f563d334",
+      "bytes": 10396,
+      "disposition": "current full UI 752 tests plus typecheck/build passed"
+    },
+    {
+      "file": "isolated-signoff.txt",
+      "source": "/tmp/stackos-workflow-718/isolated-signoff.txt",
+      "sha256": "4c8b971365dcc2dbc1e86ff22dc9ea8098e356d15d00a8df2d0b2cc8ad1c7fa7",
+      "bytes": 28681,
+      "disposition": "earlier full isolated signoff: Python5459 and UI742 passed; unchanged non-UI proof reused, UI superseded by current752"
+    },
+    {
+      "file": "signoff-isolation.json",
+      "source": "/tmp/stackos-workflow-718/signoff-isolation.json",
+      "sha256": "45d4d8e1d1926b1cdd1d46fd089aefd58f735cb0b6451b9cba3f933df32ebbf7",
+      "bytes": 2923,
+      "disposition": "earlier isolated tracked candidate provenance; protects unrelated dirty reports"
+    },
+    {
+      "file": "historical-unrelated-report-full-signoff.txt",
+      "source": "/tmp/stackos-workflow-718/full-signoff.txt",
+      "sha256": "28842e1d6c16c3c011a0b7f1f9342e5a34fb9d436130f5d95d335bbe096443a7",
+      "bytes": 74062,
+      "disposition": "historical unrelated-report lint failure; 124 lint errors in existing report scripts; superseded by isolated signoff"
+    }
+  ],
+  "safety": "Allowlisted text/JSON/PNG and three text-only harness copies. No fixture trees, native keys, ciphertext, archives, database, seed, token or cache files. No tests rerun or source/workflow writes.",
+  "freshness": "Integrated candidate matched all27 source hashes and89 bundle hashes at evidence preparation. Artifact timestamps and their original candidate scopes are preserved; copying does not imply rerunning.",
+  "overall_acceptance_owner": "root",
+  "proof_scope": {
+    "current_source_files": 27,
+    "current_bundle_files": 89,
+    "current_ui_test_files": 115,
+    "current_ui_tests_passed": 752,
+    "current_build": "passed",
+    "reused_full_isolated_python_tests_passed": 5459,
+    "historical_isolated_ui_tests_passed": 742,
+    "historical_full_signoff_failure": "Unrelated pre-existing report-script lint failure, not accepted as successful full signoff. See isolation provenance and passing isolated gate.",
+    "preservation": "2706 protected files unchanged and three live-backup metadata hashes unchanged at recorded preservation check; not a new live-content read.",
+    "browser_receipts": "../browser/evidence-index.json"
+  },
+  "preservation_source_checked_at": "2026-10-28T15:21:09.590374+00:00"
+}

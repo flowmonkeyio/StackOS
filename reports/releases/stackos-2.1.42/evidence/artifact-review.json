@@ -1,0 +1,115 @@
+{
+  "reviewed_at_utc": "2026-10-29T06:13:52.348242+00:00",
+  "reviewer": "/root/navigation_review",
+  "release": "2.1.42",
+  "source_commit": "58fec8c5ee2739eb6fe678d70cf30de465339d01",
+  "candidate_sha256": "44a65ff13cbda1f107f1abb66acdeeaa528be511bd236c2aea6a7dc1f03d78bf",
+  "verdict": "approve_artifacts_for_authorized_publication",
+  "required_repairs": [],
+  "scope": "Independent frozen app, ZIP, read-only DMG contents, trust, feed, blockmaps, stable alias and source freshness review.",
+  "artifacts": {
+    "stackos-2.1.42-mac-arm64.zip": {
+      "bytes": 550523608,
+      "sha256": "a10e0fb96e2172b23347201d25ac37b64f53eca2838a953d6b1600ffba125755",
+      "sha512_base64": "VCGwtwWf5WQAu5d59/i7fvZUKbUtLrBxpWORBVCLtnwmzCchNWsvGXXGcJiigp/aYW/KWM6q+/kBXoieC31IoA==",
+      "feed_matches": true
+    },
+    "stackos-2.1.42-mac-arm64.dmg": {
+      "bytes": 561961852,
+      "sha256": "57df6bbd00c18798c9e1ec56f9f3dad9ce628578361e06b57cff4c8ae72f0f36",
+      "sha512_base64": "7x6NVzRmBmZ1GBYsgB9mYPcGK5nH/b4U5EXPC54YKdWrZuCCekt+8CBXRLBPlbaghJbpy0329/68gJ+Z/12VKA==",
+      "feed_matches": true
+    },
+    "stackos-2.1.42-mac-arm64.dmg.blockmap": {
+      "bytes": 582270,
+      "sha256": "12961877e14c3bf562cb0f83f5ea31bc208736d944232f48049b8efd525f4259"
+    },
+    "stackos-2.1.42-mac-arm64.zip.blockmap": {
+      "bytes": 560903,
+      "sha256": "1c9d67cfa7b5d4bbd87398d94d6897a3218e0dbde2c6b2bae4e8c5ca8312f6bc"
+    },
+    "stackos-latest-mac-arm64.dmg": {
+      "bytes": 561961852,
+      "sha256": "57df6bbd00c18798c9e1ec56f9f3dad9ce628578361e06b57cff4c8ae72f0f36"
+    },
+    "latest-mac.yml": {
+      "bytes": 513,
+      "sha256": "86e2a459ebecca67268c347e6d307a17c1186979fd90d006f49684eb699baa6e"
+    }
+  },
+  "blockmaps": {
+    "stackos-2.1.42-mac-arm64.dmg": {
+      "version": "2",
+      "chunks": 26829,
+      "covered_bytes": 561961852
+    },
+    "stackos-2.1.42-mac-arm64.zip": {
+      "version": "2",
+      "chunks": 26329,
+      "covered_bytes": 550523608
+    }
+  },
+  "identity": {
+    "bundle_identifier": "io.stackos.desktop",
+    "version": "2.1.42",
+    "payload": {
+      "name": "stackos",
+      "version": "2.1.42",
+      "buildId": "20261029T054523Z",
+      "builtAt": "2026-10-29T05:45:23Z"
+    },
+    "asar_sha256": "bacf1bc8cc782184be3ddb48a38534c2628dcbfc07160905c96311379b829fd3",
+    "cdhash": "e3fd6b2c5e7b8958884c96ce586bbb7cc4364b1c",
+    "team": "TSHN26FR48"
+  },
+  "checks": {
+    "signed_build_exit_code": 0,
+    "signing_required": true,
+    "notarization_bypassed": false,
+    "dmg_trust_pass": true,
+    "dmg_app_trust_pass": true,
+    "dmg_content_matches_built_and_zip": true,
+    "app_cdhash_matches_zip": true,
+    "zip_unchanged": true,
+    "feed_hashes_and_sizes_match": true,
+    "stable_alias_identical": true,
+    "final_artifact_hash_changes": [],
+    "read_only_mount_detached": true,
+    "source_freshness": {
+      "candidate_sha256": "44a65ff13cbda1f107f1abb66acdeeaa528be511bd236c2aea6a7dc1f03d78bf",
+      "source_paths": 38,
+      "bundle_paths": 89,
+      "source_main_mismatches": [],
+      "source_tree_mismatches": [],
+      "bundle_main_mismatches": [],
+      "bundle_tree_mismatches": []
+    }
+  },
+  "source_counts": {
+    "runtime_files": 533,
+    "force_include_assets": 101,
+    "ui_files": 89,
+    "electron_source_files": 9
+  },
+  "evidence": [
+    "review-app-zip.json",
+    "review-package-content.json",
+    "review-zip-content.json",
+    "review-dmg-content.json",
+    "review-dmg-trust.json",
+    "review-dmg-app-trust.json",
+    "review-dmg-detach.json",
+    "review-final-metadata.json",
+    "review-final-source-freshness.json"
+  ],
+  "independence": {
+    "app_launched": false,
+    "installed_runtime_changed": false,
+    "provider_mutated": false,
+    "source_mutated": false,
+    "competing_build": false,
+    "writes": "Reviewer-owned receipts/scripts and temporary ZIP extraction; DMG mounted read-only then detached."
+  },
+  "operator_installation": "Latest operator request assigns local installation and feedback to the user. No installed-app replacement or installed smoke is required for this publication gate, and none is claimed by this review.",
+  "remaining_obligation": "After main-owned authorized upload/promotion, verify public HTTPS bytes/feed and source-tag binding. Public deployment is not claimed by this local artifact receipt."
+}

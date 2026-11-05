@@ -1,0 +1,59 @@
+{
+  "reviewed_at_utc": "2026-10-29T02:53:23.787951+00:00",
+  "reviewer": "/root/navigation_review",
+  "release": "2.1.41",
+  "source_commit": "b78a7c39b2f35293597575b57d8b3f7f84c786a8",
+  "tested_candidate": "04fddeae242325e5d82d9dc34b259d5bccd33772df435c5bc442e546dcc368eb",
+  "verdict": "pass_source_preparation",
+  "checks": {
+    "archive_hash_matches_root_receipt": true,
+    "archive_source_files": 2180,
+    "archive_source_missing": [],
+    "archive_source_mismatches": [],
+    "source_hash_map_sha256": "2a7c7a7554377a34d8588c96895b5ba605cef22d2d376568926897e6c11fb168",
+    "commit_parent_matches_baseline": true,
+    "commit_changed_paths": 71,
+    "unexpected_committed_paths": [],
+    "missing_committed_paths": [],
+    "source_symlinks": [
+      {
+        "path": "website/dist",
+        "archive_target": "/Users/sergeyrura/Bin/content-stack/website/.output/public",
+        "isolated_target": ".output/public",
+        "matches": true
+      }
+    ],
+    "dependency_directories": {
+      "desktop/node_modules": {
+        "present": true,
+        "root_symlink": false,
+        "symlink_count": 683,
+        "external_links": [],
+        "broken_links": []
+      },
+      "ui/node_modules": {
+        "present": false,
+        "root_symlink": false,
+        "symlink_count": 0,
+        "external_links": [],
+        "broken_links": []
+      },
+      ".venv": {
+        "present": false,
+        "root_symlink": false,
+        "symlink_count": 0,
+        "external_links": [],
+        "broken_links": []
+      }
+    }
+  },
+  "remaining_review": [
+    "Wait for root to declare completed app/ZIP/DMG before treating artifacts as final.",
+    "Compare packaged first-party Python, force-included plugin/skill assets, UI and Electron sources to immutable release commit.",
+    "Verify version, build identity, ARM64, production update URL, no editable installs or checkout references.",
+    "Verify signatures, Developer ID/team, hardened runtime, notarization and stapling on final app and extracted ZIP/DMG app.",
+    "Verify final ZIP/DMG/blockmaps/feed/alias sizes, SHA256 and feed SHA512 against final bytes.",
+    "Review root-owned installed lifecycle/state preservation and publication receipts separately."
+  ],
+  "limits": "No final artifacts inspected, app launched, build started, runtime/source/git/provider modified, or broad tests repeated."
+}

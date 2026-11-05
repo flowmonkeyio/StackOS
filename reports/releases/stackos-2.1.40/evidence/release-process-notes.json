@@ -1,0 +1,23 @@
+{
+  "failed_attempts_and_dispositions": [
+    {"attempt": "Missing stackos-notary profile", "disposition": "Wrong authentication method; the existing API-key route validated and completed strict signed/notarized packaging. Historical receipts retained."},
+    {"attempt": "First isolated package build", "disposition": "electron-builder was absent in the new checkout. Installed the frozen desktop lockfile and reran the unchanged canonical command successfully."},
+    {"attempt": "Pre-upgrade backup without explicit public key", "disposition": "Existing installation had no saved recipient. Reused the prior portable recovery public key for a one-off archive, without configuring or rotating anything. Verified recovery succeeded."},
+    {"attempt": "CDP evidence path using /tmp", "disposition": "The existing driver requires its canonical /private/tmp directory. Used that path; no app behavior change."},
+    {"attempt": "Immediate ready-prompt capture", "disposition": "The old 2.1.39 overview had not completed hydration. A settled remount displayed the real ready-to-install prompt before installation."},
+    {"attempt": "Local differential download", "disposition": "The standard local HTTP server lacks range support; the actual updater completed a full verified ZIP download."},
+    {"attempt": "Native screencapture", "disposition": "Host screen capture returned failure. The operator supplied the actual synthetic-error screenshot. Normal installed UI was independently observed through real native accessibility labels."},
+    {"attempt": "Initial normal UI accessibility URL reads", "disposition": "Empty/error results were not counted as proof. Materialized accessibility elements and actual rendered labels established one loaded web area with the new App/Backups navigation."}
+  ],
+  "negative_feed": {
+    "intentional": true,
+    "announced_before_execution": true,
+    "data": "Synthetic SQLite/seed/token fixtures only; disabled installer; no production data in the failure test.",
+    "expected_result": "404 from the deliberate /missing/ feed; real native Couldn't check for updates dialog.",
+    "preservation": "All synthetic fixture hashes unchanged; final live identities and seed/token/backup-policy/exclusion hashes unchanged.",
+    "screenshot_source": "Operator attachment clipboard-2026-10-28-101525-AB1D1F1D.png, preserved as badfeed-native-user.png.",
+    "existing_limitation": "The native dialog body exposes verbose upstream diagnostic text. This release does not claim to improve that existing update-error presentation.",
+    "cleanup": "Test app quit, loopback feed server stopped, normal /Applications app reopened; temporary feed/debug ports closed."
+  },
+  "baseline_diagnostic": "The old 2.1.39 process logged an aborted splash/navigation promise during the update test. The signed update, automatic preparation, repair/restart and final 2.1.40 normal session all passed."
+}

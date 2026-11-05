@@ -1,0 +1,30 @@
+{
+  "capturedAt": "2026-10-29T03:26:21.330Z",
+  "mode": "install",
+  "endpoint": "http://127.0.0.1:9238",
+  "targetId": "4012796E2039BCA28784D34945C70F07",
+  "sourceCommit": "b78a7c39b2f35293597575b57d8b3f7f84c786a8",
+  "expectedFromVersion": "2.1.40",
+  "expectedTargetVersion": "2.1.41",
+  "observedInstalledVersion": "2.1.40",
+  "targetOrigin": "http://127.0.0.1:5180",
+  "result": {
+    "ok": true,
+    "state": {
+      "enabled": true,
+      "status": "installing",
+      "updateUrl": "http://127.0.0.1:8765/",
+      "errorPresent": false,
+      "updateInfo": {
+        "version": "2.1.41",
+        "releaseDate": "2026-10-29T03:06:05.639Z"
+      },
+      "progress": {
+        "percent": 100,
+        "transferred": 490271232,
+        "total": 490271232,
+        "bytesPerSecond": 1536900414
+      }
+    }
+  }
+}

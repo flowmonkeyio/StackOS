@@ -1,0 +1,4 @@
+--- BEGIN UNTRUSTED EXTERNAL CONTENT (source: http://127.0.0.1:5197/backup-qa?state=configured) ---
+[2026-10-28T08:02:51.265Z] [error] Failed to load resource: the server responded with a status of 401 (Unauthorized)
+[2026-10-28T08:02:51.785Z] [error] Failed to load resource: the server responded with a status of 404 (Not Found)
+--- END UNTRUSTED EXTERNAL CONTENT ---

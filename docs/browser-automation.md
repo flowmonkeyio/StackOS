@@ -2,7 +2,7 @@
 
 StackOS creates, reuses, discovers, and stops project browser sessions. Agents
 operate them from their terminal with the upstream
-[gstack browse CLI](https://github.com/garrytan/gstack/tree/71f6048e8ada25180e61438abc1d98cb151fe9a7/browse):
+[gstack browse CLI](https://github.com/garrytan/gstack/tree/6c3cf1baac93a794d37065da8b95340e14305126/browse):
 
 ```sh
 stackos.browser --session browser-session:project-1:default:main goto https://example.com
@@ -27,7 +27,7 @@ session. Session discovery returns `cli_argv`, a ready command prefix:
 3. Read the [native browser cookbook](../plugins/stackos/skills/stackos/references/browser.md)
    shipped with the StackOS skill for interaction, screenshots, comparisons,
    batching, and diagnostics. Consult native `--help` or the bundled
-   [command reference](https://github.com/garrytan/gstack/blob/71f6048e8ada25180e61438abc1d98cb151fe9a7/browse/sections/command-list.md)
+   [command reference](https://github.com/garrytan/gstack/blob/6c3cf1baac93a794d37065da8b95340e14305126/browse/sections/command-list.md)
    for syntax. StackOS does not maintain a second command vocabulary.
 
 Session lifecycle/discovery remains available through MCP, generic REST,
@@ -110,6 +110,10 @@ Discovery inspects owned native state and OS process identity after daemon
 restart. A live busy/unhealthy owner keeps its profile. Runtime repair preserves
 profile directories and session history.
 
+Upstream health reports browser liveness separately from active-tab
+responsiveness. A healthy browser with a busy or unresponsive tab remains a
+healthy session; it is not replaced and its profile ownership is unchanged.
+
 ## Install And Upgrade
 
 Normal StackOS install/repair installs the current-user command at
@@ -123,17 +127,25 @@ The desktop payload includes a relocatable `bin/stackos.browser`. Doctor checks
 launcher readiness and the installed upstream runtime. Restart host MCP sessions
 after upgrading to refresh the lifecycle-only tool catalog.
 
-The distribution pins gstack revision `71f6048e8ada25180e61438abc1d98cb151fe9a7`
-(version `1.84.1.0`), Bun `1.3.8`, and the upstream locked dependencies/browser
+The distribution pins gstack revision `6c3cf1baac93a794d37065da8b95340e14305126`
+(version `1.91.242.0`), Bun `1.4.4`, and the upstream locked dependencies/browser
 assets, retaining licenses and notices. It lives under `browser-runtime` in the
 desktop payload or daemon data directory.
 
-The macOS ARM64 installer prunes the Anthropic SDK development packages and
-ONNX's Linux/Windows binaries after compilation and sidebar asset preparation.
-Darwin ARM64 ONNX, Transformers, the security classifier, and sidebar assets
-remain. The runtime manifest includes a packaging revision so install/repair
+The macOS ARM64 installer uses the frozen production dependency set and prunes
+Claude Agent SDK development packages and ONNX's Linux/Windows binaries after
+compilation and sidebar asset preparation. The production Anthropic SDK, Darwin
+ARM64 ONNX, Transformers, the security classifier, and sidebar assets remain.
+The compiled CLI disables automatic loading of the caller's `.env` and
+`bunfig.toml`. The runtime manifest includes a packaging revision so install/repair
 rebuilds an older managed distribution instead of accepting its bulkier layout.
 Packaged app runtimes stay immutable and are refreshed by replacing the app.
+
+The upstream Playwright `1.62.1` lock and patch are retained, including Chromium
+`151.0.7922.34`. Upstream documents a remaining certificate-trust limitation for
+some certificate authorities in its
+[browser notes](https://github.com/garrytan/gstack/blob/6c3cf1baac93a794d37065da8b95340e14305126/BROWSER.md).
+This gstack/Bun update does not resolve that browser limitation.
 
 Persistent profiles retain their existing `browser-profiles/playwright-chromium`
 paths; the directory name preserves data and does not select the old driver.

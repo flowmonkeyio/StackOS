@@ -1,0 +1,160 @@
+{
+  "scope": "native",
+  "prepared_at": "2026-10-28T07:45:30.515367+00:00",
+  "project_id": 1,
+  "run_plan_id": 718,
+  "run_id": 712,
+  "source_assignment_attempt": "native-1",
+  "contract_revision": 1,
+  "design_revision": 2,
+  "ticket_id": 14670,
+  "accepted_candidate_sha256": "c661fb35f5f6ef46e6fa16f0bd47f940e3bea35d468c4a5556c99bdbc791dda1",
+  "accepted_base": "1976d4bf96c8480652400e496534a7ed6b7e99d1",
+  "authority": "Root delegated evidence-copy assignment; no workflow or production source mutation.",
+  "acceptance_provenance": "tracker.brief 14670 completion_evidence_json: reviewer approve, root accepted unchanged candidate",
+  "artifacts": [
+    {
+      "file": "accepted-candidate.json",
+      "source": "/tmp/stackos-workflow-718/native-candidate.json",
+      "sha256": "b58c8ab81b5b1c16adb0250ce5aced25bb024adc266f6f86c727e755d4362697",
+      "bytes": 2653,
+      "disposition": "accepted candidate manifest"
+    },
+    {
+      "file": "focused-tests.txt",
+      "source": "/tmp/stackos-workflow-718/backend-native-focused-final.log",
+      "sha256": "540a74a1d701b83f13dea410d55ddc9e49746b763982335737236de0c82a7b0e",
+      "bytes": 5244,
+      "disposition": "passed: 27 native/controller/IPC/preload/output-cap cases"
+    },
+    {
+      "file": "desktop-check.txt",
+      "source": "/tmp/stackos-workflow-718/backend-native-desktop-check.log",
+      "sha256": "86a8c6aede9efb214e2ca3bf45bdc4f232963123cf7b16d1cf9a23b17c7e9f89",
+      "bytes": 7097,
+      "disposition": "passed: full desktop check including doctor and existing regressions"
+    },
+    {
+      "file": "native-results.json",
+      "source": "/tmp/stackos-workflow-718/native-roundtrip-2/native-results.json",
+      "sha256": "197034d870217f70d7fc352aa603d27d0c6f47a4a211d7f12b415ba97e892da3",
+      "bytes": 3498,
+      "disposition": "passed: root real Electron and source CLI setup/restart/export/restore"
+    },
+    {
+      "file": "native-setup.txt",
+      "source": "/tmp/stackos-workflow-718/native-setup-2.txt",
+      "sha256": "cc1b7f0628a9bbcfa5dcaba087f75fe2af7e117b474f5b5c28dd5e177a6454a8",
+      "bytes": 323,
+      "disposition": "passed: fresh canonical fixture setup"
+    },
+    {
+      "file": "native-restart-export.txt",
+      "source": "/tmp/stackos-workflow-718/native-restart-export.txt",
+      "sha256": "de59f137db2948fbd62576add0665b5981a4857eecc7f0aadf44264f42d3d5cd",
+      "bytes": 332,
+      "disposition": "passed: separate-process cached archive/key exports"
+    },
+    {
+      "file": "native-restore.txt",
+      "source": "/tmp/stackos-workflow-718/native-restore.txt",
+      "sha256": "b1262ebb7251eeba103447e246295dc38b9e5a01c45a4d944a1635a552239e3d",
+      "bytes": 325,
+      "disposition": "passed: verified fresh inert restore"
+    },
+    {
+      "file": "historical-initial-setup-path-assertion.txt",
+      "source": "/tmp/stackos-workflow-718/native-setup.txt",
+      "sha256": "5dba3f4351cebbf87bd7cef94788b3f62c01c7ba964c0ed74a0e22b6b590a57a",
+      "bytes": 398,
+      "disposition": "historical failure: harness compared /tmp with canonical /private/tmp; superseded by fresh setup pass"
+    },
+    {
+      "file": "historical-preimplementation-module-missing.txt",
+      "source": "/tmp/stackos-workflow-718/backend-native-red.log",
+      "sha256": "027260925e04f9a05665e4d56c7b2ecaac21e533bc0dfcfe01b683b70f74370a",
+      "bytes": 1027,
+      "disposition": "historical preimplementation gate: module absent, not a behavioral test verdict"
+    }
+  ],
+  "source_freshness": {
+    "desktop/src/backups.js": {
+      "accepted_sha256": "4a2b99c0fb86d5f04dc56a68f9414cdfbdc2e8a979240a6710c9ac7075d37901",
+      "current_sha256": "4a2b99c0fb86d5f04dc56a68f9414cdfbdc2e8a979240a6710c9ac7075d37901",
+      "matches": true
+    },
+    "desktop/src/main.js": {
+      "accepted_sha256": "7d9ad7ece4934db7093ece76adda436ec86e0fcf0a93e0be87294a9a3ecf481c",
+      "current_sha256": "7d9ad7ece4934db7093ece76adda436ec86e0fcf0a93e0be87294a9a3ecf481c",
+      "matches": true
+    },
+    "desktop/src/preload.js": {
+      "accepted_sha256": "12a9c94009df1a431edf34f77a1880a2a801a8eba859e0a28620f34d1b3d5d0a",
+      "current_sha256": "12a9c94009df1a431edf34f77a1880a2a801a8eba859e0a28620f34d1b3d5d0a",
+      "matches": true
+    },
+    "desktop/src/service.js": {
+      "accepted_sha256": "b142ffb59bc35eaf2f949723a18a5558aca277e24c58e720a34ad0724a3a512c",
+      "current_sha256": "b142ffb59bc35eaf2f949723a18a5558aca277e24c58e720a34ad0724a3a512c",
+      "matches": true
+    },
+    "desktop/scripts/test-backups.cjs": {
+      "accepted_sha256": "3473f584cbe1333a9a5f87ee2501325bdcd62688012da85c37fa76716cedfaaa",
+      "current_sha256": "3473f584cbe1333a9a5f87ee2501325bdcd62688012da85c37fa76716cedfaaa",
+      "matches": true
+    },
+    "desktop/package.json": {
+      "accepted_sha256": "29cdc0558e40f3a230646c38ae37a7bc4bc67f2b8f9abde135fa0537cf23ec33",
+      "current_sha256": "29cdc0558e40f3a230646c38ae37a7bc4bc67f2b8f9abde135fa0537cf23ec33",
+      "matches": true
+    },
+    "docs/backups.md": {
+      "accepted_sha256": "200c2422cdebd7d68d19b0f18598d0c18d52b4d7436af46001a130ec80061032",
+      "current_sha256": "200c2422cdebd7d68d19b0f18598d0c18d52b4d7436af46001a130ec80061032",
+      "matches": true
+    },
+    "docs/security.md": {
+      "accepted_sha256": "15907fbf302dae88ffd11df1bd4cfa35fe813deaaa620427e5406fa66936a3cc",
+      "current_sha256": "15907fbf302dae88ffd11df1bd4cfa35fe813deaaa620427e5406fa66936a3cc",
+      "matches": true
+    },
+    "docs/release-signoff.md": {
+      "accepted_sha256": "00c6bcece8561fe854be3e451cb2ed61894bad74487002d18eb812d60244a596",
+      "current_sha256": "00c6bcece8561fe854be3e451cb2ed61894bad74487002d18eb812d60244a596",
+      "matches": true
+    }
+  },
+  "checks": {
+    "native_tests_passed": 27,
+    "desktop_check": "passed",
+    "real_electron": "39.8.10",
+    "real_roundtrip_phases_passed": [
+      "setup",
+      "restart-export",
+      "restore"
+    ]
+  },
+  "safety": {
+    "inspection": "All copied contents inspected before allowlisted copying; UTF-8 text or JSON only.",
+    "excluded": "No private keys, encrypted key copies, archives, databases, seeds, tokens, fixture trees or UI evidence copied.",
+    "public_metadata": "Paths, SHA-256 hashes, recipient fingerprints, statuses, test names and warnings are retained.",
+    "copy_integrity": "Exact byte copies; historical filenames and this index label superseded failures."
+  },
+  "freshness_note": "source_freshness is a historical snapshot at prepared_at, when all nine native candidate files matched. Runtime and test files remain unchanged. The later root-owned wording-only Export backup/Export key correction changed docs/backups.md; the final integrated manifest owns its current hash. No checks were rerun for this evidence correction.",
+  "freshness_snapshot_status": "historical_at_prepared_at",
+  "current_document_supersession": {
+    "path": "docs/backups.md",
+    "accepted_and_snapshot_sha256": "200c2422cdebd7d68d19b0f18598d0c18d52b4d7436af46001a130ec80061032",
+    "current_sha256": "95911dd929478d94003d418fc441d0cc6ccc90bdaf0493b748b110446c247bce",
+    "reason": "Root-owned wording-only Export backup/Export key label correction.",
+    "current_authority": "../integration/integrated-candidate.json"
+  },
+  "root_integration_provenance": {
+    "owner": "root",
+    "fixture_source": "native-roundtrip-2",
+    "source_harness": "/tmp/stackos-workflow-718/native-roundtrip.cjs",
+    "source_harness_sha256": "42aa64a00d33d0f442b895f35bb7fcf874d241a6dd85d087c1ad75eb6bd58080",
+    "history": "Initial native-roundtrip setup produced a backup but the harness assertion compared /tmp and /private/tmp. A fresh canonical fixture run passed all three phases.",
+    "warning": "Electron phase logs include an OS sandbox-extension warning; each phase returned passed=true."
+  }
+}

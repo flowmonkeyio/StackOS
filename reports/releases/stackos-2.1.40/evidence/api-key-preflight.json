@@ -1,0 +1,21 @@
+{
+  "mode": "preflight",
+  "version": "2.1.40",
+  "command": [
+    "pnpm",
+    "--dir",
+    "desktop",
+    "run",
+    "release:preflight"
+  ],
+  "started_at": "2026-10-28T16:43:21.769936+00:00",
+  "finished_at": "2026-10-28T16:43:22.944396+00:00",
+  "exit_code": 0,
+  "log": "/tmp/stackos-release-20261028/api-key-preflight.log",
+  "signing_required": true,
+  "notarization_bypassed": false,
+  "authentication_method": "existing Apple API key",
+  "configuration_source": "/Users/sergeyrura/Bin/content-stack/.env.local",
+  "alternate_authentication_methods_cleared": true,
+  "update_url": "https://stackos.flowmonkey.io/StackOS/"
+}

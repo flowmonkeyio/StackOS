@@ -1,0 +1,15 @@
+{
+  "plugins/engineering/scripts/delivery.py": "a254e5774b69977587f6cbda422d9cc0a35a23800b31ed2e35c1fab58ed7ed71",
+  "plugins/engineering/scripts/delivery_recovery.py": "55dd5a2f398f23f2fd1c8f15020703138107e04aa18d38ad5ef2898791045512",
+  "plugins/engineering/scripts/controlled_workspace.py": "96669f9dbf1e5f54abd50c11fcad4102efc02b85c4da33613065ab8ef8a71dd7",
+  "plugins/engineering/scripts/reviewer_isolation.py": "365d46ec57c7b1ad8f8ec57515dab6de96de0289b19371b1778cf133b716edd4",
+  "plugins/engineering/scripts/source_admission.py": "fe55825ad924b5b2c1e7b61fb78468b93a2ae0cf530a99231ca6a5250e8ba703",
+  "plugins/engineering/scripts/source_admission.mjs": "5736dee59b4ee668b6c8a50368b9b735b0bdfbcc7863b4465ad2424a63f4eaab",
+  "plugins/engineering/scripts/vendor/acorn/acorn.mjs": "b4c8c70200e72bae33cf1085e0ecb1e792c1b6924ed50cab817caf14f51bb249",
+  "plugins/engineering/scripts/vendor/acorn/LICENSE": "76a876cf886ff9be2a8b5e2e86514fed06223c8c9f0c1e9ee9606e93841e00b7",
+  "plugins/engineering/scripts/vendor/acorn/README.md": "dfbb7699d8b6c7fe0175c59a7e060486c0167625279c178eddac860d479c6450",
+  "plugins/engineering/scripts/vendor/acorn/provenance.json": "4efe9eba1c06e18ac8ca29cc49fde96c7719667c8561306faaa0aa507e67d613",
+  "stackos/artifacts/redaction.py": "579dc3feef1b1ab0677720a073730e92b02c69636a6ec0536a2e71588a837096",
+  "pyproject.toml": "1abb2a5fbc0c3aea9f645d16c190f9bad7d331af95d5d5a32eac8044757e1c32",
+  "docs/workflow-templates.md": "23824e9953a5d11b46dfe011ad123d597a16c4bcae9ec92d3f8440ae501bf852"
+}

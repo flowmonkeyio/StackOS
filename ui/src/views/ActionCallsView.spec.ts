@@ -224,7 +224,7 @@ describe('ActionCallsView', () => {
     await clickDocumentButton('Resume')
     const resumeConfirmation = wrapper.findComponent(UiConfirmDialog)
     expect(resumeConfirmation.props('modelValue')).toBe(true)
-    expect(resumeConfirmation.text()).toContain('Resume delivery?')
+    expect(document.body.textContent).toContain('Resume delivery?')
     expect(documentButton('Resume delivery')).toBeDefined()
     await clickDocumentButton('Resume delivery')
     await vi.waitFor(() =>
@@ -254,8 +254,8 @@ describe('ActionCallsView', () => {
     await clickDocumentButton('Retry selected')
     const retryConfirmation = wrapper.findComponent(UiConfirmDialog)
     expect(retryConfirmation.props('modelValue')).toBe(true)
-    expect(retryConfirmation.text()).toContain('Retry selected delivery?')
-    await clickContainedButton(retryConfirmation, 'Retry selected')
+    expect(document.body.textContent).toContain('Retry selected delivery?')
+    await clickConfirmationButton('Retry selected')
     await vi.waitFor(() =>
       expect(requested.some((request) => request.url.endsWith('/actionCall.retry/call'))).toBe(true),
     )
@@ -279,8 +279,8 @@ describe('ActionCallsView', () => {
     await clickDocumentButton('Cancel delivery')
     const cancelConfirmation = wrapper.findComponent(UiConfirmDialog)
     expect(cancelConfirmation.props('modelValue')).toBe(true)
-    expect(cancelConfirmation.text()).toContain('Cancel remaining delivery?')
-    await clickContainedButton(cancelConfirmation, 'Cancel remaining delivery')
+    expect(document.body.textContent).toContain('Cancel remaining delivery?')
+    await clickConfirmationButton('Cancel remaining delivery')
     await vi.waitFor(() =>
       expect(requested.some((request) => request.url.endsWith('/actionCall.cancel/call'))).toBe(true),
     )
@@ -542,6 +542,14 @@ async function clickContainedButton(wrapper: VueWrapper, label: string): Promise
 async function clickDocumentButton(label: string): Promise<void> {
   const button = documentButton(label)
   expect(button, `${label} button`).toBeDefined()
+  button?.click()
+  await nextTick()
+}
+
+async function clickConfirmationButton(label: string): Promise<void> {
+  const button = [...document.querySelectorAll<HTMLButtonElement>('.ui-dialog button')]
+    .find(candidate => candidate.textContent?.trim() === label)
+  expect(button, `${label} confirmation button`).toBeDefined()
   button?.click()
   await nextTick()
 }

@@ -1,0 +1,208 @@
+{
+  "schema_version": 1,
+  "project_id": 1,
+  "run_plan_id": 718,
+  "run_id": 712,
+  "task_key": "workflow-718",
+  "ticket_ids": [
+    14668,
+    14669,
+    14670
+  ],
+  "assignment_attempt_id": "ui-2",
+  "review_scope": "Final UI repair 2 and integrated source delivery; reuse prior independent backend/native reviews.",
+  "contract_revision": 4,
+  "visual_design_revision": 3,
+  "technical_design_revision": 2,
+  "ui_repair_revision": 2,
+  "verdict": "pass",
+  "recommendation": "approve_source_delivery",
+  "acceptance_owner": "root",
+  "candidate": {
+    "integrated_sha256": "72935f7792c9a4c8f43db9991a831cec114c2592e26c697ca418fbce5ebc2ad7",
+    "ui_sha256": "7aa28032f098fc13280d12fabb40de22e7e63a54c7042b5223a91bda47166bfe",
+    "backend_sha256": "81c9fe3d48cffc22d43d5c224d0d3e5c664a611571d2a49fbd3bebf086be9cbc",
+    "native_sha256": "c661fb35f5f6ef46e6fa16f0bd47f940e3bea35d468c4a5556c99bdbc791dda1",
+    "base": "1976d4bf96c8480652400e496534a7ed6b7e99d1",
+    "source_files": 27,
+    "generated_bundle_files": 89,
+    "manifest": "../integration/integrated-candidate.json"
+  },
+  "independence": {
+    "reviewer": "/root/reviewer",
+    "implementation_or_acceptance_test_edits": false,
+    "disclosure": "Provided bounded design critique and defect findings; did not implement repairs. Independent reproductions lived outside the repository under /tmp. This receipt is the only review-owned durable write.",
+    "lifecycle_writes": false
+  },
+  "consumed_sources": [
+    "AGENTS.md; ui/AGENTS.md; .codex/agents/sdlc-delivery-reviewer.toml",
+    "docs/product-direction.md; docs/README.md; docs/agent-operating-model.md canonical guidance",
+    "engineering.tracked-delivery@0.4.0 frozen digest 51a9474791b97f0e7ef18beb88ceeca193309c98505b15c0451167a9ba7ca578; orchestrator0.4.1/specialists0.3.1",
+    "Run718 requirements/design/proof/readiness packets and ticket14669 raw contract4/ui-2/visual3/technical2; tracker revision13982 rehydrated during final review",
+    "Root assignments and operator amendments: preserve existing backup setup; simplify setup/key/archive access; use selected option3; stable asynchronous controls",
+    "docs/backups.md; docs/setup.md; docs/security.md; docs/release-signoff.md",
+    "docs/ui-design-system.md; docs/ui-component-inventory.md; ui/src/design/DESIGN.md; actual tokens and shared primitives",
+    "Product Design index/audit/critical-overrides guidance; exact selected image SHA a312c681dce933bd4d47a553b077fa1948afc37f1695a2a33031335b538f3f5d"
+  ],
+  "acceptance_criteria": [
+    {
+      "id": "AC1",
+      "disposition": "pass",
+      "evidence": "Reviewed guarded service/CLI and native first-setup ordering. Real Electron39.8.10 plus canonical CLI synthetic setup passed; portable key and encrypted convenience copy precede activation and first backup.",
+      "refs": [
+        "../backend/evidence-index.json",
+        "../native/native-results.json"
+      ]
+    },
+    {
+      "id": "AC2",
+      "disposition": "pass",
+      "evidence": "First-time initialization rechecks existing recipient under the canonical lock; existing and partial setup remains intact. UI performs no mount write and only explicit changed-field saves. Policy, outcome and exclusions hashes unchanged; 2706 protected files preserved.",
+      "refs": [
+        "../backend/evidence-index.json",
+        "../ui/evidence-index.json",
+        "../integration/preservation.json"
+      ]
+    },
+    {
+      "id": "AC3",
+      "disposition": "pass",
+      "evidence": "Canonical archive/key export validation and no-clobber behavior reviewed. Real separate-process cached export succeeds after portable key moved away; missing/corrupt cache paths select an original matching key without rotation. Folder action uses native bridge.",
+      "refs": [
+        "../native/native-results.json",
+        "../native/focused-tests.txt",
+        "../browser/menu-summary.json"
+      ]
+    },
+    {
+      "id": "AC4",
+      "disposition": "pass",
+      "evidence": "Native restore delegates authenticated archive recovery to a fresh inert folder. Real synthetic restore verifies secret decryptability and unchanged original database/seed/token hashes; running installation is not adopted or replaced.",
+      "refs": [
+        "../native/native-results.json",
+        "../native/native-restore.txt"
+      ]
+    },
+    {
+      "id": "AC5",
+      "disposition": "pass",
+      "evidence": "Private key bytes stay inside native/local CLI paths. Reservation precedes private staging; protected storage fails closed. IPC sender/frame/origin and argument rejection, bounded sanitized errors, cancellation and busy fence are tested. No REST/MCP credential exposure added.",
+      "refs": [
+        "../backend/evidence-index.json",
+        "../native/focused-tests.txt"
+      ]
+    },
+    {
+      "id": "AC6",
+      "disposition": "pass",
+      "evidence": "Exact option3 composition matches real components and existing design tokens. Reviewed dark/light, alternate states and 320/390/639/640/1280 captures. 27 action and9 initial-load cases show no retained-control shifts; final12 menu cases preserve positions, scroll and focus. Original3 independent UI repros now pass.",
+      "refs": [
+        "../../design/design-qa.md",
+        "../browser/comparison-full.png",
+        "../browser/browser-summary.json",
+        "../browser/menu-summary.json",
+        "../ui/evidence-index.json"
+      ]
+    },
+    {
+      "id": "AC7",
+      "disposition": "pass_source_scope",
+      "evidence": "Current docs, accepted ownership, full isolated gate and affected final UI gate are consistent. Final752 UI tests/115files, vue-tsc/build pass. Unchanged Python/native proof reused with exact hash checks. All147 indexed durable artifacts resolve and match their declared hashes.",
+      "refs": [
+        "../../verification.md",
+        "../integration/evidence-index.json",
+        "../integration/option3-ui-signoff.txt"
+      ]
+    }
+  ],
+  "independent_checks": [
+    {
+      "check": "Backend focused synthetic verification",
+      "result": "26 cases passed during backend review; unchanged runtime/test source hashes verified again."
+    },
+    {
+      "check": "Native focused controller/IPC/preload/output-cap verification",
+      "result": "27 cases passed during native review; current runtime/test hashes remain accepted."
+    },
+    {
+      "check": "Independent UI transition reproductions",
+      "command": "pnpm --dir ui exec vitest run --config /private/tmp/stackos-workflow-718/reviewer-ui2/reviewer.config.mjs -t 'independent ui2 transitions'",
+      "result": "Originally3 failed; after repair1,3 passed/43 skipped. Final repair2 changes only popup placement and its assertions; prior repro proof remains valid."
+    },
+    {
+      "check": "Final source and bundle identity",
+      "result": "Recomputed integrated SHA correctly. All27 source paths match workspace and isolated build tree; exact89-file bundle sets and bytes match both trees."
+    },
+    {
+      "check": "Final UI repair2 identity",
+      "result": "All12 owned hashes match; only BackupPanel.vue/spec differ from repair1. Existing top-end primitive implementation and actual keyboard evidence inspected."
+    },
+    {
+      "check": "Visual and browser proof",
+      "result": "Inspected11 state/responsive captures, settings captures, both combined target/render comparisons, geometry harness and summaries, raw390 menu-open/close and settings evidence. No remaining visual or interaction finding."
+    },
+    {
+      "check": "Durable evidence validation",
+      "result": "All5 indexes and147 indexed artifacts resolve with matching SHA256. Source/report identities and historical scope labels checked. No private-key or credential-token patterns found in text evidence; artifact types and synthetic scope inspected."
+    },
+    {
+      "check": "Binding and authority",
+      "result": "Read-only workspace.resolve confirms project1. No production configuration, installed app, workflow state or acceptance tests modified by reviewer."
+    }
+  ],
+  "reused_gate_evidence": {
+    "full_isolated_signoff": "5459 Python tests and742 then-current UI tests passed with static checks/build. UI portion superseded; unchanged Python/native proof retained.",
+    "final_ui_gate": "752 tests in115 files; vue-tsc and production build pass.",
+    "native_desktop_check": "Doctor and desktop contract/regression checks pass.",
+    "native_roundtrip": "Real Electron safeStorage and real source CLI; separate synthetic setup/restart-export/restore processes pass.",
+    "browser_closed_state_candidate": "b68ad4cea09a37a03004fad398aa94233d224aeb20a826d084e7c8aff813879f",
+    "browser_reuse": "27 action and9 initial-load cases apply to unchanged closed-menu layout/state. Final repair2 changes only open-menu direction.",
+    "final_menu_candidate": "72935f7792c9a4c8f43db9991a831cec114c2592e26c697ca418fbce5ebc2ad7",
+    "final_menu": "12 cases pass: Escape/settings/history/folder at1280/390/320; zero scroll/control drift, focus returns Manage, no incidental settings writes."
+  },
+  "architecture_and_cleanup": {
+    "disposition": "pass",
+    "evidence": "One canonical Python backup service/CLI owns storage and guarded initialization; Electron owns native choices and protected key custody; Vue renders safe results. No alternate crypto, cloud service, workflow model or redundant backup-state owner introduced. Existing primitives reused; cohesive feature-component decomposition review accepted by root. Prior visual layouts are replaced, not retained as parallel flows."
+  },
+  "resolved_findings": [
+    "Durable custody reservation before private writes and initialize recheck",
+    "Shared loading spinner footprint",
+    "Stale action error hiding a later native result",
+    "Primary node/focus replacement during setup",
+    "Initial Restore movement",
+    "Restore movement when setup changes state",
+    "Dropdown Escape trigger focus",
+    "Successful settings-save focus",
+    "Initial failure checking copy",
+    "Outer document scrollbar horizontal shift",
+    "Downward footer menu document scroll",
+    "Historical documentation hash mislabeled as current in evidence indexes"
+  ],
+  "unsupported_findings": [
+    "Final source already guarded null-status history/folder copy; stale excerpt did not justify a change.",
+    "Earlier20px main-scroll estimate unsupported; durable receipt retains measured2px document scroll and0 main scroll only."
+  ],
+  "required_repairs": [],
+  "unresolved_gaps_within_approved_source_scope": [],
+  "limits": [
+    "Source-delivery approval only. No commit, push, package, installation, daemon/app restart or public release is approved or claimed.",
+    "Browser proofs use actual App/components/styles with isolated synthetic records and native results; no live API/configuration was changed.",
+    "Native proof uses real Electron safeStorage and canonical CLI with isolated synthetic data and deterministic chooser answers; OS chooser appearance was not visually automated.",
+    "Installed-app/package/lifecycle signoff remains a future release obligation; installer/lifecycle mechanisms were not changed.",
+    "The implementation exports portable files; it does not establish off-device custody or cloud synchronization.",
+    "Focused comparison crop clips far-right edges; full combined comparison and original captures establish complete control geometry."
+  ],
+  "report_hashes": {
+    "verification.md": "51d5110bb37a060ad3b0eacb2fcce3c141e6f436d1b39aa144fb8a5c4cab7864",
+    "design/design-qa.md": "038bb8a3deda66af9d352fff7239ba3c49513789d53a50943a8a1c537c8722ef",
+    "design/selected-concept.png": "a312c681dce933bd4d47a553b077fa1948afc37f1695a2a33031335b538f3f5d",
+    "evidence/backend/evidence-index.json": "93eba7682a80be7cd04894ca3c3dcaeabaa54bac962fba72e4e8887106ed84cc",
+    "evidence/browser/evidence-index.json": "b627de083daf4240116436faceeede78eaf662b0a8aa3e1b9838ad949b5ed294",
+    "evidence/integration/evidence-index.json": "2626e4150946d8351802f4887aeec08015353c332ba7f07ce36f94ed83206629",
+    "evidence/native/evidence-index.json": "2925cf9ef27a6a359d0bdf3a9bfc47bf6a1f588a25f87d978860e2c13999595b",
+    "evidence/ui/evidence-index.json": "892b397fca15d59830e54b34ad2f197ce63f36d54cd2ad4e82d8a04dcb577147"
+  },
+  "next_disposition": "Root may accept current UI and integrated source candidate, replace historical UI acceptance with current identities, and complete tracker/run closeout within source-only authority.",
+  "reviewed_at_utc": "2026-10-28 15:27:18 UTC"
+}
+

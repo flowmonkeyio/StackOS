@@ -1,0 +1,7485 @@
+[viewport] Viewport set to 320x800
+
+[goto] Navigated to http://127.0.0.1:5197/backup-qa?state=fresh&initialDelay=700 (200)
+
+[js] true
+
+[js] {
+  "frames": [
+    {
+      "at": 8.899999976158142,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 12.799999952316284,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 22.599999964237213,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 33.59999996423721,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 43.59999996423721,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 52.59999996423721,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 63.59999996423721,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 73.59999996423721,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 83.59999996423721,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 92.89999997615814,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 103.59999996423721,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 113.59999996423721,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 123.59999996423721,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 133.5,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 143.5,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 152.69999998807907,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 162.5999999642372,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 173.5,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 183.5999999642372,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 193.5,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 203.5,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 213.5999999642372,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 223.5999999642372,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 233.5999999642372,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 243.5999999642372,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 252.69999998807907,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 263.69999998807907,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 273.69999998807907,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 282.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 292.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 303.5999999642372,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 313.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 323.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 332.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 343.69999998807907,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 353.69999998807907,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 363.19999998807907,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 373.39999997615814,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 382.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 393.69999998807907,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 402.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 412.69999998807907,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 423.69999998807907,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 432.69999998807907,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 442.69999998807907,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 453.69999998807907,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 463.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 473.89999997615814,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 483.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 493.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 503.39999997615814,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 513.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 523.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 533.6999999880791,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 542.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 553.6999999880791,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 563.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 573.6999999880791,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 583.6999999880791,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 593.6999999880791,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 603.6999999880791,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 613.5,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 623.5999999642372,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 632.6999999880791,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 643,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 653.6999999880791,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 662.6999999880791,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 673.6999999880791,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 682.6999999880791,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 692.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 703.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 713.5999999642372,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 723,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 733.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 743.5999999642372,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 752.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 763.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 773.3999999761581,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 783.6999999880791,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 793.6999999880791,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 803.5999999642372,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 813.5,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 822.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 832.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 842.6999999880791,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 852.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 862.6999999880791,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 872.8999999761581,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 883.6999999880791,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 893.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 903.0999999642372,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 913.6999999880791,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 923.6999999880791,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 933.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 943.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 953.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 963.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 973.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 984.2999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 993.0999999642372,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1002.6999999880791,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1013.6999999880791,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1022.6999999880791,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1033.699999988079,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1043.699999988079,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1052.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1063.699999988079,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1072.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1082.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1092.8999999761581,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1103.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1113.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1123.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1133.8999999761581,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1142.8999999761581,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1153.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1163.8999999761581,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1173.8999999761581,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1183.2999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1193.5,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1203.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1213.699999988079,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1223.699999988079,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1232.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1242.699999988079,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1252.699999988079,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1263.8999999761581,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1273,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1283.8999999761581,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1293.8999999761581,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1303.8999999761581,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1313.8999999761581,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1323.8999999761581,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1334,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1343.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1353.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1363.8999999761581,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1372.8999999761581,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1383.8999999761581,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1393.5,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    },
+    {
+      "at": 1403.7999999523163,
+      "frame": {
+        "Toggle navigation": {
+          "x": 261,
+          "y": 9.5,
+          "width": 36,
+          "height": 36
+        },
+        "Switch project": {
+          "x": -260,
+          "y": 16,
+          "width": 248,
+          "height": 48
+        },
+        "Switch to light theme": {
+          "x": -44,
+          "y": 760,
+          "width": 28,
+          "height": 28
+        },
+        "Restore backup": {
+          "x": 16,
+          "y": 140,
+          "width": 123.09375,
+          "height": 32
+        },
+        "Enable backups": {
+          "x": 32,
+          "y": 216,
+          "width": 128,
+          "height": 32
+        },
+        "Refresh backups": {
+          "x": 168,
+          "y": 216,
+          "width": 32,
+          "height": 32
+        },
+        "Export backup": {
+          "x": 165.703125,
+          "y": 489,
+          "width": 116.296875,
+          "height": 32
+        },
+        "Export key": {
+          "x": 170,
+          "y": 564,
+          "width": 112,
+          "height": 32
+        },
+        "Manage": {
+          "x": 185.953125,
+          "y": 720,
+          "width": 96.046875,
+          "height": 32
+        }
+      }
+    }
+  ],
+  "calls": [
+    {
+      "name": "backup.status",
+      "args": {}
+    }
+  ],
+  "mainClient": 298,
+  "mainScroll": 298
+}

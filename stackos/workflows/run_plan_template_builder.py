@@ -184,6 +184,13 @@ def build_run_plan_from_template(
     ]
     steps: list[Any] = []
     step_overrides = active_extension.step_overrides_json if active_extension is not None else {}
+    unknown_step_overrides = sorted(set(step_overrides) - {step.id for step in spec.steps})
+    if unknown_step_overrides:
+        raise ValueError(
+            "workflow extension overrides removed steps: "
+            + ", ".join(unknown_step_overrides)
+            + "; update the extension before creating a plan from this template"
+        )
     template_plugin_slug = loaded.summary.plugin_slug
     action_contract_refs = resolve_action_contract_refs(
         spec.action_contracts,

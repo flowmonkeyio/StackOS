@@ -1,0 +1,63 @@
+{
+  "captured_at": "2026-10-29T03:46:21.601693+00:00",
+  "version": "2.1.41",
+  "source_commit": "b78a7c39b2f35293597575b57d8b3f7f84c786a8",
+  "mode": "staged",
+  "passed": true,
+  "files": [
+    {
+      "local_name": "stackos-2.1.41-mac-arm64.zip",
+      "remote_name": "stackos-2.1.41-mac-arm64.zip",
+      "url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.41-mac-arm64.zip",
+      "status": 200,
+      "bytes": 490271232,
+      "sha256": "89ba6a16d27fe85487c9dcafafa2e9b588c36f1be3e85b6ee70ea26d53f6261d",
+      "matches": true
+    },
+    {
+      "local_name": "stackos-2.1.41-mac-arm64.dmg",
+      "remote_name": "stackos-2.1.41-mac-arm64.dmg",
+      "url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.41-mac-arm64.dmg",
+      "status": 200,
+      "bytes": 485555719,
+      "sha256": "1a42cd1ba232bb2f2f0bfa6f6991979269575a860a0dee3e427aa4f218b21ab1",
+      "matches": true
+    },
+    {
+      "local_name": "stackos-2.1.41-mac-arm64.zip.blockmap",
+      "remote_name": "stackos-2.1.41-mac-arm64.zip.blockmap",
+      "url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.41-mac-arm64.zip.blockmap",
+      "status": 200,
+      "bytes": 504983,
+      "sha256": "25d42ca7ab30bb0ff0fda5f7d6b86521664e0d61411c812c25d503c5b41ba66b",
+      "matches": true
+    },
+    {
+      "local_name": "stackos-2.1.41-mac-arm64.dmg.blockmap",
+      "remote_name": "stackos-2.1.41-mac-arm64.dmg.blockmap",
+      "url": "https://stackos.flowmonkey.io/StackOS/stackos-2.1.41-mac-arm64.dmg.blockmap",
+      "status": 200,
+      "bytes": 505310,
+      "sha256": "db70707a2e1124389760fda4861fcf8c2cff53475549bfa1340f2ccca1469752",
+      "matches": true
+    },
+    {
+      "local_name": "stackos-latest-mac-arm64.dmg",
+      "remote_name": "stackos-latest-mac-arm64-2.1.41-staged.dmg",
+      "url": "https://stackos.flowmonkey.io/StackOS/stackos-latest-mac-arm64-2.1.41-staged.dmg",
+      "status": 200,
+      "bytes": 485555719,
+      "sha256": "1a42cd1ba232bb2f2f0bfa6f6991979269575a860a0dee3e427aa4f218b21ab1",
+      "matches": true
+    },
+    {
+      "local_name": "latest-mac.yml",
+      "remote_name": "latest-mac-2.1.41-staged.yml",
+      "url": "https://stackos.flowmonkey.io/StackOS/latest-mac-2.1.41-staged.yml",
+      "status": 200,
+      "bytes": 513,
+      "sha256": "6413511556f1438382b4fb21dc64df56730d9c6ad2c17838f83d01696046addd",
+      "matches": true
+    }
+  ]
+}

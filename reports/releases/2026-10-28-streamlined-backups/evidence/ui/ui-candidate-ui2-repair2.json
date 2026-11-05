@@ -1,0 +1,267 @@
+{
+  "ticket_id": 14669,
+  "ticket_key": "backup-streamlined-panel",
+  "attempt_id": "ui-2",
+  "contract_revision": 4,
+  "design_revision": 3,
+  "project_id": 1,
+  "run_plan_id": 718,
+  "run_id": 712,
+  "step": "verify-delivery",
+  "candidate_id": "sha256:7aa28032f098fc13280d12fabb40de22e7e63a54c7042b5223a91bda47166bfe",
+  "base": "1976d4bf96c8480652400e496534a7ed6b7e99d1",
+  "checked_at": "2026-10-28T15:03:49.097661+00:00",
+  "files": {
+    "docs/setup.md": "9898d856bdb102fd7f6aa068c291c908ff92089ff7e58992f3448ae0693d3fd1",
+    "docs/ui-design-system.md": "7dc622e46b5969aecdd25e85e7327fcb3ca5fd03607de76b0ef0567c98af8f01",
+    "ui/src/App.local-setup.spec.ts": "85b03d7bdca43909b5669deb86acf202283d03f4a8a8e924405f717ff38bd694",
+    "ui/src/components/backups/BackupPanel.vue": "2c9ad7b646f19c42038b8d294130d46b129707101ffa0f133db350c361291a49",
+    "ui/src/components/backups/BackupPanel.spec.ts": "c7e74d639f495fa174f906aba065446e0a6a30d5aaee5b012962f5f35fbe6db6",
+    "ui/src/components/ui/UiButton.vue": "7ea110155896e5270ea4176149450961d1282c902ffc849ea89aaf054b071ebc",
+    "ui/src/components/ui/UiButton.spec.ts": "ec30563e95913e7cddcaaf96167053163cd2dd9768cbc08c5feae45a79325207",
+    "ui/src/lib/desktop.ts": "b1941ea0d3930d7ba89dd1e7d80d7ba3704b6e7bfaafd53d7536021957b94db9",
+    "ui/src/lib/desktop.spec.ts": "450f6b86811e75d6478bcfcc9c36f0f7d32595a45e2d6d810b6de18640ab4cce",
+    "ui/src/views/LocalSetupView.vue": "df81c25cb6c765d1cade7ff6286a8c935a659bf1a5c775e8a06d8fef23bcc1dc",
+    "ui/src/components/ui/UiDropdownMenu.vue": "64e71d951d90ff179d3a540fd6ed440cb6bdcda966663fcbc31b3bc567eb2727",
+    "ui/src/components/ui/UiDropdownMenu.spec.ts": "a224e0b6628f49985a9c13f9c3db585c65bf81101ac199b60a258359790a54b4"
+  },
+  "environment": {
+    "node": "v22.23.1",
+    "pnpm": "10.28.0",
+    "ui_lock_sha256": "9abd94a4ee9cee12efc8864762979e5dc2d288d78ef2d80cd9cbf49a81ba66be",
+    "fixture": "Mocked safe backup operations and frozen five no-argument native bridge; no sibling backend/native dependency."
+  },
+  "checks": {
+    "panel": {
+      "passed": 46,
+      "failed": 0,
+      "files": 1,
+      "receipt": "/tmp/stackos-workflow-718/ui-ui2-repair2-panel.json"
+    },
+    "typecheck": {
+      "exit_code": 0,
+      "receipt": "/tmp/stackos-workflow-718/ui-ui2-repair2-typecheck.json"
+    },
+    "lint": {
+      "exit_code": 0,
+      "warnings": 0,
+      "receipt": "/tmp/stackos-workflow-718/ui-ui2-repair2-lint.json"
+    }
+  },
+  "sources": [
+    "tracker.brief backup-streamlined-panel raw contract3/ui-1/design2",
+    "run718 define-requirements/design-approach/design-tests raw",
+    "run718 deliver-tickets readiness2 handoff",
+    "engineering.tracked-delivery@0.4.0 frozen/installed sha256:51a9474791b97f0e7ef18beb88ceeca193309c98505b15c0451167a9ba7ca578",
+    "stackos.sdlc.delivery@0.3.1 and .codex/agents/sdlc-delivery.toml",
+    "Root accepted Product Design composition and stability amendments2/3",
+    "AGENTS.md; docs/product-direction.md; docs/README.md; docs/agent-operating-model.md canonical guidance; ui/AGENTS.md",
+    "docs/ui-design-system.md; docs/ui-component-inventory.md; ui/src/design/DESIGN.md; actual tokens, colors_and_type and Ui primitives",
+    "docs/security.md backup custody; docs/setup.md",
+    "Root-adjudicated independent UI review P2-1/P2-2, same ui-1/contract3/design2",
+    "Root-adjudicated repair2: initial delayed-status Restore movement; no global font work or new state abstraction",
+    "Root-adjudicated final integration repair3, accepted Product Design reorder under verify-delivery; same14669/ui-1/contract3/design2",
+    "Raw tracker.brief current ui-2/contract4/visualdesign3/technicaldesign2 and root main assignment",
+    "Exact third displayed selected image; Product Design image-to-code/index/critical-overrides/user-context skills read; context preflight found no saved entries.",
+    "Current existing UiPageHeader, UiDropdownMenu, UiSidePanel, UiButton and Heroicons UiIcon; local DESIGN.md and design-system/token contracts.",
+    "Rehydrated raw tracker.brief project1/ticket14669 ui-2/contract4/design3/repair1; active verify-delivery plan718/run712.",
+    "Independent reviewer /tmp/stackos-workflow-718/reviewer-ui2/reviewer.spec.ts last three transitions; main-admitted repair scope and canonical dropdown ownership.",
+    "Root bounded ui-2 repair2 assignment: footer Manage top-end placement after actual390px keyboard scroll reproduction; same contract4/design3, verify-delivery plan718/run712."
+  ],
+  "omitted_by_assignment": [
+    "Root owns rendered320/390/1280 screenshots, dynamic geometry and final Product Design review.",
+    "Root owns integrated native flow, full signoff and generated UI bundle.",
+    "No live backup/configuration, installed app, commit or push mutation."
+  ],
+  "supersedes_candidate": "sha256:87cdf3216bd83c15409de3c3b26ed3d866117ed42ea4a1ad3b66924a7f5d27b7",
+  "repair_receipt": {
+    "P2-1": {
+      "change": "Clear prior error only after noncancelled native result; show native result/outputPath and explicit current-status-unavailable guidance when the status read is still unresolved.",
+      "proof": "Status read failure -> successful restore displays result/path; cancelled restore retains prior error without mutation."
+    },
+    "P2-2": {
+      "change": "Use one stable primary UiButton node across unconfigured -> configured setup; existing no-focus-steal restoration reaches the connected node.",
+      "proof": "Fresh setup -> configured preserves node and keyboard focus; another selected control keeps focus."
+    },
+    "red": {
+      "passed": 2,
+      "failed": 2,
+      "skipped": 33,
+      "receipt": "/tmp/stackos-workflow-718/ui-repair-red.json"
+    },
+    "green": {
+      "passed": 4,
+      "failed": 0,
+      "skipped": 33,
+      "receipt": "/tmp/stackos-workflow-718/ui-repair-green.json"
+    },
+    "changed_since_previous": [
+      "ui/src/components/backups/BackupPanel.vue",
+      "ui/src/components/backups/BackupPanel.spec.ts"
+    ],
+    "unresolved_findings": []
+  },
+  "repair2_receipt": {
+    "finding": "Root initial-loading browser probe: Restore control moved33px when configured status arrived.",
+    "change": "Use a noninteractive skeleton only while the first status read is pending. Show Restore when that read settles, including failure. Keep loaded Restore mounted during later refreshes.",
+    "proof": "Initial pending exposes no Restore button; settled configured status exposes it; existing error/refresh identity regressions stay green.",
+    "red": {
+      "passed": 2,
+      "failed": 1,
+      "skipped": 35,
+      "receipt": "/tmp/stackos-workflow-718/ui-repair2-red.json"
+    },
+    "green": {
+      "passed": 3,
+      "failed": 0,
+      "skipped": 35,
+      "receipt": "/tmp/stackos-workflow-718/ui-repair2-green.json"
+    },
+    "changed_since_previous": [
+      "ui/src/components/backups/BackupPanel.vue",
+      "ui/src/components/backups/BackupPanel.spec.ts"
+    ],
+    "unresolved_findings": [],
+    "review_and_geometry": "Root-owned independent re-review and browser measurements pending."
+  },
+  "repair3_receipt": {
+    "finding": "Independent final integration review found retained Restore moved36px during fresh-to-configured setup.",
+    "change": "Title-only section header, then existing quiet Recovery row before changing content. Fresh setup explanation, facts and configured-only actions/disclosures follow Restore. No new abstraction, permanent empty row or height-reservation logic.",
+    "proof": "Parameterized completed/partial setup checks keep primary/refresh/Restore nodes before changing metadata and file controls, with no variable header description. Prior behavioral regressions remain green.",
+    "red": {
+      "passed": 0,
+      "failed": 2,
+      "skipped": 38,
+      "receipt": "/tmp/stackos-workflow-718/ui-repair3-red.json"
+    },
+    "green": {
+      "passed": 2,
+      "failed": 0,
+      "skipped": 38,
+      "receipt": "/tmp/stackos-workflow-718/ui-repair3-green.json"
+    },
+    "changed_since_previous": [
+      "ui/src/components/backups/BackupPanel.vue",
+      "ui/src/components/backups/BackupPanel.spec.ts"
+    ],
+    "unresolved_findings": [],
+    "remaining_proof": "Root owns all retained-control browser anchors during success/partial at1280/390/320, independent review, and isolated all-UI/typecheck/lint/build. No Python rerun performed."
+  },
+  "technical_design_revision": 2,
+  "selected_visual": {
+    "path": "/Users/sergeyrura/.codex-personal/generated_images/01a180da-5c4e-7d20-938c-f60001a2f5f8/exec-a7608827-fec7-4a96-8a38-0a1ad4c4a85d.png",
+    "sha256": "a312c681dce933bd4d47a553b077fa1948afc37f1695a2a33031335b538f3f5d",
+    "displayed_option": 3,
+    "reviewed": true
+  },
+  "changed_since_previous": [
+    "ui/src/components/backups/BackupPanel.vue",
+    "ui/src/components/backups/BackupPanel.spec.ts"
+  ],
+  "ui2_receipt": {
+    "changes": [
+      "Page header and Restore owned by BackupPanel; LocalSetupView retains page shell.",
+      "Compact tinted status band with current outcome/cadence, stable primary/refresh and truthful fresh/loading/error states.",
+      "Two compact recovery-file rows with native Export backup and Export key.",
+      "Folder/footer Manage menu opens native folder action, settings side panel or history side panel without expanding page content.",
+      "Retained no-write-on-load, changed-fields-only save, partial retry, stale-feedback repair, stable primary node, no-focus-steal behavior and initial Restore placeholder."
+    ],
+    "proof": "43 panel tests +34 related tests pass, including3 new real-primitive keyboard/focus cases; old composition tests replaced with selected design ownership and stable node checks.",
+    "decomposition_review": "669 formatted feature-component lines; one backup lifecycle with its status, controls and two detail panels. No additional state owner/abstraction introduced; root review required per400-line trigger.",
+    "gaps": [
+      "Root owns selected-image comparison, final geometry, independent review/acceptance, full UI gates and generated bundle; root-owned style.css gutter correction is excluded from this UI manifest."
+    ],
+    "no_changes": "Native/backend/shared UiButton/tokens/sidebar/bundle unchanged. No real backup/configuration writes or workflow lifecycle writes."
+  },
+  "repair_revision": 2,
+  "historical_ui2_checks": {
+    "focused": {
+      "passed": 77,
+      "failed": 0,
+      "files": 7,
+      "receipt": "/tmp/stackos-workflow-718/ui-ui2-focused.json"
+    },
+    "menu_keyboard": {
+      "passed": 3,
+      "failed": 0,
+      "receipt": "/tmp/stackos-workflow-718/ui-ui2-menu.json"
+    },
+    "typecheck": {
+      "exit_code": 0,
+      "receipt": "/tmp/stackos-workflow-718/ui-ui2-typecheck.json"
+    },
+    "lint": {
+      "exit_code": 0,
+      "warnings": 0,
+      "receipt": "/tmp/stackos-workflow-718/ui-ui2-lint.json"
+    },
+    "owned_diff_check": {
+      "exit_code": 0,
+      "receipt": "/tmp/stackos-workflow-718/ui-ui2-diff-check.json"
+    }
+  },
+  "ui2_repair1_receipt": {
+    "disposition": "candidate-ready; frozen for independent review, not accepted",
+    "menu-escape-focus": {
+      "owner": "UiDropdownMenu.vue",
+      "fix": "Reuse canonical trigger-focus helper for Escape and command selection; outside dismissal does not steal focus.",
+      "proof": "New real-primitive Escape regression fails before fix and passes afterward; outside-click focus preservation passes."
+    },
+    "settings-save-focus": {
+      "owner": "BackupPanel.vue",
+      "fix": "Capture submitter/active form control for submission events. After an action, if source is disabled and focus was lost, focus an enabled setting in that form. Preserve existing no-focus-steal condition and leave settings open.",
+      "proof": "Real SubmitEvent success focuses enabled automatic-backups setting; failed save returns focus to Save and preserves draft values; selecting Close panel during pending save retains that focus. Synthetic submit is also supported."
+    },
+    "initial-error-copy": {
+      "owner": "BackupPanel.vue",
+      "fix": "Status band shows Refresh to check backup status after initial read failure; Checking appears only while reading.",
+      "proof": "Existing recovery-on-status-error regression now rejects stale Checking copy; Restore remains available."
+    },
+    "docs": "Setup instructions use Export backup/Export key and Manage placement for folder/settings/history.",
+    "red": {
+      "passed": 45,
+      "failed": 4,
+      "receipt": "/tmp/stackos-workflow-718/ui-ui2-repair1-red.json"
+    },
+    "first_green": {
+      "passed": 49,
+      "failed": 0,
+      "receipt": "/tmp/stackos-workflow-718/ui-ui2-repair1-green.json"
+    },
+    "intermediate_checks": [
+      "Initial broad focused call named two nonexistent guard paths; only6files/78tests ran. Corrected final call ran8files/83tests including both guards.",
+      "Prettier produced54 eslint style warnings; scoped eslint fix restored project formatting. Final lint has0warnings. Raw logs retained."
+    ],
+    "no_changes": "No layout redesign, shared UiButton, style.css, App.vue, backend/native, generated bundle, live configuration or workflow lifecycle writes."
+  },
+  "historical_ui2_repair1_checks": {
+    "focused": {
+      "passed": 83,
+      "failed": 0,
+      "files": 8,
+      "receipt": "/tmp/stackos-workflow-718/ui-ui2-repair1-focused-final.json"
+    },
+    "typecheck": {
+      "exit_code": 0,
+      "receipt": "/tmp/stackos-workflow-718/ui-ui2-repair1-typecheck.json"
+    },
+    "lint": {
+      "exit_code": 0,
+      "warnings": 0,
+      "receipt": "/tmp/stackos-workflow-718/ui-ui2-repair1-lint-final.json",
+      "format_cleanup_receipt": "/tmp/stackos-workflow-718/ui-ui2-repair1-lint-final-cleanup.json"
+    },
+    "owned_diff_check": {
+      "exit_code": 0,
+      "receipt": "/tmp/stackos-workflow-718/ui-ui2-repair1-diff-check.json"
+    }
+  },
+  "ui2_repair2_receipt": {
+    "disposition": "candidate-ready; frozen for independent review, not accepted",
+    "finding": "Root actual keyboard proof at390px: bottom-end footer menu reaches viewport bottom and document scrollY becomes2px; the logged main scrollTop is0. The earlier20px estimate was unsupported and is not an acceptance claim.",
+    "fix": "Use the existing top-end placement at the BackupPanel footer Manage consumer; no primitive API/state changes.",
+    "proof": "Existing real-menu keyboard settings/history paths now assert the rendered menu is positioned above/right-aligned to its trigger. All46panel tests pass, retaining prior focus/feedback/no-write/config preservation coverage.",
+    "remaining": "Root reruns menu/panel browser geometry and fullUI/build;27closed-action geometry remains root-owned valid proof.",
+    "scope": "Only BackupPanel.vue and BackupPanel.spec.ts changed since repair1. Other10manifest files unchanged; style.css remains root-owned and excluded."
+  }
+}

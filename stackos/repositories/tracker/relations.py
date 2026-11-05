@@ -280,10 +280,10 @@ class TrackerRelationsMixin:
             )
         self._s.add(
             TrackerTicketDependency(
-                tracker_id=tracker.id,
+                tracker_id=_required_id(tracker.id, "tracker"),
                 project_id=tracker.project_id,
-                ticket_id=ticket.id,
-                depends_on_ticket_id=dependency_ticket.id,
+                ticket_id=_required_id(ticket.id, "ticket"),
+                depends_on_ticket_id=_required_id(dependency_ticket.id, "dependency ticket"),
                 dependency_type=dependency_type,
                 created_at=_utcnow(),
             )
@@ -301,9 +301,9 @@ class TrackerRelationsMixin:
             raise ValidationError("ticket reference ref is required")
         self._s.add(
             TrackerTicketReference(
-                tracker_id=tracker.id,
+                tracker_id=_required_id(tracker.id, "tracker"),
                 project_id=tracker.project_id,
-                ticket_id=ticket.id,
+                ticket_id=_required_id(ticket.id, "ticket"),
                 ref_type=ref_type,
                 ref=redact_secret_text(ref),
                 title=_clean_text(reference.get("title")) or None,
@@ -348,7 +348,7 @@ class TrackerRelationsMixin:
             return
         self._s.add(
             TrackerTicketLink(
-                tracker_id=tracker.id,
+                tracker_id=_required_id(tracker.id, "tracker"),
                 project_id=tracker.project_id,
                 task_id=task_id,
                 ticket_id=ticket_id,

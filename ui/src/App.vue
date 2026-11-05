@@ -170,7 +170,7 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
           <RouterLink
             to="/"
             class="focus-ring-sb flex items-center gap-2.5 rounded-md px-1.5 py-1.5 transition-colors duration-fast hover:bg-sb-hover"
-            aria-label="StackOS home"
+            aria-label="StackOS Local runtime home"
           >
             <img
               src="/favicon.png"

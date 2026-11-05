@@ -1,0 +1,15 @@
+{
+  "command": [
+    "pnpm",
+    "--dir",
+    "ui",
+    "exec",
+    "vitest",
+    "run",
+    "src/components/backups/BackupPanel.spec.ts"
+  ],
+  "started_at": "2026-10-28T15:03:18.783297+00:00",
+  "exit_code": 0,
+  "log": "/tmp/stackos-workflow-718/ui-ui2-repair2-panel.log",
+  "sha256": "8d637801aeb59d20b4dd58cdd4feb2233fa96f5e76e4e80a8641a163e5ef4d21"
+}

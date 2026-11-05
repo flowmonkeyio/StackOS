@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import UTC, datetime, timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Thread
 
 import pytest
 
@@ -16,11 +18,46 @@ from stackos.browser.runtime import (
     BrowserRuntime,
     NativeProcessResult,
     ProcessIdentity,
+    _default_health_probe,
     browser_profile_dir,
     gstack_state_file,
     native_process_env,
 )
 from stackos.repositories.base import ConflictError, ValidationError
+
+
+@pytest.mark.parametrize(
+    ("status", "active_tab", "expected"),
+    [
+        ("healthy", {"id": 1, "responsive": True}, True),
+        ("healthy", {"id": 1, "responsive": False}, True),
+        ("healthy", None, True),
+        ("unhealthy", {"id": 1, "responsive": True}, False),
+    ],
+)
+@pytest.mark.asyncio
+async def test_health_probe_uses_browser_liveness_not_active_tab_responsiveness(
+    status: str, active_tab: dict[str, object] | None, expected: bool
+) -> None:
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            assert self.path == "/health"
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": status, "activeTab": active_tab}).encode())
+
+        def log_message(self, _format: str, *args: object) -> None:
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        assert await _default_health_probe(server.server_port) is expected
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
 
 
 def _runtime_layout(root: Path) -> tuple[Path, Path]:

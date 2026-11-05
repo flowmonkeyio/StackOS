@@ -1,501 +1,280 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
-import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
-
+import { computed, ref } from 'vue'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter, type LocationQueryRaw } from 'vue-router'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
-import { UiButton, UiCallout, UiEmptyState, UiPageShell } from '@/components/ui'
-import type { DataTableColumn } from '@/components/types'
+import { UiBadge, UiButton, UiCallout, UiEmptyState, UiLoadingState, UiPageShell } from '@/components/ui'
 import { callOperation } from '@/lib/operations'
 import { resolveStatus, trackerStatus } from '@/design/status'
-import { formatDateTime } from '@/lib/stackos/json'
-import type { TrackerSnapshot, TrackerStatus, TrackerTicket } from '@/lib/task-tracker/types'
+import type { TrackerSnapshot, TrackerStatus, TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
-
 import TaskTrackerCommandPanel from './task-tracker/TaskTrackerCommandPanel.vue'
+import TrackerBoardPanel from './task-tracker/TrackerBoardPanel.vue'
 import TrackerGraphPanel from './task-tracker/TrackerGraphPanel.vue'
-import TrackerStoriesPanel from './task-tracker/TrackerStoriesPanel.vue'
 import TrackerTaskDetailDialog from './task-tracker/TrackerTaskDetailDialog.vue'
 import TrackerTicketDetailPanel from './task-tracker/TrackerTicketDetailPanel.vue'
-import TrackerTicketTable from './task-tracker/TrackerTicketTable.vue'
 import TrackerWarningSummary from './task-tracker/TrackerWarningSummary.vue'
 import { useTrackerExecutionContexts } from './task-tracker/useTrackerExecutionContexts'
 import { useTrackerGraphSession } from './task-tracker/useTrackerGraphSession'
-import type {
-  SelectMetaTone,
-  StatusFilter,
-  TaskProgressRow,
-  ViewMode,
-} from './task-tracker/viewTypes'
-import {
-  buildAssigneeOptions,
-  buildTaskProgressRows,
-  buildWorkflowOptions,
-  groupTicketsByTask,
-  isOpenTicket,
-  mergeFocusedTrackerSnapshot,
-  ticketMatchesControls,
-  type TrackerControlFilters,
-} from './task-tracker/viewModel'
+import type { StatusFilter, ViewMode } from './task-tracker/viewTypes'
+import { buildAssigneeOptions, buildTaskProgressRows, buildWorkflowOptions, groupTicketsByTask, mergeFocusedTrackerSnapshot } from './task-tracker/viewModel'
 
 const route = useRoute()
 const router = useRouter()
-const { projectId, changesProjectScope } = useProjectRouteScope(route)
-const routeFocus = computed(() => (typeof route.query.focus === 'string' ? route.query.focus : ''))
-
+const { projectId } = useProjectRouteScope(route)
+const viewProjectId = projectId.value
+const viewPath = route.path
 const snapshot = ref<TrackerSnapshot | null>(null)
-const snapshotScope = ref<'index' | 'full'>('index')
 const loading = ref(false)
 const error = ref<string | null>(null)
-const viewMode = ref<ViewMode>(viewModeFromQuery(route.query.view))
-const statusFilter = ref<StatusFilter>(statusFromQuery(route.query.status))
-const workflowFilter = ref('')
-const assigneeFilter = ref('')
-const search = ref('')
-const filtersExpanded = ref(statusFilter.value !== 'all')
-const activeTaskKey = ref(routeTaskKey())
-const taskDetailOpen = ref(false)
-
-const statusOptions: Array<{ key: StatusFilter; label: string }> = [
-  { key: 'all', label: 'All' },
-  ...(Object.entries(trackerStatus) as Array<[TrackerStatus, { label: string }]>).map(
-    ([key, definition]) => ({
-      key,
-      label: definition.label,
-    }),
-  ),
-]
-
-function trackerStatusTone(status: TrackerStatus): SelectMetaTone {
-  return resolveStatus('tracker', status).tone
-}
-
-const viewOptions: Array<{ key: ViewMode; label: string; icon: string }> = [
-  { key: 'graph', label: 'Dependency map', icon: 'git-branch' },
-  { key: 'stories', label: 'Stories', icon: 'list' },
-  { key: 'tickets', label: 'Tickets', icon: 'list' },
-]
-
+const mapTaskStorageKey = `stackos:work-map-task:${projectId.value}`
+const mapTaskKey = ref(queryText(route.query.task) || rememberedMapTask())
+const viewMode = computed<ViewMode>(() => route.query.view === 'graph' ? 'graph' : 'board')
+const search = computed(() => queryText(route.query.search))
+const statusFilter = computed(() => statusFromQuery(route.query.status))
+const ticketStatusFilter = computed(() => statusFromQuery(route.query.ticket_status))
+const workflowFilter = computed(() => queryText(route.query.workflow))
+const assigneeFilter = computed(() => queryText(route.query.assignee))
+const blockedFilter = computed(() => route.query.focus === 'blocked')
+const detailTaskKey = computed(() => queryText(route.query.detail))
+const detailTicketKey = computed(() => queryText(route.query.ticket))
+const detailSnapshot = ref<TrackerSnapshot | null>(null)
+const detailLoading = ref(false)
+const detailError = ref<string | null>(null)
+const taskDialog = ref<{ confirmLeave: () => boolean; syncTask: (task: TrackerTask | null) => void; prepareInspection: (ticketKey: string) => void } | null>(null)
+const detailTask = computed(() => detailSnapshot.value?.tasks.find((task) => task.key === detailTaskKey.value) ?? null)
+const detailTickets = computed(() => detailSnapshot.value?.tickets.filter((ticket) => ticket.task_key === detailTaskKey.value) ?? [])
+const detailTicket = computed(() => detailTickets.value.find((ticket) => ticket.key === detailTicketKey.value) ?? null)
 const tasks = computed(() => snapshot.value?.tasks ?? [])
-const tickets = computed(() => snapshot.value?.tickets ?? [])
-const initialLoading = computed(() => loading.value && snapshot.value === null)
-const fullSnapshotLoading = computed(
-  () => loading.value && viewMode.value !== 'graph' && snapshotScope.value !== 'full',
-)
-
-const ticketsByTask = computed(() => groupTicketsByTask(tickets.value))
-const workflowOptions = computed(() => buildWorkflowOptions(tasks.value))
-const assigneeOptions = computed(() => buildAssigneeOptions(tasks.value, tickets.value))
-const controlFilters = computed<TrackerControlFilters>(() => ({
-  search: search.value,
-  status: statusFilter.value,
-  workflow: workflowFilter.value,
-  assignee: assigneeFilter.value,
+const ticketsByTask = computed(() => groupTicketsByTask(snapshot.value?.tickets ?? []))
+const allTaskRows = computed(() => buildTaskProgressRows(tasks.value, ticketsByTask.value, { search: '', status: 'all', workflow: '', assignee: '' }))
+const taskRows = computed(() => buildTaskProgressRows(tasks.value, ticketsByTask.value, {
+  search: search.value, status: statusFilter.value, workflow: workflowFilter.value, assignee: assigneeFilter.value,
+  ticketStatus: ticketStatusFilter.value, blocked: blockedFilter.value,
 }))
-const taskRows = computed<TaskProgressRow[]>(() =>
-  buildTaskProgressRows(tasks.value, ticketsByTask.value, controlFilters.value),
-)
-
-const taskSelectOptions = computed(() =>
-  [
-  ...(viewMode.value === 'tickets' ? [{ value: '', label: 'All tasks', rightLabel: '', rightMeta: '', rightTone: 'neutral' as SelectMetaTone }] : []),
-    ...taskRows.value.map((row) => ({
-    value: row.key,
-    label: `#${row.id} ${row.task.title}`,
-    rightLabel: resolveStatus('tracker', row.task.status).label,
-    rightMeta: `${row.terminalCount}/${row.totalCount} terminal`,
-    rightTone: trackerStatusTone(row.task.status),
-    })),
-  ],
-)
-
-const allTasksSelected = computed(() => viewMode.value === 'tickets' && !activeTaskKey.value)
-const activeTaskRow = computed<TaskProgressRow | null>(() => {
-  if (allTasksSelected.value) return null
-  if (!taskRows.value.length) return null
-  return taskRows.value.find((row) => row.key === activeTaskKey.value) ?? taskRows.value[0]
-})
-
-const graphSession = useTrackerGraphSession({
-  projectId,
-  activeTaskKey,
-  activeTaskRow,
-  snapshot,
-  routeError: error,
+const activeTaskRow = computed(() => allTaskRows.value.find((row) => row.key === mapTaskKey.value) ?? null)
+const taskSelectOptions = computed(() => allTaskRows.value.map((row) => ({
+  value: row.key, label: `#${row.id} ${row.task.title}`,
+  rightLabel: resolveStatus('tracker', row.task.status).label,
+  rightMeta: `${row.completedCount}/${row.totalCount} complete`,
+  rightTone: resolveStatus('tracker', row.task.status).tone,
+})))
+const workflowOptions = computed(() => buildWorkflowOptions(tasks.value))
+const assigneeOptions = computed(() => buildAssigneeOptions(tasks.value, snapshot.value?.tickets ?? []))
+const filtersActive = computed(() => Boolean(search.value || workflowFilter.value || assigneeFilter.value || statusFilter.value !== 'all' || ticketStatusFilter.value !== 'all' || blockedFilter.value))
+const liveTaskKey = computed(() => viewMode.value === 'graph' ? mapTaskKey.value : '')
+const graph = useTrackerGraphSession({
+  projectId, activeTaskKey: mapTaskKey, liveTaskKey, activeTaskRow, snapshot, routeError: error,
   reload: (options) => load(options),
 })
 const {
-  loading: focusedGraphLoading,
-  graphDataAvailable,
-  statusFilters: graphStatusFilters,
-  blockFilters: graphBlockFilters,
-  viewport: graphViewport,
-  refocusKey: graphRefocusKey,
-  selected,
-  detailPanelOpen,
-  liveError,
-  statusRows: graphStatusRows,
-  blockRows: graphBlockRows,
-  filtersActive: graphFiltersActive,
-  selectedTicket,
-  flowRenderKey,
-  flow,
-  fitOnInit: graphFitOnInit,
-  focusNodeIds: graphFocusNodeIds,
-  primaryFocusNodeId: primaryGraphFocusNodeId,
-  ticketStatLabel: graphTicketStatLabel,
-  edgeStatLabel: graphEdgeStatLabel,
-  selectedEdge: selectedGraphEdge,
-  selectionLabel: graphSelectionLabel,
-  selectionVisible: graphSelectionVisible,
-  selectionStats: graphSelectionStats,
-  loadFocusedGraph,
-  toggleStatus: toggleGraphStatus,
-  toggleBlock: toggleGraphBlock,
-  clearFilters: clearGraphFilters,
-  restoreViewport: restoreGraphViewport,
-  onViewportReady: onGraphViewportReady,
-  onViewportChange: onGraphViewportChange,
-  restartStatusStream: restartTrackerStatusStream,
-  stopStatusStream: stopTrackerStatusStream,
-  onNodeClick,
-  onEdgeClick,
-  onCanvasClick: onGraphCanvasClick,
-  selectTicket,
-  openSelectedDetail,
-  clearFocus: clearGraphFocus,
-} = graphSession
-
-const focusedGraphPending = computed(() => focusedGraphLoading.value && !graphDataAvailable.value)
-
-const executionContexts = useTrackerExecutionContexts({ projectId })
+  loading: graphLoading, graphDataAvailable, statusFilters: graphStatusFilters, blockFilters: graphBlockFilters,
+  viewport: graphViewport, refocusKey: graphRefocusKey, liveError, statusRows: graphStatusRows, blockRows: graphBlockRows,
+  filtersActive: graphFiltersActive, selectedTicket: graphSelectedTicket, flowRenderKey, flow, fitOnInit: graphFitOnInit,
+  focusNodeIds: graphFocusNodeIds, primaryFocusNodeId: primaryGraphFocusNodeId, ticketStatLabel: graphTicketStatLabel,
+  edgeStatLabel: graphEdgeStatLabel, selectedEdge: graphSelectedEdge, selectionLabel: graphSelectionLabel,
+  selectionVisible: graphSelectionVisible, selectionStats: graphSelectionStats,
+  detailPanelOpen: graphDetailPanelOpen,
+} = graph
+const graphPending = computed(() => graphLoading.value && !graphDataAvailable.value)
+const contexts = useTrackerExecutionContexts({ projectId })
 const {
-  contexts: taskContexts,
-  artifacts: taskContextArtifacts,
-  pageInfo: taskContextPageInfo,
-  artifactPageInfo: taskContextArtifactPageInfo,
-  loading: taskContextLoading,
-  error: taskContextError,
-  load: loadTaskContexts,
-} = executionContexts
+  contexts: taskContexts, artifacts: taskContextArtifacts, pageInfo: taskContextPageInfo,
+  artifactPageInfo: taskContextArtifactPageInfo, loading: taskContextLoading, error: taskContextError,
+} = contexts
+let loadSequence = 0
+let detailSequence = 0
+let alive = true
 
-const graphFlowId = computed(() => `tracker-flow-${projectId.value}`)
-
-const visibleTickets = computed(() => {
-  if (allTasksSelected.value) return taskRows.value.flatMap((row) => row.tickets.filter((ticket) => ticketMatchesControls(ticket, row.task, controlFilters.value)))
-  const row = activeTaskRow.value
-  if (!row) return []
-  return row.tickets.filter((ticket) =>
-    ticketMatchesControls(ticket, row.task, controlFilters.value),
-  )
-})
-
-const ticketCount = computed(() =>
-  snapshotScope.value === 'full'
-    ? tickets.value.length
-    : tasks.value.reduce((sum, task) => sum + (task.ticket_summary?.total_count ?? 0), 0),
-)
-
-const filteredTicketCount = computed<number | null>(() => {
-  if (snapshotScope.value !== 'full') return null
-  return taskRows.value.reduce(
-    (sum, row) =>
-      sum +
-      row.tickets.filter((ticket) => ticketMatchesControls(ticket, row.task, controlFilters.value))
-        .length,
-    0,
-  )
-})
-
-const activeTask = computed(() => activeTaskRow.value?.task ?? null)
-
-const detailPanelTitle = computed(() => {
-  if (selectedTicket.value) return selectedTicket.value.title
-  return 'Work detail'
-})
-
-const detailPanelDescription = computed(() => {
-  if (selectedTicket.value) return selectedTicket.value.key
-  return undefined
-})
-
-const blockedCount = computed(() => {
-  if (tasks.value.every((task) => task.ticket_summary)) {
-    return tasks.value.reduce((sum, task) => sum + (task.ticket_summary?.blocked_count ?? 0), 0)
-  }
-  return tickets.value.filter(
-    (ticket) => isOpenTicket(ticket) && (ticket.blocked_by.length > 0 || ticket.blocker_reason),
-  ).length
-})
-const workflowCount = computed(
-  () => new Set(tasks.value.map((task) => task.source_json?.run_plan_id).filter(Boolean)).size,
-)
-
-const commandFilterCount = computed(() => {
-  let count = 0
-  if (search.value.trim()) count += 1
-  if (statusFilter.value !== 'all') count += 1
-  if (workflowFilter.value) count += 1
-  if (assigneeFilter.value) count += 1
-  return count
-})
-
-const commandFiltersActive = computed(() => commandFilterCount.value > 0)
-const commandFilterLabel = computed(() =>
-  commandFilterCount.value ? `Filters (${commandFilterCount.value})` : 'Filters',
-)
-
-const ticketColumns: DataTableColumn<TrackerTicket>[] = [
-  { key: 'key', label: 'Ticket' },
-  { key: 'task_key', label: 'Task' },
-  { key: 'status', label: 'Status', widthClass: 'w-32' },
-  { key: 'priority_key', label: 'Priority', widthClass: 'w-24' },
-  {
-    key: 'assignee',
-    label: 'Assignee',
-    widthClass: 'w-32',
-    format: (value) => String(value ?? '-'),
-  },
-  {
-    key: 'updated_at',
-    label: 'Updated',
-    widthClass: 'w-40',
-    format: (value) => formatDateTime(String(value)),
-  },
-]
-
-let loadRequestSequence = 0
+function currentScope(): boolean {
+  return alive && projectId.value === viewProjectId && route.path === viewPath
+}
 
 async function load(options: { refocus?: boolean; restartStream?: boolean } = {}): Promise<void> {
-  if (!projectId.value || Number.isNaN(projectId.value)) return
-  const requestSequence = ++loadRequestSequence
-  const requestedProjectId = projectId.value
+  if (!projectId.value || !currentScope()) return
+  const sequence = ++loadSequence
   loading.value = true
   error.value = null
   try {
-    const needsFullSnapshot = viewMode.value !== 'graph'
-    const nextSnapshot = await callOperation<TrackerSnapshot>('tracker.get', {
-      project_id: requestedProjectId,
-      ...(needsFullSnapshot ? {} : { task_index_only: true }),
-      include_graph: false,
+    const next = await callOperation<TrackerSnapshot>('tracker.get', {
+      project_id: projectId.value, task_index_only: true, include_graph: false,
     })
-    if (requestSequence !== loadRequestSequence || requestedProjectId !== projectId.value) return
-    snapshot.value = nextSnapshot
-    snapshotScope.value = needsFullSnapshot ? 'full' : 'index'
-    await nextTick()
-    const requestedTaskKey = routeTaskKey()
-    const nextTaskKey = requestedTaskKey || ensureActiveTask()
-    let focused: TrackerSnapshot | null = null
-    if (viewMode.value === 'graph') {
-      const restoredViewport =
-        options.refocus === false ? Boolean(graphViewport.value) : restoreGraphViewport()
-      const shouldRefocus = options.refocus ?? !restoredViewport
-      focused = await loadFocusedGraph(nextTaskKey, { refocus: shouldRefocus })
-    }
-    if (requestSequence !== loadRequestSequence || requestedProjectId !== projectId.value) return
-    if (focused && snapshotScope.value === 'index') {
-      snapshot.value = mergeFocusedTrackerSnapshot(snapshot.value, focused)
-      await nextTick()
-      ensureActiveTask()
-    } else if (!focused && requestedTaskKey) {
-      ensureActiveTask()
-    }
-    if (options.restartStream !== false) restartTrackerStatusStream()
-  } catch (err) {
-    if (requestSequence === loadRequestSequence) {
-      error.value = err instanceof Error ? err.message : 'failed to load tracker'
+    if (!currentScope() || sequence !== loadSequence) return
+    snapshot.value = next
+    if (viewMode.value === 'graph') mapTaskKey.value = resolveMapTaskKey()
+    else if (!queryText(route.query.task)) mapTaskKey.value = validRememberedMapTask()
+    // Start the stream while this accepted request still owns the current scope.
+    // Awaited map/detail work must never restart a stream after scope disposal.
+    if (options.restartStream !== false && !mapNeedsCanonicalRoute()) graph.restartStatusStream()
+    const detailKey = detailTaskKey.value
+    if (viewMode.value === 'graph') await loadMap(options.refocus)
+    if (!currentScope() || sequence !== loadSequence) return
+    if (detailKey && detailTaskKey.value === detailKey) await loadDetail(detailKey)
+  } catch (cause) {
+    if (currentScope() && sequence === loadSequence) error.value = cause instanceof Error ? cause.message : 'Could not load work.'
+  } finally {
+    if (currentScope() && sequence === loadSequence) loading.value = false
+  }
+}
+
+async function loadMap(refocus?: boolean): Promise<void> {
+  if (!currentScope() || !activeTaskRow.value || viewMode.value !== 'graph') return
+  const taskKey = mapTaskKey.value
+  try { window.sessionStorage.setItem(mapTaskStorageKey, mapTaskKey.value) } catch { /* Storage may be unavailable. */ }
+  if (queryText(route.query.task) !== mapTaskKey.value) {
+    await router.replace({ query: { ...route.query, task: mapTaskKey.value } })
+    return
+  }
+  const restored = graph.restoreViewport()
+  const focused = await graph.loadFocusedGraph(taskKey, { refocus: refocus ?? !restored })
+  if (!currentScope() || viewMode.value !== 'graph' || mapTaskKey.value !== taskKey || queryText(route.query.task) !== taskKey) return
+  if (focused && snapshot.value) snapshot.value = mergeFocusedTrackerSnapshot(snapshot.value, focused)
+}
+
+async function loadDetail(taskKey: string): Promise<void> {
+  if (!currentScope() || detailTaskKey.value !== taskKey) return
+  const sequence = ++detailSequence
+  detailLoading.value = true
+  detailError.value = null
+  if (detailSnapshot.value?.tasks[0]?.key !== taskKey) {
+    detailSnapshot.value = null
+    taskDialog.value?.syncTask?.(null)
+    void contexts.load(null)
+  }
+  try {
+    const next = await callOperation<TrackerSnapshot>('tracker.get', {
+      project_id: projectId.value, task_key: taskKey, include_graph: false,
+    })
+    if (!currentScope() || sequence !== detailSequence || detailTaskKey.value !== taskKey) return
+    const task = next.tasks.find((item) => item.key === taskKey)
+    if (!task) throw new Error('This task is no longer available in this project.')
+    detailSnapshot.value = next
+    taskDialog.value?.syncTask?.(task)
+    if (snapshot.value) snapshot.value = mergeFocusedTrackerSnapshot(snapshot.value, next)
+    void contexts.load(task)
+  } catch (cause) {
+    if (currentScope() && sequence === detailSequence) {
+      detailError.value = cause instanceof Error ? cause.message : 'Could not load task details.'
     }
   } finally {
-    if (requestSequence === loadRequestSequence) loading.value = false
+    if (currentScope() && sequence === detailSequence) detailLoading.value = false
   }
 }
 
-function setViewMode(value: ViewMode): void {
-  viewMode.value = value
-  const taskKey = ensureActiveTask(false)
-  syncControlQuery()
-  if (value === 'graph') {
-    const restoredViewport = restoreGraphViewport()
-    void loadFocusedGraph(taskKey, { refocus: !restoredViewport })
-    restartTrackerStatusStream()
-    return
+async function refreshTaskContent(taskKey: string): Promise<TrackerTask> {
+  const [index, focused] = await Promise.all([
+    callOperation<TrackerSnapshot>('tracker.get', {
+      project_id: projectId.value, task_index_only: true, include_graph: false,
+    }),
+    callOperation<TrackerSnapshot>('tracker.get', {
+      project_id: projectId.value, task_key: taskKey, include_graph: false,
+    }),
+  ])
+  const task = focused.tasks.find((item) => item.key === taskKey)
+  if (!task) throw new Error('This task is no longer available in this project.')
+  if (currentScope() && detailTaskKey.value === taskKey) {
+    loadSequence += 1
+    detailSequence += 1
+    loading.value = false
+    detailLoading.value = false
+    error.value = null
+    detailError.value = null
+    snapshot.value = mergeFocusedTrackerSnapshot(index, focused)
+    detailSnapshot.value = focused
+    taskDialog.value?.syncTask?.(task)
   }
-  if (snapshotScope.value !== 'full') {
-    void load({ refocus: false, restartStream: false })
+  return task
+}
+
+onBeforeRouteUpdate((to, from) => {
+  const sameTask = to.path === from.path && Boolean(from.query.detail)
+    && ['detail', 'view', 'task'].every((key) => to.query[key] === from.query[key])
+  if (sameTask && to.query.ticket !== from.query.ticket) {
+    taskDialog.value?.prepareInspection?.(queryText(to.query.ticket))
+    return true
   }
-}
-
-function onTaskRow(row: TaskProgressRow): void {
-  clearGraphFocus()
-  activeTaskKey.value = row.key
-  syncControlQuery()
-  if (viewMode.value === 'graph') {
-    const restoredViewport = restoreGraphViewport()
-    void loadFocusedGraph(row.key, { refocus: !restoredViewport })
+  if (to.path !== from.path || ['detail', 'ticket', 'view', 'task'].some((key) => to.query[key] !== from.query[key])) {
+    return taskDialog.value?.confirmLeave?.() ?? true
   }
-  restartTrackerStatusStream()
-  if (taskDetailOpen.value) void loadTaskContexts(row.task)
-}
-
-function onTaskSelect(value: string | number | null): void {
-  const taskKey = typeof value === 'string' ? value : String(value ?? '')
-  if (!taskKey && viewMode.value === 'tickets') {
-    activeTaskKey.value = ''
-    syncControlQuery()
-    clearGraphFocus()
-    restartTrackerStatusStream()
-    return
-  }
-  const row = taskRows.value.find((candidate) => candidate.key === taskKey)
-  if (row) onTaskRow(row)
-}
-
-function onPaneClick(event: MouseEvent): void {
-  onGraphCanvasClick(event)
-}
-
-function onTicketRow(row: TrackerTicket): void {
-  if (!allTasksSelected.value) {
-    activeTaskKey.value = row.task_key
-    syncControlQuery()
-  }
-  selectTicket(row)
-  restartTrackerStatusStream()
-  if (taskDetailOpen.value) void loadTaskContexts(activeTask.value)
-}
-
-function openTaskDetail(): void {
-  taskDetailOpen.value = true
-  void loadTaskContexts(activeTask.value)
-}
-
-function ensureActiveTask(syncUrl = true): string {
-  if (allTasksSelected.value) return ''
-  if (!taskRows.value.length) {
-    activeTaskKey.value = ''
-    if (syncUrl) syncControlQuery()
-    clearGraphFocus()
-    return ''
-  }
-  const current = taskRows.value.find((row) => row.key === activeTaskKey.value)
-  const nextRow = current ?? taskRows.value[0]
-  activeTaskKey.value = nextRow.key
-  if (syncUrl) syncControlQuery()
-  if (
-    selected.value?.kind === 'ticket' &&
-    !nextRow.tickets.some((ticket) => ticket.key === selected.value?.key)
-  ) {
-    clearGraphFocus()
-    return nextRow.key
-  }
-  return nextRow.key
-}
-
-async function reconcileActiveTask(syncUrl = true): Promise<void> {
-  const previousTaskKey = activeTaskKey.value
-  const nextTaskKey = ensureActiveTask(syncUrl)
-  if (
-    viewMode.value === 'graph' &&
-    snapshot.value &&
-    nextTaskKey &&
-    nextTaskKey !== previousTaskKey
-  ) {
-    const restoredViewport = restoreGraphViewport()
-    await loadFocusedGraph(nextTaskKey, { refocus: !restoredViewport })
-    restartTrackerStatusStream()
-  }
-  if (taskDetailOpen.value) void loadTaskContexts(activeTask.value)
-}
-
-function setSearch(value: string): void {
-  search.value = value
-  void reconcileActiveTask()
-}
-
-function setStatusFilter(value: StatusFilter): void {
-  statusFilter.value = value
-  void reconcileActiveTask(false)
-  syncControlQuery()
-}
-
-function setWorkflowFilter(value: string): void {
-  workflowFilter.value = value
-  void reconcileActiveTask()
-}
-
-function setAssigneeFilter(value: string): void {
-  assigneeFilter.value = value
-  void reconcileActiveTask()
-}
-
-function clearFilters(): void {
-  statusFilter.value = 'all'
-  workflowFilter.value = ''
-  assigneeFilter.value = ''
-  search.value = ''
-  clearGraphFilters()
-  void reconcileActiveTask(false)
-  syncControlQuery()
-}
-
-function taskKeyFromQueryValue(raw: unknown): string {
-  if (Array.isArray(raw)) return typeof raw[0] === 'string' ? raw[0] : ''
-  return typeof raw === 'string' ? raw : ''
-}
-
-function viewModeFromQuery(raw: unknown): ViewMode {
-  return raw === 'tickets' || raw === 'stories' ? raw : 'graph'
-}
-
-function statusFromQuery(raw: unknown): StatusFilter {
-  return typeof raw === 'string' && Object.hasOwn(trackerStatus, raw) ? raw as TrackerStatus : 'all'
-}
-
-function syncControlQuery(): void {
-  const query = { ...route.query }
-  if (viewMode.value === 'graph') delete query.view
-  else query.view = viewMode.value
-  if (statusFilter.value === 'all') delete query.status
-  else query.status = statusFilter.value
-  if (activeTaskKey.value) query.task = activeTaskKey.value
-  else delete query.task
-  if (
-    query.view === route.query.view &&
-    query.status === route.query.status &&
-    query.task === route.query.task
-  ) return
-  void router.replace({ query })
-}
-
-function routeTaskKey(): string {
-  return taskKeyFromQueryValue(route.query.task)
-}
-
-useProjectScopedLoader({
-  projectId,
-  load: () => load(),
-  onScopeExit: () => {
-    loadRequestSequence += 1
-    stopTrackerStatusStream()
-  },
+  return true
 })
+onBeforeRouteLeave(() => taskDialog.value?.confirmLeave?.() ?? true)
 
-onBeforeRouteUpdate((to) => {
-  if (changesProjectScope(to)) return
-  const nextView = viewModeFromQuery(to.query.view)
-  const nextStatus = statusFromQuery(to.query.status)
-  const viewChanged = nextView !== viewMode.value
-  const statusChanged = nextStatus !== statusFilter.value
-  viewMode.value = nextView
-  statusFilter.value = nextStatus
-  if (nextStatus !== 'all') filtersExpanded.value = true
-  const nextTaskKey = taskKeyFromQueryValue(to.query.task)
-  if (!viewChanged && !statusChanged && nextTaskKey === activeTaskKey.value) return
-  activeTaskKey.value = nextTaskKey
-  clearGraphFocus()
-  if (viewChanged) void load()
-  // The incoming query has not committed yet; do not replace it with the previous URL.
-  else void reconcileActiveTask(false)
+function navigate(changes: LocationQueryRaw, replace = false): void {
+  const query: LocationQueryRaw = { ...route.query, ...changes }
+  for (const [key, value] of Object.entries(query)) if (value === '' || value == null) delete query[key]
+  void router[replace ? 'replace' : 'push']({ query })
+}
+function setViewMode(mode: ViewMode): void {
+  if (mode === viewMode.value) return
+  navigate({ view: mode === 'graph' ? 'graph' : undefined, task: mode === 'graph' ? queryText(route.query.task) || undefined : undefined, detail: undefined, ticket: undefined })
+}
+function selectMapTask(value: string | number | null): void {
+  navigate({ task: String(value ?? ''), detail: undefined, ticket: undefined })
+}
+function openTaskDetail(taskKey: string): void { navigate({ detail: taskKey, ticket: undefined }) }
+function openTicket(ticket: TrackerTicket): void { navigate({ detail: ticket.task_key, ticket: ticket.key }) }
+function viewDependencies(taskKey: string): void {
+  navigate({ view: 'graph', task: taskKey, detail: undefined, ticket: undefined })
+}
+function clearFilters(): void {
+  navigate({ search: undefined, status: undefined, ticket_status: undefined, workflow: undefined, assignee: undefined, focus: undefined })
+}
+function queryText(value: unknown): string { return typeof value === 'string' ? value : '' }
+function rememberedMapTask(): string {
+  try { return window.sessionStorage.getItem(mapTaskStorageKey) ?? '' } catch { return '' }
+}
+function validRememberedMapTask(): string {
+  const remembered = rememberedMapTask()
+  if (!remembered || allTaskRows.value.some((row) => row.key === remembered)) return remembered
+  try { window.sessionStorage.removeItem(mapTaskStorageKey) } catch { /* Storage may be unavailable. */ }
+  return ''
+}
+function resolveMapTaskKey(): string {
+  // Only called after the project index is accepted; the URL always stays authoritative.
+  return queryText(route.query.task) || validRememberedMapTask() || allTaskRows.value[0]?.key || ''
+}
+function mapNeedsCanonicalRoute(): boolean {
+  return viewMode.value === 'graph' && Boolean(activeTaskRow.value) && queryText(route.query.task) !== mapTaskKey.value
+}
+function statusFromQuery(value: unknown): StatusFilter {
+  return typeof value === 'string' && Object.hasOwn(trackerStatus, value) ? value as TrackerStatus : 'all'
+}
+
+const removeRouteListener = router.afterEach(async (to, from, failure) => {
+  if (failure || to.path !== from.path || !currentScope() || !snapshot.value) return
+  const mapChanged = to.query.view !== from.query.view || to.query.task !== from.query.task
+  if (viewMode.value === 'graph' && mapChanged) {
+    mapTaskKey.value = resolveMapTaskKey()
+  }
+  if (mapChanged) graph.clearFocus()
+  if (to.query.detail && to.query.detail !== from.query.detail) graphDetailPanelOpen.value = false
+  if (mapChanged && !mapNeedsCanonicalRoute()) graph.restartStatusStream()
+  if (viewMode.value === 'graph' && mapChanged) {
+    await loadMap()
+    if (!currentScope() || router.currentRoute.value !== to) return
+  }
+  if (to.query.detail !== from.query.detail) {
+    if (detailTaskKey.value) await loadDetail(detailTaskKey.value)
+    else {
+      detailSequence += 1
+      detailSnapshot.value = null
+      taskDialog.value?.syncTask?.(null)
+      detailError.value = null
+      detailLoading.value = false
+      void contexts.load(null)
+    }
+  }
+})
+useProjectScopedLoader({
+  projectId, load: () => load(),
+  onScopeExit: () => {
+    alive = false
+    loadSequence += 1
+    detailSequence += 1
+    graph.stopStatusStream()
+    removeRouteListener()
+  },
 })
 </script>
 
@@ -513,201 +292,172 @@ onBeforeRouteUpdate((to) => {
           size="sm"
           icon-left="refresh"
           :loading="loading"
-          @click="load()"
+          @click="load({ refocus: false })"
         >
           Refresh
         </UiButton>
       </template>
     </ProjectPageHeader>
-
     <UiCallout
       v-if="error"
       tone="danger"
     >
       {{ error }}
     </UiCallout>
-
     <UiCallout
       v-if="liveError"
       tone="warning"
     >
       {{ liveError }}
     </UiCallout>
-
     <TaskTrackerCommandPanel
-      :active-task-key="activeTaskRow?.key ?? ''"
+      :active-task-key="mapTaskKey"
       :task-options="taskSelectOptions"
       :view-mode="viewMode"
-      :view-options="viewOptions"
-      :filters-expanded="filtersExpanded"
-      :filter-label="commandFilterLabel"
-      :filters-active="commandFiltersActive"
+      :filters-active="filtersActive"
       :search="search"
-      :status-filter="statusFilter"
-      :status-options="statusOptions"
       :workflow-filter="workflowFilter"
       :workflow-options="workflowOptions"
       :assignee-filter="assigneeFilter"
       :assignee-options="assigneeOptions"
       :task-rows-count="taskRows.length"
       :tasks-count="tasks.length"
-      :filtered-ticket-count="filteredTicketCount"
-      :tickets-count="ticketCount"
-      :active-terminal-count="activeTaskRow?.terminalCount ?? null"
-      :active-total-count="activeTaskRow?.totalCount ?? null"
-      :blocked-count="blockedCount"
-      :workflow-count="workflowCount"
-      @task-select="onTaskSelect"
+      :task-available="Boolean(activeTaskRow)"
+      :graph-summary="`${graphTicketStatLabel} · ${graphEdgeStatLabel}`"
+      @task-select="selectMapTask"
       @update:view-mode="setViewMode"
-      @update:filters-expanded="filtersExpanded = $event"
-      @update:search="setSearch"
-      @update:status-filter="setStatusFilter"
-      @update:workflow-filter="setWorkflowFilter"
-      @update:assignee-filter="setAssigneeFilter"
+      @update:search="navigate({ search: $event }, true)"
+      @update:workflow-filter="navigate({ workflow: $event })"
+      @update:assignee-filter="navigate({ assignee: $event })"
       @clear="clearFilters"
+      @open-task-detail="openTaskDetail(mapTaskKey)"
     />
-
-    <TrackerStoriesPanel
-      v-if="viewMode === 'stories' && !fullSnapshotLoading"
-      :key="routeFocus"
-      :project-id="projectId"
-      :rows="taskRows"
-      :active-task-key="activeTaskRow?.key ?? ''"
-      :focus="routeFocus"
-      @select-task="onTaskRow"
-      @open-task-detail="openTaskDetail"
-    />
-
-    <UiCallout
-      v-else-if="viewMode === 'stories'"
-      tone="neutral"
-    >
-      Loading work stories…
-    </UiCallout>
-
-    <TrackerWarningSummary
-      v-if="viewMode === 'graph'"
-      :warnings="flow.warnings"
-    />
-
-    <UiCallout
-      v-if="viewMode !== 'stories' && (initialLoading || fullSnapshotLoading)"
-      tone="neutral"
-    >
-      Loading tracker work…
-    </UiCallout>
-
     <div
-      v-else-if="viewMode !== 'stories' && taskRows.length === 0"
-      class="min-h-[360px]"
+      v-if="viewMode === 'board' && (ticketStatusFilter !== 'all' || statusFilter !== 'all' || blockedFilter)"
+      class="flex flex-wrap items-center gap-2"
     >
-      <UiEmptyState
-        title="No tracker work"
-        description="Agents can create tasks and tickets through tracker operations."
+      <UiBadge v-if="ticketStatusFilter !== 'all'">
+        Contains tickets: {{ trackerStatus[ticketStatusFilter].label }}
+      </UiBadge>
+      <UiBadge v-if="statusFilter !== 'all'">
+        Task status: {{ trackerStatus[statusFilter].label }}
+      </UiBadge>
+      <UiBadge
+        v-if="blockedFilter"
+        tone="warning"
+      >
+        Has blocked tickets
+      </UiBadge>
+    </div>
+    <UiLoadingState
+      v-if="loading && !snapshot"
+      label="Loading work…"
+    />
+    <div
+      v-show="viewMode === 'board' && Boolean(snapshot)"
+      class="tracker-board-workspace"
+    >
+      <p
+        v-if="tasks.length === 0"
+        class="text-sm text-fg-muted"
+      >
+        No tasks yet. Work tracked by agents will appear here.
+      </p>
+      <p
+        v-else-if="taskRows.length === 0"
+        class="text-sm text-fg-muted"
+      >
+        No tasks match these filters.
+      </p>
+      <TrackerBoardPanel
+        :rows="taskRows"
+        :selected-task-key="detailTaskKey"
+        @open-task="openTaskDetail"
       />
     </div>
-
-    <div
-      v-else-if="viewMode !== 'stories'"
-      class="tracker-workspace"
-    >
-      <div class="tracker-focus">
-        <div class="tracker-main">
-          <TrackerGraphPanel
-            v-if="viewMode === 'graph'"
-            :flow="flow"
-            :loading="focusedGraphPending"
-            :flow-id="graphFlowId"
-            :flow-render-key="flowRenderKey"
-            :graph-fit-on-init="graphFitOnInit"
-            :focus-node-ids="graphFocusNodeIds"
-            :primary-focus-node-id="primaryGraphFocusNodeId"
-            :refocus-key="graphRefocusKey"
-            :initial-viewport="graphViewport"
-            :active-task-title="activeTaskRow?.task.title ?? 'Task graph'"
-            :active-task-available="Boolean(activeTask)"
-            :ticket-stat-label="graphTicketStatLabel"
-            :edge-stat-label="graphEdgeStatLabel"
-            :status-rows="graphStatusRows"
-            :status-filters="graphStatusFilters"
-            :block-rows="graphBlockRows"
-            :block-filters="graphBlockFilters"
-            :filters-active="graphFiltersActive"
-            :selection-visible="graphSelectionVisible"
-            :selection-label="graphSelectionLabel"
-            :selected-ticket="selectedTicket"
-            :selected-edge-label="selectedGraphEdge?.label ?? null"
-            :selection-stats="graphSelectionStats"
-            @toggle-status="toggleGraphStatus"
-            @toggle-block="toggleGraphBlock"
-            @clear-filters="clearGraphFilters"
-            @open-task-detail="openTaskDetail"
-            @node-click="onNodeClick"
-            @edge-click="onEdgeClick"
-            @pane-click="onPaneClick"
-            @graph-canvas-click="onGraphCanvasClick"
-            @open-selected-detail="openSelectedDetail"
-            @clear-graph-focus="clearGraphFocus"
-            @viewport-change-end="onGraphViewportChange"
-            @viewport-ready="onGraphViewportReady"
-          />
-
-          <TrackerTicketTable
-            v-else
-            :tickets="visibleTickets"
-            :columns="ticketColumns"
-            :loading="loading"
-            :selected-ticket-id="selectedTicket?.id ?? null"
-            @row-click="onTicketRow"
-          />
-        </div>
-      </div>
-    </div>
-
-    <TrackerTicketDetailPanel
-      v-model="detailPanelOpen"
-      :ticket="selectedTicket"
-      :title="detailPanelTitle"
-      :description="detailPanelDescription"
-    />
-
+    <template v-if="viewMode === 'graph' && snapshot">
+      <UiEmptyState
+        v-if="!activeTaskRow"
+        :title="mapTaskKey ? 'Task unavailable' : tasks.length ? 'Choose a task' : 'No tasks yet'"
+        :description="mapTaskKey ? 'The selected task is no longer available in this project. Choose another task.' : 'Select a task to see its tickets and dependencies.'"
+      />
+      <template v-else>
+        <TrackerWarningSummary :warnings="flow.warnings" />
+        <TrackerGraphPanel
+          :flow="flow"
+          :loading="graphPending"
+          :flow-id="`tracker-flow-${projectId}`"
+          :flow-render-key="flowRenderKey"
+          :graph-fit-on-init="graphFitOnInit"
+          :focus-node-ids="graphFocusNodeIds"
+          :primary-focus-node-id="primaryGraphFocusNodeId"
+          :refocus-key="graphRefocusKey"
+          :initial-viewport="graphViewport"
+          :active-task-title="activeTaskRow.task.title"
+          :active-task-available="true"
+          :ticket-stat-label="graphTicketStatLabel"
+          :edge-stat-label="graphEdgeStatLabel"
+          :status-rows="graphStatusRows"
+          :status-filters="graphStatusFilters"
+          :block-rows="graphBlockRows"
+          :block-filters="graphBlockFilters"
+          :filters-active="graphFiltersActive"
+          :selection-visible="graphSelectionVisible"
+          :selection-label="graphSelectionLabel"
+          :selected-ticket="graphSelectedTicket"
+          :selected-edge-label="graphSelectedEdge?.label ?? null"
+          :selection-stats="graphSelectionStats"
+          @toggle-status="graph.toggleStatus"
+          @toggle-block="graph.toggleBlock"
+          @clear-filters="graph.clearFilters"
+          @open-task-detail="openTaskDetail(mapTaskKey)"
+          @node-click="graph.onNodeClick"
+          @edge-click="graph.onEdgeClick"
+          @pane-click="graph.onCanvasClick"
+          @graph-canvas-click="graph.onCanvasClick"
+          @open-selected-detail="graph.openSelectedDetail"
+          @clear-graph-focus="graph.clearFocus"
+          @viewport-change-end="graph.onViewportChange"
+          @viewport-ready="graph.onViewportReady"
+        />
+      </template>
+    </template>
     <TrackerTaskDetailDialog
-      v-model="taskDetailOpen"
-      :task="activeTask"
+      ref="taskDialog"
+      :model-value="Boolean(detailTaskKey || detailTicketKey)"
+      :task="detailTask"
+      :tickets="detailTickets"
+      :loading="detailLoading"
+      :error="detailError"
+      :ticket-key="detailTicketKey"
+      :ticket="detailTicket"
+      :can-go-back="Boolean(detailTaskKey)"
+      :ticket-error="!detailLoading && !detailTicket ? detailError ?? 'This ticket is no longer available in the selected task.' : null"
+      :refresh-content="refreshTaskContent"
       :contexts="taskContexts"
       :context-artifacts="taskContextArtifacts"
       :context-page-info="taskContextPageInfo"
       :context-artifact-page-info="taskContextArtifactPageInfo"
       :context-loading="taskContextLoading"
       :context-error="taskContextError"
+      @update:model-value="!$event && navigate({ detail: undefined, ticket: undefined })"
+      @view-dependencies="viewDependencies"
+      @open-ticket="openTicket"
+      @back-to-task="navigate({ ticket: undefined })"
+      @retry="loadDetail(detailTaskKey)"
+    />
+    <TrackerTicketDetailPanel
+      :model-value="viewMode === 'graph' && graphDetailPanelOpen && !detailTaskKey && !detailTicketKey"
+      :ticket="graphSelectedTicket"
+      :title="graphSelectedTicket?.title ?? 'Ticket details'"
+      :description="graphSelectedTicket?.key"
+      @update:model-value="graphDetailPanelOpen = $event"
     />
   </UiPageShell>
 </template>
 
 <style scoped>
-.tracker-page-shell {
-  display: flex;
-  min-height: calc(100vh - 40px);
-  flex-direction: column;
-}
-
-.tracker-workspace {
-  display: flex;
-  flex: 1 1 auto;
-  min-height: 0;
-}
-
-.tracker-focus {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-}
-
-.tracker-main {
-  display: flex;
-  flex: 1 1 auto;
-  min-height: 0;
-}
+.tracker-page-shell { display: flex; height: calc(100dvh - 48px); min-height: 540px; flex-direction: column; }
+.tracker-board-workspace { display: flex; flex: 1 1 auto; min-height: 0; flex-direction: column; }
+.tracker-page-shell > :deep(.tracker-flow-shell) { min-height: 360px; }
 </style>

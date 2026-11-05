@@ -295,7 +295,6 @@ function onCardKeydown(e: KeyboardEvent, row: T): void {
         :tabindex="interactive || selection ? 0 : undefined"
         class="rounded-lg border border-default bg-bg-surface p-3 shadow-xs"
         :class="{ 'bg-accent-subtle': isSelected(row) || isActive(row) }"
-        :aria-selected="isSelected(row)"
         :aria-current="isActive(row) ? 'true' : undefined"
         @click="interactive && emit('row-click', row)"
         @keydown="onCardKeydown($event, row)"

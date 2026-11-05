@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal, Protocol
 
-from stackos.host_mcp.adapters import claude_code, claude_desktop, codex, gemini_cli, hermes
+from stackos.host_mcp.adapters import claude_code, claude_desktop, codex, gemini_cli, grok, hermes
 from stackos.host_mcp.bridge import MCP_SERVER_NAME, default_home, token_preflight
 from stackos.host_mcp.result import (
     HostMcpConnectionState,
@@ -217,7 +217,7 @@ def _single(
                 ok=False,
                 available=False,
                 blocking=True,
-                repair=("Use one of: codex, claude-code, claude-desktop, gemini-cli, hermes."),
+                repair="Use one of: codex, claude-code, claude-desktop, gemini-cli, hermes, grok.",
             ),
             HostMcpPolicy(host_key, host_key, "automatic"),
         )
@@ -298,6 +298,10 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 home,
                 profile=profile,
             ),
+        ),
+        HostMcpDefinition(
+            grok,
+            HostMcpPolicy("grok", "Grok", "automatic"),
         ),
     )
 

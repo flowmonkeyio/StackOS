@@ -1,0 +1,22 @@
+{
+  "command": [
+    "pnpm",
+    "--dir",
+    "ui",
+    "exec",
+    "vitest",
+    "run",
+    "src/components/backups/BackupPanel.spec.ts",
+    "src/components/ui/UiDropdownMenu.spec.ts",
+    "src/lib/desktop.spec.ts",
+    "src/components/ui/UiButton.spec.ts",
+    "src/App.local-setup.spec.ts",
+    "src/lib/backups.spec.ts",
+    "src/read-only-ui.spec.ts",
+    "src/no-watch-ui.spec.ts"
+  ],
+  "started_at": "2026-10-28T14:51:54.074262+00:00",
+  "exit_code": 0,
+  "log": "/tmp/stackos-workflow-718/ui-ui2-repair1-focused-final.log",
+  "sha256": "7c2ff1e4b881dce73832ca32083a641b1e8216f5a178be188be15341addd62a3"
+}

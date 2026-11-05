@@ -1,0 +1,11 @@
+{
+  "checked_files": [
+    "api-key-preflight.log",
+    "api-key-build-attempt-2.log",
+    "release-tree/desktop/.electron-builder.generated.json",
+    "release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/update-config.json",
+    "release-tree/desktop/dist/mac-arm64/StackOS.app/Contents/Resources/app-update.yml"
+  ],
+  "leaks": [],
+  "passed": true
+}

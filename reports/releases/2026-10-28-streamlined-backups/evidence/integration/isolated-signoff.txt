@@ -1,0 +1,407 @@
+uv run ruff check .
+Using CPython 3.13.11
+Creating virtual environment at: .venv
+   Building stackos @ file:///private/tmp/stackos-workflow-718/signoff-candidate
+      Built stackos @ file:///private/tmp/stackos-workflow-718/signoff-candidate
+Installed 99 packages in 181ms
+All checks passed!
+uv run ruff format --check .
+756 files already formatted
+uv run mypy stackos
+Success: no issues found in 405 source files
+uv run pytest tests -q --durations=20
+bringing up nodes...
+bringing up nodes...
+
+........................................................................ [  1%]
+........................................................................ [  2%]
+........................................................................ [  3%]
+........................................................................ [  5%]
+........................................................................ [  6%]
+........................................................................ [  7%]
+........................................................................ [  9%]
+........................................................................ [ 10%]
+........................................................................ [ 11%]
+........................................................................ [ 13%]
+........................................................................ [ 14%]
+........................................................................ [ 15%]
+........................................................................ [ 17%]
+........................................................................ [ 18%]
+........................................................................ [ 19%]
+........................................................................ [ 21%]
+........................................................................ [ 22%]
+........................................................................ [ 23%]
+........................................................................ [ 25%]
+........................................................................ [ 26%]
+........................................................................ [ 27%]
+........................................................................ [ 29%]
+........................................................................ [ 30%]
+........................................................................ [ 31%]
+........................................................................ [ 32%]
+........................................................................ [ 34%]
+........................................................................ [ 35%]
+........................................................................ [ 36%]
+........................................................................ [ 38%]
+........................................................................ [ 39%]
+........................................................................ [ 40%]
+........................................................................ [ 42%]
+........................................................................ [ 43%]
+........................................................................ [ 44%]
+........................................................................ [ 46%]
+........................................................................ [ 47%]
+........................................................................ [ 48%]
+........................................................................ [ 50%]
+........................................................................ [ 51%]
+........................................................................ [ 52%]
+........................................................................ [ 54%]
+........................................................................ [ 55%]
+........................................................................ [ 56%]
+........................................................................ [ 58%]
+........................................................................ [ 59%]
+........................................................................ [ 60%]
+........................................................................ [ 61%]
+........................................................................ [ 63%]
+........................................................................ [ 64%]
+........................................................................ [ 65%]
+........................................................................ [ 67%]
+........................................................................ [ 68%]
+........................................................................ [ 69%]
+........................................................................ [ 71%]
+........................................................................ [ 72%]
+........................................................................ [ 73%]
+........................................................................ [ 75%]
+........................................................................ [ 76%]
+........................................................................ [ 77%]
+........................................................................ [ 79%]
+........................................................................ [ 80%]
+........................................................................ [ 81%]
+........................................................................ [ 83%]
+........................................................................ [ 84%]
+........................................................................ [ 85%]
+........................................................................ [ 87%]
+........................................................................ [ 88%]
+........................................................................ [ 89%]
+........................................................................ [ 91%]
+........................................................................ [ 92%]
+........................................................................ [ 93%]
+........................................................................ [ 94%]
+........................................................................ [ 96%]
+........................................................................ [ 97%]
+........................................................................ [ 98%]
+...........................................................              [100%]
+=============================== warnings summary ===============================
+tests/unit/test_backups.py::test_authenticated_malicious_zip_rejected_without_partial_output[duplicate]
+  /Users/sergeyrura/.local/share/uv/python/cpython-3.13.11-macos-aarch64-none/lib/python3.13/zipfile/__init__.py:1655: UserWarning: Duplicate name: 'manifest.json'
+    return self._open_to_write(zinfo, force_zip64=force_zip64)
+
+tests/unit/test_cli_install.py: 15 warnings
+tests/integration/test_routes/test_finance_management_routes.py: 87 warnings
+tests/integration/test_mcp/test_mcp_ownership.py: 67 warnings
+tests/integration/test_mcp/test_mcp_bridge_agent_path.py: 55 warnings
+tests/integration/test_routes/test_finance_project_storage.py: 54 warnings
+tests/integration/test_mcp/test_mcp_communications.py: 48 warnings
+tests/integration/test_mcp/test_mcp_google_service_accounts.py: 42 warnings
+tests/integration/test_mcp/test_mcp_stripe_actions.py: 40 warnings
+tests/integration/test_mcp/test_mcp_actions.py: 36 warnings
+tests/integration/test_mcp/test_mcp_run_plans.py: 33 warnings
+tests/integration/test_mcp/test_mcp_google_indexing.py: 32 warnings
+tests/integration/test_mcp/test_mcp_readiness.py: 32 warnings
+tests/integration/test_schema.py: 6 warnings
+tests/integration/test_routes/test_operations_routes.py: 27 warnings
+tests/integration/test_mcp/test_mcp_workspaces.py: 21 warnings
+tests/unit/test_auth_route.py: 19 warnings
+tests/unit/test_health.py: 21 warnings
+tests/integration/test_mcp/test_mcp_hidden_vendor_tools.py: 18 warnings
+tests/integration/test_routes/test_slack_ingress_routes.py: 18 warnings
+tests/integration/test_routes/test_hubspot_ingress_routes.py: 17 warnings
+tests/integration/test_mcp/test_mcp_aignc_actions.py: 16 warnings
+tests/integration/test_mcp/test_mcp_finance_billing_workflow.py: 14 warnings
+tests/integration/test_mcp/test_mcp_quickbooks.py: 12 warnings
+tests/integration/test_mcp/test_telegram_communication_payload_contract.py: 9 warnings
+tests/integration/test_routes/test_auth_provider_routes.py: 12 warnings
+tests/integration/test_mcp/test_mcp_tracker.py: 11 warnings
+tests/integration/test_mcp/test_mcp_auth_provider_wrappers.py: 11 warnings
+tests/integration/test_mcp/test_mcp_operator_approval.py: 11 warnings
+tests/integration/test_mcp/test_mcp_execution_overviews.py: 10 warnings
+tests/unit/test_prepared_app_database.py: 12 warnings
+tests/integration/test_mcp/test_mcp_finance_management.py: 1 warning
+tests/integration/test_mcp/test_mcp_agent_presets.py: 9 warnings
+tests/integration/test_mcp/test_mcp_auth.py: 9 warnings
+tests/integration/test_routes/test_workflow_templates_routes.py: 8 warnings
+tests/integration/test_mcp/test_mcp_projects.py: 7 warnings
+tests/integration/test_mcp/test_mcp_tool_grants.py: 7 warnings
+tests/integration/test_mcp/test_mcp_workflow_templates.py: 7 warnings
+tests/integration/test_mcp/test_stripe_pdf.py: 7 warnings
+tests/integration/test_routes/test_filtering.py: 1 warning
+tests/integration/test_app_lifespan.py: 8 warnings
+tests/integration/test_mcp/test_mcp_host_status.py: 5 warnings
+tests/integration/test_mcp/test_mcp_context.py: 6 warnings
+tests/integration/test_routes/test_projects_routes.py: 6 warnings
+tests/integration/test_routes/test_runs_routes.py: 6 warnings
+tests/integration/test_mcp/test_mcp_seo_workflows.py: 6 warnings
+tests/integration/test_mcp/test_mcp_runs.py: 5 warnings
+tests/integration/test_mcp/test_mcp_s3_actions.py: 5 warnings
+tests/integration/test_routes/test_run_plans_routes.py: 5 warnings
+tests/integration/test_routes/test_quickbooks_callback.py: 5 warnings
+tests/integration/test_routes/test_tracker_operations_routes.py: 5 warnings
+tests/integration/test_mcp/test_mcp_action_validate_idempotency.py: 4 warnings
+tests/integration/test_mcp/test_mcp_lifecycle.py: 4 warnings
+tests/integration/test_mcp/test_mcp_envelope_shape.py: 4 warnings
+tests/integration/test_mcp/test_mcp_slack_history.py: 4 warnings
+tests/integration/test_mcp/test_mcp_backups_boundary.py: 4 warnings
+tests/integration/test_routes/test_context_routes.py: 4 warnings
+tests/integration/test_mcp/test_mcp_finance_email_followups.py: 4 warnings
+tests/integration/test_routes/test_action_validate_idempotency_routes.py: 4 warnings
+tests/integration/test_routes/test_finance_backup_integration.py: 7 warnings
+tests/integration/test_routes/test_pagination.py: 4 warnings
+tests/integration/test_routes/test_errors.py: 4 warnings
+tests/integration/test_routes/test_plugins_routes.py: 4 warnings
+tests/integration/test_mcp/test_mcp_guides.py: 3 warnings
+tests/integration/test_mcp/test_mcp_meta_enums.py: 3 warnings
+tests/integration/test_mcp/test_mcp_ftp_cloudflare_actions.py: 3 warnings
+tests/integration/test_mcp/test_mcp_linear_actions.py: 3 warnings
+tests/integration/test_mcp/test_mcp_idempotency.py: 3 warnings
+tests/integration/test_mcp/test_mcp_agent_requests.py: 3 warnings
+tests/integration/test_mcp/test_mcp_project_guidance.py: 3 warnings
+tests/integration/test_routes/test_actions_routes.py: 3 warnings
+tests/integration/test_routes/test_backup_operations_routes.py: 3 warnings
+tests/integration/test_routes/test_sitemap_route.py: 3 warnings
+tests/integration/test_routes/test_request_id.py: 3 warnings
+tests/integration/test_routes/test_resources_routes.py: 3 warnings
+tests/integration/test_routes/test_meta_routes.py: 3 warnings
+tests/integration/test_mcp/test_mcp_errors.py: 2 warnings
+tests/integration/test_jobs/test_backup_maintenance.py: 4 warnings
+tests/integration/test_mcp/test_mcp_resources.py: 2 warnings
+tests/integration/test_mcp/test_mcp_imap_output.py: 2 warnings
+tests/integration/test_mcp/test_mcp_google_ads_pagination.py: 2 warnings
+tests/integration/test_mcp/test_mcp_run_token_correlation.py: 2 warnings
+tests/integration/test_mcp/test_mcp_sitemap.py: 2 warnings
+tests/integration/test_mcp/test_mcp_communication_surface_bindings.py: 2 warnings
+tests/integration/test_mcp/test_mcp_plugins.py: 2 warnings
+tests/integration/test_mcp/test_mcp_imap_custom_ca.py: 1 warning
+tests/integration/test_routes/test_telegram_ingress_retirement.py: 1 warning
+tests/integration/test_routes/test_cli_mock_provider.py: 1 warning
+tests/integration/test_mcp/test_mcp_internal_diagnostics.py: 1 warning
+tests/integration/test_routes/test_telegram_setup_to_action_routes.py: 1 warning
+tests/integration/test_mcp/test_mcp_finance_customer_identifiers.py: 1 warning
+tests/integration/test_mcp/test_mcp_finance_receipt_workflow.py: 1 warning
+  /private/tmp/stackos-workflow-718/signoff-candidate/.venv/lib/python3.13/site-packages/alembic/config.py:612: DeprecationWarning: No path_separator found in configuration; falling back to legacy splitting on spaces, commas, and colons for prepend_sys_path.  Consider adding path_separator=os to Alembic config.
+    util.warn_deprecated(
+
+tests/unit/test_cli_install.py: 12 warnings
+tests/integration/test_routes/test_finance_management_routes.py: 1 warning
+tests/integration/test_mcp/test_mcp_ownership.py: 1 warning
+tests/integration/test_mcp/test_mcp_bridge_agent_path.py: 1 warning
+tests/integration/test_routes/test_finance_project_storage.py: 1 warning
+tests/integration/test_mcp/test_mcp_communications.py: 1 warning
+tests/integration/test_mcp/test_mcp_google_service_accounts.py: 1 warning
+tests/integration/test_schema.py: 5 warnings
+tests/unit/test_auth_route.py: 19 warnings
+tests/unit/test_health.py: 21 warnings
+tests/unit/test_prepared_app_database.py: 10 warnings
+tests/integration/test_mcp/test_mcp_auth.py: 1 warning
+tests/integration/test_app_lifespan.py: 6 warnings
+tests/integration/test_jobs/test_backup_maintenance.py: 2 warnings
+  /private/tmp/stackos-workflow-718/signoff-candidate/.venv/lib/python3.13/site-packages/sqlalchemy/engine/default.py:952: DeprecationWarning: The default datetime adapter is deprecated as of Python 3.12; see the sqlite3 documentation for suggested replacement recipes
+    cursor.execute(statement, parameters)
+
+tests/integration/test_repositories/test_telegram_account_setup.py::test_first_application_conflict_rolls_back_staged_account_and_same_session_can_retry
+  /private/tmp/stackos-workflow-718/signoff-candidate/stackos/repositories/projects.py:319: SAWarning: Identity map already had an identity for (<class 'stackos.db.model_auth.IntegrationCredential'>, (1,), None), replacing it with newly flushed object.   Are there load operations occurring inside of an event handler within the flush?
+    self._s.flush()
+
+tests/integration/test_repositories/test_telegram_account_setup.py::test_existing_application_removed_during_create_rolls_back_staged_account
+  /private/tmp/stackos-workflow-718/signoff-candidate/stackos/repositories/projects.py:319: SAWarning: Identity map already had an identity for (<class 'stackos.db.model_auth.IntegrationCredential'>, (2,), None), replacing it with newly flushed object.   Are there load operations occurring inside of an event handler within the flush?
+    self._s.flush()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================= slowest 20 durations =============================
+2.96s call     tests/integration/test_schema.py::test_ownership_migration_preserves_existing_data_and_refuses_history_loss
+2.88s call     tests/unit/test_claude_mcp.py::test_register_discovers_gui_claude_candidate_when_path_is_empty
+2.86s call     tests/integration/test_install_scripts/test_make_uninstall.py::test_make_uninstall_removes_integrations_and_preserves_local_state
+2.78s call     tests/integration/test_mcp/test_mcp_seo_workflows.py::test_prepare_and_later_assess_execute_without_provider_or_inapplicable_approval
+2.73s call     tests/integration/test_repositories/test_telegram_actions.py::test_native_close_keeps_dispatch_truth_in_actual_host_projection[True]
+2.41s call     tests/unit/test_claude_mcp.py::test_register_uses_claude_cli_user_scope_without_secrets
+2.10s call     tests/integration/test_install_scripts/test_pipx_wheel_layout.py::test_wheel_management_origin_read_query_and_guarded_edit
+2.09s call     tests/integration/test_repositories/test_actions.py::test_byteplus_seedream_generate_action_executes_and_registers_artifacts
+2.02s call     tests/integration/test_schema.py::test_alembic_downgrade_then_upgrade_idempotent
+1.99s call     tests/integration/test_routes/test_finance_project_storage.py::test_evidence_fifo_is_rejected_in_a_bounded_subprocess[preexisting]
+1.98s call     tests/integration/test_routes/test_finance_project_storage.py::test_evidence_fifo_is_rejected_in_a_bounded_subprocess[during-open]
+1.93s call     tests/integration/test_mcp/test_mcp_finance_billing_workflow.py::test_actual_billing_template_two_lines_and_send_recovery[usd-accepted]
+1.83s call     tests/integration/test_repositories/test_actions.py::test_custom_http_action_executes_static_webhook_with_daemon_side_auth
+1.70s call     tests/unit/test_finance_management_package.py::test_relocated_management_helpers_without_source_checkout
+1.70s call     tests/integration/test_schema.py::test_project_id_migration_preserves_data_and_never_reuses_ids
+1.66s call     tests/integration/test_mcp/test_mcp_finance_billing_workflow.py::test_actual_settlement_template_recovers_lost_report_without_reporting_twice[partial-attach-known]
+1.65s call     tests/integration/test_schema.py::test_telegram_cutover_retires_active_bindings_preserves_history
+1.55s call     tests/unit/test_cli_install.py::test_doctor_exits_9_for_stale_stackos_plugin_skill_cache
+1.51s call     tests/integration/test_schema.py::test_browser_replacement_preserves_historic_rows_and_profile_path
+1.49s call     tests/integration/test_install_scripts/test_doctor_json_output.py::test_doctor_json_emits_documented_schema
+5459 passed, 1126 warnings in 116.67s (0:01:56)
+
+> stackos-ui@0.0.1 test /private/tmp/stackos-workflow-718/signoff-candidate/ui
+> vitest run
+
+
+ RUN  v2.1.9 /private/tmp/stackos-workflow-718/signoff-candidate/ui
+
+stderr | src/views/ActionCallsView.spec.ts > ActionCallsView > honors exact day and action drilldowns while ordinary ledger requests retain all dry-run modes
+[Vue Router warn]: No active route record was found when calling `onBeforeRouteUpdate()`. Make sure you call this function inside a component child of <router-view>. Maybe you called it inside of App.vue?
+
+stderr | src/views/ActionCallsView.spec.ts > ActionCallsView > renders project action-call audit rows with sanitized details and filters
+[Vue Router warn]: No active route record was found when calling `onBeforeRouteUpdate()`. Make sure you call this function inside a component child of <router-view>. Maybe you called it inside of App.vue?
+
+ ✓ src/components/backups/BackupPanel.spec.ts (38 tests) 307ms
+stderr | src/views/ActionCallsView.spec.ts > ActionCallsView > renders and controls a durable action call through the registered lifecycle operations
+[Vue Router warn]: No active route record was found when calling `onBeforeRouteUpdate()`. Make sure you call this function inside a component child of <router-view>. Maybe you called it inside of App.vue?
+
+ ✓ src/views/ActionCallsView.spec.ts (3 tests) 595ms
+   ✓ ActionCallsView > renders and controls a durable action call through the registered lifecycle operations 349ms
+ ✓ src/components/finance/FinanceRecordPanel.spec.ts (55 tests) 756ms
+ ✓ src/views/TaskTrackerView.spec.ts (6 tests) 482ms
+ ✓ src/views/ConnectionsView.slack.spec.ts (4 tests) 422ms
+ ✓ src/views/ConnectionsView.accounts.spec.ts (10 tests) 1272ms
+ ✓ src/views/ConnectionsView.topology.spec.ts (5 tests) 531ms
+ ✓ src/views/accounts/NativeAccountAuthorizationPanel.spec.ts (12 tests) 70ms
+ ✓ src/views/FinanceView.spec.ts (89 tests) 1992ms
+ ✓ src/components/finance/FinanceFilters.spec.ts (15 tests) 258ms
+ ✓ src/views/HomeView.spec.ts (4 tests) 151ms
+ ✓ src/views/WorkflowTemplatesView.spec.ts (1 test) 133ms
+ ✓ src/views/finance/FinanceOverviewCharts.spec.ts (5 tests) 129ms
+ ✓ src/views/accounts/TelegramProxySetupSection.spec.ts (5 tests) 61ms
+ ✓ src/components/renderers/RunPlanRenderer.spec.ts (3 tests) 46ms
+ ✓ src/views/AccountsView.spec.ts (16 tests) 2567ms
+   ✓ AccountsView > saves one Telegram user Account, follows TDLib challenges, and resumes saved sign-in without connecting 382ms
+ ✓ src/components/ui/UiSelect.spec.ts (7 tests) 64ms
+ ✓ src/views/AgentPresetsView.spec.ts (2 tests) 255ms
+ ✓ src/views/ConnectionsView.readiness.spec.ts (2 tests) 175ms
+ ✓ src/composables/useProjectNavigation.spec.ts (5 tests) 32ms
+ ✓ src/views/AgentRequestsView.spec.ts (3 tests) 251ms
+ ✓ src/components/DesktopUpdatePrompt.spec.ts (7 tests) 286ms
+ ✓ src/views/finance/FinanceOverviewInsights.spec.ts (9 tests) 52ms
+ ✓ src/lib/task-tracker/liveEvents.spec.ts (8 tests) 11ms
+ ✓ src/views/PluginsView.spec.ts (3 tests) 210ms
+ ✓ src/App.local-setup.spec.ts (3 tests) 144ms
+ ✓ src/views/home/TicketStatusChart.spec.ts (5 tests) 111ms
+ ✓ src/components/renderers/TemplateRenderer.spec.ts (1 test) 29ms
+ ✓ src/views/connections/ConnectionCredentialField.spec.ts (7 tests) 46ms
+ ✓ src/views/HomeConsoleView.spec.ts (2 tests) 77ms
+ ✓ src/App.spec.ts (3 tests) 51ms
+ ✓ src/components/DataTable.spec.ts (11 tests) 46ms
+ ✓ src/views/ConnectionsView.linear.spec.ts (1 test) 100ms
+ ✓ src/views/accounts/NativeAccountSessionPanel.spec.ts (5 tests) 29ms
+ ✓ src/views/ResourceExplorerView.spec.ts (1 test) 104ms
+ ✓ src/composables/useProjectScopedLoader.spec.ts (4 tests) 20ms
+ ✓ src/components/ui/UiSidePanel.spec.ts (6 tests) 51ms
+ ✓ src/components/ui/UiButton.spec.ts (8 tests) 33ms
+ ✓ src/views/OperationsView.spec.ts (1 test) 149ms
+ ✓ src/views/RunsView.spec.ts (2 tests) 88ms
+ ✓ src/views/task-tracker/TrackerTaskDetailDialog.spec.ts (2 tests) 46ms
+ ✓ src/components/TabBar.spec.ts (6 tests) 32ms
+ ✓ src/components/ProjectSwitcher.spec.ts (6 tests) 30ms
+ ✓ src/components/renderers/WorkflowTemplateJourney.spec.ts (3 tests) 135ms
+ ✓ src/views/connections/providerSetup.spec.ts (2 tests) 24ms
+ ✓ src/views/RunDetail.spec.ts (4 tests) 229ms
+ ✓ src/components/domain/ProviderMark.spec.ts (7 tests) 17ms
+ ✓ src/views/task-tracker/TrackerGraphPanel.spec.ts (1 test) 21ms
+ ✓ src/views/accounts/AccountSetupFlow.spec.ts (3 tests) 30ms
+ ✓ src/components/SubNav.spec.ts (5 tests) 26ms
+ ✓ src/lib/clipboard.spec.ts (3 tests) 11ms
+ ✓ src/lib/desktop.spec.ts (15 tests) 8ms
+ ✓ src/views/plugins/IntegrationAvailability.spec.ts (10 tests) 24ms
+ ✓ src/components/renderers/ActionSchemaRenderer.spec.ts (1 test) 22ms
+ ✓ src/views/task-tracker/TicketGraphNode.spec.ts (1 test) 17ms
+ ✓ src/components/ui/UiDialog.spec.ts (2 tests) 40ms
+ ✓ src/views/project-detail/CostBudgetTab.spec.ts (1 test) 76ms
+ ✓ src/views/plugins/PluginDirectoryCard.spec.ts (2 tests) 25ms
+ ✓ src/views/home/useHomeAgentHostStatuses.spec.ts (2 tests) 6ms
+ ✓ src/views/finance/FinanceOverview.spec.ts (1 test) 32ms
+ ✓ src/components/MarkdownView.spec.ts (5 tests) 40ms
+ ✓ src/views/home/useTicketCounts.spec.ts (1 test) 11ms
+ ✓ src/components/StatusBadge.spec.ts (6 tests) 24ms
+ ✓ src/components/ui/UiFactGroups.spec.ts (1 test) 15ms
+ ✓ src/views/project-detail/SchedulesTab.spec.ts (1 test) 27ms
+ ✓ src/views/task-tracker/TrackerWarningSummary.spec.ts (2 tests) 20ms
+ ✓ src/views/ProjectDataView.spec.ts (1 test) 35ms
+ ✓ src/components/ui/UiCard.spec.ts (2 tests) 21ms
+ ✓ src/composables/usePolling.spec.ts (1 test) 12ms
+ ✓ src/components/ui/UiDropdownMenu.spec.ts (1 test) 21ms
+ ✓ src/components/renderers/ResourceViewRenderer.spec.ts (1 test) 34ms
+ ✓ src/stores/plugins.spec.ts (8 tests) 14ms
+ ✓ src/views/task-tracker/viewModel.spec.ts (7 tests) 4ms
+ ✓ src/components/ui/UiPanel.spec.ts (1 test) 16ms
+ ✓ src/components/ui/UiSegmentedControl.spec.ts (1 test) 17ms
+ ✓ src/lib/task-tracker/graphModel.spec.ts (5 tests) 18ms
+ ✓ src/views/connections/formatters.spec.ts (15 tests) 4ms
+ ✓ src/components/ui/UiMetadataStrip.spec.ts (1 test) 13ms
+ ✓ src/lib/stackos/nav.spec.ts (7 tests) 4ms
+ ✓ src/stores/attention.spec.ts (4 tests) 7ms
+ ✓ src/lib/finance.spec.ts (41 tests) 7ms
+ ✓ src/views/connections/providerReadiness.spec.ts (7 tests) 4ms
+ ✓ src/views/finance/overviewViewModel.spec.ts (6 tests) 11ms
+ ✓ src/screen-composition.spec.ts (7 tests) 3ms
+ ✓ src/views/plugins/viewModel.spec.ts (3 tests) 2ms
+ ✓ src/stores/costs.spec.ts (7 tests) 10ms
+ ✓ src/views/finance/insightsViewModel.spec.ts (9 tests) 9ms
+ ✓ src/views/plugins/useIntegrationAvailability.spec.ts (6 tests) 4ms
+ ✓ src/views/connections/profilePayloads.spec.ts (2 tests) 2ms
+ ✓ src/read-only-ui.spec.ts (4 tests) 16ms
+ ✓ src/stores/runs.spec.ts (5 tests) 7ms
+ ✓ src/lib/task-tracker/graphFocus.spec.ts (4 tests) 3ms
+ ✓ src/views/home/agentHostPresentation.spec.ts (4 tests) 2ms
+ ✓ src/lib/stackos/projectNavigation.spec.ts (25 tests) 4ms
+ ✓ src/stores/projects.spec.ts (5 tests) 7ms
+ ✓ src/stores/projectScope.spec.ts (3 tests) 5ms
+ ✓ src/lib/stackos/time.spec.ts (10 tests) 15ms
+ ✓ src/lib/stackos/events.spec.ts (7 tests) 3ms
+ ✓ src/page-layout-contract.spec.ts (4 tests) 3ms
+ ✓ src/views/home/useHomePortfolioInsights.spec.ts (3 tests) 4ms
+ ✓ src/stores/schedules.spec.ts (3 tests) 6ms
+ ✓ src/views/connections/ingressResults.spec.ts (4 tests) 2ms
+ ✓ src/lib/stackos/projectRequestGate.spec.ts (5 tests) 2ms
+ ✓ src/composables/useProjectRouteScope.spec.ts (3 tests) 3ms
+ ✓ src/lib/client.spec.ts (4 tests) 2ms
+ ✓ src/lib/stackos/json.spec.ts (9 tests) 13ms
+ ✓ src/stores/auth.spec.ts (3 tests) 6ms
+ ✓ src/no-watch-ui.spec.ts (1 test) 14ms
+ ✓ src/lib/operations.spec.ts (2 tests) 4ms
+ ✓ src/composables/useConnectionForm.spec.ts (1 test) 2ms
+ ✓ src/stores/toasts.spec.ts (4 tests) 5ms
+ ✓ src/lib/backups.spec.ts (3 tests) 2ms
+ ✓ src/design/status.spec.ts (8 tests) 2ms
+ ✓ src/views/home/ticketOverview.spec.ts (1 test) 1ms
+ ✓ src/lib/stackos/format.spec.ts (4 tests) 2ms
+
+ Test Files  115 passed (115)
+      Tests  742 passed (742)
+   Start at  00:06:42
+   Duration  9.43s (transform 2.93s, setup 322ms, collect 14.02s, tests 13.59s, environment 13.94s, prepare 3.43s)
+
+
+> stackos-ui@0.0.1 build /private/tmp/stackos-workflow-718/signoff-candidate/ui
+> vue-tsc && vite build
+
+vite v5.4.21 building for production...
+transforming...
+✓ 743 modules transformed.
+rendering chunks...
+computing gzip size...
+../stackos/ui_dist/index.html                                                       0.55 kB │ gzip:   0.35 kB
+../stackos/ui_dist/assets/jetbrains-mono-vietnamese-wght-normal-Bt-aOZkq.woff2      7.50 kB
+../stackos/ui_dist/assets/jetbrains-mono-greek-wght-normal-Bw9x6K1M.woff2           9.00 kB
+../stackos/ui_dist/assets/inter-vietnamese-wght-normal-CBcvBZtf.woff2              10.25 kB
+../stackos/ui_dist/assets/inter-greek-ext-wght-normal-DlzME5K_.woff2               11.23 kB
+../stackos/ui_dist/assets/jetbrains-mono-cyrillic-wght-normal-D73BlboJ.woff2       12.11 kB
+../stackos/ui_dist/assets/jetbrains-mono-latin-ext-wght-normal-DBQx-q_a.woff2      15.20 kB
+../stackos/ui_dist/assets/inter-cyrillic-wght-normal-DqGufNeO.woff2                18.75 kB
+../stackos/ui_dist/assets/inter-greek-wght-normal-CkhJZR-_.woff2                   19.00 kB
+../stackos/ui_dist/assets/inter-cyrillic-ext-wght-normal-BOeWTOD4.woff2            25.96 kB
+../stackos/ui_dist/assets/jetbrains-mono-latin-wght-normal-B9CIFXIH.woff2          40.40 kB
+../stackos/ui_dist/assets/inter-latin-wght-normal-Dx4kXJAl.woff2                   48.26 kB
+../stackos/ui_dist/assets/inter-latin-ext-wght-normal-DO1Apj_S.woff2               85.07 kB
+../stackos/ui_dist/assets/index-D4hJKP-w.css                                       89.63 kB │ gzip:  19.13 kB
+../stackos/ui_dist/assets/index-CjBuNCht.js                                     1,304.43 kB │ gzip: 400.59 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 2.19s

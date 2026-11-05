@@ -265,11 +265,11 @@ function inspectStatus(status: TrackerStatus): void {
           kind="tracker"
           :status="task.status"
         /><span class="text-xs text-fg-subtle">Recorded {{ formatAbsoluteDateTime(task.updated_at) }}</span><UiButton
-          :href="`${base}/tasks?task=${encodeURIComponent(task.key)}`"
+          :href="`${base}/tasks?detail=${encodeURIComponent(task.key)}`"
           variant="ghost"
           size="sm"
           icon-right="arrow-right"
-          @click.prevent="router.push(`${base}/tasks?task=${encodeURIComponent(task.key)}`)"
+          @click.prevent="router.push(`${base}/tasks?detail=${encodeURIComponent(task.key)}`)"
         >
           Open Work
         </UiButton>

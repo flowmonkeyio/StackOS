@@ -1,0 +1,113 @@
+{
+  "setup": {
+    "result": {
+      "ok": true,
+      "status": "completed",
+      "message": "Backups are enabled and the first backup is saved. Keep your recovery key and an archive copy off this device.",
+      "outputPath": "/private/tmp/stackos-workflow-718/native-roundtrip-2/destination"
+    },
+    "recipient": "466bffb9b33b5734a27819d197b71f7b8ef90225f85634591d2b10530d75e369",
+    "firstArchive": "/private/tmp/stackos-workflow-718/native-roundtrip-2/destination/stackos-backup-20261028T065633847203Z-5a0147bd.sbak",
+    "keySha256": "e95cf5870815a0ce4000588c944ac4a448eaca2b06e3661081c9e6a2d241f7a8",
+    "policySha256": "6e06ac733a33108cc7363f54388dfe666c7eb41918626a9c4c272e3a440d0784",
+    "choices": [
+      {
+        "kind": "open",
+        "title": "Choose a backup folder",
+        "cancelled": true
+      },
+      {
+        "kind": "open",
+        "title": "Choose a backup folder",
+        "cancelled": false
+      },
+      {
+        "kind": "save",
+        "title": "Save your recovery key separately from backups",
+        "cancelled": true
+      },
+      {
+        "kind": "open",
+        "title": "Choose a backup folder",
+        "cancelled": false
+      },
+      {
+        "kind": "save",
+        "title": "Save your recovery key separately from backups",
+        "cancelled": false
+      }
+    ],
+    "cancellationPreservedPolicy": true,
+    "encryptedPrivateCopy": true,
+    "noPlaintextStaging": true
+  },
+  "restart": {
+    "archive": {
+      "ok": true,
+      "status": "completed",
+      "message": "Encrypted backup exported. Keep a copy off this device.",
+      "outputPath": "/private/tmp/stackos-workflow-718/native-roundtrip-2/exports/latest.sbak"
+    },
+    "first": {
+      "ok": true,
+      "status": "completed",
+      "message": "Recovery key exported. Store it separately from your archives.",
+      "outputPath": "/private/tmp/stackos-workflow-718/native-roundtrip-2/exports/recovery-one.pem"
+    },
+    "second": {
+      "ok": true,
+      "status": "completed",
+      "message": "Recovery key exported. Store it separately from your archives.",
+      "outputPath": "/private/tmp/stackos-workflow-718/native-roundtrip-2/exports/recovery-two.pem"
+    },
+    "configuredSetupRefused": true,
+    "policyUnchanged": true,
+    "originalPortableUnavailable": true,
+    "matchingExports": true,
+    "nativeOriginalKeyPrompts": 0,
+    "choices": [
+      {
+        "kind": "save",
+        "title": "Export latest backup",
+        "cancelled": false
+      },
+      {
+        "kind": "save",
+        "title": "Export recovery key separately from backups",
+        "cancelled": false
+      },
+      {
+        "kind": "save",
+        "title": "Export recovery key separately from backups",
+        "cancelled": false
+      }
+    ]
+  },
+  "restore": {
+    "result": {
+      "ok": true,
+      "status": "completed",
+      "message": "Backup verified and recovered into a separate folder. Your current installation is unchanged.",
+      "outputPath": "/private/tmp/stackos-workflow-718/native-roundtrip-2/restored"
+    },
+    "policyUnchanged": true,
+    "freshInertOutput": true,
+    "choices": [
+      {
+        "kind": "open",
+        "title": "Choose a backup to recover",
+        "cancelled": false
+      },
+      {
+        "kind": "open",
+        "title": "Choose the recovery key for this archive",
+        "cancelled": false
+      },
+      {
+        "kind": "save",
+        "title": "Choose a new recovery folder",
+        "cancelled": false
+      }
+    ]
+  }
+}

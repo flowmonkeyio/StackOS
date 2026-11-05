@@ -10,7 +10,6 @@ import type {
   TrackerSelectedItem,
   TrackerSnapshot,
   TrackerStatus,
-  TrackerTicket,
 } from '@/lib/task-tracker/types'
 
 import type { GraphBlockFilter, TaskProgressRow } from './viewTypes'
@@ -31,6 +30,7 @@ interface TrackerReloadOptions {
 interface UseTrackerGraphSessionOptions {
   projectId: Readonly<Ref<number>>
   activeTaskKey: Ref<string>
+  liveTaskKey?: Readonly<Ref<string>>
   activeTaskRow: ComputedRef<TaskProgressRow | null>
   snapshot: Readonly<Ref<TrackerSnapshot | null>>
   routeError: Ref<string | null>
@@ -55,7 +55,7 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
     stop: stopStatusStream,
   } = useTrackerLiveUpdates({
     projectId,
-    activeTaskKey,
+    activeTaskKey: options.liveTaskKey ?? activeTaskKey,
     reload: () => reload({ refocus: false, restartStream: false }),
   })
 
@@ -223,10 +223,10 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
       : `${tickets.value.length} ${pluralize('ticket', tickets.value.length)}`
   })
   const edgeStatLabel = computed(() => {
-    if (!graphDataAvailable.value) return 'relations pending'
+    if (!graphDataAvailable.value) return 'dependencies pending'
     return filtersActive.value
-      ? `${flow.value.edges.length} visible ${pluralize('relation', flow.value.edges.length)}`
-      : `${flow.value.edges.length} ${pluralize('relation', flow.value.edges.length)}`
+      ? `${flow.value.edges.length} visible ${pluralize('dependency', flow.value.edges.length)}`
+      : `${flow.value.edges.length} ${pluralize('dependency', flow.value.edges.length)}`
   })
   const selectedEdge = computed(
     () =>
@@ -346,22 +346,15 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
     clearFocus()
   }
 
-  function selectTicket(ticket: TrackerTicket, openDetail = true): void {
-    selectedEdgeId.value = null
-    selectedNodeFocusId.value = `ticket:${ticket.key}`
-    selected.value = { kind: 'ticket', key: ticket.key }
-    detailPanelOpen.value = openDetail
-  }
-
-  function openSelectedDetail(): void {
-    if (selectedTicket.value) detailPanelOpen.value = true
-  }
-
   function clearFocus(): void {
     selectedEdgeId.value = null
     selectedNodeFocusId.value = null
     selected.value = null
     detailPanelOpen.value = false
+  }
+
+  function openSelectedDetail(): void {
+    if (selectedTicket.value) detailPanelOpen.value = true
   }
 
   return {
@@ -405,7 +398,6 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
     onNodeClick,
     onEdgeClick,
     onCanvasClick,
-    selectTicket,
     openSelectedDetail,
     clearFocus,
   }
@@ -416,5 +408,5 @@ function validProjectId(projectId: number): boolean {
 }
 
 function pluralize(label: string, count: number): string {
-  return count === 1 ? label : `${label}s`
+  return count === 1 ? label : label === 'dependency' ? 'dependencies' : `${label}s`
 }

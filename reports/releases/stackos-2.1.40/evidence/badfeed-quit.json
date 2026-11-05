@@ -1,0 +1,11 @@
+{
+  "command": [
+    "osascript",
+    "-e",
+    "tell application id \"io.stackos.desktop\" to quit"
+  ],
+  "captured_at": "2026-10-28T17:16:39.359842+00:00",
+  "seconds": 0.085,
+  "exit_code": 0,
+  "log": "/tmp/stackos-release-20261028/badfeed-quit.log"
+}

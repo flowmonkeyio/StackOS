@@ -244,8 +244,14 @@ create projects during local setup, and manage provider auth setup for a
 project (`account.start`, secret storage and edits, sanitized auth tests, and
 revoke). Provider-auth route definitions own method validity inside that
 namespace. Mutating operation calls are allowed only when the operation's REST
-surface declares `browser_safe=True` for explicit local setup or the bounded
-human finance console contract described below. It cannot access
+surface declares `browser_safe=True` for explicit local setup, the bounded
+human finance console contract described below, or the task-content contract.
+`tracker.updateTaskContent` is MCP-disabled and uses the exact-path
+`local-admin-console-write` boundary. It permits only description correction
+and appended operator input on an existing project task. Server-owned actor,
+timestamp checks, intent-bound retry receipts and tracker revisions prevent
+this content path from becoming a lifecycle or arbitrary-JSON patch surface.
+It cannot access
 MCP, arbitrary mutating operation calls, tracker lifecycle writes, or general
 mutation routes. The
 installable MCP bridge keeps the daemon bearer inside the bridge process rather
@@ -355,8 +361,8 @@ calls, `POST /api/v1/projects`, narrow no-secret setup operations such as
 `communicationProfile.upsert` and `ingressEndpoint.*`, and the
 global Account routes under `/api/v1/auth/accounts/*` plus explicit project
 Connection attach/detach routes. It can also
-call local setup operations whose REST surface is explicitly marked
-browser-safe; it cannot access `/mcp` and cannot mutate existing projects,
+call local setup operations and the bounded task-content operation whose REST
+surface is explicitly marked browser-safe; it cannot access `/mcp` and cannot mutate existing projects,
 tracker lifecycle, resources, runs, action execution, templates, or project data.
 Previously, only a process that could read `auth.token` (mode 0600, owned by
 the daemon's user) could obtain any bearer token. On a single-user macOS or
@@ -373,7 +379,7 @@ and add/test/revoke provider credentials through the local setup surface.
   daemon token. `BearerTokenMiddleware` accepts it only for `GET`,
   `HEAD`, and `OPTIONS` requests under `/api/v1/*`, `POST /api/v1/projects`,
   read-only operation-registry calls, narrow no-secret setup operations, and
-  explicit local console operations such as `tracker.updateTask`, plus `POST`
+  explicit local console operations such as `tracker.updateTaskContent`, plus `POST`
   to the exact project auth setup endpoints. It is never accepted for `/mcp`.
 - The `HostHeaderMiddleware` rejects requests with a forged `Host:`
   header, so a remote attacker who has somehow proxied to the loopback
@@ -416,6 +422,29 @@ Missing, busy, unsafe or changing sources fail closed. Backup outputs cannot
 be placed in the publicly served generated-assets directory. Private key
 exclusions survive configuration changes and reject later enrollment or a
 copied matching recovery key.
+
+Desktop setup uses the same guarded local CLI and existing backup lock. Before
+native ciphertext or plaintext staging writes, it reserves the entire private
+custody directory in the existing exclusion metadata. Exclusions remain after
+failures and crashes, and initialization rechecks the current recipient under
+the lock. Any existing recipient refuses first-time setup. The native app saves
+a portable recovery key chosen by the operator and a separate `safeStorage`
+encrypted convenience copy before enabling backups. Ciphertext is scoped by
+installation and recipient under desktop user data, with private directory/file
+permissions. Unavailable secure storage stops setup; Linux `basic_text` and
+unknown storage backends are not accepted as protected storage.
+
+Only five no-argument backup methods cross the desktop preload bridge. The
+handlers verify the main window, its top frame and the trusted UI origin, and
+serialize backup actions. Native dialogs own all selected paths. Private bytes
+stay in main-process memory or local files and never enter renderer responses,
+REST, MCP, stdout or logs. Cached exports use exclusive plaintext staging only
+inside reserved custody and remove it afterward; exclusions protect staging
+left by a process crash. Missing or undecryptable app copies require the original
+matching key, never automatic key rotation. A portable export can still use the
+original key when OS protected storage is unavailable; no plaintext convenience
+copy is saved. Restore always chooses the key for the selected archive and
+publishes only into a fresh inert folder.
 
 Private staging files are removed on normal completion or failure. Archive
 publication is exclusive and atomic; failed attempts preserve prior successful

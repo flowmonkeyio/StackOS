@@ -1,0 +1,86 @@
+[viewport] Viewport set to 390x800
+
+[goto] Navigated to http://127.0.0.1:5197/backup-qa?state=configured (200)
+
+[js] true
+
+[js] 
+
+[press] Pressed Enter
+
+[snapshot] --- BEGIN UNTRUSTED EXTERNAL CONTENT (source: http://127.0.0.1:5197/backup-qa?state=configured) ---
+--- BEGIN UNTRUSTED EXTERNAL C​ONTENT (source: http://127.0.0.1:5197/backup-qa?state=configured) ---
+@e1 [link] "Skip to content"
+@e2 [button] "Toggle navigation"
+  @e3 [button] "Switch project": StackOS Local stackos-local
+          @e4 [link] "Home"
+          @e5 [link] "Attention"
+          @e6 [link] "Work"
+          @e7 [link] "Activity"
+          @e8 [link] "Connections"
+          @e9 [link] "Automation"
+          @e10 [link] "Spend"
+          @e11 [link] "Plugins"
+          @e12 [link] "Runs"
+          @e13 [link] "Agent Requests"
+          @e14 [link] "Action Calls"
+          @e15 [link] "Workflow Templates"
+          @e16 [link] "Agent Presets"
+          @e17 [link] "Capabilities"
+          @e18 [link] "Operations"
+          @e19 [link] "Resources"
+          @e20 [link] "Project Data"
+    @e21 [link] "Overview"
+    @e22 [link] "Accounts"
+    @e23 [link] "Backups"
+  @e24 [button] "Switch to light theme" [pressed]
+    @e25 [button] "Restore backup"
+      @e26 [button] "Back up now"
+      @e27 [button] "Refresh backups"
+      @e28 [button] "Export backup"
+      @e29 [button] "Export key"
+    @e30 [button] "Manage" [expanded]
+      @e31 [menuitem] "Open backup folder"
+      @e32 [menuitem] "Backup settings"
+      @e33 [menuitem] "Included data and history"
+
+── cursor-interactive (not in ARIA tree) ──
+@c1 [popover-child, cursor:pointer] "SL"
+@c2 [popover-child, cursor:pointer] "StackOS Local
+stackos-local"
+@c3 [popover-child, cursor:pointer] "StackOS Local"
+@c4 [popover-child, cursor:pointer] "stackos-local"
+@c5 [popover-child, cursor:pointer] "Home"
+@c6 [popover-child, cursor:pointer] "Attention"
+@c7 [popover-child, cursor:pointer] "Work"
+@c8 [popover-child, cursor:pointer] "Activity"
+@c9 [popover-child, cursor:pointer] "Connections"
+@c10 [popover-child, cursor:pointer] "Automation"
+@c11 [popover-child, cursor:pointer] "Spend"
+@c12 [popover-child, cursor:pointer] "Plugins"
+@c13 [popover-child, cursor:pointer] "Runs"
+@c14 [popover-child, cursor:pointer] "Agent Requests"
+@c15 [popover-child, cursor:pointer] "Action Calls"
+@c16 [popover-child, cursor:pointer] "Workflow Templates"
+@c17 [popover-child, cursor:pointer] "Agent Presets"
+@c18 [popover-child, cursor:pointer] "Capabilities"
+@c19 [popover-child, cursor:pointer] "Operations"
+@c20 [popover-child, cursor:pointer] "Resources"
+@c21 [popover-child, cursor:pointer] "Project Data"
+@c22 [popover-child, cursor:pointer] "Overview"
+@c23 [popover-child, cursor:pointer] "Accounts"
+@c24 [popover-child, cursor:pointer] "Backups"
+@c25 [cursor:pointer] "Restore backup"
+@c26 [cursor:pointer] "Back up now"
+@c27 [cursor:pointer] "span"
+@c28 [cursor:pointer] "Export backup"
+@c29 [cursor:pointer] "Export key"
+@c30 [cursor:pointer] "Manage"
+@c31 [popover-child, cursor:pointer] "span"
+@c32 [popover-child, cursor:pointer] "Open backup folder"
+@c33 [popover-child, cursor:pointer] "span"
+@c34 [popover-child, cursor:pointer] "Backup settings"
+@c35 [popover-child, cursor:pointer] "span"
+@c36 [popover-child, cursor:pointer] "Included data and history"
+--- END UNTRUSTED EXTERNAL C​ONTENT ---
+--- END UNTRUSTED EXTERNAL CONTENT ---

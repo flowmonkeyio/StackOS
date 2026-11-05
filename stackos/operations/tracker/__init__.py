@@ -18,6 +18,7 @@ from stackos.operations.tracker.schemas import (
     TrackerResponseMode,
     TrackerSearchInput,
     TrackerTicketInput,
+    TrackerUpdateTaskContentInput,
     TrackerUpdateTaskInput,
     TrackerUpdateTicketInput,
 )
@@ -39,6 +40,7 @@ __all__ = [
     "TrackerResponseMode",
     "TrackerSearchInput",
     "TrackerTicketInput",
+    "TrackerUpdateTaskContentInput",
     "TrackerUpdateTaskInput",
     "TrackerUpdateTicketInput",
     "operation_specs",

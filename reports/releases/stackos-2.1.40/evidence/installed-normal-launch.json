@@ -1,0 +1,10 @@
+{
+  "command": [
+    "open",
+    "/Applications/StackOS.app"
+  ],
+  "captured_at": "2026-10-28T17:17:20.062333+00:00",
+  "seconds": 0.034,
+  "exit_code": 0,
+  "log": "/tmp/stackos-release-20261028/installed-normal-launch.log"
+}

@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "staged_file_count": 55,
+  "indexed_files_verified": 47,
+  "outside_release_scope": [],
+  "credential_value_matches": [],
+  "index_sha256": "e755190fab813d587a2809de6b2f38d0612b0a252fda5eac1e773ffa70f90222",
+  "forced_safe_logs": [
+    "api-key-preflight.log",
+    "api-key-build.log",
+    "api-key-build-attempt-2.log",
+    "installed-final-signature.log",
+    "installed-ui-observed.log"
+  ]
+}

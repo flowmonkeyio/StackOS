@@ -1,0 +1,95 @@
+{
+  "plan_id": 56,
+  "run_id": 51,
+  "status": "completed",
+  "installed_build": "20261103T210228Z",
+  "models": {
+    "executor": "gpt-6-astra",
+    "planner": "gpt-6-luna",
+    "reviewer": "gpt-6-astra",
+    "test_writer": "gpt-6-luna"
+  },
+  "role_threads": {
+    "planner": [
+      "01a1a340-4f11-7763-ba01-9bd5c556e8b1"
+    ],
+    "executor": [
+      "01a1a340-8fe9-7271-a748-852f8e2af556",
+      "01a1a340-8fe9-7271-a748-852f8e2af556"
+    ],
+    "reviewer": [
+      "01a1a340-cd56-7003-8318-6d930788917b",
+      "01a1a341-6c7f-7f82-95dc-a610130ac438",
+      "01a1a341-6c7f-7f82-95dc-a610130ac438"
+    ],
+    "designer": [
+      "01a1a340-4f11-7763-ba01-9bd5c556e8b1"
+    ],
+    "test_writer": [
+      "01a1a341-95e4-79b0-8a41-87d3e6998b83"
+    ]
+  },
+  "review_rejections": 1,
+  "rejection_findings": [
+    [
+      "add.py correctly parses two signed decimal integers and prints their sum followed by a newline using only the standard library.",
+      "README.md contains only a heading and does not document the command."
+    ]
+  ],
+  "tests_started_after_independent_code_approval": true,
+  "same_executor_continued": true,
+  "same_designer_continued": true,
+  "fresh_reviewer_for_changed_candidate": true,
+  "same_reviewer_approved_final_observed_outcome": true,
+  "consumption": [
+    {
+      "allowance": "retry",
+      "route": "implement-task"
+    }
+  ],
+  "actual_observations": [
+    {
+      "argv": [
+        "python3",
+        "add.py",
+        "2",
+        "3"
+      ],
+      "stdout": "5\n",
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "python3",
+        "add.py",
+        "-4",
+        "9"
+      ],
+      "stdout": "5\n",
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "python3",
+        "add.py",
+        "0",
+        "0"
+      ],
+      "stdout": "0\n",
+      "exit_code": 0
+    }
+  ],
+  "final_reviewer_actual_tool_calls": 8,
+  "changed_paths": [
+    "README.md",
+    "add.py",
+    "test_add.py"
+  ],
+  "reviewer_progress": [
+    "Inspected add.py, README.md, and test_add.py; implementation and tests use only the standard library.",
+    "README documents the required command and a correct example.",
+    "All five subprocess-based tests passed, covering positive, negative, zero, and large integers.",
+    "Independent command runs confirmed explicit plus signs, cancellation, zero plus zero, and the README example, with exact newline-terminated output and successful exits.",
+    "Code approval preceded this final test review. No files were written or commits made during review."
+  ]
+}

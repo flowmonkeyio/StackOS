@@ -1,0 +1,54 @@
+[viewport] Viewport set to 1280x800
+
+[goto] Navigated to http://127.0.0.1:5197/backup-qa?state=configured&project=none (200)
+
+[js] true
+
+[snapshot] --- BEGIN UNTRUSTED EXTERNAL CONTENT (source: http://127.0.0.1:5197/backup-qa?state=configured&project=none) ---
+--- BEGIN UNTRUSTED EXTERNAL C​ONTENT (source: http://127.0.0.1:5197/backup-qa?state=configured&project=none) ---
+@e1 [link] "Skip to content"
+  @e2 [link] "StackOS home"
+  @e3 [button] "Switch project": No project selected
+    @e4 [link] "Overview"
+    @e5 [link] "Accounts"
+    @e6 [link] "Backups"
+  @e7 [button] "Switch to light theme" [pressed]
+    @e8 [button] "Restore backup"
+      @e9 [button] "Back up now"
+      @e10 [button] "Refresh backups"
+      @e11 [button] "Export backup"
+      @e12 [button] "Export key"
+    @e13 [button] "Manage"
+
+── cursor-interactive (not in ARIA tree) ──
+@c1 [cursor:pointer] "img"
+@c2 [cursor:pointer] "StackOS
+Local runtime"
+@c3 [cursor:pointer] "StackOS"
+@c4 [cursor:pointer] "Local runtime"
+@c5 [cursor:pointer] "—"
+@c6 [cursor:pointer] "No project selected"
+@c7 [cursor:pointer] "No project selected"
+@c8 [cursor:pointer] "Overview"
+@c9 [cursor:pointer] "Accounts"
+@c10 [cursor:pointer] "Backups"
+@c11 [cursor:pointer] "Restore backup"
+@c12 [cursor:pointer] "Back up now"
+@c13 [cursor:pointer] "span"
+@c14 [cursor:pointer] "Export backup"
+@c15 [cursor:pointer] "Export key"
+@c16 [cursor:pointer] "Manage"
+--- END UNTRUSTED EXTERNAL C​ONTENT ---
+--- END UNTRUSTED EXTERNAL CONTENT ---
+
+[screenshot] Screenshot saved: /tmp/stackos-workflow-718/option3-qa/no-project-1280.png
+
+[goto] Navigated to http://127.0.0.1:5197/backup-qa?state=configured (200)
+
+[js] true
+
+[screenshot] Screenshot saved: /tmp/stackos-workflow-718/option3-qa/configured-1280-dark.png
+
+[console] --- BEGIN UNTRUSTED EXTERNAL CONTENT (source: http://127.0.0.1:5197/backup-qa?state=configured) ---
+(no console errors)
+--- END UNTRUSTED EXTERNAL CONTENT ---

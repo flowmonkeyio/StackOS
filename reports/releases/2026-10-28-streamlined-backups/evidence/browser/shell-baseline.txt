@@ -1,0 +1,67 @@
+[goto] Navigated to http://127.0.0.1:5197/backup-qa?state=configured (200)
+
+[wait] Element h1 appeared
+
+[snapshot] --- BEGIN UNTRUSTED EXTERNAL CONTENT (source: http://127.0.0.1:5197/backup-qa?state=configured) ---
+--- BEGIN UNTRUSTED EXTERNAL C​ONTENT (source: http://127.0.0.1:5197/backup-qa?state=configured) ---
+@e1 [link] "Skip to content"
+  @e2 [link] "StackOS home"
+  @e3 [button] "Switch project": StackOS Local stackos-local
+          @e4 [link] "Home"
+          @e5 [link] "Attention"
+          @e6 [link] "Work"
+          @e7 [link] "Activity"
+          @e8 [link] "Connections"
+          @e9 [link] "Automation"
+          @e10 [link] "Spend"
+          @e11 [link] "Plugins"
+          @e12 [link] "Runs"
+          @e13 [link] "Agent Requests"
+          @e14 [link] "Action Calls"
+          @e15 [link] "Workflow Templates"
+          @e16 [link] "Agent Presets"
+          @e17 [link] "Capabilities"
+          @e18 [link] "Operations"
+          @e19 [link] "Resources"
+          @e20 [link] "Project Data"
+    @e21 [link] "Overview"
+    @e22 [link] "Accounts"
+    @e23 [link] "Backups"
+  @e24 [button] "Switch to light theme" [pressed]
+    @e25 [button] "Refresh backups" [disabled]
+
+── cursor-interactive (not in ARIA tree) ──
+@c1 [cursor:pointer] "img"
+@c2 [cursor:pointer] "StackOS
+Local runtime"
+@c3 [cursor:pointer] "StackOS"
+@c4 [cursor:pointer] "Local runtime"
+@c5 [cursor:pointer] "SL"
+@c6 [cursor:pointer] "StackOS Local
+stackos-local"
+@c7 [cursor:pointer] "StackOS Local"
+@c8 [cursor:pointer] "stackos-local"
+@c9 [cursor:pointer] "Home"
+@c10 [cursor:pointer] "Attention"
+@c11 [cursor:pointer] "Work"
+@c12 [cursor:pointer] "Activity"
+@c13 [cursor:pointer] "Connections"
+@c14 [cursor:pointer] "Automation"
+@c15 [cursor:pointer] "Spend"
+@c16 [cursor:pointer] "Plugins"
+@c17 [cursor:pointer] "Runs"
+@c18 [cursor:pointer] "Agent Requests"
+@c19 [cursor:pointer] "Action Calls"
+@c20 [cursor:pointer] "Workflow Templates"
+@c21 [cursor:pointer] "Agent Presets"
+@c22 [cursor:pointer] "Capabilities"
+@c23 [cursor:pointer] "Operations"
+@c24 [cursor:pointer] "Resources"
+@c25 [cursor:pointer] "Project Data"
+@c26 [cursor:pointer] "Overview"
+@c27 [cursor:pointer] "Accounts"
+@c28 [cursor:pointer] "Backups"
+--- END UNTRUSTED EXTERNAL C​ONTENT ---
+--- END UNTRUSTED EXTERNAL CONTENT ---
+
+[screenshot] Screenshot saved: /tmp/stackos-workflow-718/option3-qa/shell-baseline.png

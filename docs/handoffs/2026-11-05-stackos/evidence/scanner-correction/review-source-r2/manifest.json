@@ -1,0 +1,9 @@
+{
+  "plugins/engineering/scripts/controlled_workspace.py": "b45a8016c22252ab915153c7a3693ca1d653dfa4b7fc48cbe2c5a492886ef3ec",
+  "plugins/engineering/scripts/delivery.py": "a254e5774b69977587f6cbda422d9cc0a35a23800b31ed2e35c1fab58ed7ed71",
+  "plugins/engineering/scripts/delivery_recovery.py": "836b7cfe58f50e9e713baeabfdcbe0a770f9137f637248547853d9f2a3a2c22f",
+  "plugins/engineering/scripts/reviewer_isolation.py": "365d46ec57c7b1ad8f8ec57515dab6de96de0289b19371b1778cf133b716edd4",
+  "stackos/artifacts/redaction.py": "579dc3feef1b1ab0677720a073730e92b02c69636a6ec0536a2e71588a837096",
+  "stackos/cli/engineering_delivery.py": "04abbbc5371ecc198f54a9b7ebe9bd367de338a0e090cf034e2cbd474a743ecf",
+  "docs/workflow-templates.md": "e2125869153d68878db8d681073e15900a10ec509832dacc44cdae415a5680dd"
+}

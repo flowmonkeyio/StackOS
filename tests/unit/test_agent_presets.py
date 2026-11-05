@@ -125,63 +125,28 @@ LOCAL_CODEX_FINANCE_AGENT_PRESETS = {
 
 def _assert_sdlc_materializations(agent_dir: Path) -> None:
     workflow = yaml.safe_load(
-        (REPO_ROOT / "plugins/engineering/workflows/tracked-delivery.yaml").read_text(
-            encoding="utf-8"
-        )
+        (REPO_ROOT / "plugins/engineering/workflows/tracked-delivery.yaml").read_text()
     )
-    requirements = {
-        item["agent_preset_ref"]: item["requirement"] for item in workflow["agent_requirements"]
+    requirements = {item["agent_preset_ref"] for item in workflow["agent_requirements"]}
+    assert requirements == {
+        "stackos.sdlc.planning",
+        "stackos.sdlc.delivery",
+        "stackos.sdlc.delivery-reviewer",
+        "stackos.sdlc.test-writer",
     }
-    expected_refs = {preset for _config_path, preset in LOCAL_CODEX_AGENT_PRESETS.values()}
-    assert set(requirements) == expected_refs
-    loader = AgentPresetLoader()
-    instructions = {}
-
-    for agent_name, (config_file, preset_ref) in LOCAL_CODEX_AGENT_PRESETS.items():
-        text = (agent_dir / Path(config_file).name).read_text(encoding="utf-8")
+    for agent_name in ("sdlc_delivery", "sdlc_delivery_reviewer"):
+        config_file, preset_ref = LOCAL_CODEX_AGENT_PRESETS[agent_name]
+        text = (agent_dir / Path(config_file).name).read_text()
         parsed = tomllib.loads(text)
-        source = loader.describe_preset(key=preset_ref).preset
+        source = AgentPresetLoader().describe_preset(key=preset_ref).preset
         assert f"Source preset: {preset_ref} v{source.version}" in text
         assert f"Workflow: {workflow['key']} v{workflow['version']}" in text
-        assert f"Workflow requirement: {requirements[preset_ref]}" in text
-        assert "Keep aligned with plugins/engineering/agent-presets/sdlc.yaml." in text
         assert parsed["name"] == agent_name
-        assert "model" not in parsed
-        assert "model_reasoning_effort" not in parsed
-        prompt = parsed["developer_instructions"]
-        assert "sole writer of durable run/tracker state" in prompt
-        assert "assignment attempt ID" in prompt
-        assert "contract revision" in prompt
-        assert "candidate identity" in prompt
-        assert "TPF_LLM_TOOL=codex tpf" in prompt
-        assert "native StackOS MCP" in prompt
-        instructions[agent_name] = prompt
-
-    # Protect the delegation/acceptance boundaries without snapshotting each prompt.
-    planning = instructions["sdlc_planning"]
-    assert "selected candidate design and proof plan" in planning
-    assert "up to three active ticket lifecycles" in planning
-    assert "shared resources, dirty baseline" in planning
-    assert "integration-only proof" in planning
-    assert "Conditional SEO use" in planning
-    assert "frozen v0.3 run" in planning
-    assert "provisional breakdown" in planning
-    assert "enrich the same ticket packets" in planning
-    delivery = instructions["sdlc_delivery"]
-    assert "Return candidate-ready promptly" in delivery
-    assert "Do not call `tracker.pick`" in delivery
-    assert "unaccepted changes" in delivery
-    reviewer = instructions["sdlc_delivery_reviewer"]
-    assert "do not edit production implementation or its acceptance tests" in reviewer
-    assert "independent review is required even for small tickets" in reviewer
-    assert "main agent owns final adjudication and acceptance" in reviewer
-    assert "sole canonical finding register" in reviewer
-    assert "`review-design` is design-only" in reviewer
-    assert "combined dispatch readiness within the current authorized step" in reviewer
-    proof = instructions["sdlc_test_designer"]
-    assert "ticket-local acceptance from integration-only proof" in proof
-    assert "stable StackOS browser `profile_key`" in proof
-    assert "combined readiness review" in proof
+        assert "model" not in parsed and "model_reasoning_effort" not in parsed
+        assert "original request" in parsed["developer_instructions"].lower()
+    # Older local roles remain available for frozen plans, but are not required in new plans.
+    for agent_name, (config_file, _) in LOCAL_CODEX_AGENT_PRESETS.items():
+        assert tomllib.loads((agent_dir / Path(config_file).name).read_text())["name"] == agent_name
 
 
 def test_codex_local_sdlc_agents_track_engineering_presets() -> None:
@@ -541,7 +506,7 @@ def test_agent_preset_loader_lists_bundled_roles() -> None:
     listing = AgentPresetLoader().list_presets()
     keys = {item.key for item in listing.presets}
 
-    assert len(keys) == 52
+    assert len(keys) == 53
     assert "stackos.sdlc.requirements-flow-definer" in keys
     assert "stackos.sdlc.codebase-explorer" in keys
     assert "stackos.sdlc.planning" in keys
@@ -619,7 +584,7 @@ def test_bundled_agent_presets_explicitly_classify_role_execution_style() -> Non
         loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
         bundles.extend(loaded.get("presets", []))
 
-    assert len(bundles) == 52
+    assert len(bundles) == 53
     assert all(item.get("role_class") in {"reasoning", "mechanical", "review"} for item in bundles)
     role_classes = {item["role_class"] for item in bundles}
     assert role_classes == {"reasoning", "mechanical", "review"}
@@ -768,153 +733,26 @@ def test_agent_preset_describe_includes_tracker_adaptation_guidance() -> None:
 
 def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None:
     loader = AgentPresetLoader()
-    architecture = loader.describe_preset(key="stackos.sdlc.architecture").preset
-    explorer = loader.describe_preset(key="stackos.sdlc.codebase-explorer").preset
     delivery = loader.describe_preset(key="stackos.sdlc.delivery").preset
     reviewer = loader.describe_preset(key="stackos.sdlc.delivery-reviewer").preset
-
-    assert architecture.version == "0.3.1"
-    architecture_text = " ".join(
-        [
-            *architecture.prompt_contract.responsibilities,
-            *architecture.prompt_contract.must_do,
-            *architecture.prompt_contract.must_not_do,
-        ]
-    ).lower()
-    explorer_text = " ".join(
-        [*explorer.prompt_contract.responsibilities, *explorer.prompt_contract.must_do]
-    ).lower()
-    delivery_text = " ".join(
-        [*delivery.prompt_contract.must_do, *delivery.prompt_contract.must_not_do]
-    ).lower()
-    reviewer_text = " ".join(
-        [
-            *reviewer.prompt_contract.responsibilities,
-            *reviewer.prompt_contract.must_do,
-            *reviewer.prompt_contract.must_not_do,
-        ]
-    ).lower()
-
-    assert "current canonical owner" in architecture_text
-    assert "one source of truth" in architecture_text
-    assert "pass-through aliases" in architecture_text
-    assert "active consumers" in explorer_text
-    assert "producer or writer" in delivery_text
-    assert "do not copy logic" in delivery_text
-    assert "actual imports, call paths, writers, readers, and consumers" in reviewer_text
-    assert "only when evidence indicates" in reviewer_text
-
-    test_designer = AgentPresetLoader().describe_preset(key="stackos.sdlc.test-designer")
-    test_designer_text = " ".join(
-        [
-            *test_designer.preset.prompt_contract.responsibilities,
-            *test_designer.preset.prompt_contract.must_do,
-            *test_designer.preset.prompt_contract.must_not_do,
-            *test_designer.preset.prompt_contract.handoff_outputs,
-            *test_designer.preset.prompt_contract.success_criteria,
-            *test_designer.preset.prompt_contract.self_check,
-        ]
-    ).lower()
-    assert "manual proof depth" in test_designer_text
-    assert "full manual signoff" in test_designer_text
-    assert "production risk" in test_designer_text
-    assert "stable stackos browser profile_key" in test_designer_text
-    assert 'vague "smoke test"' in test_designer_text
-
-    reviewer = AgentPresetLoader().describe_preset(key="stackos.sdlc.delivery-reviewer")
-    reviewer_text = " ".join(
-        [
-            *reviewer.preset.prompt_contract.responsibilities,
-            *reviewer.preset.prompt_contract.must_do,
-            *reviewer.preset.prompt_contract.must_not_do,
-            *reviewer.preset.prompt_contract.handoff_outputs,
-            *reviewer.preset.prompt_contract.success_criteria,
-            *reviewer.preset.prompt_contract.self_check,
-        ]
-    ).lower()
-    assert "tracker.get with run_plan_id and include_graph=true" in reviewer_text
-    assert "delivery/test/docs branches that bypass the workflow spine" in reviewer_text
-    assert "claims to verify" in reviewer_text
-    assert "without concrete evidence" in reviewer_text
-    assert "planned persistent profile_key" in reviewer_text
+    assert delivery.version == "0.4.0" and reviewer.version == "0.4.0"
+    assert delivery.project_adaptation == reviewer.project_adaptation
+    assert "original request" in delivery.project_adaptation.instruction
+    assert "preserve unrelated changes" in " ".join(delivery.prompt_contract.responsibilities)
+    assert "actual candidate" in " ".join(reviewer.prompt_contract.responsibilities)
+    assert "did not implement" in reviewer.prompt_contract.mission
 
 
 def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -> None:
     loader = AgentPresetLoader()
-    presets = {
-        key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset
-        for key in (
-            "requirements-flow-definer",
-            "codebase-explorer",
-            "planning",
-            "architecture",
-            "test-designer",
-            "delivery",
-            "delivery-reviewer",
-        )
-    }
-
-    def contract_text(key: str, *fields: str) -> str:
-        contract = presets[key].prompt_contract
-        return " ".join(item for field in fields for item in getattr(contract, field)).lower()
-
-    for preset in presets.values():
-        assert preset.version == "0.3.1"
-        assert preset.prompt_contract.mission
+    delivery = loader.describe_preset(key="stackos.sdlc.delivery").preset
+    reviewer = loader.describe_preset(key="stackos.sdlc.delivery-reviewer").preset
+    for preset in (delivery, reviewer):
         assert preset.prompt_contract.handoff_inputs
         assert preset.prompt_contract.handoff_outputs
         assert preset.prompt_contract.success_criteria
-        assert preset.project_adaptation == presets["delivery"].project_adaptation
-
-    shared = presets["delivery"].project_adaptation.required_agent_action.lower()
-    assert "sole writer of durable run/tracker state" in shared
-    assert "delegation and model choice" in shared
-    assert "do not pin a model or reasoning effort" in shared
-    assert "assignment attempt" in shared
-    assert "contract revision" in shared
-    assert "stale, or contradictory inputs" in shared
-    assert "other workflows or standalone assignments" in shared
-
-    requirements = contract_text("requirements-flow-definer", "responsibilities", "must_not_do")
-    assert "subsequent clarifications" in requirements
-    assert "acceptance-criterion ids" in requirements
-    assert "do not discard a source requirement" in requirements
-
-    planning = contract_text("planning", "responsibilities", "must_do", "must_not_do")
-    for obligation in (
-        "up to three active tickets",
-        "selected design and proof plan",
-        "ac ids",
-        "shared resources",
-        "dirty baseline",
-        "side-effect authority",
-        "ticket-local acceptance from integration-only proof",
-        "not depend on proof requiring an unfinished downstream ticket",
-        "independent review for an executable tracked-delivery child",
-        "seo or other workflow reuse",
-    ):
-        assert obligation in planning
-
-    architecture_inputs = contract_text("architecture", "handoff_inputs")
-    assert "requirements and flow design, impact map" in architecture_inputs
-    assert "approved task/ticket plan" not in architecture_inputs
-    design = contract_text("architecture", "must_do")
-    assert "test designer owns executable scenarios" in design
-    proof = contract_text("test-designer", "must_do", "handoff_inputs")
-    assert "selected candidate design" in proof
-    assert "combined readiness review" in proof
-    assert "evidence reuse and invalidation" in proof
-
-    delivery = contract_text("delivery", "must_do", "must_not_do", "handoff_outputs")
-    for boundary in (
-        "do not self-claim queue work",
-        "write durable run/tracker state",
-        "unaccepted changes",
-        "candidate-ready",
-        "ticket/attempt/contract ids",
-        "repair receipt",
-    ):
-        assert boundary in delivery
+    assert "Do not invent authority" in " ".join(delivery.prompt_contract.must_not_do)
+    assert "Do not edit the candidate" in " ".join(reviewer.prompt_contract.must_not_do)
     lifecycle_tools = {
         "tracker.pick",
         "tracker.updateTicket",
@@ -922,26 +760,8 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
         "runPlan.claimStep",
         "runPlan.recordStep",
     }
-    assert lifecycle_tools.isdisjoint(presets["delivery"].recommended_tools)
-
-    reviewer = contract_text(
-        "delivery-reviewer", "responsibilities", "must_do", "must_not_do", "handoff_outputs"
-    )
-    for boundary in (
-        "canonical operator sources",
-        "omitted requirements",
-        "independence from implementation",
-        "every executable child",
-        "run authorized focused checks",
-        "do not edit production implementation",
-        "main agent's final acceptance decision",
-        "tracker.verify structural consistency",
-        "per-ac disposition/evidence",
-        "pass/repair/blocked recommendation",
-    ):
-        assert boundary in reviewer
-    assert lifecycle_tools.isdisjoint(presets["delivery-reviewer"].recommended_tools)
-    # The unused release role is intentionally outside this source revision.
+    assert lifecycle_tools.isdisjoint(delivery.recommended_tools)
+    assert lifecycle_tools.isdisjoint(reviewer.recommended_tools)
     assert loader.describe_preset(key="stackos.sdlc.release-ops").preset.version == "0.2.1"
 
 

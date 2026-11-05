@@ -75,7 +75,8 @@ def install(
         typer.Option(
             "--mcp-host",
             help=(
-                "Connect one AI tool: codex, claude-code, claude-desktop, gemini-cli, or hermes."
+                "Connect one AI tool: codex, claude-code, claude-desktop, "
+                "gemini-cli, hermes, or grok."
             ),
         ),
     ] = None,
@@ -143,6 +144,7 @@ def install(
         "claude-desktop",
         "gemini-cli",
         "hermes",
+        "grok",
     }
     if mcp_host is not None and mcp_host not in supported_mcp_hosts:
         typer.echo(

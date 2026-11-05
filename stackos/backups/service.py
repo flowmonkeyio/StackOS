@@ -9,7 +9,7 @@ import time
 import uuid
 import zipfile
 from collections.abc import Sequence
-from contextlib import ExitStack, closing, suppress
+from contextlib import ExitStack, closing, nullcontext, suppress
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -28,6 +28,7 @@ from .filesystem import (
     atomic_json,
     backup_lock,
     canonical,
+    copy_verified_file,
     digest_file,
     directory_inventory,
     fsync_directory,
@@ -150,7 +151,7 @@ def _validate_policy(
     if destination.exists() and not destination.is_dir():
         raise BackupError("unsafe_destination", "The backup destination must be a directory.")
     excluded = _exclusions(settings)
-    if any(inside(key, destination) for key in excluded):
+    if any(overlap(key, destination) for key in excluded):
         raise BackupError(
             "recovery_key_capture", "The destination contains a recovery private key."
         )
@@ -172,7 +173,7 @@ def _validate_policy(
                 "overlapping_targets",
                 "External folders cannot overlap live state or the destination.",
             )
-        if any(inside(key, root) for key in excluded):
+        if any(overlap(key, root) for key in excluded):
             raise BackupError(
                 "recovery_key_capture", "A registered folder contains a recovery private key."
             )
@@ -269,19 +270,169 @@ def backup_status(settings: Settings) -> dict[str, Any]:
     }
 
 
+def _custody_policy(
+    settings: Settings,
+    *,
+    first_time: bool = False,
+    destination: Path | None = None,
+    expected_recipient: str | None = None,
+) -> BackupPolicy:
+    policy = load_policy(settings)
+    if first_time and policy.recipient_public_key is not None:
+        raise BackupError(
+            "already_configured",
+            "Backups already have a recovery key.",
+            "Use the existing backup settings and recovery key.",
+        )
+    if expected_recipient is not None and (
+        policy.recipient_public_key is None
+        or fingerprint(parse_public_key(policy.recipient_public_key)) != expected_recipient
+    ):
+        raise BackupError(
+            "recipient_changed",
+            "The configured recovery key changed.",
+            "Refresh backup status and select the matching recovery key.",
+        )
+    if destination is not None:
+        destination = canonical(destination)
+        if policy.destination is not None and not (
+            inside(destination, canonical(policy.destination))
+            and inside(canonical(policy.destination), destination)
+        ):
+            raise BackupError(
+                "setup_conflict",
+                "A different backup destination is already saved.",
+                "Keep the saved destination or change it explicitly in settings.",
+            )
+        policy = policy.model_copy(update={"destination": destination})
+    return _validate_policy(settings, policy, check_sources=False)
+
+
+def _custody_paths(settings: Settings, policy: BackupPolicy, paths: Sequence[Path]) -> list[Path]:
+    if not paths:
+        raise BackupError("key_path_required", "Choose a recovery key storage path.")
+    roots = [
+        canonical(settings.data_dir),
+        canonical(settings.state_dir),
+        canonical(settings.generated_assets_dir),
+        _destination(settings, policy),
+    ]
+    roots.extend(canonical(target.path) for target in policy.targets)
+    resolved = [canonical(path) for path in paths]
+    if any(overlap(path, root) for path in resolved for root in roots):
+        raise BackupError(
+            "recovery_key_capture",
+            "Store recovery keys outside backup, public and live-data folders.",
+        )
+    return resolved
+
+
+def _reserve_key_paths(settings: Settings, paths: Sequence[Path]) -> None:
+    """Caller holds backup_lock. Never discard exclusions after an interrupted write."""
+    exclusions = _exclusions(settings)
+    for path in paths:
+        if not any(inside(path, excluded) for excluded in exclusions):
+            exclusions.append(path)
+    atomic_json(
+        settings.state_dir / KEY_EXCLUSIONS_FILE, {"paths": [str(item) for item in exclusions]}
+    )
+
+
+def recovery_key_custody(
+    settings: Settings,
+    paths: Sequence[Path],
+    *,
+    first_time: bool = False,
+    destination: Path | None = None,
+    expected_recipient: str | None = None,
+    reserve: bool = False,
+) -> dict[str, Any]:
+    """Inspect custody without writes, or durably reserve it before native staging."""
+    with backup_lock(settings.state_dir) if reserve else nullcontext():
+        policy = _custody_policy(
+            settings,
+            first_time=first_time,
+            destination=destination,
+            expected_recipient=expected_recipient,
+        )
+        paths = _custody_paths(settings, policy, paths)
+        if reserve:
+            _reserve_key_paths(settings, paths)
+        return {"reserved": reserve, "protected_paths": [str(path) for path in paths]}
+
+
+def _matching_private_key(path: Path, public_key: str) -> bytes:
+    if path.stat().st_nlink != 1:
+        raise BackupError("unsafe_file", "Recovery key files cannot be hard links.")
+    value = read_regular(path, limit=MAX_PRIVATE_PEM_BYTES)
+    try:
+        key = serialization.load_pem_private_key(value, password=None)
+    except (ValueError, TypeError) as exc:
+        raise BackupError(
+            "invalid_private_key", "Use an unencrypted X25519 recovery key PEM."
+        ) from exc
+    if not isinstance(key, X25519PrivateKey):
+        raise BackupError("invalid_private_key", "Use an X25519 recovery key PEM.")
+    if fingerprint(key.public_key()) != fingerprint(parse_public_key(public_key)):
+        raise BackupError(
+            "key_mismatch",
+            "This recovery key does not match the configured key.",
+            "Select the original recovery key; do not generate a replacement.",
+        )
+    return value
+
+
+def initialize_backups(
+    settings: Settings,
+    recipient_public_key: str,
+    *,
+    private_key_path: Path,
+    protected_key_path: Path,
+    destination: Path | None = None,
+) -> BackupPolicy:
+    """Activate a first-time setup only after both recovery copies are durable."""
+    with backup_lock(settings.state_dir):
+        policy = _custody_policy(settings, first_time=True, destination=destination)
+        private, protected = _custody_paths(
+            settings, policy, [private_key_path, protected_key_path]
+        )
+        exclusions = _exclusions(settings)
+        if any(
+            not any(inside(path, excluded) for excluded in exclusions)
+            for path in (private, protected)
+        ):
+            raise BackupError("custody_not_reserved", "Reserve recovery key storage before setup.")
+        if overlap(private, protected):
+            raise BackupError("unsafe_path", "The recovery copies need separate files.")
+        _matching_private_key(private, recipient_public_key)
+        if protected.stat().st_nlink != 1 or not read_regular(
+            protected, limit=MAX_PRIVATE_PEM_BYTES
+        ):
+            raise BackupError(
+                "protected_key_required", "Save the protected recovery copy before setup."
+            )
+        policy = BackupPolicy.model_validate(
+            {**policy.model_dump(), "enabled": True, "recipient_public_key": recipient_public_key}
+        )
+        policy = _validate_policy(settings, policy)
+        atomic_json(settings.state_dir / POLICY_FILE, policy.model_dump(mode="json"))
+        return policy
+
+
 def generate_recovery_key(
-    settings: Settings, private_key_path: Path, public_key_path: Path
+    settings: Settings,
+    private_key_path: Path,
+    public_key_path: Path,
+    *,
+    first_time: bool = False,
+    protected_paths: Sequence[Path] = (),
+    destination: Path | None = None,
 ) -> dict[str, str]:
     private, public = canonical(private_key_path), canonical(public_key_path)
     with backup_lock(settings.state_dir):
-        policy = load_policy(settings)
-        roots = [
-            canonical(settings.data_dir),
-            canonical(settings.state_dir),
-            _destination(settings, policy),
-        ]
-        roots.extend(canonical(target.path) for target in policy.targets)
-        if private == public or any(inside(private, root) for root in roots):
+        policy = _custody_policy(settings, first_time=first_time, destination=destination)
+        paths = _custody_paths(settings, policy, [private, *protected_paths])
+        if overlap(private, public):
             raise BackupError(
                 "recovery_key_capture",
                 "Store the recovery private key outside all backup and live-data folders.",
@@ -292,12 +443,7 @@ def generate_recovery_key(
         private_directory(public.parent)
         key = X25519PrivateKey.generate()
         # Record custody first. A failed key write leaves a conservative exclusion.
-        exclusions = _exclusions(settings)
-        if private not in exclusions:
-            exclusions.append(private)
-        atomic_json(
-            settings.state_dir / KEY_EXCLUSIONS_FILE, {"paths": [str(item) for item in exclusions]}
-        )
+        _reserve_key_paths(settings, paths)
         created: list[Path] = []
         try:
             values = (
@@ -335,6 +481,72 @@ def generate_recovery_key(
             "public_key_path": str(public),
             "recipient_fingerprint": fingerprint(key.public_key()),
         }
+
+
+def export_recovery_key(
+    settings: Settings,
+    private_key_path: Path,
+    output: Path,
+    *,
+    expected_recipient: str | None = None,
+) -> dict[str, str]:
+    """Export only the configured key, never regenerate or rotate a missing key."""
+    with backup_lock(settings.state_dir):
+        policy = _custody_policy(settings, expected_recipient=expected_recipient)
+        if policy.recipient_public_key is None:
+            raise BackupError("key_required", "No recovery key is configured.")
+        private, output = _custody_paths(settings, policy, [private_key_path, output])
+        if output.exists():
+            raise BackupError("output_exists", "Recovery key export will not overwrite a file.")
+        value = _matching_private_key(private, policy.recipient_public_key)
+        staging = output.parent / f".recovery-key-{uuid.uuid4().hex}"
+        _reserve_key_paths(settings, [private, output, staging])
+        private_directory(output.parent)
+        temporary: Path | None = None
+        try:
+            fd = os.open(staging, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+            temporary = staging
+            with os.fdopen(fd, "wb") as stream:
+                stream.write(value)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.link(temporary, output, follow_symlinks=False)
+            fsync_directory(output.parent)
+        except FileExistsError as exc:
+            raise BackupError(
+                "output_exists", "Recovery key export will not overwrite a file."
+            ) from exc
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+        return {
+            "path": str(output),
+            "recipient_fingerprint": fingerprint(parse_public_key(policy.recipient_public_key)),
+        }
+
+
+def export_latest_backup(settings: Settings, output: Path) -> dict[str, Any]:
+    """Copy the last successful archive only after its saved receipt is verified."""
+    with backup_lock(settings.state_dir):
+        policy = load_policy(settings)
+        outcome = _load_outcome(settings)
+        receipt = outcome.get("last_success") if isinstance(outcome, dict) else None
+        if receipt is None:
+            raise BackupError("backup_required", "Create a successful backup before exporting.")
+        if (
+            not isinstance(receipt, dict)
+            or not isinstance(receipt.get("path"), str)
+            or not isinstance(receipt.get("sha256"), str)
+            or len(receipt["sha256"]) != 64
+            or any(char not in "0123456789abcdef" for char in receipt["sha256"])
+            or type(receipt.get("bytes")) is not int
+            or receipt["bytes"] <= 0
+        ):
+            raise BackupError("invalid_metadata", "The last backup receipt is invalid.")
+        source = canonical(Path(receipt["path"]))
+        output = _safe_output(settings, policy, output)
+        copy_verified_file(source, output, sha256=receipt["sha256"], size=receipt["bytes"])
+        return {"path": str(output), "sha256": receipt["sha256"], "bytes": receipt["bytes"]}
 
 
 def _scan_private_keys(content: bytes, recipient: X25519PublicKey, *, final: bool = False) -> bytes:
@@ -618,7 +830,7 @@ def _safe_output(settings: Settings, policy: BackupPolicy, output: Path) -> Path
             "unsafe_destination", "Backups cannot be written into public or live-data folders."
         )
     if any(inside(output, target.path) for target in policy.targets) or any(
-        output == path for path in _exclusions(settings)
+        inside(output, path) for path in _exclusions(settings)
     ):
         raise BackupError("unsafe_destination", "The backup output overlaps a protected source.")
     if any(inside(path, output.parent) for path in _exclusions(settings)):

@@ -1,0 +1,81 @@
+[js] {
+  "calls": [
+    {
+      "name": "backup.status",
+      "args": {}
+    }
+  ],
+  "mainScroll": 0,
+  "scrollY": 2
+}
+
+[fill] Filled @e36
+
+[click] Clicked @e38 → now at http://127.0.0.1:5197/backup-qa?state=configured
+
+[js] true
+
+[js] {
+  "calls": [
+    {
+      "name": "backup.status",
+      "args": {}
+    },
+    {
+      "name": "backup.configure",
+      "args": {
+        "interval_hours": 72
+      }
+    }
+  ],
+  "focus": "<input data-v-06a4cf68=\"\" type=\"checkbox\" checked=\"\" class=\"peer sr-only\">",
+  "dialog": true
+}
+
+[screenshot] Screenshot saved: /tmp/stackos-workflow-718/option3-qa/settings-390.png
+
+[press] Pressed Escape
+
+[js] {
+  "focus": "Manage",
+  "mainScroll": 0,
+  "scrollY": 2,
+  "after": {
+    "Restore backup": {
+      "x": 16,
+      "y": 138,
+      "width": 123.09375,
+      "height": 32
+    },
+    "Back up now": {
+      "x": 32,
+      "y": 214,
+      "width": 128,
+      "height": 32
+    },
+    "Refresh backups": {
+      "x": 168,
+      "y": 214,
+      "width": 32,
+      "height": 32
+    },
+    "Export backup": {
+      "x": 235.703125,
+      "y": 467,
+      "width": 116.296875,
+      "height": 32
+    },
+    "Export key": {
+      "x": 240,
+      "y": 542,
+      "width": 112,
+      "height": 32
+    },
+    "Manage": {
+      "x": 255.953125,
+      "y": 680,
+      "width": 96.046875,
+      "height": 32
+    }
+  }
+}

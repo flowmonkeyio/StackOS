@@ -1,0 +1,4 @@
+
+> stackos-ui@0.0.1 type-check /Users/sergeyrura/Bin/content-stack/ui
+> vue-tsc --noEmit
+

@@ -147,6 +147,47 @@ def test_wheel_bounds_supported_mcp_major(built_wheel: Path) -> None:
     assert mcp_requirements == ["mcp<3,>=2.0"]
 
 
+@pytest.mark.parametrize(
+    ("package", "supported", "migration"),
+    [
+        ("anthropic", "0.100.0", "0.101.0"),
+        ("cryptography", "48.0.1", "49.0.0"),
+        ("sqlmodel", "0.0.44", "0.0.45"),
+    ],
+)
+def test_wheel_excludes_deferred_dependency_migrations(
+    built_wheel: Path, package: str, supported: str, migration: str
+) -> None:
+    """Pipx installs have no uv.lock, so the wheel must preserve reviewed branches."""
+    with zipfile.ZipFile(built_wheel) as wheel:
+        metadata_name = next(
+            name for name in wheel.namelist() if name.endswith(".dist-info/METADATA")
+        )
+        metadata = Parser().parsestr(wheel.read(metadata_name).decode("utf-8"))
+    requirements = [
+        requirement
+        for value in metadata.get_all("Requires-Dist", [])
+        if canonicalize_name((requirement := Requirement(value)).name) == package
+    ]
+    assert len(requirements) == 1
+    assert supported in requirements[0].specifier
+    assert migration not in requirements[0].specifier
+
+
+def test_graphql_dev_requirement_stays_on_reviewed_api_branch() -> None:
+    """GraphQL-core minor releases may change API contracts used by provider tests."""
+    repo_root = Path(__file__).resolve().parents[3]
+    source = tomllib.loads((repo_root / "pyproject.toml").read_text(encoding="utf-8"))
+    requirements = [
+        requirement
+        for value in source["dependency-groups"]["dev"]
+        if canonicalize_name((requirement := Requirement(value)).name) == "graphql-core"
+    ]
+    assert len(requirements) == 1
+    assert "3.2.13" in requirements[0].specifier
+    assert "3.3.0" not in requirements[0].specifier
+
+
 def test_wheel_keeps_s3_host_assets_and_uses_separate_connector_package(
     built_wheel: Path,
 ) -> None:

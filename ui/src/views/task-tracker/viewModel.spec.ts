@@ -10,10 +10,17 @@ import {
   groupTicketsByTask,
   mergeFocusedTrackerSnapshot,
   selectGraphVisibleTickets,
-  ticketMatchesControls,
 } from './viewModel'
 
 describe('task tracker view model', () => {
+  it('filters board task status independently from child ticket status', () => {
+    const task = makeTask({ status: 'in-progress' })
+    const ticket = makeTicket({ status: 'complete' })
+    expect(buildTaskProgressRows([task], groupTicketsByTask([ticket]), {
+      ...emptyFilters(), status: 'complete',
+    })).toEqual([])
+  })
+
   it('groups tickets in display order and projects task progress', () => {
     const task = makeTask({ key: 'delivery', source_json: { run_plan_key: 'release' } })
     const blocked = makeTicket({
@@ -67,10 +74,11 @@ describe('task tracker view model', () => {
       status: 'not-started',
       created_at: '2026-07-12T12:00:00Z',
     })
+    const newestById = makeTask({ ...newer, id: 330, key: 'newest-by-id' })
 
-    const rows = buildTaskProgressRows([olderBlocked, newer], new Map(), emptyFilters())
+    const rows = buildTaskProgressRows([olderBlocked, newer, newestById], new Map(), emptyFilters())
 
-    expect(rows.map((row) => row.key)).toEqual(['newer', 'older-blocked'])
+    expect(rows.map((row) => row.key)).toEqual(['newest-by-id', 'newer', 'older-blocked'])
   })
 
   it('applies workflow, assignee, status, and search controls without component state', () => {
@@ -82,21 +90,21 @@ describe('task tracker view model', () => {
     })
 
     expect(
-      ticketMatchesControls(ticket, task, {
+      buildTaskProgressRows([task], groupTicketsByTask([ticket]), {
         search: 'connection FLOW',
         status: 'in-progress',
         workflow: 'engineering.delivery',
         assignee: 'codex',
       }),
-    ).toBe(true)
+    ).toHaveLength(1)
     expect(
-      ticketMatchesControls(ticket, task, {
+      buildTaskProgressRows([task], groupTicketsByTask([ticket]), {
         search: '',
         status: 'complete',
         workflow: 'engineering.delivery',
         assignee: 'codex',
       }),
-    ).toBe(false)
+    ).toHaveLength(0)
   })
 
   it('keeps task progress and filters truthful when only the task index is loaded', () => {
@@ -118,7 +126,8 @@ describe('task tracker view model', () => {
 
     const rows = buildTaskProgressRows([task], new Map(), {
       search: 'verification-ticket',
-      status: 'not-started',
+      status: 'all',
+      ticketStatus: 'not-started',
       workflow: '',
       assignee: 'codex',
     })
@@ -155,7 +164,7 @@ describe('task tracker view model', () => {
     )
     const staleMatches = buildTaskProgressRows([task], groupTicketsByTask([complete]), {
       ...emptyFilters(),
-      status: 'not-started',
+      ticketStatus: 'not-started',
     })
 
     expect(rows[0]).toMatchObject({ totalCount: 1, terminalCount: 1, percent: 100 })

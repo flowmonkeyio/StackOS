@@ -1,0 +1,74 @@
+[url] http://127.0.0.1:5197/backup-qa?state=configured
+
+[snapshot] --- BEGIN UNTRUSTED EXTERNAL CONTENT (source: http://127.0.0.1:5197/backup-qa?state=configured) ---
+--- BEGIN UNTRUSTED EXTERNAL C​ONTENT (source: http://127.0.0.1:5197/backup-qa?state=configured) ---
+@e1 [link] "Skip to content"
+@e2 [complementary] "Primary navigation"
+  @e3 [link] "StackOS home"
+    @e4 [text]: StackOS Local runtime
+  @e5 [button] "Switch project": StackOS Local stackos-local
+  @e6 [navigation] "Project navigation"
+    @e7 [region] "Operate navigation"
+      @e8 [heading] "Operate" [level=2]
+          @e9 [link] "Home"
+          @e10 [link] "Attention"
+          @e11 [link] "Work"
+          @e12 [link] "Activity"
+    @e13 [region] "Configure navigation"
+      @e14 [heading] "Configure" [level=2]
+          @e15 [link] "Connections"
+          @e16 [link] "Automation"
+          @e17 [link] "Spend"
+          @e18 [link] "Plugins"
+    @e19 [region] "Execution navigation"
+      @e20 [heading] "Execution" [level=2]
+          @e21 [link] "Runs"
+          @e22 [link] "Agent Requests"
+          @e23 [link] "Action Calls"
+    @e24 [region] "Catalog navigation"
+      @e25 [heading] "Catalog" [level=2]
+          @e26 [link] "Workflow Templates"
+          @e27 [link] "Agent Presets"
+          @e28 [link] "Capabilities"
+          @e29 [link] "Operations"
+    @e30 [region] "Data & evidence navigation"
+      @e31 [heading] "Data & evidence" [level=2]
+          @e32 [link] "Resources"
+          @e33 [link] "Project Data"
+  @e34 [navigation] "App navigation"
+    @e35 [paragraph]: App
+    @e36 [link] "Overview"
+    @e37 [link] "Accounts"
+    @e38 [link] "Backups"
+  @e39 [text]: Dark theme
+  @e40 [button] "Switch to light theme" [pressed]
+  @e41 [heading] "Backups" [level=1]
+  @e42 [paragraph]: Protect this installation and its project data.
+  @e43 [region] "Local backups"
+    @e44 [heading] "Automatic backups on" [level=2]
+    @e45 [button] "Back up now"
+    @e46 [button] "Refresh backups"
+    @e47 [paragraph]: Recover into a separate folder. This installation stays unchanged.
+    @e48 [button] "Restore backup"
+    @e49 [term]: Latest backup
+    @e50 [definition]: 10/28/2026, 9:42:00 AM
+    @e51 [term]: Schedule
+    @e52 [definition]: Every 48 hours · keep 17
+    @e53 [term]: Backup folder
+    @e54 [definition]: /Volumes/Backup drive/StackOS
+    @e55 [group] "Backup files"
+      @e56 [button] "Open backup folder"
+      @e57 [button] "Export latest backup"
+      @e58 [button] "Export recovery key"
+    @e59 [group]: Backup settings
+    @e60 [group]: Included data and history
+    @e61 [paragraph]: Keep a backup and your recovery key somewhere you can access if this device is lost.
+@e62 [text]: "[plugin:vite:import-analysis] Failed to resolve import \"pinia\" from \"../../../../../tmp/stackos-workflow-718/browser-qa/main.ts\". Does the file exist? /tmp/stackos-workflow-718/browser-qa/main.ts:2:28 1 | import { createApp, h, ref } from \"vue\"; 2 | import { createPinia } from \"pinia\"; | ^ 3 | import { createRouter, createMemoryHistory } from \"vue-router\"; 4 | import App from \"@/App.vue\"; at TransformPluginContext._formatError (file:///Users/sergeyrura/Bin/content-stack/ui/node_modules/.pnpm/vite@5.4.21_@types+node@20.19.39/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:49258:41) at TransformPluginContext.error (file:///Users/sergeyrura/Bin/content-stack/ui/node_modules/.pnpm/vite@5.4.21_@types+node@20.19.39/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:49253:16) at normalizeUrl (file:///Users/sergeyrura/Bin/content-stack/ui/node_modules/.pnpm/vite@5.4.21_@types+node@20.19.39/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:64307:23) at process.processTicksAndRejections (node:internal/process/task_queues:103:5) at async file:///Users/sergeyrura/Bin/content-stack/ui/node_modules/.pnpm/vite@5.4.21_@types+node@20.19.39/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:64439:39 at async Promise.all (index 1) at async TransformPluginContext.transform (file:///Users/sergeyrura/Bin/content-stack/ui/node_modules/.pnpm/vite@5.4.21_@types+node@20.19.39/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:64366:7) at async PluginContainer.transform (file:///Users/sergeyrura/Bin/content-stack/ui/node_modules/.pnpm/vite@5.4.21_@types+node@20.19.39/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:49099:18) at async loadAndTransform (file:///Users/sergeyrura/Bin/content-stack/ui/node_modules/.pnpm/vite@5.4.21_@types+node@20.19.39/node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:51978:27 Click outside, press Esc key, or fix the code to dismiss. You can also disable this overlay by setting"
+@e63 [code]: server.hmr.overlay
+@e64 [text]: to
+@e65 [code]: "false"
+@e66 [text]: in
+@e67 [code]: vite.config.ts
+@e68 [text]: .
+--- END UNTRUSTED EXTERNAL C​ONTENT ---
+--- END UNTRUSTED EXTERNAL CONTENT ---

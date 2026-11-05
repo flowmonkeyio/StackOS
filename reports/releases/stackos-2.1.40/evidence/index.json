@@ -1,0 +1,275 @@
+{
+  "source_commit": "958f554223a438b404e72c67a568d573f4653ae5",
+  "files": [
+    {
+      "path": "api-key-preflight.json",
+      "bytes": 632,
+      "sha256": "01c1f9b4bff495581c7e559cdbb9c17376ec67b0f2baf8ecea18f7017f5c69a8"
+    },
+    {
+      "path": "api-key-preflight.log",
+      "bytes": 1283,
+      "sha256": "2fe6149924881e502595c3297c6dbf5765e5670505c4c2d806741a712b75e0fd"
+    },
+    {
+      "path": "api-key-build.json",
+      "bytes": 623,
+      "sha256": "d05cccde5b1820d90f96926b468803724d59381283502c52a0716da57825be0b"
+    },
+    {
+      "path": "api-key-build.log",
+      "bytes": 83560,
+      "sha256": "e0303f577c781c76d07c106623dfd1e6571eae8c551cf62bad99233694c37a0f"
+    },
+    {
+      "path": "api-key-build-attempt-2.json",
+      "bytes": 633,
+      "sha256": "b81cbcd677a6ee7355caf9047f3d352e19b63d7c2c6a730c759d57ccb48fc16c"
+    },
+    {
+      "path": "api-key-build-attempt-2.log",
+      "bytes": 104506,
+      "sha256": "a33b4091101020176aeef9fa03351a23167f0bfa708cc204ae95c5f8e665d5dd"
+    },
+    {
+      "path": "release-hygiene.json",
+      "bytes": 368,
+      "sha256": "3cf9e6e701d87197f9a72178a4a58ff810fe6ae843d131a83fb755b673b6a0b1"
+    },
+    {
+      "path": "artifacts.json",
+      "bytes": 1582,
+      "sha256": "4630cf9907f059f22db43f05621313e92fb7a38d533f2f3a769358e00b2049c3"
+    },
+    {
+      "path": "build-isolation.json",
+      "bytes": 758,
+      "sha256": "b902aa7c76cadfe4c5d1b76553776cc6122a5695b4049fe71c56f20fffac84a2"
+    },
+    {
+      "path": "installed-lifecycle.json",
+      "bytes": 2600,
+      "sha256": "2c1021938309b92aee9cf32cb509c675b5f1dd5594282381e7c77bd5c0a7332d"
+    },
+    {
+      "path": "state-preservation-after.json",
+      "bytes": 507,
+      "sha256": "44e40bd1e02b92cc91154ed2885a2d24ccf940bfdf5838553dd579024a300a71"
+    },
+    {
+      "path": "state-preservation-final.json",
+      "bytes": 507,
+      "sha256": "2fd9aa22e5a6efaa71f96ce9a3452aafd3d1c2e958df651451d2245fd6fcd922"
+    },
+    {
+      "path": "preupgrade-backup.txt",
+      "bytes": 108,
+      "sha256": "633aaa97f2126de3caffe7b5ecb375c25b3ed9908a3c9ca88b9e990a1a55aeaa"
+    },
+    {
+      "path": "preupgrade-backup-existing-key.txt",
+      "bytes": 474,
+      "sha256": "3930602386905dd123eab713cd414245bf5993af093945b984c41b850fb798b3"
+    },
+    {
+      "path": "preupgrade-recovery.txt",
+      "bytes": 563,
+      "sha256": "fa9f02ea3ad700cdce50344ffb27c262b15684faf178ba192dc675490d14a833"
+    },
+    {
+      "path": "recovery-cleanup.json",
+      "bytes": 121,
+      "sha256": "b9a7ee2ca1a2f3114e2e74d90719f38317c7d61f799f1b04707eb2f30f21f2f6"
+    },
+    {
+      "path": "update-feed-receipt.json",
+      "bytes": 457,
+      "sha256": "1df2ab9327e8b73e9d4662aaf0f4eb743888e8ceefac90e1c599ce10a350cc06"
+    },
+    {
+      "path": "update-before-status.json",
+      "bytes": 668,
+      "sha256": "e369f3a4b5176bafc12265d4260508e2174469d98da98c054c13ea309678fa21"
+    },
+    {
+      "path": "update-available.json",
+      "bytes": 527,
+      "sha256": "ac648b441814a35837f15608f00723e09f04ab94776cfa96ffe8004a0e364b8d"
+    },
+    {
+      "path": "update-download.json",
+      "bytes": 661,
+      "sha256": "5b4554139c2e0fb2deb5207702e664c7954ed37c584f0e1da3caf54a369894ea"
+    },
+    {
+      "path": "update-downloaded.json",
+      "bytes": 669,
+      "sha256": "819d74ce2996cbc3320b06b49150e1735ac5aedf479bd71c6c2363e03475fd48"
+    },
+    {
+      "path": "update-install.json",
+      "bytes": 660,
+      "sha256": "b8fb5e50344a07c2224815523808c60e1abacef0facb1b1bf12cca716a80dabe"
+    },
+    {
+      "path": "update-postflight-health.json",
+      "bytes": 242,
+      "sha256": "40360218ef95c4fec5cbadab485cd2320f6bc102390cc2b3ac015f83b68c6667"
+    },
+    {
+      "path": "installed-repair.json",
+      "bytes": 295,
+      "sha256": "64a1a2e08677610b910f6bb350b60772ae2795d3da4f2eeebec224c41bfba387"
+    },
+    {
+      "path": "installed-restart.json",
+      "bytes": 291,
+      "sha256": "86bf4577b94da95aa01de5e90cc66e2d8676c21d9b6cd12ebf02c45e9364bd56"
+    },
+    {
+      "path": "installed-final-doctor.json",
+      "bytes": 282,
+      "sha256": "3d091ce18078b7a4a968cedaaf1dbe37105f5b4edf5bddc107986bb5f4c1f86c"
+    },
+    {
+      "path": "installed-final-signature.json",
+      "bytes": 299,
+      "sha256": "be428d9fc4b87537af520dbf9bd53f0e050ecacc86403269382496a2526b5870"
+    },
+    {
+      "path": "installed-final-signature.log",
+      "bytes": 1828,
+      "sha256": "05ff6808a2c0873e9e8afe3c5cfd0480761395998db9e1ed9eb1d7a04ab8cc6a"
+    },
+    {
+      "path": "installed-normal-launch.json",
+      "bytes": 228,
+      "sha256": "49fc07563301708e4bfaa641a4676806c9c43512172ba50eaafb13943e2eb646"
+    },
+    {
+      "path": "installed-ui-observed.json",
+      "bytes": 1158,
+      "sha256": "5f78035dc2fcd79794ba3cf7f522dcc8518ce11555746f8324f0324d45a10d42"
+    },
+    {
+      "path": "installed-ui-observed.log",
+      "bytes": 87,
+      "sha256": "df184ca15fe8ff056566ee4ecf48c543a2024a7c2648d72ed00274fa52ccce37"
+    },
+    {
+      "path": "update-server-stop.json",
+      "bytes": 58,
+      "sha256": "fd49a29ca82cefab59e8343d1d7f4ec2db8f7bc32a35809561c41b3615d0e1bf"
+    },
+    {
+      "path": "badfeed-before.json",
+      "bytes": 335,
+      "sha256": "b3174330d3618eb49b7d876d5427a93f11319498eb31676b5b31d6b7330038c7"
+    },
+    {
+      "path": "badfeed-after.json",
+      "bytes": 355,
+      "sha256": "a6d0a2df2b956c0eb1576bdf267f62bb3c586007051ab4cf089a4cf1fdfa7d60"
+    },
+    {
+      "path": "badfeed-check.json",
+      "bytes": 2787,
+      "sha256": "4ad94aba5237ee50c0a833ae10faaa6982db383cfd8360f6b959c573f0af5ebf"
+    },
+    {
+      "path": "badfeed-native-user.png",
+      "bytes": 182253,
+      "sha256": "8afb805d5179a40cc3fa0d243fdd31bd5ae7194198860521639f6cabe57d7ef2"
+    },
+    {
+      "path": "badfeed-native-menu.json",
+      "bytes": 449,
+      "sha256": "b879cd9bbe1d9634910b15bd6a0b625ce76f71a34a432f2372eb3cc1ac1af1df"
+    },
+    {
+      "path": "badfeed-quit.json",
+      "bytes": 257,
+      "sha256": "53eeb8765e2915d1ef4998ff8101c05720d87b97a1e79b1599cd934bb16f6d5c"
+    },
+    {
+      "path": "public-staged.json",
+      "bytes": 2291,
+      "sha256": "9277c5d86780d19598ebee370ad9a69dafb0dbd10fd29d592c8545cdc4f93349"
+    },
+    {
+      "path": "public-channel.json",
+      "bytes": 772,
+      "sha256": "b72b8b98f713ae9cbbb4b114207b937d92e90d0a55af4d25c9d26cb225e98c81"
+    },
+    {
+      "path": "public-staged-latest-mac.yml",
+      "bytes": 513,
+      "sha256": "81628f8811491baa78e628447f64a8d848f6ced578a502bef91ade7432b04dad"
+    },
+    {
+      "path": "public-channel-latest-mac.yml",
+      "bytes": 513,
+      "sha256": "81628f8811491baa78e628447f64a8d848f6ced578a502bef91ade7432b04dad"
+    },
+    {
+      "path": "published-latest-mac.yml",
+      "bytes": 513,
+      "sha256": "7f622156034e99a5eec31f7cf37801d636943114923e2da391d9736802fd4e3d"
+    },
+    {
+      "path": "channel-precondition.json",
+      "bytes": 193,
+      "sha256": "c1db464d22aea3da2b7f03e9347fd79e991cfcf376e6b2e855169c560dd2cfd7"
+    },
+    {
+      "path": "tag.json",
+      "bytes": 273,
+      "sha256": "a7709aee83a3a7e02d0df12b50962b88ab2630a68de95a5fd3630dc6a832a817"
+    },
+    {
+      "path": "publication.json",
+      "bytes": 6631,
+      "sha256": "121bf5c6c59ac70d583c19009f2025a809ba7ba2f483258325b1821ba698fd90"
+    },
+    {
+      "path": "release-process-notes.json",
+      "bytes": 2922,
+      "sha256": "65872f087efb19491450201e13203e1253dafd549184e40d2a5cb8c5180c2ca5"
+    }
+  ],
+  "local_only_evidence": [
+    {
+      "path": "/tmp/stackos-release-20261028/state-before.json",
+      "sha256": "17fad52cb65b4913b3a0c1b13d37b3e15361619f968ac2621c8f270154b87f8b"
+    },
+    {
+      "path": "/tmp/stackos-release-20261028/state-after.json",
+      "sha256": "8041dc82d4fd7a0114dc0ad845d5ca060782fd244c43ca3404d05e40687e23b6"
+    },
+    {
+      "path": "/tmp/stackos-release-20261028/state-final.json",
+      "sha256": "27dd81bdc563fe3dfbd0af326286e5916b93364eaae56397c8b996e2a018dcfb"
+    },
+    {
+      "path": "/tmp/stackos-release-20261028/update-ready.png",
+      "sha256": "b15560c8f83354b41aaa41fdefd61efd8fd3d618491a9f8eac864f5e142da085"
+    },
+    {
+      "path": "/tmp/stackos-release-20261028/update-ready-remounted.png",
+      "sha256": "f5c72edbf84adee05277ef89833759855e057f164baa1ab1c82857b7bc755565"
+    },
+    {
+      "path": "/tmp/stackos-release-20261028/update-ready-settled.png",
+      "sha256": "e25a64bd103a7b250df06146c9a8c5d4c4842b63ab4a7f86b318700db155c5df"
+    },
+    {
+      "path": "/tmp/stackos-release-20261028/update-doctor.log",
+      "sha256": "54a9838048ed33877c42dfa172d5e85c3117090f874e73628aa6ca8d6bdc7bca"
+    },
+    {
+      "path": "/tmp/stackos-release-20261028/installed-final-doctor.log",
+      "sha256": "54a9838048ed33877c42dfa172d5e85c3117090f874e73628aa6ca8d6bdc7bca"
+    }
+  ],
+  "local_only_reason": "Identity snapshots, raw diagnostics and real project UI captures remain local; reviewed summaries are preserved here."
+}

@@ -3,6 +3,7 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const { execFileSync } = require("node:child_process");
 
 const desktopDir = path.resolve(__dirname, "..");
 const repoRoot = path.resolve(desktopDir, "..");
@@ -14,6 +15,18 @@ const signer = fs.readFileSync(
 );
 const runtime = fs.readFileSync(path.join(repoRoot, "stackos", "browser", "runtime.py"), "utf8");
 const bunEntitlements = path.join(desktopDir, "scripts", "bun-entitlements.plist");
+
+// Execute the builder's selector in isolation: exact maintenance default and
+// operator overrides must both reach the existing uv interpreter selection.
+const pythonSelector = payload.match(/^PYTHON_VERSION=.*$/m)?.[0];
+assert.ok(pythonSelector, "payload builder must select its Python version");
+for (const [override, expected] of [["", "3.12.16"], ["3.13.11", "3.13.11"]]) {
+  const selected = execFileSync("bash", ["-c", `${pythonSelector}\nprintf '%s' "$PYTHON_VERSION"`], {
+    env: { ...process.env, STACKOS_DESKTOP_PYTHON: override },
+    encoding: "utf8",
+  });
+  assert.equal(selected, expected);
+}
 
 assert.match(payload, /ensure_gstack_runtime/);
 assert.match(payload, /bin\/stackos\.browser/);

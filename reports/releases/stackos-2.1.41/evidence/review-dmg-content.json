@@ -1,0 +1,61 @@
+{
+  "reviewed_at_utc": "2026-10-29T03:24:53.362913+00:00",
+  "reviewer": "/root/navigation_review",
+  "release": "2.1.41",
+  "source_commit": "b78a7c39b2f35293597575b57d8b3f7f84c786a8",
+  "app": "/tmp/stackos-release-2141-20261028/review-dmg-mount/StackOS.app",
+  "verdict": "pass_content_only",
+  "identity": {
+    "bundle_identifier": "io.stackos.desktop",
+    "version": "2.1.41",
+    "payload": {
+      "name": "stackos",
+      "version": "2.1.41",
+      "buildId": "20261029T025156Z",
+      "builtAt": "2026-10-29T02:51:56Z"
+    },
+    "asar_sha256": "aa8b0217edf4da2ccfc83e9e55744d6d6075e35fe7281a420a0adfc1948345ac"
+  },
+  "checks": {
+    "tracked_package_files": 533,
+    "tracked_package_missing": [],
+    "tracked_package_mismatch": [],
+    "tracked_package_hash_map_sha256": "8b07f76617af723738ff03483474f63d4af156cbf8abb807df28ec800bc7191b",
+    "force_include_assets": 101,
+    "force_include_asset_mismatch": [],
+    "force_include_hash_map_sha256": "4835eb9aada5a9bdd630a4464b5077a831f7a0735f28a1943ad29b40842ad22c",
+    "unexpected_package_files": [],
+    "ui_files": 89,
+    "ui_matches_commit": true,
+    "electron_source_files": 9,
+    "electron_sources_match_commit": true,
+    "electron_source_hashes": {
+      "src/backups.js": "4a2b99c0fb86d5f04dc56a68f9414cdfbdc2e8a979240a6710c9ac7075d37901",
+      "src/deep-links.js": "5293434713c9f15a967411f6085cb06f0d62ce8f0cc093881cb6a7be01095ebc",
+      "src/main.js": "7d9ad7ece4934db7093ece76adda436ec86e0fcf0a93e0be87294a9a3ecf481c",
+      "src/menu-template.js": "af444b2a99c230ab1e5c4f0cf50aac89f26ab95c89ef1785724488fdf3019686",
+      "src/notifications.js": "6f81f993ec53366e20a9c8dc434513ec300f4af1491a134d1ba5f372cf5168e2",
+      "src/preload.js": "12a9c94009df1a431edf34f77a1880a2a801a8eba859e0a28620f34d1b3d5d0a",
+      "src/service.js": "b142ffb59bc35eaf2f949723a18a5558aca277e24c58e720a34ad0724a3a512c",
+      "src/stackos-splash.png": "f039e468a597decbf0d6c1157af81e2f9db1490eeb1122f5dcff3bbc834d3a88",
+      "src/updates.js": "c33d3e50903ce591f20d3e30270a6258e1aaed7cb139d553c30897787ef9a9f6"
+    },
+    "package_retained_field_mismatch": [],
+    "package_removed_fields": [
+      "build",
+      "devDependencies",
+      "scripts"
+    ],
+    "update_example_matches_commit": true,
+    "production_update_url": "https://stackos.flowmonkey.io/StackOS/",
+    "app_update_urls": [
+      "https://stackos.flowmonkey.io/StackOS/"
+    ],
+    "editable_installs": [],
+    "egg_links": []
+  },
+  "limits": [
+    "No app launch or runtime mutation.",
+    "No trust, DMG, feed, alias or publication acceptance claimed by this content-only receipt."
+  ]
+}

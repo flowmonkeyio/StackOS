@@ -1,8 +1,9 @@
-import { mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import { defineComponent, nextTick, ref } from 'vue';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import UiSidePanel from './UiSidePanel.vue';
+import UiDialog from './UiDialog.vue';
 
 const Host = defineComponent({
   components: { UiSidePanel },
@@ -39,6 +40,32 @@ describe('UiSidePanel', () => {
   afterEach(() => {
     document.body.innerHTML = '';
     document.body.style.overflow = '';
+  });
+
+  it('keeps a later drawer above a dialog and retains scroll lock when the lower dialog unmounts', async () => {
+    const host = mount(defineComponent({
+      components: { UiDialog, UiSidePanel },
+      setup: () => ({ dialog: ref(false), drawer: ref(false) }),
+      template: '<button id="root-opener" @click="dialog = true">Open dialog</button><UiDialog v-if="dialog" :model-value="true" title="Parent"><button id="drawer-launch" @click="drawer = true">Open drawer</button></UiDialog><UiSidePanel v-model="drawer" title="Child" />',
+    }), { attachTo: document.body });
+    const opener = host.get('#root-opener').element as HTMLElement;
+    opener.focus();
+    await host.get('#root-opener').trigger('click');
+    const launch = document.getElementById('drawer-launch')!;
+    launch.focus();
+    launch.click();
+    await flushPromises();
+    expect(Number(panels()[0].style.zIndex)).toBeGreaterThan(Number(document.querySelector<HTMLElement>('.ui-dialog')!.style.zIndex));
+    host.vm.dialog = false;
+    await nextTick();
+    expect(document.body.style.overflow).toBe('hidden');
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Close panel');
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await nextTick();
+    expect(panels()).toHaveLength(0);
+    expect(document.body.style.overflow).toBe('');
+    expect(document.activeElement).toBe(opener);
+    host.unmount();
   });
 
   it('scrolls the body by default', () => {

@@ -560,6 +560,7 @@ class ExecutionContextRepository:
         metadata_json: dict[str, Any] | None = None,
     ) -> ExecutionContextArtifactOut:
         row = self._row(context_ref=context_ref, project_id=project_id)
+        assert row.id is not None
         artifact = self._s.get(Artifact, artifact_id)
         if artifact is None or artifact.project_id != row.project_id:
             raise NotFoundError(

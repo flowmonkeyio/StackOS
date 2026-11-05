@@ -217,6 +217,38 @@ const snapshot: TrackerSnapshot = {
 }
 
 describe('buildTrackerFlowModel', () => {
+  it('fits a six-ticket dependency tree in a compact width without overlapping nodes and preserves large graph spacing', () => {
+    function modelFor(count: number, pairs: number[][]) {
+      const nodes = Array.from({ length: count }, (_, index) => ({
+        ...snapshot.graph!.nodes[1]!, id: `ticket:n${index}`, label: `Ticket ${index}`,
+      }))
+      return buildTrackerFlowModel({
+        ...snapshot,
+        graph: {
+          ...snapshot.graph!, nodes: [snapshot.graph!.nodes[0]!, ...nodes],
+          edges: pairs.map(([source, target]) => ({
+            id: `dependency:${source}:${target}`, type: 'dependency',
+            source: `ticket:n${source}`, target: `ticket:n${target}`, label: 'blocks', data: {},
+          })),
+        },
+      })
+    }
+    const small = modelFor(6, [[0, 1], [1, 2], [1, 3], [2, 4], [3, 5]])
+    const positions = small.nodes.map(node => node.position)
+    const width = Math.max(...positions.map(point => point.x)) - Math.min(...positions.map(point => point.x)) + TRACKER_TICKET_NODE_WIDTH
+    expect(width).toBeLessThan(1400)
+    for (let first = 0; first < positions.length; first++) {
+      for (let second = first + 1; second < positions.length; second++) {
+        const a = positions[first]!
+        const b = positions[second]!
+        expect(Math.abs(a.x - b.x) >= TRACKER_TICKET_NODE_WIDTH || Math.abs(a.y - b.y) >= TRACKER_TICKET_NODE_HEIGHT).toBe(true)
+      }
+    }
+    const large = modelFor(13, Array.from({ length: 12 }, (_, index) => [index, index + 1]))
+    const xPositions = large.nodes.map(node => node.position.x).sort((a, b) => a - b)
+    expect(xPositions[1]! - xPositions[0]!).toBe(TRACKER_TICKET_NODE_WIDTH + 132)
+  })
+
   it('composes ticket nodes as a dependency tree by default', () => {
     const model = buildTrackerFlowModel(snapshot)
 

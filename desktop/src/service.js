@@ -193,6 +193,8 @@ function createInstallProgressReporter(options) {
 function runStackos(args, options = {}) {
   const resolved = resolveStackosCommand();
   const timeoutMs = options.timeoutMs || 120000;
+  const outputLimit = Number.isFinite(options.outputLimit)
+    ? Math.max(12000, Math.min(Math.floor(options.outputLimit), 1048576)) : 12000;
   const cwd = options.cwd || repoRoot();
   if (resolved.error || !resolved.command) {
     return Promise.resolve({
@@ -265,8 +267,8 @@ function runStackos(args, options = {}) {
         args,
         exitCode: code,
         signal,
-        stdout: trimOutput(stdout),
-        stderr: trimOutput(stderr)
+        stdout: trimOutput(stdout, outputLimit),
+        stderr: trimOutput(stderr, outputLimit)
       });
     });
   });

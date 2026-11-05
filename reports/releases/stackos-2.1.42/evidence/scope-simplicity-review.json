@@ -1,0 +1,40 @@
+{
+  "reviewer": "/root/navigation_review",
+  "verdict": "approve",
+  "scope": "Final bounded drift and overengineering audit; no repeated tests or implementation changes.",
+  "candidate_sha256": "ebb97b50d5615526a7c9aa9ea9e91c3d7ca0926830e086d12b5f0fcb0eae3064",
+  "manifest": "integrated-candidate-final.json",
+  "manifest_file_sha256": "1404117bc1c5e04fd634780b8fee960d652d015a857e097d58302bc3e2ee7021",
+  "base_commit": "3200cd97aaf2f8738fe920aec74f6279ee1c64d2",
+  "freshness_evidence": "scope-simplicity-audit.json",
+  "scope_verification": {
+    "accepted_source_paths": 36,
+    "exact_union_of_accepted_parent_and_rev5": true,
+    "main_source_hash_mismatches": [],
+    "main_bundle_files_verified": 89,
+    "main_bundle_hash_mismatches": [],
+    "all_manifest_source_files_checked": 2209,
+    "unexpected_source_drift": [],
+    "unrelated_exclusions_preserved": [".mcp/serena-mcp-wrapper.py", ".serena/project.yml"],
+    "only_new_owned_file": "tests/integration/test_dependency_refresh_contract.py"
+  },
+  "assessment": [
+    "Dependency and lockfile changes implement the approved runtime, Python and JavaScript refresh. No unrelated finance/catalog source changes or direct major framework migration were included.",
+    "Runtime changes remain in the existing installer and builder: verified source/Bun pins, production dependency closure, compile configuration isolation, authenticated archive revision metadata and an overridable Python patch default. They resolve demonstrated issues without a new service, abstraction or compatibility shim.",
+    "Repository typing changes use existing required-ID helpers and assertions after scoped lookups. No new production Python function/class, data model, migration or agent contract was introduced; accepted equality proof covers230 operations and73 OpenAPI paths.",
+    "Website changes are limited to native accessible naming and disabling controls until hydration so the first click is handled. UI changes fix observed accessible-name/ARIA failures. Remaining UI edits correct stale tests and synchronize audits with settled state; no product navigation, styling or unrelated UI behavior was redesigned.",
+    "The retained bounds are purposeful: SQLModel stays below the demonstrated aware-datetime breaking boundary; stable OTelSDK requires its exact semantic-conventions transitive prerelease; component-meta retains its compatible Kit closure. Existing UI Vite5/TypeScript5/Tailwind3/Pinia2 and runtime patched Playwright pins avoid an unapproved migration. Nuxt internal transitive majors follow the accepted Nuxt4 update.",
+    "No cancelled backup-installed-app, fake-version updater, temporary review helper or dependency-task path is part of the source manifest or added source lines. Historical release-review reports in the baseline are byte-identical. The only added repository file is a focused dependency/startup contract regression test."
+  ],
+  "proof_reused": ["integrated-review.json", "python-review.json", "python-repair-review.json", "runtime-review.json", "javascript-review.json"],
+  "valid_signoff": "5479 Python tests plus static checks on Python3.12.16; fresh802 UI tests,23 UI browser tests, build/types/lint; accepted website/runtime proof. No suite repeated for this scope-only audit.",
+  "findings": [],
+  "required_repairs": [],
+  "limits": [
+    "This is source scope and simplicity approval, not final package/publication approval. The newly authorized normal release must bind its version-only delta and newly produced artifacts to this reviewed source.",
+    "Ignored output from the cancelled local build is outside the reviewed source manifest and must not be represented as the final release artifact. Normal clean release generation remains the owner of fresh package evidence.",
+    "Retained compatible bounds should be revisited with their respective upstream or migration work; they are not permanent compatibility layers."
+  ],
+  "authority": "The latest operator explicitly authorizes normal release after this signoff. The earlier source-only stopping boundary is superseded for the main agent. The cancelled rollback-app helper and fake-version updater plan remain excluded.",
+  "next_disposition": "Scope/simplicity gate approved. Main may proceed to the normal release process using the exact reviewed source, preserving unrelated local files."
+}

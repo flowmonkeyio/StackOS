@@ -1,0 +1,9 @@
+{
+  "version": "2.1.40",
+  "source_commit": "958f554223a438b404e72c67a568d573f4653ae5",
+  "zip_bytes": 490264828,
+  "zip_sha512": "dVvw0EpkgBkNWAXEZX2NVI1eLpaM03zqbwdIxs7+n5O2z1aBXDuW4k9SCa8Am7fpp+JQhvd789sBsz2RgRSTbA==",
+  "zip_sha256": "9ea39558a289badc6e30e34e9f58b57ef3ca91609caee90631a54d0567b68551",
+  "metadata_scope": "Local update smoke: unchanged canonical ZIP entry only; separately notarizing DMG excluded.",
+  "prior_blockmap_included": true
+}

@@ -10,6 +10,7 @@ import typer
 
 from stackos.config import Settings
 
+from . import engineering_delivery as _engineering_delivery
 from .api_client import (
     _api_request,
     _echo_json,
@@ -24,6 +25,7 @@ from .app import (
     agent_requests_app,
     app,
     autostart_app,
+    delivery_app,
     ops_app,
     run_plans_app,
     tracker_app,

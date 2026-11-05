@@ -75,7 +75,6 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside))
       class="focus-ring-sb flex w-full min-w-0 items-center gap-2.5 rounded-md border border-sb-border bg-sb-hover px-2.5 py-2 text-left text-sm transition-colors duration-fast hover:bg-sb-active"
       :aria-expanded="open"
       aria-haspopup="listbox"
-      aria-label="Switch project"
       @click="toggle"
     >
       <span
@@ -102,6 +101,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onClickOutside))
           {{ selectedProject.slug }}
         </span>
       </span>
+      <span class="sr-only">Switch project</span>
       <UiIcon
         name="chevron-up-down"
         class="h-4 w-4 shrink-0 text-sb-muted"

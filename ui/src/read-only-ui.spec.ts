@@ -11,6 +11,7 @@ const WRITE_PATTERNS = [/\bapiWrite\b/, /method:\s*['"`](POST|PATCH|PUT|DELETE)[
 const AUTH_SETUP_STORE = join(ROOT, 'stores', 'plugins.ts')
 const PROJECTS_STORE = join(ROOT, 'stores', 'projects.ts')
 const OPERATIONS_CLIENT = join(ROOT, 'lib', 'operations.ts')
+const TASK_CONTENT_CONTROLLER = join(ROOT, 'views', 'task-tracker', 'useTrackerTaskContent.ts')
 const ALLOWED_WRITE_FILES = new Set([AUTH_SETUP_STORE, PROJECTS_STORE, OPERATIONS_CLIENT])
 
 function filesUnder(dir: string): string[] {
@@ -90,5 +91,22 @@ describe('restricted UI write contract', () => {
     expect([...text.matchAll(/method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/g)]).toHaveLength(1)
     expect(text).toContain('`/api/v1/operations/${operationName}/call`')
     expect(text).toContain("method: 'POST'")
+  })
+
+  it('keeps tracker writes limited to the bounded task content controller', () => {
+    const callers: string[] = []
+    for (const scope of SCOPES) {
+      for (const file of filesUnder(join(ROOT, scope))) {
+        const source = readFileSync(file, 'utf8')
+        const operations = [...source.matchAll(/callOperation(?:<[^\n]+>)?\(\s*['"](tracker\.[^'"]+)['"]/g)]
+          .map(match => match[1])
+          .filter(name => !['tracker.get', 'tracker.status'].includes(name))
+        if (operations.length) {
+          expect(operations).toEqual(['tracker.updateTaskContent'])
+          callers.push(file)
+        }
+      }
+    }
+    expect(callers).toEqual([TASK_CONTENT_CONTROLLER])
   })
 })
