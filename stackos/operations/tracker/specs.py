@@ -108,23 +108,47 @@ def operation_specs() -> list[OperationSpec]:
                 default_mode="compact",
                 allowed_modes=("compact", "raw"),
                 compact_notes=(
-                    "Keep task, job, current ticket, launch status and inspection guidance.",
+                    "Keep task, workflow scope, job, ticket, status and inspection guidance.",
                 ),
             ),
             purpose=(
-                "Select the additional automated delivery path for one independent prepared task. "
+                "Select automated delivery for a prepared task or one running workflow step. "
                 "The planner supplies project delivery/review instructions once at task level. "
-                "The daemon runs ready tickets sequentially and stops on rejection or failure."
+                "The daemon requires a new committed candidate and independent approval of its "
+                "exact SHA before advancing. Rejection or failure stops the same task."
             ),
             prerequisites=(
-                "Prepare self-contained tickets and dependencies under an independent task.",
+                "Prepare self-contained tickets and dependencies in a clean Git working directory.",
+                "For a workflow task, supply run_plan_id and step_id for its running step; "
+                "only executable children of that step are selected. The main agent retains "
+                "workflow phase lifecycle control.",
                 "Supply the project directory and its resolved agents; Codex is supported.",
             ),
             returns=(
                 "Returns task/job/status refs. Inspect tracker.get response_mode=raw for progress.",
                 "The existing daemon scheduler owns execution; jobs do not survive daemon restart.",
+                "Ticket evidence retains commit, launch and independent review receipts before "
+                "completion releases dependencies. No automatic retries or replacement tasks.",
             ),
             examples=(
+                OperationExample(
+                    title="Deliver children of the selected running workflow step",
+                    arguments={
+                        "project_id": 1,
+                        "task_key": "workflow-12",
+                        "run_plan_id": 12,
+                        "step_id": "deliver-tickets",
+                        "project_dir": "/work/project",
+                        "delivery_agent": {
+                            "name": "builder",
+                            "instructions": "Implement, check and commit this ticket.",
+                        },
+                        "review_agent": {
+                            "name": "reviewer",
+                            "instructions": "Independently check the exact commit read-only.",
+                        },
+                    },
+                ),
                 OperationExample(
                     title="Start a prepared task with project agents",
                     arguments={

@@ -44,7 +44,15 @@ class TrackerStartDeliveryInput(MCPInput):
     host_key: str = "codex"
     delivery_agent: TaskDeliveryAgent
     review_agent: TaskDeliveryAgent
+    run_plan_id: int | None = Field(default=None, ge=1)
+    step_id: str | None = Field(default=None, min_length=1)
     response_mode: TrackerResponseMode = "compact"
+
+    @model_validator(mode="after")
+    def workflow_scope_pair(self):
+        if (self.run_plan_id is None) != (self.step_id is None):
+            raise ValueError("run_plan_id and step_id must be provided together")
+        return self
 
 
 TRACKER_STATUS_DESCRIPTION = (

@@ -14,6 +14,7 @@ def test_delivery_operation_has_one_contract_and_no_ack():
     assert spec.effective_response_policy.allowed_modes == ("compact", "raw")
     schema = spec.input_model.model_json_schema()
     assert "delivery_agent" in schema["required"] and "review_agent" in schema["required"]
+    assert {"run_plan_id", "step_id"} <= schema["properties"].keys()
     with pytest.raises(ValueError):
         spec.input_model.model_validate(
             {
@@ -26,6 +27,22 @@ def test_delivery_operation_has_one_contract_and_no_ack():
         )
 
 
+@pytest.mark.parametrize("scope", [{"run_plan_id": 1}, {"step_id": "deliver"}])
+def test_delivery_requires_paired_workflow_selector(scope):
+    spec = build_operation_registry().get("tracker.startDelivery")
+    with pytest.raises(ValueError, match="provided together"):
+        spec.input_model.model_validate(
+            {
+                "project_id": 1,
+                "task_key": "one",
+                "project_dir": "/tmp",
+                "delivery_agent": {"name": "x", "instructions": "Build"},
+                "review_agent": {"name": "y", "instructions": "Review"},
+                **scope,
+            }
+        )
+
+
 def test_launch_response_preserves_inspection_fields_and_rejects_ack():
     spec = build_operation_registry().get("tracker.startDelivery")
     data = {
@@ -33,6 +50,8 @@ def test_launch_response_preserves_inspection_fields_and_rejects_ack():
         "status": "queued",
         "ticket_key": None,
         "job_ref": "engineering-delivery:1:1",
+        "run_plan_id": 12,
+        "step_id": "deliver-tickets",
         "recommended_tool": "tracker.get",
         "message": "Inspect task_key with response_mode=raw.",
     }

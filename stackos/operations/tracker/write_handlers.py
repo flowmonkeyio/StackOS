@@ -62,6 +62,8 @@ async def tracker_start_delivery(
         host_key=inp.host_key,
         delivery_agent=inp.delivery_agent.model_dump(),
         review_agent=inp.review_agent.model_dump(),
+        run_plan_id=inp.run_plan_id,
+        step_id=inp.step_id,
     )
     return WriteEnvelope(data=result, run_id=ctx.run_id, project_id=inp.project_id)
 

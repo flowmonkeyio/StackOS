@@ -75,8 +75,11 @@ def run_agent(
             "--json",
             "--cd",
             str(project_dir),
-            "--sandbox",
-            sandbox,
+            *(
+                ["--approve-for-me"]
+                if sandbox == "workspace-write"
+                else ["--sandbox", "read-only", "-c", 'approval_policy="never"']
+            ),
             "--output-schema",
             str(schema_path),
             "-o",

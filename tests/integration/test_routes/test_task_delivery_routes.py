@@ -13,11 +13,24 @@ from fastapi.testclient import TestClient
 from stackos.host_mcp.result import AgentRunResult
 from stackos.plugins.builtin_engineering import task_delivery
 from tests.integration.test_mcp.conftest import MCPClient
+from tests.integration.test_repositories.test_task_delivery import commit, git
 
 
+@pytest.mark.parametrize("workflow", [False, True])
 def test_real_operation_returns_while_scheduler_delivers(
-    api: TestClient, project_id: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    api: TestClient,
+    project_id: int,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    workflow: bool,
 ) -> None:
+    tmp_path = tmp_path / "project"
+    tmp_path.mkdir()
+    git(tmp_path, "init")
+    git(tmp_path, "config", "user.name", "Delivery Test")
+    git(tmp_path, "config", "user.email", "delivery@example.test")
+    commit(tmp_path, "baseline")
+
     def operation(name, **arguments):
         response = api.post(
             f"/api/v1/operations/{name}/call",
@@ -27,14 +40,33 @@ def test_real_operation_returns_while_scheduler_delivers(
         body = response.json()
         return body.get("data", body)
 
-    operation("tracker.createTask", key="automatic", title="Automatic")
+    scope = {}
+    task_key = "automatic"
+    if workflow:
+        plan = operation(
+            "runPlan.create",
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "automatic-workflow",
+                "title": "Automatic workflow",
+                "steps": [{"id": "deliver", "title": "Deliver"}],
+            },
+            response_mode="raw",
+        )
+        scope = {"run_plan_id": plan["id"], "step_id": "deliver"}
+        started = operation("runPlan.start", run_plan_id=plan["id"], response_mode="raw")
+        operation("runPlan.claimStep", **scope, run_token=started["run_token"])
+        task_key = f"workflow-{plan['id']}"
+    else:
+        operation("tracker.createTask", key=task_key, title="Automatic")
     for key, dependencies in (("first", []), ("second", ["first"])):
         operation(
             "tracker.createTicket",
-            task_key="automatic",
+            task_key=task_key,
             key=key,
             title=key,
             dependency_keys=dependencies,
+            **scope,
         )
 
     entered, release, finished = Event(), Event(), Event()
@@ -49,6 +81,11 @@ def test_real_operation_returns_while_scheduler_delivers(
             if sandbox == "workspace-write"
             else {"decision": "approve", "summary": "Reviewed"}
         )
+        result["commit_sha"] = (
+            commit(tmp_path, calls[-1][0])
+            if sandbox == "workspace-write"
+            else git(tmp_path, "rev-parse", "HEAD")
+        )
         return AgentRunResult(0, result=result)
 
     monkeypatch.setattr(task_delivery(), "run_agent", run_agent)
@@ -57,7 +94,8 @@ def test_real_operation_returns_while_scheduler_delivers(
         EVENT_JOB_EXECUTED,
     )
     arguments = {
-        "task_key": "automatic",
+        "task_key": task_key,
+        **scope,
         "project_dir": str(tmp_path),
         "delivery_agent": {"name": "builder", "instructions": "Deliver the project ticket."},
         "review_agent": {"name": "reviewer", "instructions": "Review the project ticket."},
@@ -76,9 +114,17 @@ def test_real_operation_returns_while_scheduler_delivers(
     finally:
         release.set()
     assert finished.wait(5), "Scheduled delivery did not finish"
-    snapshot = operation("tracker.get", task_key="automatic", response_mode="raw")
-    assert snapshot["tasks"][0]["status"] == "complete"
-    assert [ticket["status"] for ticket in snapshot["tickets"]] == ["complete", "complete"]
+    snapshot = operation("tracker.get", task_key=task_key, response_mode="raw")
+    assert snapshot["tasks"][0]["status"] == ("in-progress" if workflow else "complete")
+    assert snapshot["tasks"][0]["metadata_json"]["delivery"]["status"] == "complete"
+    assert [
+        ticket["status"] for ticket in snapshot["tickets"] if ticket["key"] in {"first", "second"}
+    ] == ["complete", "complete"]
+    if workflow:
+        mirror = next(
+            ticket for ticket in snapshot["tickets"] if ticket["parent_ticket_key"] is None
+        )
+        assert mirror["status"] == "in-progress"
     assert calls == [
         ("first", "workspace-write"),
         ("first", "read-only"),

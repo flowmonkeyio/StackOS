@@ -30,6 +30,7 @@ from stackos.db.models import (
     TrackerTask,
     TrackerTicket,
     TrackerTicketDependency,
+    TrackerTicketKind,
     TrackerTicketLink,
     TrackerTicketReference,
 )
@@ -287,6 +288,7 @@ class TrackerQueryMixin:
         include_blocked: bool = True,
         task_key: str | None = None,
         pending_only: bool = False,
+        parent_ticket_key: str | None = None,
     ) -> TrackerNextOut:
         tracker = self._tracker_or_none(project_id=project_id)
         if tracker is None:
@@ -302,6 +304,13 @@ class TrackerQueryMixin:
         if pending_only:
             tickets = [
                 ticket for ticket in tickets if ticket.status == TrackerItemStatus.NOT_STARTED
+            ]
+        if parent_ticket_key is not None:
+            parent = self._ticket_by_key(tracker.id, parent_ticket_key)
+            tickets = [
+                ticket
+                for ticket in tickets
+                if ticket.parent_ticket_id == parent.id and ticket.kind != TrackerTicketKind.GROUP
             ]
         if assignee is not None:
             tickets = [ticket for ticket in tickets if ticket.assignee in {None, assignee}]
@@ -1288,6 +1297,8 @@ class TrackerQueryMixin:
             "run_plan_step_id": step.id,
             "step_id": step.step_id,
             "template_key": plan.template_key,
+            "run_plan_status": plan.status,
+            "step_status": step.status,
         }
 
     def _ticket_for_step(

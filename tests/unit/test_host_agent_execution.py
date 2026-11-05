@@ -69,7 +69,8 @@ print('{{"type": "turn.completed"}}')
     assert call["schema"] == SCHEMA
     assert call["path_first"] == str(cli.parent)
     args = call["args"]
-    assert args[:6] == ["exec", "--json", "--cd", str(project), "--sandbox", "workspace-write"]
+    assert args[:5] == ["exec", "--json", "--cd", str(project), "--approve-for-me"]
+    assert "--sandbox" not in args
     assert args[-1] == "-"
     override = args[args.index("-c") + 1]
     assert tomllib.loads(override) == {"developer_instructions": instructions}
@@ -159,6 +160,8 @@ def test_harness_settings_are_inherited_and_read_only_is_forwarded(
         assert not any(arg.startswith("model=") for arg in command)
         assert not any(arg.startswith("model_reasoning_effort=") for arg in command)
         assert command[command.index("--sandbox") + 1] == "read-only"
+        assert 'approval_policy="never"' in command
+        assert "--approve-for-me" not in command
         Path(command[command.index("-o") + 1]).write_text('{"summary": "pass"}', encoding="utf-8")
         return subprocess.CompletedProcess(command, 0, "", "")
 

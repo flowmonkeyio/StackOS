@@ -80,21 +80,31 @@ Projects need no `.codex` folder, and StackOS does not substitute generic preset
 for those instructions. Harness and role choices are stored once under the
 task's `metadata_json.delivery`, with other task metadata preserved.
 
+For a workflow task, also pass `run_plan_id` and `step_id` together, with the
+matching `task_key` (`workflow-<run_plan_id>`). The plan must be started and the
+selected step running. Selection filters that step's direct executable child
+tickets before applying the readiness limit; group rows, workflow mirrors and
+other steps are left alone. Execution completes when those children are complete,
+even while the workflow task and step remain active. The main agent still owns
+claiming and recording workflow phases. Scope is checked again during execution;
+a queued handoff does not authorize work after its step stops running.
+
 The call returns a task key, execution status, job reference, and a
 `tracker.get` inspection hint immediately. The daemon uses its existing memory
 scheduler to run one ready, unstarted ticket from that task at a time:
 
 ```text
-ready ticket -> delivery -> fresh review -> approve -> complete -> next ticket
+ready ticket -> delivery commit -> fresh review of SHA -> approve -> complete -> next ticket
                                 |
                               reject -> record reason and stop
 ```
 
 The result contracts are `DELIVERY_SCHEMA` and `REVIEW_SCHEMA` in
 [`task_delivery.py`](../plugins/engineering/scripts/task_delivery.py). Delivery
-must return `status` (`complete` or `blocked`) and a string `summary`; review
-must return `decision` (`approve` or `reject`) and a string `summary`. Both
-fields are required for each result, and extra fields are forbidden. Agents
+must return `status` (`complete` or `blocked`), `summary` and `commit_sha`; review
+must return `decision` (`approve` or `reject`), `summary` and `commit_sha`. All
+fields are required strings, and extra fields are forbidden. Blocked/rejected
+results may use an empty SHA when no candidate exists. Agents
 return results only; StackOS updates ticket lifecycle from these results,
 completing a ticket only after successful delivery and review approval. See the
 [CLI handoff example](operations.md#cli-calls).
@@ -102,24 +112,38 @@ completing a ticket only after successful delivery and review approval. See the
 Delivery result:
 
 ```json
-{"status": "complete", "summary": "Implemented the ticket and passed its checks."}
+{"status": "complete", "summary": "Implemented and checked the ticket.", "commit_sha": "<ticket commit SHA>"}
 ```
 
 Review result:
 
 ```json
-{"decision": "approve", "summary": "Independently verified the changes and checks."}
+{"decision": "approve", "summary": "Independently verified this commit.", "commit_sha": "<same ticket commit SHA>"}
 ```
 
 Agent/process failure also stops the task's execution. Ticket evidence records
-both agent results and thread references. Completion uses the existing parent
-task rollup. An active duplicate handoff returns the current execution instead
+both agent results, launch details, thread references, prior HEAD and verified
+commit SHA before dependencies are released. Each ticket begins from a clean
+Git working tree with an existing HEAD. Delivery must create a new commit that
+descends from that HEAD and matches the current clean committed candidate.
+Missing, stale, invalid or mismatched SHAs, uncommitted changes, and review of
+a different SHA stop the same task before another ticket launches. Unrelated
+dirty work must be preserved and reconciled before submitting the handoff.
+Independent tasks retain the existing parent-task rollup. An active duplicate
+handoff for the same scope returns the current execution instead
 of scheduling another job. Inspect the full task metadata and ticket evidence
 with `tracker.get` using `response_mode="raw"`.
 
-This first slice supports independent tracker tasks and Codex. It does not
-execute workflow-mirror tasks, retry rejected work, or resume an interrupted job
-after daemon restart. `tracker.execute` remains a read-only brief operation.
+Codex delivery uses `--approve-for-me` for workspace-write execution with
+automatic approval review; authorized `.git` and `.codex` writes go through
+normal escalation and a denial stops delivery. The independent reviewer uses
+`--sandbox read-only` and `approval_policy="never"`. These modes follow the
+[Codex CLI contract](https://learn.chatgpt.com/docs/developer-commands#codex-exec)
+(checked 2026-11-05); model and reasoning settings remain inherited.
+
+This slice supports Codex and does not retry rejected work or resume an
+interrupted job after daemon restart. `tracker.execute` remains a read-only
+brief operation. Automated child delivery does not complete workflow phases.
 
 ## Workflow Mirroring
 
