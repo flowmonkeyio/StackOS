@@ -205,10 +205,19 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
 
     expected = {item["preset"]["summary"]["key"]: item for item in raw["required_agents"]}
     actual = {item["preset"]["key"]: item for item in compact["required_agents"]}
-    assert set(actual) == set(expected)
-    assert "stackos.sdlc.delivery-reviewer" in actual
+    expected_versions = {
+        "stackos.sdlc.requirements-flow-definer": "0.3.2",
+        "stackos.sdlc.planning": "0.3.2",
+        "stackos.sdlc.delivery": "0.3.2",
+        "stackos.sdlc.delivery-reviewer": "0.3.2",
+    }
+    assert set(actual) == set(expected) == set(expected_versions)
     for key, item in actual.items():
-        assert item["preset"]["version"] == "0.3.1"
+        assert (
+            item["preset"]["version"]
+            == expected[key]["preset"]["summary"]["version"]
+            == expected_versions[key]
+        )
         adaptation = item["project_adaptation"]
         full_adaptation = expected[key]["project_adaptation"]
         assert adaptation["adaptation_required"] is True
@@ -220,6 +229,13 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
         )
         assert "assignment attempt" in full_adaptation["required_agent_action"]
         assert "stale, or contradictory inputs" in full_adaptation["required_agent_action"]
+        assert "terminal-managed delivery" in full_adaptation["required_agent_action"]
+        assert "tracker.startDelivery" in full_adaptation["required_agent_action"]
+        assert (
+            "independent approval of the exact scoped commit"
+            in full_adaptation["required_agent_action"]
+        )
+        assert "workflow phase gates" in full_adaptation["required_agent_action"]
         assert item["preset"]["handoff_outputs"]
         assert (
             "sole writer of durable run/tracker state"

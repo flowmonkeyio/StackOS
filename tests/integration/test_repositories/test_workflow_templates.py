@@ -525,6 +525,12 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert "pass run_plan_id and step_id at creation time" in plan_text
     assert "one root" in plan_text
     assert "tracker.updateTicket" in plan_text
+    assert (
+        "Main writes terminal-managed child status/evidence with tracker.updateTicket" in plan_text
+    )
+    assert "tracker.startDelivery handoff delegates mechanical child results" in plan_text
+    assert "after independent exact-commit approval" in plan_text
+    assert "main-owned workflow phase mirrors" in plan_text
     assert "activates edge" in plan_text
     assert "detached branches" in plan_text
     test_design_step = next(
@@ -665,7 +671,7 @@ def test_engineering_readiness_and_acceptance_contract_survives_plan_derivation(
         "audit-tracker",
         "release-closeout",
     ]
-    assert spec.version == "0.4.0"
+    assert spec.version == "0.4.1"
     assert [step.id for step in spec.steps] == expected_order
     assert spec.metadata_json["step_ids"] == expected_order
     assert spec.skill_preset_requirements[0].applies_to_steps == expected_order
@@ -717,7 +723,7 @@ def test_engineering_readiness_and_acceptance_contract_survives_plan_derivation(
     validation = validate_run_plan_obj(plan.model_dump(mode="json"))
     assert validation.valid, validation.errors
     assert validation.warnings == []
-    assert plan.template_version == "0.4.0"
+    assert plan.template_version == "0.4.1"
     assert [step.id for step in plan.steps] == expected_order
     assert {step.id: step.depends_on for step in plan.steps} == expected_dependencies
 
