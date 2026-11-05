@@ -46,6 +46,7 @@ def run_agent(
     model: str | None = None,
     provider: str | None = None,
     profile: str | None = None,
+    resume_thread_id: str | None = None,
 ) -> AgentRunResult:
     if sandbox == "read-only":
         return AgentRunResult(None, error="Gemini CLI does not support strict read-only review.")
@@ -63,14 +64,18 @@ def run_agent(
         command += ["--approval-mode", "auto_edit"]
     if model is not None:
         command += ["--model", model]
+    if resume_thread_id is not None:
+        command += ["--resume", resume_thread_id]
     return execute_json_agent(command, project_dir, "", output_schema, "Gemini CLI", _agent_result)
 
 
 def _agent_result(stdout: str) -> AgentRunResult:
     value = json_object(stdout)
     if value.get("error"):
-        return AgentRunResult(0, error=str(value["error"]))
-    return AgentRunResult(0, result=json_object(value["response"]))
+        return AgentRunResult(0, thread_id=value.get("session_id"), error=str(value["error"]))
+    return AgentRunResult(
+        0, thread_id=value.get("session_id"), result=json_object(value["response"])
+    )
 
 
 def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:

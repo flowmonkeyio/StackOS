@@ -64,8 +64,9 @@ def run_agent(
     model: str | None = None,
     provider: str | None = None,
     profile: str | None = None,
+    resume_thread_id: str | None = None,
 ) -> AgentRunResult:
-    """Run supplied project-agent instructions in a fresh Codex thread."""
+    """Run supplied instructions in a new or explicitly selected native thread."""
     if not instructions.strip():
         return AgentRunResult(None, error="Project-agent instructions must not be empty.")
 
@@ -95,6 +96,7 @@ def run_agent(
             str(result_path),
             "-c",
             f"developer_instructions={json.dumps(instructions, ensure_ascii=False)}",
+            *(["resume", resume_thread_id] if resume_thread_id is not None else []),
             "-",
         ]
         try:

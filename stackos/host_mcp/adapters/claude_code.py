@@ -29,6 +29,7 @@ def run_agent(
     model: str | None = None,
     provider: str | None = None,
     profile: str | None = None,
+    resume_thread_id: str | None = None,
 ) -> AgentRunResult:
     cli = claude_mcp.resolve_claude_bin()
     if cli is None:
@@ -49,6 +50,8 @@ def run_agent(
         command += ["--tools", "Read,Glob,Grep", "--disallowedTools", "mcp__*"]
     if model is not None:
         command += ["--model", model]
+    if resume_thread_id is not None:
+        command += ["--resume", resume_thread_id]
     return execute_json_agent(
         command, project_dir, prompt, output_schema, "Claude Code", _agent_result
     )

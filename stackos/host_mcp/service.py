@@ -47,6 +47,7 @@ class AgentRunner(Protocol):
         model: str | None = None,
         provider: str | None = None,
         profile: str | None = None,
+        resume_thread_id: str | None = None,
     ) -> AgentRunResult: ...
 
 
@@ -105,10 +106,19 @@ def run_agent(
     model: str | None = None,
     provider: str | None = None,
     profile: str | None = None,
+    resume_thread_id: str | None = None,
 ) -> AgentRunResult:
     """Run a project agent through the same host registry used by Overview."""
     if not instructions.strip():
         return AgentRunResult(None, error="Project-agent instructions must not be empty.")
+    if resume_thread_id is not None and (
+        not isinstance(resume_thread_id, str)
+        or not resume_thread_id.strip()
+        or resume_thread_id != resume_thread_id.strip()
+        or resume_thread_id.startswith("-")
+        or resume_thread_id.lower() in {"latest", "last"}
+    ):
+        return AgentRunResult(None, error="An exact native session ID is required for resume.")
     error = agent_selection_error(
         host_key,
         sandbox=sandbox,
@@ -121,7 +131,7 @@ def run_agent(
     definition = _definition_by_key(host_key)
     if definition is None or definition.run_agent is None:
         return AgentRunResult(None, error=f"Host {host_key!r} does not support agent execution.")
-    return definition.run_agent(
+    result = definition.run_agent(
         Path(project_dir).expanduser().resolve(),
         instructions,
         prompt,
@@ -129,10 +139,25 @@ def run_agent(
         sandbox=sandbox,
         **{
             key: value
-            for key, value in {"model": model, "provider": provider, "profile": profile}.items()
+            for key, value in {
+                "model": model,
+                "provider": provider,
+                "profile": profile,
+                "resume_thread_id": resume_thread_id,
+            }.items()
             if value is not None
         },
     )
+    if resume_thread_id is not None and result.thread_id != resume_thread_id:
+        return AgentRunResult(
+            result.exit_code,
+            thread_id=result.thread_id,
+            error=(
+                f"Native session resume identity mismatch: expected {resume_thread_id!r}, "
+                f"received {result.thread_id!r}." + (f" {result.error}" if result.error else "")
+            ),
+        )
+    return result
 
 
 def agent_review_sandbox(host_key: str) -> AgentSandbox:
@@ -376,7 +401,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 "automatic",
                 AgentCapabilities(
                     sandboxes=("workspace-write", "read-only"),
-                    review_sandbox="read-only",
+                    review_sandbox="workspace-write",
                     models=("gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"),
                     provider_selection=True,
                     auth_status_command=("codex", "login", "status"),
@@ -398,7 +423,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 "automatic",
                 AgentCapabilities(
                     sandboxes=("workspace-write", "read-only"),
-                    review_sandbox="read-only",
+                    review_sandbox="workspace-write",
                     models=(
                         "claude-opus-5-5",
                         "claude-sonnet-5-5",
@@ -407,7 +432,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                     ),
                     auth_status_command=("claude", "auth", "status"),
                     notes=(
-                        "Review is file-only Read/Glob/Grep with MCP denied; "
+                        "Review uses normal auto permissions with shell available; "
                         "native tool controls, not an OS sandbox."
                     ),
                     sources=(
@@ -510,7 +535,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 "automatic",
                 AgentCapabilities(
                     sandboxes=("workspace-write", "read-only"),
-                    review_sandbox="read-only",
+                    review_sandbox="workspace-write",
                     models=("grok-build",),
                     custom_models=True,
                     notes=(

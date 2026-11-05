@@ -49,6 +49,7 @@ def run_agent(
     model: str | None = None,
     provider: str | None = None,
     profile: str | None = None,
+    resume_thread_id: str | None = None,
 ) -> AgentRunResult:
     cli = resolve_grok_bin(Path.home())
     if cli is None:
@@ -71,6 +72,8 @@ def run_agent(
     ]
     if model is not None:
         command += ["--model", model]
+    if resume_thread_id is not None:
+        command += ["--resume", resume_thread_id]
     return execute_json_agent(command, project_dir, "", output_schema, "Grok", _agent_result)
 
 

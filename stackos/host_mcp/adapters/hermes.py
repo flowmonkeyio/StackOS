@@ -46,6 +46,7 @@ def run_agent(
     model: str | None = None,
     provider: str | None = None,
     profile: str | None = None,
+    resume_thread_id: str | None = None,
 ) -> AgentRunResult:
     if sandbox == "read-only":
         return AgentRunResult(None, error="Hermes does not support strict read-only review.")
@@ -71,6 +72,8 @@ def run_agent(
         "--model",
         model,
     ]
+    if resume_thread_id is not None:
+        command += ["--resume", resume_thread_id]
     return execute_json_agent(
         command,
         project_dir,

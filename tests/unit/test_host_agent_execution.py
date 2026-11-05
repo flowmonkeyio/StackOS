@@ -35,7 +35,7 @@ NATIVE_CASES = [
         "gemini-cli",
         "gemini-3.1-pro-preview",
         None,
-        {"response": '{"summary":"delivered"}', "stats": {}},
+        {"response": '{"summary":"delivered"}', "stats": {}, "session_id": "native-thread"},
     ),
     (
         "hermes",
@@ -65,6 +65,146 @@ def fake_native_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.parametrize(("host", "model", "provider", "envelope"), NATIVE_CASES)
+@pytest.mark.parametrize("returned_id", ["native-thread", None, "wrong-thread"])
+def test_native_exact_resume(project, monkeypatch, host, model, provider, envelope, returned_id):
+    fake_native_discovery(monkeypatch)
+    envelope = dict(envelope)
+    envelope["sessionId" if host == "grok" else "session_id"] = returned_id
+    calls = []
+
+    def execute(command, **kwargs):
+        calls.append(command)
+        assert command[command.index("--resume") + 1] == "native-thread"
+        assert command[command.index("--model") + 1] == model
+        assert kwargs["cwd"] == project
+        assert not any(flag in command for flag in ("--latest", "--last", "--fork"))
+        if host == "hermes":
+            assert command[command.index("--provider") + 1] == provider
+            assert command[command.index("--profile") + 1] == "work"
+        return subprocess.CompletedProcess(command, 0, json.dumps(envelope), "")
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    result = run_agent(
+        host,
+        project,
+        "Instructions",
+        "Repair",
+        SCHEMA,
+        model=model,
+        provider=provider,
+        profile="work" if host == "hermes" else None,
+        resume_thread_id="native-thread",
+    )
+    assert result.ok is (returned_id == "native-thread")
+    assert result.thread_id == returned_id
+    if not result.ok:
+        assert "session" in result.error.lower()
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    ("host", "mode"),
+    [
+        ("codex", "workspace-write"),
+        ("claude-code", "workspace-write"),
+        ("grok", "workspace-write"),
+        ("gemini-cli", "normal"),
+        ("hermes", "normal"),
+    ],
+)
+def test_review_mode_permits_executable_specs(host, mode):
+    assert service.agent_review_sandbox(host) == mode
+
+
+@pytest.mark.parametrize("thread_id", [None, "wrong-thread", "saved-thread"])
+@pytest.mark.parametrize("native_error", [None, "native resume denied"])
+def test_codex_resume_identity_and_error_reach_caller(
+    project, monkeypatch, thread_id, native_error
+):
+    calls = []
+
+    def runner(*args, **kwargs):
+        calls.append(kwargs)
+        assert kwargs["resume_thread_id"] == "saved-thread"
+        assert kwargs["model"] == "gpt-6.1-sol"
+        assert kwargs["provider"] == "custom"
+        return AgentRunResult(
+            1 if native_error else 0,
+            thread_id=thread_id,
+            result={"summary": "done"},
+            error=native_error,
+        )
+
+    definition = replace(service._definitions()[0], run_agent=runner)
+    monkeypatch.setattr(service, "_definitions", lambda: (definition,))
+    result = run_agent(
+        "codex",
+        project,
+        "Instructions",
+        "Repair",
+        SCHEMA,
+        model="gpt-6.1-sol",
+        provider="custom",
+        resume_thread_id="saved-thread",
+    )
+    assert result.ok is (thread_id == "saved-thread" and native_error is None)
+    assert result.thread_id == thread_id
+    if native_error:
+        assert native_error in result.error
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("resume_thread_id", ["", " ", " session", "--last", "latest", "last"])
+def test_invalid_resume_id_never_launches(project, monkeypatch, resume_thread_id):
+    monkeypatch.setattr(subprocess, "run", lambda *a, **kw: pytest.fail("must not launch"))
+    result = run_agent(
+        "codex",
+        project,
+        "Instructions",
+        "Repair",
+        SCHEMA,
+        resume_thread_id=resume_thread_id,
+    )
+    assert not result.ok
+    assert "session ID" in result.error
+
+
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_gemini_error_preserves_session_id(project, monkeypatch, exit_code):
+    fake_native_discovery(monkeypatch)
+    calls = []
+
+    def execute(command, **kwargs):
+        calls.append(command)
+        return subprocess.CompletedProcess(
+            command,
+            exit_code,
+            json.dumps(
+                {
+                    "session_id": "native-thread",
+                    "error": {"message": "permission denied"},
+                }
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    result = run_agent(
+        "gemini-cli",
+        project,
+        "Instructions",
+        "Repair",
+        SCHEMA,
+        resume_thread_id="native-thread",
+    )
+    assert not result.ok
+    assert result.thread_id == "native-thread"
+    assert "permission denied" in result.error
+    assert result.exit_code == exit_code
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize(("host", "model", "provider", "envelope"), NATIVE_CASES)
 def test_native_command_and_structured_result(
     project, monkeypatch, host, model, provider, envelope
 ):
@@ -74,12 +214,15 @@ def test_native_command_and_structured_result(
     def execute(command, **kwargs):
         calls.append(command)
         assert kwargs["cwd"] == project
+        assert "--resume" not in command
         assert command[command.index("--model") + 1] == model
         assert "Project instructions" in " ".join(command) + kwargs.get("input", "")
         assert "Ticket packet" in " ".join(command) + kwargs.get("input", "")
         assert not any(arg in command for arg in ("--yolo", "--always-approve", "--bare"))
         if host == "claude-code":
             assert command[command.index("--permission-mode") + 1] == "auto"
+            assert "--tools" not in command
+            assert "--disallowedTools" not in command
             assert json.loads(command[command.index("--json-schema") + 1]) == SCHEMA
         elif host == "gemini-cli":
             assert command[command.index("--approval-mode") + 1] == "auto_edit"
@@ -107,6 +250,7 @@ def test_native_command_and_structured_result(
     )
     assert result.ok, result.error
     assert result.result == {"summary": "delivered"}
+    assert result.thread_id == "native-thread"
     assert len(calls) == 1
     assert not (project / ".codex").exists()
 
@@ -229,8 +373,9 @@ def project(tmp_path: Path) -> Path:
     return root
 
 
+@pytest.mark.parametrize("resume_thread_id", [None, "thread-test"])
 def test_codex_runs_supplied_instructions_without_agent_files(
-    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, resume_thread_id
 ) -> None:
     cli = tmp_path / "codex"
     receipt = tmp_path / "receipt.json"
@@ -259,7 +404,14 @@ print('{{"type": "turn.completed"}}')
     monkeypatch.setattr(codex, "resolve_codex_bins", lambda: [str(cli)])
 
     instructions = 'Use the project contract. Quote: "yes"\nWork carefully.'
-    result = run_agent("codex", project, instructions, "Deliver this ticket.", SCHEMA)
+    result = run_agent(
+        "codex",
+        project,
+        instructions,
+        "Deliver this ticket.",
+        SCHEMA,
+        resume_thread_id=resume_thread_id,
+    )
 
     assert result.ok
     assert result.exit_code == 0
@@ -274,6 +426,12 @@ print('{{"type": "turn.completed"}}')
     assert args[:5] == ["exec", "--json", "--cd", str(project), "--approve-for-me"]
     assert "--sandbox" not in args
     assert args[-1] == "-"
+    if resume_thread_id:
+        assert args[-3:] == ["resume", resume_thread_id, "-"]
+        assert args.index("--cd") < args.index("resume")
+        assert args.index("--approve-for-me") < args.index("resume")
+    else:
+        assert "resume" not in args
     override = args[args.index("-c") + 1]
     assert tomllib.loads(override) == {"developer_instructions": instructions}
     assert args.count("-c") == 1
@@ -371,14 +529,19 @@ def test_harness_settings_are_inherited_and_read_only_is_forwarded(
     assert run_agent("codex", project, "delivery", "Review", SCHEMA, sandbox="read-only").ok
 
 
-def test_codex_native_model_and_provider_selectors(project, monkeypatch):
+@pytest.mark.parametrize("resume_thread_id", [None, "configured-thread"])
+def test_codex_native_model_and_provider_selectors(project, monkeypatch, resume_thread_id):
     monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fake/codex")
 
     def execute(command, **kwargs):
         assert command[command.index("--model") + 1] == "configured-model"
         assert 'model_provider="local-provider"' in command
+        if resume_thread_id:
+            assert command[-3:] == ["resume", resume_thread_id, "-"]
         Path(command[command.index("-o") + 1]).write_text('{"summary":"selected"}')
-        return subprocess.CompletedProcess(command, 0, "", "")
+        return subprocess.CompletedProcess(
+            command, 0, '{"type":"thread.started","thread_id":"configured-thread"}', ""
+        )
 
     monkeypatch.setattr(subprocess, "run", execute)
     assert run_agent(
@@ -389,6 +552,7 @@ def test_codex_native_model_and_provider_selectors(project, monkeypatch):
         SCHEMA,
         model="configured-model",
         provider="local-provider",
+        resume_thread_id=resume_thread_id,
     ).ok
 
 
@@ -502,7 +666,7 @@ def test_discovery_and_execution_use_same_capability_catalog():
         if definition.run_agent is not None:
             mode = service.agent_review_sandbox(key)
             assert capability["review_sandbox"] == mode
-            assert mode == ("normal" if key in {"gemini-cli", "hermes"} else "read-only")
+            assert mode == ("normal" if key in {"gemini-cli", "hermes"} else "workspace-write")
             if mode == "normal":
                 assert "no enforced read-only isolation" in capability["notes"]
         for model in capability["models"]:
