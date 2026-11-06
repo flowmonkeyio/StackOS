@@ -728,10 +728,10 @@ implementation ticket:
 scope-work
 -> define-requirements
 -> discover-impact
--> plan-tickets
 -> design-approach
--> review-design
 -> design-tests
+-> plan-tickets
+-> review-design
 -> deliver-tickets
 -> verify-delivery
 -> review-delivery

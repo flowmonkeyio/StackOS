@@ -195,13 +195,14 @@ readiness; both use the same local bridge with `--runtime codex`.
 The optional [task delivery handoff](task-tracker.md#automated-task-delivery)
 uses this same host registry and CLI discovery. Execution capability, native
 model choices and review modes come from that registry; connection readiness
-does not prove execution or model access. Save project agent defaults under the
-engineering plugin's `config_json.delivery` using existing local-admin
-`plugin.enable` setup. Task overrides merge by role and freeze at handoff; no
-`.codex` folder or additional agent installation is required. Gemini and Hermes
-reviewers use normal native permissions with review-only instructions; receipts
-do not claim enforced read-only isolation. Supported native review controls
-remain in use on other hosts. See the task handoff contract for setup examples.
+does not prove execution or model access. Save project agent defaults in
+`TaskTracker.config_json.delivery` through the local-admin, REST-only
+`tracker.configureDelivery` operation. Task overrides merge by role and freeze
+at handoff; no `.codex` folder or additional agent installation is required.
+Gemini and Hermes reviewers use normal native permissions with review-only
+instructions; receipts do not claim enforced read-only isolation. Supported
+native review controls remain in use on other hosts. See the task handoff
+contract for setup examples.
 
 The host connection model has one brain:
 
