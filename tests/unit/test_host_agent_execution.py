@@ -59,6 +59,8 @@ NATIVE_CASES = [
 
 def fake_native_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(claude_code.claude_mcp, "resolve_claude_bin", lambda: "/fake/claude")
+    # Native version probing is exercised separately by usage-contract fixtures.
+    monkeypatch.setattr(claude_code, "_native_version", lambda *_: "2.1.277 (Claude Code)")
     monkeypatch.setattr(gemini_cli, "resolve_gemini_bin", lambda: "/fake/gemini")
     monkeypatch.setattr(hermes, "resolve_hermes_bin", lambda: "/fake/hermes")
     monkeypatch.setattr(grok, "resolve_grok_bin", lambda _home: "/fake/grok")

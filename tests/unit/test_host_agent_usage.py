@@ -68,6 +68,122 @@ GEMINI = {
 }
 
 
+@pytest.mark.parametrize(
+    "version,expected_basis,expected_total",
+    [
+        ("2.1.276 (Claude Code)", "invocation", 380),
+        ("2.1.277 (Claude Code)", "session", 230),
+        ("2.1.290", "session", 230),
+        ("unrecognized", None, None),
+        ("2.1.277-beta.1 (Claude Code)", None, None),
+        ("3.0.0 (Claude Code)", None, None),
+    ],
+)
+def test_claude_native_version_proves_resumed_usage_basis(
+    tmp_path, monkeypatch, version, expected_basis, expected_total
+):
+    """Cost-tracking contract: claude -p totals carry over only since 2.1.277."""
+    monkeypatch.setattr(claude_code.claude_mcp, "resolve_claude_bin", lambda: "/selected/claude")
+    launches, probes = [], []
+
+    def execute(command, **kwargs):
+        assert command[0] == "/selected/claude"
+        assert kwargs["cwd"] == tmp_path
+        if command == ["/selected/claude", "--version"]:
+            probes.append(command)
+            assert kwargs["timeout"] <= 5
+            return subprocess.CompletedProcess(command, 0, version, "")
+        launches.append(command)
+        if len(launches) == 2:
+            assert command[command.index("--resume") + 1] == "session"
+        value = {
+            **CLAUDE,
+            "modelUsage": {
+                "main": {
+                    "inputTokens": 100 if len(launches) == 1 else 160,
+                    "outputTokens": 50 if len(launches) == 1 else 70,
+                    "cacheReadInputTokens": 0,
+                    "cacheCreationInputTokens": 0,
+                }
+            },
+        }
+        return subprocess.CompletedProcess(command, 0, json.dumps(value), "")
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    previous = None
+    contributions = []
+    for resumed in (False, True):
+        result = run_agent(
+            "claude-code",
+            tmp_path,
+            "Instructions",
+            "Work",
+            SCHEMA,
+            resume_thread_id="session" if resumed else None,
+        )
+        assert result.ok
+        measured = normalize_usage(
+            result.usage, session_id=result.thread_id, resumed=resumed, previous=previous
+        )
+        if expected_basis is None:
+            assert measured["measured"] is None
+        else:
+            assert measured["basis"] == expected_basis
+            contributions.append(measured["measured"]["total"])
+        previous = measured
+    if expected_total is not None:
+        assert sum(contributions) == expected_total
+    assert len(launches) == len(probes) == 2
+
+
+@pytest.mark.parametrize("probe_fault", ["oserror", "timeout", "unicode", "nonzero", "malformed"])
+@pytest.mark.parametrize("native_failure", [False, True])
+def test_claude_version_probe_failure_cannot_change_native_result(
+    tmp_path, monkeypatch, probe_fault, native_failure
+):
+    monkeypatch.setattr(claude_code.claude_mcp, "resolve_claude_bin", lambda: "/selected/claude")
+    launches = []
+
+    def execute(command, **kwargs):
+        if command == ["/selected/claude", "--version"]:
+            if probe_fault == "oserror":
+                raise OSError("unavailable")
+            if probe_fault == "timeout":
+                raise subprocess.TimeoutExpired(command, 3)
+            if probe_fault == "unicode":
+                raise UnicodeError("invalid version output")
+            return subprocess.CompletedProcess(
+                command,
+                1 if probe_fault == "nonzero" else 0,
+                "2.1.277 (Claude Code)" if probe_fault == "nonzero" else "bad",
+                "",
+            )
+        launches.append(command)
+        value = {**CLAUDE, "is_error": native_failure, "errors": ["native denied"]}
+        return subprocess.CompletedProcess(command, int(native_failure), json.dumps(value), "")
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    result = run_agent("claude-code", tmp_path, "Instructions", "Work", SCHEMA)
+    assert result.ok is not native_failure
+    assert result.exit_code == int(native_failure)
+    assert result.usage is None
+    assert result.result == CLAUDE["structured_output"]
+    assert ("native denied" in result.error) if native_failure else result.error is None
+    assert len(launches) == 1
+
+
+def test_claude_unproven_terminal_version_and_older_baseline_are_not_trusted():
+    assert claude_code._agent_result(json.dumps({**CLAUDE, "version": "2.1.277"})).usage is None
+    result = claude_code._agent_result(json.dumps(CLAUDE), native_version="2.1.277")
+    previous = normalize_usage(
+        usage_snapshot("claude.model-usage", "session", 10, 10), session_id="session", resumed=False
+    )
+    measured = normalize_usage(result.usage, session_id="session", resumed=True, previous=previous)
+    assert measured["reason"] == "missing_baseline"
+    assert measured["snapshot"]["total"] == 150
+    assert measured["measured"] is None
+
+
 def test_independent_invocations_sum_once_and_missing_session_is_unknown():
     contributions = [
         normalize_usage(
@@ -175,13 +291,15 @@ def test_native_usage_survives_common_error_paths(
         value.update(structured_output={}, response="{}")
     if fault == "text":
         value.update(structured_output=None, response="malformed")
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda command, **kwargs: subprocess.CompletedProcess(
+
+    def execute(command, **kwargs):
+        if command == ["/fake/claude", "--version"]:
+            return subprocess.CompletedProcess(command, 0, "2.1.277 (Claude Code)", "")
+        return subprocess.CompletedProcess(
             command, 1 if fault == "exit" else 0, json.dumps(value), ""
-        ),
-    )
+        )
+
+    monkeypatch.setattr(subprocess, "run", execute)
     result = run_agent(
         host,
         tmp_path,
@@ -251,7 +369,7 @@ def test_malformed_native_usage_is_optional(host, envelope, malformed):
     value = json.loads(json.dumps(envelope))
     if host == "claude-code":
         value["modelUsage"] = malformed
-        result = claude_code._agent_result(json.dumps(value))
+        result = claude_code._agent_result(json.dumps(value), native_version="2.1.277")
     else:
         value["stats"]["models"] = malformed
         result = gemini_cli._agent_result(json.dumps(value))
@@ -268,7 +386,9 @@ def test_unproven_scope_and_unsupported_hosts_remain_unavailable():
         is None
     )
     assert (
-        claude_code._agent_result(json.dumps({**CLAUDE, "subtype": "error_during_execution"})).usage
+        claude_code._agent_result(
+            json.dumps({**CLAUDE, "subtype": "error_during_execution"}), native_version="2.1.277"
+        ).usage
         is None
     )
     assert (

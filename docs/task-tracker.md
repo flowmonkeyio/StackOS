@@ -306,7 +306,7 @@ Supported native contracts, checked 2026-11-06:
 | Host / scope | Native basis and arithmetic |
 | --- | --- |
 | Codex / `codex.turn` | [`turn.completed.usage`](https://github.com/openai/codex/blob/main/sdk/typescript/src/events.ts) is invocation usage. Input plus output gives total; cached input and reasoning output are subsets and are not added again. |
-| Claude Code / `claude.model-usage` | The current [Agent SDK cost-tracking contract](https://code.claude.com/docs/en/agent-sdk/cost-tracking) defines `modelUsage` as whole-tree counters restored on resume. Sum models' input, cache-read and cache-creation counts for input, plus output for total. The narrower main-loop `usage` is not mixed in or used as a fallback. Missing fields and crash results with potentially zeroed counters are unavailable. |
+| Claude Code / `claude.model-usage.v2.1` | The [Agent SDK cost-tracking contract](https://code.claude.com/docs/en/agent-sdk/cost-tracking#accumulate-costs-across-multiple-calls) defines a version boundary for `claude -p`: stable 2.1 releases before 2.1.277 report per-invocation `modelUsage`; 2.1.277+ restore session totals on resume. A bounded `--version` probe of the same selected executable establishes the basis. Unknown, prerelease, unsupported-series or failed version probes leave usage unavailable and preserve execution. Sum models' input, cache-read and cache-creation counts for input, plus output for total. The narrower main-loop `usage` is not a fallback. Missing counters and potentially zeroed crash results are unavailable. |
 | Gemini CLI / `gemini.models` | [Headless JSON](https://google-gemini.github.io/gemini-cli/docs/cli/headless.html) supplies `stats.models`; [telemetry hydration](https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/telemetry/uiTelemetry.ts) restores these counters on resume. Sum each model once: input is prompt (already includes cached), output is candidates plus thoughts plus tool, total must match their sum. Nested role counters and the uncached input subtotal are not added. |
 | Hermes / unavailable | The [CLI reference](https://hermes-agent.nousresearch.com/docs/reference/cli-commands) does not prove a usage report compatible with the integrated `chat --oneshot` command. No telemetry flag is appended. |
 | Grok / unavailable | No compatible token schema is proven for the existing JSON command in the [headless contract](https://docs.x.ai/build/cli/headless-scripting). Agent-authored usage is ignored. |
@@ -316,6 +316,13 @@ validation or session checks fail. Malformed or unsupported telemetry never
 changes host/model/default selection, resume matching, candidate validation,
 review/repair allowance or stop behavior. Source capture tests do not establish
 installed-daemon activation or real native/API/UI reconciliation.
+
+Claude's version probe runs after the agent process, without changing its
+arguments or retrying it. It times out after three seconds and never becomes an
+auth, model, session or execution gate. The `v2.1` scope identifies the supported
+stable release series and excludes snapshots recorded under the earlier
+unproven `claude.model-usage` scope from cumulative baselines. A missing compatible
+baseline stays unavailable even when the current version is known.
 
 Agent/process failure also stops the task's execution. Ticket evidence records
 both agent results, launch details, thread references, prior HEAD and verified

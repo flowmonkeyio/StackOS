@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +15,7 @@ from stackos.host_mcp.bridge import (
     is_stackos_bridge_command,
     resolve_bridge_command,
 )
+from stackos.host_mcp.discovery import subprocess_env_for_cli
 from stackos.host_mcp.result import (
     AgentRunResult,
     AgentSandbox,
@@ -59,11 +62,34 @@ def run_agent(
     if resume_thread_id is not None:
         command += ["--resume", resume_thread_id]
     return execute_json_agent(
-        command, project_dir, prompt, output_schema, "Claude Code", _agent_result
+        command,
+        project_dir,
+        prompt,
+        output_schema,
+        "Claude Code",
+        lambda stdout: _agent_result(stdout, native_version=_native_version(cli, project_dir)),
     )
 
 
-def _agent_result(stdout: str) -> AgentRunResult:
+def _native_version(cli: str, project_dir: Path) -> str | None:
+    """Optional evidence from the selected executable; never an execution gate."""
+    try:
+        process = subprocess.run(
+            [cli, "--version"],
+            cwd=project_dir,
+            env=subprocess_env_for_cli(cli),
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=3,
+        )
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        return None
+    return process.stdout if process.returncode == 0 and isinstance(process.stdout, str) else None
+
+
+def _agent_result(stdout: str, *, native_version: str | None = None) -> AgentRunResult:
     value = json_object(stdout)
     error = None
     if value.get("is_error") or str(value.get("subtype", "")).startswith("error"):
@@ -75,12 +101,20 @@ def _agent_result(stdout: str) -> AgentRunResult:
         thread_id=value.get("session_id"),
         result=value.get("structured_output"),
         error=error,
-        usage=_agent_usage(value),
+        usage=_agent_usage(value, native_version),
     )
 
 
-def _agent_usage(value: dict[str, Any]) -> dict[str, Any] | None:
-    # Current cost-tracking contract: whole-tree counters, restored on resume.
+def _agent_usage(value: dict[str, Any], native_version: str | None) -> dict[str, Any] | None:
+    # Official cost-tracking contract: stable 2.1 releases before 277 report
+    # per-call totals; 277+ restore session totals. Other versions are unproven.
+    # The terminal JSON has no documented version field; trust only the probe.
+    version = re.fullmatch(
+        r"2\.1\.([0-9]{1,6})(?: \(Claude Code\))?", (native_version or "").strip()
+    )
+    if version is None:
+        return None
+    basis = "session" if int(version[1]) >= 277 else "invocation"
     # usage is narrower (main loop only); never mix it with modelUsage.
     models = value.get("modelUsage")
     if (
@@ -106,7 +140,8 @@ def _agent_usage(value: dict[str, Any]) -> dict[str, Any] | None:
             return None
         inputs += sum(counts[:3])
         outputs += counts[3]
-    return usage_snapshot("claude.model-usage", "session", inputs, outputs)
+    # A versioned scope cannot reuse an older, unproven cumulative baseline.
+    return usage_snapshot("claude.model-usage.v2.1", basis, inputs, outputs)
 
 
 def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:
