@@ -237,7 +237,7 @@ def operation_specs() -> list[OperationSpec]:
                         "project_id": 1,
                         "task_key": "workflow-12",
                         "run_plan_id": 12,
-                        "step_id": "deliver-tickets",
+                        "step_id": "verify-delivery",
                         "project_dir": "/work/project",
                         "delivery_agent": {
                             "name": "builder",

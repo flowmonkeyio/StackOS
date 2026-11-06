@@ -1025,9 +1025,6 @@ class RunPlanRepository:
         )
         if failed_or_blocked is not None:
             return failed_or_blocked
-        delivery = next((step for step in steps if step.step_id == "deliver-tickets"), None)
-        if delivery is not None:
-            return delivery
         return max(steps, key=lambda item: item.position)
 
     def _reopen_plan_metadata(

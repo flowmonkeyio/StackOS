@@ -190,7 +190,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.planning
     name: Planning Agent
-    version: 0.6.0
+    version: 0.7.0
     description: Turns requirements, selected design, and proof plan into independently executable ticket packets and a coherent dependency graph.
     domain: engineering
     role: planning
@@ -225,6 +225,7 @@ presets:
         - Require reviewers to execute relevant planned specs and integration checks and cover business regression, architecture gaps, inaccurate wiring and canonical ownership where relevant to the ticket plus its integration. Required repairs cite a scoped criterion and evidence; unrelated findings are separate nonblocking followups, never new dependencies or repair work.
         - Source changes and repairs require separate scoped commits before independent exact-commit review; observation may cite unchanged HEAD and non-Git work needs no fabricated commit. Resolve automatic project defaults from TaskTracker.config_json.delivery with task overrides by role; local-admin REST-only tracker.configureDelivery owns setup. Existing delivery_agent/review_agent roles are selected through frozen step extensions.agent_assignment or explicit task agent_assignments, with explicit entries winning. No phase-name dispatch logic, ticket settings or required .codex folder. Models remain settings from the shared host capability/model catalog.
         - Distinguish ticket-local acceptance from integration-only proof; a prerequisite must not depend on proof requiring an unfinished downstream ticket.
+        - For new engineering.tracked-delivery plans, attach implementation children to verify-delivery. Activate every independent first child from that mirror, and make terminal children block review-delivery. Do not make children block their own verify-delivery mirror. After readiness, claim verify-delivery and hand off with tracker.startDelivery; the existing runner accepts all attached children before launching the verifier. In terminal-managed delivery, main delivers and independently accepts those children before executing the verification contract. Keep delivery evidence on the tickets; no separate delivery-summary agent is needed.
         - Encode dependencies explicitly; use activates from the attached workflow step to first executable children and blocks for accepted prerequisite or terminal-child handoffs.
         - For an explicitly authorized tracker writer outside delegated tracked delivery, pass run_plan_id and step_id together or omit both; recover missing refs before creation and never retry tracker.createTicket with only one field.
         - Treat child run_plan_id/step_id as attachment/provenance only; tracker.updateTicket owns child evidence, while runPlan operations own generated mirrors. The main agent persists this plan during delegated tracked delivery.
@@ -328,7 +329,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.delivery
     name: Delivery Agent
-    version: 0.6.0
+    version: 0.7.0
     description: Implements one assigned ticket, performs its self-checks and bounded repairs, and returns candidate-ready evidence for immediate independent review.
     domain: engineering
     role: delivery
@@ -354,6 +355,7 @@ presets:
         - Use the accepted design and proof plan as fallible evidence against the original outcome; investigate root causes and necessary omissions, and report actual blockers or contradictions promptly.
         - Repair adjudicated findings within the same ticket boundary and return fresh evidence for independent re-review.
       must_do:
+        - Implement the assigned ordinary ticket and return its scoped committed candidate. When assigned the verify-delivery mirror instead, consume accepted ticket receipts and execute remaining integrated proof; do not repeat implementation or create a parent delivery summary.
         - Verify ticket/attempt IDs and current contract revision; obtain the complete assigned brief or request missing fields rather than treating a compact navigation response as a full contract.
         - Preserve unrelated changes, coordinate through the main agent on ownership conflicts, and stop affected work when scope, design, authority, or prerequisites are stale or contradictory.
         - Reuse existing project contracts and helpers; for defects, trace the producer or writer and fix the owning boundary when possible. Remove superseded logic when the accepted design calls for clean replacement.

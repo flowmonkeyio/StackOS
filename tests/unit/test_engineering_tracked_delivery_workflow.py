@@ -70,13 +70,13 @@ def _impact_map() -> dict:
     }
 
 
-def test_tracked_delivery_v060_keeps_one_key_and_twelve_steps() -> None:
+def test_tracked_delivery_v080_keeps_one_key_and_eleven_steps() -> None:
     workflow = _workflow()
     validation = validate_workflow_template_obj(workflow)
 
     assert validation.valid is True, validation.errors
     assert workflow["key"] == "engineering.tracked-delivery"
-    assert workflow["version"] == "0.7.0"
+    assert workflow["version"] == "0.8.0"
     assert [step["id"] for step in workflow["steps"]] == [
         "scope-work",
         "define-requirements",
@@ -85,7 +85,6 @@ def test_tracked_delivery_v060_keeps_one_key_and_twelve_steps() -> None:
         "design-tests",
         "plan-tickets",
         "review-design",
-        "deliver-tickets",
         "verify-delivery",
         "review-delivery",
         "audit-tracker",
@@ -124,41 +123,15 @@ def test_tracked_delivery_is_guidance_driven_with_concise_truth_contracts() -> N
     assert "for repository-bound delivery" in policies["release_candidate_lock"].lower()
     assert "when evidence suggests" in policies["finding_lifecycle"].lower()
     assert "all remaining dependency-ready task work" in policies["main_agent_accountability"]
-    delivery = next(step for step in workflow["steps"] if step["id"] == "deliver-tickets")
-    text = str(delivery)
-    assert "independent exact-commit review" in text
-    assert "Gemini and Hermes" in text and "no enforced read-only guarantee" in text
-    assert "Main retains scope admission and final claims" in text
-    assert "status (success/repair/blocked/failed)" in text
-    assert "JSON-encoded object string" in text
-    assert "TaskTracker.config_json.delivery" in text
-    assert "tracker.configureDelivery" in text
-    assert "frozen workflow mirrors" in text
-    assert "verification/audit/closeout may cite unchanged HEAD" in text
-    for requirement in (
-        "one automatic repair pass",
-        "same native delivery session",
-        "same independent review session",
-        "clean unchanged HEAD for reject and approve",
-        "repair_pass_used across explicit requeue",
-        "second rejection",
-        "planned specs and integration checks",
-        "business regression",
-        "architecture gaps",
-        "inaccurate wiring",
-        "canonical ownership",
-        "nonblocking followups",
-        "source_ticket_key/source_attempt/created_at",
-        "Queued/running executions stay frozen",
-        "Preserve names/hosts/models/provider/profile",
-        "No synchronizer",
-        "discovered gap, necessity, proportionality, affected consumers and proof",
-        "required missed caller",
-        "not justified unlisted corrections",
-        "actual ownership conflicts",
-        "nonblocking followups",
-    ):
-        assert requirement in text, requirement
+    verify = next(step for step in workflow["steps"] if step["id"] == "verify-delivery")
+    assert verify["depends_on"] == ["review-design"]
+    assert "every attached implementation child has current independent acceptance" in str(verify)
+    assert "attach implementation children to verify-delivery" in steps["plan-tickets"]
+    assert "terminal children block review-delivery" in steps["plan-tickets"]
+    assert "Do not make children block their own verify-delivery mirror" in steps["plan-tickets"]
+    assert "tracker.startDelivery" in steps["plan-tickets"]
+    assert "delivery_summary" not in {output["key"] for output in workflow["outputs"]}
+    assert "deliver-tickets" not in str(workflow)
 
     scope_required = set(_output(workflow, "scope_summary")["schema"]["required"])
     assert {
@@ -178,10 +151,6 @@ def test_tracked_delivery_is_guidance_driven_with_concise_truth_contracts() -> N
     impact_schema = _output(workflow, "impact_map")["schema"]
     assert {"ownership", "scope_deltas"} <= set(impact_schema["required"])
     assert "root_cause_analysis" not in impact_schema["required"]
-
-    delivery_required = set(_output(workflow, "delivery_summary")["schema"]["required"])
-    assert "release_candidate" not in delivery_required
-    assert "tdd_receipts" not in delivery_required
 
     review_required = set(_output(workflow, "review_summary")["schema"]["required"])
     assert "pattern_audits" not in review_required

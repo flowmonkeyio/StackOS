@@ -184,6 +184,9 @@ delegates to `runPlan.reopen`, revives the linked audit run, resets the selected
 step and later steps to pending, and mirrors `workflow-{run_plan_id}` back to
 `in-progress`. If the target is a manual tracker task with no run plan, only the
 task is reopened. Agents should not decide which side of the mirror to patch.
+Pass `step_id` for the earliest affected gate. When omitted, reopening selects
+the first failed or blocked step, otherwise the last step; no workflow phase
+name receives special treatment.
 
 Agents must not use tracker mirror ticket status as a second workflow execution
 path. Mirrored workflow step tickets are controlled by `runPlan.claimStep` and

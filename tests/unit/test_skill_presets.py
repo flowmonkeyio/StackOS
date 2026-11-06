@@ -71,7 +71,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     contract = loaded.preset.operating_contract
     action = loaded.preset.project_adaptation.required_agent_action.lower()
 
-    assert loaded.preset.version == "0.7.0"
+    assert loaded.preset.version == "0.8.0"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "canonical owner" in action
@@ -198,7 +198,7 @@ def test_codex_sdlc_orchestrator_preserves_local_execution_boundaries() -> None:
     )
     # These are critical local materialization invariants; semantic completeness
     # still requires independent review of the source and adapted contracts.
-    assert "design-tests -> plan-tickets -> review-design -> deliver-tickets" in text
+    assert "design-tests -> plan-tickets -> review-design -> verify-delivery" in text
     assert "at most three active ticket lifecycles" in text
     assert "queued review, review and repair" in text
     assert "two implementers and one reusable reviewer" in text

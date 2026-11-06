@@ -806,6 +806,9 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                             evidence[phase]["superseded"] = True
                             _save_evidence(repo, project_id, ticket_key, evidence)
                             previously_accepted = {t["key"] for t in accepted_receipts}
+                            # Requeued children may still await activation by their
+                            # pending parent. Detect persisted progress here; the next
+                            # selection applies dependency readiness and claims it.
                             if (
                                 valid
                                 and decision in {"success", "repair"}
@@ -813,9 +816,11 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                                 and any(
                                     t.key in previously_accepted
                                     and t.status == TrackerItemStatus.NOT_STARTED
-                                    for t in repo.delivery_ready(
-                                        project_id=project_id, task_key=task_key
-                                    )
+                                    for t in repo.get(
+                                        project_id=project_id,
+                                        task_key=task_key,
+                                        include_graph=False,
+                                    ).tickets
                                 )
                             ):
                                 break

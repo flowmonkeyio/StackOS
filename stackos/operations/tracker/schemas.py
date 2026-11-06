@@ -582,7 +582,7 @@ class TrackerReopenInput(MCPInput):
         default=None,
         description=(
             "Optional workflow step id to resume from. Omit it and StackOS chooses "
-            "the failed/blocked step, deliver-tickets, or the last step."
+            "the first failed/blocked step, or the last step."
         ),
     )
     reason: str

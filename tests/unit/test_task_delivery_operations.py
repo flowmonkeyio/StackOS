@@ -118,7 +118,7 @@ def test_launch_response_preserves_inspection_fields_and_rejects_ack():
         "ticket_key": None,
         "job_ref": "task-delivery:1:1",
         "run_plan_id": 12,
-        "step_id": "deliver-tickets",
+        "step_id": "verify-delivery",
         "recommended_tool": "tracker.get",
         "message": "Inspect task_key with response_mode=raw.",
     }

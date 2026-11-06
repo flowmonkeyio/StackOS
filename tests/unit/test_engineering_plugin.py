@@ -28,7 +28,7 @@ def test_automatic_role_defaults_freeze_without_model_or_phase_runtime_policy() 
     plan = run_plan_from_template(loaded, inputs_json={"goal": "Verify role metadata"})
     roles = {step.id: step.metadata_json["agent_assignment"] for step in plan.steps}
 
-    assert loaded.spec.version == "0.6.0"
+    assert loaded.spec.version == "0.8.0"
     assert roles == {
         "scope-work": "delivery_agent",
         "define-requirements": "delivery_agent",
@@ -37,7 +37,6 @@ def test_automatic_role_defaults_freeze_without_model_or_phase_runtime_policy() 
         "design-tests": "delivery_agent",
         "plan-tickets": "delivery_agent",
         "review-design": "review_agent",
-        "deliver-tickets": "delivery_agent",
         "verify-delivery": "delivery_agent",
         "review-delivery": "review_agent",
         "audit-tracker": "review_agent",

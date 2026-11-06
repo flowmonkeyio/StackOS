@@ -34,7 +34,8 @@
   "recovery": [
     "Record blockers in the run and tracker instead of hiding them in chat.",
     "Use run consistency and recovery operations to resume a blocked step without losing prior handoffs.",
-    "Before reopening an earlier gate, stop active assignments and their processes, preserve evidence, and reconcile affected child tickets explicitly. Existing runs retain their frozen step order."
+    "For terminal-managed rewind, stop active assignments and their processes, preserve evidence, and reconcile affected child tickets explicitly. Existing runs retain their frozen step order.",
+    "For supported automatic correction, finish checks and other actions, preserve evidence and reconcile affected child tickets, and quiesce other affected work. Keep the caller active for its final tracker.reopen mutation, then immediately return repair; do not wait for the caller to terminate. The runner owns resumption."
   ],
   "safeStoppingPoints": [
     "Stop after a reviewed design or diagnosis when implementation authority was not granted."
@@ -96,11 +97,6 @@
       "id": "review-design",
       "title": "Delivery Readiness Review",
       "summary": "Review the complete requirements, design, proof plan, executable tickets, dependencies, and resources before implementation."
-    },
-    {
-      "id": "deliver-tickets",
-      "title": "Deliver Tickets",
-      "summary": "Delegate ready tickets, independently verify each candidate immediately, and accept integrated results before completing tickets and releasing dependents."
     },
     {
       "id": "verify-delivery",

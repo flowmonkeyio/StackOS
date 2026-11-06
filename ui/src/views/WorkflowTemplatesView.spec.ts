@@ -16,11 +16,10 @@ const EXPECTED_WORKFLOW_STEPS = [
   { id: 'scope-work', title: 'Scope Work' },
   { id: 'define-requirements', title: 'Define Requirements And Flows' },
   { id: 'discover-impact', title: 'Discover Impact' },
-  { id: 'plan-tickets', title: 'Plan Tracker Tickets' },
   { id: 'design-approach', title: 'Design Approach' },
-  { id: 'review-design', title: 'Review Design' },
   { id: 'design-tests', title: 'Design Tests, TDD, And Manual Scenarios' },
-  { id: 'deliver-tickets', title: 'Deliver Tickets' },
+  { id: 'plan-tickets', title: 'Plan Tracker Tickets' },
+  { id: 'review-design', title: 'Delivery Readiness Review' },
   { id: 'verify-delivery', title: 'Verify Delivery' },
   { id: 'review-delivery', title: 'Review Delivery' },
   { id: 'audit-tracker', title: 'Audit Tracker Truth' },
@@ -116,7 +115,7 @@ describe('WorkflowTemplatesView', () => {
     expect(text).toContain('stackos:stackos')
     expect(text).toContain('stackos.sdlc.delivery-orchestrator')
     expect(text).toContain('workflow-specific skill presets')
-    expect(text).toContain('12 stages')
+    expect(text).toContain('11 stages')
     for (const step of EXPECTED_WORKFLOW_STEPS) {
       expect(text).toContain(step.id)
       expect(text).toContain(step.title)
@@ -185,8 +184,8 @@ function engineeringWorkflow(): SchemaLoadedWorkflowTemplate {
       inputs: [{ key: 'goal', name: 'Goal', type: 'string', required: true, description: '' }],
       outputs: [
         {
-          key: 'delivery_summary',
-          name: 'Delivery Summary',
+          key: 'verification_summary',
+          name: 'Verification Summary',
           type: 'object',
           required: true,
           description: '',

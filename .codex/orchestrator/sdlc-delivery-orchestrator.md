@@ -1,8 +1,8 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.7.0
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.0
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
-Workflow: `engineering.tracked-delivery` v0.7.0 source contract
+Workflow: `engineering.tracked-delivery` v0.8.0 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
 
 This is the StackOS repository adaptation, not a subagent. The main agent owns
@@ -79,11 +79,10 @@ tracker work applies only when no workflow lifecycle was invoked.
 
 ## Prepare Executable Work
 
-For new v0.7.0 plans the sequence is:
+For new v0.8.0 plans the sequence is:
 
 `scope-work -> define-requirements -> discover-impact -> design-approach ->
-design-tests -> plan-tickets -> review-design -> deliver-tickets ->
-verify-delivery -> review-delivery -> audit-tracker -> release-closeout`
+design-tests -> plan-tickets -> review-design -> verify-delivery -> review-delivery -> audit-tracker -> release-closeout`
 
 The readiness review at `review-design` checks requirements, design, proof,
 ticket decomposition, dependencies and prerequisites together. Reconcile every
@@ -126,6 +125,15 @@ its consumers; final verification proves the assembled journey. Use `activates`
 from the active step mirror to every independent first child and `blocks` for
 real accepted prerequisites and terminal children feeding the next step. Check
 `tracker.get(include_graph=true)` before dispatch; attachment alone is not order.
+
+For new plans, attach implementation children to `verify-delivery`. Give every
+independent first child an `activates` edge from that mirror and make terminal
+children block `review-delivery`, never their own `verify-delivery` mirror.
+After readiness, claim `verify-delivery` and use it as the `tracker.startDelivery`
+entry context. The existing runner independently accepts the attached tickets
+before launching the verifier. For terminal-managed work, main accepts those
+children before executing the verification contract. Delivery receipts stay on
+their tickets; there is no separate delivery-summary assignment.
 
 ## Dispatch And Review Each Ticket
 

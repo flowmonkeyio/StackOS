@@ -924,12 +924,19 @@ scope-work
 -> design-tests
 -> plan-tickets
 -> review-design
--> deliver-tickets
 -> verify-delivery
 -> review-delivery
 -> audit-tracker
 -> release-closeout
 ```
+
+New engineering plans attach implementation tickets to `verify-delivery`.
+After readiness, claim that step as the automatic handoff entry. Its first
+children activate from the mirror; terminal children block `review-delivery`.
+The runner accepts all attached children before dispatching the verification
+agent, so children must not block their own mirror. Terminal-managed delivery
+accepts the same children before running integrated verification. Delivery
+commits and review evidence remain on each ticket without a summary-only step.
 
 The tracker is the durable execution map. It is not the proof that work is
 correct. Completion evidence should point to the code, commands, manual checks,

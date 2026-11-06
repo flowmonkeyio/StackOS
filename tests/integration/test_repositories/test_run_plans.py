@@ -628,9 +628,11 @@ def test_failed_step_does_not_require_success_outputs(
     assert failed.status == RunPlanStatus.FAILED
 
 
+@pytest.mark.parametrize("middle_step", ["prepare", "deliver-tickets"])
 def test_reopen_completed_run_plan_revives_run_and_tracker_mirror(
     session: Session,
     project_id: int,
+    middle_step: str,
 ) -> None:
     repo = RunPlanRepository(session)
     plan = repo.create(
@@ -641,7 +643,7 @@ def test_reopen_completed_run_plan_revives_run_and_tracker_mirror(
             "title": "Reopen workflow run",
             "steps": [
                 {"id": "scope-work", "title": "Scope work"},
-                {"id": "deliver-tickets", "title": "Deliver tickets"},
+                {"id": middle_step, "title": "Prepare"},
                 {"id": "verify-delivery", "title": "Verify delivery"},
                 {"id": "release-closeout", "title": "Release closeout"},
             ],
@@ -651,7 +653,7 @@ def test_reopen_completed_run_plan_revives_run_and_tracker_mirror(
 
     for step_id in (
         "scope-work",
-        "deliver-tickets",
+        middle_step,
         "verify-delivery",
         "release-closeout",
     ):
@@ -691,19 +693,16 @@ def test_reopen_completed_run_plan_revives_run_and_tracker_mirror(
     assert reopened.plan.completed_at is None
     assert reopened.run_id == started.run_id
     assert reopened.run_token == started.run_token
-    assert reopened.reopened_step_id == "deliver-tickets"
-    assert reopened.reset_step_ids == [
-        "deliver-tickets",
-        "verify-delivery",
-        "release-closeout",
-    ]
+    # Old frozen step names do not override the generic last-step default.
+    assert reopened.reopened_step_id == "release-closeout"
+    assert reopened.reset_step_ids == ["release-closeout"]
     assert run is not None
     assert run.status == RunStatus.RUNNING
     assert run.ended_at is None
     assert run.error is None
     assert step_rows["scope-work"].status == RunPlanStepStatus.SUCCESS
-    assert step_rows["deliver-tickets"].status == RunPlanStepStatus.PENDING
-    assert step_rows["verify-delivery"].status == RunPlanStepStatus.PENDING
+    assert step_rows[middle_step].status == RunPlanStepStatus.SUCCESS
+    assert step_rows["verify-delivery"].status == RunPlanStepStatus.SUCCESS
     assert step_rows["release-closeout"].status == RunPlanStepStatus.PENDING
 
     snapshot = TrackerRepository(session).get(
@@ -716,8 +715,9 @@ def test_reopen_completed_run_plan_revives_run_and_tracker_mirror(
     assert task.status == TrackerItemStatus.IN_PROGRESS
     assert task.completed_at is None
     assert tickets[f"workflow-{plan.id}-scope-work"].status == TrackerItemStatus.COMPLETE
-    assert tickets[f"workflow-{plan.id}-deliver-tickets"].status == (TrackerItemStatus.NOT_STARTED)
-    assert tickets[f"workflow-{plan.id}-verify-delivery"].status == (TrackerItemStatus.NOT_STARTED)
+    assert tickets[f"workflow-{plan.id}-{middle_step}"].status == TrackerItemStatus.COMPLETE
+    assert tickets[f"workflow-{plan.id}-verify-delivery"].status == TrackerItemStatus.COMPLETE
+    assert tickets[f"workflow-{plan.id}-release-closeout"].status == TrackerItemStatus.NOT_STARTED
 
     claimed = repo.claim_step(
         run_plan_id=plan.id,

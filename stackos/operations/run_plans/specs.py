@@ -340,7 +340,7 @@ def operation_specs() -> list[OperationSpec]:
             prerequisites=(
                 "Pass run_plan_id and a human-readable reason.",
                 "Optional step_id chooses where to resume; omit it to let StackOS reopen "
-                "the delivery step or the last step.",
+                "the first failed/blocked step or the last step.",
             ),
             returns=(
                 "A WriteEnvelope with the reopened run plan, revived run, run_token, "

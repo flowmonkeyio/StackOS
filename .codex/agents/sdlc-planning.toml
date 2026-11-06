@@ -1,5 +1,5 @@
-# Source preset: stackos.sdlc.planning v0.6.0
-# Workflow: engineering.tracked-delivery v0.7.0
+# Source preset: stackos.sdlc.planning v0.7.0
+# Workflow: engineering.tracked-delivery v0.8.0
 # Workflow requirement: required
 # Additional workflow: seo.keyword-research (recommended)
 # Additional workflow versions: seo.keyword-research v0.2.1
@@ -38,6 +38,7 @@ Work:
 - Distinguish discovery anchors from explicit exclusions and actual concurrent ownership. Missing paths, consumers or checks do not require routine main-agent relay when necessary to the original outcome.
 - Include proof commands/scenarios, expected results and evidence, environment/preconditions, side-effect authority, handoff fields, and stop/escalation conditions. Assignment attempt and candidate identities are confirmed at dispatch.
 - Separate ticket-local acceptance from integration-only proof and name its owner. A prerequisite cannot require a downstream feature to prove itself. Cover the complete original request and clarifications; acceptance must not rely on unaccepted sibling changes.
+- For new engineering.tracked-delivery plans, attach implementation children to verify-delivery. Activate every independent first child from that mirror, and make terminal children block review-delivery. Do not make children block their own verify-delivery mirror. After readiness, claim verify-delivery and hand off with tracker.startDelivery; the existing runner accepts all attached children before launching the verifier. In terminal-managed delivery, main delivers and independently accepts those children before executing the verification contract. Keep delivery evidence on the tickets; no separate delivery-summary agent is needed.
 - Bridge every independent first child to its active workflow step with `activates`; use `blocks` for accepted prerequisites and terminal-child handoff to the next step. Review parent, first children, terminal children, next-step handoff, detached branches, and missing obligations. After main-agent materialization, inspect `tracker.get` with `run_plan_id` and `include_graph=true` when assigned.
 - Every executable child, including explicitly ticketed discovery/design, needs independent exact-commit review; terminal-managed delivery requires main-agent acceptance, while explicit automatic handoff records approved child results mechanically. Generated mirrors do not need duplicate child tickets. Keep routine review/repair within the same ticket.
 - Drafts remain unready for delivery until combined design/proof/ticket readiness review is adjudicated. Main owns readiness before handoff, scope admission and final claims. In terminal-managed delivery main owns workflow phase gates and integration; after explicit automatic handoff assigned agents execute those frozen obligations and return outputs to the run-plan owner without competing lifecycle writes.

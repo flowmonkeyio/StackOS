@@ -1592,6 +1592,144 @@ def test_commit_identity_failure_stops_same_task(
     assert len(calls) == (2 if failure.startswith("review-") else 1)
 
 
+@pytest.mark.parametrize("correction", [False, True])
+def test_verification_entry_delivers_and_reviews_children_before_verifier(
+    session, project_id, tmp_path, monkeypatch, correction
+):
+    from stackos import task_delivery
+
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "verification-entry",
+            "title": "Delivery without a summary phase",
+            "steps": [
+                {"id": "review-design", "title": "Readiness"},
+                {
+                    "id": "verify-delivery",
+                    "title": "Verify",
+                    "depends_on": ["review-design"],
+                },
+                {
+                    "id": "review-delivery",
+                    "title": "Review",
+                    "depends_on": ["verify-delivery"],
+                    "metadata_json": {"agent_assignment": "review_agent"},
+                },
+            ],
+        },
+    ).data
+    started = plans.start(plan.id, project_id=project_id)
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="review-design")
+    plans.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="review-design",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "Ready"},
+    )
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="verify-delivery")
+    repo = TrackerRepository(session)
+    task_key = f"workflow-{plan.id}"
+    verifier = f"{task_key}-verify-delivery"
+    reviewer = f"{task_key}-review-delivery"
+    repo.create_ticket(
+        project_id=project_id,
+        task_key=task_key,
+        key="implementation",
+        title="Implement the change",
+        parent_ticket_key=verifier,
+        dependency_keys=[verifier],
+        run_plan_id=plan.id,
+        run_plan_step_id=plans.get_step(plan.id, "verify-delivery").id,
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key=reviewer,
+        patch_json={"add_dependency_keys": ["implementation"]},
+    )
+    calls = []
+    candidates = []
+
+    def launch(_host, _directory, _instructions, prompt, _schema, **kwargs):
+        packet = json.loads(prompt)
+        key, phase = packet["brief"]["ticket"]["key"], packet["phase"]
+        resumed = (key, phase) in calls
+        thread = f"{key}-{phase}"
+        assert kwargs.get("resume_thread_id") == (thread if resumed else None)
+        calls.append((key, phase))
+        status = "success"
+        if key == "implementation":
+            assert packet["workflow_step"] is None
+            if phase == "delivery":
+                if resumed:
+                    assert (
+                        packet["brief"]["ticket"]["context_json"]["correction"] == "Missed caller"
+                    )
+                    assert packet["review_result"] is None
+                candidates.append(commit(tmp_path, f"implemented-{len(candidates)}"))
+            else:
+                assert packet["candidate"]["commit_sha"] == candidates[-1]
+        elif key == verifier:
+            receipt = next(r for r in packet["accepted_receipts"] if r["key"] == "implementation")
+            evidence = receipt["completion_evidence_json"]["automatic_delivery"]
+            assert evidence["review"]["validated_outcome"] == "success"
+            assert evidence["candidate"]["commit_sha"] == candidates[-1]
+            if correction and not resumed:
+                with Session(session.get_bind()) as active:
+                    active_repo = TrackerRepository(active)
+                    for patch in [
+                        {"context_json": {"correction": "Missed caller"}},
+                        {"status": "in-progress"},
+                        {"status": "not-started"},
+                    ]:
+                        active_repo.update_ticket(
+                            project_id=project_id, ticket_key="implementation", patch_json=patch
+                        )
+                    RunPlanRepository(active).reopen(
+                        run_plan_id=plan.id,
+                        project_id=project_id,
+                        step_id="verify-delivery",
+                        reason="Correct the accepted child before repeating verification",
+                    )
+                    # The requeued child is real progress, but activation is pending
+                    # until the runner reclaims its own verification entry step.
+                    ready = active_repo.delivery_ready(project_id=project_id, task_key=task_key)
+                    assert "implementation" not in {ticket.key for ticket in ready}
+                status = "repair"
+        return AgentRunResult(
+            0,
+            thread_id=thread,
+            result=generic_result(status, outputs={"commit_sha": candidates[-1]}),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=task_key,
+        run_plan_id=plan.id,
+        step_id="verify-delivery",
+    )
+    scheduler.run()
+    session.expire_all()
+    snapshot = repo.get(project_id=project_id, task_key=task_key)
+    child_and_verifier = [
+        ("implementation", "delivery"),
+        ("implementation", "review"),
+        (verifier, "delivery"),
+    ]
+    assert calls == child_and_verifier * (2 if correction else 1) + [(reviewer, "review")]
+    assert plans.get(plan.id).status == "completed"
+    assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "complete"
+    assert all(ticket.status == "complete" for ticket in snapshot.tickets)
+
+
 def workflow_task(session, project_id, *, running=True):
     plans = RunPlanRepository(session)
     plan = plans.create(

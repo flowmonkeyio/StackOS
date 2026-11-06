@@ -373,7 +373,7 @@ def test_tracker_operations_rest_reopen_workflow_by_run_id(
                     "title": "REST reopen workflow",
                     "steps": [
                         {"id": "scope-work", "title": "Scope work"},
-                        {"id": "deliver-tickets", "title": "Deliver tickets"},
+                        {"id": "prepare", "title": "Prepare"},
                         {"id": "verify-delivery", "title": "Verify delivery"},
                     ],
                 },
@@ -391,7 +391,7 @@ def test_tracker_operations_rest_reopen_workflow_by_run_id(
     run_id = started.json()["data"]["run_id"]
     run_token = started.json()["data"]["run_token"]
 
-    for step_id in ("scope-work", "deliver-tickets", "verify-delivery"):
+    for step_id in ("scope-work", "prepare", "verify-delivery"):
         claimed = api.post(
             "/api/v1/operations/runPlan.claimStep/call",
             json={
@@ -437,8 +437,8 @@ def test_tracker_operations_rest_reopen_workflow_by_run_id(
     assert body["run_id"] == run_id
     assert body.get("run_token") is None
     assert run_token not in reopened.text
-    assert body["reopened_step_id"] == "deliver-tickets"
-    assert body["reset_step_ids"] == ["deliver-tickets", "verify-delivery"]
+    assert body["reopened_step_id"] == "verify-delivery"
+    assert body["reset_step_ids"] == ["verify-delivery"]
     if response_mode != "ack":
         assert body["task"]["status"] == "in-progress"
     # The facade keeps controller credentials private; the canonical controller
@@ -449,7 +449,7 @@ def test_tracker_operations_rest_reopen_workflow_by_run_id(
             "arguments": {
                 "project_id": project_id,
                 "run_plan_id": run_plan_id,
-                "step_id": "deliver-tickets",
+                "step_id": "prepare",
                 "reason": "Controller resume",
                 "response_mode": "raw",
             }
