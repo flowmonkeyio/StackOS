@@ -2,6 +2,7 @@ import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/lib/client'
+import { formatDateTime } from '@/lib/stackos/json'
 
 import type { TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
 
@@ -248,7 +249,170 @@ describe('TrackerTaskDetailDialog', () => {
     expect(popup().find('[aria-label="Task status"]').exists()).toBe(false)
     wrapper.unmount()
   })
+
+  it('shows multiple read-only followups with their origins alongside operator input', async () => {
+    const record = taskWithFollowups()
+    const source = sourceTicket()
+    const wrapper = mount(TrackerTaskDetailDialog, {
+      props: { modelValue: true, task: record, tickets: [source], refreshContent: vi.fn().mockResolvedValue(record) },
+      attachTo: document.body,
+    })
+
+    const notes = popup().get('[aria-label="Task followups"]')
+    expect(notes.findAll('li')).toHaveLength(2)
+    expect(notes.text()).toContain('Consider a later cleanup.')
+    expect(notes.get('strong').text()).toBe('later cleanup')
+    expect(notes.text()).toContain('Attempt 1')
+    expect(notes.text()).toContain('Attempt 2')
+    expect(notes.text()).toContain(formatDateTime('2026-11-05T23:00:00Z'))
+    expect(popup().text()).toContain('Notes outside current work')
+    expect(popup().get('[aria-label="Additional input history"]').text()).toContain('Keep the existing operator input.')
+    expect(notes.findAll('textarea,input,select,[contenteditable="true"]')).toHaveLength(0)
+    expect(popup().findAll('textarea')).toHaveLength(1)
+
+    await notes.findAll('button')[0]!.trigger('click')
+    expect(wrapper.emitted('openTicket')).toEqual([[source]])
+    expect(callOperation).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('preserves task drafts, scroll, disclosure and focus through followup source inspection and back', async () => {
+    const record = taskWithFollowups()
+    const source = sourceTicket()
+    const wrapper = mount(TrackerTaskDetailDialog, {
+      props: { modelValue: true, task: record, tickets: [source], refreshContent: vi.fn().mockResolvedValue(record) },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    const frame = popup().get('[role="dialog"]').element
+    const body = popup().get<HTMLElement>('.ui-dialog__body').element
+    await popup().get('[data-edit-content]').trigger('click')
+    await popup().get('[data-description-editor]').setValue('Unsaved description')
+    await popup().findAll('textarea')[1]!.setValue('Unsaved additional input')
+    const details = popup().get<HTMLDetailsElement>('.tracker-task-detail details').element
+    details.open = true
+    body.scrollTop = 240
+    const origin = popup().get('[aria-label="Task followups"] button')
+    ;(origin.element as HTMLElement).focus()
+    await origin.trigger('click')
+    expect(wrapper.emitted('openTicket')?.[0]).toEqual([source])
+
+    // The existing route owner prepares inspection before updating the dialog props.
+    wrapper.vm.prepareInspection(source.key)
+    await wrapper.setProps({ ticketKey: source.key, ticket: source })
+    await flushPromises()
+    expect(popup().get('[role="dialog"]').element).toBe(frame)
+    expect(body.scrollTop).toBe(0)
+    expect(document.activeElement).toBe(popup().get('h2').element)
+    await popup().findAll('button').find(button => button.text() === 'Back to task')!.trigger('click')
+    expect(wrapper.emitted('backToTask')).toHaveLength(1)
+    await wrapper.setProps({ ticketKey: '', ticket: null })
+    await flushPromises()
+
+    expect(popup().get('[role="dialog"]').element).toBe(frame)
+    expect(popup().get<HTMLTextAreaElement>('[data-description-editor]').element.value).toBe('Unsaved description')
+    expect(popup().findAll('textarea')[1]!.element.value).toBe('Unsaved additional input')
+    expect(body.scrollTop).toBe(240)
+    expect(details.open).toBe(true)
+    expect(document.activeElement).toBe(origin.element)
+    expect(callOperation).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('sanitizes followup Markdown and keeps an unavailable source readable without a navigation action', () => {
+    const record = taskWithFollowups()
+    record.context_json!.followups = [{
+      text: '**Safe note** <script>alert(1)</script><img src="x" onerror="alert(2)"> [unsafe](javascript:alert(3))',
+      source_ticket_key: 'removed-source', source_attempt: 3, created_at: '2026-11-05T23:00:00Z',
+    }]
+    const wrapper = mount(TrackerTaskDetailDialog, {
+      props: { modelValue: true, task: record }, attachTo: document.body,
+    })
+    const notes = popup().get('[aria-label="Task followups"]')
+    expect(notes.get('strong').text()).toBe('Safe note')
+    expect(notes.find('script,[onerror],a[href^="javascript:"]').exists()).toBe(false)
+    expect(notes.text()).toContain('removed-source')
+    expect(notes.text()).toContain('Source ticket unavailable')
+    expect(notes.text()).toContain('Attempt 3')
+    expect(notes.find('button').exists()).toBe(false)
+    expect(callOperation).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it.each([null, {}, { followups: [] }, { followups: 'invalid' }, {
+    followups: [null, {}, 'note', { text: 'Missing origin' }, {
+      text: ' ', source_ticket_key: 'source-ticket', source_attempt: 1, created_at: '2026-11-05T23:00:00Z',
+    }],
+  }])('handles empty, missing or malformed followups safely: %j', (context) => {
+    const wrapper = mount(TrackerTaskDetailDialog, {
+      props: { modelValue: true, task: { ...task(), context_json: context } }, attachTo: document.body,
+    })
+    expect(popup().find('[aria-label="Task followups"]').exists()).toBe(false)
+    expect(popup().get('h2').text()).toBe(task().title)
+    expect(callOperation).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
 })
+
+function sourceTicket(): TrackerTicket {
+  return {
+    id: 101,
+    project_id: 1,
+    tracker_id: 1,
+    task_id: task().id,
+    task_key: task().key,
+    parent_ticket_id: null,
+    parent_ticket_key: null,
+    run_plan_id: null,
+    run_plan_step_id: null,
+    run_id: null,
+    agent_request_id: null,
+    key: 'source-ticket',
+    title: 'Source ticket',
+    goal: '',
+    status: 'complete',
+    kind: 'ticket',
+    assignee: null,
+    priority_key: 'p1',
+    lane_key: 'done',
+    order_index: 1,
+    blocker_reason: null,
+    outcome: null,
+    effort: null,
+    source_kind: 'manual',
+    source_json: null,
+    definition_of_done_json: [],
+    constraints_json: [],
+    expected_changes_json: [],
+    allowed_paths_json: [],
+    completion_evidence_json: null,
+    context_json: null,
+    metadata_json: null,
+    created_by: 'codex',
+    claimed_at: null,
+    created_at: '2026-11-05T22:00:00Z',
+    updated_at: '2026-11-05T22:00:00Z',
+    started_at: null,
+    completed_at: '2026-11-05T22:00:00Z',
+    dependency_keys: [],
+    blocked_by: [],
+    reference_count: 0,
+    link_count: 0,
+  }
+}
+
+function taskWithFollowups(): TrackerTask {
+  return {
+    ...task(),
+    context_json: {
+      operator_inputs: [{ id: 'input-1', text: 'Keep the existing operator input.', created_at: '2026-11-05T22:00:00Z', actor: 'operator' }],
+      followups: [
+        { text: 'Consider a **later cleanup**.', source_ticket_key: 'source-ticket', source_attempt: 1, created_at: '2026-11-05T23:00:00Z' },
+        { text: 'Inspect the next release separately.', source_ticket_key: 'source-ticket', source_attempt: 2, created_at: '2026-11-05T23:30:00Z' },
+      ],
+    },
+  }
+}
 
 function task(): TrackerTask {
   return {

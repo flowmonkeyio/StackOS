@@ -12,8 +12,10 @@ import {
   UiMetadataStrip,
   UiLoadingState,
   UiFormField,
+  UiSectionHeader,
   UiTextarea,
 } from '@/components/ui'
+import MarkdownView from '@/components/MarkdownView.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import type { TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
@@ -168,6 +170,15 @@ const operatorInputs = computed(() => {
     item && typeof item === 'object' && typeof item.id === 'string'
     && typeof item.text === 'string' && typeof item.created_at === 'string',
   )
+})
+const followups = computed(() => {
+  const items = props.task?.context_json?.followups
+  if (!Array.isArray(items)) return []
+  return items.filter((item): item is { text: string; source_ticket_key: string; source_attempt: number; created_at: string } =>
+    item && typeof item === 'object' && typeof item.text === 'string' && item.text.trim().length > 0
+    && typeof item.source_ticket_key === 'string' && item.source_ticket_key.length > 0
+    && Number.isInteger(item.source_attempt) && item.source_attempt > 0 && typeof item.created_at === 'string',
+  ).map((item) => ({ ...item, ticket: props.tickets.find((ticket) => ticket.key === item.source_ticket_key) }))
 })
 const completedCount = computed(() => props.tickets.filter((ticket) => ticket.status === 'complete').length)
 
@@ -463,6 +474,50 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
               placeholder="Write a clarification or add a link…"
             />
           </UiFormField>
+        </section>
+        <section
+          v-if="followups.length"
+          class="space-y-3 border-t border-subtle pt-4"
+        >
+          <UiSectionHeader
+            as="h3"
+            title="Followups"
+            description="Notes outside current work. They do not block completion or start new work."
+          />
+          <ol
+            class="space-y-3"
+            aria-label="Task followups"
+          >
+            <li
+              v-for="(note, index) in followups"
+              :key="index"
+              class="min-w-0 rounded-lg border border-subtle bg-bg-surface-alt px-3 py-2"
+            >
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted">
+                <UiButton
+                  v-if="note.ticket"
+                  variant="ghost"
+                  size="sm"
+                  class="max-w-full font-mono"
+                  @click="$emit('openTicket', note.ticket)"
+                >
+                  <span class="truncate">{{ note.source_ticket_key }}</span>
+                </UiButton>
+                <span
+                  v-else
+                  class="min-w-0 break-words"
+                >
+                  <span class="font-mono">{{ note.source_ticket_key }}</span> · Source ticket unavailable
+                </span>
+                <span>Attempt {{ note.source_attempt }}</span>
+                <time :datetime="note.created_at">{{ formatDateTime(note.created_at) }}</time>
+              </div>
+              <MarkdownView
+                class="mt-1 break-words [overflow-wrap:anywhere]"
+                :source="note.text"
+              />
+            </li>
+          </ol>
         </section>
         <details class="border-t border-subtle pt-4">
           <summary class="focus-ring cursor-pointer rounded-xs text-sm font-medium text-fg-muted">
