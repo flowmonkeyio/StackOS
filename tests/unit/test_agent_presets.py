@@ -858,25 +858,25 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
 
 def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -> None:
     loader = AgentPresetLoader()
+    expected_versions = {
+        "requirements-flow-definer": "0.6.0",
+        "codebase-explorer": "0.6.0",
+        "planning": "0.7.0",
+        "architecture": "0.6.0",
+        "test-designer": "0.6.0",
+        "delivery": "0.7.0",
+        "delivery-reviewer": "0.6.0",
+    }
     presets = {
-        key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset
-        for key in (
-            "requirements-flow-definer",
-            "codebase-explorer",
-            "planning",
-            "architecture",
-            "test-designer",
-            "delivery",
-            "delivery-reviewer",
-        )
+        key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset for key in expected_versions
     }
 
     def contract_text(key: str, *fields: str) -> str:
         contract = presets[key].prompt_contract
         return " ".join(item for field in fields for item in getattr(contract, field)).lower()
 
-    for preset in presets.values():
-        assert preset.version == "0.6.0"
+    for key, preset in presets.items():
+        assert preset.version == expected_versions[key]
         assert preset.prompt_contract.mission
         assert preset.prompt_contract.handoff_inputs
         assert preset.prompt_contract.handoff_outputs
