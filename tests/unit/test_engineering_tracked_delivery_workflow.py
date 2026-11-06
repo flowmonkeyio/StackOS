@@ -70,13 +70,13 @@ def _impact_map() -> dict:
     }
 
 
-def test_tracked_delivery_v041_keeps_one_key_and_twelve_steps() -> None:
+def test_tracked_delivery_v042_keeps_one_key_and_twelve_steps() -> None:
     workflow = _workflow()
     validation = validate_workflow_template_obj(workflow)
 
     assert validation.valid is True, validation.errors
     assert workflow["key"] == "engineering.tracked-delivery"
-    assert workflow["version"] == "0.4.1"
+    assert workflow["version"] == "0.4.2"
     assert [step["id"] for step in workflow["steps"]] == [
         "scope-work",
         "define-requirements",
@@ -122,6 +122,25 @@ def test_tracked_delivery_is_guidance_driven_with_concise_truth_contracts() -> N
     assert "independent exact-commit review" in text
     assert "Gemini and Hermes" in text and "no enforced read-only guarantee" in text
     assert "phase gates, integration and final claims" in text
+    for requirement in (
+        "one automatic repair pass",
+        "same native delivery session",
+        "same independent review session",
+        "clean unchanged HEAD for reject and approve",
+        "repair_pass_used across explicit requeue",
+        "second rejection",
+        "planned specs and integration checks",
+        "business regression",
+        "architecture gaps",
+        "inaccurate wiring",
+        "canonical ownership",
+        "nonblocking followups",
+        "source_ticket_key/source_attempt/created_at",
+        "active/historical snapshots",
+        "preserving names/hosts/models/provider/profile",
+        "No synchronizer",
+    ):
+        assert requirement in text, requirement
 
     scope_required = set(_output(workflow, "scope_summary")["schema"]["required"])
     assert {

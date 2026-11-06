@@ -780,7 +780,7 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
     delivery = loader.describe_preset(key="stackos.sdlc.delivery").preset
     reviewer = loader.describe_preset(key="stackos.sdlc.delivery-reviewer").preset
 
-    assert architecture.version == "0.3.2"
+    assert architecture.version == "0.3.3"
     architecture_text = " ".join(
         [
             *architecture.prompt_contract.responsibilities,
@@ -866,7 +866,7 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
         return " ".join(item for field in fields for item in getattr(contract, field)).lower()
 
     for preset in presets.values():
-        assert preset.version == "0.3.2"
+        assert preset.version == "0.3.3"
         assert preset.prompt_contract.mission
         assert preset.prompt_contract.handoff_inputs
         assert preset.prompt_contract.handoff_outputs
@@ -957,6 +957,46 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     assert "no enforced read-only guarantee" in reviewer
     # The unused release role is intentionally outside this source revision.
     assert loader.describe_preset(key="stackos.sdlc.release-ops").preset.version == "0.2.1"
+
+
+def test_sdlc_source_and_local_verification_repair_contracts() -> None:
+    loader = AgentPresetLoader()
+    for role in ("planning", "test-designer", "delivery-reviewer"):
+        source = loader.describe_preset(key=f"stackos.sdlc.{role}").preset
+        source_text = " ".join(source.prompt_contract.must_do)
+        local = tomllib.loads((REPO_ROOT / f".codex/agents/sdlc-{role}.toml").read_text())
+        for text in (source_text, local["developer_instructions"]):
+            for requirement in (
+                "planned specs and integration checks",
+                "business regression",
+                "architecture gaps",
+                "inaccurate wiring",
+                "canonical ownership",
+                "nonblocking followups",
+            ):
+                assert requirement in text, (role, requirement)
+    for role in ("delivery", "delivery-reviewer"):
+        source = loader.describe_preset(key=f"stackos.sdlc.{role}").preset
+        local = tomllib.loads((REPO_ROOT / f".codex/agents/sdlc-{role}.toml").read_text())
+        combined_source = source.project_adaptation.required_agent_action + " ".join(
+            source.prompt_contract.must_do
+        )
+        for text in (combined_source, local["developer_instructions"]):
+            for requirement in (
+                "same native delivery",
+                "separate repair commit",
+                "explicit requeue",
+                "second rejection",
+                "active/historical snapshots",
+            ):
+                assert requirement in text, (role, requirement)
+    reviewer = loader.describe_preset(key="stackos.sdlc.delivery-reviewer").preset
+    text = " ".join(reviewer.prompt_contract.must_do)
+    assert "both reject and approve" in text
+    assert "clean unchanged HEAD" in text
+    assert "ordinary test outputs are allowed" in text
+    assert "genuinely unavailable required verification blocks" in text
+    assert "array of text objects, empty when none" in text
 
 
 def test_customer_support_thread_preset_requires_route_and_media_fidelity() -> None:

@@ -135,17 +135,21 @@ The call returns a task key, execution status, job reference, and a
 scheduler to run one ready, unstarted ticket from that task at a time:
 
 ```text
-ready ticket -> delivery commit -> fresh review of SHA -> approve -> complete -> next ticket
+ready ticket -> delivery commit -> review/specs on exact SHA -> approve -> complete -> next ticket
                                 |
-                              reject -> record reason and stop
+                              scoped reject -> persist -> same delivery session
+                                -> separate repair commit -> same review session -> approve
+                                -> blocked/native failure/second reject -> stop same task
 ```
 
 The result contracts are `DELIVERY_SCHEMA` and `REVIEW_SCHEMA` in
 [`task_delivery.py`](../plugins/engineering/scripts/task_delivery.py). Delivery
 must return `status` (`complete` or `blocked`), `summary` and `commit_sha`; review
-must return `decision` (`approve` or `reject`), `summary` and `commit_sha`. All
-fields are required strings, and extra fields are forbidden. Blocked/rejected
-results may use an empty SHA when no candidate exists. Agents
+must return `decision` (`approve`, `reject` or `blocked`), `summary`, `commit_sha`
+and `followups` (an array of `{"text":"..."}` objects, empty when none). The
+other fields are required strings; extra fields are forbidden. A scoped reject
+and an approval both identify the clean unchanged current candidate SHA. A
+blocked result can use an empty SHA when no candidate exists. Agents
 return results only; StackOS updates ticket lifecycle from these results,
 completing a ticket only after successful delivery and review approval. See the
 [CLI handoff example](operations.md#cli-calls).
@@ -159,8 +163,33 @@ Delivery result:
 Review result:
 
 ```json
-{"decision": "approve", "summary": "Independently verified this commit.", "commit_sha": "<same ticket commit SHA>"}
+{"decision": "approve", "summary": "Executed planned specs; commands/results and scoped review evidence.", "commit_sha": "<same ticket commit SHA>", "followups": []}
 ```
+
+Reviewers execute relevant planned specs and integration checks themselves and
+record commands/results/current SHA. Failed required specs reject; genuinely
+unavailable required verification blocks. Review covers business regression,
+architecture gaps, inaccurate wiring and canonical ownership where relevant to
+the ticket plus its integration. Required repairs cite scoped criteria/evidence.
+Unrelated findings go only in `followups`, never required-repair summary.
+
+The plugin appends notes to `task.context_json.followups` as
+`{text, source_ticket_key, source_attempt, created_at}`, preserving other context
+including `operator_inputs`. The existing task detail displays them read-only
+with source navigation. They create no tasks/dependencies, launch no work,
+never enter actionable delivery/repair prompts and do not block completion.
+
+Ticket `completion_evidence_json.automatic_delivery` stores native `sessions`
+by delivery/review role (thread ID and harness identity), prior `attempts`, latest
+receipts and `repair_pass_used`. First launch creates a session; later launches
+resume that exact role session with task-frozen settings. Roles/tickets stay
+distinct. Persist the scoped rejection before repair, supplying occurrence
+phase/attempt/candidate and persisted `review_result` decision/summary/SHA.
+One automatic repair pass requires a separate new descendant commit, then the
+same reviewer rechecks that exact SHA. The consumed pass survives explicit
+requeue. Blocked required verification, native/access/model/resume/schema failure,
+dirty/mismatched candidate or a second rejection stops the same task with history;
+there is no fresh-session, host or model fallback. Approval alone advances.
 
 Agent/process failure also stops the task's execution. Ticket evidence records
 both agent results, launch details, thread references, prior HEAD and verified
@@ -175,12 +204,12 @@ handoff for the same scope returns the current execution instead
 of scheduling another job. Inspect the full task metadata and ticket evidence
 with `tracker.get` using `response_mode="raw"`.
 
-Codex delivery uses `--approve-for-me` for workspace-write execution with
+Codex delivery and review use `--approve-for-me` for workspace-write execution with
 automatic approval review; authorized `.git` and `.codex` writes go through
-normal escalation and a denial stops delivery. The independent reviewer uses
-`--sandbox read-only` and `approval_policy="never"`. These modes follow the
-[Codex CLI contract](https://learn.chatgpt.com/docs/developer-commands#codex-exec)
-(checked 2026-11-05); reasoning settings remain inherited.
+normal escalation and a denial stops the task. Review instructions prohibit
+production-file, acceptance-test and commit changes while permitting ordinary
+test outputs. Reasoning settings remain inherited; native mode comes from the
+shared `agent_review_sandbox` capability owner, not guidance or a permission bypass.
 
 The existing `stackos.host_mcp` registry owns execution capabilities and model
 IDs, reused by host discovery and launch validation. Its dated official sources
@@ -188,22 +217,21 @@ and capability notes appear in host status `agent_execution`. Current selections
 
 | Host | Native model IDs | Delivery / review |
 | --- | --- | --- |
-| Codex | `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6.1-terra`, `gpt-6-luna`; configured provider models with `provider` | Automatic approval review / native read-only sandbox |
-| Claude Code | `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1` | `auto` permissions / `dontAsk`, only Read/Glob/Grep, MCP tools denied |
+| Codex | `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6.1-terra`, `gpt-6-luna`; configured provider models with `provider` | Automatic approval review for delivery and test-capable review |
+| Claude Code | `claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1` | Native `auto` permissions for delivery and test-capable review |
 | Gemini CLI | `gemini-3.1-pro-preview`, `gemini-3-pro-preview`, `gemini-3-flash-preview`, `gemini-2.5-pro`, `gemini-2.5-flash` | `auto_edit`, unapproved shell denied / normal native permissions, review-only instructions |
 | Hermes | Explicit provider's model ID; no Hermes model family | Native one-shot approvals / normal native permissions, review-only instructions |
-| Grok | CLI selections from `grok models`, including configured aliases such as `grok-build`; distinct from API ID `grok-4.7` | `workspace` sandbox, `auto` / `read-only` sandbox, `dontAsk` |
+| Grok | CLI selections from `grok models`, including configured aliases such as `grok-build`; distinct from API ID `grok-4.7` | `workspace` sandbox, `auto` for delivery and test-capable review |
 | Claude Desktop | None for headless execution | Unsupported |
 
-Claude review uses native tool restrictions, not an OS sandbox; it cannot run
-shell-based tests. Gemini plan mode can leave plan mode in headless execution,
+Review modes permit focused shell-based tests under native permissions; they
+do not enforce reviewer source immutability. Gemini plan mode can leave plan mode in headless execution,
 and Hermes has no established strict read-only switch. Both support independent
 review through normal native sessions with instructions to avoid changing files
 or commits; these instructions provide no enforced read-only isolation. The shared
 host capability owner selects the mode (`review_sandbox`); launch receipts record
 `sandbox: "normal"` for these reviews. Gemini review adds no approval-mode override;
-Hermes retains native one-shot permissions. Native read-only controls remain for
-Codex, Claude Code and Grok. Unsupported hosts still reject before scheduling.
+Hermes retains native one-shot permissions. Unsupported hosts still reject before scheduling.
 Native permissions may deny required work, including committing; a structured
 blocked result stops the task even if the process exit code is zero.
 
@@ -230,8 +258,8 @@ Gemini/Grok auth-status support is unverified. Actual launch failures, including
 errors on stdout, missing credentials, inaccessible models, and broken CLI shims,
 stop the current task with their reason. No credential setup is performed.
 
-Automated delivery does not retry rejected work or resume an
-interrupted job after daemon restart. `tracker.execute` remains a read-only
+Automated delivery allows only the one durable scoped repair pass above; it does
+not resume an interrupted job after daemon restart. `tracker.execute` remains a read-only
 brief operation. Automated child delivery does not complete workflow phases.
 
 ## Workflow Mirroring

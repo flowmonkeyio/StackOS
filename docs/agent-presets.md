@@ -280,17 +280,33 @@ requirements and actual evidence, returning the full `commit_sha`. The main
 agent adjudicates findings, routes repairs, integrates the reviewed result,
 rechecks affected evidence, then marks the ticket complete in terminal-managed
 delivery. An explicit `tracker.startDelivery` handoff instead lets StackOS
-mechanically complete approved child tickets and advance serially; rejection
-or failure stops that task. Main retains scope, workflow phase gates, integration
+mechanically complete approved child tickets and advance serially. A valid scoped
+rejection is persisted before one automatic repair pass in the same native
+delivery session, with a separate new descendant repair commit and re-verification
+in the same independent review session. The consumed pass survives explicit
+requeue; blocked required verification, native/access/model/resume failure,
+candidate mismatch or a second rejection stops that task. Main retains scope, workflow phase gates, integration
 and final claims. Defaults use engineering `ProjectPlugin.config_json.delivery`
 via local-admin `plugin.enable`, merged with task overrides by role once; local
 agent files are optional sources. Reusable roles never pin models. The shared
-host capability owner preserves native review controls where supported and uses
+host capability owner selects test-capable native permissions and approval review and uses
 normal native sessions for Gemini and Hermes reviewers with review-only
 instructions, truthfully reporting no enforced read-only isolation. Until acceptance,
 the ticket stays `in-progress`. There is no separate review ticket by default
 and no new tracker status. Main-agent scheduling and acceptance are guidance,
 not daemon-enforced leases or semantic verification.
+
+Reviewers execute relevant planned specs and integration checks themselves,
+reporting commands/results/current SHA and clean unchanged HEAD for reject and
+approve. Failed required specs reject; genuinely unavailable required checks
+block. Within ticket plus integration scope, review business regression,
+architecture gaps, inaccurate wiring and canonical ownership where relevant.
+Required repairs cite scoped criteria/evidence. Unrelated findings go only in
+separate nonblocking `followups` text objects, never required-repair summary,
+dependencies or actionable repair prompts. Automatic review returns
+`decision` (approve/reject/blocked), `summary`, `commit_sha` and `followups`;
+delivery returns `status`, `summary` and `commit_sha`. Ordinary test outputs are
+allowed; production files, acceptance tests and commits remain review-only.
 
 Review must identify its candidate, assignment attempt, contract revision and
 relevant environment. Disjoint file ownership does not prove independence: a
@@ -306,6 +322,16 @@ in an authorized adaptation phase; a source-only change must not relabel old
 local prompts as current. During a scoped source revision, use an explicit
 current session packet where needed. The workflow's required outputs remain
 schema-valid even when preparation is concise.
+
+Adoption is manual per project. Method belongs in reusable/local guidance;
+occurrence phase/attempt/SHA/persisted scoped feedback belongs in prompts, and
+models remain StackOS configuration. After independent source/local review,
+the main agent may manually refresh selected saved instruction strings through
+existing local-admin `plugin.enable`, preserving every other setting and reading
+back the result. Source edits alone update neither saved instructions nor active
+or historical task snapshots. Prove a subsequent handoff receives the new
+instructions. Other projects adapt individually; there is no synchronizer,
+watcher, automatic rollout or requirement for a `.codex` folder.
 
 The main agent should detect or read the host convention before writing local
 agents. For Codex-style projects, inspect `.codex/config.toml` and existing

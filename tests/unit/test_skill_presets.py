@@ -71,7 +71,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     contract = loaded.preset.operating_contract
     action = loaded.preset.project_adaptation.required_agent_action.lower()
 
-    assert loaded.preset.version == "0.4.2"
+    assert loaded.preset.version == "0.4.3"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "canonical owner" in action
@@ -216,6 +216,47 @@ def test_codex_sdlc_orchestrator_preserves_local_execution_boundaries() -> None:
     assert "do not require proof from a future step" in text
     assert "before any delivery dispatch" in text
     assert "response_mode=raw" in text
+
+
+def test_sdlc_orchestrator_manual_adoption_and_bounded_repair() -> None:
+    preset = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
+    source = " ".join(preset.operating_contract.must_do)
+    local = " ".join(
+        (Path(__file__).resolve().parents[2] / ".codex/orchestrator/sdlc-delivery-orchestrator.md")
+        .read_text()
+        .split()
+    )
+    for text in (source, local):
+        for requirement in (
+            "one automatic repair pass",
+            "same native delivery session",
+            "same independent review session",
+            "separate",
+            "explicit requeue",
+            "second rejection",
+            "clean unchanged HEAD",
+            "planned specs and integration checks",
+            "business regression",
+            "architecture gaps",
+            "inaccurate wiring",
+            "canonical ownership",
+            "nonblocking followups",
+            "plugin.enable",
+            "provider/profile",
+            "read back",
+            "subsequent",
+            "synchronizer",
+            "watcher",
+        ):
+            assert requirement.lower() in text.lower(), requirement
+    assert "models stay in StackOS settings" in source
+    assert "source edits alone" in source.lower()
+    assert "delivery.delivery_agent.instructions" in local
+    assert "delivery.review_agent.instructions" in local
+    assert "preserving names, hosts, models" in source
+    assert "without a main-agent message relay" in " ".join(
+        preset.operating_contract.responsibilities
+    )
 
 
 def test_branding_skill_preset_names_evidence_lock_and_level2_boundary() -> None:

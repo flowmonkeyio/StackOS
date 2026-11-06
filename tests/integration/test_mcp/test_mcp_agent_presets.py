@@ -206,10 +206,10 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     expected = {item["preset"]["summary"]["key"]: item for item in raw["required_agents"]}
     actual = {item["preset"]["key"]: item for item in compact["required_agents"]}
     expected_versions = {
-        "stackos.sdlc.requirements-flow-definer": "0.3.2",
-        "stackos.sdlc.planning": "0.3.2",
-        "stackos.sdlc.delivery": "0.3.2",
-        "stackos.sdlc.delivery-reviewer": "0.3.2",
+        "stackos.sdlc.requirements-flow-definer": "0.3.3",
+        "stackos.sdlc.planning": "0.3.3",
+        "stackos.sdlc.delivery": "0.3.3",
+        "stackos.sdlc.delivery-reviewer": "0.3.3",
     }
     assert set(actual) == set(expected) == set(expected_versions)
     for key, item in actual.items():
@@ -248,6 +248,35 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     reviewer = actual["stackos.sdlc.delivery-reviewer"]["preset"]
     assert "every executable child" in " ".join(reviewer["must_do"])
     assert "pass/repair/blocked recommendation" in " ".join(reviewer["handoff_outputs"])
+    full_reviewer = expected["stackos.sdlc.delivery-reviewer"]["preset"]["preset"][
+        "prompt_contract"
+    ]
+    assert reviewer["must_do"] == full_reviewer["must_do"]
+    for requirement in (
+        "planned specs and integration checks",
+        "business regression",
+        "architecture gaps",
+        "inaccurate wiring",
+        "canonical ownership",
+        "nonblocking followups",
+        "both reject and approve",
+        "genuinely unavailable required verification blocks",
+        "second rejection",
+    ):
+        assert requirement in " ".join(reviewer["must_do"]), requirement
+    full_delivery = expected["stackos.sdlc.delivery"]["preset"]["preset"]["prompt_contract"]
+    assert delivery["must_do"] == full_delivery["must_do"]
+    assert "new descendant commit" in " ".join(delivery["must_do"])
+    compact_skill = compact["required_skill_presets"][0]["preset"]
+    full_skill = raw["required_skill_presets"][0]["preset"]
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.4.3"
+    full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
+    # Skill lists are bounded navigation; raw retains the full contract.
+    assert compact_skill["must_do"] == full_instructions[:25]
+    assert "Adopt guidance manually per project" in " ".join(compact_skill["must_do"])
+    assert "one automatic repair pass" in " ".join(compact_skill["must_do"])
+    assert "second rejection" in " ".join(compact_skill["must_do"])
+    assert "Give concise ticket start/end" in " ".join(full_instructions)
 
 
 def test_branding_content_production_presets_resolve_end_to_end(

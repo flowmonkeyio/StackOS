@@ -394,6 +394,50 @@ safe refs/query/snapshot only, no actor/outbound spoofing, provider work or mode
 execution. Clear private search text and apply filters before analysis; read
 [the actual host and result protocol](../plugins/finance/references/workflow-handoffs.md#management-review-request-and-result).
 
+## Automated delivery results and manual instruction adoption
+
+`tracker.startDelivery` freezes effective project defaults plus task overrides
+once. Delivery returns only `status` (complete/blocked), `summary`, `commit_sha`;
+review returns only `decision` (approve/reject/blocked), `summary`, `commit_sha`,
+`followups` (text objects, empty array when none). Review executes planned specs
+and relevant integration checks, reporting commands/results and exact SHA.
+Failed required specs reject; unavailable required verification blocks. Scoped
+required repairs stay in summary; unrelated notes stay solely in followups and
+never enter actionable prompts, dependencies or automatic work.
+
+The existing engineering loop persists native role sessions, attempt receipts
+and `repair_pass_used` in ticket automatic-delivery evidence. It routes a valid
+scoped rejection to the same delivery session for one separate repair commit,
+then resumes the same reviewer on the new SHA. Both reject and approve require
+clean unchanged HEAD. The repair budget survives explicit requeue; blocked checks,
+native/access/model/resume failure, candidate mismatch or second rejection stops
+the same task. There is no fresh-session, host or model fallback. Main owns
+workflow phase gates and integrated signoff. See [task delivery](task-tracker.md#automated-task-delivery)
+for the stored session/followup shape and native execution modes.
+
+Source/local guidance changes require manual adoption per project through the
+existing local-admin engineering `plugin.enable` configuration owner. Ordinary
+MCP grants do not authorize that setup. Read the current configuration, copy its
+complete `delivery` object, replace only selected role `instructions`, and save
+that object; a supplied `delivery` replaces the key. Preserve names, task/role
+hosts, models, provider/profile and unrelated fields, then read back exact equality
+outside those instruction strings and exact content equality inside them. Keep
+the approved source refs/revisions and candidate with the receipt, and verify a
+subsequent new handoff prompt. No source edit refreshes saved prompts or active/
+historical snapshots, and no synchronizer, watcher or cross-project rollout exists.
+
+For this repository the manual mapping after independent candidate approval is:
+
+| Existing saved field | Accepted local source |
+| --- | --- |
+| `delivery.delivery_agent.instructions` | `.codex/agents/sdlc-delivery.toml` parsed `developer_instructions` |
+| `delivery.review_agent.instructions` | `.codex/agents/sdlc-delivery-reviewer.toml` parsed `developer_instructions` |
+
+The main agent performs this current-project setup separately from source
+delivery, after agents are quiescent for any required installed activation.
+Other projects select and adapt their own available sources individually; host
+files are optional and no other project is changed by this handoff.
+
 ## Human task content
 
 `tracker.updateTaskContent` is an exact-path browser-safe REST/CLI operation

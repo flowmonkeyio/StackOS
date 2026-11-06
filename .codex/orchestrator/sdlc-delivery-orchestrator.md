@@ -1,8 +1,8 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.4.2
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.4.3
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
-Workflow: `engineering.tracked-delivery` v0.4.1 source contract
+Workflow: `engineering.tracked-delivery` v0.4.2 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
 
 This is the StackOS repository adaptation, not a subagent. The main agent owns
@@ -66,7 +66,7 @@ tracker work applies only when no workflow lifecycle was invoked.
 
 ## Prepare Executable Work
 
-For new v0.4.1 plans the sequence is:
+For new v0.4.2 plans the sequence is:
 
 `scope-work -> define-requirements -> discover-impact -> design-approach ->
 design-tests -> plan-tickets -> review-design -> deliver-tickets ->
@@ -122,14 +122,22 @@ by role into one task snapshot. Defaults use existing local-admin `plugin.enable
 no ticket settings or required `.codex` folder. The shared host capability/model
 catalog owns native selections; never silently substitute another host or model.
 Gemini and Hermes reviewers use normal native permissions with review-only
-instructions and no enforced read-only isolation. Retain supported native review
-controls and record the actual mode in launch receipts.
+instructions and no enforced read-only isolation. The shared capability owner selects test-capable native review permissions
+and normal approval review. Reviewers may create ordinary test outputs but must
+not change production files, acceptance tests or commits. Record the actual mode
+and limitations in launch receipts.
 
 Each repository ticket produces a separate scoped commit after focused checks,
 then receives independent exact-commit review. Both receipts name full
 `commit_sha`. Protected `.git`/`.codex` writes use normal approval review; stop on
 denial. Automatic delivery mechanically records approved child results and
-advances serially; rejection or failure stops the same task without retry.
+advances serially. A valid scoped rejection is persisted before one automatic
+repair pass in the same native delivery session; require a separate new descendant
+repair commit, then resume the same independent review session on that exact SHA.
+Validate clean unchanged HEAD for reject and approve. Preserve native sessions,
+attempt history and `repair_pass_used` across explicit requeue. Blocked required
+verification, native/access/model/resume failure, candidate mismatch or a second
+rejection stops the same task without fresh-session, host or model fallback.
 Main retains scope, workflow phase gates, integration, findings adjudication and
 final claims. Do not compete with the automatic loop for ticket lifecycle writes.
 
@@ -180,6 +188,23 @@ The following dispatch and acceptance steps apply to terminal-managed delivery:
 
 ## Evidence And Feedback
 
+Reviewers execute relevant planned specs and integration checks themselves and
+report commands/results/current SHA. Failed required specs reject; genuinely
+unavailable required verification blocks. Within ticket plus integration scope,
+cover business regression, architecture gaps, inaccurate wiring and canonical
+ownership where relevant. Required repairs cite scoped criteria/evidence. Put
+unrelated findings only in separate nonblocking followups, never required-repair
+summary, dependencies, repair prompts or automatic work. Explicit automatic
+handoff authorizes routing stored scoped rejection without main message relay;
+main retains scope admission and final claims.
+
+Automatic delivery returns `status`, `summary`, `commit_sha`; review returns
+`decision` (approve/reject/blocked), `summary`, `commit_sha`, `followups` (text
+objects, empty array when none). Existing ticket automatic-delivery evidence owns
+native sessions and attempts; task context followups retain text, source_ticket_key,
+source_attempt and created_at. Keep method in guidance, occurrence phase/attempt/
+SHA/persisted review_result in prompts, and models in StackOS settings.
+
 Map each criterion to ticket or integration proof before delivery. Use TDD or
 red-first proof when behavior/contract risk warrants it. Choose manual depth
 from no manual step, focused smoke, full manual signoff, browser walkthrough,
@@ -201,6 +226,27 @@ Use canonical evidence refs rather than duplicate ledgers or review matrices.
 Preserve existing JSON evidence/history when patching: fields replace rather
 than deep-merge. Quality determines proof depth; reuse current evidence and
 stop repeating checks once they answer the relevant risk.
+
+## Manual Current-Project Instruction Refresh
+
+After independent source/local candidate approval, main manually maps parsed
+`developer_instructions` from `.codex/agents/sdlc-delivery.toml` to
+`delivery.delivery_agent.instructions` and from
+`.codex/agents/sdlc-delivery-reviewer.toml` to
+`delivery.review_agent.instructions` in this project only. Read the existing
+engineering plugin configuration through its local-admin setup owner and copy
+the complete delivery object before replacing only those two strings through
+`plugin.enable`; a supplied delivery object replaces the key. Preserve names,
+hosts, models, provider/profile and every other setting. Read back exact equality
+of instructions and all preserved settings, retaining approved source refs/versions
+and candidate identity. Prove the subsequent new rehearsal task snapshot and
+actual prompt include the new method and scoped feedback, excluding followups.
+
+Source edits alone update neither saved instructions nor active/historical task
+snapshots. Keep existing runs frozen. Other projects adapt individually using
+their own available sources; no mandatory `.codex` folder, synchronizer, watcher
+or cross-project rollout. Installed activation and new-task prompt proof remain
+main-owned integration work; source validation does not claim them complete.
 
 ## Recovery And Closeout
 

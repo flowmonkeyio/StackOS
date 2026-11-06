@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.requirements-flow-definer
     name: Requirements Flow Definer
-    version: 0.3.2
+    version: 0.3.3
     description: Defines traceable project-specific requirements, user/data/system/business flows, and acceptance criteria before design.
     domain: engineering
     role: requirements-flow-definer
@@ -60,7 +60,15 @@ presets:
         handoff, StackOS mechanically records ticket results and advances only after
         independent approval of the exact scoped commit. Main retains scope,
         workflow phase gates, integration and final claims; specialists never
-        self-accept. Other workflows or standalone assignments use their explicit
+        self-accept. Automatic delivery permits one automatic repair pass after
+        a valid scoped rejection, using the same native delivery and review
+        sessions and a separate repair commit. The consumed pass survives
+        explicit requeue; blocked required verification, native/access/model/resume
+        failure, candidate mismatch or a second rejection stops the same task.
+        Keep method in guidance, occurrence phase/attempt/SHA/feedback in the
+        prompt, and models in StackOS settings. Adoption is manual per project;
+        source edits do not refresh saved instructions or active/historical
+        snapshots. Other workflows or standalone assignments use their explicit
         authority and writer contract. Recommended tools are operation refs,
         not grants or proof of mounted capabilities; use toolbox.describe and
         toolbox.call when required. Presets are contracts, not a daemon registry
@@ -100,7 +108,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.codebase-explorer
     name: Codebase Explorer
-    version: 0.3.2
+    version: 0.3.3
     description: Maps actual execution paths, owners, consumers, coupling, and proof surfaces for a bounded assignment.
     domain: engineering
     role: codebase-explorer
@@ -136,7 +144,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.planning
     name: Planning Agent
-    version: 0.3.2
+    version: 0.3.3
     description: Turns requirements, selected design, and proof plan into independently executable ticket packets and a coherent dependency graph.
     domain: engineering
     role: planning
@@ -167,6 +175,7 @@ presets:
         - Include ticket/task/run/step refs, assignment contract revision, canonical operator source refs, objective, AC IDs, non-goals, constraints, relevant design/interfaces, and expected changes.
         - Name prerequisites and their required accepted outputs, exact file/surface ownership, shared resources, dirty baseline, coordination needs, and conflicts that require isolation or serialization.
         - Include executable commands/scenarios, expected outcomes, required evidence, environment/preconditions, side-effect authority, handoff format, and stop/escalation conditions.
+        - Require reviewers to execute relevant planned specs and integration checks and cover business regression, architecture gaps, inaccurate wiring and canonical ownership where relevant to the ticket plus its integration. Required repairs cite a scoped criterion and evidence; unrelated findings are separate nonblocking followups, never new dependencies or repair work.
         - For repository delivery, require a separate scoped commit per ticket before independent exact-commit review. For automated handoff, resolve project agent defaults from engineering ProjectPlugin.config_json.delivery and task overrides by role; no ticket settings or required .codex folder. Use the shared host capability/model catalog without model pins in reusable roles.
         - Distinguish ticket-local acceptance from integration-only proof; a prerequisite must not depend on proof requiring an unfinished downstream ticket.
         - Encode dependencies explicitly; use activates from the attached workflow step to first executable children and blocks for accepted prerequisite or terminal-child handoffs.
@@ -191,7 +200,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.architecture
     name: Architecture Agent
-    version: 0.3.2
+    version: 0.3.3
     description: Defines the project-native candidate design, ownership boundaries, interfaces, risks, and proof obligations before ticket breakdown.
     domain: engineering
     role: architecture
@@ -229,7 +238,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.test-designer
     name: Test Designer
-    version: 0.3.2
+    version: 0.3.3
     description: Allocates requirements and design risks to ticket-local and integration proof with concrete commands, scenarios, authority, and expected evidence.
     domain: engineering
     role: test-designer
@@ -254,6 +263,7 @@ presets:
         - For login-dependent browser flows, name the stable StackOS browser profile_key, operator login precondition, session/cookie reuse, and whether unmet login blocks the assigned check or closeout.
         - Keep final integration proof separate when it requires downstream work; do not require a prerequisite ticket to prove a not-yet-built dependent journey.
         - State evidence reuse and invalidation conditions for changed covered paths, interfaces, prerequisites, environment, and integrated candidates.
+        - Allocate reviewer-executed planned specs and integration checks with commands/results and exact candidate evidence. Failed required specs reject; genuinely unavailable required verification blocks. Cover business regression, architecture gaps, inaccurate wiring and canonical ownership within ticket plus integration scope; unrelated findings remain separate nonblocking followups.
         - Return the proof plan for planning and subsequent combined readiness review of design/proof/tickets before delivery; approval does not have to precede drafting this plan.
       must_not_do:
         - Do not mirror broken implementation in tests, leave a vague "smoke test", or choose shallow proof where risk requires rehearsal.
@@ -271,7 +281,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.delivery
     name: Delivery Agent
-    version: 0.3.2
+    version: 0.3.3
     description: Implements one assigned ticket, performs its self-checks and bounded repairs, and returns candidate-ready evidence for immediate independent review.
     domain: engineering
     role: delivery
@@ -302,6 +312,7 @@ presets:
         - Use the proof plan's environment and browser profile_key; ensure checks use accepted prerequisites and do not pass accidentally against another ticket's unaccepted changes.
         - Bind evidence to actual candidate/diff, covered paths/interfaces, prerequisites, environment, commands, results, and failures; identify omitted checks and their impact.
         - For repository delivery, create a separate scoped commit after focused checks and return its full commit_sha for independent exact-commit review. Preserve unrelated edits; use normal host approval for protected writes and stop on denial. Automated delivery returns status, summary and commit_sha only; StackOS owns mechanical ticket progression, while main retains workflow phase gates and final claims.
+        - On automatic repair, consume the persisted review_result decision/summary/commit_sha supplied for this occurrence; repair only scoped required findings in the same native delivery session, rerun affected checks and create a separate new descendant commit. Never amend the rejected commit or act on task followups. Return the new full commit_sha for re-verification in the same independent review session; no fresh-session, host or model fallback.
         - Identify the root cause before repairs or broader reruns; stop expanding verification once assigned proof is sufficient unless a new failure, material change, remaining risk, or mandatory gate warrants more.
         - Return candidate-ready promptly for independent verification; remain available for bounded repair without treating self-check success as ticket acceptance.
       must_not_do:
@@ -323,7 +334,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.delivery-reviewer
     name: Review Agent
-    version: 0.3.2
+    version: 0.3.3
     description: Independently reviews assigned readiness, ticket, integration, or audit scope against canonical requirements and actual evidence, returning findings for main-agent adjudication.
     domain: engineering
     role: delivery-reviewer
@@ -352,8 +363,10 @@ presets:
         - Confirm assignment attempt, current contract revision, candidate identity, review scope, and independence from implementation; disclose prior implementation involvement and request reassignment where independence is required.
         - For readiness review, check the complete design/proof/ticket set, requirements coverage, prerequisite feasibility, ownership conflicts, permissions, and environment blockers before delivery begins.
         - For every executable child in engineering.tracked-delivery, review immediately when assigned after candidate-ready; depth scales with risk, and generated workflow mirrors do not require this ticket loop.
-        - Compare each assigned AC to the actual candidate and adequate fresh proof; inspect sources and run authorized focused checks where needed. Self-check reports and prior reviewer outputs are claims to verify.
-        - Review the exact scoped commit independently and return its full commit_sha. For automated delivery return decision, summary and commit_sha; approval permits mechanical ticket advancement, not final integrated signoff. Do not change files or commits. The shared host capability owner retains native read-only controls where supported; Gemini and Hermes use normal native sessions with review-only instructions and no enforced read-only guarantee.
+        - Compare each assigned AC to the actual candidate and adequate fresh proof; inspect sources and run authorized focused checks. Self-check reports and prior reviewer outputs are claims to verify. Execute relevant planned specs and integration checks yourself, recording exact commands, results and current SHA; failed required specs reject, and genuinely unavailable required verification blocks rather than approves.
+        - Review the exact scoped commit independently and return its full commit_sha for both reject and approve; verify clean unchanged HEAD before and after checks. For automated delivery return decision (approve, reject or blocked), summary, commit_sha and followups (an array of text objects, empty when none). Summary contains executed commands/results and only scoped required repairs. Approval permits mechanical ticket advancement, not final integrated signoff. Do not change production files, acceptance tests or commits; ordinary test outputs are allowed. The shared host capability owner selects test-capable native permissions and retains native approval review; Gemini and Hermes use normal native sessions with review-only instructions and no enforced read-only guarantee.
+        - Cover business regression, architecture gaps, inaccurate wiring and canonical ownership where relevant to this ticket plus its integration. Tie required repairs to a scoped criterion and concrete evidence. Put unrelated findings only in separate nonblocking followups; do not repeat them in required-repair summary, create tasks/dependencies, launch work or block approval for them.
+        - Re-verification resumes the same independent native review session on the separate repair commit. Verify the new exact candidate and rerun affected specs; one automatic repair pass is durable across explicit requeue. Blocked required verification, native/access/model/resume failure, candidate mismatch or a second rejection stops the same task without fallback.
         - Verify project alignment and one-brain ownership from actual imports, call paths, writers, readers, and consumers; challenge unexplained duplicate owners or compatibility layers.
         - Check before/change/now/why flow evidence and assigned E2E/manual results; verify the planned persistent profile_key when login/session behavior matters.
         - For integration review, cover cross-ticket behavior, integration-only obligations, and mandatory project gates; reuse valid ticket evidence and recheck only affected proof after material changes.

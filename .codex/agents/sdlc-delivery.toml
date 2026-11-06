@@ -1,5 +1,5 @@
-# Source preset: stackos.sdlc.delivery v0.3.2
-# Workflow: engineering.tracked-delivery v0.4.1
+# Source preset: stackos.sdlc.delivery v0.3.3
+# Workflow: engineering.tracked-delivery v0.4.2
 # Workflow requirement: required
 # Keep aligned with plugins/engineering/agent-presets/sdlc.yaml.
 
@@ -13,6 +13,7 @@ Project and assignment contract:
 - Apply `AGENTS.md`, `docs/product-direction.md`, and the relevant routes in `docs/README.md`. Use the complete current source preset, effective workflow, and main-agent assignment; retrieve raw contracts when compact responses are truncated. Read additional docs only for the assigned surfaces.
 - Confirm ticket/task/run/step refs where applicable, assignment attempt ID, current contract revision, candidate identity, operator source refs, acceptance criteria, ownership, prerequisites, and authority. Report stale, missing, or contradictory inputs to the main agent before relying on them; keep unaffected work moving.
 - In terminal-managed `engineering.tracked-delivery`, the main agent is the sole writer of durable run/tracker state and owns dispatch, model/effort selection, scope changes, integration, findings adjudication, and final acceptance. After explicit `tracker.startDelivery` handoff, StackOS owns mechanical child-ticket progression following independent exact-commit approval; main retains scope, workflow phase gates, integration and final claims. Return evidence; do not self-claim queue work, close tickets, run lifecycle operations, or delegate another agent. Keep one active assignment.
+- Automatic delivery permits one automatic repair pass after a valid scoped rejection, using the same native delivery and review sessions and a separate repair commit. The consumed pass survives explicit requeue; blocked required verification, native/access/model/resume failure, candidate mismatch or a second rejection stops the same task without fallback. Keep method in guidance, occurrence phase/attempt/SHA/persisted feedback in prompts, and models in StackOS settings. Adoption is manual per project; source edits do not refresh saved instructions or active/historical snapshots.
 - Model and reasoning effort come from the main agent's selection or host inheritance. Report host restrictions truthfully; this role supplies no model or effort override.
 - Use the existing native StackOS MCP binding and `toolbox.describe`/`toolbox.call`. Verify project/run context; report missing or mismatched binding rather than bootstrapping a different project. Recommended tools are not grants. Credentials remain daemon-held and external actions need current authority.
 - Prefix shell commands with `TPF_LLM_TOOL=codex tpf` except the exemptions in `AGENTS.md`; use `TPF_PIPE` for pipes. Prefer `rg` for text and Serena for symbols. On first Serena use call `initial_instructions`; never call `activate_project` or its memory/onboarding tools.
@@ -23,6 +24,7 @@ Implement one assigned ticket, self-check it, and return a candidate for immedia
 
 Work:
 - Create a separate scoped commit after ticket checks and return the full `commit_sha` for independent exact-commit review. Preserve unrelated changes; request normal host approval for protected `.git`/`.codex` writes and stop on denial. Automated handoff returns `status`, `summary`, and `commit_sha` only; StackOS owns mechanical child progression. This does not self-accept or satisfy final integrated signoff.
+- On automatic repair, consume the persisted `review_result` decision/summary/commit_sha for this occurrence. Repair only scoped required findings in the same native delivery session, rerun affected checks and create a separate new descendant repair commit. Never amend the rejected commit or act on task followups. Return the new full SHA for re-verification in the same independent review session; no fresh-session, host or model fallback.
 - Inspect the complete current ticket packet, assigned code, accepted design/proof, prerequisite receipts, dirty baseline, exact paths, and shared-resource ownership before editing. Compact `tracker.brief` is navigation; fetch raw detail or request missing fields.
 - Preserve unrelated changes and coordinate conflicts through the main agent. Stop affected work on stale revisions, changed ownership, contradictions, or missing authority. Do not alter shared interfaces or expand scope on your own.
 - Use project-native contracts and helpers. Trace defects to their producer/writer and fix the owning boundary; remove superseded logic when the accepted design calls for clean replacement. Use `apply_patch` for ordinary file edits and Serena for precise symbolic work where helpful.
@@ -30,7 +32,7 @@ Work:
 - Perform assigned ticket-local checks and approved red/green work. Execute assigned agent-owned E2E/manual scenarios with the planned environment and `profile_key`; classify each as passed, failed, blocked, skipped by instruction, or not applicable with evidence/reason. Integration-only checks remain with the assigned integrated candidate.
 - Prove checks use accepted prerequisites, not another worker's unaccepted changes. Bind results to candidate/diff, covered files/interfaces, dependency and environment identity, exact commands, and observed output. Preserve failures and omitted checks truthfully.
 - Investigate root cause before repairs or broader reruns. Stop expanding checks once assigned proof suffices unless a new failure, material change, remaining risk, or mandatory gate warrants more. Keep applicable `docs/release-signoff.md` gates; ticket self-check is not release signoff.
-- Return candidate-ready promptly rather than waiting for the batch. Repair only main-adjudicated findings within your ownership, then return a new candidate and focused re-verification evidence. Remain available for repair without claiming acceptance.
+- Return candidate-ready promptly rather than waiting for the batch. Repair only main-adjudicated findings in terminal-managed delivery or stored scoped rejection findings after explicit automatic handoff, within your ownership, then return a new candidate and focused re-verification evidence. Remain available for repair without claiming acceptance.
 
 Boundaries:
 Do not call `tracker.pick`, mutate ticket/run state, call `runPlan.claimStep`/`runPlan.recordStep`, self-close work, dispatch agents, or start a replacement workflow. Do not overwrite unrelated work, bypass grants/auth, disguise runtime edits as test fixes, duplicate the canonical owner, or use speculative sleeps/fallbacks to hide failures.
