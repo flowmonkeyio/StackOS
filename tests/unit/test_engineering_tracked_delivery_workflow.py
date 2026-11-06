@@ -1,8 +1,7 @@
-"""Contract tests for the generic engineering tracked-delivery workflow."""
+"""Existing contract checks for the engineering tracked-delivery template."""
 
 from __future__ import annotations
 
-from copy import deepcopy
 from pathlib import Path
 
 import yaml
@@ -10,237 +9,121 @@ from jsonschema import Draft202012Validator
 
 from stackos.workflows.template_schema import validate_workflow_template_obj
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-WORKFLOW_PATH = REPO_ROOT / "plugins/engineering/workflows/tracked-delivery.yaml"
+WORKFLOW_PATH = (
+    Path(__file__).resolve().parents[2] / "plugins/engineering/workflows/tracked-delivery.yaml"
+)
 
 
 def _workflow() -> dict:
-    loaded = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
-    assert isinstance(loaded, dict)
-    return loaded
+    return yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
 
 
-def _output(workflow: dict, key: str) -> dict:
-    return next(item for item in workflow["outputs"] if item["key"] == key)
+def _schema(workflow: dict, key: str) -> dict:
+    return next(item["schema"] for item in workflow["outputs"] if item["key"] == key)
 
 
-def _verification_summary() -> dict:
-    return {
-        "checks": [
-            {
-                "check_id": "workflow-contract",
-                "kind": "automated",
-                "required": True,
-                "status": "passed",
-                "executed": True,
-                "scope": ["engineering.tracked-delivery"],
-                "checked_at": "2026-07-16T21:05:00Z",
-                "evidence_refs": ["engineering-evidence-1"],
-                "command_or_run_ref": (
-                    "uv run pytest tests/unit/test_engineering_tracked_delivery_workflow.py -q"
-                ),
-                "counts": {"passed": 4, "failed": 0, "skipped": 0},
-                "lifecycle_state": "current",
-            }
-        ],
-        "failed_checks": [],
-        "required_unexecuted": [],
-        "coverage_gaps": [],
-        "validity_status": "valid",
-    }
-
-
-def _impact_map() -> dict:
-    return {
-        "data_model": [],
-        "operations": [],
-        "adapters": [],
-        "permissions": [],
-        "ui": [],
-        "tests": ["tests/unit/test_engineering_tracked_delivery_workflow.py"],
-        "docs": [],
-        "removals": [],
-        "ownership": {
-            "canonical_owner": "plugins/engineering/workflows/tracked-delivery.yaml",
-            "existing_pattern": "Built-in versioned workflow template",
-            "active_consumers": ["workflow template loader"],
-            "intended_change": "extend",
-        },
-        "scope_deltas": {},
-    }
-
-
-def test_tracked_delivery_v040_keeps_one_key_and_twelve_steps() -> None:
+def test_tracked_delivery_v07_has_four_role_sessions_and_observed_handoff() -> None:
     workflow = _workflow()
     validation = validate_workflow_template_obj(workflow)
-
-    assert validation.valid is True, validation.errors
+    assert validation.valid, validation.errors
     assert workflow["key"] == "engineering.tracked-delivery"
-    assert workflow["version"] == "0.4.0"
+    assert workflow["version"] == "0.7.0"
     assert [step["id"] for step in workflow["steps"]] == [
-        "scope-work",
-        "define-requirements",
-        "discover-impact",
-        "design-approach",
-        "design-tests",
-        "plan-tickets",
-        "review-design",
-        "deliver-tickets",
-        "verify-delivery",
-        "review-delivery",
-        "audit-tracker",
-        "release-closeout",
+        "plan-task",
+        "implement-task",
+        "review-task",
+        "write-tests",
+        "handoff",
     ]
-    stackos_skill = next(
-        item for item in workflow["skill_requirements"] if item["skill_ref"] == "stackos:stackos"
-    )
-    assert stackos_skill["requirement"] == "required"
-    requirements = {item["role"]: item["requirement"] for item in workflow["agent_requirements"]}
-    assert requirements["planning"] == "required"
-    assert requirements["delivery"] == "required"
-    assert requirements["architecture"] == "recommended"
-    assert requirements["test-designer"] == "recommended"
-    assert requirements["delivery-reviewer"] == "required"
-    selection_text = " ".join(workflow["when_to_use"]).lower()
-    assert "follow the sdlc" in selection_text
-    assert "release-grade" in selection_text
+    assert len(workflow["policies"]) == 6
+    roles = [item["role"] for item in workflow["agent_requirements"]]
+    assert roles == ["planner", "executor", "reviewer", "test-writer"]
+    assert len(set(roles)) == 4
+    assert workflow["steps"][3]["depends_on"] == ["review-task"]
+    assert "observed" in workflow["steps"][-1]["title"].lower()
 
 
-def test_tracked_delivery_is_guidance_driven_with_concise_truth_contracts() -> None:
+def test_tracked_delivery_keeps_intent_and_actual_behavior_explicit() -> None:
     workflow = _workflow()
-    policies = {item["key"]: item["description"] for item in workflow["policies"]}
-
-    assert "agents still decide" in policies["agent_decides_strategy"].lower()
-    assert "project pattern" in policies["scope_drift_control"].lower() or (
-        "planned ownership" in policies["scope_drift_control"].lower()
-    )
-    assert "for repository-bound delivery" in policies["release_candidate_lock"].lower()
-    assert "when evidence suggests" in policies["finding_lifecycle"].lower()
-
-    scope_required = set(_output(workflow, "scope_summary")["schema"]["required"])
-    assert {
-        "delivery_mode",
-        "risk_classification",
-        "operator_constraints",
-        "forbidden_environments",
-        "forbidden_actions",
-        "deferred_gates",
-        "release_authority",
-        "constraint_revision",
-    } <= scope_required
-
-    requirements_required = set(_output(workflow, "requirements_brief")["schema"]["required"])
-    assert {"effective_contract", "contradictions"} <= requirements_required
-
-    impact_schema = _output(workflow, "impact_map")["schema"]
-    assert {"ownership", "scope_deltas"} <= set(impact_schema["required"])
-    assert "root_cause_analysis" not in impact_schema["required"]
-
-    delivery_required = set(_output(workflow, "delivery_summary")["schema"]["required"])
-    assert "release_candidate" not in delivery_required
-    assert "tdd_receipts" not in delivery_required
-
-    review_required = set(_output(workflow, "review_summary")["schema"]["required"])
-    assert "pattern_audits" not in review_required
-    assert "delivery_root_cause" not in review_required
-
-    for key in ("design_review", "tracker_audit", "release_summary"):
-        assert _output(workflow, key)["required"] is True
+    steps = {step["id"]: " ".join(step["instructions"]) for step in workflow["steps"]}
+    assert "original task" in steps["plan-task"].lower()
+    assert "Do not write tests" in steps["implement-task"]
+    assert "actual changed code" in steps["review-task"]
+    assert "rejection blocks test writing" in steps["review-task"]
+    assert "after the review" in steps["write-tests"]
+    assert "actual integrated behavior" in steps["handoff"]
 
 
-def test_bug_root_cause_contract_is_conditional_but_structured_when_used() -> None:
+def test_role_receipts_require_complete_execution_and_captured_code() -> None:
     workflow = _workflow()
-    schema = _output(workflow, "impact_map")["schema"]
-    validator = Draft202012Validator(schema)
-    impact = _impact_map()
-
-    assert list(validator.iter_errors(impact)) == []
-
-    incomplete_bug_analysis = deepcopy(impact)
-    incomplete_bug_analysis["root_cause_analysis"] = {"root_cause_owner": "writer"}
-    assert list(validator.iter_errors(incomplete_bug_analysis))
-
-    complete_bug_analysis = deepcopy(impact)
-    complete_bug_analysis["root_cause_analysis"] = {
-        "root_cause_owner": "writer",
-        "bad_state_origin": "producer",
-        "persisted_data_assessment": "No persisted bad state",
-        "repair_boundary": "producer validation",
-        "compatibility_exception": "None",
-        "deletion_condition": "Not applicable",
+    plan = Draft202012Validator(_schema(workflow, "plan_receipt"))
+    implementation = Draft202012Validator(_schema(workflow, "implementation_receipt"))
+    complete_plan = {
+        "thread_id": "thread-plan",
+        "model": "gpt-6-astra",
+        "status": "complete",
+        "prompt": "Plan the request",
+        "started_at": "start",
+        "ended_at": "end",
+        "duration_seconds": 1,
+        "answer": {"status": "complete", "plan": "Implement the change"},
     }
-    assert list(validator.iter_errors(complete_bug_analysis)) == []
-
-
-def test_verification_validity_requires_no_failed_or_required_unexecuted_checks() -> None:
-    workflow = _workflow()
-    schema = _output(workflow, "verification_summary")["schema"]
-    validator = Draft202012Validator(schema)
-    valid = _verification_summary()
-
-    assert list(validator.iter_errors(valid)) == []
-
-    failed = deepcopy(valid)
-    failed["failed_checks"] = ["workflow-contract"]
-    assert list(validator.iter_errors(failed))
-
-    incomplete = deepcopy(valid)
-    incomplete["required_unexecuted"] = ["release-signoff"]
-    assert list(validator.iter_errors(incomplete))
-
-    false_valid = deepcopy(valid)
-    false_valid["checks"][0]["status"] = "failed"
-    assert list(validator.iter_errors(false_valid))
-
-    optional_failure = deepcopy(valid)
-    optional_failure["checks"][0]["required"] = False
-    optional_failure["checks"][0]["status"] = "failed"
-    assert list(validator.iter_errors(optional_failure))
-
-    contradictory_counts = deepcopy(valid)
-    contradictory_counts["checks"][0]["counts"]["failed"] = 1
-    assert list(validator.iter_errors(contradictory_counts))
-
-    stale_required_proof = deepcopy(valid)
-    stale_required_proof["checks"][0]["lifecycle_state"] = "historical"
-    assert list(validator.iter_errors(stale_required_proof))
-
-
-def test_dedicated_review_and_release_outputs_require_explicit_disposition() -> None:
-    workflow = _workflow()
-    review_schema = _output(workflow, "design_review")["schema"]
-    release_schema = _output(workflow, "release_summary")["schema"]
-
-    waived_review = {
-        "disposition": "waived",
-        "reason": "Operator explicitly waived independent design review.",
-        "blockers": [],
-        "repairs": [],
-        "residual_risk": [],
-        "evidence_refs": ["operator-message-1"],
+    assert not list(plan.iter_errors(complete_plan))
+    assert list(plan.iter_errors({**complete_plan, "status": "held"}))
+    complete_implementation = {
+        **complete_plan,
+        "code_sha256": "a" * 64,
+        "changed_paths": ["src/feature.py"],
     }
-    assert list(Draft202012Validator(review_schema).iter_errors(waived_review)) == []
+    assert not list(implementation.iter_errors(complete_implementation))
+    assert list(implementation.iter_errors({**complete_implementation, "changed_paths": []}))
 
-    missing_reason = deepcopy(waived_review)
-    missing_reason.pop("reason")
-    assert list(Draft202012Validator(review_schema).iter_errors(missing_reason))
 
-    held_release = {
-        "decision": "held",
-        "reason": "Release authority has not been granted.",
-        "authority": {
-            "release": "not_granted",
-            "deployment": "not_granted",
-            "production_writes": "not_granted",
+def test_reviewer_rejection_and_missing_observation_evidence_cannot_complete() -> None:
+    workflow = _workflow()
+    review = Draft202012Validator(_schema(workflow, "review_receipt"))
+    handoff = Draft202012Validator(_schema(workflow, "outcome_receipt"))
+    approved = {
+        "thread_id": "thread-review",
+        "model": "gpt-6-astra",
+        "status": "complete",
+        "prompt": "Review the actual code",
+        "started_at": "start",
+        "ended_at": "end",
+        "duration_seconds": 1,
+        "answer": {
+            "verdict": "approve",
+            "findings": [],
+            "missing_requirements": [],
+            "irrelevant_changes": [],
         },
-        "changed_behavior": [],
-        "verification_refs": ["verification-1"],
-        "deployment_state": {"status": "not_authorized"},
-        "recovery_plan": {"summary": "No release side effect occurred."},
-        "residual_risk": [],
+        "verdict": "approve",
+        "code_sha256": "a" * 64,
     }
-    assert list(Draft202012Validator(release_schema).iter_errors(held_release)) == []
+    assert not list(review.iter_errors(approved))
+    assert list(review.iter_errors({**approved, "verdict": "reject"}))
+    demonstrated = {
+        "original_requirements": "The feature works",
+        "observed_behavior": "The integrated check passed",
+        "evidence_refs": ["run:1:handoff:observation:0"],
+        "gaps": [],
+        "status": "demonstrated",
+    }
+    assert not list(handoff.iter_errors(demonstrated))
+    assert list(handoff.iter_errors({**demonstrated, "evidence_refs": []}))
+    assert list(handoff.iter_errors({**demonstrated, "status": "held"}))
 
-    missing_authority = deepcopy(held_release)
-    missing_authority.pop("authority")
-    assert list(Draft202012Validator(release_schema).iter_errors(missing_authority))
+
+def test_observed_handoff_requires_evidence_and_empty_gaps() -> None:
+    workflow = _workflow()
+    handoff = Draft202012Validator(_schema(workflow, "outcome_receipt"))
+    result = {
+        "original_requirements": "Change works in the integrated consumer",
+        "observed_behavior": "The controller executed the declared check",
+        "evidence_refs": ["run:1:handoff:observation:0"],
+        "gaps": [],
+        "status": "demonstrated",
+    }
+    assert not list(handoff.iter_errors(result))
+    assert list(handoff.iter_errors({**result, "gaps": ["Not observed"]}))
+    assert list(handoff.iter_errors({k: v for k, v in result.items() if k != "evidence_refs"}))

@@ -1,0 +1,36 @@
+{
+  "at": "2026-11-04T18:13:19.313090+00:00",
+  "outcome": "stopped_after_two_logic_rejections; rejected edits restored to pre-task baseline",
+  "restored_paths": [
+    "plugins/engineering/scripts/controlled_workspace.py",
+    "plugins/engineering/scripts/delivery.py",
+    "plugins/engineering/scripts/delivery_recovery.py",
+    "plugins/engineering/scripts/reviewer_isolation.py",
+    "docs/workflow-templates.md"
+  ],
+  "baseline_hash_matches": {
+    "plugins/engineering/scripts/delivery.py": true,
+    "plugins/engineering/scripts/delivery_recovery.py": true,
+    "plugins/engineering/scripts/controlled_workspace.py": true,
+    "plugins/engineering/scripts/reviewer_isolation.py": true,
+    "stackos/artifacts/redaction.py": true,
+    "tests/unit/test_engineering_delivery_regressions.py": true,
+    "tests/unit/test_engineering_isolation_recovery.py": true
+  },
+  "git_status_matches_baseline": true,
+  "tests_written": false,
+  "tests_executed": false,
+  "installed": false,
+  "business_runs_changed": false,
+  "reviews": [
+    "independent-review.md",
+    "independent-review-r2.md"
+  ],
+  "retained_candidates": [
+    "review-source/manifest.json",
+    "review-source-r2/manifest.json",
+    "candidate.patch",
+    "candidate-r2.patch"
+  ],
+  "failure_count_for_heuristic_source_admission": 2
+}

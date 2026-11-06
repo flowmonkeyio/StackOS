@@ -1,0 +1,18 @@
+{
+  "scope": "Supported read-only RPC for existing synthetic worker; no turn start/resume",
+  "thread_id": "01a1aa8c-609a-7750-9b3b-2bc4e242035a",
+  "read_succeeded": true,
+  "turns": [
+    {
+      "id": "01a1aa8c-6c7a-7ea2-896e-d893d2d8df23",
+      "status": "failed",
+      "error_present": true,
+      "host_code": "other",
+      "http_status_code": null,
+      "message_categories": [],
+      "item_count": 1,
+      "completed_at": 1793862704
+    }
+  ],
+  "owned_reader_process_closed": true
+}

@@ -1,0 +1,27 @@
+{
+  "status": "held_after_second_independent_rejection",
+  "candidate": "source-admission-candidate",
+  "branch": "codex/source-admission-checked-20261105",
+  "independent_rejections": 2,
+  "reviews": [
+    "independent-review-r1.md",
+    "independent-review-r2.md"
+  ],
+  "first_rejection": [
+    "Credential-labelled destructuring declarations skipped literal-origin admission",
+    "Unsupported selected executable source extensions used an accepting text-only fallback"
+  ],
+  "second_rejection": "Computed credential property key with a renamed default binding bypasses literal checks",
+  "synthetic_counterexample": "function f({[\"password\"]: value = \"synthetic\"}) {}",
+  "frozen_manifest": "review-source-r2/manifest.json",
+  "complete_manifest_sha256": "ea05fd4061eb64900108189e758912019dacaa78dab474b0c3bb6ed5409339e4",
+  "complete_patch_sha256": "170926e50d86b7e42591accc74609f19c46f25fd2229b21a2b9f71c2e2636a5e",
+  "source_contract": "engineering-source-acorn-v2",
+  "candidate_behavior_executed": false,
+  "candidate_tests_written_or_run": false,
+  "candidate_installed": false,
+  "business_run_launched_or_changed": false,
+  "held_candidates_modified": false,
+  "next_candidate_action": "None authorized: preserve stopped source/evidence; do not infer approval for another correction",
+  "independent_unaffected_work": "Separately verify the previously accepted checked-output baseline with synthetic isolated daemon/host fixtures under the latest explicit verification authority; never import or test this stopped candidate"
+}

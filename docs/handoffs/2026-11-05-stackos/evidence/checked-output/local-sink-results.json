@@ -1,0 +1,66 @@
+{
+  "observed_at_utc": "2026-11-05T05:59:52Z",
+  "candidate": "checked-output-candidate",
+  "branch": "codex/checked-output-boundary-20261105",
+  "python": "/Users/adilevinshtein/Documents/Codex/2026-10-24/task/engineering-process-clarity-current/.venv/bin/python",
+  "candidate_import_selection": "explicit PYTHONPATH; probes assert delivery/helper source paths are inside candidate",
+  "local_file_sink_probe.py": {
+    "exit_code": 0,
+    "actual_snapshot_exact_bytes_and_manifest_digest": true,
+    "actual_snapshot_manifest_rejected_before_manifest_write": true,
+    "actual_broker_manifest_rejected_before_source_mutation": true,
+    "actual_broker_edit_exact_bytes_and_digest": true,
+    "actual_role_schema_rejected_before_file_creation": true,
+    "actual_role_schema_exact_bytes_before_stubbed_host_boundary": true,
+    "scope": "Temporary local Git/workspace files; native discovery and dispatch stubbed",
+    "fixture_corrections": [
+      "Resolved macOS temporary path aliases before the exact linked-worktree-root assertion",
+      "Created the snapshot parent fixture directories as the real caller does"
+    ]
+  },
+  "local_process_sink_probe.py": {
+    "exit_code": 0,
+    "actual_child_has_scrubbed_environment_and_logs_redact_canary": true,
+    "actual_child_benign_retained_stdout_stderr_are_byte_identical": true,
+    "actual_final_joined_logs_reject_before_either_file_write": true,
+    "actual_helper_event_pipe_withholds_unsafe_second_record_and_poisons": true,
+    "scope": "Local synthetic Python children and real pipes/files; no native host or daemon"
+  },
+  "preservation": {
+    "approved_source_hashes_matching": 11,
+    "held_parser_hashes_matching": 13,
+    "held_scalar_policy_hashes_matching": 13,
+    "baseline_entries_checked": 2235,
+    "missing_baseline_entries": 0,
+    "unexpected_changed_baseline_files": 0,
+    "installed_delivery_unchanged": true,
+    "held_myb_artifact_unchanged": true
+  },
+  "installed_delivery_sha256": "73cca977172981dbe6dcc45659537944dc97fe3e5128b06580443bc49efde840",
+  "held_myb_artifact_sha256": "57a4640541b82df7e74e5f97bbc252656b855aa52ebe247223755567274c9c16",
+  "business_runs_created": 0,
+  "installation_performed": false,
+  "source_admission_relaxed": false,
+  "final_consolidated_tests": {
+    "passed": 155,
+    "elapsed_seconds": 3.78,
+    "python_version": "3.14.6",
+    "ruff": "passed",
+    "source_hash_mismatches": 0
+  },
+  "additional_bundled_python_check": {
+    "python_version": "3.12.16",
+    "local_file_sink_probe_exit_code": 0,
+    "local_file_sink_probe_checks_passed": 6,
+    "local_process_sink_probe_exit_code": 1,
+    "local_process_sink_probe_failure": "Fixed expected benign stderr omitted packaged interpreter startup warnings; later checks in this probe were not reached under this runtime",
+    "preceding_process_canary_redaction_check_passed": true,
+    "bundled_python_diagnostic_exit_code": 0,
+    "direct_child_emits_startup_warning": true,
+    "supervisor_adds_identical_startup_warning": true,
+    "controller_retains_actual_stdout_and_stderr_bytes": true,
+    "startup_warning": "Could not find platform dependent libraries <exec_prefix>",
+    "production_change": "none",
+    "scope": "Bundled interpreter only with explicit candidate imports; installed daemon, app host and model flow not invoked"
+  }
+}

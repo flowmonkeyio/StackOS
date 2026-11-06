@@ -1,0 +1,18 @@
+{
+  "observed_at_utc": "2026-11-05T07:47:00Z",
+  "interpreter": "/Applications/StackOS.app/Contents/Resources/stackos/.venv/bin/python",
+  "python": "3.12.16",
+  "exit_code": 0,
+  "bytecode_writes_disabled": true,
+  "subprocess_Popen": "replaced with a raising guard before candidate imports",
+  "imported_candidate_modules": [
+    "stackos.cli.engineering_delivery.module",
+    "delivery._diagnostics",
+    "reviewer_isolation",
+    "host_diagnostics"
+  ],
+  "all_four_candidate_paths_asserted": true,
+  "host_launched": false,
+  "stderr": "Could not find platform dependent libraries <exec_prefix>\n",
+  "limitation": "Candidate imports selected explicitly; this is not installed-entrypoint, host execution, or workflow proof. The packaged interpreter startup warning predates this change."
+}

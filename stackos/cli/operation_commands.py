@@ -17,11 +17,12 @@ from .api_client import (
 from .app import actions_app, agent_requests_app, ops_app, run_plans_app, tracker_app
 
 
-def _operation_call(operation_name: str, arguments: dict[str, Any]) -> Any:
+def _operation_call(operation_name: str, arguments: dict[str, Any], **output_options) -> Any:
     return _api_request(
         "POST",
         f"/api/v1/operations/{operation_name}/call",
         body={"arguments": arguments},
+        **output_options,
     )
 
 

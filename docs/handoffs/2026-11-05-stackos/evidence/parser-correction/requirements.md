@@ -1,0 +1,17 @@
+# Original request and boundaries
+
+Adi: “Get stackos back on track.” Resume the execution-blocker work so StackOS can safely drive real engineering tasks. Implement a bounded, materially different parser-based solution with protected-value propagation and snapshot validation if supported by evidence. Obtain fresh independent security/logic review before test writing/execution. Report actual changes, checks, blockers and remaining end-to-end proof.
+
+The hand-written lexer approach is stopped after two independent rejections. Do not retry or extend it, reset its history, exclude the held artifact, edit migration source, or weaken credential scanning. The established regression classes are regex literal misclassification (including statement/ASI contexts), multiline incomplete RHS expressions, missing inherited protected values at the broker, and JavaScript HTML-style comments. Literal/comment/string/regex credential content must not acquire executable-expression exemptions.
+
+Preserve strict rejection of known inherited credential values (including escaped representations) independently of syntax classification. Do not expose these values through model prompts, source tools, command environments, arguments, retained records, errors or logs. Trusted broker admission must receive the same protected-value policy as the controller through a private bounded path.
+
+Use a complete established parser for executable JavaScript syntax; parse failures, unsupported syntax, unavailable or untrusted parser/runtime, invalid offsets or oversized responses must fail closed. Do not evaluate candidate source or use a loose parser/tokenizer as a security boundary. Preserve exact source bytes and manifest integrity. General prose/log redaction remains strict. Legitimate source access must be consistent across snapshot, broker reads/writes, actual-code capture and source supplied to reviewer/test-writer sessions.
+
+Perform identical worker/reviewer snapshot validation before creating or starting a new run; dispatch must still validate current bytes. Preserve all previous run/stop/failure history, model configuration, session identities, reviewer isolation and relevant outcome tools, implementation-before-review-before-tests gating, and bounded recovery policy. No unrelated code changes.
+
+The actual initial blocker is unchanged `chrome-extension/bricklink-content.js` at frozen MYB head `0269fe23cbc06855df3cf0844fefc01c0df700ac`, including variable/null/storage-token expressions and runtime Authorization templates. It may be read for local verification without exposing suspected secret values. No migration run may be relaunched or mutated.
+
+No system software installation, application installation, push, merge, deployment, provider action or managed-database mutation is authorized in this task. Existing local runtime/code and isolated local checks may be used. Retain pre-existing dirty work. The installed app remains unchanged until a separately authorized installation.
+
+Original four-session outcome remains: fresh configurable Astra planner from original requirements; distinct configurable Luna executor; fresh independent Astra review of actual code/outcome and original requirements without executor reports; fresh Luna test writing only after approval. Agent reports or passing checks alone do not establish task completion. Record limitations honestly, including any additional admission blocker encountered during full-source verification.

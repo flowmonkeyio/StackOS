@@ -1,0 +1,13 @@
+{
+  "docs/checked-output-boundary.md": "56d9775a03fa3dd16b898ff500fea38185728cb3c269d98877b21032935facb4",
+  "plugins/engineering/scripts/controlled_workspace.py": "3e300fcb9d62e7d1f9d9a8c2f3ce6dec0c3447efc2f18818036f06778f569e05",
+  "plugins/engineering/scripts/delivery.py": "f8bfcb9396fc594fb71438d5089c8a2b755154f718e93a3acfccfe4149f4ed5f",
+  "plugins/engineering/scripts/delivery_recovery.py": "5eca75a787e0248016fd6a2851fb3a9fde986c68ba26018bd8ad5c4b371df8bc",
+  "plugins/engineering/scripts/reviewer_isolation.py": "2a47587e81ae6231cd7ceeb3f81ea27eb225c58101837d592aabcdfc1a2d28f2",
+  "pyproject.toml": "1abb2a5fbc0c3aea9f645d16c190f9bad7d331af95d5d5a32eac8044757e1c32",
+  "stackos/artifacts/checked_output.py": "09f4144d055a93fb033a983f4287abcf303ac5feefbc1336ca8ef0ba6f7bb814",
+  "stackos/artifacts/redaction.py": "579dc3feef1b1ab0677720a073730e92b02c69636a6ec0536a2e71588a837096",
+  "stackos/cli/api_client.py": "e2d3cbc918cca458fbdc147e426e52df6571a7d0df714ab7efebbcc45526b8c8",
+  "stackos/cli/engineering_delivery.py": "04abbbc5371ecc198f54a9b7ebe9bd367de338a0e090cf034e2cbd474a743ecf",
+  "stackos/cli/operation_commands.py": "f85eb67061df0a39d54b0362e4dfc7123675bcacb744343ecf783315c628c2ed"
+}

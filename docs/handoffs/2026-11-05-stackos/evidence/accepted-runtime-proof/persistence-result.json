@@ -1,0 +1,24 @@
+{
+  "command": "/Users/adilevinshtein/Documents/Codex/2026-10-24/task/engineering-process-clarity-current/.venv/bin/python evidence/accepted-runtime-proof/restart_readback_proof.py",
+  "exit_code": 0,
+  "provenance": "Reconstructed directly from the retained tool result for the successful restart_readback_proof.py invocation; no runtime rerun was performed to create this record.",
+  "bounded_observed_output": [
+    "2026-11-04 23:12:36 [info     ] mcp.server.registered          tool_count=210",
+    "INFO  [alembic.runtime.migration] Context impl SQLiteImpl.",
+    "INFO  [alembic.runtime.migration] Will assume non-transactional DDL.",
+    "{\"canary_row_present\": false, \"event\": \"restart_readback_and_rejection_check\", \"pid\": 52224, \"plan_ids_after\": [1], \"plan_ids_before\": [1], \"plan_status\": \"completed\", \"port\": 55621, \"project_id\": 1, \"protected_request_rejected_before_http\": true, \"receipt_present\": true, \"receipt_sha256\": \"53c4cf13645d6b80983a64e734e15d7b53c735ffe8cdfebed20b34611df22d5b\", \"run_id\": 1, \"run_plan_id\": 1, \"step_status\": \"success\"}"
+  ],
+  "owned_server_lifecycle": {
+    "server_pid": 52224,
+    "port": 55621,
+    "shutdown": "The harness returned exit 0 after calling its owned Uvicorn server stop method and joining its thread.",
+    "external_process_check": {
+      "command": "ps -p 52224 -o pid=,stat=,command=",
+      "result": "Denied by sandbox: zsh:1: operation not permitted: ps"
+    }
+  },
+  "manifest_verification": {
+    "entry_count": 11,
+    "hash_mismatches": []
+  }
+}

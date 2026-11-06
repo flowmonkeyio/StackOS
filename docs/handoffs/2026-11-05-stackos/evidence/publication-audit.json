@@ -1,0 +1,593 @@
+{
+  "scope": "Changed files against github/main plus allowlisted untracked files; current inherited values and canonical JSON spellings, high-confidence credential patterns, private-artifact exclusion, copied-evidence hashes. No credential/session file reads. No claim of exhaustive secret or arbitrary-encoding detection.",
+  "files_checked": 117,
+  "copied_evidence_files_verified": 68,
+  "findings": [],
+  "checked_files": [
+    {
+      "path": ".codex/agents/sdlc-architecture.toml",
+      "sha256": "4c3e3248de4bd2ae6423031b6be47ee90924398fcba6a606f34a5efeca30a208",
+      "bytes": 5534
+    },
+    {
+      "path": ".codex/agents/sdlc-codebase-explorer.toml",
+      "sha256": "1459f8d998fa4d3d1877c07581d7cf8a56ac6ddd2fc580ad455c080fbb0d9024",
+      "bytes": 5041
+    },
+    {
+      "path": ".codex/agents/sdlc-delivery-reviewer.toml",
+      "sha256": "2ec338565cd79e283340eb291152bee76cd8ff867bcf7796c8ad7ab4be405a96",
+      "bytes": 1909
+    },
+    {
+      "path": ".codex/agents/sdlc-delivery.toml",
+      "sha256": "1894790e36c9b079bf700a3d5e79f0f93f897507cbca77700a1735cb999949a5",
+      "bytes": 1377
+    },
+    {
+      "path": ".codex/agents/sdlc-planning.toml",
+      "sha256": "b9e7f59e52f901ec80100bd0bc2e0cc1e37c77a736aefdda77ad527e9ac6c68a",
+      "bytes": 7549
+    },
+    {
+      "path": ".codex/agents/sdlc-requirements-flow-definer.toml",
+      "sha256": "84311773edb1747364f5a1a985dc7f6fdc89e56ffe89ec7acf9c3546743a4d15",
+      "bytes": 5304
+    },
+    {
+      "path": ".codex/agents/sdlc-test-designer.toml",
+      "sha256": "272e1d286a94b58428a55823cf207e1611e7d5d799b0c412b922fcf44fdb9bbe",
+      "bytes": 5782
+    },
+    {
+      "path": ".codex/orchestrator/sdlc-delivery-orchestrator.md",
+      "sha256": "58a960e08936c58a140136dddf93e3468145183a58be157b6786e5faf7fc7027",
+      "bytes": 5702
+    },
+    {
+      "path": "docs/agent-operating-model.md",
+      "sha256": "4c60704931ec38e3ba00d899c0bb813e34b5dc59506c5b44945f05e95165c7d4",
+      "bytes": 36440
+    },
+    {
+      "path": "docs/agent-presets.md",
+      "sha256": "5eee7e6daafd01f09fd3a44d231d677990e92f155e8bf11bb0fcd4ace4cd2c2b",
+      "bytes": 31419
+    },
+    {
+      "path": "docs/checked-output-boundary.md",
+      "sha256": "56d9775a03fa3dd16b898ff500fea38185728cb3c269d98877b21032935facb4",
+      "bytes": 8423
+    },
+    {
+      "path": "docs/engineering-host-diagnostics.md",
+      "sha256": "021a0b6acd1371bb6b3e34f0df246a09582d3437c0f82a0f78e4addcdc42a1c5",
+      "bytes": 2002
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/README.md",
+      "sha256": "2378bded91a02bb38a205475fc4b825ad573c9216a298ebfcbfe5fc2e00ba7b7",
+      "bytes": 17406
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/accepted-runtime-proof/host-readback-result.json",
+      "sha256": "8a5e073c5480bf76f74458d7e0a5b9a3f95354377c2ef901a52c025a45e89ddf",
+      "bytes": 498
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/accepted-runtime-proof/independent-runtime-assessment.md",
+      "sha256": "af5fdf0579eb96e7e8dc1c03cd2570607e58677f2361f2aea7fc4ecb90757252",
+      "bytes": 8201
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/accepted-runtime-proof/limitations.md",
+      "sha256": "b6e09f945a3c801e33cd91a1d9ab9693d557f302969ddb1bbb93db4ce6e62de9",
+      "bytes": 1108
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/accepted-runtime-proof/persistence-result.json",
+      "sha256": "9658a3acd2a990456051b8140c4b98df8752560a48cbbb7fc1783f31e3f68787",
+      "bytes": 1555
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/checked-output/independent-outcome-assessment.md",
+      "sha256": "aa58666bcb861991c92510dab654567804c0f67943e61f8a7eb14acbe2eb5b9b",
+      "bytes": 10318
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/checked-output/independent-review-r1.md",
+      "sha256": "9f9732b2e2b9471b61400e0d84b4206408925be541eaed55d868c7cfef875105",
+      "bytes": 9564
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/checked-output/independent-review-r2.md",
+      "sha256": "4c605d9644dced4a11b7e8a1f5c300880c23e8420ab00512989fd15df7ce42c0",
+      "bytes": 11295
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/checked-output/local-sink-results.json",
+      "sha256": "7cd13359a6a62fcfec54db3f881069a32b3a539e5cd9c4dfe186b78058e0de4f",
+      "bytes": 3318
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/checked-output/requirements.md",
+      "sha256": "488e9485d513a624a9a1175b0c92bdf1a11ff75ce8603026be862e2bb315da30",
+      "bytes": 6257
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/checked-output/review-source-r2/manifest.json",
+      "sha256": "168c5d6a2c1512f6a05a1e12a81515e876fe69a55c7ec0c4dae40b6770496412",
+      "bytes": 1207
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/checked-output/test-session-r2.md",
+      "sha256": "b458500a31f52a4bf760fb3fd50bef9dd7b1e9177589f81fa1066fdc3470e11d",
+      "bytes": 8882
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/historical/independent-clean-source-review.md",
+      "sha256": "e4cfcffee3371e7d0c882359166f5ab4485dffc41efef17261038c8ace9ea1d9",
+      "bytes": 6896
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/historical/independent-live-tool-review.md",
+      "sha256": "6a09c6b1f18a033790bd76628629e1b8140957d58182a4fa6c693d6f0dc6a814",
+      "bytes": 6376
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/historical/independent-post-lint-review.md",
+      "sha256": "f4dbdb43961a147d147ce6344a86fa73a408f12b82cdb77a03f1c5e4c4d8ac32",
+      "bytes": 5802
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/historical/independent-provenance-review.md",
+      "sha256": "0ff81c86e4e128c8ed3cac2a572c84c3b8032bba143e77373e62ca417181e250",
+      "bytes": 4238
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/historical/independent-runtime-recovery-review.md",
+      "sha256": "0ae6792feb943bbb9c7c2c261a51f44d973b35fbfe1dfc245275bebf1ca175c5",
+      "bytes": 6207
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/historical/installed-recovery-final-verified.json",
+      "sha256": "4356c7056a627e8ad72f23a58ae1bd36561972cc407fb8c8814b911a4d851991",
+      "bytes": 2268
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/historical/installed-review-gate-final-verified.json",
+      "sha256": "5e355eef3e2da17a2ca4f62fa660a6bdde778569ba613338523f60b61522ffb5",
+      "bytes": 2540
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/historical/installed-runtime-boundary.md",
+      "sha256": "fc82bfb0479f8dc2d388e078d57be9baa3cde759655c07e24314afe7e5943c56",
+      "bytes": 4910
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/historical/original-requirements-and-clarifications.md",
+      "sha256": "5df1a4438c0185c5bddc3dc2d2cbb044a4df956c11f0fb00dd93f0a7bf152471",
+      "bytes": 5966
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/historical/provenance-fix-handoff.md",
+      "sha256": "c4b7d4aaa40b26b01882b8580e3f8c3f1b3f58b321a4b496c9e45dc153bc1332",
+      "bytes": 3913
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/historical/recovery-user-policy.md",
+      "sha256": "cba1a95a430920f324ea6516e4eed2f881df0603d9e14c064f7d4ff2151186b1",
+      "bytes": 11675
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/historical/requirement-coverage.md",
+      "sha256": "49888a39403ee93f44eceb7b835bbefdbd9c9d76d8a0aaed419103a2078daf97",
+      "bytes": 7948
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/historical/review-input-boundary-deviation.md",
+      "sha256": "b01f244a1ae583b878e59011ceae39d3da1befb2c6efa869413095e840236128",
+      "bytes": 1089
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/host-diagnostics/README.md",
+      "sha256": "dd4514f0eac99c3b8ac80af188c2c9612b883b13134795149c2758f010101a5c",
+      "bytes": 3358
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/host-diagnostics/bundled-import-proof.json",
+      "sha256": "5b2553057c887b733ac2686723cbfb9c6a6aecd9943bd6fd0363499f3fd0ac68",
+      "bytes": 795
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/host-diagnostics/final-manifest.json",
+      "sha256": "664684653a056fa3421391d4221054f48fd8da47370c974c30f3a0577522538b",
+      "bytes": 591
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/host-diagnostics/independent-outcome-assessment.md",
+      "sha256": "dbc9036361fb7c9876c40cb363b1e919c486114c766186b6bd88b8162cdb821c",
+      "bytes": 9384
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/host-diagnostics/independent-review-r1.md",
+      "sha256": "80a9f5ab0693d08616c57081f91aa9a522edf3f5e2d1cd2a40829dfb39e9fd43",
+      "bytes": 5269
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/host-diagnostics/independent-review-r2.md",
+      "sha256": "6536bc43d5acf2df19213d170f12d00d2d17b52679784e46d7df4f7422b6bffa",
+      "bytes": 9740
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/host-diagnostics/pytest-results.xml",
+      "sha256": "976683756d66f450e6858f4c93ed1c2e40f648a07558a37d3e0f43ed16c1a794",
+      "bytes": 14561
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/host-diagnostics/requirements.md",
+      "sha256": "a6a556ce888ee2c7f42a2324f6d9bf17efa641e49e45bedd443d22c1ee1fc240",
+      "bytes": 2192
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/host-diagnostics/test-session-r2.md",
+      "sha256": "85f732163d7daba274f978467acbecda113ddaff9a56b39b918febe623f1dc13",
+      "bytes": 3006
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/imported-source-manifest.json",
+      "sha256": "03c59916a2f181e08e48811aa5a787f261d4c1096baa9436131894a8a342615b",
+      "bytes": 3262
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/inactive-supporting/unreviewed-local-tdlib-pins.patch.txt",
+      "sha256": "ede0f5b51715e60b78d69b819e889dd0969fc48a8fa51d8b3aeabb9bbb3bdb76",
+      "bytes": 1714
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/integration-focused-result.json",
+      "sha256": "79d1b629f74345278872953ed91634b23fb346f52da234764121e41147c25595",
+      "bytes": 946
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/parser-correction/candidate-complete.patch.txt",
+      "sha256": "e3ce6d3ece336a54b66ada89382fa594aaa3022468e74eff0893287f9c9fa81c",
+      "bytes": 25561
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/parser-correction/candidate-r2.patch.txt",
+      "sha256": "ef913c299b15fd82937d7aecf561fc8d54fc16e94bd64be646ec6db8e4eccaa7",
+      "bytes": 26366
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/parser-correction/candidate.patch.txt",
+      "sha256": "b88a6ac9f298cd5160a5140e7ca734a0bef34056b7732623c2cfcb6507171f97",
+      "bytes": 22503
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/parser-correction/hold-result.json",
+      "sha256": "d2dddbb4ac7b3a588fbff761a942dd0ae724ea3e6f35ad979b1760ef4bfa9692",
+      "bytes": 858
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/parser-correction/independent-parser-review-r2.md",
+      "sha256": "3b914a0bba13a4183ba75fe8761ffb3e7bca723a1d304af87b9ddbad106a8912",
+      "bytes": 8357
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/parser-correction/independent-parser-review.md",
+      "sha256": "994a919282b03c53dcbfbece1b4009ab98aa96444acbe9a0befb63e6cbdefd5e",
+      "bytes": 8220
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/parser-correction/parser-provenance.json",
+      "sha256": "4efe9eba1c06e18ac8ca29cc49fde96c7719667c8561306faaa0aa507e67d613",
+      "bytes": 581
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/parser-correction/requirements.md",
+      "sha256": "6ce3e7c02b3c42fbe706581e5069da9a909a258e8b9b1f97d874b2c99a76155f",
+      "bytes": 3479
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/parser-correction/review-source-r2/manifest.json",
+      "sha256": "eb53327ff2f891111a5369dcfdd5b00b184aba9584aba4731f0c893b80cae4e1",
+      "bytes": 1521
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/parser-correction/review-source-r2/plugins/engineering/scripts/vendor/acorn/provenance.json",
+      "sha256": "4efe9eba1c06e18ac8ca29cc49fde96c7719667c8561306faaa0aa507e67d613",
+      "bytes": 581
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/protected-value-policy/candidate-r1.patch.txt",
+      "sha256": "aa0328145ad4a595dec1650eb9f8dc20df88bb2f37613cd1f33aaab65edb3c03",
+      "bytes": 56620
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/protected-value-policy/candidate-r2.patch.txt",
+      "sha256": "f9522e3ca59e3064db357977955a8cebf72637d1ef1edc38ac68240c90dc8f36",
+      "bytes": 65992
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/protected-value-policy/hold-result.json",
+      "sha256": "012c4052c40ed2128175210ac610da99f575decf552ccfe6c9e31f3c437f0d22",
+      "bytes": 770
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/protected-value-policy/independent-review-r1.md",
+      "sha256": "15c0f34bb4c375d7d9acea5bce373f8e9020ea0a7d1c9bec055e66474f0c7852",
+      "bytes": 9563
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/protected-value-policy/independent-review-r2.md",
+      "sha256": "98d50d19da6d3402cc0e63d6c8b5b7ea20a399efc535ae8cac11eabdc9d8410a",
+      "bytes": 9184
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/protected-value-policy/requirements.md",
+      "sha256": "861a6645f3474634a619aead56f44ef35f08c4a95b4bb94f0f28636bfe703c1b",
+      "bytes": 5244
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/protected-value-policy/review-source-r2/manifest.json",
+      "sha256": "206edd4c22fb76a8d4ccd358cea7fdda0cd3e0e8c4a737be49e4f98ec2b8b36a",
+      "bytes": 1411
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/publication-manifest.json",
+      "sha256": "f2c1487224bdada2212452549328da531f8eb29e1affb20b594fc2f49b5f8979",
+      "bytes": 18003
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/scanner-correction/STOPPED.md",
+      "sha256": "84d9c0fdd5cd72fb303c44c01e9cb255c6a3de2f054848aeaba19d2e54051887",
+      "bytes": 2297
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/scanner-correction/candidate-r2.patch.txt",
+      "sha256": "cfcde2913b71c689ccf1b9661be9bd95a8aebb00da912663fe29045c581d5f33",
+      "bytes": 24058
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/scanner-correction/candidate.patch.txt",
+      "sha256": "37ae2e3fc9ed7c8f878c38d8cd06e52d2d3ac5262ebfe6713e6b2dd4104bdd03",
+      "bytes": 17930
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/scanner-correction/independent-review-r2.md",
+      "sha256": "20414136bfe0a2592eb71e3411c09f27047b4fc23d0928c63497abf2161fc5d9",
+      "bytes": 5986
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/scanner-correction/independent-review.md",
+      "sha256": "c458bb7b0698bec707713a754e83f2d94293a7e5d0b3e2cc50b9b162b535a1d3",
+      "bytes": 8559
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/scanner-correction/requirements.md",
+      "sha256": "08b6640f765fc7d5432dc4f193bc9d2b589d8cadbeed7162564eec24a1ca3456",
+      "bytes": 2704
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/scanner-correction/review-source-r2/manifest.json",
+      "sha256": "dfbc89ba5e5f6456f20739ddc22a45380afd9a2f01aa1c54f08553b9b614eb31",
+      "bytes": 799
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/scanner-correction/stop-result.json",
+      "sha256": "017d5a61e13a06d5a06bab6adb29809908df026fff1f9b991d83731c6cc6a19f",
+      "bytes": 1305
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/source-admission-checked/candidate-r1.patch.txt",
+      "sha256": "b9c3ca3f2015eed858d104af14a5800880591950930af0cfdba19af6036dd7c9",
+      "bytes": 293354
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/source-admission-checked/candidate-r2.patch.txt",
+      "sha256": "170926e50d86b7e42591accc74609f19c46f25fd2229b21a2b9f71c2e2636a5e",
+      "bytes": 297796
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/source-admission-checked/hold-result.json",
+      "sha256": "ad42011055511ba7c27c65f24ec54d14acada2e5f509a65e6d56e42666c0b3d2",
+      "bytes": 1545
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/source-admission-checked/independent-review-r1.md",
+      "sha256": "5fa2e31f4f92f8bc2d6931161f60ac204c2db9707833da85fe89f87556e95105",
+      "bytes": 9539
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/source-admission-checked/independent-review-r2.md",
+      "sha256": "d6c549ea7c66e775884389253b6e3f346465cf634704e30fd348e9286ad7c980",
+      "bytes": 8361
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/source-admission-checked/requirements.md",
+      "sha256": "182b96462b3507080a22382ca9f2355c5edfd0ced9b3364a79dd3c9beedb9888",
+      "bytes": 4859
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/source-admission-checked/review-source-r2/manifest.json",
+      "sha256": "1b9cc770f9124e81e57585319d0af1b354e7e1727e16a4c7e4c85613fd1bda0a",
+      "bytes": 1845
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/evidence/source-admission-checked/runtime-provenance.json",
+      "sha256": "ba67f6d7acadecaf051536ad7973362740995403e845b65628acfbd11b7eb28a",
+      "bytes": 420
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/integration-review.md",
+      "sha256": "4221a87ef92d2766709382d986b065f655ff9ee8f8a97d36fbc0ef908eabd1b8",
+      "bytes": 2117
+    },
+    {
+      "path": "docs/handoffs/2026-11-05-stackos/validation.md",
+      "sha256": "26fcb74b9a0634adce2f97725a511af7c5502a8e2d3cc0600abe0da291a5a455",
+      "bytes": 4711
+    },
+    {
+      "path": "docs/operations.md",
+      "sha256": "13a76ff14437947187897e2ab5fe6ac54729517eef07de195bbf50c132cd27a7",
+      "bytes": 56084
+    },
+    {
+      "path": "docs/task-tracker.md",
+      "sha256": "30029a00247935c448f48e2af665358be85c6ae12069d0f868654021738b578f",
+      "bytes": 35943
+    },
+    {
+      "path": "docs/workflow-templates.md",
+      "sha256": "d024184bfe9fb6e2cc356adf30bab00e4ad28d27ea1cbb811d1c53f9b55fb27b",
+      "bytes": 36959
+    },
+    {
+      "path": "plugins/engineering/agent-presets/sdlc.yaml",
+      "sha256": "ecf2d893497f4343ecb253f5b3190afb55012fd9c755dd251f8c7446ab2029ee",
+      "bytes": 36266
+    },
+    {
+      "path": "plugins/engineering/scripts/controlled_workspace.py",
+      "sha256": "3e300fcb9d62e7d1f9d9a8c2f3ce6dec0c3447efc2f18818036f06778f569e05",
+      "bytes": 23504
+    },
+    {
+      "path": "plugins/engineering/scripts/delivery.py",
+      "sha256": "218e5542b09241409826a77f6b5590087a82839690d981626f041ca5200caf85",
+      "bytes": 66093
+    },
+    {
+      "path": "plugins/engineering/scripts/delivery_recovery.py",
+      "sha256": "5eca75a787e0248016fd6a2851fb3a9fde986c68ba26018bd8ad5c4b371df8bc",
+      "bytes": 61118
+    },
+    {
+      "path": "plugins/engineering/scripts/host_diagnostics.py",
+      "sha256": "247cd09198fba291c742adb54f0a2d4786f3342c91192c74a7ed60f6d303bed6",
+      "bytes": 3022
+    },
+    {
+      "path": "plugins/engineering/scripts/reviewer_isolation.py",
+      "sha256": "92a92f5ce77b0af2ea27fe4f5efd848b121ec28b1e389297f8064289007c9c28",
+      "bytes": 44450
+    },
+    {
+      "path": "plugins/engineering/skill-presets/sdlc.yaml",
+      "sha256": "6076f9739f27a55d1dd7558f8325f9c0990464b1cdc179dde2aa14653a702792",
+      "bytes": 5371
+    },
+    {
+      "path": "plugins/engineering/workflows/tracked-delivery.yaml",
+      "sha256": "feb81d3a91ba718fedc929473dc7822722c998b2a5d57d53e2f4e2162e53d029",
+      "bytes": 13863
+    },
+    {
+      "path": "plugins/stackos/skills/stackos/SKILL.md",
+      "sha256": "2ff286ccbd86624ff8644f7497ce975efb06cc0641556dd7c30e571f0cb74c56",
+      "bytes": 31715
+    },
+    {
+      "path": "stackos/artifacts/checked_output.py",
+      "sha256": "09f4144d055a93fb033a983f4287abcf303ac5feefbc1336ca8ef0ba6f7bb814",
+      "bytes": 13751
+    },
+    {
+      "path": "stackos/cli/__init__.py",
+      "sha256": "84f4269fc988eabeb0b40fd3dede2a96182f846e54c688797333ba7117d8a306",
+      "bytes": 2528
+    },
+    {
+      "path": "stackos/cli/api_client.py",
+      "sha256": "e2d3cbc918cca458fbdc147e426e52df6571a7d0df714ab7efebbcc45526b8c8",
+      "bytes": 6052
+    },
+    {
+      "path": "stackos/cli/app.py",
+      "sha256": "8d9c503d501e79a3595c80d4287dabca86a1b3fca4e03ecde70b5a5646291e1b",
+      "bytes": 3048
+    },
+    {
+      "path": "stackos/cli/engineering_delivery.py",
+      "sha256": "04abbbc5371ecc198f54a9b7ebe9bd367de338a0e090cf034e2cbd474a743ecf",
+      "bytes": 688
+    },
+    {
+      "path": "stackos/cli/operation_commands.py",
+      "sha256": "f85eb67061df0a39d54b0362e4dfc7123675bcacb744343ecf783315c628c2ed",
+      "bytes": 44560
+    },
+    {
+      "path": "stackos/operations/tracker/schemas.py",
+      "sha256": "0db06d54997ce5f4ecf4a4f5050451142f3973579d1c69130dc1de3fd29b8381",
+      "bytes": 22983
+    },
+    {
+      "path": "stackos/operations/tracker/write_handlers.py",
+      "sha256": "a36ac0d30a81a08d205223d437dac796f8d61433a79256d9a0a6125518c70447",
+      "bytes": 20768
+    },
+    {
+      "path": "stackos/repositories/tracker/mirrors.py",
+      "sha256": "a4cb5e1ad9143a736a299403bea4fa65831bcdcf44873441df30db75017bb756",
+      "bytes": 30017
+    },
+    {
+      "path": "stackos/repositories/tracker/mutations.py",
+      "sha256": "a997de4167e49d7775688ef9355daf087a38449f4e78e12af7ac074754fe8b55",
+      "bytes": 80737
+    },
+    {
+      "path": "stackos/workflows/run_plan_template_builder.py",
+      "sha256": "108a5d8d6a5d1a51d88b8cfd93cce8e493e952e73c7dfbb36fe6ca3456c429d6",
+      "bytes": 12783
+    },
+    {
+      "path": "tests/integration/test_repositories/test_required_stackos_flow.py",
+      "sha256": "03bd2456f08d1240033894a8324e450dcb3a962f1ecbb45a1dbd0ddfc09b4565",
+      "bytes": 20015
+    },
+    {
+      "path": "tests/integration/test_repositories/test_workflow_templates.py",
+      "sha256": "18881dd0a1ae3f2f3113a9dfb4356a34c5a85dcadc7a75b8763104aa51da30ea",
+      "bytes": 49918
+    },
+    {
+      "path": "tests/unit/test_agent_presets.py",
+      "sha256": "732cbf4ac219b3efad784e34bb4ea9721ee6e6d485c849995d2d097de7619103",
+      "bytes": 47967
+    },
+    {
+      "path": "tests/unit/test_checked_output_boundary.py",
+      "sha256": "589554d3aacf28c44c1691fbe2afb3c8fd3b65e960d0a6b2c788cb9a9ace7aee",
+      "bytes": 18510
+    },
+    {
+      "path": "tests/unit/test_engineering_delivery_regressions.py",
+      "sha256": "0b8a4fb53633d4675802bd1ab18f7a734721aad6d8d87d6c8204d80fb9c4662c",
+      "bytes": 12044
+    },
+    {
+      "path": "tests/unit/test_engineering_host_diagnostics.py",
+      "sha256": "ee667f47d4e386bc389f6c28fae0ff252b217eda14f6f9744b780f753a7f775b",
+      "bytes": 21066
+    },
+    {
+      "path": "tests/unit/test_engineering_isolation_recovery.py",
+      "sha256": "e546f4a903c37f240f1709ab0dc7ccb1438e75e17e00b89c8fdfe56fc6f15d56",
+      "bytes": 20805
+    },
+    {
+      "path": "tests/unit/test_engineering_tracked_delivery_workflow.py",
+      "sha256": "521fd65a7d206e9963fb22838beacc7f65137124f77e526311076821a5738d70",
+      "bytes": 5041
+    },
+    {
+      "path": "tests/unit/test_skill_presets.py",
+      "sha256": "c8a55ca659cd506db4c638f6e2c4002c9d5ca149812f9aa1a714d3d4e216b6ac",
+      "bytes": 19200
+    }
+  ]
+}

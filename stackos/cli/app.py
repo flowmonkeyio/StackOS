@@ -39,6 +39,13 @@ run_plans_app = typer.Typer(
 )
 app.add_typer(run_plans_app, name="run-plans")
 
+delivery_app = typer.Typer(
+    name="delivery",
+    help="Run a bounded, tracked engineering task through separate agent sessions.",
+    no_args_is_help=True,
+)
+app.add_typer(delivery_app, name="delivery")
+
 agent_requests_app = typer.Typer(
     name="agent-requests",
     help="List, claim, and resolve generic StackOS agent request queue items.",
@@ -105,6 +112,7 @@ __all__ = [
     "agent_requests_app",
     "app",
     "autostart_app",
+    "delivery_app",
     "ops_app",
     "run_plans_app",
     "tracker_app",

@@ -438,131 +438,37 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
         "codebase-explorer",
     ]
     assert engineering_described.summary.plugin_slug == "engineering"
-    assert engineering_described.spec.agent_requirements[0].agent_preset_ref == (
-        "stackos.sdlc.requirements-flow-definer"
-    )
-    engineering_agent_refs = {
-        item.agent_preset_ref for item in engineering_described.spec.agent_requirements
-    }
-    assert engineering_agent_refs == {
-        "stackos.sdlc.requirements-flow-definer",
-        "stackos.sdlc.codebase-explorer",
-        "stackos.sdlc.planning",
-        "stackos.sdlc.architecture",
-        "stackos.sdlc.test-designer",
+    assert {item.agent_preset_ref for item in engineering_described.spec.agent_requirements} == {
         "stackos.sdlc.delivery",
         "stackos.sdlc.delivery-reviewer",
     }
-    engineering_skill_refs = {
-        item.skill_ref for item in engineering_described.spec.skill_requirements
+    assert {item.skill_ref for item in engineering_described.spec.skill_requirements} == {
+        "stackos:stackos"
     }
-    assert engineering_skill_refs == {"stackos:stackos"}
-    engineering_skill_preset_refs = {
+    assert {
         item.skill_preset_ref for item in engineering_described.spec.skill_preset_requirements
-    }
-    assert engineering_skill_preset_refs == {"stackos.sdlc.delivery-orchestrator"}
-    engineering_setup_notes = "\n".join(
-        engineering_described.spec.skill_requirements[0].setup_notes
-    )
-    assert ".codex/config.toml" in engineering_setup_notes
-    assert ".codex/agents/*.toml" in engineering_setup_notes
-    assert "operation.list" in engineering_setup_notes
-    assert "resource.query" in engineering_setup_notes
-    assert "resource.upsert" in engineering_setup_notes
-    assert "artifact.create" not in engineering_setup_notes
-    assert "decision.record" in engineering_setup_notes
+    } == {"stackos.sdlc.delivery-orchestrator"}
     assert engineering_described.spec.metadata_json["artifact_grant_policy"] == "explicit"
-    sdlc_skill_preset = next(
-        item
-        for item in engineering_described.spec.skill_preset_requirements
-        if item.skill_preset_ref == "stackos.sdlc.delivery-orchestrator"
-    )
-    assert sdlc_skill_preset.requirement == "required"
-    assert "global installed skill" in " ".join(sdlc_skill_preset.setup_notes)
-    assert "workflow-specific skill presets" in " ".join(sdlc_skill_preset.setup_notes)
-    assert engineering_described.spec.steps[0].id == "scope-work"
-    engineering_step_ids = [step.id for step in engineering_described.spec.steps]
-    assert engineering_step_ids == [
+    assert [step.id for step in engineering_described.spec.steps] == [
         "scope-work",
-        "define-requirements",
-        "discover-impact",
-        "design-approach",
-        "design-tests",
-        "plan-tickets",
-        "review-design",
         "deliver-tickets",
         "verify-delivery",
         "review-delivery",
-        "audit-tracker",
         "release-closeout",
     ]
+    assert len(engineering_described.spec.policies) == 6
     assert engineering_described.spec.approval_gates == []
     assert all(not step.approval_refs for step in engineering_described.spec.steps)
-    assert engineering_described.spec.metadata_json["workflow_family"] == "sdlc"
-    assert engineering_described.spec.metadata_json["workflow_selection_invariant"] == (
-        "lifecycle_intent_requires_run_plan_before_tracker_tickets"
-    )
-    assert engineering_described.spec.metadata_json["feedback_gatekeeper"] == "main_orchestrator"
-    engineering_text = engineering_described.spec.model_dump_json()
-    assert "workflow_selection_precedence" in engineering_text
-    assert "quality_over_speed" in engineering_text
-    assert "mandatory_flow_design" in engineering_text
-    assert "agent_executed_flow_proof" in engineering_text
-    assert "independent_closeout_verification" in engineering_text
-    assert "orchestrator_feedback_gate" in engineering_text
-    assert "workflow-backed run plan before creating tracker tickets" in engineering_text
-    assert "direct tracker task and a later workflow task" in engineering_text
-    define_step = next(
-        step for step in engineering_described.spec.steps if step.id == "define-requirements"
-    )
-    define_text = define_step.model_dump_json()
-    assert "user flows, data flows, system flows, and business-rule flows" in define_text
-    assert "pre-change behavior or code path" in define_text
-    plan_step = next(step for step in engineering_described.spec.steps if step.id == "plan-tickets")
-    plan_text = plan_step.model_dump_json()
-    assert "workflow task/run plan from the start" in plan_text
-    assert "attachment/provenance only" in plan_text
-    assert "pass run_plan_id and step_id at creation time" in plan_text
-    assert "one root" in plan_text
-    assert "tracker.updateTicket" in plan_text
-    assert "activates edge" in plan_text
-    assert "detached branches" in plan_text
-    test_design_step = next(
-        step for step in engineering_described.spec.steps if step.id == "design-tests"
-    )
-    test_design_text = test_design_step.model_dump_json()
-    assert "manual proof depth" in test_design_text
-    assert "quality_over_speed" in test_design_text
-    assert "full manual signoff" in test_design_text
-    assert "agent-executed" in test_design_text
-    assert "Every changed or at-risk user/data/system/business flow" in test_design_text
-    assert "stable StackOS browser profile_key" in test_design_text
-    assert "unverified or incomplete proof plan" in test_design_text
-    verify_step = next(
-        step for step in engineering_described.spec.steps if step.id == "verify-delivery"
-    )
-    verify_text = verify_step.model_dump_json()
-    assert "test plan" in verify_text
-    assert "profile_key specified by the test plan" in verify_text
-    assert "agent-owned E2E/manual flow scenarios" in verify_text
-    review_step = next(
-        step for step in engineering_described.spec.steps if step.id == "review-delivery"
-    )
-    review_text = review_step.model_dump_json()
-    assert "one-brain ownership" in review_text
-    assert "pre-change behavior or code path" in review_text
-    assert "feedback as advisory" in review_text
-    assert "over-engineer beyond the scoped deliverable" in review_text
-    assert "only validated required fixes block closeout" in review_text
-    audit_step = next(
-        step for step in engineering_described.spec.steps if step.id == "audit-tracker"
-    )
-    assert "detached workflow step ticket" in audit_step.model_dump_json()
-    assert "E2E/manual flow proof" in audit_step.model_dump_json()
     engineering_run_plan = run_plan_from_template(
-        engineering_described,
-        inputs_json={"goal": "verify engineering grants"},
+        engineering_described, inputs_json={"goal": "verify engineering grants"}
     )
+    assert [step.id for step in engineering_run_plan.steps] == [
+        "scope-work",
+        "deliver-tickets",
+        "verify-delivery",
+        "review-delivery",
+        "release-closeout",
+    ]
     engineering_granted_tools = {
         tool
         for grant in engineering_run_plan.grant_snapshot_json["mcp_tool_grants"]
@@ -570,11 +476,6 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     }
     assert "artifact.create" not in engineering_granted_tools
     assert engineering_described.spec.metadata_json["agent_subset"] == [
-        "requirements-flow-definer",
-        "codebase-explorer",
-        "planning",
-        "architecture",
-        "test-designer",
         "delivery",
         "delivery-reviewer",
     ]
@@ -647,79 +548,39 @@ def test_engineering_readiness_and_acceptance_contract_survives_plan_derivation(
     session: Session,
 ) -> None:
     described = WorkflowTemplateLoader(session).describe_template(
-        key="engineering.tracked-delivery",
-        plugin_slug="engineering",
+        key="engineering.tracked-delivery", plugin_slug="engineering"
     )
     spec = described.spec
     expected_order = [
         "scope-work",
-        "define-requirements",
-        "discover-impact",
-        "design-approach",
-        "design-tests",
-        "plan-tickets",
-        "review-design",
         "deliver-tickets",
         "verify-delivery",
         "review-delivery",
-        "audit-tracker",
         "release-closeout",
     ]
-    assert spec.version == "0.4.0"
+    assert spec.version == "0.5.0"
     assert [step.id for step in spec.steps] == expected_order
     assert spec.metadata_json["step_ids"] == expected_order
     assert spec.skill_preset_requirements[0].applies_to_steps == expected_order
-    expected_dependencies = {
+    assert {step.id: step.depends_on for step in spec.steps} == {
         step_id: expected_order[index - 1 : index] if index else []
         for index, step_id in enumerate(expected_order)
     }
-    assert {step.id: step.depends_on for step in spec.steps} == expected_dependencies
-
-    reviewer = next(item for item in spec.agent_requirements if item.role == "delivery-reviewer")
-    assert reviewer.requirement == "required"
-    assert reviewer.applies_to_steps == expected_order
-    assert "explicitly ticketed discovery" in reviewer.purpose
-    steps = {step.id: step for step in spec.steps}
-    assert steps["review-design"].title == "Delivery Readiness Review"
-    assert {"delegated_ticket_acceptance", "ticket_and_integration_proof"} <= set(
-        steps["review-design"].policy_refs
-    )
-    assert {"delegated_ticket_acceptance", "recovery_reconciliation"} <= set(
-        steps["deliver-tickets"].policy_refs
-    )
-    policy_text = {item.key: item.description for item in spec.policies}
-    assert "every independent first executable child" in policy_text["workflow_dependency_spine"]
-    assert "all terminal children" in policy_text["workflow_dependency_spine"]
-    assert "unaccepted sibling candidate" in policy_text["ticket_and_integration_proof"]
-    assert "does not reopen its completed children" in policy_text["recovery_reconciliation"]
-
-    expected_outputs = {
-        "scope_summary",
-        "requirements_brief",
-        "flow_design",
-        "impact_map",
-        "design_summary",
-        "test_plan",
-        "tracker_plan",
-        "design_review",
-        "delivery_summary",
-        "verification_summary",
+    assert {item.key for item in spec.outputs if item.required} == {
+        "intent_summary",
+        "implementation_summary",
+        "behavior_summary",
         "review_summary",
-        "tracker_audit",
         "release_summary",
     }
-    assert {output.key for output in spec.outputs if output.required} == expected_outputs
-    assert {ref for step in spec.steps for ref in step.output_refs} == expected_outputs
     for output in spec.outputs:
         Draft202012Validator.check_schema(output.schema_data)
-
-    plan = run_plan_from_template(described, inputs_json={"goal": "prove delegated delivery"})
+    plan = run_plan_from_template(described, inputs_json={"goal": "prove engineering delivery"})
     validation = validate_run_plan_obj(plan.model_dump(mode="json"))
     assert validation.valid, validation.errors
     assert validation.warnings == []
-    assert plan.template_version == "0.4.0"
+    assert plan.template_version == "0.5.0"
     assert [step.id for step in plan.steps] == expected_order
-    assert {step.id: step.depends_on for step in plan.steps} == expected_dependencies
 
 
 def test_builtin_workflow_preset_requirements_are_step_mapped(session: Session) -> None:

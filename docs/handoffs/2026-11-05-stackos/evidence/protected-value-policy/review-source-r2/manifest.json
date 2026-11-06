@@ -1,0 +1,15 @@
+{
+  "docs/protected-value-policy.md": "8a396b7a6b1822e888b5b80e5fd5698f8616c7e7de961e211009d48a17778a1e",
+  "docs/workflow-templates.md": "a25e96da90de64a30e5a4c39a20038c6bb0c536d5a3e7e69e3363a3efbafd8ff",
+  "plugins/engineering/scripts/controlled_workspace.py": "d48fb54fdeca1d31cfc3390c1c2d2aadb5ff8a0143a6f89c621b4348d595b77c",
+  "plugins/engineering/scripts/delivery.py": "2fdb3d727f9835334ef36089132c8c6403cdcb1a8b53568cfb90ba7d81f4c682",
+  "plugins/engineering/scripts/delivery_recovery.py": "084554126ab485d71d15cc026bb6b22d582b878f3708ca29709cdd2da858734e",
+  "plugins/engineering/scripts/reviewer_isolation.py": "23f9175794d1a73220c925a60ab779292936edc518c29f43924dc40ba1e0e1c2",
+  "pyproject.toml": "1abb2a5fbc0c3aea9f645d16c190f9bad7d331af95d5d5a32eac8044757e1c32",
+  "stackos/artifacts/__init__.py": "3897580376316cbec1adf6b355c0888cccecb3e574dd16e73af506192f7880ba",
+  "stackos/artifacts/protected_values.py": "b2fc7d836a8e68f8e4149b83e9b986c3effdc743a4fd038b250de4c35a5e0f5f",
+  "stackos/artifacts/redaction.py": "579dc3feef1b1ab0677720a073730e92b02c69636a6ec0536a2e71588a837096",
+  "stackos/cli/api_client.py": "fb1a6f965ab14642b1a1e833ba1867250c2ddeae1e72ab482232cf1e5d5c3207",
+  "stackos/cli/engineering_delivery.py": "04abbbc5371ecc198f54a9b7ebe9bd367de338a0e090cf034e2cbd474a743ecf",
+  "stackos/cli/operation_commands.py": "15bbc04abf1caed0c1bf4b734159d2a90dd26a5d327ff63091f69ed831fed850"
+}

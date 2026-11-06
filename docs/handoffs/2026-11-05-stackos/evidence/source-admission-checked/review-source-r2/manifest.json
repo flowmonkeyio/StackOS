@@ -1,0 +1,18 @@
+{
+  "docs/engineering-source-admission.md": "54ecfa7026e87bf12e393d525ce9482fc8fe81957d30427ec254234beb61f7d9",
+  "plugins/engineering/scripts/controlled_workspace.py": "1697233ddd6db6c644a658472de26bd0991fac34263e80af2064f2eca661c5b5",
+  "plugins/engineering/scripts/delivery.py": "0a3a3ba2be4c942ed47c73b9542f2e972ac3007fec3c8b4df268e98361dbc9df",
+  "plugins/engineering/scripts/delivery_recovery.py": "1a8c55065aeae7fd6ba9bbc9d4dcf9598d2cddc4d824d962965564951b67fac1",
+  "plugins/engineering/scripts/reviewer_isolation.py": "2a47587e81ae6231cd7ceeb3f81ea27eb225c58101837d592aabcdfc1a2d28f2",
+  "plugins/engineering/scripts/source_admission.py": "909fe82acfa0b89b47fc0d02c64c5409845fdc1ba11f238f1586766e82102adf",
+  "plugins/engineering/scripts/source_classifier.mjs": "74fbb4605e03b58685fb82f62218af1f37b801f5df63464cda5569f8b007da8f",
+  "plugins/engineering/scripts/vendor/acorn/LICENSE": "76a876cf886ff9be2a8b5e2e86514fed06223c8c9f0c1e9ee9606e93841e00b7",
+  "plugins/engineering/scripts/vendor/acorn/PROVENANCE.md": "35a2c10375c184c9885c0adb35b316bc7ae2c7d214e8e4214447b25a5c419db2",
+  "plugins/engineering/scripts/vendor/acorn/README.md": "dfbb7699d8b6c7fe0175c59a7e060486c0167625279c178eddac860d479c6450",
+  "plugins/engineering/scripts/vendor/acorn/acorn.mjs": "b4c8c70200e72bae33cf1085e0ecb1e792c1b6924ed50cab817caf14f51bb249",
+  "pyproject.toml": "1abb2a5fbc0c3aea9f645d16c190f9bad7d331af95d5d5a32eac8044757e1c32",
+  "stackos/artifacts/checked_output.py": "09f4144d055a93fb033a983f4287abcf303ac5feefbc1336ca8ef0ba6f7bb814",
+  "stackos/artifacts/redaction.py": "579dc3feef1b1ab0677720a073730e92b02c69636a6ec0536a2e71588a837096",
+  "stackos/cli/api_client.py": "e2d3cbc918cca458fbdc147e426e52df6571a7d0df714ab7efebbcc45526b8c8",
+  "stackos/cli/operation_commands.py": "f85eb67061df0a39d54b0362e4dfc7123675bcacb744343ecf783315c628c2ed"
+}

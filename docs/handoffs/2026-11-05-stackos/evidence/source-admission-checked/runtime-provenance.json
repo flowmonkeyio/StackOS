@@ -1,0 +1,9 @@
+{
+  "version": "1.4.4",
+  "official_archive_sha256": "c240d7f0ccb90c263a849fcdb09b7ee62630d921348ed6aafda86b9d577bc510",
+  "archive_matches_installer_pin": true,
+  "upstream_binary_sha256": "0a2237cdcfa0d16ef501d9acca9f0026309ef348bea7393a64e8d1e3609565cc",
+  "installed_binary_sha256": "0a2237cdcfa0d16ef501d9acca9f0026309ef348bea7393a64e8d1e3609565cc",
+  "exact_binary_match": true,
+  "executed_or_installed": false
+}

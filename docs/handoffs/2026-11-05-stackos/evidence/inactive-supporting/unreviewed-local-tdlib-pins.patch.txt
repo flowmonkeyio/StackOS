@@ -1,0 +1,29 @@
+diff --git a/desktop/scripts/build-tdlib-runtime-mac.sh b/desktop/scripts/build-tdlib-runtime-mac.sh
+index c8144417..c2ef5b26 100755
+--- a/desktop/scripts/build-tdlib-runtime-mac.sh
++++ b/desktop/scripts/build-tdlib-runtime-mac.sh
+@@ -18,9 +18,9 @@ PYTHON_BIN="${TDLIB_PYTHON:-python3}"
+ OPENSSL_ROOT="${TDLIB_OPENSSL_ROOT:-}"
+ TDLIB_SOURCE_URL="https://github.com/tdlib/td.git"
+ TDLIB_SOURCE_COMMIT="d1085f9cebc5a62379991ae1652673954f229c1f"
+-TDLIB_SOURCE_ARCHIVE_SHA256="5f5ebdb7f658b1a71ba6cb4f823017ad6649352427ce2a274cebc4b0dd2216e9"
++TDLIB_SOURCE_ARCHIVE_SHA256="95da0cdae15b90abe54117499187c66380e5bed6ef760f11e01ce94ee44b4508"
+ TDLIB_VERSION="1.8.67"
+-TDLIB_EXPECTED_LIBRARY_SHA256="c397db26e7596eaf4a37ffb6d9400f2a34d764a26f388e4f4b9bfd41b070d5af"
++TDLIB_EXPECTED_LIBRARY_SHA256="3e377bd49317bbc282b81a85caf11b111028ce1a58139ac9edebc1df67ab083a"
+ TDLIB_BUILD_MANIFEST_VERSION="1"
+ SOURCE_VERIFICATION="inherited-proof-artifact"
+ 
+diff --git a/stackos/integrations/telegram_tdlib/runtime.py b/stackos/integrations/telegram_tdlib/runtime.py
+index 8b19c106..c64e747b 100644
+--- a/stackos/integrations/telegram_tdlib/runtime.py
++++ b/stackos/integrations/telegram_tdlib/runtime.py
+@@ -25,7 +25,7 @@ TDLIB_MANIFEST_FILENAME = "manifest.json"
+ TDLIB_LIBRARY_RELATIVE_PATH = Path("lib/libtdjson.dylib")
+ TDLIB_SOURCE_REPOSITORY = "https://github.com/tdlib/td.git"
+ TDLIB_SOURCE_COMMIT = "d1085f9cebc5a62379991ae1652673954f229c1f"
+-TDLIB_SOURCE_ARCHIVE_SHA256 = "5f5ebdb7f658b1a71ba6cb4f823017ad6649352427ce2a274cebc4b0dd2216e9"
++TDLIB_SOURCE_ARCHIVE_SHA256 = "95da0cdae15b90abe54117499187c66380e5bed6ef760f11e01ce94ee44b4508"
+ TDLIB_BUILD_MANIFEST_VERSION = 1
+ TDLIB_VERSION = "1.8.67"
+ TDLIB_RUNTIME_REPAIR = (

@@ -284,71 +284,91 @@ feedback -> route and media preflight -> canonical Slack thread -> intake reacti
 -> task-created reaction -> engineering.tracked-delivery
 ```
 
-The baseline separates method from specialization. Requirements define what
-must be true, discovery and architecture map how the current project actually
-works, and test design owns the full proof plan before delivery begins. That
-test design includes TDD/red-first proof when needed, targeted automated checks,
-risk-appropriate manual proof, expected outcomes, and the evidence artifacts
-needed for signoff. The orchestrator chooses manual proof depth by reasoning
-from quality, production risk, and user/business impact, not by optimizing for
-speed. That depth may be no manual step, a narrow smoke, full manual signoff, a
-browser/user walkthrough, a provider live check, a migration rehearsal, or an
-operator-owned release gate. Delivery changes the repo, verification executes
-or truthfully marks every relevant proof item, and reviewers challenge
-behavior, test evidence, and durable tracker truth. A template may compact or
-skip optional specialist roles for small work, but it should not erase
-acceptance criteria, dependencies, evidence, or closeout truth from the run
-plan.
+New `engineering.tracked-delivery` plans sequence `plan-task`,
+`implement-task`, `review-task`, `write-tests`, and `handoff`. The StackOS CLI
+launches distinct configured planner, executor, reviewer and test-writer
+sessions. The reviewer receives original requirements and actual code, never
+the executor report; rejection blocks test writing. Only a fresh test writer
+may add tests after approval. Prompts, session IDs, timings, code digest,
+findings and failures are recorded in the run. The handoff remains blocked
+until actual integrated behavior is observed against the original request;
+tests and self-reports are not proof of completion.
+Code capture currently holds on secret-like text, including some harmless
+assignments such as `token = 0`; it never sends a redacted substitute to the
+reviewer and calls that the actual code. Role output is captured with bounded memory and redacted before retained logs
+are written. Workers receive only the explicit host-discovery, locale and login-path
+environment allowlist; provider credentials and controller variables are omitted.
+Known secret values from sensitive controller environment variables are removed
+from event strings, plain stdout/stderr, observations and persisted receipts,
+including JSON-escaped occurrences. Sanitized events and role outputs are stored in StackOS.
+The controller entrypoint is `stackos delivery run --project ID --repo PATH
+--task-file PATH --confirm`. It requires a clean linked worktree, records a
+real plan/run before launching models. Settled failures use the bounded same-run recovery policy; authority denials and unresolved effects are held after inspection.
+Pass `--observation-file PATH` to supply a JSON array of integrated checks,
+each with `requirement`, `argv` (an argument array), and exact `expected_stdout`.
+An optional `"confinement": "read_only"` runs that check through the verified host
+command broker with no writes or network; omission preserves authorized unconfined
+execution. Failed observations receive read-only designer triage. Automatic replay
+requires positive confinement evidence, settled custody and clear authority;
+stdout and unchanged files alone cannot establish that external effects are safe.
+Unconfined or uncertain effects remain held after triage.
+The check specification is not reviewer input. After the fresh test-writing
+session, the controller executes those commands and verifies the unchanged
+candidate. It resumes the same independent reviewer with actual argv, output
+and exit evidence, never expected-output specifications or worker reports.
+That reviewer must approve coverage of every original requirement before handoff. Caller-authored observation receipts are not accepted.
+Reviewer sessions use a private Codex home with a reference to existing file-backed
+authentication; credentials are not copied into prompts or logs. Before each
+turn, the adapter verifies effective permissions, managed requirements, disabled
+host tools, empty instruction/skill sources, the exact configured model and the
+selected profile. It refuses fallback. Read-only command execution and bounded
+image inspection operate on a separate repository snapshot without Git history
+or host logs. Symlinks and special files are rejected. Commands needing writes,
+network, external services or dependencies outside that snapshot and the minimal
+system runtime remain unsupported and must be reported as gaps. Private reviewer
+state is retained for exact thread resume; missing state holds for reconciliation.
+Without suitable checks the outcome remains blocked; UI/manual outcomes are
+not automatically certified. Commands run with the invoking operator's local
+authority and must be authorized for the task. The CLI is synchronous and does
+not automatically replay interrupted work. `--resume-plan` inspects canonical role,
+handoff and continuation checkpoints in the same plan/run; a blocked handoff does
+not authorize another observation. A controller exit closes its worker lease and
+terminates the original process group. Unconfined observation commands can leave detached effects and cannot be
+automatically replayed. Ordinary worker commands use the confined host contract;
+missing closed-broker custody evidence still holds recovery.
+Test-order instructions and final artifact inspection cannot prove that an
+executor never authored transient or disguised test code. Generic run-plan records remain authored
+records; they are not authenticated execution receipts. This controller's
+completion claim uses its own retained role and outcome receipts in the same frozen
+run. Recovery policy `bounded-recovery-v3` assigns one retry and one designer-authorized
+final attempt to each evidence-backed semantic failure; comparison with all prior
+episodes prevents wording, revisions or replacement from resetting recurrence caps.
+Unknown older recovery schemas hold for explicit reconciliation. See the recovery
+contract in [Agent Operating Model](agent-operating-model.md).
 
-Tracked delivery keeps planning and delivery roles required while architecture,
-test-design, and delivery-review specialists are recommended depth tools. The
-main agent selects them from architectural and production risk, records a
-reason when omitting them, and still produces each workflow disposition. This
-keeps the SDLC complete without forcing a subagent or ceremony for every small
-change.
+Ordinary roles use a verified private app-server host. Commands see a filtered
+read-only source view and private writable scratch with no network; only the
+synchronous broker edits the actual repository. Applicable project guidance is
+included as data for ordinary roles. Reviewer input remains original requirements
+and actual outcome only. Use an installed trusted controller outside the candidate
+repository. Requested and host-resolved models are recorded and checked on every
+fresh, resumed, and replacement turn. Private host pointers are retained in the
+canonical run ledger for literal thread continuity.
 
-`engineering.tracked-delivery` compiles material operator input into one
-effective, precedence-aware contract. Current invariants, product decisions,
-implementation constraints, prohibitions, authority, deferrals, supersession,
-and acceptance cases retain the traceability needed for the delivery. Retired
-entries remain auditable but are not supplied beside current requirements as if
-both still applied. Material unresolved contradictions block implementation.
+Supported local failures may retry only with positive scope admission and closed
+broker custody receipts. Every earlier worker and observation affected by replay
+must be reconciled before consuming an allowance or reopening. A preparation
+failure proven to precede dispatch is recorded as not started. Missing custody,
+hard interruption without closure, unknown effects, and actual denials remain
+held; there is no manual assertion that upgrades old unknown receipts. Recovery
+still uses the original attempt, one retry, and one designer-authorized final
+attempt total, with no budget reset. No unattended scheduler is provided.
 
-For repository-bound delivery, the agent identifies the integrated candidate
-covered by verification. Executed evidence records its HEAD commit, staged and
-unstaged diff checksums, untracked-file manifest checksum, covered paths,
-migration head, generated-contract revision, and capture time. A material
-covered change makes affected proof stale and returns the workflow to the
-earliest affected gate. StackOS validates the declared output and evidence
-contracts; the agent decides which evidence was affected from project context.
-
-The test design itself must be verified before implementation starts, either by
-the main orchestrator or a designated reviewer. A mechanical "manual smoke" is
-not a test design when the risk calls for full signoff or a production-like
-rehearsal. Manual proof scenarios should name preconditions, exact user or
-agent steps, expected outcomes, evidence such as screenshots/logs/artifacts,
-and whether each scenario is closeout-blocking, residual, or operator-owned.
-For browser-assisted platform flows that require login, those preconditions
-must also name the stable StackOS browser `profile_key`, state whether the
-operator must log in once, and say whether reusing the resulting cookies/session
-is required for closeout or remains an operator-owned prerequisite.
-
-Reviewer output is evidence to adjudicate, not truth to copy into tickets. The
-orchestrator should classify each reviewer claim before action: valid
-unresolved issue, fixed issue, unsupported/false-positive claim, residual risk,
-or informational note. Status markers should be contextual: ✅ means verified
-good, fixed, or passing; ❌ means an unresolved blocker or failed required
-check; ⚠️ means residual risk, coverage gap, or operator-owned gate; ℹ️ means
-context or a rejected/unsupported claim.
-
-For workflow-backed tracker work, attachment is not readiness. A ticket created
-with `run_plan_id` and `step_id` is contained under the mirrored workflow step,
-but no execution dependency exists until the agent adds dependency edges.
-Tracked-delivery planning must bridge child tickets into the workflow spine:
-an `activates` edge makes the first executable child ready while its parent
-step is active, `blocks` edges hold work until real prerequisites complete, the
-next step blocks on the prior step's terminal child tickets, and
-verification/docs/signoff work cannot float as a ready branch beside delivery.
+Existing run plans retain their frozen step order, grants, output schemas,
+approvals and history. A new source template applies only to future plans after
+the installed workflow is updated. Workflow-backed child tickets still need
+real dependency edges where their order matters; attaching a ticket to a step
+is provenance, not readiness.
 
 The customer feedback baseline is deliberately split. Slack is the canonical
 thread for support work, even when feedback originates in Telegram or another
@@ -631,3 +651,5 @@ Template validation should check:
 - approval gates referenced by steps
 - no embedded secrets
 - no domain-only assumptions in core fields
+
+The shipped engineering plugin owns delivery orchestration in `plugins/engineering/scripts/delivery.py`; the core CLI only loads that fixed shipped controller.

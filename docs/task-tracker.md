@@ -104,8 +104,23 @@ state looks inconsistent. If diagnostics show a system-recoverable lifecycle fai
 replacement plan. `tracker.rejectTask` is a rejection override for independent
 tasks or draft/started workflow plans that should first abort through
 `runPlan.abort`.
-`tracker.linkRunPlan` adds provenance only. It does not make a manual task's
-lifecycle follow the linked run plan.
+By default, `tracker.linkRunPlan` adds provenance only. For a manual task whose
+completion explicitly requires a StackOS flow, call it while the selected plan
+is still a draft, before `runPlan.start`, with
+`require_execution=true` and nonempty `required_step_ids` selected from the
+plan. This binds the exact plan ID and its input digest as an immutable
+requirement; another same-key plan or past completed plan cannot substitute for
+it. It does not transfer
+lifecycle ownership. Completion then needs that plan's run ID, a
+successful terminal plan/run, and claimed, recorded success for each selected
+step. Use `completion_evidence_json.stackos_flow` with `mode: "run"`,
+`run_plan_id`, and `run_id`. A manual fallback must instead record
+`mode: "manual_fallback"`, `failure_reason`, and `failure_ref` while setting
+the task to `failed`; it never counts as flow completion. Ordinary run-plan
+step results are agent-recorded evidence, not action receipts or independent
+review, so check external effects and artifacts separately where required.
+StackOS does not infer flow requirements from task prose or enforce status in
+external trackers.
 
 When an agent needs to create delivery tickets under a workflow step, it should
 call `tracker.createTicket` with `run_plan_id` and `step_id`. StackOS resolves
@@ -458,24 +473,21 @@ the start, then dependency-bridge them into the step chain. Ordinary non-workflo
 tasks may still have several independent roots when the work is genuinely
 parallel.
 
-For engineering SDLC workflow work, the mirrored tickets should preserve the
-requirements-to-release order instead of collapsing everything into one
-implementation ticket:
+New engineering tracked-delivery plans mirror the five actual checkpoints:
 
 ```text
-scope-work
--> define-requirements
--> discover-impact
--> plan-tickets
--> design-approach
--> review-design
--> design-tests
--> deliver-tickets
--> verify-delivery
--> review-delivery
--> audit-tracker
--> release-closeout
+plan-task
+-> implement-task
+-> review-task
+-> write-tests
+-> handoff
 ```
+
+The review step must approve actual code before the test-writing step can run.
+The final handoff stays blocked until actual behavior matches the original
+requirements. Older run plans keep their frozen step order and tracker mirrors. Use child
+tickets and dependency edges only for real delegated work; attachment to a
+workflow step does not by itself establish readiness.
 
 The tracker is the durable execution map. It is not the proof that work is
 correct. Completion evidence should point to the code, commands, manual checks,

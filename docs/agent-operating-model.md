@@ -75,12 +75,19 @@ turns each workflow into the required and recommended role contracts; use those
 communications, support, and engineering roles as one curated project-adapted
 agent set without overlapping responsibilities.
 
-Engineering preparation establishes design and proof before executable ticket
-planning, then reviews the complete delivery plan. Inside one active delivery
-step, the main agent coordinates bounded specialist assignments and immediate
-independent ticket review. It owns durable lifecycle writes, integrates reviewed
-candidates and accepts tickets; specialists return evidence. Final verification
-and review cover assembled behavior and outstanding integration obligations.
+New engineering tracked-delivery plans use five checkpoints: plan, implement,
+review actual code, write tests after approval, and observe the outcome.
+`stackos delivery run` launches four fresh sessions with task or project model
+selection (Astra/Luna defaults). The reviewer receives original requirements
+and actual changed code, with outcome-scoped command/image tools; no executor
+report, plan, host instructions or proposed observation specification is supplied.
+After tests, the same reviewer session must approve actual observed behavior
+before handoff. Rejection stops test writing;
+ambiguous intent stops affected work for an operator answer. StackOS records
+the role prompts, model/session IDs, timings, code digest, findings and failures
+in the run. Actual integrated behavior must still be observed before the final
+step can succeed; green tests alone are insufficient. Existing plans retain
+their frozen order and contracts.
 See [engineering delegation](./agent-presets.md#engineering-delegation-and-acceptance)
 for ownership, concurrency, model-selection and evidence rules. These are plugin
 operating contracts, not a second scheduler inside StackOS core.
@@ -553,3 +560,55 @@ This model keeps the current StackOS principles intact:
 Known operational note: live provider behavior still needs real provider
 credentials for production contract testing. Mock/local tests prove the action
 registry, adapters, auth boundary, audit path, and compact response behavior.
+
+
+Engineering delivery recovery v0.7.0 uses `delivery run --resume-plan <id>` with
+unchanged original task, worktree, observations, and effective model settings.
+Ordinary roles use a verified private app-server host. Commands see a filtered
+read-only source view and private writable scratch with no network; only the
+synchronous broker edits the actual repository. Applicable project guidance is
+included as data for ordinary roles. Reviewer input remains original requirements
+and actual outcome only. Use an installed trusted controller outside the candidate
+repository. Requested and host-resolved models are recorded and checked on every
+fresh, resumed, and replacement turn. Private host pointers are retained in the
+canonical run ledger for literal thread continuity.
+
+Supported local failures may retry only with positive scope admission and closed
+broker custody receipts. Every earlier worker and observation affected by replay
+must be reconciled before consuming an allowance or reopening. A preparation
+failure proven to precede dispatch is recorded as not started. Missing custody,
+hard interruption without closure, unknown effects, and actual denials remain
+held; there is no manual assertion that upgrades old unknown receipts. Recovery
+still uses the original attempt, one retry, and one designer-authorized final
+attempt total, with no budget reset. No unattended scheduler is provided.
+
+The frozen recovery policy is `bounded-recovery-v3`; older recovery schemas hold
+for explicit reconciliation rather than being silently migrated.
+`engineering_recovery` run metadata owns prompts, model/thread lineage, receipts,
+reconciliation, prior step snapshots, and consumed budgets. File digests and test
+archives store paths as values, preserving secret-value checks without treating
+filenames as credential-field labels. A local POSIX worktree lock excludes
+competing host controllers; it is not a distributed lease.
+
+The original designer classifies each failure using durable evidence and compares
+its root cause with every existing episode. Only an evidence-backed distinct
+cause starts a new budget. Wording, phase changes, revisions, replacement, or
+apparent resolution never reset a recurrence's budget. Each episode allows one
+retry, then one designer-authorized final attempt total. The first execution
+retry resumes the literal executor thread; recurrence replaces the executor.
+Design revisions continue in the original designer thread. Reviewers receive
+original requirements and actual outcome only; changed candidates require fresh
+independent review before a fresh test writer. Verified test changes are archived
+before retirement, and prior step results are archived before reopening.
+
+Resume inspects the canonical handoff and consumed continuation checkpoints
+before claiming or dispatching anything. Missing completion or uncertain reopen
+state holds; a blocked checkpoint is not permission to replay. Private reviewer
+state is retained for exact thread resume. Failed observations reach read-only
+designer triage. Optional per-check `"confinement": "read_only"` uses the verified
+host command broker with no filesystem writes or network; omitted confinement
+retains authorized unconfined execution. Automatic observation recovery requires
+positive confinement evidence, settled custody, and no unresolved authority
+refusal. Command output or unchanged files alone do not establish safe replay.
+Unconfined or uncertain effects remain held after triage; real denials are never
+bypassed. Frozen earlier workflow versions are never silently upgraded.

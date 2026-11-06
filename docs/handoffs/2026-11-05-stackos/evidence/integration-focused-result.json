@@ -1,0 +1,22 @@
+{
+  "provenance": "Projection of local JUnit, not a new test execution",
+  "junit_sha256": "eb88936577b371a37f1193162959ef1423ebfa003ef95a6085ffa77af49a6eea",
+  "passed": 152,
+  "failed": 3,
+  "errors": 0,
+  "skipped": 0,
+  "failures": [
+    {
+      "test": "test_builtin_templates_can_be_listed_and_described",
+      "message": "AssertionError: assert {'stackos.sdl....test-writer'} == {'stackos.sdl...ery-reviewer'}\n  \n  Extra items in the left set:\n  'stackos.sdlc.test-writer'\n  'stackos.sdlc.planning'\n  Use -v to get more diff"
+    },
+    {
+      "test": "test_engineering_readiness_and_acceptance_contract_survives_plan_derivation",
+      "message": "AssertionError: assert '0.7.0' == '0.5.0'\n  \n  - 0.5.0\n  ?   ^\n  + 0.7.0\n  ?   ^"
+    },
+    {
+      "test": "test_builtin_public_workflows_have_reviewed_experience_contracts",
+      "message": "AssertionError: engineering.tracked-delivery\nassert None is not None"
+    }
+  ]
+}

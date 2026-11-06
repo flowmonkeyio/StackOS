@@ -1,0 +1,18 @@
+{
+  "at": "2026-11-05T04:59:36.244605+00:00",
+  "state": "held_after_second_independent_rejection",
+  "branch": "codex/protected-value-policy-20261105",
+  "candidate": "/Users/adilevinshtein/Documents/Codex/2026-11-03/task/protected-value-policy-candidate",
+  "candidate_matches_frozen": true,
+  "prior_parser_candidate_unchanged": true,
+  "reviews": [
+    "independent-review-r1.md",
+    "independent-review-r2.md"
+  ],
+  "remaining_blocker": "Structured-field validation does not validate every final serialized JSON byte stream before helper host sends and local manifest/schema/event retention.",
+  "tests_written_or_run": false,
+  "installed": false,
+  "business_operations": false,
+  "source_admission_integration_advanced": false,
+  "candidate_preserved": true
+}

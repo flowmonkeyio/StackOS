@@ -1,0 +1,518 @@
+--- before/plugins/engineering/scripts/controlled_workspace.py
++++ plugins/engineering/scripts/controlled_workspace.py
+@@ -22,6 +22,171 @@
+ from pathlib import Path
+ 
+ from stackos.artifacts import redact_secret_text
++from stackos.artifacts.redaction import _SECRET_TEXT_RE
++
++_JS_REFERENCE = r"[A-Za-z_$][A-Za-z0-9_$]*(?:\s*\.\s*[A-Za-z_$][A-Za-z0-9_$]*)*"
++_JS_LOOKUP = (
++    r"(?:localStorage|sessionStorage)\s*\.\s*getItem\s*\(\s*"
++    r"(['\"])[A-Za-z_$][A-Za-z0-9_$.-]*\1\s*\)"
++)
++_JS_TOKEN = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*|[0-9]+|=>|&&|\|\||==|!=|\?\.")
++_JS_LINE_END = re.compile(r"[\r\n\u2028\u2029]")
++_JS_SAFE_RHS = re.compile(
++    rf"(?:{_JS_LOOKUP}|{_JS_REFERENCE}|`Bearer \$\{{\s*{_JS_REFERENCE}\s*\}}`)\s*(?=[,;}})]|$)"
++)
++
++
++def _js_tokens(text):
++    """Lex JS conservatively; ambiguous syntax yields no source exemptions.
++
++    Comments, strings, regexes and whole templates remain opaque. Interpolations
++    are traversed only to locate the end of a template, never to grant exemptions.
++    """
++    tokens = []
++    size = len(text)
++
++    def scan(pos, interpolation=False):
++        depth, previous, previous_end = 0, "", pos
++        while pos < size:
++            start, char = pos, text[pos]
++            if char.isspace():
++                pos += 1
++                continue
++            if text.startswith("//", pos):
++                end = _JS_LINE_END.search(text, pos)
++                pos = size if end is None else end.start()
++                continue
++            if text.startswith("/*", pos):
++                end = text.find("*/", pos + 2)
++                if end < 0:
++                    raise ValueError("unterminated comment")
++                pos = end + 2
++                continue
++            kind = "punct"
++            if char in "'\"`":
++                kind = "template" if char == "`" else "string"
++                pos += 1
++                while pos < size:
++                    if text[pos] == "\\":
++                        pos += 2
++                    elif text[pos] == char:
++                        pos += 1
++                        break
++                    elif char == "`" and text.startswith("${", pos):
++                        pos = scan(pos + 2, True)
++                    elif char != "`" and _JS_LINE_END.match(text, pos):
++                        raise ValueError("unterminated string")
++                    else:
++                        pos += 1
++                else:
++                    raise ValueError("unterminated literal")
++            elif char == "/":
++                # These require statement/expression grammar to disambiguate.
++                if previous in {"", ")", "}"}:
++                    raise ValueError("ambiguous slash")
++                operand = bool(re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*|[0-9]+", previous))
++                keyword = previous in {
++                    "return", "throw", "yield", "case", "delete", "void", "typeof",
++                    "instanceof", "in", "of", "new", "await", "else", "do",
++                }
++                if (operand and not keyword) or previous in {"literal", "]"}:
++                    # A line break can terminate a restricted statement, even
++                    # after its label. Without statement grammar we cannot
++                    # distinguish division from a new regex statement here.
++                    # Include line breaks inside comments and Unicode endings.
++                    if _JS_LINE_END.search(text, previous_end, pos):
++                        raise ValueError("ambiguous slash after line terminator")
++                    pos += 1
++                else:
++                    kind, bracket = "regex", False
++                    pos += 1
++                    while pos < size and not _JS_LINE_END.match(text, pos):
++                        if text[pos] == "\\":
++                            pos += 2
++                            continue
++                        if text[pos] == "[":
++                            bracket = True
++                        elif text[pos] == "]":
++                            bracket = False
++                        elif text[pos] == "/" and not bracket:
++                            pos += 1
++                            while pos < size and text[pos].isalpha():
++                                pos += 1
++                            break
++                        pos += 1
++                    else:
++                        raise ValueError("unterminated regex")
++            elif char == "\\":
++                raise ValueError("unsupported escaped identifier")
++            else:
++                match = _JS_TOKEN.match(text, pos)
++                pos += len(match.group()) if match else 1
++                kind = "word" if match else "punct"
++            value = text[start:pos]
++            if interpolation:
++                if value == "}" and depth == 0:
++                    return pos
++                depth += (value == "{") - (value == "}")
++            else:
++                tokens.append((start, pos, kind, value))
++            previous = value if kind not in {"string", "template", "regex"} else "literal"
++            previous_end = pos
++        if interpolation:
++            raise ValueError("unterminated interpolation")
++        return pos
++
++    try:
++        scan(0)
++    except (ValueError, RecursionError):
++        return []
++    return tokens
++
++
++def source_is_safe(text, path, known_secrets=()):
++    """Validate exact source bytes separately from general log/prompt redaction.
++
++    Only complete JS references, storage-key lookups and runtime Bearer templates
++    can override labelled-value matches. Other literal detectors and inherited
++    credentials remain enforced. This does not prove runtime data flow safety.
++    """
++    for secret in known_secrets:
++        if secret and any(value in text for value in (
++            secret, json.dumps(secret)[1:-1], json.dumps(secret, ensure_ascii=False)[1:-1]
++        )):
++            return False
++    if redact_secret_text(text) == text:
++        return True
++    if Path(path).suffix.lower() not in {".js", ".mjs", ".cjs"}:
++        return False
++    tokens = _js_tokens(text)
++    starts = {item[0]: index for index, item in enumerate(tokens)}
++    ends = {item[1] for item in tokens}
++    masked = list(text)
++    for match in _SECRET_TEXT_RE.finditer(text):
++        index = starts.get(match.start())
++        if index is None or index + 2 >= len(tokens):
++            continue
++        key, operator = tokens[index], tokens[index + 1]
++        if key[2] not in {"word", "string"} or key[3].strip("'\"") != match.group(2):
++            continue
++        previous = tokens[index - 1][3] if index else ""
++        if not (
++            (operator[3] == ":" and previous in {"{", ","})
++            or (operator[3] == "=" and previous in {"const", "let", "var", ";", "{"})
++        ):
++            continue
++        rhs_start = tokens[index + 2][0]
++        expression = _JS_SAFE_RHS.match(text, rhs_start)
++        if expression is None:
++            continue
++        rhs_end = expression.end()
++        while rhs_end > rhs_start and text[rhs_end - 1].isspace():
++            rhs_end -= 1
++        if rhs_end not in ends:
++            continue
++        masked[match.start():match.end()] = " " * (match.end() - match.start())
++    view = "".join(masked)
++    return redact_secret_text(view) == view
+ 
+ MAX_BYTES = 500_000
+ COMMAND_PROFILE = "stackos_worker_command"
+@@ -413,7 +578,7 @@
+         finally:
+             os.close(fd)
+ 
+-    def _read_at(self, parent, name):
++    def _read_at(self, parent, name, path):
+         try:
+             fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+         except FileNotFoundError:
+@@ -441,7 +606,7 @@
+                 raise ValueError("unsupported binary file; UTF-8 required") from None
+             if "\0" in text:
+                 raise ValueError("unsupported binary file; UTF-8 required")
+-            if self._safe(text) != text:
++            if not source_is_safe(text, path, self.known_secrets):
+                 raise ValueError("workspace content withheld by secret filter")
+             return data, before
+         finally:
+@@ -526,7 +691,7 @@
+                     if path not in self.entries:
+                         raise ValueError("path is not admitted")
+                     with self._parent(self.view_fd, path) as (fd, leaf):
+-                        data, _ = self._read_at(fd, leaf)
++                        data, _ = self._read_at(fd, leaf, path)
+                     if (
+                         data is None
+                         or hashlib.sha256(data).hexdigest() != self.entries[path]["sha256"]
+@@ -583,7 +748,7 @@
+             not isinstance(content, str)
+             or "\0" in content
+             or len(content.encode()) > MAX_BYTES
+-            or self._safe(content) != content
++            or not source_is_safe(content, path, self.known_secrets)
+         ):
+             raise ValueError("bounded secret-free UTF-8 content required")
+         data = content.encode() if content is not None else None
+@@ -592,7 +757,7 @@
+         self.emit({"type": "workspace.edit_intent", **record})
+         try:
+             with self._parent(self.repo_fd, path, create=True) as (fd, leaf):
+-                current, info = self._read_at(fd, leaf)
++                current, info = self._read_at(fd, leaf, path)
+                 before = hashlib.sha256(current).hexdigest() if current is not None else None
+                 if before != expected_sha256 or (current is None and data is None):
+                     raise ValueError("file changed or missing; reconcile before editing")
+--- before/plugins/engineering/scripts/delivery.py
++++ plugins/engineering/scripts/delivery.py
+@@ -245,9 +245,35 @@
+     paths = _changed_paths(repo)
+     if not paths:
+         raise ValueError("executor produced no changed code")
++    before_digests = _file_digests(repo, paths)
++    current_sources = {}
+     for path in paths:
+         _outcome_selection(path, changed=True)
+-    chunks = [_git(repo, "diff", "--binary", "HEAD")]
++        _safe_text(path, label="changed path")
++    known_secrets = _worker_environment()[1]
++    # Validate complete sources on both sides; diff hunk text is not JS syntax.
++    # Deleted/replaced credentials must not leak through removed diff lines.
++    base_paths = set(_git(repo, "ls-tree", "-r", "--name-only", "-z", "HEAD").decode().split("\0"))
++    for path in paths:
++        versions = []
++        if path in base_paths:
++            versions.append(_git(repo, "show", f"HEAD:{path}"))
++        file = repo / path
++        if file.is_symlink():
++            raise ValueError(f"symlink in changed code: {path}")
++        if file.is_file():
++            current_sources[path] = file.read_bytes()
++            versions.append(current_sources[path])
++        for data in versions:
++            if len(data) > 20_000_000:
++                raise ValueError("actual source exceeds bounded size")
++            try:
++                text = data.decode("utf-8")
++            except UnicodeDecodeError as exc:
++                raise ValueError("binary code requires a separate review path") from exc
++            if not _workspace.source_is_safe(text, path, known_secrets):
++                raise ValueError(f"actual source contains secret-like content: {path}")
++    chunks = [_git(repo, "diff", "--no-ext-diff", "--no-textconv", "--binary", "HEAD")]
+     untracked = set(
+         _git(repo, "ls-files", "--others", "--exclude-standard", "-z").decode().split("\0")
+     )
+@@ -256,7 +282,9 @@
+             file = repo / path
+             if not file.is_file() or file.is_symlink():
+                 raise ValueError(f"unreviewable untracked path: {path}")
+-            chunks.append(f"\n--- complete changed file {path} ---\n".encode() + file.read_bytes())
++            chunks.append(
++                f"\n--- complete changed file {path} ---\n".encode() + current_sources[path]
++            )
+     data = b"\n".join(chunks)
+     if len(data) > max_bytes:
+         raise ValueError("actual code exceeds reviewer input limit; review is blocked")
+@@ -264,8 +292,31 @@
+         code = data.decode("utf-8")
+     except UnicodeDecodeError as exc:
+         raise ValueError("binary code requires a separate review path") from exc
+-    _safe_text(code, label="actual code")
+-    return code, hashlib.sha256(data).hexdigest(), _file_digests(repo, paths)
++    if _changed_paths(repo) != paths or _file_digests(repo, paths) != before_digests:
++        raise ValueError("candidate changed during actual-code admission")
++    return code, hashlib.sha256(data).hexdigest(), before_digests
++
++
++def _safe_role_prompt(role: str, prompt: str, repo: Path) -> str:
++    """Check prose strictly and source only through complete-file admission.
++
++    Only an exact freshly captured source block in a controller-created review
++    or test prompt may use source admission. This is not a prose exemption.
++    """
++    if _sanitize(prompt) == prompt:
++        return _safe_text(prompt, label=f"{role} prompt")
++    prefix = {
++        "reviewer": "Actual changed code (not an executor report):\n",
++        "test_writer": "Implementation code approved by a separate reviewer:\n",
++    }.get(role)
++    if prefix is None:
++        return _safe_text(prompt, label=f"{role} prompt")
++    code, _digest, _files = _actual_code(repo, max_bytes=500_000)
++    block = prefix + code + "\n\n"
++    if prompt.count(block) != 1:
++        raise ValueError("role prompt does not match admitted actual code")
++    _safe_text(prompt.replace(block, prefix, 1), label=f"{role} prompt prose")
++    return prompt
+ 
+ 
+ def _outcome_snapshot(repo: Path, destination: Path, *, worker: bool = False) -> dict[str, Any]:
+@@ -358,7 +409,7 @@
+                 raise ValueError(
+                     f"review held: selected non-media artifact is not inspectable UTF-8: {relative}"
+                 ) from exc
+-            if _sanitize(text) != text:
++            if not _workspace.source_is_safe(text, relative, _worker_environment()[1]):
+                 raise ValueError(
+                     f"review held: selected artifact contains secret-like data: {relative}"
+                 )
+@@ -569,9 +620,25 @@
+     stdout: Any,
+     stderr: Any,
+     prompt: str | None = None,
++    *,
++    broker_policy: bool = False,
+ ) -> dict[str, Any]:
+     """Bound input/output and retain only sanitized logs; own the original group."""
+     environment, known_secrets = _worker_environment()
++    if broker_policy and prompt is None:
++        raise ValueError("broker policy requires a worker prompt")
++    if broker_policy:
++        # Only the trusted --worker helper consumes this private stdin envelope.
++        # It closes stdin before launching the model host. Raw protected values
++        # never enter argv, env, logs or model input.
++        payload = json.dumps(
++            {"version": 1, "prompt": prompt, "known_secrets": known_secrets},
++            ensure_ascii=False,
++        ).encode()
++        if len(payload) > 2_000_000:
++            raise ValueError("worker admission envelope exceeds bounded size")
++    else:
++        payload = prompt.encode() if prompt is not None else b""
+     lease_read, lease_write = os.pipe()
+     buffers = {"stdout": bytearray(), "stderr": bytearray()}
+     process = None
+@@ -582,7 +649,7 @@
+     ):
+         result_path = Path(directory) / "exit.json"
+         if prompt is not None:
+-            input_file.write(prompt.encode())
++            input_file.write(payload)
+             input_file.seek(0)
+         started = time.monotonic()
+ 
+@@ -825,7 +892,7 @@
+     try:
+         if len(prompt.encode()) > MAX_PROMPT_BYTES:
+             raise ValueError("role prompt exceeds bounded input limit")
+-        _safe_text(prompt, label=f"{role} prompt")
++        _safe_role_prompt(role, prompt, repo)
+         binary = shutil.which("codex")
+         if not binary:
+             raise ValueError("Codex CLI is not installed")
+@@ -927,7 +994,10 @@
+             os.close(out_fd)
+             raise
+         with os.fdopen(out_fd, "wb") as stdout, os.fdopen(err_fd, "wb") as stderr:
+-            execution = _execute(command, repo, seconds, stdout, stderr, prompt)
++            execution = _execute(
++                command, repo, seconds, stdout, stderr, prompt,
++                broker_policy=role != "reviewer",
++            )
+         receipt.update(execution)
+         timed_out = execution["timed_out"]
+         group_leaked = execution["group_leaked"]
+@@ -1255,6 +1325,13 @@
+         if any(role not in role_guidance for _step, role in ROLE_STEPS):
+             raise ValueError("effective workflow lacks one of the four role contracts")
+         if existing is None:
++            # Exercise the same admission path as worker/reviewer dispatch before
++            # creating any durable run. Dispatch still captures fresh bytes.
++            with tempfile.TemporaryDirectory(prefix="stackos-source-preflight-") as preflight:
++                _outcome_snapshot(repo, Path(preflight) / "worker", worker=True)
++                _outcome_snapshot(repo, Path(preflight) / "review")
++            if _repo_head(repo) != head:
++                raise ValueError("repository changed during source preflight")
+             plan = _call(
+                 "runPlan.create",
+                 {
+--- before/plugins/engineering/scripts/delivery_recovery.py
++++ plugins/engineering/scripts/delivery_recovery.py
+@@ -177,12 +177,16 @@
+     ):
+         attempt = attempt_id or uuid4().hex
+         before = self.api._file_digests(repo, self.api._changed_paths(repo))
++        self.api._safe_role_prompt(role, prompt, repo)
+         self.append(
+             "dispatch",
+             attempt_id=attempt,
+             role=role,
+             model=model,
+-            prompt=prompt,
++            # Exact source reaches the host unchanged. Durable general-purpose
++            # prompt logs retain canonical redaction plus the original digest.
++            prompt=self.api._sanitize(prompt),
++            prompt_sha256=hashlib.sha256(prompt.encode()).hexdigest(),
+             resume_thread=resume,
+             file_digests=before,
+         )
+@@ -893,7 +897,8 @@
+             receipt = {
+                 "role": role,
+                 "error": api._sanitize(str(exc)),
+-                "prompt": prompt,
++                "prompt": api._sanitize(prompt),
++                "prompt_sha256": hashlib.sha256(prompt.encode()).hexdigest(),
+                 "base_commit": head,
+                 "candidate_code_sha256": code_hash,
+                 "custody": {
+@@ -1082,7 +1087,10 @@
+             ):
+                 reason = "test writer did not complete relevant tests"
+             receipt.update(changed_paths=sorted(after), file_digests=after)
+-        receipt.update(prompt=prompt)
++        receipt.update(
++            prompt=api._sanitize(prompt),
++            prompt_sha256=hashlib.sha256(prompt.encode()).hexdigest(),
++        )
+         if not reason:
+             api._record(
+                 project_id,
+--- before/plugins/engineering/scripts/reviewer_isolation.py
++++ plugins/engineering/scripts/reviewer_isolation.py
+@@ -14,6 +14,7 @@
+ import subprocess
+ import sys
+ import time
++from contextlib import suppress
+ from pathlib import Path
+ 
+ from controlled_workspace import Workspace, native_binary
+@@ -435,7 +436,40 @@
+     if not observe:
+         verify_manifest(snapshot, manifest_digest)
+         schema = json.loads(Path(schema_arg).read_text())
+-    prompt = sys.stdin.buffer.read(200_001)
++    if worker:
++        # The controller's exact protected-value policy arrives only through
++        # private stdin, never the scrubbed environment or command arguments.
++        # Close the inherited descriptor before any model/command process starts.
++        input_descriptor = sys.stdin.fileno()
++        try:
++            payload = sys.stdin.buffer.read(2_000_001)
++        finally:
++            sys.stdin.close()
++            # Python standard streams can use closefd=False. Close the actual
++            # inherited descriptor as well, not just its Python wrapper.
++            with suppress(OSError):
++                os.close(input_descriptor)
++        if len(payload) > 2_000_000:
++            raise ValueError("worker admission envelope exceeds limit")
++        try:
++            envelope = json.loads(payload)
++        except (ValueError, UnicodeDecodeError):
++            raise ValueError("invalid worker admission envelope") from None
++        if (
++            not isinstance(envelope, dict)
++            or set(envelope) != {"version", "prompt", "known_secrets"}
++            or type(envelope["version"]) is not int
++            or envelope["version"] != 1
++            or not isinstance(envelope["prompt"], str)
++            or not isinstance(envelope["known_secrets"], list)
++            or any(not isinstance(value, str) or not value for value in envelope["known_secrets"])
++        ):
++            raise ValueError("invalid worker admission envelope")
++        known_secrets = tuple(envelope["known_secrets"])
++        prompt = envelope["prompt"].encode()
++        del payload, envelope
++    else:
++        prompt = sys.stdin.buffer.read(200_001)
+     if len(prompt) > 200_000:
+         raise ValueError("review prompt exceeds limit")
+     deadline = time.monotonic() + int(seconds_arg)
+@@ -447,15 +481,6 @@
+         scratch.mkdir(mode=0o700, exist_ok=True)
+         if scratch.is_symlink() or scratch.resolve(strict=True) != scratch:
+             raise ValueError("private scratch is not a direct host directory")
+-        known_secrets = tuple(
+-            value
+-            for key, value in os.environ.items()
+-            if len(value) >= 8
+-            and any(
+-                marker in key.upper()
+-                for marker in ("TOKEN", "SECRET", "PASSWORD", "API_KEY", "CREDENTIAL")
+-            )
+-        )
+         workspace = Workspace(
+             Path(repo_arg),
+             snapshot,
+--- before/docs/workflow-templates.md
++++ docs/workflow-templates.md
+@@ -304,6 +304,23 @@
+ The controller entrypoint is `stackos delivery run --project ID --repo PATH
+ --task-file PATH --confirm`. It requires a clean linked worktree, records a
+ real plan/run before launching models. Settled failures use the bounded same-run recovery policy; authority denials and unresolved effects are held after inspection.
++Before creating a new plan/run, the controller exercises the same worker and
++reviewer snapshot admission used at dispatch. Dispatch still revalidates fresh
++bytes. Source admission recognizes a conservative subset of executable JavaScript
++references, storage-key lookups, and runtime Bearer templates; ambiguous syntax,
++credential literals, and known inherited credential values remain held. The same
++check covers snapshot files, broker reads/writes, and both sides of changed code.
++Actual source reaches role prompts unchanged; retained prompt logs use canonical
++redaction and record the original prompt SHA256. General prose/log redaction is
++unchanged. This lexical check is not a proof of arbitrary runtime data flow.
++Reference exemptions require an expression delimiter; a newline alone does not
++end an RHS. Slash after a line break following an operand, or after `)`/`}`, is
++held when its regex/division meaning requires statement grammar. This can reject
++safe JavaScript. Worker brokers receive the controller's exact inherited-value
++policy through bounded private helper stdin, which is closed before host launch;
++the policy is excluded from model input, command environments and retained logs.
++Preflight establishes snapshot admission only, not every later host/broker
++readiness condition (such as its narrower file size and UTF-8 tool limits).
+ Pass `--observation-file PATH` to supply a JSON array of integrated checks,
+ each with `requirement`, `argv` (an argument array), and exact `expected_stdout`.
+ An optional `"confinement": "read_only"` runs that check through the verified host

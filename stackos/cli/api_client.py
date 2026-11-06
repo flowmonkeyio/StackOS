@@ -9,13 +9,22 @@ from typing import Any
 
 import typer
 
+from stackos.artifacts import redact_secret_text
+from stackos.artifacts.checked_output import (
+    CheckedConsole,
+    CheckedStream,
+    OutputPolicy,
+    OutputRejected,
+)
 from stackos.config import Settings, get_settings
 
 
-def _read_daemon_token(settings: Settings) -> str:
+def _read_daemon_token(settings: Settings, *, output_policy: OutputPolicy | None = None) -> str:
     try:
         return settings.token_path.read_text(encoding="utf-8").strip()
     except FileNotFoundError:
+        if output_policy is not None:
+            raise OutputRejected("daemon authentication is unavailable") from None
         typer.echo(
             f"auth token missing at {settings.token_path}; run `stackos init`.",
             err=True,
@@ -29,15 +38,45 @@ def _api_request(
     *,
     body: dict[str, Any] | None = None,
     settings: Settings | None = None,
+    output_policy: OutputPolicy | None = None,
+    diagnostic_stream: CheckedStream | CheckedConsole | None = None,
 ) -> Any:
     """Call the local daemon REST API and return parsed JSON."""
     from urllib.error import HTTPError, URLError
     from urllib.request import Request, urlopen
 
     settings = settings or get_settings()
-    token = _read_daemon_token(settings)
+    token = (
+        _read_daemon_token(settings) if output_policy is None
+        else _read_daemon_token(settings, output_policy=output_policy)
+    )
     url = f"http://{settings.host}:{settings.port}{path}"
-    data = None if body is None else json.dumps(body).encode("utf-8")
+    if output_policy is not None:
+        output_policy.require([method, url])
+    data = None if body is None else (
+        json.dumps(body).encode("utf-8") if output_policy is None
+        else output_policy.encoded_json(body)
+    )
+
+    def capture(response):
+        if output_policy is None:
+            return response.read().decode("utf-8")
+        raw = response.read(2_000_001)
+        if len(raw) > 2_000_000:
+            raise OutputRejected("daemon response exceeds bound")
+        output_policy.text(raw.decode("utf-8"), limit=2_000_000)
+        return raw.decode("utf-8")
+
+    def diagnostic(text):
+        if output_policy is None:
+            typer.echo(text, err=True)
+        else:
+            if diagnostic_stream is None or diagnostic_stream.policy is not output_policy:
+                raise OutputRejected("checked diagnostic stream owner required")
+            text = redact_secret_text(text)
+            diagnostic_stream.write(
+                sys.stderr.buffer, output_policy.encoded_text(text, suffix="\n")
+            )
     request = Request(
         url,
         data=data,
@@ -51,25 +90,27 @@ def _api_request(
     )
     try:
         with urlopen(request, timeout=30) as response:
-            raw = response.read().decode("utf-8")
+            raw = capture(response)
     except HTTPError as exc:
-        raw = exc.read().decode("utf-8", errors="replace")
+        raw = (exc.read().decode("utf-8", errors="replace")
+               if output_policy is None else capture(exc))
         try:
             payload = json.loads(raw)
         except json.JSONDecodeError:
             payload = raw
-        typer.echo(_format_daemon_api_error(exc.code, payload), err=True)
+        if output_policy is not None:
+            output_policy.require(payload)
+        diagnostic(_format_daemon_api_error(exc.code, payload))
         raise typer.Exit(code=1) from None
     except (OSError, TimeoutError, URLError) as exc:
-        typer.echo(
+        diagnostic(
             f"daemon API request failed: {exc}; is StackOS running on "
             f"{settings.host}:{settings.port}?",
-            err=True,
         )
         raise typer.Exit(code=1) from None
     if not raw:
         return None
-    return json.loads(raw)
+    return (json.loads(raw) if output_policy is None else output_policy.decode_json(raw))
 
 
 def _format_daemon_api_error(status_code: int, payload: Any) -> str:

@@ -1,0 +1,90 @@
+{
+  "plan_id": 55,
+  "run_id": 50,
+  "status": "completed",
+  "installed_build": "20261103T210228Z",
+  "models": {
+    "executor": "gpt-6-astra",
+    "planner": "gpt-6-luna",
+    "reviewer": "gpt-6-astra",
+    "test_writer": "gpt-6-luna"
+  },
+  "role_threads": {
+    "planner": [
+      "01a1a33c-5749-71d0-89ca-552e577a1cc8",
+      "01a1a33c-5749-71d0-89ca-552e577a1cc8"
+    ],
+    "executor": [
+      "01a1a33c-9188-7f81-8c02-b96388ed7810",
+      "01a1a33c-9188-7f81-8c02-b96388ed7810"
+    ],
+    "designer": [
+      "01a1a33c-5749-71d0-89ca-552e577a1cc8"
+    ],
+    "reviewer": [
+      "01a1a33e-9f7f-7e61-bd87-1dfc83af25ca",
+      "01a1a33e-9f7f-7e61-bd87-1dfc83af25ca"
+    ],
+    "test_writer": [
+      "01a1a33e-c842-72c0-81ee-5dddc9f5767a"
+    ]
+  },
+  "review_rejections": 0,
+  "rejection_findings": [],
+  "tests_started_after_independent_code_approval": true,
+  "same_executor_continued": true,
+  "same_designer_continued": true,
+  "fresh_reviewer_for_changed_candidate": false,
+  "same_reviewer_approved_final_observed_outcome": true,
+  "consumption": [
+    {
+      "allowance": "retry",
+      "route": "plan-task"
+    }
+  ],
+  "actual_observations": [
+    {
+      "argv": [
+        "python3",
+        "add.py",
+        "2",
+        "3"
+      ],
+      "stdout": "5\n",
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "python3",
+        "add.py",
+        "-4",
+        "9"
+      ],
+      "stdout": "5\n",
+      "exit_code": 0
+    },
+    {
+      "argv": [
+        "python3",
+        "add.py",
+        "0",
+        "0"
+      ],
+      "stdout": "0\n",
+      "exit_code": 0
+    }
+  ],
+  "final_reviewer_actual_tool_calls": 12,
+  "changed_paths": [
+    "README.md",
+    "add.py",
+    "test_add.py"
+  ],
+  "reviewer_progress": [
+    "Inspected add.py, README.md, and test_add.py; all use only the standard library and stay within scope.",
+    "README documents the required command and newline output.",
+    "All five existing subprocess-based tests passed.",
+    "Eight independent CLI checks produced correct sums and exact newline output for positive, negative, zero, explicit plus signs, leading zeros, and large integers.",
+    "Independent implementation approval preceded this final test review. No files or tests were written during review."
+  ]
+}
