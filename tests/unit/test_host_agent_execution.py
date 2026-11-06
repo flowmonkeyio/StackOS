@@ -270,7 +270,7 @@ def test_normal_review_uses_native_permissions_and_review_schema(project, monkey
 
     fake_native_discovery(monkeypatch)
     calls = []
-    value = {"decision": "approve", "summary": "Reviewed", "commit_sha": "a" * 40}
+    value = {"decision": "approve", "summary": "Reviewed", "commit_sha": "a" * 40, "followups": []}
     if not valid:
         value["decision"] = "complete"
 
