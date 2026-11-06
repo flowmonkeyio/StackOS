@@ -5,6 +5,39 @@ from __future__ import annotations
 from .conftest import MCPClient
 
 
+def test_engineering_compact_recovery_summary_keeps_automatic_caller_active(
+    mcp_client: MCPClient,
+) -> None:
+    request = {"key": "engineering.tracked-delivery", "plugin_slug": "engineering"}
+    raw = mcp_client.call_tool_structured(
+        "workflowTemplate.describe", {**request, "response_mode": "raw"}
+    )
+    compact = mcp_client.call_tool_structured("workflowTemplate.describe", request)
+    compact = compact.get("data", compact)
+    recovery = compact["spec"]["experience"]["recovery"]
+    # This summary reaches agents verbatim, independently of detailed policies.
+    assert recovery == raw["spec"]["experience"]["recovery"]
+    assert any(
+        "terminal-managed" in item and "stop active assignments and their processes" in item
+        for item in recovery
+    )
+    assert any(
+        all(
+            obligation in item
+            for obligation in (
+                "supported automatic correction",
+                "finish checks",
+                "other affected work",
+                "caller active",
+                "final tracker.reopen",
+                "return repair",
+                "do not wait for the caller to terminate",
+            )
+        )
+        for item in recovery
+    )
+
+
 def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
     listing = mcp_client.call_tool_structured(
         "agentPreset.list",
