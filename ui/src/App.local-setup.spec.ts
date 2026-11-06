@@ -5,6 +5,11 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import App from './App.vue'
 import appRouter from './router'
+import {
+  AgentStatsCoverageOutClassification_status,
+  AgentStatsCoverageOutUsage_status,
+  type SchemaTrackerAgentStatsOut,
+} from '@/api'
 import ProjectSwitcher from '@/components/ProjectSwitcher.vue'
 import { useProjectsStore, type Project } from '@/stores/projects'
 
@@ -81,6 +86,27 @@ it.each([null, 7])(
           total_count: 0,
           ticket_counts: {},
         })
+      }
+      if (url === '/api/v1/operations/tracker.agentStatsAll/call') {
+        return json({
+          project_id: null,
+          is_active: true,
+          as_of: '2026-11-06T20:00:00Z',
+          totals: {
+            launch_attempts: 0,
+            recorded_reviewer_rejects: 0,
+            reported_usage: { unit: 'tokens', input: 0, output: 0, total: 0 },
+            coverage: {
+              usage_status: AgentStatsCoverageOutUsage_status.empty,
+              usage_measured_attempts: 0,
+              usage_unavailable_attempts: 0,
+              classification_status: AgentStatsCoverageOutClassification_status.empty,
+              classification_known_attempts: 0,
+              classification_unknown_attempts: 0,
+            },
+          },
+          rows: [],
+        } satisfies SchemaTrackerAgentStatsOut)
       }
       if (url.startsWith('/api/v1/plugins')) return json([])
       if (url === '/api/v1/operations/backup.status/call') return json(status())
