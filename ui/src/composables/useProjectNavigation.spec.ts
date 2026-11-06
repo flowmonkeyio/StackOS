@@ -55,6 +55,14 @@ describe('useProjectNavigation', () => {
     harness.wrapper.unmount()
   })
 
+  it('remounts agent defaults in the selected project scope', async () => {
+    const harness = await setupNavigation('/projects/1/agent-defaults')
+    await expect(harness.navigation.selectProject(2)).resolves.toBe(true)
+    expect(harness.router.currentRoute.value.path).toBe('/projects/2/agent-defaults')
+    expect(harness.navigation.routeViewKey.value).toBe('project:2')
+    harness.wrapper.unmount()
+  })
+
   it('changes only the navigation fallback while a global surface stays mounted', async () => {
     const harness = await setupNavigation('/accounts?account=credential_123')
     vi.mocked(globalThis.fetch).mockClear()
@@ -144,6 +152,7 @@ async function setupNavigation(
       { path: '/accounts', component: { template: '<div />' } },
       { path: '/projects/:id', component: { template: '<div />' } },
       { path: '/projects/:id/connections', component: { template: '<div />' } },
+      { path: '/projects/:id/agent-defaults', component: { template: '<div />' } },
       { path: '/projects/:id/runs', component: { template: '<div />' } },
       { path: '/projects/:id/runs/:run_id', component: { template: '<div />' } },
     ],

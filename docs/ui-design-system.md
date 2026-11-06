@@ -50,7 +50,7 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 - Sidebar: 256px desktop rail.
 - The project picker directly precedes the scrollable project navigation.
   **Operate** leads (Home, Attention, Work, Activity), then **Configure**
-  (Connections, Automation, Spend, Plugins), **Execution**, **Catalog**,
+  (Connections, Automation, Spend, Agent defaults, Plugins), **Execution**, **Catalog**,
   **Data & evidence**, and enabled plugin groups.
 - A separated **App** footer holds Overview, Accounts, and Backups outside the
   project navigation scroll, above the theme control. All three are available

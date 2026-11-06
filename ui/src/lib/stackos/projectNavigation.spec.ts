@@ -21,6 +21,7 @@ describe('projectSwitchDestination', () => {
     'activity',
     'schedules',
     'cost-budget',
+    'agent-defaults',
     'plugins',
     'capabilities',
     'connections',

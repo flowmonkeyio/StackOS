@@ -82,6 +82,18 @@ revision in raw mode; compact and ack are unsupported. Existing
 `tracker.get` with `response_mode=raw` exposes `tracker.config_json` for readback.
 MCP/system and workflow grants cannot authorize this local-admin write.
 
+The local console exposes this setup at **Configure → Agent defaults**
+(`/projects/:id/agent-defaults`). It reads `tracker.status` in raw mode and edits
+a copy of the complete saved delivery object, changing only selected fields.
+Untouched optional fields and other role settings are retained; the operation
+preserves unrelated tracker configuration. Blank optional selectors save as
+null; untouched absent fields remain absent. Harness/model choices and supported
+provider/profile controls use the shared host capability catalog, with no model
+access claim. A successful save reloads and checks the stored delivery object
+against the operation result and displays its revision. Failures remain visible
+and retain the draft. Existing task snapshots and ticket receipts stay unchanged;
+saving does not call `tracker.startDelivery` or refresh instructions from files.
+
 Migration `0035_generic_task_delivery` moves existing engineering plugin
 delivery defaults once, preserving role instructions, names, host, model,
 provider, profile, unrelated plugin/tracker keys and existing generic values

@@ -31,7 +31,7 @@ const activeKey = computed<string>(() => {
   return match ? match[1] : 'overview'
 })
 
-type ProjectConfigurationKey = 'overview' | 'schedules' | 'cost-budget'
+type ProjectConfigurationKey = 'overview' | 'schedules' | 'cost-budget' | 'agent-defaults'
 
 interface PageCopy {
   title: string
@@ -55,6 +55,11 @@ const PAGE_COPY = {
   'cost-budget': {
     title: 'Cost & Budget',
     description: 'Monthly spend, vendor caps, alerts, and request-rate controls.',
+  },
+  'agent-defaults': {
+    title: 'Agent defaults',
+    description:
+      'Project delivery and review instructions and native execution choices for future task handoffs.',
   },
 } satisfies ProjectConfigurationPageCopy
 

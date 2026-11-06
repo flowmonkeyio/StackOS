@@ -29,6 +29,7 @@ describe('StackOS nav contributions', () => {
       'Connections',
       'Automation',
       'Spend',
+      'Agent defaults',
       'Plugins',
     ])
     // Execution, catalog, and evidence remain secondary inspection groups.
@@ -77,6 +78,7 @@ describe('StackOS nav contributions', () => {
       '/projects/12/connections',
       '/projects/12/schedules',
       '/projects/12/cost-budget',
+      '/projects/12/agent-defaults',
       '/projects/12/plugins',
     ])
   })

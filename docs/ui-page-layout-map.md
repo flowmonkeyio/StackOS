@@ -27,6 +27,7 @@ not become narrower when its data or selected mode changes.
 | `/setup` | Backups | `LocalSetupView` | installation-wide backup settings and coverage |
 | `/projects/:id/schedules` | Automation | `ProjectDetailView` | shared project-detail header and schedules panel |
 | `/projects/:id/cost-budget` | Spend | `ProjectDetailView` | shared project-detail header and budget panel |
+| `/projects/:id/agent-defaults` | Agent defaults | `ProjectDetailView` | delivery/review setup form using shared controls and backend execution choices |
 | `/projects/:id/inbox` | Attention | `InboxView` | filters and human-action master/detail |
 | `/projects/:id/activity` | Activity | `ActivityView` | grouped outcomes master/detail with audit disclosure |
 | `/projects/:id/tasks` | Work | `TaskTrackerView` | inline Board / Graph command surface; default seven-column Board; map-only task picker and explicit side inspector; one persistent task/ticket detail dialog |
@@ -45,7 +46,7 @@ not become narrower when its data or selected mode changes.
 | `/projects/:id/resources` | Resources | `ResourceExplorerView` | resource explorer and selected resource detail |
 
 `/projects` and `/projects/:id/overview` are redirects and do not own shells.
-The two configuration child components deliberately do not create a second
+The configuration child components deliberately do not create a second
 shell; `ProjectDetailView` supplies it. Project Home is the exception inside
 that nested router because `HomeConsoleView` owns its complete page chrome.
 

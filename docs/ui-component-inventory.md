@@ -108,6 +108,11 @@ same contract. A feature composable should receive explicit refs/callbacks,
 return its public state/actions, and keep one mutation/reload policy. The route
 view remains responsible for coordinating multiple composables.
 
+`project-detail/AgentDefaultsTab` composes the project scope with
+`agent-defaults/AgentDefaultsForm`; `useAgentDefaults` owns its load/save/readback
+lifecycle. The form uses shared input, textarea, select and form-field
+primitives over existing tracker setup and safe host capabilities.
+
 Connections is the reference implementation:
 
 - `ConnectionsView.vue` owns project routing, section composition, and

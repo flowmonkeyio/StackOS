@@ -9,6 +9,7 @@ import InboxView from './views/InboxView.vue'
 import ActivityView from './views/ActivityView.vue'
 import SchedulesTab from './views/project-detail/SchedulesTab.vue'
 import CostBudgetTab from './views/project-detail/CostBudgetTab.vue'
+import AgentDefaultsTab from './views/project-detail/AgentDefaultsTab.vue'
 import RunsView from './views/RunsView.vue'
 import PluginsView from './views/PluginsView.vue'
 import CapabilitiesView from './views/CapabilitiesView.vue'
@@ -40,6 +41,11 @@ const routes: RouteRecordRaw[] = [
       { path: 'overview', redirect: (to) => ({ path: `/projects/${to.params.id}` }) },
       { path: 'schedules', name: 'project-detail-schedules', component: SchedulesTab },
       { path: 'cost-budget', name: 'project-detail-cost-budget', component: CostBudgetTab },
+      {
+        path: 'agent-defaults',
+        name: 'project-detail-agent-defaults',
+        component: AgentDefaultsTab,
+      },
     ],
   },
   { path: '/projects/:id/inbox', name: 'project-inbox', component: InboxView },

@@ -9,6 +9,23 @@ export type TrackerStatus =
 export type TrackerNodeKind = 'task' | 'ticket' | 'group'
 export type TrackerEdgeKind = 'contains' | 'dependency' | 'link'
 
+export interface DeliveryAgentDefaults {
+  name?: string | null
+  instructions?: string | null
+  host_key?: string | null
+  model?: string | null
+  provider?: string | null
+  profile?: string | null
+  [key: string]: unknown
+}
+
+export interface DeliveryDefaults {
+  host_key?: string | null
+  delivery_agent?: DeliveryAgentDefaults | null
+  review_agent?: DeliveryAgentDefaults | null
+  [key: string]: unknown
+}
+
 export interface TrackerSummary {
   id: number
   project_id: number
@@ -16,6 +33,7 @@ export interface TrackerSummary {
   name: string
   description: string
   rev: number
+  config_json?: Record<string, unknown> | null
   created_at: string
   updated_at: string
 }

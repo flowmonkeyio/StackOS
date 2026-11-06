@@ -204,6 +204,16 @@ instructions; receipts do not claim enforced read-only isolation. Supported
 native review controls remain in use on other hosts. See the task handoff
 contract for setup examples.
 
+In the project console, open **Configure → Agent defaults** to edit the delivery
+and review names, full instructions, harness, model, and supported native
+provider/profile selectors. The editor reads the shared `hostMcp.status`
+execution catalog; native defaults and custom models follow its capability
+flags. Saved selections remain visible when absent from the current catalog.
+Connection or installation status does not establish authentication, subscription,
+or model access. Save writes through `tracker.configureDelivery` and reloads
+the saved tracker revision. It affects future handoffs only and starts no work.
+The **Catalog → Agent Presets** page remains the generic read-only preset catalog.
+
 The host connection model has one brain:
 
 1. the shared bridge contract owns the local stdio command, runtime label,
