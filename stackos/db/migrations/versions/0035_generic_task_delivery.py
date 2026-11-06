@@ -42,6 +42,9 @@ def upgrade() -> None:
     ).all()
     for plugin_id, project_id, raw_config in rows:
         config = json.loads(raw_config) if raw_config else {}
+        # Optional JSON columns written through SQLModel can contain JSON null.
+        if config is None:
+            continue
         if "delivery" not in config:
             continue
         legacy = config.pop("delivery")
@@ -98,6 +101,8 @@ def upgrade() -> None:
         else:
             tracker_id, raw_current = tracker
             current = json.loads(raw_current) if raw_current else {}
+            if current is None:
+                current = {}
         current["delivery"] = (
             _preserve_current(legacy, current["delivery"]) if "delivery" in current else legacy
         )

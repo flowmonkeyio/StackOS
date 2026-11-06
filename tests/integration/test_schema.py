@@ -2075,6 +2075,77 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
     engine.dispose()
 
 
+@pytest.mark.parametrize("null_owner", ["plugin", "tracker"])
+@pytest.mark.parametrize("storage", ["json-null", "sql-null"])
+def test_generic_delivery_migration_handles_null_configuration(
+    isolated_alembic: Path, null_owner: str, storage: str
+) -> None:
+    from sqlmodel import Session
+
+    from stackos.db.models import Plugin, PluginSource, ProjectPlugin
+    from stackos.repositories.tracker import TrackerRepository
+
+    _run_alembic(["upgrade", "0034_work_item_ownership"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        _insert_legacy_project(conn, project_id=1, now="2026-11-06")
+    defaults = {
+        "host_key": "codex",
+        "delivery_agent": {
+            "name": "builder",
+            "instructions": "Exact build instructions",
+            "model": "gpt-6.1-sol",
+            "provider": None,
+            "profile": None,
+        },
+        "review_agent": {"name": "reviewer", "instructions": "Review", "model": "gpt-6-astra"},
+    }
+    engine = make_engine(isolated_alembic)
+    with Session(engine) as session:
+        plugin = Plugin(slug="engineering", name="Engineering", source=PluginSource.BUILTIN)
+        session.add(plugin)
+        session.flush()
+        session.add(
+            ProjectPlugin(
+                project_id=1,
+                plugin_id=plugin.id,
+                config_json=None
+                if null_owner == "plugin"
+                else {"delivery": defaults, "keep": None},
+            )
+        )
+        TrackerRepository(session).ensure_tracker(project_id=1)
+        session.commit()
+    engine.dispose()
+    null_table = "project_plugins" if null_owner == "plugin" else "task_trackers"
+    with sqlite3.connect(isolated_alembic) as conn:
+        # Exercise the real models' JSON-null storage as well as SQL NULL.
+        assert conn.execute(f"SELECT config_json FROM {null_table}").fetchone() == ("null",)
+        if storage == "sql-null":
+            conn.execute(f"UPDATE {null_table} SET config_json = NULL")
+        tracker_before = conn.execute("SELECT * FROM task_trackers").fetchall()
+        plugin_before = conn.execute("SELECT * FROM project_plugins").fetchall()
+    _run_alembic(["upgrade", "head"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        if null_owner == "plugin":
+            assert conn.execute("SELECT * FROM task_trackers").fetchall() == tracker_before
+            assert conn.execute("SELECT * FROM project_plugins").fetchall() == plugin_before
+        else:
+            assert json.loads(
+                conn.execute("SELECT config_json FROM task_trackers").fetchone()[0]
+            ) == {
+                "delivery": defaults,
+            }
+            assert json.loads(
+                conn.execute("SELECT config_json FROM project_plugins").fetchone()[0]
+            ) == {
+                "keep": None,
+            }
+            assert (
+                conn.execute("SELECT id FROM task_trackers").fetchone()[0] == tracker_before[0][0]
+            )
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
 def test_alembic_downgrade_then_upgrade_idempotent(isolated_alembic: Path) -> None:
     _run_alembic(["upgrade", "head"])
     _run_alembic(["downgrade", "base"])
