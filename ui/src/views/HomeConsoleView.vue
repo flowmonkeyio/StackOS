@@ -21,6 +21,8 @@ import { connectionNeedsAttention, connectionStatusKey } from './connections/cre
 import { providerLabel } from './connections/formatters'
 import TicketStatusChart from './home/TicketStatusChart.vue'
 import { useTicketCounts } from './home/useTicketCounts'
+import AgentActivitySection from './home/AgentActivitySection.vue'
+import { useAgentStats } from './home/useAgentStats'
 import { useProjectOverview } from './home/useProjectOverview'
 import { ticketWorkUrl } from './home/ticketOverview'
 
@@ -31,10 +33,12 @@ const overview = useProjectOverview(projectId)
 const { project, accounts, workflows, task, loading, errors } = overview
 const description = computed(() => project.value?.domain || 'Current project work')
 const tickets = useTicketCounts(projectId)
+const agents = useAgentStats(projectId)
+const { summary: agentSummary, loading: agentsLoading, error: agentsError } = agents
 const { summary, loading: countsLoading, error: countsError } = tickets
 const { running, refresh } = usePolling(
   async () => {
-    await Promise.all([overview.load(), tickets.load()])
+    await Promise.all([overview.load(), tickets.load(), agents.load()])
   },
   { intervalMs: 30_000 },
 )
@@ -246,6 +250,11 @@ function inspectStatus(status: TrackerStatus): void {
         </UiCard>
       </div>
     </div>
+    <AgentActivitySection
+      :summary="agentSummary"
+      :loading="agentsLoading"
+      :error="agentsError"
+    />
     <div
       class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-default bg-bg-surface px-4 py-3"
       aria-label="Tracked work"

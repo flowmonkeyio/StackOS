@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import HomeView from './HomeView.vue'
 import { portfolioFixture, ticketSummaryFixture } from './home/overviewFixtures'
+import { agentStatsFixture } from './home/agentStatsFixtures'
 
 const ORIG_FETCH = globalThis.fetch
 
@@ -76,6 +77,11 @@ describe('HomeView', () => {
     const wrapper = await mountHome()
     const overview = wrapper.findComponent({ name: 'HomePortfolioOverview' })
     expect(wrapper.text()).toContain('Tickets by status')
+    expect(wrapper.findComponent({ name: 'AgentActivitySection' }).props('summary').totals.reported_usage.total).toBe(100)
+    expect(requests.find(({ url }) => url.includes('agentStatsAll'))?.args).toEqual({ response_mode: 'raw', is_active: true })
+    await wrapper.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click')
+    await flushPromises()
+    expect(requests.filter(({ url }) => url.includes('agentStatsAll'))).toHaveLength(2)
     expect(overview.text()).toContain('Current snapshot · 4 tickets')
     expect(overview.findComponent({ name: 'TicketStatusChart' }).attributes('summary-aside')).toBeUndefined()
     expect(wrapper.text()).not.toContain('Latest action calls')
@@ -87,6 +93,12 @@ describe('HomeView', () => {
     expect(
       requests.filter(({ url }) => url.includes('project.portfolio')).at(-1)?.args,
     ).toMatchObject({ ticket_status: 'in-progress', is_active: true, limit: 50 })
+    overview.vm.$emit('visibility', 'all')
+    await flushPromises()
+    expect(requests.filter(({ url }) => url.includes('agentStatsAll')).at(-1)?.args).toEqual({ response_mode: 'raw', is_active: null })
+    overview.vm.$emit('visibility', 'archived')
+    await flushPromises()
+    expect(requests.filter(({ url }) => url.includes('agentStatsAll')).at(-1)?.args).toEqual({ response_mode: 'raw', is_active: false })
     overview.vm.$emit('visibility', 'all')
     await flushPromises()
     expect(requests.filter(({ url }) => url.includes('ticketCountsAll')).at(-1)?.args).toEqual({
@@ -244,7 +256,7 @@ async function mountHome() {
     {
       global: {
         plugins: [router, createPinia()],
-        stubs: { teleport: true, TicketStatusChart: true },
+        stubs: { teleport: true, TicketStatusChart: true, AgentActivityChart: true },
       },
     },
   )
@@ -253,6 +265,7 @@ async function mountHome() {
 }
 
 function defaultFetch(url: string): Response {
+  if (url === '/api/v1/operations/tracker.agentStatsAll/call') return json(agentStatsFixture({ project_id: null, is_active: true }))
   if (url === '/api/v1/operations/tracker.ticketCountsAll/call') {
     return json(ticketSummaryFixture())
   }

@@ -21,9 +21,9 @@ not become narrower when its data or selected mode changes.
 
 | Route | Human surface | Page-shell owner | Inner layout |
 | --- | --- | --- | --- |
-| `/` | Overview | `HomeView` | full local service and host status, tickets by current status, project directory with tracked work and ticket counts |
+| `/` | Overview | `HomeView` | full local service and host status, tickets by current status, shared Agent activity with project identity and Active/Archived/All visibility, project directory with tracked work and ticket counts |
 | `/auth-error` | Authentication recovery | `AuthErrorView` | centered recovery content within the full shell |
-| `/projects/:id` | Project Home | `HomeConsoleView` | tickets by current status, project connections and configured workflows, links to filtered Work |
+| `/projects/:id` | Project Home | `HomeConsoleView` | tickets by current status, project connections and configured workflows, shared scoped Agent activity and coverage, links to filtered Work |
 | `/setup` | Backups | `LocalSetupView` | installation-wide backup settings and coverage |
 | `/projects/:id/schedules` | Automation | `ProjectDetailView` | shared project-detail header and schedules panel |
 | `/projects/:id/cost-budget` | Spend | `ProjectDetailView` | shared project-detail header and budget panel |

@@ -364,6 +364,21 @@ success 40 produces four attempts, 100 reported tokens and one reject, even when
 the current attempt also appears in the archive. A one-phase reviewer mirror
 with validated repair adds one attempt and one reject.
 
+Project Home and the main Overview share an **Agent activity** section backed
+by these operations. It shows launch attempts, reported tokens and recorded
+reviewer rejects, a compact attempt-count chart and the complete grouped table.
+The chart shows up to eight groups in table order; the table retains every group.
+Overview uses its existing Active/Archived/All project visibility for these reads
+and keeps project IDs/names/slugs in the breakdown. Model and role labels are
+recorded selections, independent of current Agent defaults.
+
+Coverage appears beside both totals and row values: a measured zero stays `0`,
+unavailable measurements/classification say `Unavailable`, and partial sums or
+reject counts retain their measured/classified attempt coverage. A failed
+refresh retains same-scope values with a warning and their original update time;
+scope changes clear those values. Both pages reuse their existing refresh owner,
+with no statistics writes, receipt aggregation in Vue, or extra timer.
+
 Agent/process failure also stops the task's execution. Ticket evidence records
 both agent results, launch details, thread references, prior HEAD and verified
 commit SHA before dependencies are released. Git is optional. Non-Git tasks invoke no Git commands; Codex uses its native

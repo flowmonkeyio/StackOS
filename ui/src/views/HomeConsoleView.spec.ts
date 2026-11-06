@@ -6,6 +6,7 @@ import { apiFetch } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
 import HomeConsoleView from './HomeConsoleView.vue'
 import { portfolioFixture, ticketSummaryFixture } from './home/overviewFixtures'
+import { agentStatsFixture } from './home/agentStatsFixtures'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
 vi.mock('@/lib/client', async (original) => ({ ...(await original<object>()), apiFetch: vi.fn() }))
@@ -14,6 +15,7 @@ beforeEach(() => {
   vi.mocked(callOperation).mockReset()
   vi.mocked(apiFetch).mockReset()
   vi.mocked(callOperation).mockImplementation(async (name, args) => {
+    if (name === 'tracker.agentStats') return agentStatsFixture({ project_id: Number(args.project_id) }) as never
     if (name === 'tracker.ticketCounts')
       return ticketSummaryFixture({ project_id: Number(args.project_id), is_active: null }) as never
     if (name === 'project.portfolio')
@@ -77,7 +79,7 @@ async function mountProject() {
     {
       global: {
         plugins: [router, createPinia()],
-        stubs: { TicketStatusChart: true, teleport: true },
+        stubs: { TicketStatusChart: true, AgentActivityChart: true, teleport: true },
       },
     },
   )
@@ -89,6 +91,11 @@ describe('project ticket overview', () => {
   it('shows current ticket counts and terminal work, and only actual configured workflows/Account state', async () => {
     const { wrapper, router } = await mountProject()
     expect(callOperation).toHaveBeenCalledWith('tracker.ticketCounts', { project_id: 1 })
+    expect(callOperation).toHaveBeenCalledWith('tracker.agentStats', { project_id: 1 })
+    expect(wrapper.findComponent({ name: 'AgentActivitySection' }).props('summary').totals.reported_usage.total).toBe(100)
+    await wrapper.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click')
+    await flushPromises()
+    expect(vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'tracker.agentStats')).toHaveLength(2)
     expect(wrapper.text()).toContain('Tickets by status')
     expect(wrapper.text()).toContain('Current snapshot · 4 tickets')
     expect(wrapper.text()).not.toContain('Latest action calls')
@@ -118,7 +125,7 @@ describe('project ticket overview', () => {
     })
     const existing = vi.mocked(callOperation).getMockImplementation()!
     vi.mocked(callOperation).mockImplementation(async (name, args) => {
-      if (name === 'tracker.ticketCounts' && args.project_id === 1) return (await old) as never
+      if ((name === 'tracker.ticketCounts' || name === 'tracker.agentStats') && args.project_id === 1) return (await old) as never
       if (name === 'tracker.ticketCounts')
         return ticketSummaryFixture({ project_id: 2, total_count: 9 }) as never
       return existing(name, args)
@@ -129,6 +136,7 @@ describe('project ticket overview', () => {
     resolveOld(ticketSummaryFixture({ project_id: 1, total_count: 99 }))
     await flushPromises()
     expect(wrapper.findComponent({ name: 'TicketStatusChart' }).props('total')).toBe(9)
+    expect(wrapper.findComponent({ name: 'AgentActivitySection' }).props('summary').project_id).toBe(2)
     wrapper.unmount()
   })
 })

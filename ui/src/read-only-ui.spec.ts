@@ -105,7 +105,7 @@ describe('restricted UI write contract', () => {
         const source = readFileSync(file, 'utf8')
         const operations = [...source.matchAll(/callOperation(?:<[^\n]+>)?\(\s*['"](tracker\.[^'"]+)['"]/g)]
           .map(match => match[1])
-          .filter(name => !['tracker.get', 'tracker.status'].includes(name))
+          .filter(name => !['tracker.get', 'tracker.status', 'tracker.agentStats', 'tracker.agentStatsAll'].includes(name))
         if (operations.length) {
           expect(operations).toEqual(allowedOperations.get(file) ?? [])
           callers.push(file)

@@ -12,19 +12,23 @@ import { useHomeAgentHostStatuses } from './home/useHomeAgentHostStatuses'
 import { useHomePortfolioInsights } from './home/useHomePortfolioInsights'
 import { useHomeSystemStatus } from './home/useHomeSystemStatus'
 import { useTicketCounts } from './home/useTicketCounts'
+import AgentActivitySection from './home/AgentActivitySection.vue'
+import { useAgentStats } from './home/useAgentStats'
 
 const isShell = isDesktopShell()
 const repairOpen = ref(false)
 const portfolio = useHomePortfolioInsights()
 const { items, loading: projectsLoading, error: projectsError, nextCursor, total, filters } = portfolio
 const tickets = useTicketCounts()
+const agents = useAgentStats()
+const { summary: agentSummary, loading: agentsLoading, error: agentsError } = agents
 const { summary, visibility, loading: countsLoading, error: countsError } = tickets
 const { hostStatuses, hostStatusSummary, loadHostStatuses, applyHostStatuses } =
   useHomeAgentHostStatuses(isShell)
 const { health, systemBusy, statusTone, statusLabel, systemFacts, loadHealth, runSystemAction } =
   useHomeSystemStatus({ onDoctorResult: applyHostStatuses, onRepairComplete: loadHostStatuses })
 
-usePolling(tickets.load, { intervalMs: 30_000 })
+usePolling(async () => { await Promise.all([tickets.load(), agents.load()]) }, { intervalMs: 30_000 })
 onMounted(() => {
   void loadHealth()
   void loadHostStatuses()
@@ -32,7 +36,7 @@ onMounted(() => {
 })
 
 async function refresh(): Promise<void> {
-  await Promise.all([portfolio.load(), tickets.load(), loadHealth(), loadHostStatuses()])
+  await Promise.all([portfolio.load(), tickets.load(), agents.load(), loadHealth(), loadHostStatuses()])
 }
 function confirmRepair(): void {
   repairOpen.value = false
@@ -42,6 +46,7 @@ async function setVisibility(value: string | number): Promise<void> {
   const active = value === 'all' ? null : value === 'active'
   await Promise.all([
     tickets.setVisibility(active),
+    agents.setVisibility(active),
     portfolio.setFilters({ ...filters.value, is_active: active }),
   ])
 }
@@ -61,7 +66,7 @@ function selectStatus(status: TrackerStatus | null): void {
           variant="secondary"
           size="sm"
           icon-left="refresh"
-          :loading="projectsLoading || countsLoading"
+          :loading="projectsLoading || countsLoading || agentsLoading"
           @click="refresh"
         >
           Refresh
@@ -101,6 +106,12 @@ function selectStatus(status: TrackerStatus | null): void {
       :error="countsError"
       @visibility="setVisibility"
       @select="selectStatus"
+    />
+    <AgentActivitySection
+      :summary="agentSummary"
+      :loading="agentsLoading"
+      :error="agentsError"
+      global
     />
     <HomeProjectsSection
       :items="items"

@@ -84,6 +84,13 @@ exception is signed off.
 
 ## View decomposition pattern
 
+Both Home pages share `views/home/AgentActivitySection.vue` (three metrics,
+coverage, compact Chart.js attempt counts, accessible `DataTable`) and
+`useAgentStats.ts` (the accepted project/global statistics reads, explicit scope
+and stale-response protection). `AgentActivityChart.vue` displays up to eight
+backend groups in table order; the table contains all groups. Each page's
+existing refresh/polling owner loads statistics alongside ticket counts.
+
 Route views are composition roots, not feature implementations. Use the
 following ownership split for new work and when a touched view has accumulated
 multiple independent lifecycles:
