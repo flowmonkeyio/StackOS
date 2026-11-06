@@ -38,6 +38,7 @@ def test_delivery_operation_has_one_contract_and_no_ack():
     schema = spec.input_model.model_json_schema()
     assert {"delivery_agent", "review_agent", "host_key"}.isdisjoint(schema["required"])
     assert {"run_plan_id", "step_id"} <= schema["properties"].keys()
+    assert "agent_assignments" in schema["properties"]
     with pytest.raises(ValueError):
         spec.input_model.model_validate(
             {
@@ -47,6 +48,24 @@ def test_delivery_operation_has_one_contract_and_no_ack():
                 "delivery_agent": {"name": "x", "instructions": ""},
                 "review_agent": {"name": "y", "instructions": "Review"},
             }
+        )
+
+
+def test_assignment_map_accepts_only_existing_two_roles():
+    spec = build_operation_registry().get("tracker.startDelivery")
+    arguments = {
+        "project_id": 1,
+        "task_key": "prepared",
+        "project_dir": "/tmp",
+        "agent_assignments": {"workflow-42-check": "review_agent"},
+    }
+    assert (
+        spec.input_model.model_validate(arguments).agent_assignments
+        == arguments["agent_assignments"]
+    )
+    with pytest.raises(ValueError):
+        spec.input_model.model_validate(
+            {**arguments, "agent_assignments": {"workflow-42-check": "new_phase_role"}}
         )
 
 
@@ -120,13 +139,13 @@ def test_review_result_accepts_scoped_decisions_and_separate_followups(decision,
         0,
         thread_id="native-review",
         result={
-            "decision": decision,
+            "status": {"approve": "success", "reject": "repair", "blocked": "blocked"}[decision],
             "summary": "Focused checks and scoped findings",
-            "commit_sha": "a" * 40,
+            "outputs": json.dumps({"commit_sha": "a" * 40}),
             "followups": followups,
         },
     )
-    assert validate_agent_result(result, task_delivery.REVIEW_SCHEMA, "codex").ok
+    assert validate_agent_result(result, task_delivery.RESULT_SCHEMA, "codex").ok
 
 
 @pytest.mark.parametrize(
@@ -140,13 +159,13 @@ def test_review_result_rejects_malformed_or_actionable_followup_fields(followups
         0,
         thread_id="native-review",
         result={
-            "decision": "approve",
+            "status": "success",
             "summary": "Focused checks",
-            "commit_sha": "a" * 40,
+            "outputs": json.dumps({"commit_sha": "a" * 40}),
             "followups": followups,
         },
     )
-    assert not validate_agent_result(result, task_delivery.REVIEW_SCHEMA, "codex").ok
+    assert not validate_agent_result(result, task_delivery.RESULT_SCHEMA, "codex").ok
 
 
 @pytest.mark.parametrize("encoding", ["json", "repr", "nested-json"])

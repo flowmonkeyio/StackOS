@@ -119,9 +119,12 @@ planner's task adaptation. Task overrides merge field by field within each role;
 an explicit null clears an optional role selection (model/provider/profile/host),
 while a resolved name or instructions cannot be missing, null or empty.
 Projects need no `.codex` folder, and StackOS does not substitute generic presets
-for those instructions. Harness and role choices are stored once under the
-task's `metadata_json.delivery`, with other task metadata preserved. Launches use
-that effective snapshot even if project defaults later change. Tickets carry no
+for those instructions. Harness and role choices are frozen under the task's `metadata_json.delivery`,
+with other task metadata preserved. Queued/running launches keep that snapshot.
+An explicit handoff after an execution completes or stops resolves a new current
+snapshot from current defaults and overrides. Prior ticket receipts, native
+sessions and consumed repair allowance survive. Completed tasks and frozen
+run/template snapshots are never refreshed. Tickets carry no
 agent settings. Invalid resolved roles or model selections reject before scheduling.
 Each role may override `host_key`, `model`, `provider`, and (for Hermes)
 `profile`. The merged role host overrides the task host, then the project host,
@@ -133,49 +136,58 @@ for example `{"host_key":"hermes","provider":"openrouter","model":"<provider mod
 Codex also supports its configured `model_provider` selector. Other hosts reject
 `provider`; their existing native authentication/configuration remains in control.
 
-For a workflow task, also pass `run_plan_id` and `step_id` together, with the
-matching `task_key` (`workflow-<run_plan_id>`). The plan must be started and the
-selected step running. Selection filters that step's direct executable child
-tickets before applying the readiness limit; group rows, workflow mirrors and
-other steps are left alone. Execution completes when those children are complete,
-even while the workflow task and step remain active. The main agent still owns
-claiming and recording workflow phases. Scope is checked again during execution;
-a queued handoff does not authorize work after its step stops running.
+For a workflow task, pass `run_plan_id` and `step_id` together with the
+matching `task_key` (`workflow-<run_plan_id>`). The plan must be started and
+the entry step running. `step_id` is entry context; automation traverses the
+whole task by canonical dependencies, including nested groups and fork/join.
+Groups activate and complete structurally and never launch agents. A dependency
+on a containing group activates its children while the group is running, using
+the same `activates` semantics as workflow parents.
 
-The call returns a task key, execution status, job reference, and a
-`tracker.get` inspection hint immediately. The daemon uses its existing memory
-scheduler to run one ready, unstarted ticket from that task at a time:
+Mirrors claim their bound step through `RunPlanRepository`, wait for accepted
+descendant/bound-child work, then launch their remaining frozen contract once.
+Zero-child mirrors launch directly. The packet contains the full frozen
+`RunPlanStepOut`, inputs, context, dependency results, tracker brief, accepted
+receipts and current operator inputs. It is not reconstructed from latest YAML.
+Only the run-plan owner validates frozen output schemas and writes terminal
+mirror/plan/run lifecycle, preserving approval, dependency and pending-action
+checks. Controller binding stays in the daemon; raw controller tokens never
+enter prompts or task metadata. Worker agents return only their own evidence.
+
+Optional task-level `agent_assignments` maps canonical ticket keys to the existing
+`delivery_agent` or `review_agent`. Frozen step extensions
+`{"agent_assignment":"review_agent"}` provide mirror defaults; explicit map
+entries win. The resolved map is frozen with each execution snapshot.
+An unassigned mirror uses `delivery_agent`. Models and instructions remain
+project/task settings. No workflow or step name selects behavior.
+
+The call returns task/job/status refs immediately. The existing memory scheduler
+executes serially until all task work completes or execution stops:
 
 ```text
-ready ticket -> delivery commit -> review/specs on exact SHA -> approve -> complete -> next ticket
-                                |
-                              scoped reject -> persist -> same delivery session
-                                -> separate repair commit -> same review session -> approve
-                                -> blocked/native failure/second reject -> stop same task
+ordinary: ready -> delivery -> independent review -> success -> complete
+                         -> scoped repair -> same delivery/review sessions (once)
+mirror: claim step -> accepted descendants -> frozen contract -> record outputs
 ```
 
-The result contracts are `DELIVERY_SCHEMA` and `REVIEW_SCHEMA` in
-[`task_delivery.py`](../stackos/task_delivery.py). Delivery
-must return `status` (`complete` or `blocked`), `summary` and `commit_sha`; review
-must return `decision` (`approve`, `reject` or `blocked`), `summary`, `commit_sha`
-and `followups` (an array of `{"text":"..."}` objects, empty when none). The
-other fields are required strings; extra fields are forbidden. A scoped reject
-and an approval both identify the clean unchanged current candidate SHA. A
-blocked result can use an empty SHA when no candidate exists. Agents
-return results only; StackOS updates ticket lifecycle from these results,
-completing a ticket only after successful delivery and review approval. See the
-[CLI handoff example](operations.md#cli-calls).
+All launches use `RESULT_SCHEMA` in
+[`task_delivery.py`](../stackos/task_delivery.py): `status`
+(`success`, `repair`, `blocked`, `failed`), `summary`, `outputs`, and
+`followups`. All four fields are required; extra fields are forbidden.
+`outputs` is a JSON-encoded object string so native harnesses can transport
+arbitrary frozen output schemas using a closed envelope. The daemon decodes it,
+rejects nonobjects/malformed JSON, and passes mirror outputs unchanged to the
+run-plan owner's validation. Ordinary work may include optional `commit_sha`.
+`followups` is an array of `{"text":"..."}` objects, empty when none.
 
-Delivery result:
-
-```json
-{"status": "complete", "summary": "Implemented and checked the ticket.", "commit_sha": "<ticket commit SHA>"}
-```
-
-Review result:
+Agents explicitly map their domain conclusions to a generic disposition.
+The runtime has no domain verdict table. Only `success` advances.
+An ordinary review `repair` invokes the existing one-pass loop; mirror
+`repair`, blocked/failed, malformed output and native failure stop the same task.
+No ready work with unfinished tickets is stopped, never reported complete.
 
 ```json
-{"decision": "approve", "summary": "Executed planned specs; commands/results and scoped review evidence.", "commit_sha": "<same ticket commit SHA>", "followups": []}
+{"status":"success","summary":"Executed checks.","outputs":"{\"report\":{\"count\":2}}","followups":[]}
 ```
 
 Reviewers execute relevant planned specs and integration checks themselves and
@@ -185,7 +197,7 @@ architecture gaps, inaccurate wiring and canonical ownership where relevant to
 the ticket plus its integration. Required repairs cite scoped criteria/evidence.
 Unrelated findings go only in `followups`, never required-repair summary.
 
-The plugin appends notes to `task.context_json.followups` as
+The runner appends notes to `task.context_json.followups` as
 `{text, source_ticket_key, source_attempt, created_at}`, preserving other context
 including `operator_inputs`. The existing task detail displays them read-only
 with source navigation. They create no tasks/dependencies, launch no work,
@@ -196,7 +208,7 @@ by delivery/review role (thread ID and harness identity), prior `attempts`, late
 receipts and `repair_pass_used`. First launch creates a session; later launches
 resume that exact role session with task-frozen settings. Roles/tickets stay
 distinct. Persist the scoped rejection before repair, supplying occurrence
-phase/attempt/candidate and persisted `review_result` decision/summary/SHA.
+phase/attempt/candidate and persisted `review_result` status/summary/outputs.
 One automatic repair pass requires a separate new descendant commit, then the
 same reviewer rechecks that exact SHA. The consumed pass survives explicit
 requeue. Blocked required verification, native/access/model/resume/schema failure,
@@ -205,12 +217,13 @@ there is no fresh-session, host or model fallback. Approval alone advances.
 
 Agent/process failure also stops the task's execution. Ticket evidence records
 both agent results, launch details, thread references, prior HEAD and verified
-commit SHA before dependencies are released. Each ticket begins from a clean
-Git working tree with an existing HEAD. Delivery must create a new commit that
-descends from that HEAD and matches the current clean committed candidate.
-Missing, stale, invalid or mismatched SHAs, uncommitted changes, and review of
-a different SHA stop the same task before another ticket launches. Unrelated
-dirty work must be preserved and reconciled before submitting the handoff.
+commit SHA before dependencies are released. Git is optional. Non-Git tasks invoke no Git commands; Codex uses its native
+`--skip-git-repo-check` launch option. Supplied candidate evidence must resolve
+to clean current HEAD and descend from the observed base. Observation work may
+cite unchanged HEAD. Engineering guidance still requires separate source-change
+and repair commits; a supplied repair candidate must be a new descendant.
+Invalid/mismatched candidates, dirty Git state and review of a different SHA stop
+the task. Preserve unrelated dirty work and reconcile it before handoff.
 Independent tasks retain the existing parent-task rollup. An active duplicate
 handoff for the same scope returns the current execution instead
 of scheduling another job. Inspect the full task metadata and ticket evidence
@@ -272,7 +285,8 @@ stop the current task with their reason. No credential setup is performed.
 
 Automated delivery allows only the one durable scoped repair pass above; it does
 not resume an interrupted job after daemon restart. `tracker.execute` remains a read-only
-brief operation. Automated child delivery does not complete workflow phases.
+brief operation. Explicit taskwide handoff delegates mechanical mirror progression; agents retain
+domain judgment and final integrated proof obligations.
 
 ## Workflow Mirroring
 

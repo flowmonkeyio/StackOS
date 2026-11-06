@@ -444,11 +444,22 @@ class RunPlanRepository:
         step_id: str,
         *,
         project_id: int | None = None,
+        full_context: bool = False,
     ) -> RunPlanStepOut:
         plan = self._fetch_plan(run_plan_id)
         self._require_plan_project(plan, project_id)
         step = self._fetch_step(run_plan_id, step_id)
-        return self._step_out(step, plan)
+        return self._step_out(step, plan, full_context=full_context)
+
+    def validate_delivery_controller(
+        self, *, run_plan_id: int, project_id: int, run_id: int | None
+    ) -> None:
+        """Validate the daemon-held binding before automatic task work executes."""
+        plan = self._fetch_plan(run_plan_id)
+        self._require_plan_project(plan, project_id)
+        self._require_bound_run(plan, run_id)
+        if plan.status != RunPlanStatus.STARTED:
+            raise ValidationError("Automatic delivery requires a started run plan")
 
     def check_consistency(
         self,
@@ -1258,6 +1269,7 @@ class RunPlanRepository:
         *,
         all_steps: builtins.list[RunPlanStep] | None = None,
         workflow_contract: RunPlanWorkflowContractOut | None = None,
+        full_context: bool = False,
     ) -> RunPlanStepOut:
         data = RunPlanStepOut.model_validate(step)
         if plan is None:
@@ -1293,9 +1305,14 @@ class RunPlanRepository:
                     ),
                 )
                 data.input_context_truncated = inputs_truncated or context_truncated
+                if full_context:
+                    data.input_values_json = _jsonable(input_values)
+                    data.step_context_json = _jsonable(plan.selected_context_json)
+                    data.input_context_truncated = False
         data.direct_dependency_handoffs = direct_dependency_handoffs(
             step,
             all_steps=all_steps or self._step_rows(step.run_plan_id),
+            full_context=full_context,
         )
         return data
 

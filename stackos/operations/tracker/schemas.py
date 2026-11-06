@@ -71,6 +71,7 @@ class TrackerStartDeliveryInput(MCPInput):
     host_key: str | None = Field(default=None, min_length=1)
     delivery_agent: TaskDeliveryAgentOverride | None = None
     review_agent: TaskDeliveryAgentOverride | None = None
+    agent_assignments: dict[str, Literal["delivery_agent", "review_agent"]] | None = None
     run_plan_id: int | None = Field(default=None, ge=1)
     step_id: str | None = Field(default=None, min_length=1)
     response_mode: TrackerResponseMode = "compact"

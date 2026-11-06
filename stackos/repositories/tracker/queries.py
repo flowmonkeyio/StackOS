@@ -1334,17 +1334,33 @@ class TrackerQueryMixin:
         tracker_id: int | None,
         *,
         tickets: list[TrackerTicket] | None = None,
+        include_workflow: bool = False,
     ) -> list[TrackerTicket]:
         rows = tickets if tickets is not None else self._ticket_rows(tracker_id)
         return [
             ticket
             for ticket in rows
             if ticket.status not in TERMINAL_TRACKER_STATUSES
-            and not self._is_workflow_step_mirror_ticket(ticket)
+            and (include_workflow or not self._is_workflow_step_mirror_ticket(ticket))
             and not self._ticket_task_is_terminal(ticket)
             and not ticket.blocker_reason
             and not self._blocked_by_incomplete(tracker_id, ticket)
         ]
+
+    def delivery_ready(self, *, project_id: int, task_key: str) -> list[TrackerTicketOut]:
+        """Task automation uses the same dependency truth, including workflow mirrors."""
+        tracker = self.ensure_tracker(project_id=project_id)
+        task = self._task_by_key(tracker.id, task_key)
+        rows = [row for row in self._ticket_rows(tracker.id) if row.task_id == task.id]
+        ready = self._ready_ticket_rows(tracker.id, tickets=rows, include_workflow=True)
+        ready.sort(
+            key=lambda row: (
+                self._priority_rank(tracker.id, row.priority_key),
+                row.order_index,
+                row.id or 0,
+            )
+        )
+        return self._ticket_out_many(ready)
 
     def _is_workflow_step_mirror_ticket(self, ticket: TrackerTicket) -> bool:
         return (

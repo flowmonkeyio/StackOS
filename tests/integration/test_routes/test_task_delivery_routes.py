@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from stackos import task_delivery
 from stackos.host_mcp.result import AgentRunResult
 from tests.integration.test_mcp.conftest import MCPClient
-from tests.integration.test_repositories.test_task_delivery import commit, git
+from tests.integration.test_repositories.test_task_delivery import commit, generic_result, git
 
 
 @pytest.mark.parametrize("response_mode", ["compact", "ack"])
@@ -94,19 +94,23 @@ def test_real_operation_returns_while_scheduler_delivers(
     calls = []
 
     def run_agent(_host, _directory, _instructions, prompt, _schema, *, sandbox):
-        delivery = _schema == task_delivery.DELIVERY_SCHEMA
+        packet = json.loads(prompt)
+        delivery = packet["phase"] == "delivery"
         calls.append(
             (json.loads(prompt)["brief"]["ticket"]["key"], "delivery" if delivery else "review")
         )
         entered.set()
         assert release.wait(5), "Test did not release the background agent"
-        result = (
-            {"status": "complete", "summary": "Delivered"}
-            if delivery
-            else {"decision": "approve", "summary": "Reviewed", "followups": []}
-        )
-        result["commit_sha"] = (
-            commit(tmp_path, calls[-1][0]) if delivery else git(tmp_path, "rev-parse", "HEAD")
+        result = generic_result(
+            outputs={}
+            if packet["workflow_step"]
+            else {
+                "commit_sha": (
+                    commit(tmp_path, calls[-1][0])
+                    if delivery
+                    else git(tmp_path, "rev-parse", "HEAD")
+                )
+            }
         )
         return AgentRunResult(0, thread_id=f"{calls[-1][0]}-{delivery}", result=result)
 
@@ -159,7 +163,7 @@ def test_real_operation_returns_while_scheduler_delivers(
         release.set()
     assert finished.wait(5), "Scheduled delivery did not finish"
     snapshot = operation("tracker.get", task_key=task_key, response_mode="raw")
-    assert snapshot["tasks"][0]["status"] == ("in-progress" if workflow else "complete")
+    assert snapshot["tasks"][0]["status"] == "complete"
     assert snapshot["tasks"][0]["metadata_json"]["delivery"]["status"] == "complete"
     assert snapshot["tasks"][0]["metadata_json"]["delivery"]["review_agent"] == {
         "name": "reviewer",
@@ -173,10 +177,10 @@ def test_real_operation_returns_while_scheduler_delivers(
         mirror = next(
             ticket for ticket in snapshot["tickets"] if ticket["parent_ticket_key"] is None
         )
-        assert mirror["status"] == "in-progress"
+        assert mirror["status"] == "complete"
     assert calls == [
         ("first", "delivery"),
         ("first", "review"),
         ("second", "delivery"),
         ("second", "review"),
-    ]
+    ] + ([(f"workflow-{plan['id']}-deliver", "delivery")] if workflow else [])

@@ -266,13 +266,13 @@ def test_unsupported_native_read_only_does_not_launch(project, monkeypatch, host
 @pytest.mark.parametrize("host", ["gemini-cli", "hermes"])
 @pytest.mark.parametrize("valid", [True, False])
 def test_normal_review_uses_native_permissions_and_review_schema(project, monkeypatch, host, valid):
-    from stackos.plugins.builtin_engineering import task_delivery
+    from stackos import task_delivery
 
     fake_native_discovery(monkeypatch)
     calls = []
-    value = {"decision": "approve", "summary": "Reviewed", "commit_sha": "a" * 40, "followups": []}
+    value = {"status": "success", "summary": "Reviewed", "outputs": "{}", "followups": []}
     if not valid:
-        value["decision"] = "complete"
+        value["status"] = "complete"
 
     def execute(command, **kwargs):
         calls.append(command)
@@ -300,7 +300,7 @@ def test_normal_review_uses_native_permissions_and_review_schema(project, monkey
         project,
         "Independent review. Do not change files or commits.",
         "Review the exact committed candidate",
-        task_delivery().REVIEW_SCHEMA,
+        task_delivery.RESULT_SCHEMA,
         sandbox=mode,
         model="provider/model-id" if host == "hermes" else "gemini-3.1-pro-preview",
         provider="openrouter" if host == "hermes" else None,
@@ -423,7 +423,14 @@ print('{{"type": "turn.completed"}}')
     assert call["schema"] == SCHEMA
     assert call["path_first"] == str(cli.parent)
     args = call["args"]
-    assert args[:5] == ["exec", "--json", "--cd", str(project), "--approve-for-me"]
+    assert args[:6] == [
+        "exec",
+        "--json",
+        "--skip-git-repo-check",
+        "--cd",
+        str(project),
+        "--approve-for-me",
+    ]
     assert "--sandbox" not in args
     assert args[-1] == "-"
     if resume_thread_id:

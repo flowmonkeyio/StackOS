@@ -20,6 +20,7 @@ from stackos.db.models import (
     TrackerTask,
     TrackerTicket,
     TrackerTicketDependency,
+    TrackerTicketKind,
     TrackerTicketLink,
     TrackerTicketReference,
 )
@@ -255,11 +256,17 @@ class TrackerRelationsMixin:
         dependency_type = (
             ACTIVATES_DEPENDENCY_TYPE
             if ticket.parent_ticket_id == dependency_ticket.id
-            and ticket.run_plan_id is not None
-            and ticket.run_plan_id == dependency_ticket.run_plan_id
-            and ticket.run_plan_step_id is not None
-            and ticket.run_plan_step_id == dependency_ticket.run_plan_step_id
-            and dependency_ticket.parent_ticket_id is None
+            and ticket.task_id == dependency_ticket.task_id
+            and (
+                dependency_ticket.kind == TrackerTicketKind.GROUP
+                or (
+                    ticket.run_plan_id is not None
+                    and ticket.run_plan_id == dependency_ticket.run_plan_id
+                    and ticket.run_plan_step_id is not None
+                    and ticket.run_plan_step_id == dependency_ticket.run_plan_step_id
+                    and dependency_ticket.parent_ticket_id is None
+                )
+            )
             else BLOCKS_DEPENDENCY_TYPE
         )
         existing = self._s.exec(

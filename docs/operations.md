@@ -403,29 +403,46 @@ unrelated tracker configuration. Send `arguments` with `project_id` and
 `delivery` to `POST /api/v1/operations/tracker.configureDelivery/call`. The raw
 response includes saved configuration and tracker revision; MCP, CLI, workflow
 grants, compact and ack are unsupported for this setup write. Read current
-defaults through `tracker.get` with `response_mode=raw`. Changes affect future
-handoffs; existing task snapshots and historical run/ticket evidence retain
+defaults through `tracker.get` with `response_mode=raw`. Changes affect explicit future handoffs. Queued/running executions keep their
+snapshot; an explicit rehandoff after complete/stopped execution resolves current
+defaults and overrides. Historical task/run snapshots and ticket evidence retain
 their settings. Migration `0035_generic_task_delivery` transfers the retired
 engineering plugin defaults once and preserves existing generic values.
 
-`tracker.startDelivery` freezes effective project defaults plus task overrides
-once. Delivery returns only `status` (complete/blocked), `summary`, `commit_sha`;
-review returns only `decision` (approve/reject/blocked), `summary`, `commit_sha`,
-`followups` (text objects, empty array when none). Review executes planned specs
-and relevant integration checks, reporting commands/results and exact SHA.
-Failed required specs reject; unavailable required verification blocks. Scoped
-required repairs stay in summary; unrelated notes stay solely in followups and
-never enter actionable prompts, dependencies or automatic work.
+`tracker.startDelivery` freezes project defaults, task overrides and optional
+`agent_assignments` into one execution snapshot. The map identifies canonical
+ticket keys and existing `delivery_agent`/`review_agent` roles; frozen step
+extension `agent_assignment` supplies mirror defaults and explicit entries win.
+For workflows the running `step_id` is entry context. The existing job traverses
+all dependency-ready work, activates nested groups without launching them,
+claims mirrors through the run-plan owner, runs accepted descendants and then
+launches each remaining frozen mirror contract once. Zero-child mirrors launch
+directly. Only `RunPlanRepository` records terminal mirror/plan/run state.
+Bound controller context stays daemon-held; worker packets carry no raw token.
 
-The task delivery loop persists native role sessions, attempt receipts
-and `repair_pass_used` in ticket automatic-delivery evidence. It routes a valid
-scoped rejection to the same delivery session for one separate repair commit,
-then resumes the same reviewer on the new SHA. Both reject and approve require
-clean unchanged HEAD. The repair budget survives explicit requeue; blocked checks,
-native/access/model/resume failure, candidate mismatch or second rejection stops
-the same task. There is no fresh-session, host or model fallback. Main owns
-workflow phase gates and integrated signoff. See [task delivery](task-tracker.md#automated-task-delivery)
-for the stored session/followup shape and native execution modes.
+Every native result has `status` (success/repair/blocked/failed), `summary`,
+`outputs` (a JSON-encoded object string), and `followups` (text objects).
+This closed envelope transports arbitrary output contracts through native
+harness restrictions. Malformed JSON/nonobjects reject; mirror outputs pass to
+the canonical frozen-schema validation. Agents explicitly map domain conclusions
+to status. Runtime has no domain verdict table. Only success advances; unfinished
+non-ready work stops. Mirror repair stops without a duplicate review loop.
+
+Ordinary tickets retain independent review and one scoped repair in the same
+delivery/review sessions, with persisted rejection, attempt receipts and consumed
+repair allowance surviving requeue. Reviewers execute planned specs and relevant
+integration checks; failures report repair, unavailable required checks blocked.
+Unrelated notes stay in nonactionable followups and never enter repair prompts,
+dependencies or automatic work.
+
+Git is optional. Supplied `outputs.commit_sha` evidence retains clean-current-HEAD,
+ancestry and exact review identity checks. Observation may cite unchanged HEAD;
+project guidance requires separate commits for source changes/repairs.
+Non-Git tasks invoke no Git commands; Codex uses `--skip-git-repo-check`.
+Native/access/model/resume/schema failure, candidate mismatch or second rejection
+stops the same task, with no fresh-session, host or model fallback.
+See [task delivery](task-tracker.md#automated-task-delivery) for session/followup
+storage and native execution modes.
 
 Source/local guidance changes require manual adoption per project through the
 local-admin `tracker.configureDelivery` configuration owner. Ordinary

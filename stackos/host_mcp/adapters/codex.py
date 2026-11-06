@@ -81,6 +81,7 @@ def run_agent(
             codex_bin,
             "exec",
             "--json",
+            "--skip-git-repo-check",
             "--cd",
             str(project_dir),
             *(["--model", model] if model is not None else []),

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,533 @@ from stackos.operations.tracker.write_handlers import tracker_start_delivery
 from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
+
+
+def scenario_result(*args, result=None, **kwargs):
+    """Express scenario outcomes in the generic native wire format."""
+    if result is not None and (
+        "decision" in result or "commit_sha" in result or result.get("status") == "complete"
+    ):
+        value = dict(result)
+        disposition = value.pop("decision", value.pop("status", None))
+        value["status"] = {"complete": "success", "approve": "success", "reject": "repair"}.get(
+            disposition, disposition
+        )
+        if "commit_sha" in value:
+            value["outputs"] = json.dumps({"commit_sha": value.pop("commit_sha")})
+        if "decision" not in result:
+            value.setdefault("followups", [])
+        result = value
+    return AgentRunResult(*args, result=result, **kwargs)
+
+
+def generic_result(status="success", outputs=None, summary="Checked", followups=None):
+    return {
+        "status": status,
+        "summary": summary,
+        "outputs": json.dumps(outputs or {}),
+        "followups": followups or [],
+    }
+
+
+def test_unfinished_nonready_work_stops_without_launch(session, project_id, tmp_path, monkeypatch):
+    from stackos import task_delivery
+
+    prepared_task(session, project_id)
+    repo = TrackerRepository(session)
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="first",
+        patch_json={"blocker_reason": "Missing approved input"},
+    )
+    monkeypatch.setattr(
+        task_delivery, "run_agent", lambda *a, **kw: pytest.fail("Blocked work launched")
+    )
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    snapshot = repo.get(project_id=project_id, task_key="deliver")
+    assert all(t.status == "not-started" for t in snapshot.tickets)
+    assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "stopped"
+
+
+def test_taskwide_dispatch_cannot_complete_with_pending_actions(
+    session, project_id, tmp_path, monkeypatch
+):
+    from stackos import task_delivery
+    from tests.integration.test_repositories.test_run_plan_pending_actions import (
+        _action,
+        _running_plan,
+    )
+
+    plan = _running_plan(session, project_id)
+    action = _action(session, plan)
+    calls = []
+
+    def launch(*args, **kwargs):
+        calls.append(json.loads(args[3])["workflow_step"]["step_id"])
+        return AgentRunResult(0, thread_id="pending-action-session", result=generic_result())
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=f"workflow-{plan.id}",
+        run_plan_id=plan.id,
+        step_id="work",
+    )
+    scheduler.run()
+    session.expire_all()
+    final = RunPlanRepository(session).get(plan.id)
+    assert calls == ["work"]
+    assert [s.status for s in final.steps] == ["blocked", "pending"]
+    assert action.status == "running"
+    state = (
+        TrackerRepository(session)
+        .get(project_id=project_id, task_key=f"workflow-{plan.id}")
+        .tasks[0]
+        .metadata_json["delivery"]
+    )
+    assert state["status"] == "stopped" and "action" in state["reason"]
+
+
+def test_taskwide_dispatch_preserves_pending_approval_gate(
+    session, project_id, tmp_path, monkeypatch
+):
+    from stackos import task_delivery
+
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "gated-task",
+            "title": "Gated task",
+            "approvals": [{"key": "operator-review", "title": "Operator review"}],
+            "steps": [
+                {"id": "read-local", "title": "Read"},
+                {
+                    "id": "change-local",
+                    "title": "Change",
+                    "depends_on": ["read-local"],
+                    "approval_refs": ["operator-review"],
+                },
+            ],
+        },
+    ).data
+    started = plans.start(plan.id, project_id=project_id)
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="read-local")
+    calls = []
+
+    def launch(*args, **kwargs):
+        calls.append(json.loads(args[3])["workflow_step"]["step_id"])
+        return AgentRunResult(0, thread_id="read-session", result=generic_result())
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=f"workflow-{plan.id}",
+        run_plan_id=plan.id,
+        step_id="read-local",
+    )
+    scheduler.run()
+    session.expire_all()
+    final = plans.get(plan.id)
+    assert calls == ["read-local"]
+    assert [s.status for s in final.steps] == ["success", "pending"]
+    assert final.approval_requests[0].status == "pending"
+    state = (
+        TrackerRepository(session)
+        .get(project_id=project_id, task_key=f"workflow-{plan.id}")
+        .tasks[0]
+        .metadata_json["delivery"]
+    )
+    assert state["status"] == "stopped" and "approval" in state["reason"]
+
+
+@pytest.mark.parametrize(
+    "disposition", ["repair", "blocked", "failed", "invalid-json", "invalid-output", "native"]
+)
+def test_mirror_unsuccessful_or_malformed_result_stops_through_plan_owner(
+    session, project_id, tmp_path, monkeypatch, disposition
+):
+    from stackos import task_delivery
+
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "arbitrary-observation",
+            "title": "Observe",
+            "steps": [
+                {
+                    "id": "observe",
+                    "title": "Observe",
+                    "output_refs": ["report"],
+                    "expected_outputs": {
+                        "report": {
+                            "required": True,
+                            "type": "object",
+                            "schema_json": {
+                                "type": "object",
+                                "required": ["count"],
+                                "properties": {"count": {"type": "integer"}},
+                            },
+                        }
+                    },
+                },
+                {"id": "wrap-up", "title": "Wrap", "depends_on": ["observe"]},
+            ],
+        },
+    ).data
+    started = plans.start(plan.id, project_id=project_id)
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="observe")
+    calls = []
+
+    def launch(*args, **kwargs):
+        calls.append(json.loads(args[3]))
+        if disposition == "native":
+            return AgentRunResult(1, thread_id="failed-native", error="Native unavailable")
+        value = generic_result(
+            disposition if disposition in {"repair", "blocked", "failed"} else "success",
+            outputs={"report": {"count": "wrong"}},
+        )
+        if disposition == "invalid-json":
+            value["outputs"] = "not JSON"
+        return AgentRunResult(0, thread_id="mirror", result=value)
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=f"workflow-{plan.id}",
+        run_plan_id=plan.id,
+        step_id="observe",
+    )
+    scheduler.run()
+    session.expire_all()
+    snapshot = TrackerRepository(session).get(project_id=project_id, task_key=f"workflow-{plan.id}")
+    assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "stopped"
+    assert len(calls) == 1
+    final = plans.get(plan.id)
+    assert final.steps[0].status in {"blocked", "failed"}
+    assert final.steps[1].status != "success"
+    assert (
+        "repair_pass_used" not in snapshot.tickets[0].completion_evidence_json["automatic_delivery"]
+    )
+
+
+def test_explicit_rehandoff_refreshes_current_snapshot_preserving_frozen_and_ticket_history(
+    session, project_id, tmp_path
+):
+    from copy import deepcopy
+
+    from stackos import task_delivery
+
+    plan_id = workflow_task(session, project_id)
+    plans = RunPlanRepository(session)
+    repo = TrackerRepository(session)
+    scheduler = QueuedScheduler()
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=f"workflow-{plan_id}",
+        run_plan_id=plan_id,
+        step_id="deliver",
+    )
+    historical = {
+        "sessions": {"delivery": {"thread_id": "accepted-session"}},
+        "repair_pass_used": True,
+        "attempts": [{"attempt": 1}],
+    }
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="selected",
+        patch_json={
+            "status": "complete",
+            "completion_evidence_json": {"automatic_delivery": historical},
+        },
+    )
+    task_delivery._update_delivery(repo, project_id, f"workflow-{plan_id}", status="complete")
+    frozen = deepcopy(plans.get(plan_id).model_dump(mode="json"))
+    repo.create_task(
+        project_id=project_id,
+        key="historical",
+        title="Historical",
+        metadata_json={
+            "delivery": {"status": "complete", "delivery_agent": {"instructions": "Old"}}
+        },
+    )
+    old = repo.get(project_id=project_id, task_key="historical").tasks[0].model_dump(mode="json")
+    repo.configure_delivery(
+        project_id=project_id,
+        delivery={
+            "delivery_agent": {"name": "project-builder", "instructions": "Adopted build"},
+            "review_agent": {"name": "project-reviewer", "instructions": "Adopted review"},
+        },
+    )
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=f"workflow-{plan_id}",
+        run_plan_id=plan_id,
+        step_id="deliver",
+        delivery_agent=None,
+        review_agent=None,
+        agent_assignments={f"workflow-{plan_id}-later": "review_agent"},
+    )
+    current = (
+        repo.get(project_id=project_id, task_key=f"workflow-{plan_id}")
+        .tasks[0]
+        .metadata_json["delivery"]
+    )
+    assert current["delivery_agent"]["instructions"] == "Adopted build"
+    assert current["agent_assignments"][f"workflow-{plan_id}-later"] == "review_agent"
+    repo.configure_delivery(project_id=project_id, delivery={})
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=f"workflow-{plan_id}",
+        run_plan_id=plan_id,
+        step_id="deliver",
+        delivery_agent=None,
+        review_agent=None,
+    )
+    assert (
+        repo.get(project_id=project_id, task_key=f"workflow-{plan_id}")
+        .tasks[0]
+        .metadata_json["delivery"]
+        == current
+    )
+    assert (
+        repo.brief(project_id=project_id, ticket_key="selected").ticket.completion_evidence_json[
+            "automatic_delivery"
+        ]
+        == historical
+    )
+    assert plans.get(plan_id).model_dump(mode="json") == frozen
+    assert (
+        repo.get(project_id=project_id, task_key="historical").tasks[0].model_dump(mode="json")
+        == old
+    )
+    assert len(scheduler.jobs) == 2
+
+
+def test_unchanged_head_is_valid_observation_evidence(session, project_id, tmp_path, monkeypatch):
+    from stackos import task_delivery
+
+    prepared_task(session, project_id)
+    head = git(tmp_path, "rev-parse", "HEAD")
+
+    def launch(*args, **kwargs):
+        p = json.loads(args[3])
+        return AgentRunResult(
+            0,
+            thread_id=p["brief"]["ticket"]["key"] + p["phase"],
+            result=generic_result(outputs={"commit_sha": head}),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    assert (
+        TrackerRepository(session)
+        .get(project_id=project_id, task_key="deliver")
+        .tasks[0]
+        .metadata_json["delivery"]["status"]
+        == "complete"
+    )
+    assert git(tmp_path, "rev-parse", "HEAD") == head
+
+
+def test_non_git_task_and_unchanged_observation_candidate(
+    session, project_id, tmp_path, monkeypatch
+):
+    from stackos import task_delivery
+
+    prepared_task(session, project_id)
+    shutil.rmtree(tmp_path / ".git")
+    directory = tmp_path / "local-data"
+    directory.mkdir()
+    calls = []
+
+    def launch(_host, _directory, _instructions, prompt, schema, **kwargs):
+        packet = json.loads(prompt)
+        calls.append((packet["brief"]["ticket"]["key"], packet["phase"]))
+        return scenario_result(0, thread_id=str(calls[-1]), result=generic_result())
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    monkeypatch.setattr(task_delivery, "_git", lambda *a: pytest.fail("Non-Git work invoked Git"))
+    scheduler = QueuedScheduler()
+    submit(session, project_id, directory, scheduler)
+    scheduler.run()
+    session.expire_all()
+    snapshot = TrackerRepository(session).get(project_id=project_id, task_key="deliver")
+    assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "complete"
+    assert calls == [
+        (key, phase) for key in ("first", "second") for phase in ("delivery", "review")
+    ]
+
+
+def test_taskwide_nested_fork_join_and_frozen_mirrors(session, project_id, tmp_path, monkeypatch):
+    from stackos import task_delivery
+
+    shutil.rmtree(tmp_path / ".git")
+    monkeypatch.setattr(
+        task_delivery, "_git", lambda *a: pytest.fail("Non-Git workflow invoked Git")
+    )
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "local-data-pipeline",
+            "title": "Local data",
+            "inputs": {"dataset": "x" * 6000},
+            "selected_context": {"source": "y" * 6000},
+            "steps": [
+                {
+                    "id": "gather",
+                    "title": "Gather",
+                    "instructions": ["Frozen instruction"],
+                    "input_refs": ["dataset"],
+                },
+                {
+                    "id": "inspect",
+                    "title": "Inspect",
+                    "depends_on": ["gather"],
+                    "metadata_json": {"agent_assignment": "review_agent"},
+                    "output_refs": ["report"],
+                    "expected_outputs": {
+                        "report": {
+                            "required": True,
+                            "type": "object",
+                            "schema_json": {
+                                "type": "object",
+                                "required": ["count"],
+                                "properties": {"count": {"type": "integer"}},
+                            },
+                        }
+                    },
+                },
+                {"id": "side", "title": "Independent branch"},
+                {
+                    "id": "publish-local",
+                    "title": "Publish",
+                    "depends_on": ["inspect", "side"],
+                    "metadata_json": {"agent_assignment": "delivery_agent"},
+                },
+            ],
+        },
+    ).data
+    started = plans.start(plan.id, project_id=project_id)
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="gather")
+    repo = TrackerRepository(session)
+    root = f"workflow-{plan.id}-gather"
+    step_pk = plans.get_step(plan.id, "gather").id
+    for key, parent, kind, dependencies in [
+        ("bundle", root, "group", [root]),
+        ("nested", "bundle", "group", ["bundle"]),
+        ("left", "nested", "ticket", ["nested"]),
+        ("right", "nested", "ticket", ["nested"]),
+        ("join", "bundle", "ticket", ["left", "right"]),
+    ]:
+        repo.create_ticket(
+            project_id=project_id,
+            task_key=f"workflow-{plan.id}",
+            key=key,
+            title=key,
+            kind=kind,
+            parent_ticket_key=parent,
+            dependency_keys=dependencies,
+            run_plan_id=plan.id,
+            run_plan_step_id=step_pk,
+        )
+    calls = []
+
+    def launch(_host, _directory, instructions, prompt, schema, **kwargs):
+        packet = json.loads(prompt)
+        key = packet["brief"]["ticket"]["key"]
+        calls.append((key, packet["phase"], instructions))
+        if packet.get("workflow_step"):
+            assert packet["workflow_step"]["input_context_truncated"] is False
+            if key == root:
+                assert packet["workflow_step"]["input_values_json"]["dataset"] == "x" * 6000
+                assert packet["workflow_step"]["step_context_json"]["source"] == "y" * 6000
+                assert packet["workflow_step"]["instructions_json"] == ["Frozen instruction"]
+                assert {r["key"] for r in packet["accepted_receipts"]} >= {"left", "right", "join"}
+            if key == f"workflow-{plan.id}-inspect":
+                handoff = packet["workflow_step"]["direct_dependency_handoffs"][0]
+                assert handoff["truncated"] is False
+                assert handoff["result_json"] == {"evidence": "z" * 6000}
+        return scenario_result(
+            0,
+            thread_id=str(calls[-1]),
+            result=generic_result(
+                outputs=(
+                    {"report": {"count": 2}}
+                    if key == f"workflow-{plan.id}-inspect"
+                    else {"evidence": "z" * 6000}
+                    if key == root
+                    else {}
+                )
+            ),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=f"workflow-{plan.id}",
+        run_plan_id=plan.id,
+        step_id="gather",
+        agent_assignments={f"workflow-{plan.id}-publish-local": "review_agent"},
+    )
+    scheduler.run()
+    session.expire_all()
+    snapshot = repo.get(project_id=project_id, task_key=f"workflow-{plan.id}")
+    assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "complete"
+    assert all(t.status == "complete" for t in snapshot.tickets)
+    assert [c[0] for c in calls] == [
+        "left",
+        "left",
+        "right",
+        "right",
+        "join",
+        "join",
+        root,
+        f"workflow-{plan.id}-inspect",
+        f"workflow-{plan.id}-side",
+        f"workflow-{plan.id}-publish-local",
+    ]
+    assert calls[-3][2] == calls[-1][2] == "Review the ticket."
+    final = plans.get(plan.id)
+    assert final.status == "completed"
+    assert all(s.claimed_by == task_delivery.ACTOR for s in final.steps[1:])
+    assert final.steps[1].result_json == {"report": {"count": 2}}
 
 
 def git(directory: Path, *args: str) -> str:
@@ -110,11 +638,12 @@ def test_role_host_model_provider_reach_launch_and_receipt(
 
     def run_agent(host, directory, instructions, prompt, schema, *, sandbox, **selection):
         calls.append((host, selection))
-        key = json.loads(prompt)["brief"]["ticket"]["key"]
-        delivery = schema == task_delivery.DELIVERY_SCHEMA
+        packet = json.loads(prompt)
+        key = packet["brief"]["ticket"]["key"]
+        delivery = packet["phase"] == "delivery"
         sha = commit(tmp_path, key) if delivery else git(tmp_path, "rev-parse", "HEAD")
         value = {"status": "complete"} if delivery else {"decision": "approve", "followups": []}
-        return AgentRunResult(
+        return scenario_result(
             0,
             thread_id=f"{key}-{delivery}",
             result={**value, "summary": "Checked", "commit_sha": sha},
@@ -253,8 +782,9 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
 
     def run_agent(host, directory, instructions, prompt, schema, *, sandbox, **selection):
         calls.append((host, instructions, sandbox, selection))
-        key = json.loads(prompt)["brief"]["ticket"]["key"]
-        if schema == task_delivery.DELIVERY_SCHEMA:
+        packet = json.loads(prompt)
+        key = packet["brief"]["ticket"]["key"]
+        if packet["phase"] == "delivery":
             value = {"status": "complete", "commit_sha": commit(tmp_path, key)}
         else:
             value = {
@@ -262,7 +792,7 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
                 "followups": [],
                 "commit_sha": git(tmp_path, "rev-parse", "HEAD"),
             }
-        return AgentRunResult(
+        return scenario_result(
             0, thread_id=f"{key}-{sandbox}", result={**value, "summary": "Checked"}
         )
 
@@ -338,9 +868,9 @@ def test_normal_review_receipts_and_same_task_failure(
         else:
             assert sandbox == "normal" and selected_host == host
             assert "Do not change files or commits" in packet["assignment"]
-            assert schema == task_delivery.REVIEW_SCHEMA
+            assert schema == task_delivery.RESULT_SCHEMA
             if failure == "native":
-                return AgentRunResult(1, error="Native review access denied")
+                return scenario_result(1, error="Native review access denied")
             value = {
                 "decision": "reject" if failure == "reject" else "approve",
                 "commit_sha": packet["candidate"]["commit_sha"],
@@ -348,7 +878,7 @@ def test_normal_review_receipts_and_same_task_failure(
             }
             if failure == "mutation":
                 (tmp_path / "review-edit").write_text("unauthorized review change")
-        return AgentRunResult(
+        return scenario_result(
             0,
             thread_id=None if failure == "reject" and sandbox == "normal" else f"{key}-{sandbox}",
             result={**value, "summary": "Reviewed"},
@@ -392,7 +922,7 @@ def test_two_tickets_run_in_order_after_submission_returns(
     def run_agent(host, project_dir, instructions, prompt, schema, *, sandbox):
         packet = json.loads(prompt)
         ticket_key = packet["brief"]["ticket"]["key"]
-        phase = "delivery" if schema == task_delivery.DELIVERY_SCHEMA else "review"
+        phase = "delivery" if packet["phase"] == "delivery" else "review"
         assert "delivery" not in (packet["brief"]["task"]["metadata_json"] or {})
         assert host == "codex" and Path(project_dir) == tmp_path
         with Session(session.get_bind()) as check:
@@ -422,7 +952,7 @@ def test_two_tickets_run_in_order_after_submission_returns(
             else {"decision": "approve", "summary": "Verified", "followups": []}
         )
         result["commit_sha"] = sha
-        return AgentRunResult(0, thread_id=f"thread-{len(calls)}", result=result)
+        return scenario_result(0, thread_id=f"thread-{len(calls)}", result=result)
 
     monkeypatch.setattr(task_delivery, "run_agent", run_agent)
     first = submit(session, project_id, tmp_path, scheduler)
@@ -445,9 +975,12 @@ def test_two_tickets_run_in_order_after_submission_returns(
     assert metadata["delivery"]["delivery_agent"]["name"] == "project-builder"
     for ticket in snapshot.tickets:
         evidence = ticket.completion_evidence_json["automatic_delivery"]
-        assert evidence["review"]["result"]["decision"] == "approve"
+        assert evidence["review"]["result"]["status"] == "success"
         assert evidence["delivery"]["thread_id"] != evidence["review"]["thread_id"]
-        assert evidence["candidate"]["commit_sha"] == evidence["review"]["result"]["commit_sha"]
+        assert (
+            evidence["candidate"]["commit_sha"]
+            == json.loads(evidence["review"]["result"]["outputs"])["commit_sha"]
+        )
         assert evidence["candidate"]["base_commit_sha"] != evidence["candidate"]["commit_sha"]
     assert (
         TrackerRepository(session).brief(project_id=project_id, ticket_key="other").ticket.status
@@ -469,12 +1002,13 @@ def test_failure_stops_before_next_ticket(
     calls = []
 
     def run_agent(*args, sandbox, **kwargs):
-        delivery = args[4] == task_delivery.DELIVERY_SCHEMA
+        packet = json.loads(args[3])
+        delivery = packet["phase"] == "delivery"
         calls.append(delivery)
         if failure == "delivery" or (failure == "review" and not delivery):
-            return AgentRunResult(1, error="Harness failed")
+            return scenario_result(1, error="Harness failed")
         if delivery:
-            return AgentRunResult(
+            return scenario_result(
                 0,
                 thread_id="delivery",
                 result={
@@ -483,7 +1017,7 @@ def test_failure_stops_before_next_ticket(
                     "commit_sha": commit(tmp_path, "delivered"),
                 },
             )
-        return AgentRunResult(0, result={"decision": "reject", "summary": "Needs repair"})
+        return scenario_result(0, result={"decision": "reject", "summary": "Needs repair"})
 
     monkeypatch.setattr(task_delivery, "run_agent", run_agent)
     scheduler = QueuedScheduler()
@@ -545,7 +1079,8 @@ def test_commit_identity_failure_stops_same_task(
     calls = []
 
     def run_agent(*args, sandbox, **kwargs):
-        delivery = args[4] == task_delivery.DELIVERY_SCHEMA
+        packet = json.loads(args[3])
+        delivery = packet["phase"] == "delivery"
         calls.append(delivery)
         if delivery:
             sha = commit(tmp_path, "first")
@@ -572,7 +1107,7 @@ def test_commit_identity_failure_stops_same_task(
                 new_sha = commit(tmp_path, "review-mutation")
                 if failure == "review-new-sha":
                     result["commit_sha"] = new_sha
-        return AgentRunResult(0, thread_id=f"thread-{delivery}", result=result)
+        return scenario_result(0, thread_id=f"thread-{delivery}", result=result)
 
     monkeypatch.setattr(task_delivery, "run_agent", run_agent)
     scheduler = QueuedScheduler()
@@ -586,7 +1121,7 @@ def test_commit_identity_failure_stops_same_task(
     if failure == "missing":
         assert "Invalid codex result" in evidence["delivery"]["error"]
     else:
-        assert evidence["delivery"]["result"]["status"] == "complete"
+        assert evidence["delivery"]["result"]["status"] == "success"
     assert len(calls) == (2 if failure.startswith("review-") else 1)
 
 
@@ -629,7 +1164,7 @@ def workflow_task(session, project_id, *, running=True):
     return plan.id
 
 
-def test_workflow_delivers_only_selected_children_without_completing_step(
+def test_workflow_advances_beyond_entry_children_through_lifecycle(
     session, project_id, tmp_path, monkeypatch
 ):
     from stackos import task_delivery
@@ -640,9 +1175,9 @@ def test_workflow_delivers_only_selected_children_without_completing_step(
     def run_agent(*args, sandbox, **kwargs):
         packet = json.loads(args[3])
         calls.append(packet["brief"]["ticket"]["key"])
-        delivery = args[4] == task_delivery.DELIVERY_SCHEMA
-        sha = commit(tmp_path, "selected") if delivery else git(tmp_path, "rev-parse", "HEAD")
-        return AgentRunResult(
+        delivery = packet["phase"] == "delivery"
+        sha = git(tmp_path, "rev-parse", "HEAD")
+        return scenario_result(
             0,
             thread_id=f"selected-{delivery}",
             result={
@@ -667,12 +1202,18 @@ def test_workflow_delivers_only_selected_children_without_completing_step(
     scheduler.run()
     session.expire_all()
     snapshot = TrackerRepository(session).get(project_id=project_id, task_key=f"workflow-{plan_id}")
-    assert calls == ["selected", "selected"]
-    assert snapshot.tasks[0].status == "in-progress"
+    assert calls == [
+        "selected",
+        "selected",
+        f"workflow-{plan_id}-deliver",
+        "other-step",
+        "other-step",
+        f"workflow-{plan_id}-later",
+    ]
+    assert snapshot.tasks[0].status == "complete"
     assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "complete"
     statuses = {ticket.key: ticket.status for ticket in snapshot.tickets}
-    assert statuses[f"workflow-{plan_id}-deliver"] == "in-progress"
-    assert statuses["other-step"] == statuses["group"] == "not-started"
+    assert all(status == "complete" for status in statuses.values())
 
 
 @pytest.mark.parametrize("failure", ["pending", "task", "step", "partial"])
@@ -722,7 +1263,7 @@ def test_queued_workflow_stops_when_step_is_no_longer_running(
     session.expire_all()
     snapshot = TrackerRepository(session).get(project_id=project_id, task_key=f"workflow-{plan_id}")
     assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "stopped"
-    assert "running workflow step" in snapshot.tasks[0].metadata_json["delivery"]["reason"]
+    assert "No pending ticket" in snapshot.tasks[0].metadata_json["delivery"]["reason"]
     assert (
         next(ticket for ticket in snapshot.tickets if ticket.key == "selected").status
         == "not-started"
@@ -739,7 +1280,7 @@ def feedback_harness(session, project_id, tmp_path, monkeypatch, decisions, *, f
     def run_agent(host, directory, instructions, prompt, schema, *, sandbox, **selection):
         packet = json.loads(prompt)
         key = packet["brief"]["ticket"]["key"]
-        phase = "delivery" if schema == task_delivery.DELIVERY_SCHEMA else "review"
+        phase = "delivery" if packet["phase"] == "delivery" else "review"
         resume = selection.get("resume_thread_id")
         previous = [call for call in calls if call["key"] == key and call["phase"] == phase]
         assert resume == (f"{key}-{phase}" if previous else None)
@@ -751,7 +1292,7 @@ def feedback_harness(session, project_id, tmp_path, monkeypatch, decisions, *, f
                 durable = TrackerRepository(check).brief(project_id=project_id, ticket_key=key)
                 evidence = durable.ticket.completion_evidence_json["automatic_delivery"]
                 assert evidence["repair_pass_used"] is True
-                assert evidence["attempts"][-1]["review"]["result"]["decision"] == "reject"
+                assert evidence["attempts"][-1]["review"]["result"]["status"] == "repair"
             assert packet["review_result"]["result"]["summary"] == "Scoped repair"
         calls.append({"key": key, "phase": phase, "resume": resume, "packet": packet})
         identity = f"{key}-{phase}"
@@ -779,7 +1320,7 @@ def feedback_harness(session, project_id, tmp_path, monkeypatch, decisions, *, f
             elif fault == "schema":
                 value.pop("followups")
             elif fault == "native":
-                return AgentRunResult(1, thread_id=identity, error="Required check unavailable")
+                return scenario_result(1, thread_id=identity, error="Required check unavailable")
         if fault == "missing-id" or (fault == "missing-review-id" and phase == "review"):
             identity = None
         elif resume and (
@@ -789,7 +1330,7 @@ def feedback_harness(session, project_id, tmp_path, monkeypatch, decisions, *, f
             identity = "wrong-session"
         elif fault == "shared-id" and phase == "review":
             identity = f"{key}-delivery"
-        return AgentRunResult(0, thread_id=identity, result=value)
+        return scenario_result(0, thread_id=identity, result=value)
 
     monkeypatch.setattr(task_delivery, "run_agent", run_agent)
     return calls
@@ -854,10 +1395,13 @@ def test_feedback_reject_repair_approve_preserves_sessions_attempts_and_notes(
     assert first.completion_evidence_json["unrelated"] == {"keep": True}
     assert "SIDE NOTE nested" in json.dumps(first.completion_evidence_json["prior_review"])
     prior = evidence["attempts"][0]
-    assert prior["review"]["result"]["decision"] == "reject"
+    assert prior["review"]["result"]["status"] == "repair"
     assert prior["candidate"]["commit_sha"] != evidence["candidate"]["commit_sha"]
     assert evidence["candidate"]["base_commit_sha"] == prior["candidate"]["commit_sha"]
-    assert evidence["review"]["result"]["commit_sha"] == evidence["candidate"]["commit_sha"]
+    assert (
+        json.loads(evidence["review"]["result"]["outputs"])["commit_sha"]
+        == evidence["candidate"]["commit_sha"]
+    )
     assert evidence["sessions"]["delivery"]["thread_id"] == "first-delivery"
     assert evidence["sessions"]["review"]["thread_id"] == "first-review"
     assert (
@@ -908,7 +1452,7 @@ def test_feedback_followup_only_blocked_and_second_reject(
     if decision == "blocked":
         evidence = snapshot.tickets[0].completion_evidence_json["automatic_delivery"]
         assert not evidence.get("repair_pass_used", False)
-        assert evidence["review"]["result"]["decision"] == "blocked"
+        assert evidence["review"]["result"]["status"] == "blocked"
 
 
 @pytest.mark.parametrize("invalid_location", ["result", "followup"])
@@ -924,7 +1468,7 @@ def test_feedback_schema_error_requeue_excludes_serialized_followups(
         packet = json.loads(prompt)
         assert packet["brief"]["ticket"]["key"] == "first"
         assert "SIDE NOTE" not in prompt
-        phase = "delivery" if schema == task_delivery.DELIVERY_SCHEMA else "review"
+        phase = "delivery" if packet["phase"] == "delivery" else "review"
         previous = [call for call in calls if call["phase"] == phase]
         identity = f"first-{phase}"
         assert selection.get("resume_thread_id") == (identity if previous else None)
@@ -947,7 +1491,7 @@ def test_feedback_schema_error_requeue_excludes_serialized_followups(
                     value["unexpected"] = True
                 else:
                     value["followups"][0]["unexpected"] = True
-        return AgentRunResult(0, thread_id=identity, result=value)
+        return scenario_result(0, thread_id=identity, result=value)
 
     monkeypatch.setattr(task_delivery, "run_agent", run_agent)
     scheduler = QueuedScheduler()
@@ -977,7 +1521,7 @@ def test_feedback_schema_error_requeue_excludes_serialized_followups(
     evidence = stopped.tickets[0].completion_evidence_json["automatic_delivery"]
     assert evidence["attempts"][0]["review"]["error"] == error
     assert not evidence.get("repair_pass_used", False)
-    assert evidence["review"]["result"]["decision"] == "blocked"
+    assert evidence["review"]["result"]["status"] == "blocked"
 
 
 @pytest.mark.parametrize(
@@ -1043,4 +1587,4 @@ def test_feedback_requeue_preserves_consumed_repair_budget(
     evidence = snapshot.tickets[0].completion_evidence_json["automatic_delivery"]
     assert evidence["repair_pass_used"] is True
     assert len(evidence["attempts"]) == 2
-    assert [a["review"]["result"]["decision"] for a in evidence["attempts"]] == ["reject", "reject"]
+    assert [a["review"]["result"]["status"] for a in evidence["attempts"]] == ["repair", "repair"]

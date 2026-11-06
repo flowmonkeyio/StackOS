@@ -168,19 +168,28 @@ def operation_specs() -> list[OperationSpec]:
                 ),
             ),
             purpose=(
-                "Select automated delivery for a prepared task or one running workflow step. "
+                "Select taskwide dependency-driven execution for a prepared task. "
                 "Resolve generic tracker delivery defaults with task overrides by role once. "
-                "The daemon requires a new committed candidate and independent approval of its "
-                "exact SHA before advancing. Rejection or failure stops the same task."
+                "Ordinary work retains independent review and one same-session scoped repair. "
+                "Workflow mirrors execute their frozen contracts through the run-plan owner. "
+                "Explicit unsuccessful results or native failures stop the same task."
             ),
             prerequisites=(
-                "Prepare self-contained tickets and dependencies in a clean Git working directory.",
+                "Prepare self-contained tickets and dependencies in an existing working directory. "
+                "Git is optional; supplied candidate evidence requires clean matching HEAD. "
+                "Source-change and repair commit obligations come from project guidance.",
                 "For a workflow task, supply run_plan_id and step_id for its running step; "
-                "only executable children of that step are selected. The main agent retains "
-                "workflow phase lifecycle control.",
+                "this is entry context, not a traversal limit. The daemon retains the bound "
+                "controller run internally and claims/records mirrors through RunPlanRepository.",
+                "Optional agent_assignments maps canonical ticket keys to delivery_agent or "
+                "review_agent. Frozen step metadata agent_assignment supplies mirror defaults; "
+                "explicit handoff entries win. No workflow/step-name routing or ticket settings.",
                 "Supply the project directory. Role fields may be omitted when saved in "
                 "TaskTracker.config_json.delivery through local-admin tracker.configureDelivery. "
-                "Task choices merge by role into one effective snapshot; no ticket settings or "
+                "Task choices merge by role into one execution snapshot. An explicit handoff "
+                "after complete/stopped execution resolves a new snapshot; queued/running work "
+                "keeps its snapshot. Prior ticket receipts, sessions and repair allowance survive. "
+                "No "
                 "required .codex folder. Resolved names and instructions must be complete. "
                 "Optional per-role host_key, "
                 "model, provider and Hermes profile use the host_mcp capability catalog. "
@@ -192,8 +201,9 @@ def operation_specs() -> list[OperationSpec]:
             returns=(
                 "Returns task/job/status refs. Inspect tracker.get response_mode=raw for progress.",
                 "The existing daemon scheduler owns execution; jobs do not survive daemon restart.",
-                "Ticket evidence retains commit, launch and independent review receipts before "
-                "completion releases dependencies. No automatic retries or replacement tasks.",
+                "Agents return status success/repair/blocked/failed, summary, outputs as a "
+                "JSON-encoded object and nonactionable followups. Frozen outputs are validated by "
+                "the run-plan owner. Mirror repair stops. No automatic replacement tasks.",
             ),
             examples=(
                 OperationExample(
@@ -209,7 +219,7 @@ def operation_specs() -> list[OperationSpec]:
                     },
                 ),
                 OperationExample(
-                    title="Deliver children of the selected running workflow step",
+                    title="Execute a workflow task from its running entry step",
                     arguments={
                         "project_id": 1,
                         "task_key": "workflow-12",
