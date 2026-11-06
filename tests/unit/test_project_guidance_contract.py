@@ -97,3 +97,80 @@ def test_family_aliases_keep_one_shared_adaptation() -> None:
         assert len(paths) == 1
         roles = yaml.safe_load(paths[0].read_text(encoding="utf-8"))["presets"]
         assert len({id(role["project_adaptation"]) for role in roles}) == 1
+
+
+def _assert_bounded_correction_method(text: str) -> None:
+    text = " ".join(text.lower().split())
+    for obligation in (
+        "terminal-managed",
+        "verifier/reviewer",
+        "full-read/merge",
+        "target/source ticket refs",
+        "source attempt",
+        "inspected candidate",
+        "failed criterion/check",
+        "required outcome",
+        "affected recheck",
+        "outside step result_json",
+        "repair_pass_used",
+        "complete -> in-progress -> not-started",
+        "tracker.updateticket",
+        "earliest affected bound gate",
+        "tracker.reopen",
+        "explicit step_id and reason",
+        "final mutation",
+        "then immediately return repair",
+        "fresh persisted correction outranks old approved review",
+        "separate descendant commit",
+        "independent exact-sha review",
+        "without fallback",
+        "followups",
+    ):
+        assert obligation in text, obligation
+    assert "mirror repair stops" not in text
+
+
+def test_sdlc_source_and_seven_local_roles_share_bounded_correction_authority() -> None:
+    loader = AgentPresetLoader()
+    shared_local = set()
+    for role in (
+        "requirements-flow-definer",
+        "codebase-explorer",
+        "planning",
+        "architecture",
+        "test-designer",
+        "delivery",
+        "delivery-reviewer",
+    ):
+        preset = loader.describe_preset(key=f"stackos.sdlc.{role}").preset
+        _assert_bounded_correction_method(preset.project_adaptation.required_agent_action)
+        local = tomllib.loads((ROOT / f".codex/agents/sdlc-{role}.toml").read_text())
+        assert "model" not in local and "model_reasoning_effort" not in local
+        instructions = local["developer_instructions"]
+        _assert_bounded_correction_method(instructions)
+        shared_local.add(
+            next(
+                line
+                for line in instructions.splitlines()
+                if line.startswith("- For an explicitly assigned automatic verifier/reviewer")
+            )
+        )
+    assert len(shared_local) == 1
+
+
+def test_orchestrator_and_workflow_carry_correction_method_without_new_phase() -> None:
+    skill = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
+    _assert_bounded_correction_method(" ".join(skill.operating_contract.must_do))
+    _assert_bounded_correction_method(
+        (ROOT / ".codex/orchestrator/sdlc-delivery-orchestrator.md").read_text()
+    )
+    workflow = yaml.safe_load(
+        (ROOT / "plugins/engineering/workflows/tracked-delivery.yaml").read_text()
+    )
+    recovery = next(p for p in workflow["policies"] if p["key"] == "recovery_reconciliation")
+    _assert_bounded_correction_method(recovery["description"])
+    steps = {step["id"]: step for step in workflow["steps"]}
+    for key in ("verify-delivery", "review-delivery"):
+        assert "recovery_reconciliation" in steps[key]["policy_refs"]
+        assert "recovery_reconciliation" in " ".join(steps[key]["instructions"])
+    assert not any("correction" in key or "repair" in key for key in steps)

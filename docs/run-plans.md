@@ -51,12 +51,28 @@ Frozen step `extensions.agent_assignment` may select `delivery_agent` or
 phase-name dispatch table. Models and instructions remain project/task settings.
 The current result envelope is status/summary/outputs/followups; outputs is a
 JSON-encoded object string. Agents map domain conclusions to explicit generic
-status; only success advances and mirror repair stops. Integration and final
+status; only success accepts a gate. A supported persisted correction/reopen
+returns to dependency scanning after native validation; mirror repair without
+progress stops. Integration and final
 workflow gates still need actual proof, without observation-only commits.
 An explicit rehandoff after a completed/stopped job may refresh that task's
 execution settings. It never rewrites frozen templates, grants, outputs or
 completed task snapshots, and preserves prior ticket receipts/sessions/repair
 allowance. Queued/running execution snapshots never refresh silently.
+
+An assigned automatic verifier/reviewer can use the bounded
+[agent-owned correction method](task-tracker.md#agent-owned-automatic-corrections)
+when the runtime and assignment support it. Full-read/merge feedback and retain
+current findings/outputs outside step results, reconcile affected ordinary
+children, finish checks and quiesce other affected work, then call `tracker.reopen`
+at the earliest affected bound gate as the final mutation and immediately return
+`repair`. The caller must remain active for that last call. RunPlanRepository
+still owns reclaim/record; the runner retains superseded observations and resumes
+original sessions through persisted dependencies. Fresh correction outranks old
+approval; descendant source commits require independent exact review, preserving
+history and consumed repair allowance. No self-acceptance, dispatch, controller
+token or phase-specific repair engine is introduced. Terminal-managed writers
+remain unchanged, and source updates never rewrite frozen jobs or grants.
 
 When the operator has already made an explicit approval decision, the agent
 records it with `runPlan.update` through the normal workspace-bound MCP toolbox.

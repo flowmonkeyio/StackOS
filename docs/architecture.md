@@ -91,10 +91,25 @@ spec.
 ## Optional Task Delivery
 
 `tracker.startDelivery` hands an independently prepared tracker task to the
-existing daemon scheduler. The engineering plugin owns one fixed sequence:
-ready ticket, delivery agent, review agent, completion on approval, next ticket.
-Rejection or failure stops the sequence and records the reason. Run-plan mirror
-lifecycle remains owned by `runPlan.*`.
+existing daemon scheduler. Its generic dependency scan traverses all remaining
+ready work without workflow phase-name routing. Ordinary tickets use delivery
+and independent exact-candidate review; a valid scoped rejection permits one
+same-session repair with a separate descendant source commit. Workflow mirrors
+execute frozen contracts through existing selected roles after accepted children;
+RunPlanRepository alone records mirror/plan/run lifecycle. Child approval never
+substitutes for integration proof.
+
+Assigned automatic verifiers/reviewers may use existing tracker operations for
+scoped corrections on owning tickets, preserving failed proof, merged context,
+sessions, attempts and consumed repair allowance. After checks and other affected
+actions finish, `tracker.reopen` at the earliest affected bound gate is the final
+mutation, followed immediately by a truthful `repair` return. The runner validates
+the native result, retains superseded observations and rescans persisted state;
+it alone resumes original sessions. Fresh correction outranks historical approval,
+and corrected source requires independent exact descendant review. Unsupported
+or no-progress repair and actual execution errors stop; agents never self-accept,
+claim/record steps or dispatch. See the
+[bounded correction contract](task-tracker.md#agent-owned-automatic-corrections).
 
 Task metadata holds the selected harness, project directory, named project-agent
 instruction packets, and execution progress. Canonical tracker briefs,
@@ -103,10 +118,15 @@ There is no additional table or scheduler. The initial memory job continues
 after the submitting process exits but does not resume after a daemon restart.
 
 `stackos.host_mcp` owns the shared internal `run_agent` entry point through the
-same host registry used by Overview. Codex is the first execution adapter;
-additional adapters can implement that capability without changing the delivery
-loop. The planner supplies adapted project instructions, so launch requires no
-particular agent-file layout. Codex retains its normal project/global settings.
+same host registry and capability catalog used by Overview. Harness/model choices
+come from project defaults in `TaskTracker.config_json.delivery` and role-merged
+task overrides, frozen at handoff. The planner supplies adapted instructions, so
+launch requires no particular agent-file layout. Defaults are configured through
+local-admin REST-only `tracker.configureDelivery`; reviewed adoption is manual
+per project, preserves other settings and proves a fresh snapshot/prompt. Source
+edits do not update saved instructions, installed runtimes or frozen jobs. No
+synchronizer or cross-project rollout exists. Main retains scope admission and
+final claims; terminal-managed delivery keeps its sole-writer contract.
 
 ## Data Model
 

@@ -206,10 +206,10 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     expected = {item["preset"]["summary"]["key"]: item for item in raw["required_agents"]}
     actual = {item["preset"]["key"]: item for item in compact["required_agents"]}
     expected_versions = {
-        "stackos.sdlc.requirements-flow-definer": "0.5.0",
-        "stackos.sdlc.planning": "0.5.0",
-        "stackos.sdlc.delivery": "0.5.0",
-        "stackos.sdlc.delivery-reviewer": "0.5.0",
+        "stackos.sdlc.requirements-flow-definer": "0.6.0",
+        "stackos.sdlc.planning": "0.6.0",
+        "stackos.sdlc.delivery": "0.6.0",
+        "stackos.sdlc.delivery-reviewer": "0.6.0",
     }
     assert set(actual) == set(expected) == set(expected_versions)
     for key, item in actual.items():
@@ -229,6 +229,18 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
         )
         assert "assignment attempt" in full_adaptation["required_agent_action"]
         assert "stale, or contradictory inputs" in full_adaptation["required_agent_action"]
+        assert "tracker.reopen" in full_adaptation["required_agent_action"]
+        assert (
+            "final mutation, then immediately return repair"
+            in full_adaptation["required_agent_action"]
+        )
+        if key in {"stackos.sdlc.delivery", "stackos.sdlc.delivery-reviewer"}:
+            # These are recommendations for the bounded method, never controller grants.
+            recommended = set(expected[key]["preset"]["preset"]["recommended_tools"])
+            assert {"tracker.updateTicket", "tracker.reopen"} <= recommended
+            assert {"tracker.pick", "runPlan.claimStep", "runPlan.recordStep"}.isdisjoint(
+                recommended
+            )
         assert (
             "terminal-managed engineering.tracked-delivery"
             in full_adaptation["required_agent_action"]
@@ -285,7 +297,7 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     assert "new descendant commit" in " ".join(delivery["must_do"])
     compact_skill = compact["required_skill_presets"][0]["preset"]
     full_skill = raw["required_skill_presets"][0]["preset"]
-    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.6.0"
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.7.0"
     full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
     # Skill lists are bounded navigation; raw retains the full contract.
     assert len(compact_skill["must_do"]) == 25

@@ -1,8 +1,8 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.6.0
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.7.0
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
-Workflow: `engineering.tracked-delivery` v0.6.0 source contract
+Workflow: `engineering.tracked-delivery` v0.7.0 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
 
 This is the StackOS repository adaptation, not a subagent. The main agent owns
@@ -79,7 +79,7 @@ tracker work applies only when no workflow lifecycle was invoked.
 
 ## Prepare Executable Work
 
-For new v0.6.0 plans the sequence is:
+For new v0.7.0 plans the sequence is:
 
 `scope-work -> define-requirements -> discover-impact -> design-approach ->
 design-tests -> plan-tickets -> review-design -> deliver-tickets ->
@@ -223,7 +223,8 @@ main retains scope admission and final claims.
 Current automatic launches all return `status` (success/repair/blocked/failed),
 `summary`, `outputs` (a JSON-encoded object string), and `followups` (text
 objects, empty array when none). Only success advances; ordinary review repair
-uses the bounded loop, mirror repair stops. Agents explicitly map domain
+uses the bounded loop. Supported persisted correction/reopen returns to dependency
+scanning; mirror repair without progress stops. Agents explicitly map domain
 verdicts and return declared frozen outputs. Supplied outputs.commit_sha retains
 candidate integrity checks; source changes/repairs need exact commits, while
 verification/audit/closeout must not fabricate commits. Honor an older installed
@@ -258,6 +259,39 @@ Preserve existing JSON evidence/history when patching: fields replace rather
 than deep-merge. Quality determines proof depth; reuse current evidence and
 stop repeating checks once they answer the relevant risk.
 
+## Agent-Owned Automatic Corrections
+
+For a supporting runtime/assignment after explicit automatic handoff, the assigned
+verifier/reviewer routes scoped required corrections to existing owning tickets
+without main relay. Terminal-managed routing stays with main. Read full source
+and target briefs, context and completion evidence; full-read/merge supplied JSON
+fields rather than replacing unrelated content. Persist target/source ticket refs,
+source attempt and inspected candidate, failed criterion/check and concrete
+evidence, required outcome and affected recheck. Preserve current findings/outputs
+outside step result_json and retain automatic_delivery sessions, attempts, receipts
+and repair_pass_used before rewind clears current step results.
+
+Choose the earliest affected bound gate from actual provenance/dependencies.
+Requeue affected ordinary children through complete -> in-progress -> not-started
+with tracker.updateTicket and reconcile affected dependents with history intact.
+Finish own checks/other actions and quiesce other affected processes/in-flight
+actions first. Do not wait for this caller to terminate: tracker.reopen with
+explicit step_id and reason is its final mutation, then immediately return repair
+with truthful findings and declared frozen outputs. Never self-accept, claim/record
+steps, dispatch agents or create replacement work. Safe reopen refs grant no
+controller authority. The runner validates the native return, retains the
+superseded observation and rescans persisted dependencies, alone reclaiming the
+bound gate and resuming original delivery/review/verifier sessions.
+
+Fresh persisted correction outranks old approved review, which remains history.
+Corrected source requires a separate descendant commit and independent exact-SHA
+review. Preserve consumed ordinary repair allowance; never reopen to evade a
+second rejection. Unsupported/no-progress correction and actual execution/access/
+model/resume/schema/candidate errors stop without fallback. Followups stay
+nonblocking; exclusions, authority/ownership conflicts and materially different
+outcomes require main reconciliation. Source edits do not activate this method on
+unsupported frozen/live jobs; manual reviewed adoption remains separate.
+
 ## Manual Current-Project Instruction Refresh
 
 After independent source/local candidate approval, explicitly map parsed
@@ -290,7 +324,8 @@ activation or subsequent native proof complete.
 
 ## Recovery And Closeout
 
-Ordinary scoped repairs stay in the active step. Before parking, reassignment
+Ordinary scoped repairs stay in the active step. For terminal-managed recovery,
+before parking, reassignment
 or a material rewind, quiesce affected agents and processes; before resetting
 workflow steps, quiesce all concurrent agents/processes/in-flight actions.
 Preserve receipts outside step `result_json`, then use `tracker.reopen` at the

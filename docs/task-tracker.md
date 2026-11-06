@@ -207,8 +207,11 @@ evidence, including mirrors assigned either existing role. The envelope's
 
 Agents explicitly map their domain conclusions to a generic disposition.
 The runtime has no domain verdict table. Only `success` advances.
-An ordinary review `repair` invokes the existing one-pass loop; mirror
-`repair`, blocked/failed, malformed output and native failure stop the same task.
+An ordinary review `repair` invokes the existing one-pass loop. A supported
+persisted correction/reopen causes a dependency rescan after a valid native
+return; it never accepts the superseded mirror occurrence. Mirror `repair`
+without that persisted progress, blocked/failed, malformed output and native
+failure stop the same task.
 No ready work with unfinished tickets is stopped, never reported complete.
 
 ```json
@@ -252,7 +255,8 @@ One automatic repair pass requires a separate new descendant commit, then the
 same reviewer rechecks that exact SHA. The consumed pass survives explicit
 requeue. Blocked required verification, native/access/model/resume/schema failure,
 dirty/mismatched candidate or a second rejection stops the same task with history;
-there is no fresh-session, host or model fallback. Approval alone advances.
+there is no fresh-session, host or model fallback. Current independent approval
+completes the ordinary ticket; historical approval cannot satisfy a correction.
 
 Each new invocation receipt also records `selected_role` (`delivery_agent` or
 `review_agent`) at the actual call site, including one-phase workflow mirrors.
@@ -447,7 +451,8 @@ Gemini/Grok auth-status support is unverified. Actual launch failures, including
 errors on stdout, missing credentials, inaccessible models, and broken CLI shims,
 stop the current task with their reason. No credential setup is performed.
 
-Automated delivery allows only the one durable scoped repair pass above; it does
+Ordinary automatic review allows only the one durable scoped repair pass above;
+dependency-driven corrections preserve that consumed allowance. Delivery does
 not resume an interrupted job after daemon restart. `tracker.execute` remains a read-only
 brief operation. Explicit taskwide handoff delegates mechanical mirror progression; agents retain
 domain judgment and final integrated proof obligations.
@@ -608,8 +613,8 @@ historically complete.
 
 ## Delegated Work And Recovery
 
-Workflow guidance decides who may accept a ticket. For engineering tracked
-delivery, the main agent assigns explicit keys, serializes tracker writes and
+Workflow guidance decides who may accept a ticket. For terminal-managed
+engineering tracked delivery, the main agent assigns explicit keys, serializes tracker writes and
 marks a child complete only after independent review and acceptance of its
 integrated result. Implementation, review and repair use the same
 `in-progress` ticket with phase/assignment context in existing metadata and
@@ -633,7 +638,7 @@ capacity is released; a failed attempt remains failed evidence.
 `tracker.reopen` with an explicit `step_id` can also return a started workflow
 to an earlier gate. It resets that step and all later positions and clears their
 current step results; it does not stop agents or actions, reset attached child
-statuses, or refresh approval decisions. Before a rewind, preserve retained
+statuses, or refresh approval decisions. For a terminal-managed rewind, preserve retained
 receipts in ticket evidence or other authorized durable records, quiesce all
 agents/processes and in-flight actions, and identify affected evidence and
 accepted children. Reopen through the run-plan lifecycle, explicitly reconcile
@@ -642,6 +647,53 @@ and reclaim the step before resuming. Unaffected valid evidence can be reused.
 Ordinary ticket repair within an active delivery step needs no workflow rewind.
 Existing plans retain their frozen order, grants and output contracts after a
 source-template update.
+
+### Agent-Owned Automatic Corrections
+
+With explicit automatic handoff and a supporting runtime/assignment, an assigned
+verifier or reviewer may route a scoped required correction to existing owning
+tickets without main-agent relay. This is a bounded exception to specialist
+write restrictions; terminal-managed routing remains with main. It grants no
+self-acceptance, step claim/record, agent dispatch or replacement workflow.
+
+1. Read full source and target briefs, context and completion evidence. Choose
+   the original owning ticket and earliest affected bound gate from actual
+   provenance/dependencies. Stop affected work on exclusions, authority/ownership
+   conflicts or materially different outcomes; followups remain nonblocking.
+2. Full-read/merge supplied JSON fields because updates replace whole fields.
+   Persist target/source ticket refs, source attempt and inspected candidate,
+   failed criterion/check and concrete evidence, required outcome and affected
+   recheck. Preserve unrelated context and `automatic_delivery` sessions,
+   attempts, receipts and `repair_pass_used`. Save current failed findings and
+   outputs outside step `result_json` before rewind clears it.
+3. Requeue affected ordinary children with `tracker.updateTicket`, using
+   `complete -> in-progress -> not-started` for completed children, and reconcile
+   affected dependents with their history intact. Reopening a gate alone does
+   not invalidate child acceptance. Finish own checks/other actions and quiesce
+   other affected processes and in-flight actions. The caller remains active to
+   make the last call; it must not wait for itself to terminate.
+4. Call `tracker.reopen` with explicit `step_id` and reason as the final mutation,
+   then immediately return `repair` with truthful findings and declared frozen
+   outputs. The facade returns safe run/plan/reset refs without a controller
+   token value. Do not claim/record the reset gate or dispatch another agent.
+
+After native/session/schema/candidate validation, the runner reloads persisted
+state, retains the superseded observation as history and returns to its existing
+dependency scan. It alone reclaims the pending bound gate and resumes original
+delivery/review/verifier sessions. No phase-name selector or correction service
+is involved. Fresh persisted correction is actionable before an earlier approved
+review, which remains historical evidence. Corrected source needs a separate
+descendant commit and independent exact-SHA approval; consumed ordinary repair
+allowance is preserved, never reset to evade a second rejection. Unsupported
+or no-progress correction and actual native/access/model/resume/schema/candidate
+errors stop without fallback. An old success cannot accept a reset occurrence.
+
+Source guidance edits do not activate this path in installed runtimes, saved
+instructions or frozen jobs. Adoption remains explicit and reviewed per project;
+local agent files are optional sources. Configure/read back only the authorized
+project defaults and prove a subsequent fresh snapshot/prompt, preserving other
+settings and historical receipts. Isolated source rehearsal proves source
+behavior; it does not establish live instruction adoption or installed activation.
 
 ## Status Events
 

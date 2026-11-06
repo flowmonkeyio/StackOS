@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: engineering.tracked-delivery
 name: Engineering Tracked Delivery
-version: 0.6.0
+version: 0.7.0
 description: Reusable SDLC workflow for requirements, project-native design and proof planning, executable ticket breakdown, delegated delivery with immediate independent review, integrated verification, and truthful release closeout.
 domain: engineering
 owner:
@@ -265,7 +265,34 @@ policies:
     description: Ticket acceptance proves the assigned local obligations against accepted prerequisite state; combined business requirements remain explicit integration obligations. A ticket cannot pass by relying on an unaccepted sibling candidate. Integrate its reviewed result and validate any relevant integration changes before completion releases dependents. Reuse current ticket evidence at later gates and execute the remaining combined proof.
   - key: recovery_reconciliation
     kind: recovery
-    description: Before reopening an earlier gate, quiesce active agents and processes, preserve receipts, invalidate affected proof, and explicitly reconcile affected child tickets and dependencies. Reopening a run-plan step does not reopen its completed children. Resume against the new contract revision and candidate; existing runs keep their frozen template order.
+    description: >-
+      Terminal-managed rewinds quiesce active agents/processes, preserve receipts,
+      invalidate affected proof and reconcile children/dependencies through main.
+      Reopening a run-plan step does not reopen its completed children.
+      For supported automatic execution, an explicitly assigned verifier/reviewer
+      may route a scoped required correction through existing owning tickets without
+      main relay. Read full source/target briefs, context and evidence; full-read/merge
+      supplied JSON fields, retaining unrelated context, automatic_delivery sessions,
+      attempts, receipts and repair_pass_used. Persist target/source ticket refs,
+      source attempt and inspected candidate, failed criterion/check/evidence,
+      required outcome and affected recheck. Preserve current findings/outputs outside
+      step result_json before rewind clears results. Choose the earliest affected
+      bound gate from actual provenance/dependencies; requeue affected ordinary
+      children via tracker.updateTicket through complete -> in-progress -> not-started
+      and reconcile affected dependents. Finish own checks/other actions and quiesce
+      other affected processes/in-flight actions; do not wait for this caller to
+      terminate. Call tracker.reopen with explicit step_id and reason as its final
+      mutation, then immediately return repair with truthful declared outputs.
+      Never self-accept, claim/record steps, dispatch agents or create replacement
+      work. StackOS validates the native return, retains the superseded observation
+      and rescans persisted dependencies, alone resuming original delivery/review/verifier
+      sessions. Fresh persisted correction outranks old approved review, retained
+      as history. Corrected source needs a separate descendant commit and independent
+      exact-SHA review; never reset consumed ordinary repair allowance. Actual
+      execution/access/model/resume/schema/candidate errors and unsupported/no-progress
+      correction stop without fallback; followups remain nonblocking. Existing runs
+      keep frozen template order, grants and output schemas; source changes do not
+      activate this path on unsupported frozen/live occurrences.
   - key: orchestrator_feedback_gate
     kind: orchestration
     description: Original operator intent and current constraints define the delivery outcome; the agreed plan is fallible evidence. Main owns material outcome admission and terminal-managed repair routing, not routine resolution of necessary omissions. Explicit automatic handoff authorizes mechanical routing of stored scoped rejection without main message relay. Required repairs protect the original outcome or changed-surface correctness/safety; unrelated findings remain nonblocking followups until separately selected by main/operator.
@@ -439,7 +466,7 @@ steps:
       - Partition ticket-local acceptance from the remaining combined requirement proof; no prerequisite ticket may require proof that only a blocked downstream ticket can provide. Record which final integration checks close each combined requirement.
       - Identify up to three safe concurrent ticket lifecycles and serialize or isolate conflicting ownership of interfaces, generated files, migrations, databases, ports, browser sessions, and other shared resources. Distinct filenames alone do not establish independence.
       - Create no ticket from feedback unless the main orchestrator traces it to the agreed deliverable or changed-surface correctness/safety.
-      - "For workflow-backed child tickets, pass run_plan_id and step_id at creation time; treat them as attachment/provenance only. Main writes terminal-managed child status/evidence with tracker.updateTicket. Explicit tracker.startDelivery delegates all remaining task work by dependencies; ordinary results need independent review and mirror lifecycle remains with RunPlanRepository. Workers return evidence without lifecycle writes."
+      - "For workflow-backed child tickets, pass run_plan_id and step_id at creation time; treat them as attachment/provenance only. Main writes terminal-managed child status/evidence with tracker.updateTicket. Explicit tracker.startDelivery delegates all remaining task work by dependencies; ordinary results need independent review and mirror lifecycle remains with RunPlanRepository. Workers return evidence; only assigned automatic verification/review has the bounded feedback/reopen exception in recovery_reconciliation."
       - Add an activates edge from the active workflow step mirror to every independent first executable child; use blocks edges only for prerequisites that must complete.
       - "Keep the workflow graph to one root: the first generated workflow step mirror ticket. Any extra root under a workflow-backed task is detached work that must be repaired before delivery continues."
       - Make every independent first executable child of a workflow step activate from the workflow step ticket, and make the next workflow step block on all terminal child tickets from the prior step.
@@ -501,7 +528,8 @@ steps:
       - Start independent review at the next available scheduling opportunity after each implementation candidate is ready, ahead of new implementations. Keep the ticket in progress through review and repairs; the implementer cannot verify independently or complete their own ticket.
       - Require a separate scoped commit and full outputs.commit_sha for source changes and repairs before independent exact-commit review. Observation-only outputs need no fabricated commit. Protected writes use normal host approval and stop on denial.
       - Main may hand the prepared task to tracker.startDelivery after readiness, with this running step as entry context. Resolve TaskTracker.config_json.delivery defaults and task overrides by role once; configure defaults through local-admin REST-only tracker.configureDelivery. No required .codex folder or ticket settings. Frozen step extensions.agent_assignment select existing delivery_agent/review_agent; explicit task agent_assignments win. The generic runner traverses dependencies without phase-name logic and stops on failure. Main retains scope admission and final claims without competing lifecycle writes.
-      - Current launches use status (success/repair/blocked/failed), summary, outputs (a JSON-encoded object string) and followups (text objects). Agents map domain conclusions explicitly; only success advances. Mirrors return their declared frozen outputs once after accepted descendants; only RunPlanRepository records mirror/plan/run lifecycle. Mirror repair stops. Preserve frozen schemas and domain fields named followups. Honor an older installed launcher's actual occurrence schema.
+      - Current launches use status (success/repair/blocked/failed), summary, outputs (a JSON-encoded object string) and followups (text objects). Agents map domain conclusions explicitly; only success accepts a gate. Mirrors return their declared frozen outputs once per occurrence after accepted descendants; only RunPlanRepository records mirror/plan/run lifecycle. A supported persisted correction/reopen returns repair for dependency rescan, never acceptance of the superseded occurrence; repair without progress stops. Preserve frozen schemas and domain fields named followups. Honor an older installed launcher's actual occurrence schema.
+      - On correction resumption consume fresh persisted context before historical approval. Keep original delivery/review/verifier sessions, attempts, receipts and consumed repair allowance. Correct scoped required findings in a separate descendant source commit for independent exact-SHA review; never promote task followups to work. The recovery_reconciliation method does not bypass ordinary second-rejection or actual execution failure stops.
       - Source changes and repairs require separate scoped commits and full outputs.commit_sha; verification/audit/closeout may cite unchanged HEAD and must not fabricate commits. Non-Git work needs no Git evidence. Source/local edits require reviewed explicit current-project instruction adoption, preserving settings and historical snapshots; queued/running snapshots never refresh silently.
       - The shared host capability owner chooses test-capable native review permissions with normal approval review. Gemini and Hermes reviewers use normal native sessions with review-only instructions and no enforced read-only guarantee; never silently substitute hosts or models or bypass a denial.
       - Automatic delivery persists a valid scoped rejection before one automatic repair pass in the same native delivery session, requires a separate new descendant repair commit and resumes the same independent review session on that exact SHA. Validate clean unchanged HEAD for reject and approve. Preserve sessions, attempt history and repair_pass_used across explicit requeue; blocked required verification, native/access/model/resume failure, candidate mismatch or a second rejection stops the same task without fallback.
@@ -554,6 +582,7 @@ steps:
       - Widen to project signoff when contracts, grants, adapters, migrations, UI, provider, or release behavior crosses boundaries.
       - Derive passed status only when failed checks are empty and every required check executed; an attempted failure stays failed and cannot be relabeled deferred.
       - If material covered state changes after a check, treat that evidence as stale, return to the earliest affected gate, and rerun the proof whose validity changed.
+      - For a scoped required correction in supported automatic execution, apply recovery_reconciliation to preserve failed proof, merge feedback on existing owning tickets, requeue affected children and call tracker.reopen as the final mutation before returning repair. No self-acceptance, claim/record or dispatch; the runner alone resumes dependency-ready work. In terminal-managed execution return findings to main.
     policy_refs:
       - evidence_over_assertion
       - truthful_tracker_state
@@ -590,6 +619,7 @@ steps:
       - Escalate repeated findings in the same category to a delivery-level root-cause finding when the evidence points to a common cause, rather than applying another isolated patch.
       - Reject, defer, or mark residual feedback that is unsupported, already covered, out of scope, or would over-engineer beyond the scoped deliverable.
       - Lead with confirmed findings ordered by severity; separate false positives, project decisions, and residual gaps.
+      - For a scoped required correction in supported automatic execution, apply recovery_reconciliation through existing owning tickets without main relay, preserving failed outputs and history before the final tracker.reopen and repair return. Re-verification consumes fresh correction before historical approval and requires the independent exact descendant candidate. Terminal-managed routing stays with main; unrelated followups remain nonblocking.
     policy_refs:
       - evidence_over_assertion
       - one_brain_delivery
@@ -1118,8 +1148,8 @@ failure_handling:
   - If project guidance or host-agent format is missing, record the exact gap and ask for it before writing local agent files.
   - If tracker dependencies reveal blocked work, update ticket blockers instead of continuing with invisible chat-only state.
   - If verification fails, use root-cause debugging before broad reruns or speculative fixes.
-  - Keep ordinary review/repair in the same ticket. Terminal-managed findings route through main; automatic delivery routes persisted scoped rejection once in the same native delivery/review sessions. Unrelated followups never become automatic work. Mirror repair stops for controller diagnosis.
-  - Before a material scope change or late integration failure requires an earlier gate, stop all active assignments and their processes, preserve receipts, and explicitly reopen or otherwise reconcile affected child tickets and dependency edges. Reopening a run-plan step alone does not reopen completed children.
+  - Keep ordinary review/repair in the same ticket. Terminal-managed findings route through main; automatic delivery routes persisted scoped rejection once in the same native delivery/review sessions. Unrelated followups never become automatic work. Supported automatic verification/review corrections use recovery_reconciliation through owning tickets and the earliest bound gate; mirror repair without persisted progress stops for controller diagnosis.
+  - For terminal-managed rewind after a material scope change or late integration failure, stop all active assignments and their processes, preserve receipts, and explicitly reconcile affected children/dependencies. For supported assigned automatic correction finish the caller's checks and quiesce other affected work, then make tracker.reopen the final mutation before returning repair; the caller must not wait for itself to terminate. Reopening a run-plan step alone does not reopen completed children.
   - Resume affected assignments with a new attempt and current contract revision; ignore superseded results and invalidate only affected evidence. Never rewrite an existing run's frozen step order to match a newer template.
   - Necessary omitted consumers, files, wiring, specs and docs within the original outcome do not require routine main-agent relay or workflow rewind. Record necessity, proportionality, affected consumers and proof. Explicit exclusions, unavailable authority, actual ownership conflicts or materially different outcomes stop affected work; material outcome changes return to affected impact discovery, architecture and test design.
   - If material covered repository state changes after verification, reopen the earliest affected gate and invalidate only the proof whose validity changed.

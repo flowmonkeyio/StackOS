@@ -790,7 +790,7 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
     delivery = loader.describe_preset(key="stackos.sdlc.delivery").preset
     reviewer = loader.describe_preset(key="stackos.sdlc.delivery-reviewer").preset
 
-    assert architecture.version == "0.5.0"
+    assert architecture.version == "0.6.0"
     architecture_text = " ".join(
         [
             *architecture.prompt_contract.responsibilities,
@@ -876,7 +876,7 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
         return " ".join(item for field in fields for item in getattr(contract, field)).lower()
 
     for preset in presets.values():
-        assert preset.version == "0.5.0"
+        assert preset.version == "0.6.0"
         assert preset.prompt_contract.mission
         assert preset.prompt_contract.handoff_inputs
         assert preset.prompt_contract.handoff_outputs
@@ -932,7 +932,7 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
 
     delivery = contract_text("delivery", "must_do", "must_not_do", "handoff_outputs")
     for boundary in (
-        "do not self-claim queue work",
+        "never self-claim queue work",
         "write durable run/tracker state",
         "unaccepted changes",
         "candidate-ready",
@@ -940,14 +940,14 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
         "repair receipt",
     ):
         assert boundary in delivery
-    lifecycle_tools = {
+    controller_tools = {
         "tracker.pick",
-        "tracker.updateTicket",
-        "tracker.reopen",
         "runPlan.claimStep",
         "runPlan.recordStep",
     }
-    assert lifecycle_tools.isdisjoint(presets["delivery"].recommended_tools)
+    correction_tools = {"tracker.updateTicket", "tracker.reopen"}
+    assert controller_tools.isdisjoint(presets["delivery"].recommended_tools)
+    assert correction_tools <= set(presets["delivery"].recommended_tools)
 
     reviewer = contract_text(
         "delivery-reviewer", "responsibilities", "must_do", "must_not_do", "handoff_outputs"
@@ -965,7 +965,8 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
         "pass/repair/blocked recommendation",
     ):
         assert boundary in reviewer
-    assert lifecycle_tools.isdisjoint(presets["delivery-reviewer"].recommended_tools)
+    assert controller_tools.isdisjoint(presets["delivery-reviewer"].recommended_tools)
+    assert correction_tools <= set(presets["delivery-reviewer"].recommended_tools)
     for text in (planning, delivery, reviewer):
         assert "scoped commit" in text
         assert (

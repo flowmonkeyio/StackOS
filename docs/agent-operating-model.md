@@ -126,6 +126,22 @@ sessions with review-only instructions and no enforced read-only isolation.
 Native read-only controls remain where supported. See
 [task handoff](task-tracker.md#automated-task-delivery).
 
+On supported automatic execution, assigned verifiers/reviewers use the bounded
+[correction method](task-tracker.md#agent-owned-automatic-corrections) to merge
+scoped feedback into existing owning tickets, preserve failed findings/outputs
+and full session/attempt history, requeue affected children and reopen the
+earliest affected bound gate. They finish checks and quiesce other affected work
+before `tracker.reopen` as their final mutation, then immediately return `repair`.
+They do not wait for their own termination before that call. StackOS validates
+the native return and rescans persisted dependencies, preserving superseded
+observations without accepting the reset gate. Fresh feedback outranks old
+approval; corrected source requires a separate descendant commit and exact
+independent review in original sessions with consumed allowance intact. This
+permits no self-acceptance, claim/record or dispatch. Terminal-managed routing
+stays with main; unsupported/no-progress repair and actual execution errors stop.
+New source guidance does not activate unsupported frozen/live jobs; reviewed
+manual per-project adoption and fresh snapshot proof remain separate work.
+
 Local agent installation is outside the StackOS daemon boundary. StackOS
 describes generic presets and workflow role requirements, but the host/project
 decides whether those become `.codex` agents, markdown-frontmatter agents,

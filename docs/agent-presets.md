@@ -323,12 +323,29 @@ separate nonblocking `followups` text objects, never required-repair summary,
 dependencies or actionable repair prompts. All current automatic launches return
 `status` (success/repair/blocked/failed), `summary`, `outputs` (a JSON-encoded
 object string), and `followups` (text objects). Only success advances; ordinary
-review repair uses the bounded loop, mirror repair stops. Agents explicitly map
+review repair uses the bounded loop. Supported persisted correction/reopen returns
+to dependency scanning; mirror repair without progress stops. Agents explicitly map
 domain verdicts to status and return declared frozen mirror outputs. Honor an
 older installed launcher's actual occurrence schema. Source changes and repairs
 require exact scoped commits in `outputs.commit_sha`; observation may cite
 unchanged HEAD and non-Git work needs no fabricated commit. Ordinary test outputs are
 allowed; production files, acceptance tests and commits remain review-only.
+
+Source SDLC roles share the bounded
+[automatic correction method](task-tracker.md#agent-owned-automatic-corrections).
+An assigned automatic verifier/reviewer full-reads and merges scoped feedback on
+the existing owning ticket, preserving source/target/attempt/candidate identity,
+failed criterion/check/evidence, required outcome/recheck, unrelated context and
+all sessions/receipts/consumed allowance. It saves failed outputs before rewind,
+requeues affected children and calls `tracker.reopen` at the earliest affected
+bound gate as its final mutation, then returns `repair`. It finishes checks and
+quiesces other affected work first, without waiting for itself to terminate.
+Only the runner resumes original sessions and records workflow lifecycle.
+Fresh persisted correction outranks historical approval; corrected source needs
+a separate descendant commit and independent exact-SHA review. This exception
+does not permit self-acceptance, claim/record, dispatch, new work from followups,
+or bypass of actual execution errors or ordinary second-rejection stops.
+Terminal-managed specialists still return evidence for main to route.
 
 Review must identify its candidate, assignment attempt, contract revision and
 relevant environment. Disjoint file ownership does not prove independence: a
