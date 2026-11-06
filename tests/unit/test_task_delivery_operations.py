@@ -1,12 +1,32 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from copy import deepcopy
+from types import SimpleNamespace
 
 import pytest
 
 from stackos.operations.registry import build_operation_registry
 from stackos.operations.responses import resolve_response_mode, shape_operation_response
+
+
+@pytest.mark.parametrize(
+    "extras", [{}, {"surface": "mcp", "trusted_local_admin": True}, {"surface": "rest"}]
+)
+def test_defaults_handler_requires_local_admin_rest(extras):
+    from stackos.operations.tracker.schemas import TrackerConfigureDeliveryInput
+    from stackos.operations.tracker.write_handlers import tracker_configure_delivery
+    from stackos.repositories.base import ValidationError
+
+    with pytest.raises(ValidationError, match="local-admin"):
+        asyncio.run(
+            tracker_configure_delivery(
+                TrackerConfigureDeliveryInput(project_id=1, delivery={}),
+                SimpleNamespace(extras=extras),
+                None,
+            )
+        )
 
 
 def test_delivery_operation_has_one_contract_and_no_ack():
@@ -43,8 +63,16 @@ def test_partial_role_choices_and_local_admin_defaults_contract():
     )
     assert inp.delivery_agent is None
     assert inp.review_agent.model_dump(exclude_unset=True) == {"model": "gemini-3.1-pro-preview"}
-    enable = registry.get("plugin.enable")
-    assert enable.grant_policy == "local-admin-plugin-write"
+    configure = registry.get("tracker.configureDelivery")
+    assert configure.grant_policy == "local-admin-console-write"
+    assert configure.surfaces.rest.enabled and configure.surfaces.rest.browser_safe
+    assert not configure.surfaces.mcp.enabled and not configure.surfaces.cli.enabled
+    assert configure.effective_response_policy.allowed_modes == ("raw",)
+    assert not configure.effective_response_policy.ack_safe
+    with pytest.raises(ValueError):
+        configure.input_model.model_validate(
+            {"project_id": 1, "delivery": {"unrelated_tracker_setting": True}}
+        )
 
 
 @pytest.mark.parametrize("scope", [{"run_plan_id": 1}, {"step_id": "deliver"}])
@@ -69,7 +97,7 @@ def test_launch_response_preserves_inspection_fields_and_rejects_ack():
         "task_key": "one",
         "status": "queued",
         "ticket_key": None,
-        "job_ref": "engineering-delivery:1:1",
+        "job_ref": "task-delivery:1:1",
         "run_plan_id": 12,
         "step_id": "deliver-tickets",
         "recommended_tool": "tracker.get",
@@ -85,8 +113,8 @@ def test_launch_response_preserves_inspection_fields_and_rejects_ack():
 @pytest.mark.parametrize("decision", ["approve", "reject", "blocked"])
 @pytest.mark.parametrize("followups", [[], [{"text": "Outside this ticket's scope"}]])
 def test_review_result_accepts_scoped_decisions_and_separate_followups(decision, followups):
+    from stackos import task_delivery
     from stackos.host_mcp.result import AgentRunResult, validate_agent_result
-    from stackos.plugins.builtin_engineering import task_delivery
 
     result = AgentRunResult(
         0,
@@ -98,15 +126,15 @@ def test_review_result_accepts_scoped_decisions_and_separate_followups(decision,
             "followups": followups,
         },
     )
-    assert validate_agent_result(result, task_delivery().REVIEW_SCHEMA, "codex").ok
+    assert validate_agent_result(result, task_delivery.REVIEW_SCHEMA, "codex").ok
 
 
 @pytest.mark.parametrize(
     "followups", [None, "fix this", [{}], [{"text": ""}], [{"text": "note", "create_ticket": True}]]
 )
 def test_review_result_rejects_malformed_or_actionable_followup_fields(followups):
+    from stackos import task_delivery
     from stackos.host_mcp.result import AgentRunResult, validate_agent_result
-    from stackos.plugins.builtin_engineering import task_delivery
 
     result = AgentRunResult(
         0,
@@ -118,12 +146,12 @@ def test_review_result_rejects_malformed_or_actionable_followup_fields(followups
             "followups": followups,
         },
     )
-    assert not validate_agent_result(result, task_delivery().REVIEW_SCHEMA, "codex").ok
+    assert not validate_agent_result(result, task_delivery.REVIEW_SCHEMA, "codex").ok
 
 
 @pytest.mark.parametrize("encoding", ["json", "repr", "nested-json"])
 def test_work_prompt_excludes_serialized_notes_without_changing_canonical_diagnostics(encoding):
-    from stackos.plugins.builtin_engineering import task_delivery
+    from stackos import task_delivery
 
     result = {"decision": "reject", "followups": [{"text": "Unrelated deferred note"}]}
     serialized = repr(result) if encoding == "repr" else json.dumps(result)
@@ -135,7 +163,7 @@ def test_work_prompt_excludes_serialized_notes_without_changing_canonical_diagno
         "followups": [{"text": "Unrelated deferred note"}],
     }
     original = deepcopy(canonical)
-    prompt = task_delivery()._prompt_copy(canonical)
+    prompt = task_delivery._prompt_copy(canonical)
     assert "Unrelated deferred note" not in json.dumps(prompt)
     assert prompt["summary"] == "Required check unavailable"
     assert canonical == original

@@ -6,12 +6,14 @@ from typing import Any
 
 from sqlmodel import select
 
+from stackos import task_delivery
 from stackos.artifacts import redact_secret_text
 from stackos.db.models import RunPlan, RunPlanStatus
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import WriteEnvelope
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.operations.tracker.schemas import (
+    TrackerConfigureDeliveryInput,
     TrackerCreateTaskInput,
     TrackerCreateTicketInput,
     TrackerLinkRunPlanInput,
@@ -25,7 +27,6 @@ from stackos.operations.tracker.schemas import (
     TrackerUpdateTaskInput,
     TrackerUpdateTicketInput,
 )
-from stackos.plugins.builtin_engineering import task_delivery
 from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import (
@@ -34,6 +35,20 @@ from stackos.repositories.tracker import (
     TrackerRepository,
     TrackerTaskContentOut,
 )
+from stackos.repositories.tracker.schema import TrackerSummaryOut
+
+
+async def tracker_configure_delivery(
+    inp: TrackerConfigureDeliveryInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[TrackerSummaryOut]:
+    if ctx.extras.get("surface") != "rest" or ctx.extras.get("trusted_local_admin") is not True:
+        raise ValidationError("Delivery defaults require authenticated local-admin setup")
+    result = TrackerRepository(ctx.session).configure_delivery(
+        project_id=inp.project_id, delivery=inp.delivery.model_dump(exclude_unset=True)
+    )
+    return WriteEnvelope(data=result, run_id=ctx.run_id, project_id=inp.project_id)
 
 
 def _safe_rejection_reason(reason: str) -> str:
@@ -52,7 +67,7 @@ async def tracker_start_delivery(
     session_factory = ctx.extras.get("session_factory")
     if scheduler is None or session_factory is None:
         raise ValidationError("Task delivery requires the running StackOS daemon")
-    result = task_delivery().start_delivery(
+    result = task_delivery.start_delivery(
         session=ctx.session,
         session_factory=session_factory,
         scheduler=scheduler,

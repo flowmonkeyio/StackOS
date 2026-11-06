@@ -56,16 +56,15 @@ The planner chooses this optional path by calling `tracker.startDelivery` after
 preparing a task's self-contained tickets and dependencies. The existing
 terminal-managed path continues to use the normal tracker operations.
 
-Project agent defaults live in the engineering plugin's existing
-`ProjectPlugin.config_json.delivery` object. An operator saves them through
-local-admin `plugin.enable` setup (the local-admin REST route is
-`POST /api/v1/projects/{project_id}/plugins/engineering/enable`, with
-`config_json` in its body). Ordinary MCP/system grants do not allow this setup:
+Project agent defaults live in `TaskTracker.config_json.delivery`. An operator
+saves them through local-admin `tracker.configureDelivery` setup at
+`POST /api/v1/operations/tracker.configureDelivery/call`. This narrow REST-only
+operation accepts `arguments` containing `project_id` and `delivery`:
 
 ```json
 {
-  "plugin_slug": "engineering",
-  "config_json": {
+  "arguments": {
+    "project_id": 1,
     "delivery": {
       "host_key": "codex",
       "delivery_agent": {"name": "builder", "instructions": "Implement, check and commit the assigned ticket."},
@@ -75,9 +74,22 @@ local-admin `plugin.enable` setup (the local-admin REST route is
 }
 ```
 
-`plugin.enable` merges supplied top-level configuration keys, preserving other
-keys; a supplied `delivery` object replaces that key, so include all intended
-defaults when updating it. Instructions must be adapted to the project.
+`tracker.configureDelivery` replaces only `config_json.delivery`, preserving
+unrelated tracker keys and recording a tracker revision. Include all intended
+defaults when updating it; an empty object clears the defaults. Instructions
+must be adapted to the project. The operation returns the saved tracker and
+revision in raw mode; compact and ack are unsupported. Existing
+`tracker.get` with `response_mode=raw` exposes `tracker.config_json` for readback.
+MCP/system and workflow grants cannot authorize this local-admin write.
+
+Migration `0035_generic_task_delivery` moves existing engineering plugin
+delivery defaults once, preserving role instructions, names, host, model,
+provider, profile, unrelated plugin/tracker keys and existing generic values
+(including explicit nulls). Existing generic fields take precedence; missing
+fields are filled from the legacy defaults. The retired plugin `delivery` key
+is removed. Task snapshots, run snapshots and ticket evidence remain unchanged.
+Runtime reads only tracker defaults; enabling the engineering plugin is no
+longer a prerequisite for task automation.
 
 The handoff is task-level; role objects and their fields can be omitted when
 project defaults supply them:
@@ -143,7 +155,7 @@ ready ticket -> delivery commit -> review/specs on exact SHA -> approve -> compl
 ```
 
 The result contracts are `DELIVERY_SCHEMA` and `REVIEW_SCHEMA` in
-[`task_delivery.py`](../plugins/engineering/scripts/task_delivery.py). Delivery
+[`task_delivery.py`](../stackos/task_delivery.py). Delivery
 must return `status` (`complete` or `blocked`), `summary` and `commit_sha`; review
 must return `decision` (`approve`, `reject` or `blocked`), `summary`, `commit_sha`
 and `followups` (an array of `{"text":"..."}` objects, empty when none). The

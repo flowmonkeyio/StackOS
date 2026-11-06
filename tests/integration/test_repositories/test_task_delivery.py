@@ -18,7 +18,6 @@ from stackos.mcp.context import MCPContext
 from stackos.operations.tracker.schemas import TrackerStartDeliveryInput
 from stackos.operations.tracker.write_handlers import tracker_start_delivery
 from stackos.repositories.base import NotFoundError, ValidationError
-from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
 
@@ -103,7 +102,7 @@ def submit(session: Session, project_id: int, tmp_path: Path, scheduler: QueuedS
 def test_role_host_model_provider_reach_launch_and_receipt(
     session: Session, project_id: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from stackos.plugins.builtin_engineering import task_delivery
+    from stackos import task_delivery
 
     prepared_task(session, project_id)
     scheduler = QueuedScheduler()
@@ -112,7 +111,7 @@ def test_role_host_model_provider_reach_launch_and_receipt(
     def run_agent(host, directory, instructions, prompt, schema, *, sandbox, **selection):
         calls.append((host, selection))
         key = json.loads(prompt)["brief"]["ticket"]["key"]
-        delivery = schema == task_delivery().DELIVERY_SCHEMA
+        delivery = schema == task_delivery.DELIVERY_SCHEMA
         sha = commit(tmp_path, key) if delivery else git(tmp_path, "rev-parse", "HEAD")
         value = {"status": "complete"} if delivery else {"decision": "approve", "followups": []}
         return AgentRunResult(
@@ -121,7 +120,7 @@ def test_role_host_model_provider_reach_launch_and_receipt(
             result={**value, "summary": "Checked", "commit_sha": sha},
         )
 
-    monkeypatch.setattr(task_delivery(), "run_agent", run_agent)
+    monkeypatch.setattr(task_delivery, "run_agent", run_agent)
     submit(
         session,
         project_id,
@@ -179,13 +178,33 @@ def test_unsupported_reviewer_rejects_before_scheduling(session, project_id, tmp
     assert task.metadata_json == {"keep": "yes"}
 
 
+def test_tracker_defaults_preserve_unrelated_configuration_and_are_readable(session, project_id):
+    repo = TrackerRepository(session)
+    tracker = repo.ensure_tracker(project_id=project_id)
+    tracker.config_json = {"unrelated": {"keep": True}}
+    session.add(tracker)
+    session.commit()
+    defaults = {"delivery_agent": {"instructions": "Exact project source"}}
+    saved = repo.configure_delivery(project_id=project_id, delivery=defaults)
+    assert saved.config_json == {"unrelated": {"keep": True}, "delivery": defaults}
+    snapshot = repo.get(project_id=project_id, include_graph=False)
+    assert snapshot.tracker.config_json == saved.config_json
+    assert snapshot.tracker.rev == saved.rev
+    result = repo.delivery_defaults(project_id=project_id)
+    result["delivery_agent"]["instructions"] = "Caller mutation"
+    assert repo.delivery_defaults(project_id=project_id) == defaults
+    cleared = repo.configure_delivery(project_id=project_id, delivery={})
+    assert cleared.config_json == {"unrelated": {"keep": True}, "delivery": {}}
+    assert cleared.rev == saved.rev + 1
+
+
 def test_project_defaults_merge_by_role_and_freeze_before_launch(
     session, project_id, tmp_path, monkeypatch
 ):
-    from stackos.plugins.builtin_engineering import task_delivery
+    from stackos import task_delivery
 
     prepared_task(session, project_id)
-    plugins = PluginRepository(session)
+    repo = TrackerRepository(session)
     defaults = {
         "host_key": "claude-code",
         "delivery_agent": {"name": "builder", "instructions": "Saved build instructions"},
@@ -196,9 +215,7 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
             "model": "gemini-2.5-pro",
         },
     }
-    plugins.enable(
-        project_id=project_id, plugin_slug="engineering", config_json={"delivery": defaults}
-    )
+    repo.configure_delivery(project_id=project_id, delivery=defaults)
     scheduler = QueuedScheduler()
     submit(
         session,
@@ -224,10 +241,9 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
         "model": "gemini-3.1-pro-preview",
     }
     # An edit after submission cannot change the effective task snapshot.
-    plugins.enable(
+    repo.configure_delivery(
         project_id=project_id,
-        plugin_slug="engineering",
-        config_json={"delivery": {"review_agent": {"instructions": "Changed later"}}},
+        delivery={"review_agent": {"instructions": "Changed later"}},
     )
     duplicate = submit(
         session, project_id, tmp_path, scheduler, delivery_agent=None, review_agent=None
@@ -238,7 +254,7 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
     def run_agent(host, directory, instructions, prompt, schema, *, sandbox, **selection):
         calls.append((host, instructions, sandbox, selection))
         key = json.loads(prompt)["brief"]["ticket"]["key"]
-        if schema == task_delivery().DELIVERY_SCHEMA:
+        if schema == task_delivery.DELIVERY_SCHEMA:
             value = {"status": "complete", "commit_sha": commit(tmp_path, key)}
         else:
             value = {
@@ -250,7 +266,7 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
             0, thread_id=f"{key}-{sandbox}", result={**value, "summary": "Checked"}
         )
 
-    monkeypatch.setattr(task_delivery(), "run_agent", run_agent)
+    monkeypatch.setattr(task_delivery, "run_agent", run_agent)
     scheduler.run()
     assert (
         calls
@@ -293,9 +309,7 @@ def test_incomplete_or_invalid_resolved_defaults_never_schedule(
     session, project_id, tmp_path, defaults, override, reason
 ):
     prepared_task(session, project_id)
-    PluginRepository(session).enable(
-        project_id=project_id, plugin_slug="engineering", config_json={"delivery": defaults}
-    )
+    TrackerRepository(session).configure_delivery(project_id=project_id, delivery=defaults)
     scheduler = QueuedScheduler()
     with pytest.raises(ValidationError, match=reason):
         submit(session, project_id, tmp_path, scheduler, delivery_agent=override, review_agent=None)
@@ -309,7 +323,7 @@ def test_incomplete_or_invalid_resolved_defaults_never_schedule(
 def test_normal_review_receipts_and_same_task_failure(
     session, project_id, tmp_path, monkeypatch, host, failure
 ):
-    from stackos.plugins.builtin_engineering import task_delivery
+    from stackos import task_delivery
 
     prepared_task(session, project_id)
     scheduler = QueuedScheduler()
@@ -324,7 +338,7 @@ def test_normal_review_receipts_and_same_task_failure(
         else:
             assert sandbox == "normal" and selected_host == host
             assert "Do not change files or commits" in packet["assignment"]
-            assert schema == task_delivery().REVIEW_SCHEMA
+            assert schema == task_delivery.REVIEW_SCHEMA
             if failure == "native":
                 return AgentRunResult(1, error="Native review access denied")
             value = {
@@ -340,7 +354,7 @@ def test_normal_review_receipts_and_same_task_failure(
             result={**value, "summary": "Reviewed"},
         )
 
-    monkeypatch.setattr(task_delivery(), "run_agent", run_agent)
+    monkeypatch.setattr(task_delivery, "run_agent", run_agent)
     review = {"name": "reviewer", "instructions": "Independent review only", "host_key": host}
     if host == "hermes":
         review.update(provider="openrouter", model="provider/model")
@@ -369,7 +383,7 @@ def test_normal_review_receipts_and_same_task_failure(
 def test_two_tickets_run_in_order_after_submission_returns(
     session: Session, project_id: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from stackos.plugins.builtin_engineering import task_delivery
+    from stackos import task_delivery
 
     prepared_task(session, project_id)
     scheduler = QueuedScheduler()
@@ -378,7 +392,7 @@ def test_two_tickets_run_in_order_after_submission_returns(
     def run_agent(host, project_dir, instructions, prompt, schema, *, sandbox):
         packet = json.loads(prompt)
         ticket_key = packet["brief"]["ticket"]["key"]
-        phase = "delivery" if schema == task_delivery().DELIVERY_SCHEMA else "review"
+        phase = "delivery" if schema == task_delivery.DELIVERY_SCHEMA else "review"
         assert "delivery" not in (packet["brief"]["task"]["metadata_json"] or {})
         assert host == "codex" and Path(project_dir) == tmp_path
         with Session(session.get_bind()) as check:
@@ -410,7 +424,7 @@ def test_two_tickets_run_in_order_after_submission_returns(
         result["commit_sha"] = sha
         return AgentRunResult(0, thread_id=f"thread-{len(calls)}", result=result)
 
-    monkeypatch.setattr(task_delivery(), "run_agent", run_agent)
+    monkeypatch.setattr(task_delivery, "run_agent", run_agent)
     first = submit(session, project_id, tmp_path, scheduler)
     again = submit(session, project_id, tmp_path, scheduler)
     assert first == again and first["status"] == "queued"
@@ -449,13 +463,13 @@ def test_failure_stops_before_next_ticket(
     monkeypatch: pytest.MonkeyPatch,
     failure: str,
 ) -> None:
-    from stackos.plugins.builtin_engineering import task_delivery
+    from stackos import task_delivery
 
     prepared_task(session, project_id)
     calls = []
 
     def run_agent(*args, sandbox, **kwargs):
-        delivery = args[4] == task_delivery().DELIVERY_SCHEMA
+        delivery = args[4] == task_delivery.DELIVERY_SCHEMA
         calls.append(delivery)
         if failure == "delivery" or (failure == "review" and not delivery):
             return AgentRunResult(1, error="Harness failed")
@@ -471,7 +485,7 @@ def test_failure_stops_before_next_ticket(
             )
         return AgentRunResult(0, result={"decision": "reject", "summary": "Needs repair"})
 
-    monkeypatch.setattr(task_delivery(), "run_agent", run_agent)
+    monkeypatch.setattr(task_delivery, "run_agent", run_agent)
     scheduler = QueuedScheduler()
     submit(session, project_id, tmp_path, scheduler)
     scheduler.run()
@@ -524,14 +538,14 @@ def test_workflow_task_is_not_a_second_run_plan_controller(
 def test_commit_identity_failure_stops_same_task(
     session, project_id, tmp_path, monkeypatch, failure
 ):
-    from stackos.plugins.builtin_engineering import task_delivery
+    from stackos import task_delivery
 
     prepared_task(session, project_id)
     base = git(tmp_path, "rev-parse", "HEAD")
     calls = []
 
     def run_agent(*args, sandbox, **kwargs):
-        delivery = args[4] == task_delivery().DELIVERY_SCHEMA
+        delivery = args[4] == task_delivery.DELIVERY_SCHEMA
         calls.append(delivery)
         if delivery:
             sha = commit(tmp_path, "first")
@@ -560,7 +574,7 @@ def test_commit_identity_failure_stops_same_task(
                     result["commit_sha"] = new_sha
         return AgentRunResult(0, thread_id=f"thread-{delivery}", result=result)
 
-    monkeypatch.setattr(task_delivery(), "run_agent", run_agent)
+    monkeypatch.setattr(task_delivery, "run_agent", run_agent)
     scheduler = QueuedScheduler()
     submit(session, project_id, tmp_path, scheduler)
     scheduler.run()
@@ -618,7 +632,7 @@ def workflow_task(session, project_id, *, running=True):
 def test_workflow_delivers_only_selected_children_without_completing_step(
     session, project_id, tmp_path, monkeypatch
 ):
-    from stackos.plugins.builtin_engineering import task_delivery
+    from stackos import task_delivery
 
     plan_id = workflow_task(session, project_id)
     calls = []
@@ -626,7 +640,7 @@ def test_workflow_delivers_only_selected_children_without_completing_step(
     def run_agent(*args, sandbox, **kwargs):
         packet = json.loads(args[3])
         calls.append(packet["brief"]["ticket"]["key"])
-        delivery = args[4] == task_delivery().DELIVERY_SCHEMA
+        delivery = args[4] == task_delivery.DELIVERY_SCHEMA
         sha = commit(tmp_path, "selected") if delivery else git(tmp_path, "rev-parse", "HEAD")
         return AgentRunResult(
             0,
@@ -639,7 +653,7 @@ def test_workflow_delivers_only_selected_children_without_completing_step(
             },
         )
 
-    monkeypatch.setattr(task_delivery(), "run_agent", run_agent)
+    monkeypatch.setattr(task_delivery, "run_agent", run_agent)
     scheduler = QueuedScheduler()
     submit(
         session,
@@ -681,7 +695,7 @@ def test_workflow_selector_rejected_before_scheduling(session, project_id, tmp_p
 def test_queued_workflow_stops_when_step_is_no_longer_running(
     session, project_id, tmp_path, monkeypatch
 ):
-    from stackos.plugins.builtin_engineering import task_delivery
+    from stackos import task_delivery
 
     plan_id = workflow_task(session, project_id)
     scheduler = QueuedScheduler()
@@ -703,9 +717,7 @@ def test_queued_workflow_stops_when_step_is_no_longer_running(
         status=RunPlanStepStatus.BLOCKED,
         error="Operator paused delivery",
     )
-    monkeypatch.setattr(
-        task_delivery(), "run_agent", lambda *a, **kw: pytest.fail("must not launch")
-    )
+    monkeypatch.setattr(task_delivery, "run_agent", lambda *a, **kw: pytest.fail("must not launch"))
     scheduler.run()
     session.expire_all()
     snapshot = TrackerRepository(session).get(project_id=project_id, task_key=f"workflow-{plan_id}")
@@ -719,7 +731,7 @@ def test_queued_workflow_stops_when_step_is_no_longer_running(
 
 def feedback_harness(session, project_id, tmp_path, monkeypatch, decisions, *, fault=None):
     """Real commits and durable tracker reads around each controlled native response."""
-    from stackos.plugins.builtin_engineering import task_delivery
+    from stackos import task_delivery
 
     calls = []
     base = git(tmp_path, "rev-parse", "HEAD")
@@ -727,7 +739,7 @@ def feedback_harness(session, project_id, tmp_path, monkeypatch, decisions, *, f
     def run_agent(host, directory, instructions, prompt, schema, *, sandbox, **selection):
         packet = json.loads(prompt)
         key = packet["brief"]["ticket"]["key"]
-        phase = "delivery" if schema == task_delivery().DELIVERY_SCHEMA else "review"
+        phase = "delivery" if schema == task_delivery.DELIVERY_SCHEMA else "review"
         resume = selection.get("resume_thread_id")
         previous = [call for call in calls if call["key"] == key and call["phase"] == phase]
         assert resume == (f"{key}-{phase}" if previous else None)
@@ -779,7 +791,7 @@ def feedback_harness(session, project_id, tmp_path, monkeypatch, decisions, *, f
             identity = f"{key}-delivery"
         return AgentRunResult(0, thread_id=identity, result=value)
 
-    monkeypatch.setattr(task_delivery(), "run_agent", run_agent)
+    monkeypatch.setattr(task_delivery, "run_agent", run_agent)
     return calls
 
 
@@ -903,7 +915,7 @@ def test_feedback_followup_only_blocked_and_second_reject(
 def test_feedback_schema_error_requeue_excludes_serialized_followups(
     session, project_id, tmp_path, monkeypatch, invalid_location
 ):
-    from stackos.plugins.builtin_engineering import task_delivery
+    from stackos import task_delivery
 
     feedback_task(session, project_id)
     calls = []
@@ -912,7 +924,7 @@ def test_feedback_schema_error_requeue_excludes_serialized_followups(
         packet = json.loads(prompt)
         assert packet["brief"]["ticket"]["key"] == "first"
         assert "SIDE NOTE" not in prompt
-        phase = "delivery" if schema == task_delivery().DELIVERY_SCHEMA else "review"
+        phase = "delivery" if schema == task_delivery.DELIVERY_SCHEMA else "review"
         previous = [call for call in calls if call["phase"] == phase]
         identity = f"first-{phase}"
         assert selection.get("resume_thread_id") == (identity if previous else None)
@@ -937,7 +949,7 @@ def test_feedback_schema_error_requeue_excludes_serialized_followups(
                     value["followups"][0]["unexpected"] = True
         return AgentRunResult(0, thread_id=identity, result=value)
 
-    monkeypatch.setattr(task_delivery(), "run_agent", run_agent)
+    monkeypatch.setattr(task_delivery, "run_agent", run_agent)
     scheduler = QueuedScheduler()
     submit(session, project_id, tmp_path, scheduler)
     scheduler.run()

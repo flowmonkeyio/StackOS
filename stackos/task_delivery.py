@@ -27,7 +27,6 @@ from stackos.host_mcp.result import AgentSandbox, validate_agent_result
 from stackos.host_mcp.service import agent_review_sandbox, agent_selection_error, run_agent
 from stackos.operations.tracker.schemas import TaskDeliveryAgent
 from stackos.repositories.base import NotFoundError, ValidationError
-from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.tracker import TrackerRepository
 
 DELIVERY_SCHEMA = {
@@ -59,7 +58,7 @@ REVIEW_SCHEMA = {
     "required": ["decision", "summary", "commit_sha", "followups"],
     "additionalProperties": False,
 }
-ACTOR = "engineering.task-delivery"
+ACTOR = "tracker.task-delivery"
 
 
 def _workflow_scope(repo, project_id, task, run_plan_id, step_id):
@@ -223,21 +222,17 @@ def start_delivery(
     directory = Path(project_dir).expanduser().resolve()
     if not directory.is_dir():
         raise ValidationError("project_dir must be an existing working directory")
-    defaults = (
-        PluginRepository(session)
-        .get_project_config(project_id=project_id, plugin_slug="engineering")
-        .get("delivery", {})
-    )
+    defaults = repo.delivery_defaults(project_id=project_id)
     if not isinstance(defaults, dict):
-        raise ValidationError("Engineering delivery defaults must be an object")
+        raise ValidationError("Task delivery defaults must be an object")
     host_key = host_key or defaults.get("host_key") or "codex"
     if not isinstance(host_key, str):
-        raise ValidationError("Engineering delivery host_key must be a string")
+        raise ValidationError("Task delivery host_key must be a string")
     resolved = {}
     for role, override in (("delivery_agent", delivery_agent), ("review_agent", review_agent)):
         default_agent = defaults.get(role, {})
         if not isinstance(default_agent, dict):
-            raise ValidationError(f"Engineering delivery {role} must be an object")
+            raise ValidationError(f"Task delivery {role} must be an object")
         try:
             agent = TaskDeliveryAgent.model_validate(
                 {**default_agent, **(override or {})}
@@ -271,7 +266,7 @@ def start_delivery(
         review_agent=resolved["review_agent"],
         run_plan_id=run_plan_id,
         step_id=step_id,
-        job_ref=f"engineering-delivery:{project_id}:{task.id}",
+        job_ref=f"task-delivery:{project_id}:{task.id}",
     )
     try:
         scheduler.add_job(

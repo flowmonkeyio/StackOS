@@ -3,6 +3,9 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
+from typing import Any
+
 from sqlmodel import select
 
 from stackos.db.models import (
@@ -27,6 +30,29 @@ from stackos.repositories.tracker.utils import (
 
 class TrackerSetupMixin:
     """Tracker setup and default catalogue helpers."""
+
+    def delivery_defaults(self, *, project_id: int) -> dict[str, Any]:
+        tracker = self._tracker_or_none(project_id=project_id)
+        return deepcopy((tracker.config_json or {}).get("delivery", {})) if tracker else {}
+
+    def configure_delivery(self, *, project_id: int, delivery: dict[str, Any]) -> TrackerSummaryOut:
+        """Replace only delivery defaults; preserve unrelated tracker configuration."""
+        tracker = self.ensure_tracker(project_id=project_id)
+        before = deepcopy(tracker.config_json)
+        tracker.config_json = {**(tracker.config_json or {}), "delivery": deepcopy(delivery)}
+        self._record_revision(
+            tracker,
+            actor="local-admin",
+            change_kind="update",
+            entity_kind="tracker",
+            entity_id=tracker.id,
+            entity_key=tracker.key,
+            summary="Updated project task delivery defaults.",
+            before_json={"config_json": before},
+            after_json={"config_json": tracker.config_json},
+            commit=True,
+        )
+        return TrackerSummaryOut.model_validate(tracker)
 
     def _tracker_or_none(
         self,

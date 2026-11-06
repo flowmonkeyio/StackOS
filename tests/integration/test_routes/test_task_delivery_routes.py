@@ -10,10 +10,29 @@ import pytest
 from apscheduler.events import EVENT_JOB_EXECUTED
 from fastapi.testclient import TestClient
 
+from stackos import task_delivery
 from stackos.host_mcp.result import AgentRunResult
-from stackos.plugins.builtin_engineering import task_delivery
 from tests.integration.test_mcp.conftest import MCPClient
 from tests.integration.test_repositories.test_task_delivery import commit, git
+
+
+@pytest.mark.parametrize("response_mode", ["compact", "ack"])
+def test_project_defaults_setup_rejects_lossy_responses(api, project_id, response_mode):
+    arguments = {"project_id": project_id, "delivery": {"host_key": "codex"}}
+    endpoint = "/api/v1/operations/tracker.configureDelivery/call"
+    saved = api.post(endpoint, json={"arguments": arguments})
+    assert saved.status_code == 200, saved.text
+    rejected = api.post(
+        endpoint,
+        json={"arguments": {**arguments, "delivery": {}, "response_mode": response_mode}},
+    )
+    assert rejected.status_code == 422, rejected.text
+    snapshot = api.post(
+        "/api/v1/operations/tracker.get/call",
+        json={"arguments": {"project_id": project_id, "response_mode": "raw"}},
+    )
+    assert snapshot.status_code == 200, snapshot.text
+    assert snapshot.json()["tracker"] == saved.json()["data"]
 
 
 @pytest.mark.parametrize("workflow", [False, True])
@@ -75,7 +94,7 @@ def test_real_operation_returns_while_scheduler_delivers(
     calls = []
 
     def run_agent(_host, _directory, _instructions, prompt, _schema, *, sandbox):
-        delivery = _schema == task_delivery().DELIVERY_SCHEMA
+        delivery = _schema == task_delivery.DELIVERY_SCHEMA
         calls.append(
             (json.loads(prompt)["brief"]["ticket"]["key"], "delivery" if delivery else "review")
         )
@@ -91,9 +110,9 @@ def test_real_operation_returns_while_scheduler_delivers(
         )
         return AgentRunResult(0, thread_id=f"{calls[-1][0]}-{delivery}", result=result)
 
-    monkeypatch.setattr(task_delivery(), "run_agent", run_agent)
+    monkeypatch.setattr(task_delivery, "run_agent", run_agent)
     api.app.state.scheduler.add_listener(
-        lambda event: finished.set() if event.job_id.startswith("engineering-delivery:") else None,
+        lambda event: finished.set() if event.job_id.startswith("task-delivery:") else None,
         EVENT_JOB_EXECUTED,
     )
     arguments = {
@@ -105,17 +124,22 @@ def test_real_operation_returns_while_scheduler_delivers(
     }
     if defaults:
         enabled = api.post(
-            f"/api/v1/projects/{project_id}/plugins/engineering/enable",
+            "/api/v1/operations/tracker.configureDelivery/call",
             json={
-                "config_json": {
+                "arguments": {
+                    "project_id": project_id,
                     "delivery": {
                         "delivery_agent": arguments.pop("delivery_agent"),
                         "review_agent": arguments.pop("review_agent"),
-                    }
+                    },
                 }
             },
         )
         assert enabled.status_code == 200, enabled.text
+        configured = enabled.json()["data"]
+        readback = operation("tracker.get", task_key=task_key, response_mode="raw")
+        assert readback["tracker"]["config_json"] == configured["config_json"]
+        assert readback["tracker"]["rev"] == configured["rev"]
     try:
         receipt = operation("tracker.startDelivery", **arguments)
         assert receipt["status"] == "queued"
@@ -124,9 +148,9 @@ def test_real_operation_returns_while_scheduler_delivers(
         mcp = MCPClient(api, api.headers["Authorization"].removeprefix("Bearer "))
         assert "tracker.startDelivery" in {tool["name"] for tool in mcp.list_tools()}
         denied = mcp.call_tool_error(
-            "plugin.enable", {"project_id": project_id, "plugin_slug": "engineering"}
+            "tracker.configureDelivery", {"project_id": project_id, "delivery": {}}
         )
-        assert denied["code"] == -32007
+        assert denied["code"] == -32601
         duplicate = mcp.call_tool_structured(
             "tracker.startDelivery", {"project_id": project_id, **arguments}
         )

@@ -41,6 +41,7 @@ class TrackerSummaryOut(BaseModel):
     name: str
     description: str
     rev: int
+    config_json: dict[str, Any] | None = None
     created_at: datetime
     updated_at: datetime
 

@@ -396,6 +396,18 @@ execution. Clear private search text and apply filters before analysis; read
 
 ## Automated delivery results and manual instruction adoption
 
+The generic `stackos.task_delivery` module owns task execution.
+`tracker.configureDelivery` is the narrow local-admin REST-only setup write for
+`TaskTracker.config_json.delivery`; it replaces that object while preserving
+unrelated tracker configuration. Send `arguments` with `project_id` and
+`delivery` to `POST /api/v1/operations/tracker.configureDelivery/call`. The raw
+response includes saved configuration and tracker revision; MCP, CLI, workflow
+grants, compact and ack are unsupported for this setup write. Read current
+defaults through `tracker.get` with `response_mode=raw`. Changes affect future
+handoffs; existing task snapshots and historical run/ticket evidence retain
+their settings. Migration `0035_generic_task_delivery` transfers the retired
+engineering plugin defaults once and preserves existing generic values.
+
 `tracker.startDelivery` freezes effective project defaults plus task overrides
 once. Delivery returns only `status` (complete/blocked), `summary`, `commit_sha`;
 review returns only `decision` (approve/reject/blocked), `summary`, `commit_sha`,
@@ -405,7 +417,7 @@ Failed required specs reject; unavailable required verification blocks. Scoped
 required repairs stay in summary; unrelated notes stay solely in followups and
 never enter actionable prompts, dependencies or automatic work.
 
-The existing engineering loop persists native role sessions, attempt receipts
+The task delivery loop persists native role sessions, attempt receipts
 and `repair_pass_used` in ticket automatic-delivery evidence. It routes a valid
 scoped rejection to the same delivery session for one separate repair commit,
 then resumes the same reviewer on the new SHA. Both reject and approve require
@@ -416,7 +428,7 @@ workflow phase gates and integrated signoff. See [task delivery](task-tracker.md
 for the stored session/followup shape and native execution modes.
 
 Source/local guidance changes require manual adoption per project through the
-existing local-admin engineering `plugin.enable` configuration owner. Ordinary
+local-admin `tracker.configureDelivery` configuration owner. Ordinary
 MCP grants do not authorize that setup. Read the current configuration, copy its
 complete `delivery` object, replace only selected role `instructions`, and save
 that object; a supplied `delivery` replaces the key. Preserve names, task/role
@@ -533,8 +545,8 @@ stackos tracker patch --project 1 --input tracker-patch.json
 Use `tracker.startDelivery` for a task-level background handoff of an independent
 task whose tickets and dependencies are prepared. The `handoff.json` input file
 contains the task handoff (task key, project directory, and optional delivery/review
-role overrides). Project defaults use engineering `ProjectPlugin.config_json.delivery`
-through existing local-admin `plugin.enable`; omitted role fields inherit those
+role overrides). Project defaults use generic `TaskTracker.config_json.delivery`
+through local-admin `tracker.configureDelivery`; omitted role fields inherit those
 defaults and resolved roles must be complete. Task overrides merge by role once,
 preserving unrelated metadata. No ticket settings or permission expansion is needed.
 See [Automated Task Delivery](task-tracker.md#automated-task-delivery)

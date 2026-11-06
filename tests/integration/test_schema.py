@@ -677,7 +677,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0034_work_item_ownership",
+            "0035_generic_task_delivery",
         )
     finally:
         conn.close()
@@ -1880,7 +1880,7 @@ def test_ownership_migration_preserves_existing_data_and_refuses_history_loss(
     now = "2026-10-14 00:00:00"
     with sqlite3.connect(isolated_alembic) as conn:
         _insert_legacy_project(conn, project_id=1, now=now)
-    _run_alembic(["upgrade", "head"])
+    _run_alembic(["upgrade", "0034_work_item_ownership"])
     with sqlite3.connect(isolated_alembic) as conn:
         assert conn.execute("SELECT id FROM projects").fetchall() == [(1,)]
         assert conn.execute("SELECT * FROM work_item_ownership").fetchall() == []
@@ -1923,6 +1923,156 @@ def test_ownership_migration_preserves_existing_data_and_refuses_history_loss(
     assert "work_item_ownership" in _list_tables(isolated_alembic)
     with sqlite3.connect(isolated_alembic) as conn:
         assert conn.execute("SELECT id FROM projects").fetchall() == [(1,)]
+
+
+def test_generic_delivery_migration_preserves_settings_and_history(isolated_alembic: Path) -> None:
+    from sqlmodel import Session
+
+    from stackos.db.models import Plugin, PluginSource, ProjectPlugin, RunPlan, RunPlanStatus
+    from stackos.repositories.tracker import TrackerRepository
+    from stackos.repositories.tracker.utils import DEFAULT_LANES, DEFAULT_PRIORITIES
+
+    _run_alembic(["upgrade", "0034_work_item_ownership"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        for project_id in (1, 2, 3):
+            _insert_legacy_project(conn, project_id=project_id, now="2026-11-05")
+    legacy = {
+        "host_key": "codex",
+        "delivery_agent": {
+            "name": "builder",
+            "instructions": "Exact build\nsource instructions",
+            "host_key": "codex",
+            "model": "gpt-6.1-sol",
+            "provider": "openai",
+            "profile": None,
+        },
+        "review_agent": {
+            "name": "reviewer",
+            "instructions": "Exact review instructions",
+            "host_key": "hermes",
+            "model": "gpt-6-astra",
+            "provider": "openrouter",
+            "profile": "work",
+        },
+    }
+    engine = make_engine(isolated_alembic)
+    with Session(engine) as session:
+        plugin = Plugin(slug="engineering", name="Engineering", source=PluginSource.BUILTIN)
+        session.add(plugin)
+        session.flush()
+        for project_id in (1, 2):
+            session.add(
+                ProjectPlugin(
+                    project_id=project_id,
+                    plugin_id=plugin.id,
+                    config_json={"delivery": legacy, "unrelated": {"enabled": False}},
+                )
+            )
+        session.add(ProjectPlugin(project_id=3, plugin_id=plugin.id, config_json={"keep": 3}))
+        repo = TrackerRepository(session)
+        repo.create_task(
+            project_id=1,
+            key="historical",
+            title="Historical",
+            status="complete",
+            metadata_json={"delivery": {**legacy, "status": "complete"}},
+            context_json={"selected_sources": ["approved:v1"]},
+        )
+        repo.create_ticket(
+            project_id=1,
+            task_key="historical",
+            key="old",
+            title="Old",
+            status="complete",
+            completion_evidence_json={
+                "automatic_delivery": {
+                    "repair_pass_used": True,
+                    "sessions": {"review": {"thread_id": "native-old"}},
+                    "attempts": [{"review": {"result": {"decision": "reject"}}}],
+                }
+            },
+        )
+        tracker = repo.ensure_tracker(project_id=1)
+        tracker.config_json = {
+            "unrelated": [1, 2],
+            "delivery": {
+                "host_key": "claude-code",
+                "delivery_agent": {"model": "saved-generic-model", "provider": None},
+                "review_agent": {"instructions": "Current generic review"},
+            },
+        }
+        session.add(tracker)
+        session.add(
+            RunPlan(
+                project_id=1,
+                key="historical",
+                title="Historical",
+                status=RunPlanStatus.COMPLETED,
+                template_snapshot_json={"extensions": {"delivery": legacy}},
+            )
+        )
+        session.commit()
+    engine.dispose()
+    preserved_tables = ("tracker_tasks", "tracker_tickets", "run_plans", "tracker_revisions")
+    with sqlite3.connect(isolated_alembic) as conn:
+        before = {
+            table: conn.execute(f"SELECT * FROM {table}").fetchall() for table in preserved_tables
+        }
+        tables_before = _list_tables(isolated_alembic)
+    _run_alembic(["upgrade", "head"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        assert _list_tables(isolated_alembic) == tables_before
+        for table, rows in before.items():
+            assert conn.execute(f"SELECT * FROM {table}").fetchall() == rows
+        configs = {
+            project_id: json.loads(config)
+            for project_id, config in conn.execute(
+                "SELECT project_id, config_json FROM task_trackers"
+            )
+        }
+        assert configs[1] == {
+            "unrelated": [1, 2],
+            "delivery": {
+                **legacy,
+                "host_key": "claude-code",
+                "delivery_agent": {
+                    **legacy["delivery_agent"],
+                    "model": "saved-generic-model",
+                    "provider": None,
+                },
+                "review_agent": {
+                    **legacy["review_agent"],
+                    "instructions": "Current generic review",
+                },
+            },
+        }
+        assert configs[2] == {"delivery": legacy}
+        assert 3 not in configs
+        assert [
+            json.loads(row[0])
+            for row in conn.execute("SELECT config_json FROM project_plugins ORDER BY project_id")
+        ] == [{"unrelated": {"enabled": False}}, {"unrelated": {"enabled": False}}, {"keep": 3}]
+        tracker_id = conn.execute("SELECT id FROM task_trackers WHERE project_id=2").fetchone()[0]
+        assert conn.execute(
+            "SELECT key, label FROM task_tracker_lanes WHERE tracker_id=? ORDER BY position",
+            (tracker_id,),
+        ).fetchall() == list(DEFAULT_LANES)
+        assert conn.execute(
+            "SELECT key, label, rank FROM task_tracker_priorities "
+            "WHERE tracker_id=? ORDER BY position",
+            (tracker_id,),
+        ).fetchall() == list(DEFAULT_PRIORITIES)
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        after = conn.execute("SELECT config_json FROM task_trackers ORDER BY id").fetchall()
+    # A replay after migration/stamp interruption cannot reinterpret retired defaults.
+    migration = importlib.import_module("stackos.db.migrations.versions.0035_generic_task_delivery")
+    engine = make_engine(isolated_alembic)
+    with engine.begin() as conn, Operations.context(MigrationContext.configure(conn)):
+        migration.upgrade()
+        assert (
+            conn.exec_driver_sql("SELECT config_json FROM task_trackers ORDER BY id").all() == after
+        )
+    engine.dispose()
 
 
 def test_alembic_downgrade_then_upgrade_idempotent(isolated_alembic: Path) -> None:

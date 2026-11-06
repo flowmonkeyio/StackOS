@@ -47,6 +47,22 @@ class TaskDeliveryAgent(TaskDeliveryAgentOverride):
     instructions: str = Field(min_length=1)
 
 
+class TaskDeliveryDefaults(BaseModel):
+    """Project defaults; task handoff validates the complete resolved roles."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    host_key: str | None = Field(default=None, min_length=1)
+    delivery_agent: TaskDeliveryAgentOverride | None = None
+    review_agent: TaskDeliveryAgentOverride | None = None
+
+
+class TrackerConfigureDeliveryInput(MCPInput):
+    model_config = ConfigDict(extra="forbid")
+    project_id: int = Field(ge=1)
+    delivery: TaskDeliveryDefaults
+    response_mode: TrackerResponseMode = "raw"
+
+
 class TrackerStartDeliveryInput(MCPInput):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     project_id: int

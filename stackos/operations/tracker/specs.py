@@ -30,6 +30,7 @@ from stackos.operations.tracker.read_handlers import (
 )
 from stackos.operations.tracker.schemas import (
     TrackerChangedInput,
+    TrackerConfigureDeliveryInput,
     TrackerCreateTaskInput,
     TrackerCreateTicketInput,
     TrackerGetInput,
@@ -57,6 +58,7 @@ from stackos.operations.tracker.spec_helpers import (
     _write_spec,
 )
 from stackos.operations.tracker.write_handlers import (
+    tracker_configure_delivery,
     tracker_create_task,
     tracker_create_ticket,
     tracker_link_run_plan,
@@ -84,6 +86,7 @@ from stackos.repositories.tracker import (
     TrackerTicketCountsOut,
     TrackerVerifyOut,
 )
+from stackos.repositories.tracker.schema import TrackerSummaryOut
 
 _TICKET_COUNTS_RESPONSE_POLICY = OperationResponsePolicy(
     default_mode="compact",
@@ -95,6 +98,59 @@ _TICKET_COUNTS_RESPONSE_POLICY = OperationResponsePolicy(
 
 def operation_specs() -> list[OperationSpec]:
     return [
+        OperationSpec(
+            name="tracker.configureDelivery",
+            summary="Save project task delivery defaults through local-admin setup.",
+            input_model=TrackerConfigureDeliveryInput,
+            output_model=WriteEnvelope[TrackerSummaryOut],
+            handler=tracker_configure_delivery,
+            surfaces=OperationSurfaces(
+                mcp=OperationSurface(enabled=False),
+                rest=OperationSurface(
+                    enabled=True,
+                    browser_safe=True,
+                    path="/api/v1/operations/tracker.configureDelivery/call",
+                ),
+                cli=OperationSurface(enabled=False),
+            ),
+            mutating=True,
+            grant_policy="local-admin-console-write",
+            response_policy=OperationResponsePolicy(
+                default_mode="raw",
+                allowed_modes=("raw",),
+                ack_safe=False,
+                raw_only_reason="Preserve saved defaults and tracker revision for setup readback.",
+            ),
+            purpose=(
+                "Replace TaskTracker.config_json.delivery only, preserving other tracker keys. "
+                "This changes future handoffs, never task snapshots or stored ticket evidence."
+            ),
+            prerequisites=(
+                "Requires authenticated local-admin REST setup; no MCP or workflow grants.",
+                "Read tracker.get response_mode=raw first; include all desired delivery defaults. "
+                "Do not store secrets in instructions or selections.",
+            ),
+            returns=("Saved tracker configuration and revision; inspect with tracker.get raw.",),
+            examples=(
+                OperationExample(
+                    title="Save project agents",
+                    arguments={
+                        "project_id": 1,
+                        "delivery": {
+                            "host_key": "codex",
+                            "delivery_agent": {
+                                "name": "builder",
+                                "instructions": "Build and check.",
+                            },
+                            "review_agent": {
+                                "name": "reviewer",
+                                "instructions": "Review independently.",
+                            },
+                        },
+                    },
+                ),
+            ),
+        ),
         OperationSpec(
             name="tracker.startDelivery",
             summary="Start background task delivery and review using project agents.",
@@ -113,7 +169,7 @@ def operation_specs() -> list[OperationSpec]:
             ),
             purpose=(
                 "Select automated delivery for a prepared task or one running workflow step. "
-                "Resolve engineering project delivery defaults with task overrides by role once. "
+                "Resolve generic tracker delivery defaults with task overrides by role once. "
                 "The daemon requires a new committed candidate and independent approval of its "
                 "exact SHA before advancing. Rejection or failure stops the same task."
             ),
@@ -123,7 +179,7 @@ def operation_specs() -> list[OperationSpec]:
                 "only executable children of that step are selected. The main agent retains "
                 "workflow phase lifecycle control.",
                 "Supply the project directory. Role fields may be omitted when saved in "
-                "engineering ProjectPlugin.config_json.delivery through local-admin plugin.enable. "
+                "TaskTracker.config_json.delivery through local-admin tracker.configureDelivery. "
                 "Task choices merge by role into one effective snapshot; no ticket settings or "
                 "required .codex folder. Resolved names and instructions must be complete. "
                 "Optional per-role host_key, "

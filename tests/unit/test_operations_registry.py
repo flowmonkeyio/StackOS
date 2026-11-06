@@ -11,7 +11,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 231
+    assert len(names) == 232
     assert not names.intersection(
         {"actionCall.aggregate", "actionCall.aggregateAll", "actionCall.queryAll"}
     )
@@ -28,6 +28,7 @@ def test_operation_registry_documents_core_operations() -> None:
         "tracker.ticketCountsAll",
         "tracker.updateTaskContent",
         "tracker.startDelivery",
+        "tracker.configureDelivery",
         "hostMcp.status",
         "project.portfolio",
         "secret.set",
@@ -543,6 +544,7 @@ def test_operation_registry_surface_filter() -> None:
         "account.authorization.cancel",
         "auth.callback",
         "secret.set",
+        "tracker.configureDelivery",
     }
     assert {
         "workflowTemplate.describe",
