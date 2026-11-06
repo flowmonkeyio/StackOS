@@ -242,9 +242,13 @@ def _receipt(task_key: str, state: dict[str, Any]) -> dict[str, Any]:
 
 
 def _prompt_copy(value: Any) -> Any:
-    """Leave deferred notes canonical, but exclude them from every nested work receipt."""
+    """Copy a known execution receipt without its deferred notes."""
     if isinstance(value, dict):
-        return {key: _prompt_copy(item) for key, item in value.items() if key != "followups"}
+        return {
+            key: deepcopy(item) if key in {"outputs", "summary"} else _prompt_copy(item)
+            for key, item in value.items()
+            if key != "followups"
+        }
     if isinstance(value, list):
         return [_prompt_copy(item) for item in value]
     # Schema errors embed rejected output as Python repr and instance paths;
@@ -253,6 +257,39 @@ def _prompt_copy(value: Any) -> Any:
     if isinstance(value, str) and re.search(r"""["']followups\\*["']\s*[:\]]""", value):
         return "Diagnostic containing serialized followups omitted from work prompt."
     return value
+
+
+def _work_prompt_copy(value: dict[str, Any]) -> dict[str, Any]:
+    """Filter owned note locations while preserving frozen contracts and domain data."""
+    packet = deepcopy(value)
+    for key in ("delivery_result", "review_result"):
+        packet[key] = _prompt_copy(packet.get(key))
+    brief = packet.get("brief", {})
+    context = (brief.get("task") or {}).get("context_json")
+    if isinstance(context, dict):
+        context.pop("followups", None)
+    tickets = [
+        brief.get("ticket"),
+        *brief.get("dependencies", []),
+        *brief.get("dependents", []),
+        *packet.get("accepted_receipts", []),
+    ]
+    for ticket in tickets:
+        if not isinstance(ticket, dict):
+            continue
+        evidence = ticket.get("completion_evidence_json") or {}
+        automatic = evidence.get("automatic_delivery") or {}
+        diagnostics: list[str | None] = []
+        for attempt in [automatic, *automatic.get("attempts", [])]:
+            for role in ("delivery", "review"):
+                receipt = attempt.get(role) or {}
+                diagnostics.extend(receipt.get(key) for key in ("error", "validation_error"))
+        for key in ("automatic_delivery", "prior_review"):
+            if key in evidence:
+                evidence[key] = _prompt_copy(evidence[key])
+        if ticket.get("outcome") and ticket["outcome"] in diagnostics:
+            ticket["outcome"] = _prompt_copy(ticket["outcome"])
+    return packet
 
 
 def _archive_attempt(evidence: dict[str, Any]) -> None:
@@ -540,7 +577,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                     state["project_dir"],
                     agent["instructions"],
                     json.dumps(
-                        _prompt_copy(
+                        _work_prompt_copy(
                             {
                                 "assignment": (
                                     "Execute the remaining frozen workflow_step contract. "
@@ -640,10 +677,12 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                                 returned_sha,
                                 evidence["candidate"].get("base_commit_sha"),
                             )
-                            if phase == "delivery":
-                                if evidence.get("repair_pass_used") and sha == evidence[
-                                    "candidate"
-                                ].get("base_commit_sha"):
+                            if workflow_step is not None or phase == "delivery":
+                                if (
+                                    workflow_step is None
+                                    and evidence.get("repair_pass_used")
+                                    and sha == evidence["candidate"].get("base_commit_sha")
+                                ):
                                     raise ValidationError("Repair requires a new descendant commit")
                                 evidence["candidate"]["commit_sha"] = sha
                             elif sha != evidence["candidate"].get("commit_sha"):

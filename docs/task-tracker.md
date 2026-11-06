@@ -177,7 +177,8 @@ All launches use `RESULT_SCHEMA` in
 `outputs` is a JSON-encoded object string so native harnesses can transport
 arbitrary frozen output schemas using a closed envelope. The daemon decodes it,
 rejects nonobjects/malformed JSON, and passes mirror outputs unchanged to the
-run-plan owner's validation. Ordinary work may include optional `commit_sha`.
+run-plan owner's validation. Work may include optional `commit_sha` candidate
+evidence, including mirrors assigned either existing role. The envelope's
 `followups` is an array of `{"text":"..."}` objects, empty when none.
 
 Agents explicitly map their domain conclusions to a generic disposition.
@@ -202,6 +203,9 @@ The runner appends notes to `task.context_json.followups` as
 including `operator_inputs`. The existing task detail displays them read-only
 with source navigation. They create no tasks/dependencies, launch no work,
 never enter actionable delivery/repair prompts and do not block completion.
+Filtering applies to these task/receipt notes. Frozen contracts, domain inputs
+and declared outputs retain fields named `followups`; scoped review summaries
+remain intact.
 
 Ticket `completion_evidence_json.automatic_delivery` stores native `sessions`
 by delivery/review role (thread ID and harness identity), prior `attempts`, latest

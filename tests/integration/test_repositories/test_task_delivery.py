@@ -50,6 +50,195 @@ def generic_result(status="success", outputs=None, summary="Checked", followups=
     }
 
 
+@pytest.mark.parametrize("role", ["delivery_agent", "review_agent"])
+def test_mirror_candidate_evidence_is_independent_of_selected_role(
+    session, project_id, tmp_path, monkeypatch, role
+):
+    from stackos import task_delivery
+
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "candidate-observation",
+            "title": "Observe",
+            "steps": [
+                {
+                    "id": "observe",
+                    "title": "Observe",
+                    "metadata_json": {"agent_assignment": role},
+                    "output_refs": ["commit_sha"],
+                    "expected_outputs": {
+                        "commit_sha": {
+                            "required": True,
+                            "type": "string",
+                            "schema_json": {"type": "string"},
+                        }
+                    },
+                }
+            ],
+        },
+    ).data
+    started = plans.start(plan.id, project_id=project_id)
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="observe")
+    head = git(tmp_path, "rev-parse", "HEAD")
+    calls = []
+
+    def launch(*args, **kwargs):
+        packet = json.loads(args[3])
+        calls.append(packet)
+        return AgentRunResult(
+            0, thread_id="mirror-observation", result=generic_result(outputs={"commit_sha": head})
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=f"workflow-{plan.id}",
+        run_plan_id=plan.id,
+        step_id="observe",
+    )
+    scheduler.run()
+    session.expire_all()
+    assert len(calls) == 1
+    assert calls[0]["phase"] == role.removesuffix("_agent")
+    final = plans.get(plan.id)
+    assert final.status == "completed"
+    assert final.steps[0].result_json == {"commit_sha": head}
+    ticket = (
+        TrackerRepository(session)
+        .brief(project_id=project_id, ticket_key=f"workflow-{plan.id}-observe")
+        .ticket
+    )
+    assert ticket.completion_evidence_json["automatic_delivery"]["candidate"]["commit_sha"] == head
+    assert git(tmp_path, "rev-parse", "HEAD") == head
+
+
+def test_workflow_prompt_preserves_domain_followups_and_excludes_receipt_notes(
+    session, project_id, tmp_path, monkeypatch
+):
+    from copy import deepcopy
+
+    from stackos import task_delivery
+
+    domain = {"report": {"followups": [{"text": "Domain next action"}]}}
+    summary = 'Required report.followups must retain {"followups": []} in its schema.'
+    expected = {
+        "report": {
+            "required": True,
+            "type": "object",
+            "schema_json": {
+                "type": "object",
+                "required": ["followups"],
+                "properties": {"followups": {"type": "array", "items": {"type": "object"}}},
+            },
+        }
+    }
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "domain-data",
+            "title": "Domain data",
+            "inputs": {"payload": {"followups": ["Input data"]}},
+            "selected_context": {"followups": ["Selected domain context"]},
+            "steps": [
+                {"id": "collect", "title": "Collect"},
+                {
+                    "id": "report",
+                    "title": "Report",
+                    "depends_on": ["collect"],
+                    "input_refs": ["payload"],
+                    "output_refs": ["report"],
+                    "expected_outputs": expected,
+                },
+            ],
+        },
+    ).data
+    started = plans.start(plan.id, project_id=project_id)
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="collect")
+    plans.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="collect",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json=domain,
+    )
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="report")
+    repo = TrackerRepository(session)
+    repo.update_task(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        patch_json={
+            "context_json": {
+                "followups": [{"text": "DEFERRED_TASK_NOTE"}],
+                "operator_inputs": {"followups": ["Operator domain input"]},
+            }
+        },
+    )
+    receipt = generic_result(
+        outputs=domain, summary=summary, followups=[{"text": "DEFERRED_RECEIPT_NOTE"}]
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key=f"workflow-{plan.id}-collect",
+        patch_json={
+            "outcome": summary,
+            "completion_evidence_json": {
+                "automatic_delivery": {"delivery": {"result": receipt}},
+                "domain_evidence": domain,
+            },
+        },
+    )
+    frozen = plans.get_step(plan.id, "report", full_context=True).model_dump(mode="json")
+    captured = []
+
+    def launch(*args, **kwargs):
+        captured.append(json.loads(args[3]))
+        return AgentRunResult(0, thread_id="domain-report", result=generic_result(outputs=domain))
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=f"workflow-{plan.id}",
+        run_plan_id=plan.id,
+        step_id="report",
+    )
+    scheduler.run()
+    session.expire_all()
+    assert len(captured) == 1
+    packet = captured[0]
+    assert packet["workflow_step"] == frozen
+    assert packet["brief"]["task"]["context_json"]["operator_inputs"] == {
+        "followups": ["Operator domain input"]
+    }
+    assert "DEFERRED_TASK_NOTE" not in json.dumps(packet)
+    assert "DEFERRED_RECEIPT_NOTE" not in json.dumps(packet)
+    assert packet["accepted_receipts"][0]["outcome"] == summary
+    accepted = packet["accepted_receipts"][0]["completion_evidence_json"]
+    assert accepted["domain_evidence"] == domain
+    presented = accepted["automatic_delivery"]["delivery"]["result"]
+    assert json.loads(presented["outputs"]) == domain
+    assert presented["summary"] == summary
+    assert "followups" not in presented
+    assert receipt == generic_result(
+        outputs=domain, summary=summary, followups=[{"text": "DEFERRED_RECEIPT_NOTE"}]
+    )
+    assert plans.get(plan.id).status == "completed"
+    assert plans.get_step(plan.id, "report").result_json == domain
+    assert plans.get_step(plan.id, "report").expected_outputs_json == deepcopy(expected)
+
+
 def test_unfinished_nonready_work_stops_without_launch(session, project_id, tmp_path, monkeypatch):
     from stackos import task_delivery
 
