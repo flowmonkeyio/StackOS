@@ -7,6 +7,8 @@ from sqlmodel import Session, select
 
 from stackos.db.models import ActionCall, ActionCallStatus, TrackerItemStatus
 from stackos.repositories.projects import ProjectRepository
+from stackos.repositories.tracker import TrackerRepository
+from tests.integration.test_repositories.test_agent_statistics import _receipt, _repaired, _store
 from tests.integration.test_repositories.test_execution_overviews import _call
 from tests.integration.test_repositories.test_ticket_overviews import _ticket
 
@@ -268,3 +270,100 @@ def test_local_admin_ticket_counts_match_contributing_project_directory(
     assert len(matching["tickets"]) == 1
     missing = _rest(mcp_client, "tracker.ticketCounts", {"project_id": 999999})
     assert missing.status_code == 404
+
+
+def test_agent_statistics_persisted_rest_mcp_parity_scope_and_privacy(
+    mcp_client: MCPClient, seeded_project: dict
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    with Session(mcp_client.test_client.app.state.engine) as session:
+        _store(session, project_id, "stats", _repaired())
+        other = (
+            ProjectRepository(session)
+            .create(slug="stats-other", name="Archived", domain="other.test")
+            .data
+        )
+        ProjectRepository(session).update(other.id, is_active=False)
+        _store(
+            session,
+            other.id,
+            "other-stats",
+            {"attempt": 1, "delivery": _receipt(model="other-model")},
+        )
+        repo = TrackerRepository(session)
+        before = repo.get(project_id=project_id).model_dump(mode="json")
+        # Real write/read retained safe numeric usage while credential redaction still applies.
+        stored = repo.brief(
+            project_id=project_id, ticket_key="stats"
+        ).ticket.completion_evidence_json
+        assert stored["automatic_delivery"]["review"]["usage"]["measured"]["total"] == 40
+        assert stored["automatic_delivery"]["review"]["api_key"] == "[redacted]"
+    baseline = None
+    for mode in ("raw", "compact"):
+        result = _rest(
+            mcp_client, "tracker.agentStats", {"project_id": project_id, "response_mode": mode}
+        )
+        assert result.status_code == 200, result.text
+        stats = _operation_data(result.json())
+        assert stats["totals"]["launch_attempts"] == 4
+        assert stats["totals"]["recorded_reviewer_rejects"] == 1
+        assert stats["totals"]["reported_usage"] == {
+            "unit": "tokens",
+            "input": 100,
+            "output": 0,
+            "total": 100,
+        }
+        assert stats["totals"]["coverage"]["usage_measured_attempts"] == 4
+        assert "PRIVATE" not in str(stats)
+        assert not {"prompt", "instructions", "result", "error", "api_key", "usage"}.intersection(
+            stats["rows"][0]
+        )
+        facts = {k: v for k, v in stats.items() if k != "as_of"}
+        if baseline is not None:
+            assert facts == baseline
+        baseline = facts
+    for visibility, count in ((True, 4), (False, 1), (None, 5)):
+        for mode in ("raw", "compact"):
+            result = _rest(
+                mcp_client,
+                "tracker.agentStatsAll",
+                {"is_active": visibility, "response_mode": mode},
+            )
+            assert result.status_code == 200, result.text
+            stats = _operation_data(result.json())
+            assert stats["is_active"] is visibility
+            assert stats["totals"]["launch_attempts"] == count
+            assert stats["totals"]["reported_usage"]["total"] == (
+                130 if visibility is None else 100 if visibility else 30
+            )
+    mcp_client.call_tool_structured(
+        "workspace.connect",
+        {
+            "project_id": project_id,
+            "repo_fingerprint": "path:stats-overview",
+            "last_known_root": "/tmp/stats-overview",
+        },
+    )
+    proxy, client = _scoped_bridge(
+        mcp_client, cwd="/tmp/stats-overview", repo_fingerprint="path:stats-overview"
+    )
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list")
+    for mode in ("raw", "compact"):
+        response = _toolbox_call(proxy, client, "tracker.agentStats", {"response_mode": mode})
+        assert not response["result"].get("isError"), response
+        stats = _operation_data(_structured(response))
+        assert {k: v for k, v in stats.items() if k != "as_of"} == baseline
+    wrong = _toolbox_call(proxy, client, "tracker.agentStats", {"project_id": other.id})
+    assert wrong["result"]["isError"] is True
+    denied = _toolbox_call(proxy, client, "tracker.agentStatsAll")
+    assert denied["result"]["isError"] is True
+    assert "local-admin" in str(denied)
+    missing = _rest(mcp_client, "tracker.agentStats", {"project_id": 999999})
+    assert missing.status_code == 404
+    for invalid in ({"is_active": "false"}, {"is_active": 0}, {"project_id": project_id}):
+        assert _rest(mcp_client, "tracker.agentStatsAll", invalid).status_code == 422
+    with Session(mcp_client.test_client.app.state.engine) as session:
+        assert (
+            TrackerRepository(session).get(project_id=project_id).model_dump(mode="json") == before
+        )

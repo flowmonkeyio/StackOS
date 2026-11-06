@@ -116,6 +116,15 @@ class TrackerProjectInput(MCPInput):
     )
 
 
+class TrackerAgentStatsInput(TrackerProjectInput):
+    project_id: int = Field(ge=1)
+
+
+class TrackerAgentStatsAllInput(MCPInput):
+    model_config = ConfigDict(extra="forbid")
+    is_active: StrictBool | None = True
+
+
 class TrackerTicketCountsInput(TrackerProjectInput):
     project_id: int = Field(ge=1)
 

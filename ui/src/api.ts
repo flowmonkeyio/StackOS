@@ -2345,6 +2345,74 @@ export interface components {
          * @enum {string}
          */
         AgentRequestStatus: AgentRequestStatus;
+        /** AgentStatsCoverageOut */
+        AgentStatsCoverageOut: {
+            /** Classification Known Attempts */
+            classification_known_attempts: number;
+            /**
+             * Classification Status
+             * @enum {string}
+             */
+            classification_status: AgentStatsCoverageOutClassification_status;
+            /** Classification Unknown Attempts */
+            classification_unknown_attempts: number;
+            /** Usage Measured Attempts */
+            usage_measured_attempts: number;
+            /**
+             * Usage Status
+             * @enum {string}
+             */
+            usage_status: AgentStatsCoverageOutUsage_status;
+            /** Usage Unavailable Attempts */
+            usage_unavailable_attempts: number;
+        };
+        /** AgentStatsMetricsOut */
+        AgentStatsMetricsOut: {
+            coverage: components["schemas"]["AgentStatsCoverageOut"];
+            /** Launch Attempts */
+            launch_attempts: number;
+            /** Recorded Reviewer Rejects */
+            recorded_reviewer_rejects: number;
+            reported_usage: components["schemas"]["AgentStatsUsageOut"];
+        };
+        /** AgentStatsRowOut */
+        AgentStatsRowOut: {
+            /** Agent Name */
+            agent_name: string | null;
+            coverage: components["schemas"]["AgentStatsCoverageOut"];
+            /** Host Key */
+            host_key: string | null;
+            /** Launch Attempts */
+            launch_attempts: number;
+            /** Model */
+            model: string | null;
+            /** Project Id */
+            project_id: number;
+            /** Project Name */
+            project_name: string;
+            /** Project Slug */
+            project_slug: string;
+            /** Recorded Reviewer Rejects */
+            recorded_reviewer_rejects: number;
+            reported_usage: components["schemas"]["AgentStatsUsageOut"];
+            /** Selected Role */
+            selected_role: AgentStatsRowOutSelected_roleAnyOf0 | null;
+        };
+        /** AgentStatsUsageOut */
+        AgentStatsUsageOut: {
+            /** Input */
+            input: number | null;
+            /** Output */
+            output: number | null;
+            /** Total */
+            total: number | null;
+            /**
+             * Unit
+             * @default tokens
+             * @constant
+             */
+            unit: "tokens";
+        };
         /** ApprovalGateSpec */
         ApprovalGateSpec: {
             /** Approver */
@@ -5986,6 +6054,57 @@ export interface components {
             /** Sha256 */
             sha256: string;
         };
+        /**
+         * TaskDeliveryAgentOverride
+         * @description Task choices may omit fields supplied by project defaults.
+         */
+        TaskDeliveryAgentOverride: {
+            /**
+             * Host Key
+             * @default null
+             */
+            host_key: string | null;
+            /**
+             * Instructions
+             * @default null
+             */
+            instructions: string | null;
+            /**
+             * Model
+             * @default null
+             */
+            model: string | null;
+            /**
+             * Name
+             * @default null
+             */
+            name: string | null;
+            /**
+             * Profile
+             * @default null
+             */
+            profile: string | null;
+            /**
+             * Provider
+             * @default null
+             */
+            provider: string | null;
+        };
+        /**
+         * TaskDeliveryDefaults
+         * @description Project defaults; task handoff validates the complete resolved roles.
+         */
+        TaskDeliveryDefaults: {
+            /** @default null */
+            delivery_agent: components["schemas"]["TaskDeliveryAgentOverride"] | null;
+            /**
+             * Host Key
+             * @default null
+             */
+            host_key: string | null;
+            /** @default null */
+            review_agent: components["schemas"]["TaskDeliveryAgentOverride"] | null;
+        };
         /** TelegramApplicationStatusOut */
         TelegramApplicationStatusOut: {
             /** Configured */
@@ -6043,6 +6162,339 @@ export interface components {
             name?: string | null;
             /** Team */
             team?: string | null;
+        };
+        /** TrackerAgentStatsAllInput */
+        TrackerAgentStatsAllInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Is Active
+             * @default true
+             */
+            is_active: boolean | null;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: TrackerAgentStatsAllInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /**
+         * TrackerAgentStatsInput
+         * @example {
+         *       "project_id": 1,
+         *       "response_mode": "compact"
+         *     }
+         */
+        TrackerAgentStatsInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact is default; raw/standard/verbose return the full tracker rows for diagnostics. raw aliases standard.
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: TrackerAgentStatsInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** TrackerAgentStatsOut */
+        TrackerAgentStatsOut: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Is Active */
+            is_active: boolean | null;
+            /** Project Id */
+            project_id: number | null;
+            /** Rows */
+            rows: components["schemas"]["AgentStatsRowOut"][];
+            totals: components["schemas"]["AgentStatsMetricsOut"];
+        };
+        /** TrackerConfigureDeliveryInput */
+        TrackerConfigureDeliveryInput: {
+            delivery: components["schemas"]["TaskDeliveryDefaults"];
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default raw
+             * @enum {string}
+             */
+            response_mode: TrackerConfigureDeliveryInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /**
+         * TrackerItemStatus
+         * @description Persists to tracker task/ticket status columns.
+         *
+         *     Meanings: not-started = planned but not begun; in-progress = actively
+         *     being worked; complete = finished successfully; deferred = valid work
+         *     postponed for later; aborted = stopped, cancelled, or rejected; failed =
+         *     attempted and unsuccessful; skipped = intentionally not executed.
+         * @enum {string}
+         */
+        TrackerItemStatus: TrackerItemStatus;
+        /**
+         * TrackerSourceKind
+         * @description Persists to tracker source-kind columns.
+         * @enum {string}
+         */
+        TrackerSourceKind: TrackerSourceKind;
+        /** TrackerSummaryOut */
+        TrackerSummaryOut: {
+            /**
+             * Config Json
+             * @default null
+             */
+            config_json: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Description */
+            description: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Project Id */
+            project_id: number;
+            /** Rev */
+            rev: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** TrackerTaskContentOut */
+        TrackerTaskContentOut: {
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** @default null */
+            input: components["schemas"]["TrackerTaskInputOut"] | null;
+            /**
+             * Replayed
+             * @default false
+             */
+            replayed: boolean;
+            /** Request Sha256 */
+            request_sha256: string;
+            /** Rev */
+            rev: number;
+            task: components["schemas"]["TrackerTaskOut"];
+        };
+        /** TrackerTaskInputOut */
+        TrackerTaskInputOut: {
+            /** Actor */
+            actor: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: string;
+            /** Text */
+            text: string;
+        };
+        /** TrackerTaskOut */
+        TrackerTaskOut: {
+            /** Completed At */
+            completed_at: string | null;
+            /** Completion Evidence Json */
+            completion_evidence_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Constraints Json */
+            constraints_json: string[];
+            /** Context Json */
+            context_json: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Definition Of Done Json */
+            definition_of_done_json: string[];
+            /** Description */
+            description: string;
+            /** Expected Outcomes Json */
+            expected_outcomes_json: string[];
+            /** Goal */
+            goal: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            /** Lane Key */
+            lane_key: string;
+            /** Metadata Json */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Order Index */
+            order_index: number;
+            /** Owner */
+            owner: string | null;
+            /** Priority Key */
+            priority_key: string;
+            /** Project Id */
+            project_id: number;
+            /** Source Json */
+            source_json: {
+                [key: string]: unknown;
+            } | null;
+            source_kind: components["schemas"]["TrackerSourceKind"];
+            /** Started At */
+            started_at: string | null;
+            status: components["schemas"]["TrackerItemStatus"];
+            /** Task Type */
+            task_type: string;
+            /** @default null */
+            ticket_summary: components["schemas"]["TrackerTaskTicketSummaryOut"] | null;
+            /** Title */
+            title: string;
+            /** Tracker Id */
+            tracker_id: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * TrackerTaskTicketSummaryOut
+         * @description Ticket rollup used by lightweight task-index reads.
+         */
+        TrackerTaskTicketSummaryOut: {
+            /** Assignees */
+            assignees?: string[];
+            /**
+             * Blocked Count
+             * @default 0
+             */
+            blocked_count: number;
+            /**
+             * In Progress Count
+             * @default 0
+             */
+            in_progress_count: number;
+            /**
+             * Search Text
+             * @default
+             */
+            search_text: string;
+            /** Status Counts */
+            status_counts?: {
+                [key: string]: number;
+            };
+            /**
+             * Terminal Count
+             * @default 0
+             */
+            terminal_count: number;
+            /**
+             * Total Count
+             * @default 0
+             */
+            total_count: number;
+        };
+        /**
+         * TrackerUpdateTaskContentInput
+         * @description Human content edits cannot supply tracker or workflow execution state.
+         */
+        TrackerUpdateTaskContentInput: {
+            /**
+             * Additional Input
+             * @default null
+             */
+            additional_input: string | null;
+            /**
+             * Description
+             * @default null
+             */
+            description: string | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: null;
+            /**
+             * Expected Updated At
+             * Format: date-time
+             */
+            expected_updated_at: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default raw
+             * @enum {string}
+             */
+            response_mode: TrackerUpdateTaskContentInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: null;
+            /** Task Key */
+            task_key: string;
         };
         /**
          * UiTokenResponse
@@ -6608,6 +7060,34 @@ export interface components {
              */
             run_id: number | null;
         };
+        /** WriteEnvelope[TrackerSummaryOut] */
+        WriteEnvelope_TrackerSummaryOut_: {
+            data: components["schemas"]["TrackerSummaryOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
+        /** WriteEnvelope[TrackerTaskContentOut] */
+        WriteEnvelope_TrackerTaskContentOut_: {
+            data: components["schemas"]["TrackerTaskContentOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
         /** WriteEnvelope[WorkflowTemplateExtensionDeleteOut] */
         WriteEnvelope_WorkflowTemplateExtensionDeleteOut_: {
             data: components["schemas"]["WorkflowTemplateExtensionDeleteOut"];
@@ -6897,6 +7377,10 @@ export type SchemaActionExposureNextActionOut = components['schemas']['ActionExp
 export type SchemaActionExposureOut = components['schemas']['ActionExposureOut'];
 export type SchemaActionOut = components['schemas']['ActionOut'];
 export type SchemaAgentRequestOut = components['schemas']['AgentRequestOut'];
+export type SchemaAgentStatsCoverageOut = components['schemas']['AgentStatsCoverageOut'];
+export type SchemaAgentStatsMetricsOut = components['schemas']['AgentStatsMetricsOut'];
+export type SchemaAgentStatsRowOut = components['schemas']['AgentStatsRowOut'];
+export type SchemaAgentStatsUsageOut = components['schemas']['AgentStatsUsageOut'];
 export type SchemaApprovalGateSpec = components['schemas']['ApprovalGateSpec'];
 export type SchemaApprovalRequestOut = components['schemas']['ApprovalRequestOut'];
 export type SchemaArtifactCreateRequest = components['schemas']['ArtifactCreateRequest'];
@@ -7021,10 +7505,22 @@ export type SchemaScheduledJobOut = components['schemas']['ScheduledJobOut'];
 export type SchemaSitemapFetchRequest = components['schemas']['SitemapFetchRequest'];
 export type SchemaSitemapFetchResponse = components['schemas']['SitemapFetchResponse'];
 export type SchemaSnapshotRef = components['schemas']['SnapshotRef'];
+export type SchemaTaskDeliveryAgentOverride = components['schemas']['TaskDeliveryAgentOverride'];
+export type SchemaTaskDeliveryDefaults = components['schemas']['TaskDeliveryDefaults'];
 export type SchemaTelegramApplicationStatusOut = components['schemas']['TelegramApplicationStatusOut'];
 export type SchemaTemplateBaseSpec = components['schemas']['TemplateBaseSpec'];
 export type SchemaTemplateIoSpec = components['schemas']['TemplateIOSpec'];
 export type SchemaTemplateOwnerSpec = components['schemas']['TemplateOwnerSpec'];
+export type SchemaTrackerAgentStatsAllInput = components['schemas']['TrackerAgentStatsAllInput'];
+export type SchemaTrackerAgentStatsInput = components['schemas']['TrackerAgentStatsInput'];
+export type SchemaTrackerAgentStatsOut = components['schemas']['TrackerAgentStatsOut'];
+export type SchemaTrackerConfigureDeliveryInput = components['schemas']['TrackerConfigureDeliveryInput'];
+export type SchemaTrackerSummaryOut = components['schemas']['TrackerSummaryOut'];
+export type SchemaTrackerTaskContentOut = components['schemas']['TrackerTaskContentOut'];
+export type SchemaTrackerTaskInputOut = components['schemas']['TrackerTaskInputOut'];
+export type SchemaTrackerTaskOut = components['schemas']['TrackerTaskOut'];
+export type SchemaTrackerTaskTicketSummaryOut = components['schemas']['TrackerTaskTicketSummaryOut'];
+export type SchemaTrackerUpdateTaskContentInput = components['schemas']['TrackerUpdateTaskContentInput'];
 export type SchemaUiTokenResponse = components['schemas']['UiTokenResponse'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type SchemaWorkflowAgentRequirementSpec = components['schemas']['WorkflowAgentRequirementSpec'];
@@ -7048,6 +7544,8 @@ export type SchemaWriteEnvelopeDurableActionJobOut = components['schemas']['Writ
 export type SchemaWriteEnvelopeFinanceCommitOut = components['schemas']['WriteEnvelope_FinanceCommitOut_'];
 export type SchemaWriteEnvelopeFinanceStatusOut = components['schemas']['WriteEnvelope_FinanceStatusOut_'];
 export type SchemaWriteEnvelopeLocalAgentChatMessageOut = components['schemas']['WriteEnvelope_LocalAgentChatMessageOut_'];
+export type SchemaWriteEnvelopeTrackerSummaryOut = components['schemas']['WriteEnvelope_TrackerSummaryOut_'];
+export type SchemaWriteEnvelopeTrackerTaskContentOut = components['schemas']['WriteEnvelope_TrackerTaskContentOut_'];
 export type SchemaWriteEnvelopeWorkflowTemplateExtensionDeleteOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionDeleteOut_'];
 export type SchemaWriteEnvelopeWorkflowTemplateExtensionUpsertOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionUpsertOut_'];
 export type SchemaWriteResponseAccountAuthStatusOut = components['schemas']['WriteResponse_AccountAuthStatusOut_'];
@@ -10248,6 +10746,22 @@ export enum AgentRequestStatus {
     ignored = "ignored",
     failed = "failed"
 }
+export enum AgentStatsCoverageOutClassification_status {
+    empty = "empty",
+    complete = "complete",
+    partial = "partial",
+    unavailable = "unavailable"
+}
+export enum AgentStatsCoverageOutUsage_status {
+    empty = "empty",
+    complete = "complete",
+    partial = "partial",
+    unavailable = "unavailable"
+}
+export enum AgentStatsRowOutSelected_roleAnyOf0 {
+    delivery_agent = "delivery_agent",
+    review_agent = "review_agent"
+}
 export enum ApprovalRequestStatus {
     pending = "pending",
     approved = "approved",
@@ -10496,6 +11010,46 @@ export enum RunStatus {
     success = "success",
     failed = "failed",
     aborted = "aborted"
+}
+export enum TrackerAgentStatsAllInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum TrackerAgentStatsInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum TrackerConfigureDeliveryInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum TrackerItemStatus {
+    not_started = "not-started",
+    in_progress = "in-progress",
+    complete = "complete",
+    deferred = "deferred",
+    aborted = "aborted",
+    failed = "failed",
+    skipped = "skipped"
+}
+export enum TrackerSourceKind {
+    manual = "manual",
+    workflow = "workflow",
+    agent_request = "agent-request",
+    external = "external",
+    system = "system"
+}
+export enum TrackerUpdateTaskContentInputResponse_mode {
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
 }
 export enum WorkflowAgentRequirementSpecRequirement {
     required = "required",

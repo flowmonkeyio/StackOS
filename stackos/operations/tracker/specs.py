@@ -14,6 +14,8 @@ from stackos.operations.spec import (
     OperationSurfaces,
 )
 from stackos.operations.tracker.read_handlers import (
+    tracker_agent_stats,
+    tracker_agent_stats_all,
     tracker_blockers,
     tracker_brief,
     tracker_changed,
@@ -29,6 +31,8 @@ from stackos.operations.tracker.read_handlers import (
     tracker_why,
 )
 from stackos.operations.tracker.schemas import (
+    TrackerAgentStatsAllInput,
+    TrackerAgentStatsInput,
     TrackerChangedInput,
     TrackerConfigureDeliveryInput,
     TrackerCreateTaskInput,
@@ -86,7 +90,16 @@ from stackos.repositories.tracker import (
     TrackerTicketCountsOut,
     TrackerVerifyOut,
 )
-from stackos.repositories.tracker.schema import TrackerSummaryOut
+from stackos.repositories.tracker.schema import TrackerAgentStatsOut, TrackerSummaryOut
+
+_AGENT_STATS_RESPONSE_POLICY = OperationResponsePolicy(
+    default_mode="compact",
+    allowed_modes=("compact", "raw"),
+    ack_safe=False,
+    compact_notes=(
+        "Keep scope, as_of, totals, all grouped rows and complete usage/classification coverage.",
+    ),
+)
 
 _TICKET_COUNTS_RESPONSE_POLICY = OperationResponsePolicy(
     default_mode="compact",
@@ -256,6 +269,49 @@ def operation_specs() -> list[OperationSpec]:
                         },
                     },
                 ),
+            ),
+        ),
+        operation_spec(
+            name="tracker.agentStats",
+            summary=(
+                "Read recorded agent launch attempts, reported usage and reviewer rejects "
+                "for one project."
+            ),
+            input_model=TrackerAgentStatsInput,
+            output_model=TrackerAgentStatsOut,
+            handler=tracker_agent_stats,
+            mutating=False,
+            grant_policy="direct-read",
+            response_policy=_AGENT_STATS_RESPONSE_POLICY,
+            purpose=(
+                "Read deduplicated current/archive invocation facts; missing telemetry "
+                "and classification remain explicit."
+            ),
+            examples=(
+                OperationExample(title="Read project agent activity", arguments={"project_id": 1}),
+            ),
+        ),
+        operation_spec(
+            name="tracker.agentStatsAll",
+            summary="Read recorded agent activity across active, archived or all projects.",
+            input_model=TrackerAgentStatsAllInput,
+            output_model=TrackerAgentStatsOut,
+            handler=tracker_agent_stats_all,
+            mutating=False,
+            grant_policy="local-admin-read",
+            response_policy=_AGENT_STATS_RESPONSE_POLICY,
+            purpose=(
+                "Local-console read over the same receipt projection; preserves recorded "
+                "agent/role/host/model identity."
+            ),
+            examples=(
+                OperationExample(
+                    title="Read active project activity", arguments={"is_active": True}
+                ),
+                OperationExample(
+                    title="Read archived project activity", arguments={"is_active": False}
+                ),
+                OperationExample(title="Read all project activity", arguments={"is_active": None}),
             ),
         ),
         operation_spec(

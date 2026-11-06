@@ -1,11 +1,45 @@
 from __future__ import annotations
 
 from fastapi.testclient import TestClient
+from sqlmodel import Session
+
+from tests.integration.test_repositories.test_agent_statistics import _repaired, _store
 
 
 def _operation_data(response):
     body = response.json()
     return body.get("data", body)
+
+
+def test_agent_statistics_are_browser_readable_with_exact_usage_and_no_ack(
+    api: TestClient, project_id: int
+) -> None:
+    with Session(api.app.state.engine) as session:
+        _store(session, project_id, "browser-stats", _repaired())
+    browser = api.get("/api/v1/auth/ui-token").json()["token"]
+    headers = {"Authorization": f"Bearer {browser}"}
+    for name, arguments in (
+        ("tracker.agentStats", {"project_id": project_id}),
+        ("tracker.agentStatsAll", {"is_active": None}),
+    ):
+        for mode in ("compact", "raw"):
+            result = api.post(
+                f"/api/v1/operations/{name}/call",
+                headers=headers,
+                json={"arguments": {**arguments, "response_mode": mode}},
+            )
+            assert result.status_code == 200, result.text
+            stats = _operation_data(result)
+            assert stats["totals"]["reported_usage"]["total"] == 100
+            assert stats["totals"]["launch_attempts"] == 4
+            assert stats["totals"]["recorded_reviewer_rejects"] == 1
+            assert "PRIVATE" not in result.text
+        denied = api.post(
+            f"/api/v1/operations/{name}/call",
+            headers=headers,
+            json={"arguments": {**arguments, "response_mode": "ack"}},
+        )
+        assert denied.status_code == 422, denied.text
 
 
 def test_tracker_operations_rest_vertical_slice(api: TestClient, project_id: int) -> None:

@@ -20,13 +20,14 @@ def main() -> int:
     app = create_app()
     document = app.openapi()
     # The generic operation REST route intentionally has a dynamic envelope.
-    # Include the registry-owned contracts used by the Action Calls console so
+    # Include the registry-owned contracts used by the local console so
     # the UI does not maintain a second copy of durable job/receipt schemas.
     models = [
         (model, mode)
         for spec in build_operation_registry().by_surface("rest")
         if (
             spec.name.startswith("actionCall.")
+            or spec.name in {"tracker.agentStats", "tracker.agentStatsAll"}
             or spec.grant_policy in {"local-admin-console-read", "local-admin-console-write"}
             or spec.name == "localAgentChat.createMessage"
         )

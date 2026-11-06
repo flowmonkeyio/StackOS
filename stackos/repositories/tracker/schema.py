@@ -235,6 +235,47 @@ class TrackerSnapshotOut(BaseModel):
     graph: TrackerGraphOut | None = None
 
 
+class AgentStatsUsageOut(BaseModel):
+    unit: Literal["tokens"] = "tokens"
+    input: int | None
+    output: int | None
+    total: int | None
+
+
+class AgentStatsCoverageOut(BaseModel):
+    usage_measured_attempts: int
+    usage_unavailable_attempts: int
+    classification_known_attempts: int
+    classification_unknown_attempts: int
+    usage_status: Literal["empty", "complete", "partial", "unavailable"]
+    classification_status: Literal["empty", "complete", "partial", "unavailable"]
+
+
+class AgentStatsMetricsOut(BaseModel):
+    launch_attempts: int
+    recorded_reviewer_rejects: int
+    reported_usage: AgentStatsUsageOut
+    coverage: AgentStatsCoverageOut
+
+
+class AgentStatsRowOut(AgentStatsMetricsOut):
+    project_id: int
+    project_name: str
+    project_slug: str
+    agent_name: str | None
+    selected_role: Literal["delivery_agent", "review_agent"] | None
+    host_key: str | None
+    model: str | None
+
+
+class TrackerAgentStatsOut(BaseModel):
+    project_id: int | None
+    is_active: bool | None
+    as_of: datetime
+    totals: AgentStatsMetricsOut
+    rows: list[AgentStatsRowOut]
+
+
 class TrackerTicketCountsOut(BaseModel):
     project_id: int | None
     is_active: bool | None

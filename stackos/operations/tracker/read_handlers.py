@@ -7,6 +7,8 @@ from starlette.concurrency import run_in_threadpool
 from stackos.mcp.context import MCPContext
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.operations.tracker.schemas import (
+    TrackerAgentStatsAllInput,
+    TrackerAgentStatsInput,
     TrackerChangedInput,
     TrackerGetInput,
     TrackerHistoryInput,
@@ -30,6 +32,23 @@ from stackos.repositories.tracker import (
     TrackerTicketCountsOut,
     TrackerVerifyOut,
 )
+from stackos.repositories.tracker.schema import TrackerAgentStatsOut
+
+
+async def tracker_agent_stats(
+    inp: TrackerAgentStatsInput, ctx: MCPContext, _emitter: ProgressEmitter
+) -> TrackerAgentStatsOut:
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).agent_stats, project_id=inp.project_id
+    )
+
+
+async def tracker_agent_stats_all(
+    inp: TrackerAgentStatsAllInput, ctx: MCPContext, _emitter: ProgressEmitter
+) -> TrackerAgentStatsOut:
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).agent_stats_all, is_active=inp.is_active
+    )
 
 
 async def tracker_status(

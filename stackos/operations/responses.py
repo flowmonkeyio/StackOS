@@ -786,6 +786,8 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
         "account.application.status",
         "tracker.ticketCounts",
         "tracker.ticketCountsAll",
+        "tracker.agentStats",
+        "tracker.agentStatsAll",
         "project.portfolio",
         "browser.runtime.status",
     }:

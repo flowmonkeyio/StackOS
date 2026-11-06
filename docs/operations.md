@@ -242,6 +242,28 @@ The UI reads the same docs at `/projects/{project_id}/operations`. That page is
 not a second registry; it renders `GET /api/v1/operations` and
 `GET /api/v1/operations/{operation_name}`.
 
+## Agent activity reads
+
+`tracker.agentStats` (`project_id`) and `tracker.agentStatsAll` (`is_active`:
+true/false/null for Active/Archived/All, default true) expose one tracker-owned
+projection of recorded invocation receipts. The project operation uses
+`direct-read` with project scope; the global operation uses `local-admin-read`,
+so project-scoped MCP callers cannot read it. Registry-generated MCP, REST and
+CLI surfaces share `TrackerAgentStatsOut` and support compact/raw, without ack.
+
+Both return scope, `as_of`, `totals` and grouped `rows`, preserving all numeric
+usage and missing/classification coverage in compact responses. No private
+receipt payloads are returned, and reads change no state. See
+[metric semantics](./task-tracker.md#recorded-agent-statistics).
+
+```json
+{"arguments": {"project_id": 1, "response_mode": "compact"}}
+```
+
+Use that payload at `/api/v1/operations/tracker.agentStats/call`. Local admin
+may call `/api/v1/operations/tracker.agentStatsAll/call` with
+`{"arguments":{"is_active":null}}` for all projects.
+
 ## Browser Operations
 
 The browser operation surface owns runtime status, profile create/list, and

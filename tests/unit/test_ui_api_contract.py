@@ -27,6 +27,14 @@ from stackos.operations.finance import (
     FinanceRecordOut,
     FinanceStatusInput,
 )
+from stackos.operations.tracker.schemas import TrackerAgentStatsAllInput, TrackerAgentStatsInput
+from stackos.repositories.tracker.schema import (
+    AgentStatsCoverageOut,
+    AgentStatsMetricsOut,
+    AgentStatsRowOut,
+    AgentStatsUsageOut,
+    TrackerAgentStatsOut,
+)
 from stackos.server import create_app
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -79,6 +87,13 @@ def test_ui_generation_includes_registry_owned_durable_contracts(
         DurableActionItemOut,
         ActionCallResumeInput,
         ActionCallRetryInput,
+        TrackerAgentStatsInput,
+        TrackerAgentStatsAllInput,
+        TrackerAgentStatsOut,
+        AgentStatsMetricsOut,
+        AgentStatsUsageOut,
+        AgentStatsCoverageOut,
+        AgentStatsRowOut,
         FinanceStatusInput,
         FinanceQueryInput,
         FinanceEditIntent,

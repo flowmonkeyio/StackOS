@@ -11,7 +11,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 232
+    assert len(names) == 234
     assert not names.intersection(
         {"actionCall.aggregate", "actionCall.aggregateAll", "actionCall.queryAll"}
     )
@@ -26,6 +26,8 @@ def test_operation_registry_documents_core_operations() -> None:
         "actionCall.retry",
         "tracker.ticketCounts",
         "tracker.ticketCountsAll",
+        "tracker.agentStats",
+        "tracker.agentStatsAll",
         "tracker.updateTaskContent",
         "tracker.startDelivery",
         "tracker.configureDelivery",
@@ -157,6 +159,8 @@ def test_operation_registry_documents_core_operations() -> None:
         "actionCall.query": "direct-read",
         "tracker.ticketCounts": "direct-read",
         "tracker.ticketCountsAll": "local-admin-read",
+        "tracker.agentStats": "direct-read",
+        "tracker.agentStatsAll": "local-admin-read",
         "project.portfolio": "local-admin-read",
     }.items():
         overview = registry.get(name).describe_out()

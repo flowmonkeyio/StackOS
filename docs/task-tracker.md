@@ -324,6 +324,46 @@ stable release series and excludes snapshots recorded under the earlier
 unproven `claude.model-usage` scope from cumulative baselines. A missing compatible
 baseline stays unavailable even when the current version is known.
 
+### Recorded agent statistics
+
+`tracker.agentStats` reads one project's default tracker with enforced project
+scope. `tracker.agentStatsAll` is a local-admin read over the same query:
+`is_active=true` (default) selects active projects, `false` archived projects,
+and `null` all projects. A project read includes its receipts even when archived.
+Neither operation creates a tracker, launches work, or changes configuration.
+
+Both return `TrackerAgentStatsOut`: scope (`project_id`, `is_active`), `as_of`,
+`totals`, and `rows`. Each row groups project ID/name/slug, recorded `agent_name`,
+`selected_role`, `host_key`, and `model`. Agent/role/host/model come from receipts,
+never current defaults; missing historical identities remain null.
+
+- **Launch attempts** (`launch_attempts`) count recorded invocation receipts once
+  per ticket/attempt/phase across current and archived attempts. Resumes are new
+  occurrences. Tracker history, configured unused roles and group tickets without
+  invocation receipts contribute nothing. An attempt need not have reached a model.
+- **Reported tokens** (`reported_usage`, unit `tokens`, with numeric `input`,
+  `output`, `total`) sum only normalized `usage.measured` contributions. Snapshots,
+  cache/reasoning subsets and provider subtotals are never added again. No usable
+  contribution means null; measured zero is zero; an empty scope has zero totals.
+- **Recorded reviewer rejects** (`recorded_reviewer_rejects`) count explicit
+  `selected_role=review_agent` plus `validated_outcome=repair`, including reviewer
+  mirrors stored in the delivery phase. Failed, blocked, native/schema/candidate
+  validation errors do not count. Phase, title and agent name never classify a reject.
+
+Totals and rows include `coverage`: `usage_measured_attempts`,
+`usage_unavailable_attempts`, `classification_known_attempts` and
+`classification_unknown_attempts`. `usage_status` and `classification_status` are
+`empty`, `complete`, `partial` or `unavailable`. Explicit null validated outcomes
+record known validation failure; absent outcomes or roles remain unclassified.
+Display coverage with the values: historical unknown does not establish zero use
+or zero rejects. Compact and raw responses retain the same complete facts and
+rows, excluding prompts, instructions, raw execution output and credentials.
+
+For example, delivery 10 → reviewer repair 20 → resumed delivery 30 → reviewer
+success 40 produces four attempts, 100 reported tokens and one reject, even when
+the current attempt also appears in the archive. A one-phase reviewer mirror
+with validated repair adds one attempt and one reject.
+
 Agent/process failure also stops the task's execution. Ticket evidence records
 both agent results, launch details, thread references, prior HEAD and verified
 commit SHA before dependencies are released. Git is optional. Non-Git tasks invoke no Git commands; Codex uses its native

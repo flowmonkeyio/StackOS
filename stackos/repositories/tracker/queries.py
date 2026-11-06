@@ -40,8 +40,10 @@ from stackos.repositories.base import (
     ValidationError,
     cursor_paginate,
 )
+from stackos.repositories.tracker.agent_stats import query_agent_stats
 from stackos.repositories.tracker.counts import query_ticket_counts
 from stackos.repositories.tracker.schema import (
+    TrackerAgentStatsOut,
     TrackerBriefOut,
     TrackerChangedOut,
     TrackerHistoryOut,
@@ -80,6 +82,13 @@ from stackos.repositories.tracker.workflow_graph_analysis import (
 
 class TrackerQueryMixin:
     """Tracker read/query helpers and response shaping."""
+
+    def agent_stats(self, *, project_id: int) -> TrackerAgentStatsOut:
+        self._require_project(project_id)
+        return query_agent_stats(self._s, project_id=project_id)
+
+    def agent_stats_all(self, *, is_active: bool | None = True) -> TrackerAgentStatsOut:
+        return query_agent_stats(self._s, is_active=is_active)
 
     def ticket_counts(self, *, project_id: int) -> TrackerTicketCountsOut:
         self._tracker_or_none(project_id=project_id)
