@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, toRef, watch } from 'vue'
+import { computed, reactive } from 'vue'
 
 import {
   UiButton,
@@ -29,19 +29,12 @@ const {
   load,
   setField,
   save,
-} = useAgentDefaults(toRef(props, 'projectId'))
+} = useAgentDefaults(computed(() => props.projectId))
 const roles: Array<{ key: AgentRole; label: string }> = [
   { key: 'delivery_agent', label: 'Delivery agent' },
   { key: 'review_agent', label: 'Review agent' },
 ]
 const custom = reactive<Record<AgentRole, boolean>>({ delivery_agent: false, review_agent: false })
-watch(
-  () => props.projectId,
-  () => {
-    custom.delivery_agent = false
-    custom.review_agent = false
-  },
-)
 const executableHosts = computed(() =>
   hosts.value.filter((host) => host.agent_execution?.sandboxes.length),
 )

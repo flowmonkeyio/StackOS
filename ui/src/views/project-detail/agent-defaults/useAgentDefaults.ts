@@ -1,5 +1,6 @@
-import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
+import { computed, ref, type ComputedRef } from 'vue'
 
+import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import { formatApiError } from '@/lib/client'
 import type { DesktopHostStatusesResult, DesktopMcpHostStatus } from '@/lib/desktop'
 import { callOperation } from '@/lib/operations'
@@ -26,7 +27,7 @@ function canonical(value: unknown): string {
   return JSON.stringify(value)
 }
 
-export function useAgentDefaults(projectId: Ref<number>) {
+export function useAgentDefaults(projectId: ComputedRef<number>) {
   const draft = ref<DeliveryDefaults>({})
   const saved = ref<DeliveryDefaults>({})
   const hosts = ref<DesktopMcpHostStatus[]>([])
@@ -127,16 +128,15 @@ export function useAgentDefaults(projectId: Ref<number>) {
     }
   }
 
-  watch(
+  // Project-keyed component replacement owns scope changes; the shared loader
+  // starts this instance and invalidates its requests when the scope exits.
+  useProjectScopedLoader({
     projectId,
-    () => {
-      void load()
+    load,
+    onScopeExit: () => {
+      disposed = true
+      generation += 1
     },
-    { immediate: true },
-  )
-  onBeforeUnmount(() => {
-    disposed = true
-    generation += 1
   })
 
   return {

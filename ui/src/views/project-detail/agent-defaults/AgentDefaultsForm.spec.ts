@@ -1,10 +1,12 @@
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { callOperation } from '@/lib/operations'
 import type { DesktopAgentExecutionCapabilities } from '@/lib/desktop'
 import type { DeliveryDefaults, TrackerSummary } from '@/lib/task-tracker/types'
 import AgentDefaultsForm from './AgentDefaultsForm.vue'
+import AgentDefaultsTab from '../AgentDefaultsTab.vue'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
 const call = vi.mocked(callOperation)
@@ -94,6 +96,18 @@ async function setup(id = 1) {
   wrapper = mount(AgentDefaultsForm, { props: { projectId: id } })
   await flushPromises()
   return wrapper
+}
+
+async function setupProjectTab(id = 1) {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/projects/:id/agent-defaults', component: AgentDefaultsTab }],
+  })
+  await router.push(`/projects/${id}/agent-defaults`)
+  await router.isReady()
+  wrapper = mount(AgentDefaultsTab, { global: { plugins: [router] } })
+  await flushPromises()
+  return { w: wrapper, router }
 }
 async function choose(w: VueWrapper, selector: string, label: string) {
   await w.get(selector).trigger('click')
@@ -219,7 +233,8 @@ describe('Project agent defaults', () => {
   })
 
   it('rejects mismatched scope and ignores an old save response after project switching', async () => {
-    const w = await setup()
+    const { w, router } = await setupProjectTab()
+    await choose(w, '#delivery_agent-model', 'Custom model…')
     await w.get('#delivery_agent-name').setValue('Project one edit')
     let resolve!: (result: unknown) => void
     call.mockImplementationOnce(
@@ -229,8 +244,8 @@ describe('Project agent defaults', () => {
         }),
     )
     await w.get('form').trigger('submit')
-    defaults = { review_agent: { name: 'Project two reviewer' } }
-    await w.setProps({ projectId: 2 })
+    defaults = { host_key: 'catalog-host', review_agent: { name: 'Project two reviewer' } }
+    await router.push('/projects/2/agent-defaults')
     await flushPromises()
     resolve({ data: tracker(1), project_id: 1 })
     await flushPromises()
@@ -238,6 +253,7 @@ describe('Project agent defaults', () => {
       'Project two reviewer',
     )
     expect(w.text()).not.toContain('Defaults saved')
+    expect(w.find('#delivery_agent-custom-model').exists()).toBe(false)
     expect(saves()[0]![1].project_id).toBe(1)
     call.mockResolvedValueOnce({ tracker: tracker(1) })
     await w
@@ -257,15 +273,15 @@ describe('Project agent defaults', () => {
           resolve = done
         }),
     )
-    wrapper = mount(AgentDefaultsForm, { props: { projectId: 1 } })
+    const { w, router } = await setupProjectTab()
     defaults = { delivery_agent: { name: 'Project two builder' } }
-    await wrapper.setProps({ projectId: 2 })
+    await router.push('/projects/2/agent-defaults')
     await flushPromises()
     resolve({ tracker: tracker(1, initial) })
     await flushPromises()
-    expect((wrapper.get('#delivery_agent-name').element as HTMLInputElement).value).toBe(
+    expect((w.get('#delivery_agent-name').element as HTMLInputElement).value).toBe(
       'Project two builder',
     )
-    expect(wrapper.text()).not.toContain('Defaults saved')
+    expect(w.text()).not.toContain('Defaults saved')
   })
 })

@@ -6,5 +6,8 @@ const { projectId } = useProjectRouteScope()
 </script>
 
 <template>
-  <AgentDefaultsForm :project-id="projectId" />
+  <AgentDefaultsForm
+    :key="projectId"
+    :project-id="projectId"
+  />
 </template>

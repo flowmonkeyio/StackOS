@@ -110,7 +110,9 @@ view remains responsible for coordinating multiple composables.
 
 `project-detail/AgentDefaultsTab` composes the project scope with
 `agent-defaults/AgentDefaultsForm`; `useAgentDefaults` owns its load/save/readback
-lifecycle. The form uses shared input, textarea, select and form-field
+lifecycle through `useProjectScopedLoader`. The tab keys the form by project so
+scope changes reset local drafts and selection state and invalidate pending requests.
+The form uses shared input, textarea, select and form-field
 primitives over existing tracker setup and safe host capabilities.
 
 Connections is the reference implementation:

@@ -154,14 +154,22 @@ test('project defaults save/reload preserves roles and optional choices without 
     contentType: 'application/json',
   })
 
-  // A different project must load its own empty defaults, including after returning.
-  await page.goto(`/projects/${other.id}/agent-defaults`)
+  // Exercise the app's project-keyed lifecycle without a document reload.
+  await choose(delivery, 'Model', 'Custom model…')
+  await delivery.getByRole('textbox', { name: 'Custom model', exact: true }).fill('unsaved-custom-model')
+  await page.getByRole('button', { name: /Switch project/ }).click()
+  await page.getByRole('option', { name: /Empty Defaults Project/ }).click()
+  await expect(page).toHaveURL(new RegExp(`/projects/${other.id}/agent-defaults$`))
   await expect(page.getByText('No project agent defaults saved.', { exact: false })).toBeVisible()
   await expect(delivery.getByRole('textbox', { name: 'Name', exact: true })).toHaveValue('')
-  await page.goto(`/projects/${project.id}/agent-defaults`)
+  await page.getByRole('button', { name: /Switch project/ }).click()
+  await page.getByRole('option', { name: /Agent Defaults Proof/ }).click()
+  await expect(page).toHaveURL(new RegExp(`/projects/${project.id}/agent-defaults$`))
   await expect(delivery.getByRole('textbox', { name: 'Name', exact: true })).toHaveValue(
     'Edited builder',
   )
+  await expect(delivery.getByRole('textbox', { name: 'Custom model', exact: true })).toHaveCount(0)
+  await expect(delivery.getByRole('combobox', { name: 'Model', exact: true })).toHaveText(model)
   await page.screenshot({ path: testInfo.outputPath('agent-defaults-saved.png'), fullPage: true })
   errors.assertNone()
 })

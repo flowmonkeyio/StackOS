@@ -12,6 +12,7 @@ const AUTH_SETUP_STORE = join(ROOT, 'stores', 'plugins.ts')
 const PROJECTS_STORE = join(ROOT, 'stores', 'projects.ts')
 const OPERATIONS_CLIENT = join(ROOT, 'lib', 'operations.ts')
 const TASK_CONTENT_CONTROLLER = join(ROOT, 'views', 'task-tracker', 'useTrackerTaskContent.ts')
+const AGENT_DEFAULTS_CONTROLLER = join(ROOT, 'views', 'project-detail', 'agent-defaults', 'useAgentDefaults.ts')
 const ALLOWED_WRITE_FILES = new Set([AUTH_SETUP_STORE, PROJECTS_STORE, OPERATIONS_CLIENT])
 
 function filesUnder(dir: string): string[] {
@@ -93,7 +94,11 @@ describe('restricted UI write contract', () => {
     expect(text).toContain("method: 'POST'")
   })
 
-  it('keeps tracker writes limited to the bounded task content controller', () => {
+  it('keeps tracker writes limited to the bounded task content and project defaults controllers', () => {
+    const allowedOperations = new Map([
+      [TASK_CONTENT_CONTROLLER, ['tracker.updateTaskContent']],
+      [AGENT_DEFAULTS_CONTROLLER, ['tracker.configureDelivery']],
+    ])
     const callers: string[] = []
     for (const scope of SCOPES) {
       for (const file of filesUnder(join(ROOT, scope))) {
@@ -102,11 +107,11 @@ describe('restricted UI write contract', () => {
           .map(match => match[1])
           .filter(name => !['tracker.get', 'tracker.status'].includes(name))
         if (operations.length) {
-          expect(operations).toEqual(['tracker.updateTaskContent'])
+          expect(operations).toEqual(allowedOperations.get(file) ?? [])
           callers.push(file)
         }
       }
     }
-    expect(callers).toEqual([TASK_CONTENT_CONTROLLER])
+    expect(callers.sort()).toEqual([...allowedOperations.keys()].sort())
   })
 })
