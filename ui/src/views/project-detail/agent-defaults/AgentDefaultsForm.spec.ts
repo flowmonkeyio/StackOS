@@ -81,6 +81,16 @@ beforeEach(() => {
               profile_selection: false,
             },
           },
+          {
+            host_key: 'plain-host',
+            display_name: 'Plain Harness',
+            agent_execution: {
+              ...capability,
+              custom_models: false,
+              provider_selection: false,
+              profile_selection: false,
+            },
+          },
         ],
       }
     if (name === 'tracker.configureDelivery') {
@@ -153,7 +163,7 @@ describe('Project agent defaults', () => {
     await choose(w, '#delivery_agent-host', 'Explicit Harness')
     // Host selection must not silently discard saved model/provider/profile.
     expect((w.get('#delivery_agent-profile').element as HTMLInputElement).value).toBe('new-profile')
-    expect(w.get('#delivery_agent-profile').attributes('disabled')).toBeDefined()
+    expect(w.get('#delivery_agent-profile').attributes('disabled')).toBeUndefined()
     expect(w.text()).toContain('Explicit provider and model required')
     await w.get('#delivery_agent-model').trigger('click')
     expect(w.findAll('[role="option"]').map((item) => item.text())).toContain('catalog-model')
@@ -175,6 +185,50 @@ describe('Project agent defaults', () => {
     })
     expect(defaults.review_agent!.model).toBeNull()
   })
+
+  it.each([
+    ['delivery_agent', 'profile', 'Explicit Harness'],
+    ['review_agent', 'profile', 'Explicit Harness'],
+    ['delivery_agent', 'provider', 'Plain Harness'],
+    ['review_agent', 'provider', 'Plain Harness'],
+  ] as const)(
+    'explicitly clears retained incompatible %s %s after a harness switch',
+    async (role, field, harness) => {
+      defaults[role] = {
+        ...defaults[role],
+        provider: 'saved-provider',
+        profile: field === 'profile' ? 'saved-profile' : null,
+        future_role_field: { retained: true },
+      }
+      const expected = structuredClone(defaults)
+      const w = await setup()
+      await choose(w, `#${role}-host`, harness)
+      await choose(w, `#${role}-model`, 'catalog-model')
+      const input = w.get(`#${role}-${field}`)
+      expect((input.element as HTMLInputElement).value).toBe(`saved-${field}`)
+      expect(input.attributes('disabled')).toBeUndefined()
+      expect(w.text()).toContain(`Clear the saved ${field}`)
+      const clear = input.element.parentElement!.querySelector('button[aria-label="Clear input"]')!
+      expect(clear).not.toBeNull()
+      const clearButton = clear as HTMLButtonElement
+      clearButton.click()
+      await flushPromises()
+      expect(w.find(`#${role}-${field}`).exists()).toBe(false)
+      await w.get('form').trigger('submit')
+      await flushPromises()
+      expected[role] = {
+        ...expected[role],
+        host_key: field === 'profile' ? 'explicit-host' : 'plain-host',
+        model: 'catalog-model',
+        [field]: null,
+      }
+      expect(defaults).toEqual(expected)
+      expect(saves()).toEqual([
+        ['tracker.configureDelivery', { project_id: 1, delivery: expected }],
+      ])
+      expect(w.text()).toContain('Saved and reloaded project defaults')
+    },
+  )
 
   it('supports empty defaults and preserves unavailable saved harness/model selections', async () => {
     defaults = {}

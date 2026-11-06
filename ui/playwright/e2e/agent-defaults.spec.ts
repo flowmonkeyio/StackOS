@@ -1,4 +1,7 @@
 import { expect, test, type Locator } from '@playwright/test'
+import { spawnSync } from 'node:child_process'
+import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import {
   createProject,
@@ -21,6 +24,36 @@ async function operation(name: string, args: Record<string, unknown>) {
 async function choose(region: Locator, field: string, option: string) {
   await region.getByRole('combobox', { name: field, exact: true }).click()
   await region.getByRole('option', { name: option, exact: true }).click()
+}
+
+function selectionErrors(delivery: unknown): Record<string, string | null> {
+  const repoRoot = fileURLToPath(new URL('../../../', import.meta.url))
+  const env = { ...process.env }
+  delete env.PYTHONHOME
+  delete env.PYTHONPATH
+  const result = spawnSync(
+    process.env.STACKOS_E2E_PYTHON ?? join(repoRoot, '.venv/bin/python'),
+    [
+      '-c',
+      `
+import json, sys
+from stackos.host_mcp.service import agent_review_sandbox, agent_selection_error
+from stackos.operations.tracker.schemas import TaskDeliveryAgent, TrackerConfigureDeliveryInput
+defaults = TrackerConfigureDeliveryInput.model_validate({"project_id": 1, "delivery": json.load(sys.stdin)}).delivery.model_dump(exclude_unset=True)
+errors = {}
+for role in ("delivery_agent", "review_agent"):
+    agent = TaskDeliveryAgent.model_validate(defaults[role]).model_dump(exclude_none=True)
+    host = agent["host_key"]
+    sandbox = agent_review_sandbox(host) if role == "review_agent" else "workspace-write"
+    errors[role] = agent_selection_error(host, sandbox=sandbox, model=agent.get("model"), provider=agent.get("provider"), profile=agent.get("profile"))
+print(json.dumps(errors))
+`,
+    ],
+    { cwd: repoRoot, env, input: JSON.stringify(delivery), encoding: 'utf8', timeout: 30_000 },
+  )
+  expect(result.error, 'canonical validator process').toBeUndefined()
+  expect(result.status, result.stderr).toBe(0)
+  return JSON.parse(result.stdout)
 }
 
 test('project defaults save/reload preserves roles and optional choices without starting delivery', async ({
@@ -156,7 +189,9 @@ test('project defaults save/reload preserves roles and optional choices without 
 
   // Exercise the app's project-keyed lifecycle without a document reload.
   await choose(delivery, 'Model', 'Custom model…')
-  await delivery.getByRole('textbox', { name: 'Custom model', exact: true }).fill('unsaved-custom-model')
+  await delivery
+    .getByRole('textbox', { name: 'Custom model', exact: true })
+    .fill('unsaved-custom-model')
   await page.getByRole('button', { name: /Switch project/ }).click()
   await page.getByRole('option', { name: /Empty Defaults Project/ }).click()
   await expect(page).toHaveURL(new RegExp(`/projects/${other.id}/agent-defaults$`))
@@ -171,5 +206,142 @@ test('project defaults save/reload preserves roles and optional choices without 
   await expect(delivery.getByRole('textbox', { name: 'Custom model', exact: true })).toHaveCount(0)
   await expect(delivery.getByRole('combobox', { name: 'Model', exact: true })).toHaveText(model)
   await page.screenshot({ path: testInfo.outputPath('agent-defaults-saved.png'), fullPage: true })
+  errors.assertNone()
+})
+
+test('harness transitions preserve selectors until explicit clearing and pass canonical selection validation', async ({
+  page,
+}, testInfo) => {
+  expect(new URL(getBaseUrl()).port).not.toBe('5180')
+  await resetProjects()
+  const errors = trackConsoleErrors(page)
+  const project = await createProject({
+    name: 'Harness Transition Proof',
+    slug: 'harness-transition-proof',
+    domain: 'transition.test',
+  })
+  const hosts = await operation('hostMcp.status', {})
+  const codex = hosts.items.find((host: { host_key: string }) => host.host_key === 'codex')
+  const claude = hosts.items.find((host: { host_key: string }) => host.host_key === 'claude-code')
+  const hermes = hosts.items.find((host: { host_key: string }) => host.host_key === 'hermes')
+  expect(hermes.agent_execution.profile_selection).toBe(true)
+  expect(hermes.agent_execution.provider_selection).toBe(true)
+  expect(codex.agent_execution.profile_selection).toBe(false)
+  expect(claude.agent_execution.provider_selection).toBe(false)
+  expect(claude.agent_execution.profile_selection).toBe(false)
+  const initial = {
+    host_key: 'hermes',
+    delivery_agent: {
+      name: 'Transition builder',
+      instructions: 'Preserve delivery instructions.\nSecond line.',
+      model: 'fixture-model',
+      provider: 'openai',
+      profile: 'work',
+    },
+    review_agent: {
+      name: 'Transition reviewer',
+      instructions: 'Preserve independent review instructions.',
+      model: 'fixture-model',
+      provider: 'openai',
+      profile: 'review-work',
+    },
+  }
+  await operation('tracker.configureDelivery', { project_id: project.id, delivery: initial })
+  const before = await operation('tracker.status', { project_id: project.id })
+  await page.goto(`/projects/${project.id}/agent-defaults`)
+  const delivery = page.getByRole('region', { name: 'Delivery agent', exact: true })
+  const review = page.getByRole('region', { name: 'Review agent', exact: true })
+  await expect(delivery.getByRole('textbox', { name: 'Profile', exact: true })).toHaveValue('work')
+  await choose(delivery, 'Harness', codex.display_name)
+  await choose(delivery, 'Model', codex.agent_execution.models[0])
+  await choose(review, 'Harness', claude.display_name)
+  await choose(review, 'Model', claude.agent_execution.models[0])
+  for (const [region, profile] of [
+    [delivery, 'work'],
+    [review, 'review-work'],
+  ] as const) {
+    await expect(region.getByRole('textbox', { name: 'Provider', exact: true })).toHaveValue(
+      'openai',
+    )
+    await expect(region.getByRole('textbox', { name: 'Profile', exact: true })).toHaveValue(profile)
+    await expect(region.getByRole('textbox', { name: 'Profile', exact: true })).toBeEnabled()
+  }
+  await expect(review.getByRole('textbox', { name: 'Provider', exact: true })).toBeEnabled()
+  await expect(review.getByText('Clear the saved provider', { exact: false })).toBeVisible()
+  const retained = {
+    ...initial,
+    delivery_agent: {
+      ...initial.delivery_agent,
+      host_key: 'codex',
+      model: codex.agent_execution.models[0],
+    },
+    review_agent: {
+      ...initial.review_agent,
+      host_key: 'claude-code',
+      model: claude.agent_execution.models[0],
+    },
+  }
+  await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
+  await expect(
+    page.getByText('Saved and reloaded project defaults', { exact: false }),
+  ).toBeVisible()
+  const savedRetained = await operation('tracker.status', { project_id: project.id })
+  expect(savedRetained.tracker.config_json.delivery).toEqual(retained)
+  const incompatible = selectionErrors(savedRetained.tracker.config_json.delivery)
+  expect(incompatible.delivery_agent).toContain('profile selector')
+  expect(incompatible.review_agent).toContain('provider selector')
+  await page.screenshot({
+    path: testInfo.outputPath('harness-selectors-retained.png'),
+    fullPage: true,
+  })
+
+  for (const [region, field] of [
+    [delivery, 'Profile'],
+    [review, 'Provider'],
+    [review, 'Profile'],
+  ] as const) {
+    const input = region.getByRole('textbox', { name: field, exact: true })
+    await input.locator('..').getByRole('button', { name: 'Clear input', exact: true }).click()
+    await expect(input).toHaveCount(0)
+  }
+  await page.getByRole('button', { name: 'Save defaults', exact: true }).click()
+  await expect(
+    page.getByText('Saved and reloaded project defaults', { exact: false }),
+  ).toBeVisible()
+  await page.reload()
+  await expect(delivery.getByRole('textbox', { name: 'Instructions', exact: true })).toHaveValue(
+    initial.delivery_agent.instructions,
+  )
+  await expect(delivery.getByRole('textbox', { name: 'Profile', exact: true })).toHaveCount(0)
+  await expect(review.getByRole('textbox', { name: 'Provider', exact: true })).toHaveCount(0)
+  await expect(review.getByRole('textbox', { name: 'Profile', exact: true })).toHaveCount(0)
+  const after = await operation('tracker.status', { project_id: project.id })
+  const cleared = {
+    ...retained,
+    delivery_agent: { ...retained.delivery_agent, profile: null },
+    review_agent: { ...retained.review_agent, provider: null, profile: null },
+  }
+  expect(after.tracker.config_json).toEqual({ ...before.tracker.config_json, delivery: cleared })
+  expect(after.task_counts).toEqual(before.task_counts)
+  expect(after.ticket_counts).toEqual(before.ticket_counts)
+  const accepted = selectionErrors(after.tracker.config_json.delivery)
+  expect(accepted).toEqual({ delivery_agent: null, review_agent: null })
+  await testInfo.attach('canonical-transition-validation', {
+    body: JSON.stringify(
+      {
+        retained: savedRetained.tracker.config_json.delivery,
+        incompatible,
+        cleared: after.tracker.config_json.delivery,
+        accepted,
+      },
+      null,
+      2,
+    ),
+    contentType: 'application/json',
+  })
+  await page.screenshot({
+    path: testInfo.outputPath('harness-selectors-cleared.png'),
+    fullPage: true,
+  })
   errors.assertNone()
 })

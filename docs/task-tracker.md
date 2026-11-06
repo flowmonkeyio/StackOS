@@ -89,7 +89,10 @@ Untouched optional fields and other role settings are retained; the operation
 preserves unrelated tracker configuration. Blank optional selectors save as
 null; untouched absent fields remain absent. Harness/model choices and supported
 provider/profile controls use the shared host capability catalog, with no model
-access claim. A successful save reloads and checks the stored delivery object
+access claim. After a harness change, incompatible saved provider/profile values
+remain visible until explicitly cleared in the same input. Clear them before
+using that harness; saving defaults does not establish execution readiness.
+A successful save reloads and checks the stored delivery object
 against the operation result and displays its revision. Failures remain visible
 and retain the draft. Existing task snapshots and ticket receipts stay unchanged;
 saving does not call `tracker.startDelivery` or refresh instructions from files.

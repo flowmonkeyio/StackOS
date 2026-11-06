@@ -218,14 +218,17 @@ function selectModel(role: AgentRole, selection: string | number | null) {
             label="Provider"
             :input-id="`${role.key}-provider`"
             :help="
-              host(role.key)?.agent_execution?.requires_provider_model
-                ? 'Explicit provider and model required for execution.'
-                : 'Optional native provider selector. Leave blank for the native default.'
+              !host(role.key)?.agent_execution?.provider_selection
+                ? 'This harness does not support provider selection. Clear the saved provider before using this harness.'
+                : host(role.key)?.agent_execution?.requires_provider_model
+                  ? 'Explicit provider and model required for execution.'
+                  : 'Optional native provider selector. Leave blank for the native default.'
             "
           >
             <UiInput
               :model-value="value(role.key, 'provider')"
-              :disabled="saving || !host(role.key)?.agent_execution?.provider_selection"
+              :disabled="saving"
+              clearable
               @update:model-value="setField(role.key, 'provider', $event)"
             />
           </UiFormField>
@@ -233,11 +236,14 @@ function selectModel(role: AgentRole, selection: string | number | null) {
             v-if="host(role.key)?.agent_execution?.profile_selection || value(role.key, 'profile')"
             label="Profile"
             :input-id="`${role.key}-profile`"
-            help="Optional native execution profile. Leave blank for the native default."
+            :help="host(role.key)?.agent_execution?.profile_selection
+              ? 'Optional native execution profile. Leave blank for the native default.'
+              : 'This harness does not support profile selection. Clear the saved profile before using this harness.'"
           >
             <UiInput
               :model-value="value(role.key, 'profile')"
-              :disabled="saving || !host(role.key)?.agent_execution?.profile_selection"
+              :disabled="saving"
+              clearable
               @update:model-value="setField(role.key, 'profile', $event)"
             />
           </UiFormField>
