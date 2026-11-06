@@ -528,9 +528,9 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     assert (
         "Main writes terminal-managed child status/evidence with tracker.updateTicket" in plan_text
     )
-    assert "tracker.startDelivery handoff delegates mechanical child results" in plan_text
-    assert "after independent exact-commit approval" in plan_text
-    assert "main-owned workflow phase mirrors" in plan_text
+    assert "tracker.startDelivery delegates all remaining task work by dependencies" in plan_text
+    assert "ordinary results need independent review" in plan_text
+    assert "mirror lifecycle remains with RunPlanRepository" in plan_text
     assert "activates edge" in plan_text
     assert "detached branches" in plan_text
     test_design_step = next(
@@ -671,7 +671,7 @@ def test_engineering_readiness_and_acceptance_contract_survives_plan_derivation(
         "audit-tracker",
         "release-closeout",
     ]
-    assert spec.version == "0.4.2"
+    assert spec.version == "0.5.0"
     assert [step.id for step in spec.steps] == expected_order
     assert spec.metadata_json["step_ids"] == expected_order
     assert spec.skill_preset_requirements[0].applies_to_steps == expected_order
@@ -723,7 +723,7 @@ def test_engineering_readiness_and_acceptance_contract_survives_plan_derivation(
     validation = validate_run_plan_obj(plan.model_dump(mode="json"))
     assert validation.valid, validation.errors
     assert validation.warnings == []
-    assert plan.template_version == "0.4.2"
+    assert plan.template_version == "0.5.0"
     assert [step.id for step in plan.steps] == expected_order
     assert {step.id: step.depends_on for step in plan.steps} == expected_dependencies
     derived_delivery = next(step for step in plan.steps if step.id == "deliver-tickets")
@@ -732,7 +732,7 @@ def test_engineering_readiness_and_acceptance_contract_survives_plan_derivation(
     assert "one automatic repair pass" in derived_text
     assert "repair_pass_used across explicit requeue" in derived_text
     assert "nonblocking followups" in derived_text
-    assert "source edits do not refresh saved role instructions" in derived_text
+    assert "Queued/running executions stay frozen" in derived_text
 
 
 def test_builtin_workflow_preset_requirements_are_step_mapped(session: Session) -> None:

@@ -51,7 +51,7 @@ from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.secrets import PayloadSecretRepository
 
-HEAD_REVISION = "0034_work_item_ownership"
+HEAD_REVISION = "0035_generic_task_delivery"
 
 
 @pytest.fixture

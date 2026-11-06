@@ -70,13 +70,13 @@ def _impact_map() -> dict:
     }
 
 
-def test_tracked_delivery_v042_keeps_one_key_and_twelve_steps() -> None:
+def test_tracked_delivery_v050_keeps_one_key_and_twelve_steps() -> None:
     workflow = _workflow()
     validation = validate_workflow_template_obj(workflow)
 
     assert validation.valid is True, validation.errors
     assert workflow["key"] == "engineering.tracked-delivery"
-    assert workflow["version"] == "0.4.2"
+    assert workflow["version"] == "0.5.0"
     assert [step["id"] for step in workflow["steps"]] == [
         "scope-work",
         "define-requirements",
@@ -116,12 +116,18 @@ def test_tracked_delivery_is_guidance_driven_with_concise_truth_contracts() -> N
     )
     assert "for repository-bound delivery" in policies["release_candidate_lock"].lower()
     assert "when evidence suggests" in policies["finding_lifecycle"].lower()
-    assert "mechanical child-ticket progression" in policies["main_agent_accountability"]
+    assert "all remaining dependency-ready task work" in policies["main_agent_accountability"]
     delivery = next(step for step in workflow["steps"] if step["id"] == "deliver-tickets")
     text = str(delivery)
     assert "independent exact-commit review" in text
     assert "Gemini and Hermes" in text and "no enforced read-only guarantee" in text
-    assert "phase gates, integration and final claims" in text
+    assert "Main retains scope admission and final claims" in text
+    assert "status (success/repair/blocked/failed)" in text
+    assert "JSON-encoded object string" in text
+    assert "TaskTracker.config_json.delivery" in text
+    assert "tracker.configureDelivery" in text
+    assert "frozen workflow mirrors" in text
+    assert "verification/audit/closeout may cite unchanged HEAD" in text
     for requirement in (
         "one automatic repair pass",
         "same native delivery session",
@@ -136,8 +142,8 @@ def test_tracked_delivery_is_guidance_driven_with_concise_truth_contracts() -> N
         "canonical ownership",
         "nonblocking followups",
         "source_ticket_key/source_attempt/created_at",
-        "active/historical snapshots",
-        "preserving names/hosts/models/provider/profile",
+        "Queued/running executions stay frozen",
+        "Preserve names/hosts/models/provider/profile",
         "No synchronizer",
     ):
         assert requirement in text, requirement
