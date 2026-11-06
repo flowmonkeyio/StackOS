@@ -26,6 +26,50 @@ def _workflow_two_step_plan_json() -> dict:
     }
 
 
+def test_tracker_reopen_mcp_returns_safe_refs_without_controller_token(
+    mcp_client: MCPClient, seeded_project: dict
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    plan = mcp_client.call_tool_structured(
+        "runPlan.create",
+        {"project_id": project_id, "run_plan_json": _workflow_two_step_plan_json()},
+    )
+    plan_id = plan["data"]["id"]
+    started = mcp_client.call_tool_structured(
+        "runPlan.start", {"project_id": project_id, "run_plan_id": plan_id}
+    )
+    token = started["data"]["run_token"]
+    for mode in ("raw", "compact", "ack"):
+        reopened = mcp_client.call_tool_structured(
+            "tracker.reopen",
+            {
+                "project_id": project_id,
+                "run_plan_id": plan_id,
+                "step_id": "deliver",
+                "reason": "Scoped correction",
+                "response_mode": mode,
+            },
+        )
+        data = reopened.get("refs", reopened.get("data"))
+        assert data["run_plan_id"] == plan_id
+        assert data["run_id"] == started["data"]["run_id"]
+        assert data["reopened_step_id"] == "deliver"
+        assert data["reset_step_ids"] == ["deliver", "verify"]
+        assert data.get("run_token") is None
+        assert token not in str(reopened)
+    controller = mcp_client.call_tool_structured(
+        "runPlan.reopen",
+        {
+            "project_id": project_id,
+            "run_plan_id": plan_id,
+            "step_id": "deliver",
+            "reason": "Controller resume",
+            "response_mode": "raw",
+        },
+    )
+    assert controller["data"]["run_token"] == token
+
+
 def test_tracker_operations_are_registered(mcp_client: MCPClient) -> None:
     listed_tools = mcp_client.list_tools()
     tools = {tool["name"] for tool in listed_tools}

@@ -723,7 +723,8 @@ def operation_specs() -> list[OperationSpec]:
                 "Use this when more work is discovered after a task or workflow was "
                 "closed. StackOS resolves whether the target is a plain tracker task "
                 "or a mirrored workflow run plan, then reopens the canonical lifecycle "
-                "state in one operation."
+                "state in one operation. Returns safe run/reset-step references, "
+                "without a controller token; controller callers use runPlan.start/reopen."
             ),
             examples=(
                 OperationExample(

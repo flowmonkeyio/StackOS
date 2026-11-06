@@ -16,8 +16,16 @@ from sqlmodel import Session
 from stackos.db.models import RunPlanStepStatus
 from stackos.host_mcp.result import AgentRunResult, usage_snapshot
 from stackos.mcp.context import MCPContext
-from stackos.operations.tracker.schemas import TrackerStartDeliveryInput
-from stackos.operations.tracker.write_handlers import tracker_start_delivery
+from stackos.operations.tracker.schemas import (
+    TrackerReopenInput,
+    TrackerStartDeliveryInput,
+    TrackerUpdateTicketInput,
+)
+from stackos.operations.tracker.write_handlers import (
+    tracker_reopen,
+    tracker_start_delivery,
+    tracker_update_ticket,
+)
 from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
@@ -48,6 +56,267 @@ def generic_result(status="success", outputs=None, summary="Checked", followups=
         "outputs": json.dumps(outputs or {}),
         "followups": followups or [],
     }
+
+
+@pytest.mark.parametrize(
+    ("consumed_repair", "observation_result"),
+    [
+        (False, "repair"),
+        (False, "success"),
+        (True, "repair"),
+        (False, "blocked"),
+        (False, "failed"),
+        (False, "native-error"),
+        (False, "schema-error"),
+        (False, "candidate-error"),
+        (False, "session-error"),
+        (False, "no-reopen"),
+        (False, "self-reopen"),
+        (False, "stale-correction"),
+        (False, "missing-correction-candidate"),
+    ],
+)
+def test_agent_reopen_rescans_dependencies_and_resumes_original_sessions(
+    session, project_id, tmp_path, monkeypatch, consumed_repair, observation_result
+):
+    from stackos import task_delivery
+
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "generic-correction",
+            "title": "Generic correction",
+            "steps": [
+                {"id": "assemble", "title": "Assemble"},
+                {
+                    "id": "measure",
+                    "title": "Measure",
+                    "depends_on": ["assemble"],
+                    "metadata_json": {"agent_assignment": "review_agent"},
+                },
+                {"id": "finish", "title": "Finish", "depends_on": ["measure"]},
+            ],
+        },
+    ).data
+    started = plans.start(plan.id, project_id=project_id)
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="assemble")
+    repo = TrackerRepository(session)
+    task_key = f"workflow-{plan.id}"
+    root = f"{task_key}-assemble"
+    measure = f"{task_key}-measure"
+    repo.create_ticket(
+        project_id=project_id,
+        task_key=task_key,
+        key="producer",
+        title="Producer",
+        parent_ticket_key=root,
+        dependency_keys=[root],
+        run_plan_id=plan.id,
+        run_plan_step_id=plans.get_step(plan.id, "assemble").id,
+        context_json={"keep": {"input": "original"}},
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key=measure,
+        patch_json={"add_dependency_keys": ["producer"]},
+    )
+    repo.create_task(project_id=project_id, key="held", title="Held")
+    repo.create_ticket(project_id=project_id, task_key="held", key="held-child", title="Held")
+    held = repo.brief(project_id=project_id, ticket_key="held-child").model_dump(mode="json")
+    calls = []
+    commits = []
+    correction = {"source_ticket": measure, "check": "consumer", "required_outcome": "wired"}
+    failed_outputs = {"check": "consumer", "observed": "missing"}
+
+    def launch(_host, _directory, _instructions, prompt, _schema, **kwargs):
+        packet = json.loads(prompt)
+        ticket = packet["brief"]["ticket"]
+        key, phase = ticket["key"], packet["phase"]
+        prior_calls = [c for c in calls if c == (key, phase)]
+        thread = f"{key}-{phase}"
+        assert kwargs.get("resume_thread_id") == (thread if prior_calls else None)
+        calls.append((key, phase))
+        status = "success"
+        outputs = {}
+        if key == "producer":
+            correcting = ticket["context_json"].get("correction") is not None
+            if correcting:
+                assert ticket["context_json"] == {
+                    "keep": {"input": "original"},
+                    "correction": correction,
+                }
+                # A previous approval is history, never the current repair request.
+                assert packet["review_result"] is None
+                assert (
+                    ticket["completion_evidence_json"]["automatic_delivery"].get(
+                        "repair_pass_used", False
+                    )
+                    is consumed_repair
+                )
+            if phase == "delivery" and not (
+                correcting
+                and observation_result in {"stale-correction", "missing-correction-candidate"}
+            ):
+                commits.append(commit(tmp_path, f"producer-{len(commits)}"))
+            elif consumed_repair and (len(prior_calls) == 0 or correcting):
+                status = "repair"
+            outputs = {"commit_sha": commits[-1]}
+            if correcting and observation_result == "missing-correction-candidate":
+                outputs = {}
+        elif key == measure and not prior_calls:
+            with Session(session.get_bind()) as active:
+                ctx = MCPContext(
+                    session=active, request_id="native-correction", project_id=project_id
+                )
+
+                def update(target, patch):
+                    return asyncio.run(
+                        tracker_update_ticket(
+                            TrackerUpdateTicketInput(
+                                project_id=project_id, ticket_key=target, patch_json=patch
+                            ),
+                            ctx,
+                            None,
+                        )
+                    )
+
+                target = (
+                    TrackerRepository(active)
+                    .brief(project_id=project_id, ticket_key="producer")
+                    .ticket
+                )
+                update(
+                    "producer", {"context_json": {**target.context_json, "correction": correction}}
+                )
+                update(measure, {"context_json": {"failed_outputs": failed_outputs}})
+                if observation_result != "self-reopen":
+                    update("producer", {"status": "in-progress"})
+                    update("producer", {"status": "not-started"})
+                if observation_result != "no-reopen":
+                    reopened = asyncio.run(
+                        tracker_reopen(
+                            TrackerReopenInput(
+                                project_id=project_id,
+                                task_key=task_key,
+                                step_id="measure"
+                                if observation_result == "self-reopen"
+                                else "assemble",
+                                reason="Consumer check requires original producer correction",
+                            ),
+                            ctx,
+                            None,
+                        )
+                    )
+                    assert reopened.data.run_id == started.run_id
+            status, outputs = "repair", {"commit_sha": commits[-1], **failed_outputs}
+            if observation_result in {"success", "blocked", "failed"}:
+                status = observation_result
+            elif observation_result == "native-error":
+                return AgentRunResult(1, thread_id=thread, error="Native access failed")
+            elif observation_result == "schema-error":
+                return AgentRunResult(0, thread_id=thread, result={"status": "repair"})
+            elif observation_result == "candidate-error":
+                outputs["commit_sha"] = "0" * 40
+            elif observation_result == "session-error":
+                thread = None
+        return AgentRunResult(
+            0, thread_id=thread, result=generic_result(status, outputs, summary="Consumer check")
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=task_key,
+        run_plan_id=plan.id,
+        step_id="assemble",
+    )
+    scheduler.run()
+    session.expire_all()
+    final = repo.get(project_id=project_id, task_key=task_key)
+    integrity_failure = observation_result not in {"repair", "success"}
+    assert final.tasks[0].metadata_json["delivery"]["status"] == (
+        "stopped" if consumed_repair or integrity_failure else "complete"
+    )
+    if observation_result in {"stale-correction", "missing-correction-candidate"}:
+        assert calls == [
+            ("producer", "delivery"),
+            ("producer", "review"),
+            (root, "delivery"),
+            (measure, "review"),
+            ("producer", "delivery"),
+        ]
+        producer = repo.brief(project_id=project_id, ticket_key="producer").ticket
+        assert producer.status == "failed"
+        receipt = producer.completion_evidence_json["automatic_delivery"]["delivery"]
+        assert receipt["validated_outcome"] is None
+        assert receipt["validation_error"] == (
+            "Repair requires a new descendant commit"
+            if observation_result == "stale-correction"
+            else "Agent must return a real commit_sha"
+        )
+        assert plans.get_step(plan.id, "measure").status == "pending"
+        return
+    if integrity_failure:
+        assert calls == [
+            ("producer", "delivery"),
+            ("producer", "review"),
+            (root, "delivery"),
+            (measure, "review"),
+        ]
+        observation = repo.brief(project_id=project_id, ticket_key=measure).ticket
+        receipt = observation.completion_evidence_json["automatic_delivery"]["review"]
+        assert receipt["validated_outcome"] in {None, "repair", "blocked", "failed"}
+        assert receipt["validated_outcome"] != "success"
+        assert plans.get_step(plan.id, "finish").status == "pending"
+        if observation_result != "no-reopen":
+            assert receipt["superseded"] is True
+            assert plans.get_step(plan.id, "measure").status == "pending"
+        assert (
+            repo.brief(project_id=project_id, ticket_key="held-child").model_dump(mode="json")
+            == held
+        )
+        return
+    producer = repo.brief(project_id=project_id, ticket_key="producer").ticket
+    evidence = producer.completion_evidence_json["automatic_delivery"]
+    assert evidence.get("repair_pass_used", False) is consumed_repair
+    assert evidence["sessions"]["delivery"]["thread_id"] == "producer-delivery"
+    assert evidence["sessions"]["review"]["thread_id"] == "producer-review"
+    assert evidence["attempts"][-1]["review"]["validated_outcome"] == "success"
+    assert evidence["review"]["validated_outcome"] == ("repair" if consumed_repair else "success")
+    assert len(commits) == (3 if consumed_repair else 2)
+    assert git(tmp_path, "merge-base", "--is-ancestor", commits[-2], commits[-1]) == ""
+    observation = repo.brief(project_id=project_id, ticket_key=measure).ticket
+    assert observation.context_json["failed_outputs"] == failed_outputs
+    observations = observation.completion_evidence_json["automatic_delivery"]
+    old = observations if consumed_repair else observations["attempts"][0]
+    assert json.loads(old["review"]["result"]["outputs"]) == {
+        "commit_sha": commits[-2],
+        **failed_outputs,
+    }
+    assert old["review"]["superseded"] is True
+    assert old["review"]["validated_outcome"] is None
+    if not consumed_repair:
+        assert all(t.status == "complete" for t in final.tickets)
+        assert plans.get(plan.id).status == "completed"
+        assert observations["sessions"]["review"]["thread_id"] == f"{measure}-review"
+        assert calls[-4:] == [
+            ("producer", "review"),
+            (root, "delivery"),
+            (measure, "review"),
+            (f"{task_key}-finish", "delivery"),
+        ]
+    else:
+        assert producer.status == "failed"
+        assert plans.get_step(plan.id, "measure").status == "pending"
+    assert (
+        repo.brief(project_id=project_id, ticket_key="held-child").model_dump(mode="json") == held
+    )
 
 
 @pytest.mark.parametrize("role", ["delivery_agent", "review_agent"])

@@ -577,6 +577,10 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                     ),
                     None,
                 )
+                # Earlier approvals describe historical candidates. Current ticket
+                # context is authoritative when an agent reopens accepted work.
+                if prior_review and prior_review.get("validated_outcome") != "repair":
+                    prior_review = None
                 result = run_agent(
                     host_key,
                     state["project_dir"],
@@ -588,7 +592,9 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                                     "Execute the remaining frozen workflow_step contract. "
                                     "Use accepted receipts and current operator inputs. "
                                     "Return declared outputs and explicit disposition. "
-                                    "Do not edit source or change lifecycle."
+                                    "Do not edit source. Use only explicitly assigned existing "
+                                    "tracker correction/reopen operations; StackOS owns "
+                                    "claim, record and dispatch."
                                 )
                                 if workflow_step is not None
                                 else (
@@ -620,7 +626,8 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                                     "Return status success/repair/blocked/failed explicitly. "
                                     "Map domain conclusions to that disposition explicitly. "
                                     "outputs is a JSON-encoded object. followups are unrelated "
-                                    "nonblocking text notes. A mirror repair stops this task."
+                                    "nonblocking text notes. Mirror repair without persisted "
+                                    "reopened dependency work stops this task."
                                 ),
                                 "phase": phase,
                                 "lifecycle": (
@@ -694,8 +701,25 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                         if not isinstance(outputs, dict):
                             raise ValidationError("outputs must encode a JSON object")
                         returned_sha = outputs.get("commit_sha")
+                        previous_candidate: dict[str, Any] = next(
+                            (
+                                attempt.get("candidate", {})
+                                for attempt in reversed(evidence["attempts"])
+                                if attempt.get("review", {}).get("validated_outcome") == "success"
+                            ),
+                            {},
+                        )
+                        changed_candidate = bool(
+                            workflow_step is None
+                            and previous_candidate.get("commit_sha")
+                            and previous_candidate.get("base_commit_sha")
+                            and previous_candidate.get("commit_sha")
+                            != previous_candidate.get("base_commit_sha")
+                        )
                         if decision in {"success", "repair"} and (
-                            "commit_sha" in outputs or evidence["candidate"].get("commit_sha")
+                            "commit_sha" in outputs
+                            or evidence["candidate"].get("commit_sha")
+                            or changed_candidate
                         ):
                             sha = _candidate_commit(
                                 state["project_dir"],
@@ -705,7 +729,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                             if workflow_step is not None or phase == "delivery":
                                 if (
                                     workflow_step is None
-                                    and evidence.get("repair_pass_used")
+                                    and (evidence.get("repair_pass_used") or changed_candidate)
                                     and sha == evidence["candidate"].get("base_commit_sha")
                                 ):
                                     raise ValidationError("Repair requires a new descendant commit")
@@ -771,6 +795,46 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                     elif accepted and phase == "review":
                         patch.update(status="complete", outcome=value["summary"])
                     if workflow_step is not None:
+                        plans = RunPlanRepository(session)
+                        current_step = plans.get_step(
+                            state["run_plan_id"], workflow_step.step_id, project_id=project_id
+                        )
+                        if current_step.status != RunPlanStepStatus.RUNNING:
+                            # The agent may have rewound this occurrence through the
+                            # canonical owner. Its return is evidence, not acceptance
+                            # of the newly pending occurrence (even for success).
+                            evidence[phase]["superseded"] = True
+                            _save_evidence(repo, project_id, ticket_key, evidence)
+                            previously_accepted = {t["key"] for t in accepted_receipts}
+                            if (
+                                valid
+                                and decision in {"success", "repair"}
+                                and current_step.status == RunPlanStepStatus.PENDING
+                                and any(
+                                    t.key in previously_accepted
+                                    and t.status == TrackerItemStatus.NOT_STARTED
+                                    for t in repo.delivery_ready(
+                                        project_id=project_id, task_key=task_key
+                                    )
+                                )
+                            ):
+                                break
+                            _update_delivery(
+                                repo,
+                                project_id,
+                                task_key,
+                                status="stopped",
+                                reason=validation_error
+                                or result.error
+                                or (
+                                    value.get("summary")
+                                    if decision in {"blocked", "failed"}
+                                    else None
+                                )
+                                or "Workflow occurrence changed without valid "
+                                "reopened dependency work",
+                            )
+                            return
                         # Only the run-plan owner can validate outputs and advance mirrors.
                         _save_evidence(repo, project_id, ticket_key, evidence)
                         status = (
@@ -780,7 +844,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                             if decision in {"repair", "blocked"}
                             else RunPlanStepStatus.FAILED
                         )
-                        RunPlanRepository(session).record_step(
+                        plans.record_step(
                             run_plan_id=state["run_plan_id"],
                             run_id=state["controller_run_id"],
                             project_id=project_id,

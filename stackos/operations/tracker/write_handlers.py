@@ -490,7 +490,6 @@ async def tracker_reopen(
             rev=snapshot.tracker.rev,
             run_plan_id=workflow_run_plan_id,
             run_id=run_env.data.run_id,
-            run_token=run_env.data.run_token,
             reopened_step_id=run_env.data.reopened_step_id,
             reset_step_ids=run_env.data.reset_step_ids,
             next_operations=run_env.data.next_operations,

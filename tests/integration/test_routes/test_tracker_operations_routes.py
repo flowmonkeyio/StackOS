@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
@@ -355,9 +356,11 @@ def test_tracker_operations_rest_reject_task_cascades_tickets(
     ]
 
 
+@pytest.mark.parametrize("response_mode", ["raw", "compact", "ack"])
 def test_tracker_operations_rest_reopen_workflow_by_run_id(
     api: TestClient,
     project_id: int,
+    response_mode: str,
 ) -> None:
     created = api.post(
         "/api/v1/operations/runPlan.create/call",
@@ -424,15 +427,33 @@ def test_tracker_operations_rest_reopen_workflow_by_run_id(
                 "run_id": run_id,
                 "reason": "More follow-up work was found after closeout.",
                 "actor": "route-test",
-                "response_mode": "raw",
+                "response_mode": response_mode,
             }
         },
     )
     assert reopened.status_code == 200, reopened.text
-    body = reopened.json()["data"]
+    body = reopened.json()["refs"] if response_mode == "ack" else _operation_data(reopened)
     assert body["run_plan_id"] == run_plan_id
     assert body["run_id"] == run_id
-    assert body["run_token"] == run_token
+    assert body.get("run_token") is None
+    assert run_token not in reopened.text
     assert body["reopened_step_id"] == "deliver-tickets"
     assert body["reset_step_ids"] == ["deliver-tickets", "verify-delivery"]
-    assert body["task"]["status"] == "in-progress"
+    if response_mode != "ack":
+        assert body["task"]["status"] == "in-progress"
+    # The facade keeps controller credentials private; the canonical controller
+    # owner still returns the same usable token on an explicit reopen.
+    controller = api.post(
+        "/api/v1/operations/runPlan.reopen/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "run_plan_id": run_plan_id,
+                "step_id": "deliver-tickets",
+                "reason": "Controller resume",
+                "response_mode": "raw",
+            }
+        },
+    )
+    assert controller.status_code == 200, controller.text
+    assert controller.json()["data"]["run_token"] == run_token
