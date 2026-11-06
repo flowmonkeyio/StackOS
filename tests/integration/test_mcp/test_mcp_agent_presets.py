@@ -206,10 +206,10 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     expected = {item["preset"]["summary"]["key"]: item for item in raw["required_agents"]}
     actual = {item["preset"]["key"]: item for item in compact["required_agents"]}
     expected_versions = {
-        "stackos.sdlc.requirements-flow-definer": "0.4.0",
-        "stackos.sdlc.planning": "0.4.0",
-        "stackos.sdlc.delivery": "0.4.0",
-        "stackos.sdlc.delivery-reviewer": "0.4.0",
+        "stackos.sdlc.requirements-flow-definer": "0.5.0",
+        "stackos.sdlc.planning": "0.5.0",
+        "stackos.sdlc.delivery": "0.5.0",
+        "stackos.sdlc.delivery-reviewer": "0.5.0",
     }
     assert set(actual) == set(expected) == set(expected_versions)
     for key, item in actual.items():
@@ -241,9 +241,13 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
         assert "workflow phase gates" in full_adaptation["required_agent_action"]
         assert item["preset"]["handoff_outputs"]
         assert (
-            "sole writer of durable run/tracker state"
-            in (item["project_adaptation"]["required_agent_action"])
+            "sole writer of durable run/tracker state" in full_adaptation["required_agent_action"]
         )
+        assert (
+            "fallible evidence of the original operator outcome"
+            in full_adaptation["required_agent_action"]
+        )
+        assert "without routine main-agent relay" in full_adaptation["required_agent_action"]
 
     delivery = actual["stackos.sdlc.delivery"]["preset"]
     assert "candidate-ready" in " ".join(delivery["must_do"])
@@ -268,16 +272,20 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
         "when Git evidence is supplied",
         "genuinely unavailable required verification blocks",
         "second rejection",
+        "completeness and proportionality",
+        "omitted checks",
     ):
         assert requirement in " ".join(full_reviewer["must_do"]), requirement
     full_delivery = expected["stackos.sdlc.delivery"]["preset"]["preset"]["prompt_contract"]
+    assert "discovered gap" in " ".join(full_delivery["must_do"])
+    assert "necessary and proportionate" in " ".join(full_delivery["must_do"])
     assert len(delivery["must_do"]) == len(full_delivery["must_do"])
     for brief_rule, full_rule in zip(delivery["must_do"], full_delivery["must_do"], strict=True):
         assert full_rule.startswith(brief_rule.removesuffix("..."))
     assert "new descendant commit" in " ".join(delivery["must_do"])
     compact_skill = compact["required_skill_presets"][0]["preset"]
     full_skill = raw["required_skill_presets"][0]["preset"]
-    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.5.0"
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.6.0"
     full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
     # Skill lists are bounded navigation; raw retains the full contract.
     assert len(compact_skill["must_do"]) == 25

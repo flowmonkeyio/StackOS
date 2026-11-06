@@ -70,13 +70,13 @@ def _impact_map() -> dict:
     }
 
 
-def test_tracked_delivery_v050_keeps_one_key_and_twelve_steps() -> None:
+def test_tracked_delivery_v060_keeps_one_key_and_twelve_steps() -> None:
     workflow = _workflow()
     validation = validate_workflow_template_obj(workflow)
 
     assert validation.valid is True, validation.errors
     assert workflow["key"] == "engineering.tracked-delivery"
-    assert workflow["version"] == "0.5.0"
+    assert workflow["version"] == "0.6.0"
     assert [step["id"] for step in workflow["steps"]] == [
         "scope-work",
         "define-requirements",
@@ -111,9 +111,16 @@ def test_tracked_delivery_is_guidance_driven_with_concise_truth_contracts() -> N
     policies = {item["key"]: item["description"] for item in workflow["policies"]}
 
     assert "agents still decide" in policies["agent_decides_strategy"].lower()
-    assert "project pattern" in policies["scope_drift_control"].lower() or (
-        "planned ownership" in policies["scope_drift_control"].lower()
-    )
+    scope = policies["scope_drift_control"]
+    assert "fallible evidence of the original operator outcome" in scope
+    assert "without routine main-agent relay" in scope
+    for boundary in ("Explicit exclusions", "unavailable authority", "actual ownership conflicts"):
+        assert boundary in scope
+    assert "The agreed plan is the delivery contract" not in policies["orchestrator_feedback_gate"]
+    steps = {step["id"]: " ".join(step["instructions"]) for step in workflow["steps"]}
+    assert "Distinguish known paths" in steps["plan-tickets"]
+    assert "necessary omitted checks" in steps["verify-delivery"]
+    assert "without routine main relay" in steps["review-delivery"]
     assert "for repository-bound delivery" in policies["release_candidate_lock"].lower()
     assert "when evidence suggests" in policies["finding_lifecycle"].lower()
     assert "all remaining dependency-ready task work" in policies["main_agent_accountability"]
@@ -145,6 +152,11 @@ def test_tracked_delivery_is_guidance_driven_with_concise_truth_contracts() -> N
         "Queued/running executions stay frozen",
         "Preserve names/hosts/models/provider/profile",
         "No synchronizer",
+        "discovered gap, necessity, proportionality, affected consumers and proof",
+        "required missed caller",
+        "not justified unlisted corrections",
+        "actual ownership conflicts",
+        "nonblocking followups",
     ):
         assert requirement in text, requirement
 

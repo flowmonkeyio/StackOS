@@ -557,7 +557,9 @@ def test_builtin_templates_can_be_listed_and_described(session: Session) -> None
     review_text = review_step.model_dump_json()
     assert "one-brain ownership" in review_text
     assert "pre-change behavior or code path" in review_text
-    assert "feedback as advisory" in review_text
+    assert "Independently assess completeness" in review_text
+    assert "necessary omitted checks" in review_text
+    assert "main admits materially different outcomes" in review_text
     assert "over-engineer beyond the scoped deliverable" in review_text
     assert "only validated required fixes block closeout" in review_text
     audit_step = next(
@@ -671,7 +673,7 @@ def test_engineering_readiness_and_acceptance_contract_survives_plan_derivation(
         "audit-tracker",
         "release-closeout",
     ]
-    assert spec.version == "0.5.0"
+    assert spec.version == "0.6.0"
     assert [step.id for step in spec.steps] == expected_order
     assert spec.metadata_json["step_ids"] == expected_order
     assert spec.skill_preset_requirements[0].applies_to_steps == expected_order
@@ -723,7 +725,7 @@ def test_engineering_readiness_and_acceptance_contract_survives_plan_derivation(
     validation = validate_run_plan_obj(plan.model_dump(mode="json"))
     assert validation.valid, validation.errors
     assert validation.warnings == []
-    assert plan.template_version == "0.5.0"
+    assert plan.template_version == "0.6.0"
     assert [step.id for step in plan.steps] == expected_order
     assert {step.id: step.depends_on for step in plan.steps} == expected_dependencies
     derived_delivery = next(step for step in plan.steps if step.id == "deliver-tickets")
@@ -733,6 +735,11 @@ def test_engineering_readiness_and_acceptance_contract_survives_plan_derivation(
     assert "repair_pass_used across explicit requeue" in derived_text
     assert "nonblocking followups" in derived_text
     assert "Queued/running executions stay frozen" in derived_text
+    assert "Plans, listed paths, design and proof" in policy_text["scope_drift_control"]
+    assert "without routine main-agent relay" in policy_text["scope_drift_control"]
+    assert "necessary omitted files, wiring, specs and docs" in derived_text
+    assert "completeness and proportionality" in derived_text
+    assert "actual ownership conflicts" in derived_text
 
 
 def test_builtin_workflow_preset_requirements_are_step_mapped(session: Session) -> None:

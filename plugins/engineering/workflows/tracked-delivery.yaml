@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: engineering.tracked-delivery
 name: Engineering Tracked Delivery
-version: 0.5.0
+version: 0.6.0
 description: Reusable SDLC workflow for requirements, project-native design and proof planning, executable ticket breakdown, delegated delivery with immediate independent review, integrated verification, and truthful release closeout.
 domain: engineering
 owner:
@@ -250,7 +250,7 @@ policies:
     description: Confirmed feedback is adjudicated as a finding; when evidence suggests a repeated or shared pattern, the agent expands investigation and re-verification to that affected pattern instead of applying an isolated patch.
   - key: scope_drift_control
     kind: delivery
-    description: Agents compare actual changed paths and contract deltas with planned ownership at useful integration points; material undeclared scope reopens impact, architecture, and test design.
+    description: Plans, listed paths, design and proof are fallible evidence of the original operator outcome. Agents independently complete necessary omitted consumers, files, wiring, specs and docs, recording the gap, necessity, proportionality, affected consumers and proof without routine main-agent relay. Explicit exclusions, unavailable authority, actual ownership conflicts and materially different outcomes stop affected work for main reconciliation; material outcome changes reopen affected impact, architecture and proof. Unrelated cleanup stays in nonblocking followups.
   - key: status_semantics
     kind: delivery
     description: Failed means an attempted check or action failed; deferred means work was not executed because of an explicit instruction or external prerequisite and requires a named resume condition.
@@ -268,7 +268,7 @@ policies:
     description: Before reopening an earlier gate, quiesce active agents and processes, preserve receipts, invalidate affected proof, and explicitly reconcile affected child tickets and dependencies. Reopening a run-plan step does not reopen its completed children. Resume against the new contract revision and candidate; existing runs keep their frozen template order.
   - key: orchestrator_feedback_gate
     kind: orchestration
-    description: The agreed plan is the delivery contract. Main owns scope admission and terminal-managed repair routing. Explicit automatic handoff authorizes mechanical routing of stored scoped rejection without main message relay, never scope expansion. Required repairs protect the agreed outcome or changed-surface correctness/safety; unrelated findings remain nonblocking followups until separately selected by main/operator.
+    description: Original operator intent and current constraints define the delivery outcome; the agreed plan is fallible evidence. Main owns material outcome admission and terminal-managed repair routing, not routine resolution of necessary omissions. Explicit automatic handoff authorizes mechanical routing of stored scoped rejection without main message relay. Required repairs protect the original outcome or changed-surface correctness/safety; unrelated findings remain nonblocking followups until separately selected by main/operator.
   - key: quality_over_speed
     kind: verification
     description: The orchestrator chooses proof depth from production risk and user/business impact; speed never justifies skipping the evidence needed for a high-quality outcome.
@@ -434,6 +434,7 @@ steps:
       - When workflow intent was explicit, create every discovery, design, delivery, verification, and closeout ticket under the workflow task/run plan from the start.
       - Use a direct tracker task only when the operator asks for task/dependency tracking without invoking a workflow.
       - Give each ticket its run/step identity, current contract revision, objective, acceptance-criterion refs, non-goals, accepted design and flow refs, accepted prerequisite handoffs, exact owned paths and shared resources, constraints, and stop/escalation conditions.
+      - Distinguish known paths and design/proof assumptions from explicit exclusions and actual concurrent ownership. Necessary omissions within the original outcome belong to assigned delivery and independent review judgment, without routine main-agent relay.
       - Include the approved checks or scenarios, commands, preconditions, expected results, evidence requirements, independent review contract, and worker return fields in the ticket brief. A targeted raw tracker.brief supplies the full packet; compact briefs are navigation only.
       - Partition ticket-local acceptance from the remaining combined requirement proof; no prerequisite ticket may require proof that only a blocked downstream ticket can provide. Record which final integration checks close each combined requirement.
       - Identify up to three safe concurrent ticket lifecycles and serialize or isolate conflicting ownership of interfaces, generated files, migrations, databases, ports, browser sessions, and other shared resources. Distinct filenames alone do not establish independence.
@@ -509,12 +510,14 @@ steps:
       - Adopt reusable and host-local guidance explicitly per project after independent approval, replacing only selected instructions through local-admin REST-only tracker.configureDelivery. Preserve names/hosts/models/provider/profile and all other settings, then read back and prove a subsequent handoff. Queued/running executions stay frozen; explicit rehandoff after complete/stopped execution may resolve current defaults while retaining receipts/sessions/repair allowance. Completed tasks and frozen run/templates stay unchanged. No synchronizer, watcher or cross-project rollout.
       - Bind assignments and receipts to ticket, attempt, contract revision, candidate, covered paths, accepted dependencies, environment, and time. Reject delayed results from superseded assignments and evidence that relies on unaccepted sibling changes.
       - The reviewer checks the candidate against current requirements, accepted design and proof, returning criterion-level evidence, concrete findings and missing proof. Main adjudicates terminal-managed findings and routes repairs; explicit automatic handoff routes only stored scoped required rejection through the bounded same-session loop. Scope expansion still requires main/operator admission.
+      - Treat plans, listed paths, design and proof as fallible evidence. Trace actual owners and affected consumers, complete necessary omitted files, wiring, specs and docs within the original outcome, and record the discovered gap, necessity, proportionality, affected consumers and proof. Do not defer a required missed caller solely because the plan omitted it; stop affected work on explicit exclusions, unavailable authority, actual ownership conflicts or a materially different outcome.
+      - Independently review completeness and proportionality against original intent and execute relevant specs, including necessary omitted checks. Reject drift, unnecessary abstractions, duplicate owners and opportunistic cleanup, not justified unlisted corrections.
       - Integrate the reviewed result, resolve conflicts and recheck affected proof before acceptance. In terminal-managed delivery main records acceptance; in automatic delivery independent approval of the exact committed candidate permits mechanical completion. Dependents may use only that accepted result.
       - For red-first work, prove the red is trustworthy before production edits and rerun the same slice to green.
-      - At integration points, compare actual changed paths, migrations, generated contracts, cross-package imports, and test layers with planned ticket ownership; material drift reopens impact, design, and test planning.
+      - At integration points, compare actual changed paths, migrations, generated contracts, cross-package imports, and test layers with original intent and actual ownership. Record necessary plan corrections; material outcome drift reopens affected impact, design, and test planning.
       - When the delivery changes repository state, identify the integrated release candidate and capture the repository fingerprint needed to keep later verification truthful.
       - Keep unrelated user changes intact and record blockers instead of hiding them in chat.
-      - Do not add reviewer suggestions, adjacent cleanup, or "while here" work outside the agreed plan.
+      - Keep unrelated reviewer suggestions, adjacent cleanup and naming/style/debt work in nonblocking followups. Necessary corrections within the original outcome are delivery work even when unlisted.
       - Preserve ticket receipts for later integrated verification; choose final checks from remaining combined obligations and evidence freshness rather than automatically repeating all ticket checks.
     policy_refs:
       - truthful_tracker_state
@@ -545,7 +548,7 @@ steps:
       - Classify changed surfaces and choose the smallest convincing checks first.
       - Map accepted ticket receipts to the approved proof plan and verify their candidate, prerequisite, environment, and scope freshness. Reuse valid receipts; execute remaining combined-flow checks and recheck only evidence invalidated by relevant changes, failures, or project requirements.
       - Record enough structured evidence to reproduce and judge each check. Repository-bound executed checks identify the covered candidate; other checks identify their exact run, environment, scope, time, result, and lifecycle.
-      - Execute, update, or explicitly mark every automated and manual proof item from the test plan; do not silently replace the test design with ad hoc checks.
+      - Execute, update, or explicitly mark every automated and manual proof item from the test plan. Trace actual affected flows for necessary omitted checks and record why the proportionate proof changed; a green planned slice alone does not prove completeness.
       - Execute the agent-owned E2E/manual flow scenarios from the test plan before signoff, capturing evidence for changed user, data, system, and business flows.
       - For browser-assisted platform proof, reuse the profile_key specified by the test plan so persisted cookies/session state is tested intentionally.
       - Widen to project signoff when contracts, grants, adapters, migrations, UI, provider, or release behavior crosses boundaries.
@@ -582,7 +585,7 @@ steps:
       - Review tests, fixtures, docs, tracker updates, and implementation together.
       - Compare delivered verification against the approved test design, including manual scenarios and expected evidence.
       - For browser-assisted platform proof, verify the delivered evidence used the planned persistent profile_key or explains why a fresh profile was required.
-      - Treat verifier and reviewer feedback as advisory; the main orchestrator admits only findings required by the agreed deliverable or changed-surface correctness/safety.
+      - Independently assess completeness, business regression, architecture/wiring, canonical ownership and proportionality against original intent, executing relevant specs including necessary omitted checks. Required findings protect that outcome or changed-surface correctness/safety without routine main relay; main admits materially different outcomes. Reject drift, speculative abstractions and unrelated cleanup.
       - Classify each confirmed finding, identify affected tickets and evidence, and invalidate stale proof. Run a horizontal pattern audit only when the finding indicates shared ownership, repeated behavior, or a delivery-wide pattern risk.
       - Escalate repeated findings in the same category to a delivery-level root-cause finding when the evidence points to a common cause, rather than applying another isolated patch.
       - Reject, defer, or mark residual feedback that is unsupported, already covered, out of scope, or would over-engineer beyond the scoped deliverable.
@@ -1118,10 +1121,10 @@ failure_handling:
   - Keep ordinary review/repair in the same ticket. Terminal-managed findings route through main; automatic delivery routes persisted scoped rejection once in the same native delivery/review sessions. Unrelated followups never become automatic work. Mirror repair stops for controller diagnosis.
   - Before a material scope change or late integration failure requires an earlier gate, stop all active assignments and their processes, preserve receipts, and explicitly reopen or otherwise reconcile affected child tickets and dependency edges. Reopening a run-plan step alone does not reopen completed children.
   - Resume affected assignments with a new attempt and current contract revision; ignore superseded results and invalidate only affected evidence. Never rewrite an existing run's frozen step order to match a newer template.
-  - If actual changed scope materially exceeds the plan, return to impact discovery, architecture, and test design before continuing.
+  - Necessary omitted consumers, files, wiring, specs and docs within the original outcome do not require routine main-agent relay or workflow rewind. Record necessity, proportionality, affected consumers and proof. Explicit exclusions, unavailable authority, actual ownership conflicts or materially different outcomes stop affected work; material outcome changes return to affected impact discovery, architecture and test design.
   - If material covered repository state changes after verification, reopen the earliest affected gate and invalidate only the proof whose validity changed.
   - If flow design, E2E/manual flow proof, or independent closeout verification is missing for non-micro work, return to the earliest affected step instead of closing the delivery.
-  - If review finds missing requirements, impact, test, or tracker truth, return to the earliest affected step rather than patching the final report.
+  - If review finds requirement, impact, proof or tracker gaps, resolve necessary omissions within the original outcome and current authority in the assigned step, retaining evidence. Material contradictions, unmet prerequisites or outcome changes that cannot be resolved there return to the earliest affected gate rather than being hidden in a final report.
   - If a finding requires material expansion of the agreed outcome, defer it and ask the operator instead of expanding delivery.
 metadata:
   builtin: true

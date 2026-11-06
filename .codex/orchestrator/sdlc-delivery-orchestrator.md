@@ -1,8 +1,8 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.5.0
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.6.0
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
-Workflow: `engineering.tracked-delivery` v0.5.0 source contract
+Workflow: `engineering.tracked-delivery` v0.6.0 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
 
 This is the StackOS repository adaptation, not a subagent. The main agent owns
@@ -43,6 +43,19 @@ canonical owner and existing patterns. A new abstraction needs a demonstrated
 gap, rejected native alternatives, owner, consumers and migration/removal plan.
 Avoid copied logic, pass-through aliases and parallel repositories or policies.
 
+Plans, listed paths, design and proof are fallible evidence of the original
+operator outcome. Delivery traces actual owners and affected consumers and
+completes necessary omitted files, wiring, specs and docs without routine
+main-agent relay. Receipts record the discovered gap, necessity, proportionality,
+affected consumers and proof. Independent review judges completeness and
+proportionality and executes relevant specs, including necessary omitted checks.
+A missed caller after a producer refactor needs correction; unrelated naming,
+style or debt stays in nonblocking followups. Explicit exclusions, unavailable
+authority, actual ownership conflicts and materially different outcomes stop
+affected work for main reconciliation. Reject drift, speculative abstractions,
+duplicate owners and opportunistic cleanup; a missing planned path alone is
+not a reason to block or request permission.
+
 Record a concise calibration in existing run/ticket context: authoritative
 operator request/amendments, scope and non-goals, dirty baseline, changed
 surfaces/flows, risk, depth, specialist choices and proof. Micro work reuses
@@ -66,7 +79,7 @@ tracker work applies only when no workflow lifecycle was invoked.
 
 ## Prepare Executable Work
 
-For new v0.5.0 plans the sequence is:
+For new v0.6.0 plans the sequence is:
 
 `scope-work -> define-requirements -> discover-impact -> design-approach ->
 design-tests -> plan-tickets -> review-design -> deliver-tickets ->
@@ -75,7 +88,8 @@ verify-delivery -> review-delivery -> audit-tracker -> release-closeout`
 The readiness review at `review-design` checks requirements, design, proof,
 ticket decomposition, dependencies and prerequisites together. Reconcile every
 derived acceptance criterion with the authoritative request and its amendments;
-an omitted requirement needs adjudication, not an automatic out-of-scope label.
+a necessary omitted consumer remains within the original outcome; materially
+different outcomes require main reconciliation.
 For non-micro work, design the changed user/data/system/business flows with
 before/change/now/why context, denied/error cases and concrete expected outcomes.
 For unchanged flows, record why they do not need further proof.
@@ -96,7 +110,7 @@ For current plans, plan tickets after design and proof. Each bounded packet cont
 - objective, source requirement/AC refs, non-goals and current amendments;
 - relevant design decisions, interfaces, reference paths and project rules;
 - accepted prerequisites, dependency refs and acceptance basis;
-- exact write ownership, shared resources, dirty baseline and isolation needs;
+- known paths, actual write ownership, shared resources, dirty baseline and isolation needs;
 - ticket-local checks, commands/scenarios, expected results, environment,
   authority and evidence; separately name remaining integration obligations;
 - return format, candidate identity, stop/blocker conditions and repair route.
@@ -231,9 +245,11 @@ with operator-login prerequisites and cookie/session reuse made explicit.
 The main agent adjudicates reviewer claims against the operator contract and
 actual code/evidence: required fix, already covered, unsupported, out of scope,
 optional, over-engineering risk, residual or operator-owned gap. Admit only
-required work and correctness/safety fixes; ask before materially expanding the
-outcome. Require concrete evidence and impact for blockers. Repeated failures
-or shared patterns warrant bounded diagnosis across the affected owner.
+required work and correctness/safety fixes. Necessary omissions within the
+original outcome belong to assigned delivery and review judgment; main is not a
+routine relay. Ask before materially expanding the outcome. Require concrete
+evidence and impact for blockers. Repeated failures or shared patterns warrant
+bounded diagnosis across the affected owner.
 
 Preserve failed attempts as history. Distinguish passed, failed, blocked,
 skipped and not applicable; never turn an attempted failure into deferred work.

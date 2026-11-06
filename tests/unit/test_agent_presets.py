@@ -155,6 +155,16 @@ def _assert_sdlc_materializations(agent_dir: Path) -> None:
         assert "candidate identity" in prompt
         assert "TPF_LLM_TOOL=codex tpf" in prompt
         assert "native StackOS MCP" in prompt
+        assert "fallible evidence of the original operator outcome" in prompt
+        assert "without routine main-agent relay" in prompt
+        for boundary in (
+            "Explicit exclusions",
+            "unavailable authority",
+            "actual ownership conflicts",
+            "materially different outcomes",
+            "nonblocking followups",
+        ):
+            assert boundary in prompt, (agent_name, boundary)
         instructions[agent_name] = prompt
 
     # Protect the delegation/acceptance boundaries without snapshotting each prompt.
@@ -780,7 +790,7 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
     delivery = loader.describe_preset(key="stackos.sdlc.delivery").preset
     reviewer = loader.describe_preset(key="stackos.sdlc.delivery-reviewer").preset
 
-    assert architecture.version == "0.4.0"
+    assert architecture.version == "0.5.0"
     architecture_text = " ".join(
         [
             *architecture.prompt_contract.responsibilities,
@@ -866,7 +876,7 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
         return " ".join(item for field in fields for item in getattr(contract, field)).lower()
 
     for preset in presets.values():
-        assert preset.version == "0.4.0"
+        assert preset.version == "0.5.0"
         assert preset.prompt_contract.mission
         assert preset.prompt_contract.handoff_inputs
         assert preset.prompt_contract.handoff_outputs
@@ -883,6 +893,12 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     assert "other workflows or standalone assignments" in shared
     assert "mechanically records ticket results" in shared
     assert "workflow phase gates" in shared
+    assert "fallible evidence of the original operator outcome" in shared
+    assert "necessary omitted files, wiring, specs and docs" in shared
+    assert "without routine main-agent relay" in shared
+    assert "explicit exclusions" in shared and "actual ownership conflicts" in shared
+    assert "materially different outcomes stop affected work" in shared
+    assert "unrelated naming, style or debt" in shared
 
     requirements = contract_text("requirements-flow-definer", "responsibilities", "must_not_do")
     assert "subsequent clarifications" in requirements
@@ -952,6 +968,27 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     assert lifecycle_tools.isdisjoint(presets["delivery-reviewer"].recommended_tools)
     for text in (planning, delivery, reviewer):
         assert "scoped commit" in text
+        assert (
+            "without routine main-agent relay" in text or "require routine main-agent relay" in text
+        )
+    assert "discovery anchors from explicit exclusions" in planning
+    for requirement in (
+        "discovered gap",
+        "necessary and proportionate",
+        "affected consumers",
+        "missed caller",
+        "nonblocking followup",
+    ):
+        assert requirement in delivery
+    for requirement in (
+        "completeness and proportionality",
+        "omitted checks",
+        "unnecessary abstractions",
+        "duplicate ownership",
+        "unrelated cleanup",
+    ):
+        assert requirement in reviewer
+    assert "do not expand scope or alter shared interfaces/ownership" not in delivery
     assert "commit_sha" in delivery and "commit_sha" in reviewer
     assert "gemini and hermes" in reviewer and "normal native sessions" in reviewer
     assert "no enforced read-only guarantee" in reviewer

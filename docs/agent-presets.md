@@ -267,6 +267,18 @@ and stop conditions. Read the full targeted `tracker.brief` with
 the specialist a bounded packet. Keep durable facts in existing run/ticket
 context and evidence, and reference them from schema-valid phase outputs.
 
+Plans, listed paths, design and proof are fallible evidence, not exhaustive
+boundaries. Delivery independently traces actual owners and affected consumers,
+completes necessary omitted files, wiring, specs and docs within the original
+operator outcome, and records the discovered gap, necessity, proportionality,
+consumers and proof. Review independently judges completeness and proportionality
+and executes relevant specs, including necessary omitted checks. A missed caller
+after a producer refactor is required work without routine main-agent relay;
+unrelated naming/style/debt stays in nonblocking followups. Review rejects drift,
+unnecessary abstractions and duplicate ownership, not justified unlisted changes.
+Explicit exclusions, unavailable authority, actual ownership conflicts and
+materially different outcomes stop affected work for main reconciliation.
+
 Ticket-local acceptance must be distinct from integration-only obligations.
 An interface ticket can pass its contract checks before a consumer is built;
 the complete user journey remains an open workflow obligation. Readiness
@@ -530,7 +542,7 @@ All presets are expected to work through the existing StackOS tracker:
   evidence and blockers rather than independently pulling or completing work
 - verifier and reviewer agents compare completion claims with actual evidence
 - reviewers verify evidence before closeout
-- reviewer findings are claims until the orchestrator adjudicates them against
+- reviewer findings are claims to check against
   evidence, root cause, and user/business impact
 - tracker truth reviewers check that durable state matches code, docs, tests,
   run-plan steps, and verification outcomes

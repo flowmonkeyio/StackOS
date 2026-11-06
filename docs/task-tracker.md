@@ -207,6 +207,17 @@ architecture gaps, inaccurate wiring and canonical ownership where relevant to
 the ticket plus its integration. Required repairs cite scoped criteria/evidence.
 Unrelated findings go only in `followups`, never required-repair summary.
 
+Engineering guidance treats plans, listed paths, design and proof as fallible
+evidence of the original operator outcome. Delivery and independent review trace
+actual owners and affected consumers, resolving necessary omitted files, wiring,
+specs and docs without routine main-agent relay. Receipts explain the discovered
+gap, necessity, proportionality, consumers and executed proof; review checks
+completeness and runs relevant specs including necessary omitted checks. Unrelated
+naming/style/debt remains nonblocking followups. Explicit exclusions, unavailable
+authority, actual ownership conflicts and materially different outcomes stop
+affected work for main reconciliation. These are agent judgments, not new tracker
+settings or filesystem grants; existing lifecycle and repair limits still apply.
+
 The runner appends notes to `task.context_json.followups` as
 `{text, source_ticket_key, source_attempt, created_at}`, preserving other context
 including `operator_inputs`. The existing task detail displays them read-only

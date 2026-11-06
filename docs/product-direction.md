@@ -37,7 +37,15 @@ readiness, visibility, approvals, recovery, and audit.
 - Main agents own interpretation, workflow adaptation, sequencing, specialist
   delegation, cross-step and cross-run coherence, and final claims.
 - Specialist agents own bounded reasoning, production, or review contracts.
-  Their findings are inputs for main-agent adjudication, not product policy.
+  For engineering work, plans, paths, design and proof are fallible evidence of
+  the original operator outcome. Delivery and independent review resolve
+  necessary omissions in real owners and affected consumers without routine
+  main-agent relay, recording the gap, necessity, proportionality and proof.
+  Explicit exclusions, unavailable
+  authority, actual ownership conflicts and materially different outcomes remain
+  boundaries for main reconciliation. Unrelated cleanup stays in nonblocking
+  followups; speculative abstractions and duplicate owners are rejected.
+  Findings inform acceptance without becoming product policy.
 - StackOS owns project scope, durable state, validation, scoped authority,
   daemon-held credentials, explicit execution, recovery state, and audit.
 - A planning agent may explicitly hand an independently prepared task to

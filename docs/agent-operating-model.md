@@ -85,6 +85,18 @@ See [engineering delegation](./agent-presets.md#engineering-delegation-and-accep
 for ownership, concurrency, model-selection and evidence rules. These are plugin
 operating contracts, not a second scheduler inside StackOS core.
 
+Plans, listed paths, design and proof are fallible evidence of the original
+operator outcome. Assigned delivery agents trace actual owners and affected
+consumers and complete necessary omitted files, wiring, specs and docs without
+routine main-agent relay. Their receipt explains the discovered gap, necessity,
+proportionality, consumers and proof. Independent review judges completeness
+and proportionality, executes relevant specs including omitted checks, and
+rejects drift, unnecessary abstractions and duplicate ownership. A missed caller
+after a producer refactor needs correction; unrelated naming/style/debt stays
+in nonblocking followups. Explicit exclusions, unavailable authority, actual
+ownership conflicts and materially different outcomes stop affected work for
+main reconciliation. This judgment does not change lifecycle or action authority.
+
 For an independently prepared task, the planner can instead call
 `tracker.startDelivery` after creating self-contained tickets and dependencies.
 It supplies the project directory and task choices, merged by role with

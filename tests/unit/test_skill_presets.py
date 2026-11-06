@@ -71,7 +71,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     contract = loaded.preset.operating_contract
     action = loaded.preset.project_adaptation.required_agent_action.lower()
 
-    assert loaded.preset.version == "0.5.0"
+    assert loaded.preset.version == "0.6.0"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "canonical owner" in action
@@ -221,13 +221,30 @@ def test_codex_sdlc_orchestrator_preserves_local_execution_boundaries() -> None:
 
 def test_sdlc_orchestrator_manual_adoption_and_bounded_repair() -> None:
     preset = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
-    source = " ".join(preset.operating_contract.must_do)
+    source = " ".join(
+        [*preset.operating_contract.responsibilities, *preset.operating_contract.must_do]
+    )
     local = " ".join(
         (Path(__file__).resolve().parents[2] / ".codex/orchestrator/sdlc-delivery-orchestrator.md")
         .read_text()
         .split()
     )
     for text in (source, local):
+        for requirement in (
+            "fallible evidence",
+            "original outcome",
+            "necessary omitted",
+            "routine main-agent relay",
+            "discovered gap",
+            "proportionality",
+            "affected consumers",
+            "actual ownership conflicts",
+            "unrelated naming",
+            "completeness",
+            "omitted checks",
+            "speculative abstractions",
+        ):
+            assert requirement.lower() in text.lower(), requirement
         for requirement in (
             "one automatic repair pass",
             "same native delivery session",
