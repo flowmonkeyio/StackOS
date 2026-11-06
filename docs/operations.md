@@ -447,8 +447,13 @@ Every native result has `status` (success/repair/blocked/failed), `summary`,
 This closed envelope transports arbitrary output contracts through native
 harness restrictions. Malformed JSON/nonobjects reject; mirror outputs pass to
 the canonical frozen-schema validation. Agents explicitly map domain conclusions
-to status. Runtime has no domain verdict table. Only success advances; unfinished
-non-ready work stops. Mirror repair stops without a duplicate review loop.
+to status. Runtime has no domain verdict table. Only success accepts a gate;
+unfinished non-ready work stops. After native validation, a valid success or
+repair result following supported persisted correction/reopen returns to
+dependency scanning without accepting the superseded occurrence. Mirror repair
+without persisted progress stops; mirrors do not enter a duplicate ordinary-ticket
+review loop. See the
+[agent-owned correction method](task-tracker.md#agent-owned-automatic-corrections).
 
 Ordinary tickets retain independent review and one scoped repair in the same
 delivery/review sessions, with persisted rejection, attempt receipts and consumed
