@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from dataclasses import asdict
 from pathlib import Path
 from threading import get_ident
 
@@ -9,6 +10,7 @@ import pytest
 
 from stackos.host_mcp import restart_state, service
 from stackos.host_mcp.adapters import claude_desktop
+from stackos.host_mcp.result import HostMcpResult
 from stackos.operations.system import HostMcpStatusInput, host_mcp_status
 
 
@@ -99,3 +101,29 @@ def test_host_status_offloads_inspection_without_context_or_filesystem_inputs(
     assert result.model_dump() == {"ok": True, "items": []}
     assert len(inspected_threads) == 1
     assert inspected_threads[0] != caller_thread
+
+
+def test_host_status_projects_shared_execution_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    definitions = service._definitions()
+    aggregate = service.HostMcpAggregate(
+        ok=True,
+        results=[
+            service.normalize_result(
+                HostMcpResult(d.policy.host_key, "fixture", "absent", "Not installed", True, False),
+                d.policy,
+            )
+            for d in definitions
+        ],
+    )
+    monkeypatch.setattr(service, "inspect_all", lambda: aggregate)
+
+    result = asyncio.run(host_mcp_status(HostMcpStatusInput(), None, None)).model_dump(mode="json")
+
+    for row, definition in zip(result["items"], definitions, strict=True):
+        expected = asdict(definition.policy.agent_execution)
+        expected.pop("auth_status_command")
+        expected.update(credential_status="not_checked", model_access="not_checked")
+        assert row["agent_execution"] == json.loads(json.dumps(expected))
+        assert row["available"] is False
+        assert row["agent_execution"]["credential_status"] == "not_checked"
+        assert row["agent_execution"]["model_access"] == "not_checked"

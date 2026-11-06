@@ -1,5 +1,6 @@
 """The console can read safe host status; scoped agents cannot inspect other hosts."""
 
+from dataclasses import asdict, replace
 from threading import get_ident
 
 import pytest
@@ -39,7 +40,16 @@ def inspected(monkeypatch: pytest.MonkeyPatch):
                 selected=True,
                 managed=True,
             ),
-            service.HostMcpPolicy("codex", "ChatGPT / Codex", "automatic"),
+            next(d.policy for d in service._definitions() if d.policy.host_key == "codex"),
+        )
+        result = replace(
+            result,
+            agent_execution={
+                **result.agent_execution,
+                "auth_status_command": ["/private/auth-cli", "private-auth-command"],
+                "config_path": "/private/execution-config",
+                "credential": "private-execution-credential",
+            },
         )
         return service.HostMcpAggregate(ok=True, results=[result])
 
@@ -54,6 +64,16 @@ def test_host_status_has_one_read_only_local_admin_contract() -> None:
     assert all(spec.surfaces.is_enabled(surface) for surface in ("mcp", "rest", "cli"))
     assert spec.response_policy.default_mode == "raw"
     assert spec.response_policy.allowed_modes == ("raw",)
+    schema = spec.output_model.model_json_schema()
+    capability_fields = schema["$defs"]["HostMcpAgentExecutionOut"]["properties"]
+    assert {
+        "models",
+        "custom_models",
+        "provider_selection",
+        "profile_selection",
+        "requires_provider_model",
+    } <= capability_fields.keys()
+    assert not {"auth_status_command", "config_path", "credential"} & capability_fields.keys()
 
 
 def test_console_reads_only_normalized_host_status(mcp_client: MCPClient, inspected) -> None:
@@ -74,11 +94,27 @@ def test_console_reads_only_normalized_host_status(mcp_client: MCPClient, inspec
     assert row["selected"] is True
     assert row["managed"] is True
     assert not {"command", "config_path", "target", "targets"} & row.keys()
+    capability = row["agent_execution"]
+    expected = asdict(
+        next(
+            d.policy.agent_execution for d in service._definitions() if d.policy.host_key == "codex"
+        )
+    )
+    expected.pop("auth_status_command")
+    expected.update(credential_status="not_checked", model_access="not_checked")
+    assert capability == {
+        key: list(value) if isinstance(value, tuple) else value for key, value in expected.items()
+    }
+    assert not {"auth_status_command", "config_path", "credential"} & capability.keys()
     for secret in (
         "synthetic-secret",
         "raw-config-fragment",
         "private-profile",
         "/private/host-config",
+        "/private/auth-cli",
+        "private-auth-command",
+        "/private/execution-config",
+        "private-execution-credential",
     ):
         assert secret not in response.text
     assert len(inspected) == 1

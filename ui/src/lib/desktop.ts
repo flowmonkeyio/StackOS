@@ -24,6 +24,22 @@ export interface DesktopStatus {
   [key: string]: unknown
 }
 
+export interface DesktopAgentExecutionCapabilities {
+  sandboxes: Array<'read-only' | 'workspace-write' | 'normal'>
+  review_sandbox: 'read-only' | 'workspace-write' | 'normal' | null
+  models: string[]
+  custom_models: boolean
+  provider_selection: boolean
+  profile_selection: boolean
+  /** False allows native defaults; true requires both provider and model. */
+  requires_provider_model: boolean
+  notes: string
+  sources: string[]
+  checked_on: string
+  credential_status: 'not_checked'
+  model_access: 'not_checked'
+}
+
 export interface DesktopMcpHostStatus {
   host_key: string
   display_name?: string
@@ -53,6 +69,8 @@ export interface DesktopMcpHostStatus {
   setup_policy?: 'automatic' | 'explicit'
   target?: { kind: string; [key: string]: string } | null
   targets?: Array<{ kind: string; [key: string]: string }>
+  // Optional for older native shells/daemons that predate the shared catalog.
+  agent_execution?: DesktopAgentExecutionCapabilities
   [key: string]: unknown
 }
 
