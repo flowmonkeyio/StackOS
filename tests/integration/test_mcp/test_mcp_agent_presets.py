@@ -206,10 +206,10 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     expected = {item["preset"]["summary"]["key"]: item for item in raw["required_agents"]}
     actual = {item["preset"]["key"]: item for item in compact["required_agents"]}
     expected_versions = {
-        "stackos.sdlc.requirements-flow-definer": "0.3.3",
-        "stackos.sdlc.planning": "0.3.3",
-        "stackos.sdlc.delivery": "0.3.3",
-        "stackos.sdlc.delivery-reviewer": "0.3.3",
+        "stackos.sdlc.requirements-flow-definer": "0.4.0",
+        "stackos.sdlc.planning": "0.4.0",
+        "stackos.sdlc.delivery": "0.4.0",
+        "stackos.sdlc.delivery-reviewer": "0.4.0",
     }
     assert set(actual) == set(expected) == set(expected_versions)
     for key, item in actual.items():
@@ -229,10 +229,13 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
         )
         assert "assignment attempt" in full_adaptation["required_agent_action"]
         assert "stale, or contradictory inputs" in full_adaptation["required_agent_action"]
-        assert "terminal-managed delivery" in full_adaptation["required_agent_action"]
+        assert (
+            "terminal-managed engineering.tracked-delivery"
+            in full_adaptation["required_agent_action"]
+        )
         assert "tracker.startDelivery" in full_adaptation["required_agent_action"]
         assert (
-            "independent approval of the exact scoped commit"
+            "Ordinary tickets require independent approval"
             in full_adaptation["required_agent_action"]
         )
         assert "workflow phase gates" in full_adaptation["required_agent_action"]
@@ -251,7 +254,10 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     full_reviewer = expected["stackos.sdlc.delivery-reviewer"]["preset"]["preset"][
         "prompt_contract"
     ]
-    assert reviewer["must_do"] == full_reviewer["must_do"]
+    # Navigation may truncate a long rule; raw remains the execution contract.
+    assert len(reviewer["must_do"]) == len(full_reviewer["must_do"])
+    for brief_rule, full_rule in zip(reviewer["must_do"], full_reviewer["must_do"], strict=True):
+        assert full_rule.startswith(brief_rule.removesuffix("..."))
     for requirement in (
         "planned specs and integration checks",
         "business regression",
@@ -259,20 +265,24 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
         "inaccurate wiring",
         "canonical ownership",
         "nonblocking followups",
-        "both reject and approve",
+        "when Git evidence is supplied",
         "genuinely unavailable required verification blocks",
         "second rejection",
     ):
-        assert requirement in " ".join(reviewer["must_do"]), requirement
+        assert requirement in " ".join(full_reviewer["must_do"]), requirement
     full_delivery = expected["stackos.sdlc.delivery"]["preset"]["preset"]["prompt_contract"]
-    assert delivery["must_do"] == full_delivery["must_do"]
+    assert len(delivery["must_do"]) == len(full_delivery["must_do"])
+    for brief_rule, full_rule in zip(delivery["must_do"], full_delivery["must_do"], strict=True):
+        assert full_rule.startswith(brief_rule.removesuffix("..."))
     assert "new descendant commit" in " ".join(delivery["must_do"])
     compact_skill = compact["required_skill_presets"][0]["preset"]
     full_skill = raw["required_skill_presets"][0]["preset"]
-    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.4.3"
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.5.0"
     full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
     # Skill lists are bounded navigation; raw retains the full contract.
-    assert compact_skill["must_do"] == full_instructions[:25]
+    assert len(compact_skill["must_do"]) == 25
+    for brief_rule, full_rule in zip(compact_skill["must_do"], full_instructions[:25], strict=True):
+        assert full_rule.startswith(brief_rule.removesuffix("..."))
     assert "Adopt guidance manually per project" in " ".join(compact_skill["must_do"])
     assert "one automatic repair pass" in " ".join(compact_skill["must_do"])
     assert "second rejection" in " ".join(compact_skill["must_do"])

@@ -462,8 +462,15 @@ For this repository the manual mapping after independent candidate approval is:
 | `delivery.delivery_agent.instructions` | `.codex/agents/sdlc-delivery.toml` parsed `developer_instructions` |
 | `delivery.review_agent.instructions` | `.codex/agents/sdlc-delivery-reviewer.toml` parsed `developer_instructions` |
 
-The main agent performs this current-project setup separately from source
-delivery, after agents are quiescent for any required installed activation.
+Current-project adoption is a separately authorized setup action after independent
+source/local review and old-job completion. A reviewed one-time operational
+helper may perform it when explicitly assigned, outside the daemon lifetime;
+this is not a shipped synchronizer. Compare instruction strings with canonical
+whitespace normalization and every other setting exactly. Preserve completed
+tasks and frozen run/templates; an explicit rehandoff after completed/stopped
+execution may refresh only current task execution settings while retaining
+ticket receipts, sessions and consumed repair allowance. Never refresh a
+queued/running job silently.
 Other projects select and adapt their own available sources individually; host
 files are optional and no other project is changed by this handoff.
 

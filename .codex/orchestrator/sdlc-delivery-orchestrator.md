@@ -1,8 +1,8 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.4.3
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.5.0
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
-Workflow: `engineering.tracked-delivery` v0.4.2 source contract
+Workflow: `engineering.tracked-delivery` v0.5.0 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
 
 This is the StackOS repository adaptation, not a subagent. The main agent owns
@@ -66,7 +66,7 @@ tracker work applies only when no workflow lifecycle was invoked.
 
 ## Prepare Executable Work
 
-For new v0.4.2 plans the sequence is:
+For new v0.5.0 plans the sequence is:
 
 `scope-work -> define-requirements -> discover-impact -> design-approach ->
 design-tests -> plan-tickets -> review-design -> deliver-tickets ->
@@ -117,8 +117,8 @@ real accepted prerequisites and terminal children feeding the next step. Check
 
 Choose terminal-managed delegation or explicit `tracker.startDelivery` handoff.
 For automatic delivery, resolve agent identity, instructions, harness and model
-from engineering `ProjectPlugin.config_json.delivery` defaults and task overrides
-by role into one task snapshot. Defaults use existing local-admin `plugin.enable`;
+from `TaskTracker.config_json.delivery` defaults and task overrides
+by role into one task snapshot. Defaults use local-admin REST-only `tracker.configureDelivery`;
 no ticket settings or required `.codex` folder. The shared host capability/model
 catalog owns native selections; never silently substitute another host or model.
 Gemini and Hermes reviewers use normal native permissions with review-only
@@ -127,7 +127,7 @@ and normal approval review. Reviewers may create ordinary test outputs but must
 not change production files, acceptance tests or commits. Record the actual mode
 and limitations in launch receipts.
 
-Each repository ticket produces a separate scoped commit after focused checks,
+Each source-change ticket produces a separate scoped commit after focused checks,
 then receives independent exact-commit review. Both receipts name full
 `commit_sha`. Protected `.git`/`.codex` writes use normal approval review; stop on
 denial. Automatic delivery mechanically records approved child results and
@@ -138,8 +138,16 @@ Validate clean unchanged HEAD for reject and approve. Preserve native sessions,
 attempt history and `repair_pass_used` across explicit requeue. Blocked required
 verification, native/access/model/resume failure, candidate mismatch or a second
 rejection stops the same task without fresh-session, host or model fallback.
-Main retains scope, workflow phase gates, integration, findings adjudication and
-final claims. Do not compete with the automatic loop for ticket lifecycle writes.
+Observation may cite unchanged HEAD; non-Git work needs no fabricated commit.
+Automatic delivery traverses all remaining dependency-ready task work, including
+workflow mirrors. Frozen step extensions.agent_assignment select existing
+delivery_agent/review_agent roles; explicit task agent_assignments win. No phase
+roles, model settings in extensions or phase-name dispatch logic. The running
+step_id is entry context only. Mirrors execute remaining frozen contracts once
+after accepted descendants; groups never launch. Only RunPlanRepository records
+mirror/plan/run terminal state. Assigned agents execute integration and workflow
+phase gates. Main retains scope admission and final claims and observes without
+competing lifecycle writes; child approval alone never satisfies final proof.
 
 The following dispatch and acceptance steps apply to terminal-managed delivery:
 
@@ -198,9 +206,16 @@ summary, dependencies, repair prompts or automatic work. Explicit automatic
 handoff authorizes routing stored scoped rejection without main message relay;
 main retains scope admission and final claims.
 
-Automatic delivery returns `status`, `summary`, `commit_sha`; review returns
-`decision` (approve/reject/blocked), `summary`, `commit_sha`, `followups` (text
-objects, empty array when none). Existing ticket automatic-delivery evidence owns
+Current automatic launches all return `status` (success/repair/blocked/failed),
+`summary`, `outputs` (a JSON-encoded object string), and `followups` (text
+objects, empty array when none). Only success advances; ordinary review repair
+uses the bounded loop, mirror repair stops. Agents explicitly map domain
+verdicts and return declared frozen outputs. Supplied outputs.commit_sha retains
+candidate integrity checks; source changes/repairs need exact commits, while
+verification/audit/closeout must not fabricate commits. Honor an older installed
+launcher's actual occurrence schema. Preserve frozen schemas and domain fields
+named followups; filtering covers only envelope task/receipt notes.
+Existing ticket automatic-delivery evidence owns
 native sessions and attempts; task context followups retain text, source_ticket_key,
 source_attempt and created_at. Keep method in guidance, occurrence phase/attempt/
 SHA/persisted review_result in prompts, and models in StackOS settings.
@@ -229,24 +244,33 @@ stop repeating checks once they answer the relevant risk.
 
 ## Manual Current-Project Instruction Refresh
 
-After independent source/local candidate approval, main manually maps parsed
+After independent source/local candidate approval, explicitly map parsed
 `developer_instructions` from `.codex/agents/sdlc-delivery.toml` to
 `delivery.delivery_agent.instructions` and from
 `.codex/agents/sdlc-delivery-reviewer.toml` to
 `delivery.review_agent.instructions` in this project only. Read the existing
-engineering plugin configuration through its local-admin setup owner and copy
+tracker configuration through its local-admin setup owner and copy
 the complete delivery object before replacing only those two strings through
-`plugin.enable`; a supplied delivery object replaces the key. Preserve names,
+`tracker.configureDelivery`; a supplied delivery object replaces the key. Preserve names,
 hosts, models, provider/profile and every other setting. Read back exact equality
-of instructions and all preserved settings, retaining approved source refs/versions
+of instructions using canonical whitespace normalization and exact equality of
+all preserved settings, retaining approved source refs/versions
 and candidate identity. Prove the subsequent new rehearsal task snapshot and
 actual prompt include the new method and scoped feedback, excluding followups.
 
 Source edits alone update neither saved instructions nor active/historical task
-snapshots. Keep existing runs frozen. Other projects adapt individually using
+snapshots. Queued/running executions stay frozen. Explicit rehandoff after
+completed/stopped execution resolves current defaults/overrides while preserving
+prior ticket receipts, native sessions and consumed repair allowance. Completed
+tasks and frozen run/template snapshots stay unchanged. Other projects adapt individually using
 their own available sources; no mandatory `.codex` folder, synchronizer, watcher
-or cross-project rollout. Installed activation and new-task prompt proof remain
-main-owned integration work; source validation does not claim them complete.
+or cross-project rollout. A specifically authorized, independently reviewed
+one-time helper may perform current-project adoption and installed activation
+after all implementation approvals and old-job completion, then hand off the
+same task once. It must pin the accepted candidate/helper hash, stop on failure,
+preserve rollback bundles and never select another candidate or perform source
+edits or claim/record/recovery writes. Source validation does not claim installed
+activation or subsequent native proof complete.
 
 ## Recovery And Closeout
 

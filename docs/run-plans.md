@@ -39,6 +39,25 @@ to run-plan execution: inspect `runPlan.get`, start the plan if no run exists,
 claim the matching step, inspect granted tools, then record the step result.
 The tracker packet does not grant execution by itself.
 
+For explicit taskwide `tracker.startDelivery` handoff, the running step is entry
+context rather than a traversal limit. The existing generic runner selects all
+remaining dependency-ready task work. It claims mirrors through RunPlanRepository,
+waits for accepted descendants, and launches each remaining frozen contract once.
+Zero-child mirrors launch directly; groups never launch. The selected agent
+returns declared outputs without claiming or recording its own step. Only the
+run-plan owner validates frozen schemas and writes mirror/plan/run terminal state.
+Frozen step `extensions.agent_assignment` may select `delivery_agent` or
+`review_agent`; explicit task `agent_assignments` take precedence. There is no
+phase-name dispatch table. Models and instructions remain project/task settings.
+The current result envelope is status/summary/outputs/followups; outputs is a
+JSON-encoded object string. Agents map domain conclusions to explicit generic
+status; only success advances and mirror repair stops. Integration and final
+workflow gates still need actual proof, without observation-only commits.
+An explicit rehandoff after a completed/stopped job may refresh that task's
+execution settings. It never rewrites frozen templates, grants, outputs or
+completed task snapshots, and preserves prior ticket receipts/sessions/repair
+allowance. Queued/running execution snapshots never refresh silently.
+
 When the operator has already made an explicit approval decision, the agent
 records it with `runPlan.update` through the normal workspace-bound MCP toolbox.
 Pass the exact `run_plan_id`, `approval_key`, and `approval_status`. Retain the

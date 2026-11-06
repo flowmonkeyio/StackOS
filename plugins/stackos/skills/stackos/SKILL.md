@@ -410,6 +410,20 @@ primitive.
   and the stale-run reaper preserves normal long-running workflow work. Do not add
   periodic `run.heartbeat` calls unless a workflow explicitly asks for audit
   liveness evidence.
+- Hand off a prepared task automatically when explicitly authorized: use
+  `tracker.startDelivery` with task/project scope and, for workflow work, the
+  running entry step and plan. Generic defaults live in
+  `TaskTracker.config_json.delivery`; local-admin REST-only
+  `tracker.configureDelivery` owns setup, independently of any domain plugin.
+  Resolve existing delivery/review roles and task assignments once. StackOS
+  traverses all remaining dependency-ready task work, including frozen mirrors
+  through the run-plan owner. Workers return their own outputs without lifecycle
+  calls. After handoff observe rather than competing with claim/record writes.
+  Current results use status/summary/outputs/followups, with outputs a JSON-encoded
+  object string; honor the actual launcher's occurrence schema. Only success
+  advances. Preserve scoped same-session review/one repair, nonactionable
+  followups and frozen snapshots; source guidance requires explicit reviewed
+  per-project adoption and never silently refreshes active jobs.
 - Execute one direct action: describe the action when useful, call
   `toolbox.call` for `readiness.check` when setup is uncertain, resolve an
   `executionContext.*` ref when the provider scope will be reused, and prepare

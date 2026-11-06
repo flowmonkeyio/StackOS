@@ -274,20 +274,25 @@ checks coverage against authoritative operator input as well as derived
 criteria, and rejects dependencies that make a ticket's required proof depend
 on its own blocked consumers.
 
-Repository implementation and self-check produce a separate scoped commit per
-ticket. A separate reviewer checks that exact commit against the assigned
+Source implementation and repairs produce separate scoped commits after self-checks.
+A separate reviewer checks that exact commit against the assigned
 requirements and actual evidence, returning the full `commit_sha`. The main
 agent adjudicates findings, routes repairs, integrates the reviewed result,
 rechecks affected evidence, then marks the ticket complete in terminal-managed
 delivery. An explicit `tracker.startDelivery` handoff instead lets StackOS
-mechanically complete approved child tickets and advance serially. A valid scoped
+mechanically complete approved ordinary tickets and advance serially through all
+remaining dependency-ready task work. Mirrors execute their remaining frozen
+contract once using an existing selected role; only RunPlanRepository records
+their lifecycle. A valid scoped
 rejection is persisted before one automatic repair pass in the same native
 delivery session, with a separate new descendant repair commit and re-verification
 in the same independent review session. The consumed pass survives explicit
 requeue; blocked required verification, native/access/model/resume failure,
-candidate mismatch or a second rejection stops that task. Main retains scope, workflow phase gates, integration
-and final claims. Defaults use engineering `ProjectPlugin.config_json.delivery`
-via local-admin `plugin.enable`, merged with task overrides by role once; local
+candidate mismatch or a second rejection stops that task. Main retains scope
+admission and final claims. In automatic delivery, assigned agents execute
+integration and workflow phase gates; main observes without lifecycle writes.
+Defaults use `TaskTracker.config_json.delivery`
+via local-admin REST-only `tracker.configureDelivery`, merged with task overrides by role once; local
 agent files are optional sources. Reusable roles never pin models. The shared
 host capability owner selects test-capable native permissions and approval review and uses
 normal native sessions for Gemini and Hermes reviewers with review-only
@@ -303,9 +308,14 @@ block. Within ticket plus integration scope, review business regression,
 architecture gaps, inaccurate wiring and canonical ownership where relevant.
 Required repairs cite scoped criteria/evidence. Unrelated findings go only in
 separate nonblocking `followups` text objects, never required-repair summary,
-dependencies or actionable repair prompts. Automatic review returns
-`decision` (approve/reject/blocked), `summary`, `commit_sha` and `followups`;
-delivery returns `status`, `summary` and `commit_sha`. Ordinary test outputs are
+dependencies or actionable repair prompts. All current automatic launches return
+`status` (success/repair/blocked/failed), `summary`, `outputs` (a JSON-encoded
+object string), and `followups` (text objects). Only success advances; ordinary
+review repair uses the bounded loop, mirror repair stops. Agents explicitly map
+domain verdicts to status and return declared frozen mirror outputs. Honor an
+older installed launcher's actual occurrence schema. Source changes and repairs
+require exact scoped commits in `outputs.commit_sha`; observation may cite
+unchanged HEAD and non-Git work needs no fabricated commit. Ordinary test outputs are
 allowed; production files, acceptance tests and commits remain review-only.
 
 Review must identify its candidate, assignment attempt, contract revision and
@@ -327,9 +337,12 @@ Adoption is manual per project. Method belongs in reusable/local guidance;
 occurrence phase/attempt/SHA/persisted scoped feedback belongs in prompts, and
 models remain StackOS configuration. After independent source/local review,
 the main agent may manually refresh selected saved instruction strings through
-existing local-admin `plugin.enable`, preserving every other setting and reading
+local-admin REST-only `tracker.configureDelivery`, preserving every other setting and reading
 back the result. Source edits alone update neither saved instructions nor active
-or historical task snapshots. Prove a subsequent handoff receives the new
+or historical task snapshots. Queued/running executions retain their snapshot;
+an explicit rehandoff after completed/stopped execution resolves current defaults
+and overrides while preserving prior ticket receipts, sessions and consumed repair
+allowance. Completed tasks and frozen run/templates stay unchanged. Prove a subsequent handoff receives the new
 instructions. Other projects adapt individually; there is no synchronizer,
 watcher, automatic rollout or requirement for a `.codex` folder.
 

@@ -87,17 +87,28 @@ operating contracts, not a second scheduler inside StackOS core.
 
 For an independently prepared task, the planner can instead call
 `tracker.startDelivery` after creating self-contained tickets and dependencies.
-It supplies the project directory and task choices, merged by role with engineering
-`ProjectPlugin.config_json.delivery` defaults into one effective task snapshot.
+It supplies the project directory and task choices, merged by role with
+`TaskTracker.config_json.delivery` defaults into one effective task snapshot.
 The planner adapts named delivery/review instructions from the
 project's available guidance; agent files are optional sources, not a launch
 requirement. StackOS passes the instructions to the harness and follows the
-fixed delivery/review sequence. Each repository ticket creates a separate scoped
-commit, followed by independent exact-commit review. Approval completes a ticket
-and releases its dependents; rejection or failure stops the same task with evidence.
-For a workflow task, hand off one running step's executable children. Mechanical
-advancement does not complete workflow phases: main retains scope, phase gates,
-integration and final claims. Jobs do not resume after daemon restart. The shared
+generic dependency traversal. Source changes and repairs create separate scoped
+commits for independent exact-commit review; observation work may cite unchanged
+HEAD and non-Git work needs no commit. Ordinary review may request one scoped
+repair in the same native delivery/review sessions; required failure stops the
+same task with evidence. Workflow handoff uses a running step as entry context,
+then traverses all remaining task work. Mirrors execute their frozen contracts
+once after accepted descendants, using existing roles selected by frozen step
+extensions or explicit task assignments. RunPlanRepository alone records their
+lifecycle. Assigned agents execute integration, review, audit and closeout gates;
+main retains scope admission and final claims and observes without lifecycle
+writes. Results use the actual launcher schema; the current closed envelope is
+status/summary/outputs/followups, with outputs a JSON-encoded object string.
+Only explicit success advances. Defaults use local-admin REST-only
+`tracker.configureDelivery`. Reviewed instruction adoption is explicit per
+project; source changes never refresh active or historical snapshots. Explicit
+rehandoff after a completed/stopped job resolves current defaults and preserves
+ticket sessions, receipts and repair allowance. Jobs do not resume after daemon restart. The shared
 host capability owner selects review mode; Gemini and Hermes use normal native
 sessions with review-only instructions and no enforced read-only isolation.
 Native read-only controls remain where supported. See

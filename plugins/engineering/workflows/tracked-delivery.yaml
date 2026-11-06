@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: engineering.tracked-delivery
 name: Engineering Tracked Delivery
-version: 0.4.2
+version: 0.5.0
 description: Reusable SDLC workflow for requirements, project-native design and proof planning, executable ticket breakdown, delegated delivery with immediate independent review, integrated verification, and truthful release closeout.
 domain: engineering
 owner:
@@ -256,10 +256,10 @@ policies:
     description: Failed means an attempted check or action failed; deferred means work was not executed because of an explicit instruction or external prerequisite and requires a named resume condition.
   - key: main_agent_accountability
     kind: orchestration
-    description: The main agent is the sole workflow controller and, in terminal-managed delivery, tracker lifecycle writer. Explicit tracker.startDelivery handoff delegates mechanical child-ticket progression to StackOS after independent approval of each exact scoped commit. Main retains scope, phase gates, integration, finding adjudication and final claims; specialists never complete their own tickets.
+    description: Main owns scope admission and final claims. Terminal-managed delivery keeps workflow/tracker writes and acceptance with main. Explicit tracker.startDelivery handoff delegates all remaining dependency-ready task work to StackOS, including integration and frozen workflow gates through assigned agents. Ordinary tickets require independent review; RunPlanRepository alone records mirror/plan/run lifecycle. Specialists return evidence and never complete their own tickets.
   - key: delegated_ticket_acceptance
     kind: delivery
-    description: Delegate executable child tickets with up to three active ticket lifecycles within host capacity; implementation, independent review, and repair share the same ticket. Repository delivery and each repair create separate scoped commits before independent exact-commit review, which takes priority over new implementations. Every executable child, including explicitly ticketed discovery, needs independent review before completion. Terminal-managed delivery uses main-agent acceptance; explicit automated delivery advances serially on exact-SHA approval and permits one durable automatic repair pass for a scoped rejection in the same native role sessions. Blocked verification, native failure, candidate mismatch or a second rejection stops the task. Generated workflow mirrors retain main-owned phase gates.
+    description: Terminal-managed delivery allows up to three active ticket lifecycles within host capacity. Source changes and each repair create separate scoped commits before independent exact-commit review; observation work may cite unchanged HEAD and needs no fabricated commit. Every executable child needs independent review. Explicit automatic delivery advances serially and permits one durable scoped repair in the same native delivery/review sessions. Blocked verification, native failure, candidate mismatch or second rejection stops the task. Generated mirrors execute the frozen contract once through an existing selected role, without a duplicate ordinary review loop; child approval alone never satisfies integration or final signoff.
   - key: ticket_and_integration_proof
     kind: verification
     description: Ticket acceptance proves the assigned local obligations against accepted prerequisite state; combined business requirements remain explicit integration obligations. A ticket cannot pass by relying on an unaccepted sibling candidate. Integrate its reviewed result and validate any relevant integration changes before completion releases dependents. Reuse current ticket evidence at later gates and execute the remaining combined proof.
@@ -283,6 +283,7 @@ policies:
     description: Non-micro delivery closeout includes independent verification of one-brain ownership, cleanup, architecture/contracts, and business/user/data/system flows, or a recorded waiver.
 steps:
   - id: scope-work
+    extensions: {agent_assignment: delivery_agent}
     title: Scope Work
     purpose: Restate the engineering goal, delivery mode, constraints, project setup, host-agent format, and missing context.
     instructions:
@@ -315,6 +316,7 @@ steps:
       - Explicit workflow intent is represented by a workflow-backed run plan before any delivery tickets are created.
       - Delivery mode, missing project guidance, and host-agent format are explicit.
   - id: define-requirements
+    extensions: {agent_assignment: delivery_agent}
     title: Define Requirements And Flows
     purpose: Convert user intent into explicit user, data, system, and business flows, acceptance criteria, non-goals, and evidence expectations.
     instructions:
@@ -342,6 +344,7 @@ steps:
       - Acceptance criteria are testable and include failure paths.
       - Relevant user, data, system, and business flows are explicit, or the not-applicable rationale is documented for micro work.
   - id: discover-impact
+    extensions: {agent_assignment: delivery_agent}
     title: Discover Impact
     purpose: Map affected scopes, real execution paths, ownership boundaries, downstream readers, tests, docs, and signoff fallout.
     instructions:
@@ -365,6 +368,7 @@ steps:
       - Mutation owners, read paths, shared contracts, and verification surfaces are visible.
       - Hidden downstream risk is surfaced before ticket planning.
   - id: design-approach
+    extensions: {agent_assignment: delivery_agent}
     title: Design Approach
     purpose: Identify canonical ownership, shared operations, data invariants, adapter surfaces, grants, docs, tests, rollout, and rollback implications.
     instructions:
@@ -387,6 +391,7 @@ steps:
       - The design avoids duplicate logic and names every touched contract boundary.
       - Future agents can implement without guessing architecture or validation.
   - id: design-tests
+    extensions: {agent_assignment: delivery_agent}
     title: Design Tests, TDD, And Manual Scenarios
     purpose: "Own the full proof plan before delivery: TDD/red-first automated tests, verification commands, agent-executed E2E/manual flow scenarios, expected outcomes, and signoff requirements."
     instructions:
@@ -420,6 +425,7 @@ steps:
       - The test design is complete enough for ticket planning and delivery readiness review; implementation remains gated on its verification or explicit waiver.
       - Delivery knows which checks prove the change and which checks are residual.
   - id: plan-tickets
+    extensions: {agent_assignment: delivery_agent}
     title: Plan Tracker Tickets
     purpose: Turn the completed design and proof plan into executable assignments with dependencies, exclusive ownership, acceptance criteria, review instructions, and integration obligations.
     instructions:
@@ -432,12 +438,12 @@ steps:
       - Partition ticket-local acceptance from the remaining combined requirement proof; no prerequisite ticket may require proof that only a blocked downstream ticket can provide. Record which final integration checks close each combined requirement.
       - Identify up to three safe concurrent ticket lifecycles and serialize or isolate conflicting ownership of interfaces, generated files, migrations, databases, ports, browser sessions, and other shared resources. Distinct filenames alone do not establish independence.
       - Create no ticket from feedback unless the main orchestrator traces it to the agreed deliverable or changed-surface correctness/safety.
-      - "For workflow-backed child tickets, pass run_plan_id and step_id at creation time; treat them as attachment/provenance only. Main writes terminal-managed child status/evidence with tracker.updateTicket; explicit tracker.startDelivery handoff delegates mechanical child results after independent exact-commit approval. Reserve runPlan.claimStep/runPlan.recordStep for main-owned workflow phase mirrors."
+      - "For workflow-backed child tickets, pass run_plan_id and step_id at creation time; treat them as attachment/provenance only. Main writes terminal-managed child status/evidence with tracker.updateTicket. Explicit tracker.startDelivery delegates all remaining task work by dependencies; ordinary results need independent review and mirror lifecycle remains with RunPlanRepository. Workers return evidence without lifecycle writes."
       - Add an activates edge from the active workflow step mirror to every independent first executable child; use blocks edges only for prerequisites that must complete.
       - "Keep the workflow graph to one root: the first generated workflow step mirror ticket. Any extra root under a workflow-backed task is detached work that must be repaired before delivery continues."
       - Make every independent first executable child of a workflow step activate from the workflow step ticket, and make the next workflow step block on all terminal child tickets from the prior step.
       - Keep delivery verification, docs, signoff, and release tickets inside the delivery graph so they cannot become ready independently of the workflow spine.
-      - Independent exact-commit review gates completion of every executable child, including discovery or design children; terminal-managed delivery adds main-agent acceptance, while explicit automatic handoff records approved child results mechanically. Workflow mirrors retain main-owned phase gates without requiring one subagent per mirror.
+      - Independent review gates completion of every executable child, including discovery or design; source changes and repairs require exact-commit review. Terminal-managed delivery adds main-agent acceptance. Automatic handoff records approved ordinary results and executes frozen mirror gates through assigned agents; never add a duplicate review loop for a mirror.
       - After creating or updating workflow-backed tickets, call tracker.get with run_plan_id and include_graph=true; review graph warnings, repair material sequencing issues, and record non-blocking cleanup instead of freezing progress.
       - Keep the tracker aligned with project rules; the tracker mirrors work, it does not replace policy or verification.
     policy_refs:
@@ -462,6 +468,7 @@ steps:
       - tracker.get include_graph=true has been reviewed, with material workflow-spine warnings repaired or captured as explicit follow-up risk.
       - Detached delivery, verification, docs, signoff, or release branches are either repaired or explicitly tracked as non-blocking cleanup.
   - id: review-design
+    extensions: {agent_assignment: review_agent}
     title: Delivery Readiness Review
     purpose: Review the complete requirements, design, proof plan, executable tickets, dependencies, and resources before implementation.
     instructions:
@@ -485,20 +492,23 @@ steps:
       - Blocking requirement, design, proof, ticket, dependency, and execution-resource gaps are resolved before delivery starts, or an authorized disposition makes the remaining delivery boundary explicit.
       - Review findings are actionable and scoped.
   - id: deliver-tickets
+    extensions: {agent_assignment: delivery_agent}
     title: Deliver Tickets
-    purpose: Deliver ready tickets as scoped commits, independently review each exact commit, and record approved child results while retaining main-owned workflow phase gates.
+    purpose: Deliver ready tickets, independently review source changes at exact scoped commits, and return current accepted receipts for the remaining integrated workflow proof.
     instructions:
-      - For terminal-managed delivery the main agent dispatches complete current ticket packets under the orchestrator preset, with up to three active ticket lifecycles within host capacity, and owns lifecycle writes and acceptance. Each specialist owns one bounded assignment; run steps remain main-owned in both delivery paths.
+      - For terminal-managed delivery main dispatches complete ticket packets under the orchestrator preset, with up to three active ticket lifecycles within host capacity, and owns lifecycle writes and acceptance. Each specialist owns one bounded assignment. After explicit automatic handoff StackOS owns progression through all remaining task dependencies, including frozen workflow mirrors.
       - Start independent review at the next available scheduling opportunity after each implementation candidate is ready, ahead of new implementations. Keep the ticket in progress through review and repairs; the implementer cannot verify independently or complete their own ticket.
-      - Require a separate scoped commit and full commit_sha per repository ticket before independent exact-commit review. Protected writes use normal host approval and stop on denial.
-      - The main agent may hand this running step's executable children to tracker.startDelivery after readiness. Resolve engineering project defaults and task overrides by role once; no required .codex folder or ticket settings. StackOS then owns serial mechanical ticket progression, stops on failure and leaves phase gates, integration and final claims to main. The terminal-managed path remains available.
+      - Require a separate scoped commit and full outputs.commit_sha for source changes and repairs before independent exact-commit review. Observation-only outputs need no fabricated commit. Protected writes use normal host approval and stop on denial.
+      - Main may hand the prepared task to tracker.startDelivery after readiness, with this running step as entry context. Resolve TaskTracker.config_json.delivery defaults and task overrides by role once; configure defaults through local-admin REST-only tracker.configureDelivery. No required .codex folder or ticket settings. Frozen step extensions.agent_assignment select existing delivery_agent/review_agent; explicit task agent_assignments win. The generic runner traverses dependencies without phase-name logic and stops on failure. Main retains scope admission and final claims without competing lifecycle writes.
+      - Current launches use status (success/repair/blocked/failed), summary, outputs (a JSON-encoded object string) and followups (text objects). Agents map domain conclusions explicitly; only success advances. Mirrors return their declared frozen outputs once after accepted descendants; only RunPlanRepository records mirror/plan/run lifecycle. Mirror repair stops. Preserve frozen schemas and domain fields named followups. Honor an older installed launcher's actual occurrence schema.
+      - Source changes and repairs require separate scoped commits and full outputs.commit_sha; verification/audit/closeout may cite unchanged HEAD and must not fabricate commits. Non-Git work needs no Git evidence. Source/local edits require reviewed explicit current-project instruction adoption, preserving settings and historical snapshots; queued/running snapshots never refresh silently.
       - The shared host capability owner chooses test-capable native review permissions with normal approval review. Gemini and Hermes reviewers use normal native sessions with review-only instructions and no enforced read-only guarantee; never silently substitute hosts or models or bypass a denial.
       - Automatic delivery persists a valid scoped rejection before one automatic repair pass in the same native delivery session, requires a separate new descendant repair commit and resumes the same independent review session on that exact SHA. Validate clean unchanged HEAD for reject and approve. Preserve sessions, attempt history and repair_pass_used across explicit requeue; blocked required verification, native/access/model/resume failure, candidate mismatch or a second rejection stops the same task without fallback.
       - Require reviewer-executed relevant planned specs and integration checks with commands/results/current SHA; failed required specs reject and genuinely unavailable required verification blocks. Review business regression, architecture gaps, inaccurate wiring and canonical ownership where relevant within ticket plus integration scope. Required repairs cite scoped criteria/evidence; unrelated findings are separate nonblocking followups, never dependencies, repair prompts or automatic work.
-      - Automatic review returns decision approve/reject/blocked, summary, commit_sha and followups as text objects; delivery returns status, summary and commit_sha. Keep required repairs and check evidence in summary; task context followups retain source_ticket_key/source_attempt/created_at. Method belongs in guidance, occurrence phase/attempt/SHA/persisted review_result in the prompt, and models in StackOS settings.
-      - Adopt reusable and host-local guidance manually per project; source edits do not refresh saved role instructions or active/historical snapshots. Main manually replaces only selected current-project instruction strings through existing local-admin plugin.enable, preserving names/hosts/models/provider/profile and other settings, then reads back and proves a subsequent handoff. No synchronizer, watcher or cross-project rollout.
+      - Keep required repairs and check evidence in summary; nonactionable task context followups retain source_ticket_key/source_attempt/created_at and never become automatic work. Method belongs in guidance, occurrence phase/attempt/SHA/persisted review_result in the prompt, and models in StackOS settings.
+      - Adopt reusable and host-local guidance explicitly per project after independent approval, replacing only selected instructions through local-admin REST-only tracker.configureDelivery. Preserve names/hosts/models/provider/profile and all other settings, then read back and prove a subsequent handoff. Queued/running executions stay frozen; explicit rehandoff after complete/stopped execution may resolve current defaults while retaining receipts/sessions/repair allowance. Completed tasks and frozen run/templates stay unchanged. No synchronizer, watcher or cross-project rollout.
       - Bind assignments and receipts to ticket, attempt, contract revision, candidate, covered paths, accepted dependencies, environment, and time. Reject delayed results from superseded assignments and evidence that relies on unaccepted sibling changes.
-      - The reviewer checks the candidate against the current requirements, accepted design, and proof plan, returning criterion-level evidence, concrete findings, missing proof, and a verdict. The main agent adjudicates findings and routes required repairs to the delivery agent for focused independent re-verification.
+      - The reviewer checks the candidate against current requirements, accepted design and proof, returning criterion-level evidence, concrete findings and missing proof. Main adjudicates terminal-managed findings and routes repairs; explicit automatic handoff routes only stored scoped required rejection through the bounded same-session loop. Scope expansion still requires main/operator admission.
       - Integrate the reviewed result, resolve conflicts and recheck affected proof before acceptance. In terminal-managed delivery main records acceptance; in automatic delivery independent approval of the exact committed candidate permits mechanical completion. Dependents may use only that accepted result.
       - For red-first work, prove the red is trustworthy before production edits and rerun the same slice to green.
       - At integration points, compare actual changed paths, migrations, generated contracts, cross-package imports, and test layers with planned ticket ownership; material drift reopens impact, design, and test planning.
@@ -526,8 +536,9 @@ steps:
     success_criteria:
       - Ticket state matches reality.
       - Targeted verification proves the behavior named in each ticket definition of done.
-      - Every completed executable child has current independent exact-commit review and acceptance through the selected delivery path; required review or repair remains visible as unfinished work. Automatic child completion never substitutes for integrated proof or main-owned phase gates.
+      - Every completed executable child has current independent review and acceptance through the selected delivery path, with exact-commit review for source changes and repairs. Required review/repair remains unfinished work. Child completion never substitutes for integrated proof; automatic workflow gates execute their frozen contracts through selected agents and the canonical run-plan owner.
   - id: verify-delivery
+    extensions: {agent_assignment: delivery_agent}
     title: Verify Delivery
     purpose: Prove the assembled outcome, cross-ticket interactions, remaining requirements, and mandatory project checks using current ticket receipts plus the remaining integrated proof.
     instructions:
@@ -560,6 +571,7 @@ steps:
       - Agent-executed E2E/manual flow scenarios are complete for changed flows, or operator-owned/waived gates are explicit.
       - Unrun or blocked checks are explicit.
   - id: review-delivery
+    extensions: {agent_assignment: review_agent}
     title: Review Delivery
     purpose: Independently review the assembled outcome and remaining integration risks across behavior, contracts, security, docs, evidence, and release authority.
     instructions:
@@ -596,10 +608,11 @@ steps:
       - Independent verification findings are adjudicated before closeout, or an explicit waiver explains why they were not needed.
       - The review does not rubber-stamp open or unverified tickets.
   - id: audit-tracker
+    extensions: {agent_assignment: review_agent}
     title: Audit Tracker Truth
     purpose: Confirm tracker state, run-plan state, docs, tests, evidence, and the actual diff agree before closeout.
     instructions:
-      - The main agent reconciles durable state and final claims; use specialist help only for a concrete unresolved audit question.
+      - Reconcile durable state and final claims against actual evidence. In terminal-managed delivery main owns this gate; in automatic delivery the selected agent returns tracker_audit for the run-plan owner without lifecycle writes.
       - Compare completed tickets with code, verification, docs, run-plan steps, and evidence.
       - Verify every completed executable child has current independent exact-commit review, acceptance through the selected delivery path, and accepted prerequisite state; tracker.verify proves structural consistency, not implementation correctness or reviewer independence.
       - Reconcile workflow/ticket state, repository evidence, review findings, browser artifacts, verification counts, operator gates, and release authorization as one closeout state.
@@ -634,6 +647,7 @@ steps:
       - No final claim depends on unexecuted E2E/manual flow proof or unadjudicated independent verification.
       - Workflow-backed tickets are dependency-bridged into the workflow spine, with no ready detached branch bypassing delivery order.
   - id: release-closeout
+    extensions: {agent_assignment: review_agent}
     title: Release Closeout
     purpose: Confirm final signoff, docs, known limitations, commit/release state, rollback/watch notes, and post-release checks.
     instructions:
@@ -1101,7 +1115,7 @@ failure_handling:
   - If project guidance or host-agent format is missing, record the exact gap and ask for it before writing local agent files.
   - If tracker dependencies reveal blocked work, update ticket blockers instead of continuing with invisible chat-only state.
   - If verification fails, use root-cause debugging before broad reruns or speculative fixes.
-  - Keep ordinary ticket review and repair within the active step and child ticket; route findings through the main agent and independently re-verify required repairs before acceptance.
+  - Keep ordinary review/repair in the same ticket. Terminal-managed findings route through main; automatic delivery routes persisted scoped rejection once in the same native delivery/review sessions. Unrelated followups never become automatic work. Mirror repair stops for controller diagnosis.
   - Before a material scope change or late integration failure requires an earlier gate, stop all active assignments and their processes, preserve receipts, and explicitly reopen or otherwise reconcile affected child tickets and dependency edges. Reopening a run-plan step alone does not reopen completed children.
   - Resume affected assignments with a new attempt and current contract revision; ignore superseded results and invalidate only affected evidence. Never rewrite an existing run's frozen step order to match a newer template.
   - If actual changed scope materially exceeds the plan, return to impact discovery, architecture, and test design before continuing.

@@ -91,6 +91,15 @@ is removed. Task snapshots, run snapshots and ticket evidence remain unchanged.
 Runtime reads only tracker defaults; enabling the engineering plugin is no
 longer a prerequisite for task automation.
 
+Source/local instruction adoption is a reviewed, explicit current-project setup
+action. Copy the full saved delivery object and replace only selected role
+instructions through `tracker.configureDelivery`; preserve names, hosts, models,
+provider/profile and all other fields. Read back exact preserved settings and
+instructions with canonical whitespace normalization. An explicitly authorized
+one-time operational helper may perform this after independent source/local
+approval and old-job completion; source edits alone never update saved settings,
+and no synchronizer or cross-project rollout is implied.
+
 The handoff is task-level; role objects and their fields can be omitted when
 project defaults supply them:
 

@@ -172,7 +172,7 @@ def _assert_sdlc_materializations(agent_dir: Path) -> None:
         assert "scoped commit" in prompt
         assert "exact-commit review" in prompt or "exact scoped commit" in prompt
         assert "commit_sha" in prompt
-        assert "mechanical" in prompt
+        assert "all remaining dependency-ready task work" in prompt
         assert "workflow phase gates" in prompt
     assert "no enforced read-only guarantee" in instructions["sdlc_delivery_reviewer"]
     assert "Return candidate-ready promptly" in delivery
@@ -780,7 +780,7 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
     delivery = loader.describe_preset(key="stackos.sdlc.delivery").preset
     reviewer = loader.describe_preset(key="stackos.sdlc.delivery-reviewer").preset
 
-    assert architecture.version == "0.3.3"
+    assert architecture.version == "0.4.0"
     architecture_text = " ".join(
         [
             *architecture.prompt_contract.responsibilities,
@@ -866,7 +866,7 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
         return " ".join(item for field in fields for item in getattr(contract, field)).lower()
 
     for preset in presets.values():
-        assert preset.version == "0.3.3"
+        assert preset.version == "0.4.0"
         assert preset.prompt_contract.mission
         assert preset.prompt_contract.handoff_inputs
         assert preset.prompt_contract.handoff_outputs
@@ -992,11 +992,11 @@ def test_sdlc_source_and_local_verification_repair_contracts() -> None:
                 assert requirement in text, (role, requirement)
     reviewer = loader.describe_preset(key="stackos.sdlc.delivery-reviewer").preset
     text = " ".join(reviewer.prompt_contract.must_do)
-    assert "both reject and approve" in text
+    assert "when Git evidence is supplied" in text
     assert "clean unchanged HEAD" in text
     assert "ordinary test outputs are allowed" in text
     assert "genuinely unavailable required verification blocks" in text
-    assert "array of text objects, empty when none" in text
+    assert "text objects, empty when none" in text
 
 
 def test_customer_support_thread_preset_requires_route_and_media_fidelity() -> None:

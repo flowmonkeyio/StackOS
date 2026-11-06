@@ -71,7 +71,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     contract = loaded.preset.operating_contract
     action = loaded.preset.project_adaptation.required_agent_action.lower()
 
-    assert loaded.preset.version == "0.4.3"
+    assert loaded.preset.version == "0.5.0"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "canonical owner" in action
@@ -120,17 +120,18 @@ def test_sdlc_orchestrator_defines_bounded_delegation_and_acceptance() -> None:
     assert policy["agent_assignment_limit"] == 1
     assert policy["durable_owner"] == "main_agent"
     assert policy["reviewer_priority"] == "before_new_delivery"
-    assert "not daemon-enforced" in policy["state_owner"]
+    assert "terminal-managed rules guide main" in policy["state_owner"]
     assert "explicit unassigned ticket keys" in required
     assert "one active assignment per agent" in required
     assert "Idle or interrupted agents do not necessarily release slots" in required
     assert "Never retask a busy reviewer" in required
-    assert "only the main agent marks complete" in required
+    assert "only main marks complete" in required
     assert "Integrate the reviewed candidate before acceptance" in required
     assert "independent exact-commit review" in required
-    assert "ProjectPlugin.config_json.delivery" in required
+    assert "TaskTracker.config_json.delivery" in required
+    assert "tracker.configureDelivery" in required
     assert "Gemini and Hermes" in required and "normal native permissions" in required
-    assert "never completes workflow phases" in required
+    assert "executes remaining workflow gates through assigned agents" in required
     assert "waive required ticket independence because work is micro" in boundaries
     assert "did not implement" in policy["independence"]
     assert "response_mode=raw" in required
@@ -241,7 +242,7 @@ def test_sdlc_orchestrator_manual_adoption_and_bounded_repair() -> None:
             "inaccurate wiring",
             "canonical ownership",
             "nonblocking followups",
-            "plugin.enable",
+            "tracker.configureDelivery",
             "provider/profile",
             "read back",
             "subsequent",

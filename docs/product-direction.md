@@ -43,8 +43,15 @@ readiness, visibility, approvals, recovery, and audit.
 - A planning agent may explicitly hand an independently prepared task to
   automated delivery. It supplies the tickets, dependencies, and project-agent
   instructions. StackOS then mechanically launches delivery and review through
-  an existing harness, completes approved tickets, and advances. Agents retain
-  engineering judgment; the terminal-managed path remains available.
+  an existing harness and traverses all remaining dependency-ready task work.
+  Ordinary tickets retain independent review; workflow mirrors execute frozen
+  contracts through selected existing roles and the canonical run-plan lifecycle
+  owner. Agents interpret domain outcomes and report explicit disposition;
+  runtime does not choose quality or strategy from phase names. Main retains
+  scope admission and final claims without competing lifecycle writes after
+  handoff. Generic tracker defaults own project execution settings; source
+  guidance adoption remains an explicit reviewed project action. The
+  terminal-managed path remains available.
 - Connectors own provider transport and protocol semantics. They do not invent
   workflow logic or business decisions.
 
