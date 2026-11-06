@@ -158,6 +158,11 @@ def _prompt_copy(value: Any) -> Any:
         return {key: _prompt_copy(item) for key, item in value.items() if key != "followups"}
     if isinstance(value, list):
         return [_prompt_copy(item) for item in value]
+    # Schema errors embed rejected output as Python repr and instance paths;
+    # other receipts can contain serialized JSON. Keep diagnostics canonical,
+    # but do not replay opaque note payloads through error/outcome/reason strings.
+    if isinstance(value, str) and re.search(r"""["']followups\\*["']\s*[:\]]""", value):
+        return "Diagnostic containing serialized followups omitted from work prompt."
     return value
 
 
@@ -517,7 +522,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                     _workflow_scope(
                         repo, project_id, task, state.get("run_plan_id"), state.get("step_id")
                     )
-                    if valid and phase == "review" and decision in {"approve", "reject"}:
+                    if valid and phase == "review":
                         context = deepcopy(task.context_json or {})
                         notes = context.setdefault("followups", [])
                         notes.extend(

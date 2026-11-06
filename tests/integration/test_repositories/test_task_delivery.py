@@ -885,6 +885,87 @@ def test_feedback_followup_only_blocked_and_second_reject(
     assert len(calls) == (2 if decision == "blocked" else 4)
     if decision != "approve":
         assert snapshot.tickets[1].status == "not-started"
+    context = snapshot.tasks[0].context_json
+    assert context["operator_inputs"] == ["Keep input"] and context["other"] == "preserved"
+    notes = context["followups"]
+    assert len(notes) == (2 if decision == "blocked" else 3)
+    assert notes[1]["text"] == "SIDE NOTE first 2"
+    assert notes[1]["source_ticket_key"] == "first"
+    assert notes[1]["source_attempt"] == 1
+    assert notes[1]["created_at"]
+    if decision == "blocked":
+        evidence = snapshot.tickets[0].completion_evidence_json["automatic_delivery"]
+        assert not evidence.get("repair_pass_used", False)
+        assert evidence["review"]["result"]["decision"] == "blocked"
+
+
+@pytest.mark.parametrize("invalid_location", ["result", "followup"])
+def test_feedback_schema_error_requeue_excludes_serialized_followups(
+    session, project_id, tmp_path, monkeypatch, invalid_location
+):
+    from stackos.plugins.builtin_engineering import task_delivery
+
+    feedback_task(session, project_id)
+    calls = []
+
+    def run_agent(host, directory, instructions, prompt, schema, *, sandbox, **selection):
+        packet = json.loads(prompt)
+        assert packet["brief"]["ticket"]["key"] == "first"
+        assert "SIDE NOTE" not in prompt
+        phase = "delivery" if schema == task_delivery().DELIVERY_SCHEMA else "review"
+        previous = [call for call in calls if call["phase"] == phase]
+        identity = f"first-{phase}"
+        assert selection.get("resume_thread_id") == (identity if previous else None)
+        calls.append({"phase": phase, "packet": packet})
+        if phase == "delivery":
+            value = {
+                "status": "complete",
+                "summary": "Checked specs",
+                "commit_sha": commit(tmp_path, f"candidate-{len(calls)}"),
+            }
+        else:
+            value = {
+                "decision": "blocked" if previous else "reject",
+                "summary": "Required check unavailable" if previous else "Scoped repair",
+                "commit_sha": packet["candidate"]["commit_sha"],
+                "followups": [] if previous else [{"text": "SIDE NOTE malformed reviewer"}],
+            }
+            if not previous:
+                if invalid_location == "result":
+                    value["unexpected"] = True
+                else:
+                    value["followups"][0]["unexpected"] = True
+        return AgentRunResult(0, thread_id=identity, result=value)
+
+    monkeypatch.setattr(task_delivery(), "run_agent", run_agent)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    repo = TrackerRepository(session)
+    stopped = repo.get(project_id=project_id, task_key="deliver")
+    assert [ticket.status for ticket in stopped.tickets] == ["failed", "not-started"]
+    error = stopped.tickets[0].completion_evidence_json["automatic_delivery"]["review"]["error"]
+    assert "unexpected" in error and "SIDE NOTE malformed reviewer" in error
+    assert stopped.tickets[0].outcome == error
+    assert stopped.tasks[0].metadata_json["delivery"]["reason"] == error
+    assert len(stopped.tasks[0].context_json["followups"]) == 1
+    repo.update_ticket(
+        project_id=project_id, ticket_key="first", patch_json={"status": "in-progress"}
+    )
+    repo.update_ticket(
+        project_id=project_id, ticket_key="first", patch_json={"status": "not-started"}
+    )
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    assert [call["phase"] for call in calls] == ["delivery", "review", "delivery", "review"]
+    session.expire_all()
+    stopped = repo.get(project_id=project_id, task_key="deliver")
+    assert [ticket.status for ticket in stopped.tickets] == ["failed", "not-started"]
+    evidence = stopped.tickets[0].completion_evidence_json["automatic_delivery"]
+    assert evidence["attempts"][0]["review"]["error"] == error
+    assert not evidence.get("repair_pass_used", False)
+    assert evidence["review"]["result"]["decision"] == "blocked"
 
 
 @pytest.mark.parametrize(

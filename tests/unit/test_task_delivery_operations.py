@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from copy import deepcopy
+
 import pytest
 
 from stackos.operations.registry import build_operation_registry
@@ -116,3 +119,23 @@ def test_review_result_rejects_malformed_or_actionable_followup_fields(followups
         },
     )
     assert not validate_agent_result(result, task_delivery().REVIEW_SCHEMA, "codex").ok
+
+
+@pytest.mark.parametrize("encoding", ["json", "repr", "nested-json"])
+def test_work_prompt_excludes_serialized_notes_without_changing_canonical_diagnostics(encoding):
+    from stackos.plugins.builtin_engineering import task_delivery
+
+    result = {"decision": "reject", "followups": [{"text": "Unrelated deferred note"}]}
+    serialized = repr(result) if encoding == "repr" else json.dumps(result)
+    if encoding == "nested-json":
+        serialized = json.dumps(serialized)
+    canonical = {
+        "attempts": [{"review": {"error": f"Invalid result: {serialized}"}}],
+        "summary": "Required check unavailable",
+        "followups": [{"text": "Unrelated deferred note"}],
+    }
+    original = deepcopy(canonical)
+    prompt = task_delivery()._prompt_copy(canonical)
+    assert "Unrelated deferred note" not in json.dumps(prompt)
+    assert prompt["summary"] == "Required check unavailable"
+    assert canonical == original
