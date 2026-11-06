@@ -25,6 +25,7 @@ from stackos.host_mcp.result import (
     AgentSandbox,
     HostMcpResult,
     looks_secretish,
+    usage_snapshot,
     validate_agent_result,
 )
 
@@ -114,6 +115,7 @@ def run_agent(
             return AgentRunResult(None, error=f"Could not launch Codex: {exc}")
         thread_id = None
         native_error = None
+        usage = None
         for line in process.stdout.splitlines():
             try:
                 event = json.loads(line)
@@ -121,12 +123,26 @@ def run_agent(
                 continue
             if isinstance(event, dict) and event.get("type") == "thread.started":
                 thread_id = event.get("thread_id")
+            if isinstance(event, dict) and event.get("type") == "turn.completed":
+                counters = event.get("usage")
+                # events.ts: cached input and reasoning output are subsets.
+                usage = (
+                    usage_snapshot(
+                        "codex.turn",
+                        "invocation",
+                        counters.get("input_tokens"),
+                        counters.get("output_tokens"),
+                    )
+                    if isinstance(counters, dict)
+                    else None
+                )
             if isinstance(event, dict) and event.get("type") in {"error", "turn.failed"}:
                 native_error = str(event.get("error") or event.get("message") or "Codex failed.")
         if process.returncode != 0 or native_error:
             return AgentRunResult(
                 process.returncode,
                 thread_id=thread_id,
+                usage=usage,
                 error=native_error
                 or process.stderr.strip()
                 or process.stdout.strip()
@@ -138,9 +154,13 @@ def run_agent(
                 raise ValueError("expected a JSON object")
         except (OSError, ValueError) as exc:
             detail = process.stderr.strip() or process.stdout.strip() or str(exc)
-            return AgentRunResult(0, thread_id=thread_id, error=f"Invalid Codex result: {detail}")
+            return AgentRunResult(
+                0, thread_id=thread_id, usage=usage, error=f"Invalid Codex result: {detail}"
+            )
         return validate_agent_result(
-            AgentRunResult(0, thread_id=thread_id, result=result), output_schema, "Codex"
+            AgentRunResult(0, thread_id=thread_id, result=result, usage=usage),
+            output_schema,
+            "Codex",
         )
 
 

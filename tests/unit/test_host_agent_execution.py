@@ -64,6 +64,32 @@ def fake_native_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(grok, "resolve_grok_bin", lambda _home: "/fake/grok")
 
 
+def test_codex_native_usage_is_separate_from_agent_output(project, monkeypatch):
+    """Official SDK events.ts: turn.completed usage covers this invocation."""
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fake/codex")
+
+    def execute(command, **kwargs):
+        Path(command[command.index("-o") + 1]).write_text('{"summary":"delivered"}')
+        events = [
+            {"type": "thread.started", "thread_id": "native-thread"},
+            {
+                "type": "turn.completed",
+                "usage": {
+                    "input_tokens": 100,
+                    "cached_input_tokens": 80,
+                    "output_tokens": 50,
+                    "reasoning_output_tokens": 20,
+                },
+            },
+        ]
+        return subprocess.CompletedProcess(command, 0, "\n".join(map(json.dumps, events)), "")
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    result = run_agent("codex", project, "Instructions", "Work", SCHEMA)
+    assert result.ok
+    assert result.usage["snapshot"] == {"input": 100, "output": 50, "total": 150}
+
+
 @pytest.mark.parametrize(("host", "model", "provider", "envelope"), NATIVE_CASES)
 @pytest.mark.parametrize("returned_id", ["native-thread", None, "wrong-thread"])
 def test_native_exact_resume(project, monkeypatch, host, model, provider, envelope, returned_id):

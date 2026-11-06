@@ -57,6 +57,7 @@ def execute_json_agent(
         process.returncode,
         thread_id=native.thread_id,
         result=native.result,
+        usage=native.usage,
         error=native.error
         or (
             process.stderr.strip() or process.stdout.strip() or f"{host} exited unsuccessfully."

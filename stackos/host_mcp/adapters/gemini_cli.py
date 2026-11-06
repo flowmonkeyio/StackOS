@@ -19,7 +19,13 @@ from stackos.host_mcp.bridge import (
     token_preflight,
 )
 from stackos.host_mcp.discovery import resolve_cli_bin, subprocess_env_for_cli
-from stackos.host_mcp.result import AgentRunResult, AgentSandbox, HostMcpResult, looks_secretish
+from stackos.host_mcp.result import (
+    AgentRunResult,
+    AgentSandbox,
+    HostMcpResult,
+    looks_secretish,
+    usage_snapshot,
+)
 
 HOST_KEY = "gemini-cli"
 SURFACE = "cli-config"
@@ -71,11 +77,46 @@ def run_agent(
 
 def _agent_result(stdout: str) -> AgentRunResult:
     value = json_object(stdout)
+    usage = _agent_usage(value)
     if value.get("error"):
-        return AgentRunResult(0, thread_id=value.get("session_id"), error=str(value["error"]))
-    return AgentRunResult(
-        0, thread_id=value.get("session_id"), result=json_object(value["response"])
-    )
+        return AgentRunResult(
+            0, thread_id=value.get("session_id"), usage=usage, error=str(value["error"])
+        )
+    try:
+        result = json_object(value["response"])
+    except (ValueError, KeyError, TypeError) as exc:
+        return AgentRunResult(
+            0,
+            thread_id=value.get("session_id"),
+            usage=usage,
+            error=f"Invalid Gemini CLI result: {exc}",
+        )
+    return AgentRunResult(0, thread_id=value.get("session_id"), result=result, usage=usage)
+
+
+def _agent_usage(value: dict[str, Any]) -> dict[str, Any] | None:
+    # uiTelemetry.hydrate restores stats.models on resume. Sum models, not
+    # their nested roles. prompt includes cached; total includes thoughts/tool.
+    stats = value.get("stats")
+    models = stats.get("models") if isinstance(stats, dict) else None
+    if not isinstance(models, dict) or not models:
+        return None
+    inputs = outputs = total = 0
+    for row in models.values():
+        counters = row.get("tokens") if isinstance(row, dict) else None
+        if not isinstance(counters, dict):
+            return None
+        counts: list[Any] = [
+            counters.get(k) for k in ("prompt", "candidates", "thoughts", "tool", "total")
+        ]
+        if any(type(n) is not int or n < 0 for n in counts):
+            return None
+        if counts[4] != sum(counts[:4]):
+            return None
+        inputs += counts[0]
+        outputs += sum(counts[1:4])
+        total += counts[4]
+    return usage_snapshot("gemini.models", "session", inputs, outputs, total)
 
 
 def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:

@@ -13,7 +13,13 @@ from stackos.host_mcp.bridge import (
     is_stackos_bridge_command,
     resolve_bridge_command,
 )
-from stackos.host_mcp.result import AgentRunResult, AgentSandbox, HostMcpResult, looks_secretish
+from stackos.host_mcp.result import (
+    AgentRunResult,
+    AgentSandbox,
+    HostMcpResult,
+    looks_secretish,
+    usage_snapshot,
+)
 
 HOST_KEY = "claude-code"
 SURFACE = "cli"
@@ -69,7 +75,38 @@ def _agent_result(stdout: str) -> AgentRunResult:
         thread_id=value.get("session_id"),
         result=value.get("structured_output"),
         error=error,
+        usage=_agent_usage(value),
     )
+
+
+def _agent_usage(value: dict[str, Any]) -> dict[str, Any] | None:
+    # Current cost-tracking contract: whole-tree counters, restored on resume.
+    # usage is narrower (main loop only); never mix it with modelUsage.
+    models = value.get("modelUsage")
+    if (
+        not isinstance(models, dict)
+        or not models
+        or value.get("subtype") == "error_during_execution"
+    ):
+        return None
+    inputs = outputs = 0
+    for row in models.values():
+        if not isinstance(row, dict):
+            return None
+        counts: list[Any] = [
+            row.get(k)
+            for k in (
+                "inputTokens",
+                "cacheReadInputTokens",
+                "cacheCreationInputTokens",
+                "outputTokens",
+            )
+        ]
+        if any(type(n) is not int or n < 0 for n in counts):
+            return None
+        inputs += sum(counts[:3])
+        outputs += counts[3]
+    return usage_snapshot("claude.model-usage", "session", inputs, outputs)
 
 
 def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:

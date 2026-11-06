@@ -254,6 +254,69 @@ requeue. Blocked required verification, native/access/model/resume/schema failur
 dirty/mismatched candidate or a second rejection stops the same task with history;
 there is no fresh-session, host or model fallback. Approval alone advances.
 
+Each new invocation receipt also records `selected_role` (`delivery_agent` or
+`review_agent`) at the actual call site, including one-phase workflow mirrors.
+`validated_outcome` is the returned generic disposition only after native,
+schema, session and candidate integrity checks; otherwise it is null. Mirror
+success additionally requires the run-plan owner's output validation. A recorded
+reviewer reject requires `selected_role=review_agent` and
+`validated_outcome=repair`. Phase, agent name, current defaults and raw returned
+status are not substitutes. Older receipts can lack these facts.
+
+Optional native usage travels separately from agent-authored outputs through
+`AgentRunResult.usage`. The shared owner in `host_mcp/result.py` validates
+`usage_snapshot(scope, basis, input_count, output_count, total)` and measures
+`normalize_usage(usage, session_id=..., resumed=..., previous=...)` for the
+receipt. Numeric fields use safe names because credential redaction masks keys
+containing `token`, including numeric values; credential redaction is unchanged.
+The receipt's `usage` value has this shape:
+
+```json
+{
+  "unit": "tokens",
+  "scope": "gemini.models",
+  "basis": "session",
+  "session_id": "native-session-id",
+  "snapshot": {"input": 160, "output": 70, "total": 230},
+  "status": "measured",
+  "reason": null,
+  "measured": {"input": 60, "output": 20, "total": 80}
+}
+```
+
+Only `measured` is additive. `basis=invocation` contributes its counters once.
+For `basis=session`, a fresh session contributes its snapshot; a resumed call
+contributes the difference from the immediately preceding invocation of that
+same role/session/unit/scope/basis. For example, snapshots 150 then 230 contribute
+150 then 80. A legacy resumed session without a compatible baseline retains its
+snapshot but contributes no measured value; its next compatible snapshot can
+produce a delta. Missing intervening telemetry is not bridged. Negative or
+inconsistent deltas are unavailable, never clamped to zero. Unavailable usage
+has `status=unavailable`, `measured=null` and a reason (`missing_or_unsupported`,
+`malformed`, `missing_session`, `missing_baseline`, or `invalid_delta`). Valid
+snapshots retain unit/scope/basis/session metadata even when the delta is
+unavailable. Missing telemetry is unknown, including on historical receipts.
+Current receipts and archived `attempts` preserve these same facts and sessions;
+no separate ledger or historical rewrite is involved. A receipt occurrence is
+identified by ticket, attempt number and phase; tracker-history copies are not
+additional invocations.
+
+Supported native contracts, checked 2026-11-06:
+
+| Host / scope | Native basis and arithmetic |
+| --- | --- |
+| Codex / `codex.turn` | [`turn.completed.usage`](https://github.com/openai/codex/blob/main/sdk/typescript/src/events.ts) is invocation usage. Input plus output gives total; cached input and reasoning output are subsets and are not added again. |
+| Claude Code / `claude.model-usage` | The current [Agent SDK cost-tracking contract](https://code.claude.com/docs/en/agent-sdk/cost-tracking) defines `modelUsage` as whole-tree counters restored on resume. Sum models' input, cache-read and cache-creation counts for input, plus output for total. The narrower main-loop `usage` is not mixed in or used as a fallback. Missing fields and crash results with potentially zeroed counters are unavailable. |
+| Gemini CLI / `gemini.models` | [Headless JSON](https://google-gemini.github.io/gemini-cli/docs/cli/headless.html) supplies `stats.models`; [telemetry hydration](https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/telemetry/uiTelemetry.ts) restores these counters on resume. Sum each model once: input is prompt (already includes cached), output is candidates plus thoughts plus tool, total must match their sum. Nested role counters and the uncached input subtotal are not added. |
+| Hermes / unavailable | The [CLI reference](https://hermes-agent.nousresearch.com/docs/reference/cli-commands) does not prove a usage report compatible with the integrated `chat --oneshot` command. No telemetry flag is appended. |
+| Grok / unavailable | No compatible token schema is proven for the existing JSON command in the [headless contract](https://docs.x.ai/build/cli/headless-scripting). Agent-authored usage is ignored. |
+
+Usage is optional evidence, including when native execution, result/schema
+validation or session checks fail. Malformed or unsupported telemetry never
+changes host/model/default selection, resume matching, candidate validation,
+review/repair allowance or stop behavior. Source capture tests do not establish
+installed-daemon activation or real native/API/UI reconciliation.
+
 Agent/process failure also stops the task's execution. Ticket evidence records
 both agent results, launch details, thread references, prior HEAD and verified
 commit SHA before dependencies are released. Git is optional. Non-Git tasks invoke no Git commands; Codex uses its native

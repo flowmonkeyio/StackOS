@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Literal
 
 from jsonschema import ValidationError, validate
@@ -18,6 +18,7 @@ class AgentRunResult:
     thread_id: str | None = None
     result: dict[str, Any] | None = None
     error: str | None = None
+    usage: dict[str, Any] | None = None
 
     @property
     def ok(self) -> bool:
@@ -33,10 +34,88 @@ def validate_agent_result(
     try:
         validate(result.result, schema)
     except ValidationError as exc:
-        return AgentRunResult(
-            result.exit_code, thread_id=result.thread_id, error=f"Invalid {host} result: {exc}"
-        )
+        return replace(result, result=None, error=f"Invalid {host} result: {exc}")
     return result
+
+
+def usage_snapshot(
+    scope: Any, basis: Any, input_count: Any, output_count: Any, total: Any = None
+) -> dict[str, Any] | None:
+    """Safe native counters, independent of the agent-authored result contract."""
+    if not isinstance(basis, str) or basis not in {"invocation", "session"}:
+        return None
+    if not isinstance(scope, str) or not scope:
+        return None
+    if any(type(n) is not int or n < 0 for n in (input_count, output_count)):
+        return None
+    if total is None:
+        total = input_count + output_count
+    if type(total) is not int or total != input_count + output_count:
+        return None
+    return {
+        "unit": "tokens",
+        "scope": scope,
+        "basis": basis,
+        "snapshot": {"input": input_count, "output": output_count, "total": total},
+    }
+
+
+def normalize_usage(
+    usage: Any, *, session_id: str | None, resumed: bool, previous: Any = None
+) -> dict[str, Any]:
+    """Measure one invocation; cumulative counters require a compatible baseline.
+
+    Only measured is additive. A missing legacy baseline still retains a usable
+    snapshot for the next same-session delta. Never bridge an unobserved call.
+    """
+    unavailable = {"status": "unavailable", "reason": "missing_or_unsupported", "measured": None}
+    if not isinstance(usage, dict):
+        return unavailable
+    snapshot = usage.get("snapshot")
+    if not isinstance(snapshot, dict) or type(snapshot.get("total")) is not int:
+        return {**unavailable, "reason": "malformed"}
+    safe = usage_snapshot(
+        usage.get("scope"),
+        usage.get("basis"),
+        snapshot.get("input"),
+        snapshot.get("output"),
+        snapshot.get("total"),
+    )
+    if safe is None or usage.get("unit") != "tokens":
+        return {**unavailable, "reason": "malformed"}
+    measured = safe["snapshot"].copy()
+    reason = None
+    if safe["basis"] == "session":
+        if not isinstance(session_id, str) or not session_id.strip():
+            reason = "missing_session"
+        elif resumed:
+            if not isinstance(previous, dict) or any(
+                previous.get(key) != value
+                for key, value in {
+                    **{k: safe[k] for k in ("unit", "basis", "scope")},
+                    "session_id": session_id,
+                }.items()
+            ):
+                reason = "missing_baseline"
+            else:
+                baseline = previous.get("snapshot")
+                if not isinstance(baseline, dict) or any(
+                    type(baseline.get(k)) is not int or baseline[k] < 0 for k in measured
+                ):
+                    reason = "missing_baseline"
+                else:
+                    measured = {k: n - baseline[k] for k, n in measured.items()}
+                    if any(n < 0 for n in measured.values()) or (
+                        measured["total"] != measured["input"] + measured["output"]
+                    ):
+                        reason = "invalid_delta"
+    return {
+        **safe,
+        "session_id": session_id,
+        "status": "unavailable" if reason else "measured",
+        "reason": reason,
+        "measured": None if reason else measured,
+    }
 
 
 @dataclass(frozen=True)

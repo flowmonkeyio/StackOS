@@ -23,7 +23,7 @@ from stackos.db.models import (
     TrackerSourceKind,
     TrackerTicketKind,
 )
-from stackos.host_mcp.result import AgentSandbox, validate_agent_result
+from stackos.host_mcp.result import AgentSandbox, normalize_usage, validate_agent_result
 from stackos.host_mcp.service import agent_review_sandbox, agent_selection_error, run_agent
 from stackos.operations.tracker.schemas import TaskDeliveryAgent
 from stackos.repositories.base import NotFoundError, ValidationError
@@ -506,7 +506,8 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
             phase = role.removesuffix("_agent") if workflow_step is not None else "delivery"
             while True:
                 schema = RESULT_SCHEMA
-                agent = state[role if phase == "delivery" else "review_agent"]
+                selected_role = role if phase == "delivery" else "review_agent"
+                agent = state[selected_role]
                 host_key = agent.get("host_key") or state["host_key"]
                 sandbox: AgentSandbox = (
                     "workspace-write" if phase == "delivery" else agent_review_sandbox(host_key)
@@ -541,7 +542,11 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                     "started_at": datetime.now(UTC).isoformat(),
                     **({"resume_thread_id": resume_thread_id} if resume_thread_id else {}),
                 }
-                evidence[phase] = {"agent": agent["name"], "launch": launch}
+                evidence[phase] = {
+                    "agent": agent["name"],
+                    "selected_role": selected_role,
+                    "launch": launch,
+                }
                 with session_factory() as session:
                     repo = TrackerRepository(session)
                     task = _task(repo, project_id, task_key)
@@ -640,7 +645,27 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                 )
                 # The shared schema owner also protects controlled/injected harnesses.
                 result = validate_agent_result(result, schema, host_key)
-                evidence[phase] = {"agent": agent["name"], "launch": launch, **asdict(result)}
+                previous = next(
+                    (
+                        attempt[phase].get("usage")
+                        for attempt in reversed(evidence["attempts"])
+                        if phase in attempt
+                    ),
+                    None,
+                )
+                evidence[phase] = {
+                    "agent": agent["name"],
+                    "selected_role": selected_role,
+                    "launch": launch,
+                    **asdict(result),
+                    "usage": normalize_usage(
+                        result.usage,
+                        session_id=result.thread_id,
+                        resumed=resume_thread_id is not None,
+                        previous=previous,
+                    ),
+                    "validated_outcome": None,
+                }
                 value = result.result or {}
                 decision = value.get("status")
                 outputs = {}
@@ -696,6 +721,9 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                 # Error receipts can still identify the exact native session for explicit requeue.
                 elif native_session is None and result.thread_id:
                     sessions[phase] = {**identity, "thread_id": result.thread_id}
+
+                if workflow_step is None and valid:
+                    evidence[phase]["validated_outcome"] = decision
 
                 repair = (
                     valid
@@ -763,6 +791,9 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                             if accepted
                             else (validation_error or result.error or value.get("summary")),
                         )
+                        if valid:
+                            evidence[phase]["validated_outcome"] = decision
+                            _save_evidence(repo, project_id, ticket_key, evidence)
                     else:
                         _save_evidence(repo, project_id, ticket_key, evidence, **patch)
                     if not accepted and not repair:

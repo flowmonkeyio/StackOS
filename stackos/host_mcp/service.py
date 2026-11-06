@@ -152,6 +152,7 @@ def run_agent(
         return AgentRunResult(
             result.exit_code,
             thread_id=result.thread_id,
+            usage=result.usage,
             error=(
                 f"Native session resume identity mismatch: expected {resume_thread_id!r}, "
                 f"received {result.thread_id!r}." + (f" {result.error}" if result.error else "")

@@ -14,7 +14,7 @@ from pydantic import ValidationError as SchemaValidationError
 from sqlmodel import Session
 
 from stackos.db.models import RunPlanStepStatus
-from stackos.host_mcp.result import AgentRunResult
+from stackos.host_mcp.result import AgentRunResult, usage_snapshot
 from stackos.mcp.context import MCPContext
 from stackos.operations.tracker.schemas import TrackerStartDeliveryInput
 from stackos.operations.tracker.write_handlers import tracker_start_delivery
@@ -116,6 +116,9 @@ def test_mirror_candidate_evidence_is_independent_of_selected_role(
         .ticket
     )
     assert ticket.completion_evidence_json["automatic_delivery"]["candidate"]["commit_sha"] == head
+    receipt = ticket.completion_evidence_json["automatic_delivery"][role.removesuffix("_agent")]
+    assert receipt["selected_role"] == role
+    assert receipt["validated_outcome"] == "success"
     assert git(tmp_path, "rev-parse", "HEAD") == head
 
 
@@ -381,6 +384,7 @@ def test_mirror_unsuccessful_or_malformed_result_stops_through_plan_owner(
                 {
                     "id": "observe",
                     "title": "Observe",
+                    "metadata_json": {"agent_assignment": "review_agent"},
                     "output_refs": ["report"],
                     "expected_outputs": {
                         "report": {
@@ -435,6 +439,11 @@ def test_mirror_unsuccessful_or_malformed_result_stops_through_plan_owner(
     assert final.steps[1].status != "success"
     assert (
         "repair_pass_used" not in snapshot.tickets[0].completion_evidence_json["automatic_delivery"]
+    )
+    receipt = snapshot.tickets[0].completion_evidence_json["automatic_delivery"]["review"]
+    assert receipt["selected_role"] == "review_agent"
+    assert receipt["validated_outcome"] == (
+        disposition if disposition in {"repair", "blocked", "failed"} else None
     )
 
 
@@ -1459,7 +1468,9 @@ def test_queued_workflow_stops_when_step_is_no_longer_running(
     )
 
 
-def feedback_harness(session, project_id, tmp_path, monkeypatch, decisions, *, fault=None):
+def feedback_harness(
+    session, project_id, tmp_path, monkeypatch, decisions, *, fault=None, usage_basis="invocation"
+):
     """Real commits and durable tracker reads around each controlled native response."""
     from stackos import task_delivery
 
@@ -1485,6 +1496,9 @@ def feedback_harness(session, project_id, tmp_path, monkeypatch, decisions, *, f
             assert packet["review_result"]["result"]["summary"] == "Scoped repair"
         calls.append({"key": key, "phase": phase, "resume": resume, "packet": packet})
         identity = f"{key}-{phase}"
+        usage = usage_snapshot(
+            "fixture", usage_basis, 160 if previous else 100, 70 if previous else 50
+        )
         if phase == "delivery":
             sha = commit(tmp_path, f"{key}-{len(calls)}")
             value = {"status": "complete", "summary": "Checked specs", "commit_sha": sha}
@@ -1509,7 +1523,9 @@ def feedback_harness(session, project_id, tmp_path, monkeypatch, decisions, *, f
             elif fault == "schema":
                 value.pop("followups")
             elif fault == "native":
-                return scenario_result(1, thread_id=identity, error="Required check unavailable")
+                return scenario_result(
+                    1, thread_id=identity, error="Required check unavailable", usage=usage
+                )
         if fault == "missing-id" or (fault == "missing-review-id" and phase == "review"):
             identity = None
         elif resume and (
@@ -1519,7 +1535,7 @@ def feedback_harness(session, project_id, tmp_path, monkeypatch, decisions, *, f
             identity = "wrong-session"
         elif fault == "shared-id" and phase == "review":
             identity = f"{key}-delivery"
-        return scenario_result(0, thread_id=identity, result=value)
+        return scenario_result(0, thread_id=identity, result=value, usage=usage)
 
     monkeypatch.setattr(task_delivery, "run_agent", run_agent)
     return calls
@@ -1558,12 +1574,18 @@ def feedback_task(session, project_id):
     )
 
 
+@pytest.mark.parametrize("usage_basis", ["invocation", "session"])
 def test_feedback_reject_repair_approve_preserves_sessions_attempts_and_notes(
-    session, project_id, tmp_path, monkeypatch
+    session, project_id, tmp_path, monkeypatch, usage_basis
 ):
     feedback_task(session, project_id)
     calls = feedback_harness(
-        session, project_id, tmp_path, monkeypatch, ["reject", "approve", "approve"]
+        session,
+        project_id,
+        tmp_path,
+        monkeypatch,
+        ["reject", "approve", "approve"],
+        usage_basis=usage_basis,
     )
     scheduler = QueuedScheduler()
     submit(session, project_id, tmp_path, scheduler)
@@ -1585,6 +1607,18 @@ def test_feedback_reject_repair_approve_preserves_sessions_attempts_and_notes(
     assert "SIDE NOTE nested" in json.dumps(first.completion_evidence_json["prior_review"])
     prior = evidence["attempts"][0]
     assert prior["review"]["result"]["status"] == "repair"
+    assert prior["review"]["selected_role"] == "review_agent"
+    assert prior["review"]["validated_outcome"] == "repair"
+    for phase, role in (("delivery", "delivery_agent"), ("review", "review_agent")):
+        assert prior[phase]["selected_role"] == role
+        assert evidence[phase]["selected_role"] == role
+        assert evidence[phase]["validated_outcome"] == "success"
+        assert prior[phase]["usage"]["snapshot"]["total"] == 150
+        assert prior[phase]["usage"]["measured"]["total"] == 150
+        assert evidence[phase]["usage"]["snapshot"] == {"input": 160, "output": 70, "total": 230}
+        assert evidence[phase]["usage"]["measured"]["total"] == (
+            80 if usage_basis == "session" else 230
+        )
     assert prior["candidate"]["commit_sha"] != evidence["candidate"]["commit_sha"]
     assert evidence["candidate"]["base_commit_sha"] == prior["candidate"]["commit_sha"]
     assert (
@@ -1746,6 +1780,10 @@ def test_feedback_identity_schema_and_check_failures_stop(
     assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "stopped"
     assert len(calls) == expected_calls
     assert len(snapshot.tasks[0].context_json["followups"]) == (2 if expected_calls >= 3 else 1)
+    evidence = snapshot.tickets[0].completion_evidence_json["automatic_delivery"]
+    phase = calls[-1]["phase"]
+    assert evidence[phase]["validated_outcome"] is None
+    assert evidence[phase]["usage"]["measured"]["total"] in {150, 230}
 
 
 def test_feedback_requeue_preserves_consumed_repair_budget(
@@ -1777,3 +1815,72 @@ def test_feedback_requeue_preserves_consumed_repair_budget(
     assert evidence["repair_pass_used"] is True
     assert len(evidence["attempts"]) == 2
     assert [a["review"]["result"]["status"] for a in evidence["attempts"]] == ["repair", "repair"]
+    for attempt in [*evidence["attempts"], evidence]:
+        for phase in ("delivery", "review"):
+            assert attempt[phase]["selected_role"] == f"{phase}_agent"
+            assert attempt[phase]["usage"]["measured"]["total"] in {150, 230}
+        assert attempt["review"]["validated_outcome"] == "repair"
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_cumulative_receipt_requeue_retains_unknown_and_redaction_boundary(
+    session, project_id, tmp_path, monkeypatch, legacy
+):
+    """Actual tracker writes/readbacks/archive, with a resumed baseline gap."""
+    from stackos import task_delivery
+
+    prepared_task(session, project_id)
+    calls = []
+
+    def launch(_host, _directory, _instructions, prompt, schema, **kwargs):
+        packet = json.loads(prompt)
+        key, phase = packet["brief"]["ticket"]["key"], packet["phase"]
+        calls.append((key, phase))
+        resumed = "resume_thread_id" in kwargs
+        return AgentRunResult(
+            0,
+            thread_id=f"{key}-{phase}",
+            result=generic_result("blocked" if len(calls) == 2 else "success"),
+            usage=usage_snapshot(
+                "fixture", "session", 160 if resumed else 100, 70 if resumed else 50
+            ),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    repo = TrackerRepository(session)
+    evidence = repo.brief(project_id=project_id, ticket_key="first").ticket.completion_evidence_json
+    automatic = evidence["automatic_delivery"]
+    for phase in ("delivery", "review"):
+        assert automatic[phase]["usage"]["measured"] == {"input": 100, "output": 50, "total": 150}
+        if legacy:
+            automatic[phase].pop("usage")
+    evidence["credential_token"] = "must-stay-secret"
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="first",
+        patch_json={"completion_evidence_json": evidence, "status": "in-progress"},
+    )
+    repo.update_ticket(
+        project_id=project_id, ticket_key="first", patch_json={"status": "not-started"}
+    )
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    evidence = repo.brief(project_id=project_id, ticket_key="first").ticket.completion_evidence_json
+    assert evidence["credential_token"] == "[redacted]"
+    automatic = evidence["automatic_delivery"]
+    assert automatic["sessions"]["delivery"]["thread_id"] == "first-delivery"
+    assert len(automatic["attempts"]) == 1
+    for phase in ("delivery", "review"):
+        receipt = automatic[phase]
+        assert receipt["validated_outcome"] == "success"
+        assert receipt["usage"]["snapshot"]["total"] == 230
+        assert receipt["usage"]["measured"] == (
+            None if legacy else {"input": 60, "output": 20, "total": 80}
+        )
+        old = automatic["attempts"][0][phase]
+        assert ("usage" not in old) if legacy else old["usage"]["snapshot"]["total"] == 150
