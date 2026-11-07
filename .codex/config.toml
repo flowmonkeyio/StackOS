@@ -107,7 +107,7 @@ config_file = "agents/finance-control-reviewer.toml"
 # MCP server for this checkout.
 [mcp_servers.serena]
 command = "python3"
-args = ["/Users/sergeyrura/Bin/content-stack/.mcp/serena-mcp-wrapper.py"]
+args = ["/Users/sergeyrura/.serena/bin/serena-mcp-wrapper.py"]
 env = { SERENA_PROJECT = "/Users/sergeyrura/Bin/content-stack", SERENA_PROJECT_NAME = "content-stack", SERENA_PORT = "9133", SERENA_CONTEXT = "codex", SERENA_IDLE_TIMEOUT_SECONDS = "3600", UV_CACHE_DIR = "/Users/sergeyrura/.local/share/tpf/uv-cache" }
 startup_timeout_sec = 60.0
 tool_timeout_sec = 300.0
