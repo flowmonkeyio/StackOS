@@ -585,20 +585,26 @@ they omit private receipt content. Generated API and maintained tracker types
 expose the same `agent_stats` field. The optional/null schema default supports
 objects without an attached projection; it does not establish measured zero.
 
-Project Home and the main Overview share an **Agent activity** section backed
-by these operations. It shows launch attempts, reported tokens and recorded
-reviewer rejects, a compact attempt-count chart and the complete grouped table.
-The chart shows up to eight groups in table order; the table retains every group.
-Overview uses its existing Active/Archived/All project visibility for these reads
-and keeps project IDs/names/slugs in the breakdown. Model and role labels are
-recorded selections, independent of current Agent defaults.
+Project Home and the main Overview share an **Agent usage** section backed by
+these operations. Input / Cache / Output remain visible alongside launch
+attempts, daily stacked bars and a complete Agent / Model / Agent+model table.
+Cache means cache read included in Input. Summary, table and chart use the same
+selected date range, defaulting to today plus the previous six local calendar
+days in the visibly identified browser IANA timezone. Chart metric/color controls,
+Input-type decomposition and exact values on hover/keyboard focus follow the
+[shared Home component contract](ui-component-inventory.md#view-decomposition-pattern).
+Overview retains its existing Active/Archived/All project visibility. Agent
+groups retain project identity; Model grouping combines the selected projects.
+Model labels reflect recorded selections, independent of current Agent defaults.
 
-Coverage appears beside both totals and row values: a measured zero stays `0`,
-unavailable measurements/classification say `Unavailable`, and partial sums or
-reject counts retain their measured/classified attempt coverage. A failed
-refresh retains same-scope values with a warning and their original update time;
-scope changes clear those values. Both pages reuse their existing refresh owner,
-with no statistics writes, receipt aggregation in Vue, or extra timer.
+A measured zero stays `0`; missing fields say `Not reported` with field-specific
+coverage beside totals and row values, preserving any known Input/Cache/Output.
+Details retain optional cache-write/reasoning measurements and explicitly recorded
+review outcomes with classified/unclassified attempt counts, without an inferred
+approval rate. A failed refresh retains same-scope values with a warning and
+their original update time; scope changes clear those values. Both pages reuse
+their existing refresh owner, with no statistics writes, receipt aggregation in
+Vue, or extra timer.
 
 Agent/process failure also stops the task's execution. Ticket evidence records
 both agent results, launch details, thread references, prior HEAD and verified
