@@ -492,17 +492,20 @@ in that scope. A partial cache sum describes only known measurements; it does
 not imply zero cache for the others. `review_outcomes` counts explicit
 review-role validated `success`, `repair`, `blocked`, `failed`, or
 `validation_failed` (explicit null); absent/unknown role or outcome remains
-unclassified. This is not an approval rate. Display missing facts specifically
-alongside values. Compact and raw responses retain identical complete facts,
-including daily series and missing-date disclosure, excluding prompts,
+unclassified. This is not an approval rate. Keep missing-data accounting in the
+API and accessible exact-value coverage; omit unsupported normal-UI fields
+rather than displaying permanent placeholders. Compact and raw responses retain
+identical complete facts, including daily series and missing-date disclosure, excluding prompts,
 instructions, raw output and credentials. Neither operation accepts `ack`.
 
-For Input-type chart stacks, `remaining_input` sums Input minus cache read
+For Tokens chart composition, `remaining_input` sums Input minus cache read
 **only on receipts with known cache read**, including cache write in that
 remainder. `input_with_unknown_cache` is measured Input on receipts whose
-cache-read split is unknown. The three portions (known cache read, known
-remainder, input with unreported split) reconcile to measured Input. The last
-portion must be labeled as unreported cache split, never as uncached input.
+cache-read split is unknown. These three internal accounting portions (known
+cache read, known remainder, Input with unreported split) reconcile to measured
+Input. The unknown-cache portion is not a displayed chart series. Tokens shows
+only available Cache, New input and Output; when the shown stack differs from
+the reported Input + Output, its label is **Shown**, not a complete total.
 When all cache reads are unknown, cache and remainder stay null; an all-empty
 scope returns zeros. Do not subtract a partial cache sum from all Input.
 

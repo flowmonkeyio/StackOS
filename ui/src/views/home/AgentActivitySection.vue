@@ -13,7 +13,15 @@ const emit = defineEmits<{ filters: [value: Partial<AgentStatsFilters>] }>()
 const detailsOpen = ref(false)
 const chartView = ref<ActivityView>('tokens')
 const groups = [{ value: 'agent', label: 'Agent' }, { value: 'model', label: 'Model' }, { value: 'agent_model', label: 'Agent + model' }] as const
-const rows = computed(() => props.summary?.rows.map(row => ({ ...row, id: row.group_key, input: row.reported_usage.input, cache_read: row.reported_usage.cache_read, output: row.reported_usage.output })) ?? [])
+const rows = computed(() => props.summary?.rows.map(row => ({
+  ...row, id: row.group_key, input: row.reported_usage.input, cache_read: row.reported_usage.cache_read, output: row.reported_usage.output,
+  detail_lines: [
+    props.global && (row.project_name || row.project_ids.length) ? `${row.project_name ?? 'Projects'} · ${row.project_ids.map(id => `#${id}`).join(', ')}` : null,
+    props.filters.group_by === 'agent' ? row.model : null,
+    row.host_key === 'codex' ? 'Codex' : row.host_key,
+    reviewFacts(row),
+  ].filter((line): line is string => !!line),
+})) ?? [])
 type Row = (typeof rows.value)[number]
 const fields = computed(() => usageFields.filter(field => rows.value.some(row => row.reported_usage[field.key] != null)))
 const columns = computed<DataTableColumn<Row>[]>(() => [
@@ -212,9 +220,14 @@ function setDate(field: 'start_date' | 'end_date', value: string | number | null
           max-height="24rem"
         >
           <template #cell:agent_name="{ row }">
-            <details class="agent-activity__row-detail">
-              <summary
-                class="focus-ring cursor-pointer"
+            <component
+              :is="row.detail_lines.length ? 'details' : 'div'"
+              class="agent-activity__row-detail"
+            >
+              <component
+                :is="row.detail_lines.length ? 'summary' : 'div'"
+                class="agent-activity__row-label"
+                :class="{ 'focus-ring cursor-pointer': row.detail_lines.length }"
                 :title="filters.group_by === 'model' ? row.model ?? 'Model not recorded' : agentLabel(row.agent_name)"
               >
                 <span>{{ filters.group_by === 'model' ? row.model ?? 'Model not recorded' : agentLabel(row.agent_name) }}</span>
@@ -226,22 +239,19 @@ function setDate(field: 'start_date' | 'end_date', value: string | number | null
                   v-if="global && filters.group_by !== 'model'"
                   class="ml-2 text-xs text-fg-muted"
                 >{{ row.project_name }} #{{ row.project_id }}</span>
-              </summary>
-              <div class="agent-activity__details">
-                <p v-if="global">
-                  {{ row.project_name ?? 'Projects' }} · {{ row.project_ids.map(id => `#${id}`).join(', ') }}
-                </p>
-                <p v-if="filters.group_by === 'agent' && row.model">
-                  {{ row.model }}
-                </p>
-                <p v-if="row.host_key">
-                  {{ row.host_key === 'codex' ? 'Codex' : row.host_key }}
-                </p>
-                <p v-if="reviewFacts(row)">
-                  {{ reviewFacts(row) }}
+              </component>
+              <div
+                v-if="row.detail_lines.length"
+                class="agent-activity__details"
+              >
+                <p
+                  v-for="(line, index) in row.detail_lines"
+                  :key="index"
+                >
+                  {{ line }}
                 </p>
               </div>
-            </details>
+            </component>
           </template>
           <template
             v-for="field in fields"
@@ -281,7 +291,7 @@ function setDate(field: 'start_date' | 'end_date', value: string | number | null
 .agent-activity__split dt { color: var(--color-fg-muted); }
 .agent-activity__split dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .agent-activity__details { display: grid; gap: 8px; white-space: normal; font-size: 12px; line-height: 18px; color: var(--color-fg-muted); padding: 12px 0; max-width: 34rem; overflow-wrap: anywhere; }
-.agent-activity__row-detail summary { overflow-wrap: anywhere; white-space: normal; }
+.agent-activity__row-label { overflow-wrap: anywhere; white-space: normal; }
 .agent-activity :deep(table) { table-layout: fixed; width: 100%; }
 .agent-activity :deep(th:first-child) { width: 40%; }
 @media (max-width: 1100px) { .agent-activity__headline { grid-template-columns: minmax(0, 1fr); gap: 12px; } .agent-activity__attempts { border: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; } }

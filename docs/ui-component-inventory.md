@@ -53,7 +53,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 |---|---|
 | `ProjectPageHeader` | project-aware title, breadcrumbs, utility action slot, and route chrome |
 | `ProviderMark` | canonical provider logo/initial mark backed by `provider-presentation.json`; shared by Connections and Plugins |
-| `AgentUsageSummary` | Shared Input / Cache / Output renderer; accepts `metrics: AgentStatsMetrics \| null` and `compact?: boolean`. Compact mode retains all three labels and exact focus/hover values; full mode also shows independent missing-field notes. Cache means cache read included in Input. No receipt parsing or subtotal calculation. |
+| `AgentUsageSummary` | Shared available Input / Cache / Output renderer; accepts `metrics: AgentStatsMetrics \| null` and `compact?: boolean`. Both modes omit unsupported fields and retain measured zero with exact focus/hover values. Partial-field coverage stays in accessible exact-value labels, rather than permanent missing-value slots or notes. Cache means cache read included in Input. No receipt parsing or subtotal calculation. |
 
 ## Shipped — app-level primitives (`ui/src/components/`)
 
@@ -116,6 +116,8 @@ Input/Output. Only supported cache-write/reasoning and recorded review outcomes
 appear in details; ordinary copy omits raw roles, classification and empty review
 sentences. Model versions remain exact. Existing Work layout remains owned by
 its consumers and the summary's compact mode.
+Breakdown rows use plain labels when no supported detail is available; only
+rows with actual project, model, host or review details offer a disclosure.
 Each page's existing refresh/polling owner continues loading statistics
 alongside ticket counts. Work consumers retain lifetime task/ticket projections,
 independent of these Home date filters.
@@ -125,7 +127,7 @@ header, individual ticket nodes, task details, and `TrackerTicketDetailContent`
 (shared by the task popup and graph inspector). Board/header/task details pass
 the backend lifetime task projection; nodes and ticket details pass only their
 own ticket projection. Graph visibility never recomputes these totals. Exact
-values and independent missing-field notes remain available on focus/hover.
+values and field coverage remain available in exact focus/hover labels.
 `Automated` sits with task identity/status and uses the unchanged persisted
 delivery predicate, including stopped and complete executions. Ticket geometry
 is centrally defined as 328 × 248px in `lib/task-tracker/graphModel.ts`, including

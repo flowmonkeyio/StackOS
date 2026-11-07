@@ -2,13 +2,42 @@ import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import AgentActivitySection from './AgentActivitySection.vue'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
-import { localActivityFilters } from '@/lib/agentActivity'
+import { localActivityFilters, type ActivityGroup } from '@/lib/agentActivity'
 import { agentStatsFixture } from './agentStatsFixtures'
 
 function render(summary = agentStatsFixture(), extra = {}) {
   return mount(AgentActivitySection, { props: { summary, loading: false, error: null, filters: localActivityFilters(), ...extra }, global: { stubs: { AgentActivityChart: true } } })
 }
 describe('Agent usage presentation', () => {
+  it.each(['model', 'agent_model', 'agent'] as const)('uses a plain %s label when the row has no supported details', group => {
+    const fixture = agentStatsFixture()
+    fixture.rows[0]!.host_key = null
+    fixture.rows[0]!.review_outcomes = {}
+    if (group === 'agent') fixture.rows[0]!.model = null
+    const wrapper = render(fixture, { filters: { ...localActivityFilters(), group_by: group as ActivityGroup } })
+    const row = wrapper.get('table tbody tr')
+    expect(row.find('details').exists()).toBe(false)
+    expect(row.find('summary').exists()).toBe(false)
+    expect(row.text()).toContain(group === 'model' ? 'recorded-sol' : 'Same-name')
+    expect(row.text()).toContain('70')
+    wrapper.unmount()
+  })
+
+  it.each(['host', 'review', 'model', 'project'] as const)('retains a disclosure with supported %s details', async detail => {
+    const fixture = agentStatsFixture()
+    fixture.rows[0]!.host_key = detail === 'host' ? 'codex' : null
+    fixture.rows[0]!.review_outcomes = detail === 'review' ? { repair: 1 } : {}
+    const wrapper = render(fixture, {
+      global: detail === 'project',
+      filters: { ...localActivityFilters(), group_by: (detail === 'model' ? 'agent' : 'model') as ActivityGroup },
+    })
+    const disclosure = wrapper.get('table tbody tr details')
+    expect(disclosure.get('summary').text()).toBeTruthy()
+    await disclosure.get('summary').trigger('click')
+    expect(disclosure.get('.agent-activity__details').text()).toContain({ host: 'Codex', review: 'Changes requested: 1', model: 'recorded-sol', project: 'Fixture project' }[detail])
+    wrapper.unmount()
+  })
+
   it('renders the shared Input/Cache/Output composition and bounded recorded review details', async () => {
     const fixture = agentStatsFixture()
     const wrapper = render(fixture, { global: true })
