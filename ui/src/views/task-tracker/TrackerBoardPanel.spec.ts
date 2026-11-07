@@ -46,6 +46,11 @@ describe('Work board presentation', () => {
     expect(wrapper.get('[data-usage-field="cache_read"] dd').text()).toBe('Not reported')
     expect(wrapper.get('[data-usage-field="output"] dd').text()).toBe('30')
     expect(wrapper.text()).not.toContain('Partial')
+    metrics.reported_usage.input = null
+    metrics.reported_usage.output = null
+    await wrapper.setProps({ rows: rows() })
+    expect(wrapper.findAll('dd[tabindex]').map(value => value.text())).toEqual(['Not reported', 'Not reported', 'Not reported'])
+    expect(wrapper.findAll('dd[tabindex]').every(value => value.attributes('aria-label')?.includes('Not reported'))).toBe(true)
     metrics.launch_attempts = 0
     await wrapper.setProps({ rows: rows() })
     expect(wrapper.get('button').text()).toContain('No recorded usage')

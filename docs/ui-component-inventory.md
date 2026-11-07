@@ -110,6 +110,9 @@ compact/exact formatting, per-field missing notes, cache-share eligibility, and
 bounded review-fact copy. A measured zero stays zero; missing cache does not
 erase valid Input/Output. Optional cache-write/reasoning and explicitly recorded
 review outcomes remain available in details without an inferred approval rate.
+Compact missing values use smaller muted text and wrap only between words so
+`Not reported` remains readable in the Board's 64px value cells; measured values
+retain the numeric hierarchy and exact-value disclosure.
 Each page's existing refresh/polling owner continues loading statistics
 alongside ticket counts. Work consumers retain lifetime task/ticket projections,
 independent of these Home date filters.

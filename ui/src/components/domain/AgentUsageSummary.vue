@@ -19,6 +19,7 @@ withDefaults(defineProps<{ metrics?: AgentStatsMetrics | null; compact?: boolean
       >
         <dt>{{ field.label }}</dt>
         <dd
+          :class="{ 'agent-usage-summary__value--missing': metrics?.reported_usage[field.key] == null }"
           :title="exactUsage(metrics, field.key)"
           :aria-label="exactUsage(metrics, field.key)"
           tabindex="0"
@@ -55,5 +56,6 @@ dd:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset:
 .agent-usage-summary--compact .agent-usage-summary__metric + .agent-usage-summary__metric { padding-left: 12px; }
 .agent-usage-summary--compact dt { font-size: 12px; margin-bottom: 2px; }
 .agent-usage-summary--compact dd { font-size: 16px; line-height: 22px; letter-spacing: 0; }
+.agent-usage-summary--compact dd.agent-usage-summary__value--missing { font-size: 12px; line-height: 16px; font-weight: 400; color: var(--color-fg-muted); overflow-wrap: normal; }
 @media (max-width: 900px) { .agent-usage-summary { gap: 12px; } .agent-usage-summary__metric + .agent-usage-summary__metric { padding-left: 12px; } dd { font-size: 24px; line-height: 30px; } }
 </style>

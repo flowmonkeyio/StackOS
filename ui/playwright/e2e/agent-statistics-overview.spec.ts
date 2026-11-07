@@ -206,6 +206,34 @@ async function workMetrics(region: Locator, totals: AgentStatsMetrics) {
   await expect(region).not.toContainText('Partial')
 }
 
+async function readableMissingValues(region: Locator) {
+  const values = region.locator('.agent-usage-summary dd[tabindex]').filter({ hasText: 'Not reported' })
+  expect(await values.count()).toBeGreaterThan(0)
+  for (const value of await values.all()) {
+    const layout = await value.evaluate(element => {
+      const metric = element.closest('[data-usage-field]')!.getBoundingClientRect()
+      const words: { text: string; fragments: number; contained: boolean }[] = []
+      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
+      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        for (const match of node.textContent!.matchAll(/\S+/g)) {
+          const range = document.createRange()
+          range.setStart(node, match.index!)
+          range.setEnd(node, match.index! + match[0].length)
+          const rects = [...range.getClientRects()].filter(rect => rect.width > 0)
+          words.push({ text: match[0], fragments: rects.length, contained: rects.every(rect => rect.left >= metric.left - 1 && rect.right <= metric.right + 1) })
+        }
+      }
+      return { words, lines: element.getBoundingClientRect().height / parseFloat(getComputedStyle(element).lineHeight) }
+    })
+    expect(layout.words.map(word => word.text)).toEqual(['Not', 'reported'])
+    for (const word of layout.words) {
+      expect(word.fragments, `${word.text} must stay whole`).toBe(1)
+      expect(word.contained, `${word.text} must fit its metric`).toBe(true)
+    }
+    expect(layout.lines).toBeLessThanOrEqual(2)
+  }
+}
+
 test('Work uses shared Input Cache Output through filtering, details and refresh', async ({ page }, testInfo) => {
   expect(new URL(getBaseUrl()).port).not.toBe('5180')
   expect(process.env.STACKOS_E2E_BASE_URL).toBe(getBaseUrl())
@@ -255,6 +283,17 @@ test('Work uses shared Input Cache Output through filtering, details and refresh
     await workMetrics(row, task.agent_stats!)
     if (['empty', 'reset'].includes(key)) await expect(row).toContainText('No recorded usage')
   }
+  for (const width of [1280, 760]) {
+    await page.setViewportSize({ width, height: 800 })
+    await page.evaluate(() => document.fonts.ready)
+    for (const key of ['missing-cache', 'unknown']) {
+      const row = board.getByRole('button', { name: new RegExp(`Usage ${key}$`) })
+      await row.scrollIntoViewIfNeeded()
+      await workMetrics(row, index.tasks.find(task => task.key === key)!.agent_stats!)
+      await readableMissingValues(row)
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 800 })
   await page.screenshot({ path: testInfo.outputPath('work-usage-board.png'), fullPage: true })
   await card.click()
   const dialog = page.getByRole('dialog')
