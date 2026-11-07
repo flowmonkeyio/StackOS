@@ -335,6 +335,45 @@ Correcting collection does not rewrite historical receipts or activate an
 already installed daemon. Historical repair and installed activation require
 their separately reviewed evidence.
 
+Workflow 779's one-off `scripts/repair-agent-usage.py` uses a frozen, hashed
+allowlist of 112 pre-779 project-1 occurrences on 59 completed tickets. It has
+no inventory/discovery mode. The separate allowlist and dry-run manifest are
+review evidence, not a new statistics store. Run it from this source checkout
+with the repository Python environment:
+
+```bash
+TPF_LLM_TOOL=codex tpf env -u PYTHONHOME -u PYTHONPATH .venv/bin/python scripts/repair-agent-usage.py --database /path/to/stackos.db --allowlist /path/to/reviewed-allowlist.json --manifest /path/to/new-dry-run.json --source-commit <full-reviewed-source-sha>
+```
+
+Dry-run opens SQLite with `mode=ro` and `query_only=ON`. Native session metadata,
+project directory, turn boundaries, launch interval and exact terminal result
+hash must agree. Persisted Codex `total_token_usage` is cumulative in the
+[0.166.0 native protocol](https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/protocol/src/protocol.rs#L2339-L2372),
+also observed in the 0.167.0 captures. The tool checks that native shape and
+uses the shared normalizer with the immediately preceding completed native
+turn's compatible snapshot. Creation version is provenance, not proof of a
+later resume executable. Missing/intervening usage, ambiguous results,
+decreasing counters and unfinished native sessions remain unsupported; an
+unsupported occurrence is left unchanged. No transcript or result text enters
+the manifest. Historical selected role/outcome remain unknown without the
+original frozen assignment, schema and candidate/output validation chain;
+phase or a raw approve/reject is insufficient.
+
+Only the separately authorized historical-apply ticket may add `--apply`,
+`--reviewed-manifest-sha256 <file-sha256>` and `--backup <new-private-file>` to
+that command. Independent exact-commit review must precede apply. The tool
+checks the allowlist, manifest/source/database identity, native file hashes and
+every expected full-row hash, then backs up the exact affected rows in a private
+file before one narrow transaction. Only receipt `usage`, `selected_role` and
+`validated_outcome` may change; current/archive copies are synchronized. The
+full-merge tracker mutation API would change history/lifecycle metadata, so
+this explicitly authorized repair writes only existing evidence JSON directly.
+Results, launches, sessions, commits, attempts, repair allowance, ticket/task
+lifecycle, existing audit and other projects remain intact. Reapplying the
+same reviewed manifest is a no-op; concurrent row or native-file changes refuse
+apply and require a fresh reviewed dry-run. Keep the private backup and manifest
+with the apply receipt and reconcile the shared statistics projection afterward.
+
 ### Recorded agent statistics
 
 `tracker.agentStats` reads one project's default tracker with enforced project
