@@ -40,7 +40,12 @@ from stackos.repositories.base import (
     ValidationError,
     cursor_paginate,
 )
-from stackos.repositories.tracker.agent_stats import query_agent_stats
+from stackos.repositories.tracker.agent_stats import (
+    invocation_receipts,
+    query_agent_stats,
+    query_task_agent_stats,
+    summarize_receipts,
+)
 from stackos.repositories.tracker.counts import query_ticket_counts
 from stackos.repositories.tracker.schema import (
     TrackerAgentStatsOut,
@@ -184,7 +189,7 @@ class TrackerQueryMixin:
                 or (task.source_json or {}).get("run_plan_key") == workflow_key
             ]
         if task_index_only:
-            task_out = self._task_out_many(tracker.id, tasks)
+            task_out = self._task_out_many(tracker.id, tasks, include_ticket_summary=True)
             return TrackerSnapshotOut(
                 tracker=self._tracker_out(tracker),
                 lanes=self._lane_out(tracker.id),
@@ -266,7 +271,7 @@ class TrackerQueryMixin:
             task_ids = {ticket.task_id for ticket in tickets}
             tasks = [task for task in tasks if task.id in task_ids]
 
-        task_out = [self._task_out(task) for task in tasks]
+        task_out = self._task_out_many(tracker.id, tasks)
         ticket_out = self._ticket_out_many(tickets)
         dependencies = self._dependency_out_for_tickets(tickets)
         links = self._link_out_for_scope(
@@ -815,7 +820,7 @@ class TrackerQueryMixin:
                 .limit(max(1, min(limit, 100)))
             )
         )
-        task_out = [self._task_out(row) for row in tasks]
+        task_out = self._task_out_many(tracker.id, tasks)
         ticket_out = self._ticket_out_many(tickets)
         return TrackerSearchOut(
             project_id=project_id,
@@ -852,16 +857,28 @@ class TrackerQueryMixin:
         ]
 
     def _task_out(self, row: TrackerTask) -> TrackerTaskOut:
-        return TrackerTaskOut.model_validate(row)
+        return self._task_out_many(row.tracker_id, [row])[0]
 
     def _task_out_many(
         self,
         tracker_id: int | None,
         rows: list[TrackerTask],
+        *,
+        include_ticket_summary: bool = False,
     ) -> list[TrackerTaskOut]:
-        summaries = self._task_ticket_summaries(tracker_id, rows)
+        summaries = self._task_ticket_summaries(tracker_id, rows) if include_ticket_summary else {}
+        metrics = query_task_agent_stats(
+            self._s,
+            tracker_id=_required_id(tracker_id, "tracker"),
+            task_ids={row.id for row in rows if row.id is not None},
+        )
         return [
-            self._task_out(row).model_copy(update={"ticket_summary": summaries.get(row.id)})
+            TrackerTaskOut.model_validate(row).model_copy(
+                update={
+                    "ticket_summary": summaries.get(row.id),
+                    "agent_stats": metrics.get(_required_id(row.id, "task")),
+                }
+            )
             for row in rows
         ]
 
@@ -1001,10 +1018,12 @@ class TrackerQueryMixin:
                 "blocked_by",
                 "reference_count",
                 "link_count",
+                "agent_stats",
             }
         )
         return TrackerTicketOut(
             **base,
+            agent_stats=summarize_receipts(invocation_receipts(row.completion_evidence_json)),
             task_key=task.key if task is not None else "",
             parent_ticket_key=parent.key if parent is not None else None,
             dependency_keys=dependency_keys,
@@ -1079,11 +1098,15 @@ class TrackerQueryMixin:
                     "blocked_by",
                     "reference_count",
                     "link_count",
+                    "agent_stats",
                 }
             )
             output.append(
                 TrackerTicketOut(
                     **base,
+                    agent_stats=summarize_receipts(
+                        invocation_receipts(row.completion_evidence_json)
+                    ),
                     task_key=task.key if task is not None else "",
                     parent_ticket_key=parent.key if parent is not None else None,
                     dependency_keys=[
@@ -1476,10 +1499,11 @@ class TrackerQueryMixin:
         return row.rank if row is not None else 100
 
     def _task_snapshot(self, task: TrackerTask) -> dict[str, Any]:
-        return self._task_out(task).model_dump(mode="json")
+        # Derived usage belongs to read projections, never persisted history.
+        return TrackerTaskOut.model_validate(task).model_dump(mode="json", exclude={"agent_stats"})
 
     def _ticket_snapshot(self, ticket: TrackerTicket) -> dict[str, Any]:
-        return self._ticket_out(ticket).model_dump(mode="json")
+        return self._ticket_out(ticket).model_dump(mode="json", exclude={"agent_stats"})
 
     def _count_statuses(self, statuses: list[TrackerItemStatus]) -> dict[str, int]:
         counts = {status.value: 0 for status in TrackerItemStatus}

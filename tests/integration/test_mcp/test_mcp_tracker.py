@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from tests.integration.test_repositories.test_agent_statistics import _receipt, _repaired
+
 from .conftest import MCPClient
 
 
@@ -12,6 +14,85 @@ def _workflow_step_plan_json() -> dict:
         "title": "Tracker workflow step",
         "steps": [{"id": "deliver", "title": "Deliver"}],
     }
+
+
+def test_tracker_mcp_metrics_match_task_ticket_and_project_scopes(
+    mcp_client: MCPClient, seeded_project: dict
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    mcp_client.call_tool_structured(
+        "tracker.createTask",
+        {
+            "project_id": project_id,
+            "key": "metrics",
+            "title": "Metrics",
+        },
+    )
+    for key, automatic in (
+        ("repaired", _repaired()),
+        ("zero", {"attempt": 1, "delivery": _receipt(total=0)}),
+        ("unknown", {"attempt": 1, "delivery": {"launch": {"model": "unknown"}}}),
+    ):
+        mcp_client.call_tool_structured(
+            "tracker.createTicket",
+            {
+                "project_id": project_id,
+                "task_key": "metrics",
+                "key": key,
+                "title": key,
+            },
+        )
+        mcp_client.call_tool_structured(
+            "tracker.updateTicket",
+            {
+                "project_id": project_id,
+                "ticket_key": key,
+                "patch_json": {"completion_evidence_json": {"automatic_delivery": automatic}},
+            },
+        )
+    expected = mcp_client.call_tool_structured(
+        "tracker.agentStats",
+        {
+            "project_id": project_id,
+        },
+    )["data"]["totals"]
+    for mode in ("raw", "compact"):
+        index = mcp_client.call_tool_structured(
+            "tracker.get",
+            {
+                "project_id": project_id,
+                "task_index_only": True,
+                "include_graph": False,
+                "response_mode": mode,
+            },
+        )
+        index = index.get("data", index)
+        focused = mcp_client.call_tool_structured(
+            "tracker.get",
+            {
+                "project_id": project_id,
+                "task_key": "metrics",
+                "ticket_keys": ["repaired"],
+                "include_graph": True,
+                "response_mode": mode,
+            },
+        )
+        focused = focused.get("data", focused)
+        assert index["tasks"][0]["agent_stats"] == expected
+        assert focused["tasks"][0]["agent_stats"] == expected
+        assert focused["tickets"][0]["agent_stats"]["reported_usage"]["total"] == 100
+        brief = mcp_client.call_tool_structured(
+            "tracker.brief",
+            {
+                "project_id": project_id,
+                "ticket_key": "unknown",
+                "response_mode": mode,
+            },
+        )
+        brief = brief.get("data", brief)
+        assert brief["task"]["agent_stats"] == expected
+        assert brief["ticket"]["agent_stats"]["reported_usage"]["total"] is None
+        assert brief["ticket"]["agent_stats"]["coverage"]["usage_status"] == "unavailable"
 
 
 def _workflow_two_step_plan_json() -> dict:

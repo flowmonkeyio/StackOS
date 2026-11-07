@@ -375,6 +375,23 @@ success 40 produces four attempts, 100 reported tokens and one reject, even when
 the current attempt also appears in the archive. A one-phase reviewer mirror
 with validated repair adds one attempt and one reject.
 
+`tracker.get` also returns `agent_stats` on each task and ticket, using the same
+`AgentStatsMetricsOut` summarizer and coverage semantics as project/global totals.
+A ticket counts only its own deduplicated invocation receipts. A task counts all
+its tickets' own receipts, including group and workflow-mirror invocations, once;
+it never adds recursive parent subtotals. Ticket/graph visibility filters do not
+change the task total, so a focused graph and its board card share one scope.
+An empty task has zero totals with `empty` coverage; missing usage on recorded
+attempts remains null with `unavailable` coverage, and measured zero stays zero.
+
+The task index batches whole-task metrics alongside its ticket summaries and
+keeps tickets, dependencies and links empty. Consumers read the returned metrics
+without per-card statistics requests or receipt arithmetic. Compact task/ticket
+projections retain the complete safe metrics, including null usage and coverage;
+they omit private receipt content. Generated API and maintained tracker types
+expose the same `agent_stats` field. The optional/null schema default supports
+objects without an attached projection; it does not establish measured zero.
+
 Project Home and the main Overview share an **Agent activity** section backed
 by these operations. It shows launch attempts, reported tokens and recorded
 reviewer rejects, a compact attempt-count chart and the complete grouped table.

@@ -6267,6 +6267,200 @@ export interface components {
              */
             run_token: string | null;
         };
+        /** TrackerDependencyOut */
+        TrackerDependencyOut: {
+            /** Dependency Type */
+            dependency_type: string;
+            /** Depends On Ticket Key */
+            depends_on_ticket_key: string;
+            /** Id */
+            id: number;
+            /**
+             * Metadata Json
+             * @default null
+             */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Ticket Key */
+            ticket_key: string;
+        };
+        /**
+         * TrackerGetInput
+         * @example {
+         *       "include_graph": true,
+         *       "project_id": 1
+         *     }
+         * @example {
+         *       "include_graph": false,
+         *       "project_id": 1,
+         *       "response_mode": "raw",
+         *       "task_index_only": true,
+         *       "task_statuses": [
+         *         "not-started",
+         *         "in-progress"
+         *       ]
+         *     }
+         * @example {
+         *       "include_graph": false,
+         *       "project_id": 1,
+         *       "task_key": "telegram-comms",
+         *       "ticket_keys": [
+         *         "telegram-ingress",
+         *         "telegram-reply"
+         *       ]
+         *     }
+         */
+        TrackerGetInput: {
+            /**
+             * Assignee
+             * @default null
+             */
+            assignee: string | null;
+            /**
+             * Block State
+             * @default null
+             */
+            block_state: TrackerGetInputBlock_stateAnyOf0 | null;
+            /**
+             * Dependency Ticket Key
+             * @default null
+             */
+            dependency_ticket_key: string | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Include Graph
+             * @default true
+             */
+            include_graph: boolean;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: TrackerGetInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Plan Id
+             * @default null
+             */
+            run_plan_id: number | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Statuses
+             * @default null
+             */
+            statuses: components["schemas"]["TrackerItemStatus"][] | null;
+            /**
+             * Task Index Only
+             * @description Return every matching task with whole-task agent_stats and an aggregate ticket summary while skipping ticket, dependency, link, and graph hydration. Pair with include_graph=false. This is intended for operator task indexes before one focused graph is loaded.
+             * @default false
+             */
+            task_index_only: boolean;
+            /**
+             * Task Key
+             * @default null
+             */
+            task_key: string | null;
+            /**
+             * Task Statuses
+             * @description Filter top-level tasks by their own lifecycle status without filtering their ticket summaries. Use this with task_index_only for bounded operator views such as open-work portfolios.
+             * @default null
+             */
+            task_statuses: components["schemas"]["TrackerItemStatus"][] | null;
+            /**
+             * Ticket Ids
+             * @default null
+             */
+            ticket_ids: number[] | null;
+            /**
+             * Ticket Keys
+             * @default null
+             */
+            ticket_keys: string[] | null;
+            /**
+             * Workflow Key
+             * @default null
+             */
+            workflow_key: string | null;
+        };
+        /** TrackerGraphEdgeOut */
+        TrackerGraphEdgeOut: {
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: string;
+            /**
+             * Label
+             * @default null
+             */
+            label: string | null;
+            /** Source */
+            source: string;
+            /** Target */
+            target: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: TrackerGraphEdgeOutType;
+        };
+        /** TrackerGraphNodeOut */
+        TrackerGraphNodeOut: {
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            };
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Lane Key */
+            lane_key: string;
+            /**
+             * Parent Id
+             * @default null
+             */
+            parent_id: string | null;
+            /** Priority Key */
+            priority_key: string;
+            /** Status */
+            status: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: TrackerGraphNodeOutType;
+        };
+        /** TrackerGraphOut */
+        TrackerGraphOut: {
+            /** Edges */
+            edges?: components["schemas"]["TrackerGraphEdgeOut"][];
+            /** Layout Hints */
+            layout_hints?: {
+                [key: string]: unknown;
+            };
+            /** Nodes */
+            nodes?: components["schemas"]["TrackerGraphNodeOut"][];
+            /** Warnings */
+            warnings?: string[];
+        };
         /**
          * TrackerItemStatus
          * @description Persists to tracker task/ticket status columns.
@@ -6278,6 +6472,87 @@ export interface components {
          * @enum {string}
          */
         TrackerItemStatus: TrackerItemStatus;
+        /** TrackerLaneOut */
+        TrackerLaneOut: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Position */
+            position: number;
+        };
+        /**
+         * TrackerLinkKind
+         * @description Persists to ``tracker_ticket_links.link_kind``.
+         * @enum {string}
+         */
+        TrackerLinkKind: TrackerLinkKind;
+        /** TrackerLinkOut */
+        TrackerLinkOut: {
+            /** Action Call Id */
+            action_call_id: number | null;
+            /** Agent Request Id */
+            agent_request_id: number | null;
+            /** Artifact Id */
+            artifact_id: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            link_kind: components["schemas"]["TrackerLinkKind"];
+            /** Metadata Json */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Ref */
+            ref: string | null;
+            /** Resource Record Id */
+            resource_record_id: number | null;
+            /** Run Id */
+            run_id: number | null;
+            /** Run Plan Id */
+            run_plan_id: number | null;
+            /** Run Plan Step Id */
+            run_plan_step_id: number | null;
+            /** Task Id */
+            task_id: number | null;
+            /** Ticket Id */
+            ticket_id: number | null;
+            /** Title */
+            title: string | null;
+        };
+        /** TrackerPriorityOut */
+        TrackerPriorityOut: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Position */
+            position: number;
+            /** Rank */
+            rank: number;
+        };
+        /** TrackerSnapshotOut */
+        TrackerSnapshotOut: {
+            /** Dependencies */
+            dependencies: components["schemas"]["TrackerDependencyOut"][];
+            /** @default null */
+            graph: components["schemas"]["TrackerGraphOut"] | null;
+            /** Lanes */
+            lanes: components["schemas"]["TrackerLaneOut"][];
+            /** Links */
+            links: components["schemas"]["TrackerLinkOut"][];
+            /** Priorities */
+            priorities: components["schemas"]["TrackerPriorityOut"][];
+            /** Tasks */
+            tasks: components["schemas"]["TrackerTaskOut"][];
+            /** Tickets */
+            tickets: components["schemas"]["TrackerTicketOut"][];
+            tracker: components["schemas"]["TrackerSummaryOut"];
+        };
         /**
          * TrackerSourceKind
          * @description Persists to tracker source-kind columns.
@@ -6349,6 +6624,11 @@ export interface components {
         };
         /** TrackerTaskOut */
         TrackerTaskOut: {
+            /**
+             * @description Whole-task receipt metrics, including all tickets regardless of visible filters.
+             * @default null
+             */
+            agent_stats: components["schemas"]["AgentStatsMetricsOut"] | null;
             /** Completed At */
             completed_at: string | null;
             /** Completion Evidence Json */
@@ -6452,6 +6732,127 @@ export interface components {
              * @default 0
              */
             total_count: number;
+        };
+        /**
+         * TrackerTicketKind
+         * @description Persists to ``tracker_tickets.kind`` for graph rendering.
+         * @enum {string}
+         */
+        TrackerTicketKind: TrackerTicketKind;
+        /** TrackerTicketOut */
+        TrackerTicketOut: {
+            /** Agent Request Id */
+            agent_request_id: number | null;
+            /**
+             * @description This ticket's own deduplicated invocation receipt metrics.
+             * @default null
+             */
+            agent_stats: components["schemas"]["AgentStatsMetricsOut"] | null;
+            /** Allowed Paths Json */
+            allowed_paths_json: string[];
+            /** Assignee */
+            assignee: string | null;
+            /** Blocked By */
+            blocked_by?: string[];
+            /** Blocker Reason */
+            blocker_reason: string | null;
+            /** Claimed At */
+            claimed_at: string | null;
+            /** Completed At */
+            completed_at: string | null;
+            /** Completion Evidence Json */
+            completion_evidence_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Constraints Json */
+            constraints_json: string[];
+            /** Context Json */
+            context_json: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string | null;
+            /** Definition Of Done Json */
+            definition_of_done_json: string[];
+            /** Dependency Keys */
+            dependency_keys?: string[];
+            /** Effort */
+            effort: string | null;
+            /** Expected Changes Json */
+            expected_changes_json: string[];
+            /** Goal */
+            goal: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            kind: components["schemas"]["TrackerTicketKind"];
+            /** Lane Key */
+            lane_key: string;
+            /**
+             * Link Count
+             * @default 0
+             */
+            link_count: number;
+            /** Metadata Json */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Order Index */
+            order_index: number;
+            /** Outcome */
+            outcome: string | null;
+            /** Parent Ticket Id */
+            parent_ticket_id: number | null;
+            /**
+             * Parent Ticket Key
+             * @default null
+             */
+            parent_ticket_key: string | null;
+            /** Priority Key */
+            priority_key: string;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Reference Count
+             * @default 0
+             */
+            reference_count: number;
+            /** Run Id */
+            run_id: number | null;
+            /** Run Plan Id */
+            run_plan_id: number | null;
+            /** Run Plan Step Id */
+            run_plan_step_id: number | null;
+            /** Source Json */
+            source_json: {
+                [key: string]: unknown;
+            } | null;
+            source_kind: components["schemas"]["TrackerSourceKind"];
+            /** Started At */
+            started_at: string | null;
+            status: components["schemas"]["TrackerItemStatus"];
+            /** Task Id */
+            task_id: number;
+            /**
+             * Task Key
+             * @default
+             */
+            task_key: string;
+            /** Title */
+            title: string;
+            /** Tracker Id */
+            tracker_id: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /**
          * TrackerUpdateTaskContentInput
@@ -7515,11 +7916,21 @@ export type SchemaTrackerAgentStatsAllInput = components['schemas']['TrackerAgen
 export type SchemaTrackerAgentStatsInput = components['schemas']['TrackerAgentStatsInput'];
 export type SchemaTrackerAgentStatsOut = components['schemas']['TrackerAgentStatsOut'];
 export type SchemaTrackerConfigureDeliveryInput = components['schemas']['TrackerConfigureDeliveryInput'];
+export type SchemaTrackerDependencyOut = components['schemas']['TrackerDependencyOut'];
+export type SchemaTrackerGetInput = components['schemas']['TrackerGetInput'];
+export type SchemaTrackerGraphEdgeOut = components['schemas']['TrackerGraphEdgeOut'];
+export type SchemaTrackerGraphNodeOut = components['schemas']['TrackerGraphNodeOut'];
+export type SchemaTrackerGraphOut = components['schemas']['TrackerGraphOut'];
+export type SchemaTrackerLaneOut = components['schemas']['TrackerLaneOut'];
+export type SchemaTrackerLinkOut = components['schemas']['TrackerLinkOut'];
+export type SchemaTrackerPriorityOut = components['schemas']['TrackerPriorityOut'];
+export type SchemaTrackerSnapshotOut = components['schemas']['TrackerSnapshotOut'];
 export type SchemaTrackerSummaryOut = components['schemas']['TrackerSummaryOut'];
 export type SchemaTrackerTaskContentOut = components['schemas']['TrackerTaskContentOut'];
 export type SchemaTrackerTaskInputOut = components['schemas']['TrackerTaskInputOut'];
 export type SchemaTrackerTaskOut = components['schemas']['TrackerTaskOut'];
 export type SchemaTrackerTaskTicketSummaryOut = components['schemas']['TrackerTaskTicketSummaryOut'];
+export type SchemaTrackerTicketOut = components['schemas']['TrackerTicketOut'];
 export type SchemaTrackerUpdateTaskContentInput = components['schemas']['TrackerUpdateTaskContentInput'];
 export type SchemaUiTokenResponse = components['schemas']['UiTokenResponse'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
@@ -11030,6 +11441,27 @@ export enum TrackerConfigureDeliveryInputResponse_mode {
     standard = "standard",
     verbose = "verbose"
 }
+export enum TrackerGetInputBlock_stateAnyOf0 {
+    blocked = "blocked",
+    open = "open"
+}
+export enum TrackerGetInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum TrackerGraphEdgeOutType {
+    contains = "contains",
+    dependency = "dependency",
+    link = "link"
+}
+export enum TrackerGraphNodeOutType {
+    task = "task",
+    ticket = "ticket",
+    group = "group"
+}
 export enum TrackerItemStatus {
     not_started = "not-started",
     in_progress = "in-progress",
@@ -11039,12 +11471,26 @@ export enum TrackerItemStatus {
     failed = "failed",
     skipped = "skipped"
 }
+export enum TrackerLinkKind {
+    run_plan = "run-plan",
+    run_plan_step = "run-plan-step",
+    run = "run",
+    agent_request = "agent-request",
+    resource = "resource",
+    artifact = "artifact",
+    action_call = "action-call",
+    external = "external"
+}
 export enum TrackerSourceKind {
     manual = "manual",
     workflow = "workflow",
     agent_request = "agent-request",
     external = "external",
     system = "system"
+}
+export enum TrackerTicketKind {
+    ticket = "ticket",
+    group = "group"
 }
 export enum TrackerUpdateTaskContentInputResponse_mode {
     raw = "raw",

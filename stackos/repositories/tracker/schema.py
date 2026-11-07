@@ -140,6 +140,12 @@ class TrackerTaskOut(BaseModel):
     started_at: datetime | None
     completed_at: datetime | None
     ticket_summary: TrackerTaskTicketSummaryOut | None = None
+    agent_stats: AgentStatsMetricsOut | None = Field(
+        default=None,
+        description=(
+            "Whole-task receipt metrics, including all tickets regardless of visible filters."
+        ),
+    )
 
 
 class TrackerDependencyOut(BaseModel):
@@ -195,6 +201,9 @@ class TrackerTicketOut(BaseModel):
     blocked_by: list[str] = Field(default_factory=list)
     reference_count: int = 0
     link_count: int = 0
+    agent_stats: AgentStatsMetricsOut | None = Field(
+        default=None, description="This ticket's own deduplicated invocation receipt metrics."
+    )
 
 
 class TrackerGraphNodeOut(BaseModel):

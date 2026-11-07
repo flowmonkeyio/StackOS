@@ -179,7 +179,8 @@ class TrackerGetInput(MCPInput):
     task_index_only: bool = Field(
         default=False,
         description=(
-            "Return every matching task with an aggregate ticket summary while skipping "
+            "Return every matching task with whole-task agent_stats and an aggregate ticket "
+            "summary while skipping "
             "ticket, dependency, link, and graph hydration. Pair with include_graph=false. "
             "This is intended for operator task indexes before one focused graph is loaded."
         ),

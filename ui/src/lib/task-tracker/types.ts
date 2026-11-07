@@ -1,3 +1,5 @@
+import type { SchemaAgentStatsMetricsOut } from '@/api'
+
 export type TrackerStatus =
   | 'not-started'
   | 'in-progress'
@@ -79,6 +81,7 @@ export interface TrackerTask {
   started_at: string | null
   completed_at: string | null
   ticket_summary?: TrackerTaskTicketSummary | null
+  agent_stats?: SchemaAgentStatsMetricsOut | null
 }
 
 export interface TrackerTaskTicketSummary {
@@ -134,6 +137,7 @@ export interface TrackerTicket {
   blocked_by: string[]
   reference_count: number
   link_count: number
+  agent_stats?: SchemaAgentStatsMetricsOut | null
 }
 
 export interface TrackerDependency {

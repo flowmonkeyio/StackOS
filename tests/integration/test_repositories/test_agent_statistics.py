@@ -2,10 +2,18 @@
 
 from copy import deepcopy
 
+import pytest
 from sqlalchemy import event
 from sqlmodel import Session, select
 
-from stackos.db.models import TaskTracker
+from stackos.db.models import (
+    TaskTracker,
+    TrackerItemStatus,
+    TrackerSourceKind,
+    TrackerTask,
+    TrackerTicket,
+    TrackerTicketKind,
+)
 from stackos.operations.registry import build_operation_registry
 from stackos.operations.responses import shape_operation_response
 from stackos.repositories.projects import ProjectRepository
@@ -53,6 +61,166 @@ def _store(session, project_id, key, automatic):
         ticket_key=key,
         patch_json={"completion_evidence_json": {"automatic_delivery": automatic}},
     )
+
+
+def test_task_and_ticket_projections_share_receipt_totals(session: Session, project_id: int):
+    repo = TrackerRepository(session)
+    _store(session, project_id, "repaired", _repaired())
+    _store(
+        session,
+        project_id,
+        "mirror",
+        {"attempt": 1, "delivery": _receipt("review_agent", "repair", 7)},
+    )
+    _ticket(session, project_id, "unused-group", kind=TrackerTicketKind.GROUP)
+    mirror = session.exec(select(TrackerTicket).where(TrackerTicket.key == "mirror")).one()
+    repaired = session.exec(select(TrackerTicket).where(TrackerTicket.key == "repaired")).one()
+    mirror.kind = TrackerTicketKind.GROUP
+    mirror.source_kind = TrackerSourceKind.WORKFLOW
+    repaired.parent_ticket_id = mirror.id
+    session.add_all([mirror, repaired])
+    session.commit()
+    expected = repo.agent_stats(project_id=project_id).totals
+    index = repo.get(project_id=project_id, task_index_only=True, include_graph=False)
+    full = repo.get(project_id=project_id)
+    focused = repo.get(project_id=project_id, task_key="overview", ticket_keys=["repaired"])
+    assert index.tasks[0].agent_stats == expected
+    assert full.tasks[0].agent_stats == expected
+    assert focused.tasks[0].agent_stats == expected
+    assert expected.reported_usage.total == 107
+    assert expected.launch_attempts == 5
+    tickets = {ticket.key: ticket.agent_stats for ticket in full.tickets}
+    assert tickets["repaired"].reported_usage.total == 100
+    assert tickets["repaired"].launch_attempts == 4
+    assert tickets["mirror"].reported_usage.total == 7
+    assert tickets["unused-group"].coverage.usage_status == "empty"
+    nodes = {node.id: node for node in full.graph.nodes}
+    assert nodes["task:overview"].data["agent_stats"] == expected.model_dump(mode="json")
+    assert nodes["ticket:repaired"].data["agent_stats"] == tickets["repaired"].model_dump(
+        mode="json"
+    )
+    brief = repo.brief(project_id=project_id, ticket_key="repaired")
+    assert brief.ticket.agent_stats == tickets["repaired"]
+    assert brief.task.agent_stats == expected
+    assert repo.agent_stats_all().totals == expected
+    # Mutation responses expose current metrics without persisting another total.
+    updated = repo.update_task(
+        project_id=project_id, task_key="overview", patch_json={"title": "Updated"}
+    )
+    assert updated.data.task.agent_stats == expected
+    for entry in repo.history(project_id=project_id).items:
+        assert "agent_stats" not in (entry.before_json or {})
+        assert "agent_stats" not in (entry.after_json or {})
+
+
+@pytest.mark.parametrize("state", ["empty", "unavailable", "complete", "partial"])
+def test_projection_coverage_and_scope_isolation(session: Session, project_id: int, state: str):
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="scope", title="Scope")
+    if state != "empty":
+        repo.create_ticket(project_id=project_id, task_key="scope", key="own", title="Own")
+        unknown = _receipt()
+        for key in ("usage", "selected_role", "validated_outcome"):
+            unknown.pop(key)
+        automatic = {
+            "attempt": 1,
+            "delivery": unknown if state != "complete" else _receipt(total=0),
+        }
+        if state == "partial":
+            automatic["review"] = _receipt("review_agent", "success", 0)
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="own",
+            patch_json={"completion_evidence_json": {"automatic_delivery": automatic}},
+        )
+    # Other tasks, trackers and projects must not enter this task's metrics.
+    repo.create_task(project_id=project_id, key="other-task", title="Other task")
+    repo.create_ticket(project_id=project_id, task_key="other-task", key="other", title="Other")
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="other",
+        patch_json={"completion_evidence_json": {"automatic_delivery": _repaired()}},
+    )
+    other_tracker = _ticket(session, project_id, "other-tracker", tracker_key="other")
+    other_tracker.completion_evidence_json = {"automatic_delivery": _repaired()}
+    session.add(other_tracker)
+    session.commit()
+    other_project = (
+        ProjectRepository(session)
+        .create(slug="other-scope", name="Other", domain="other.test")
+        .data
+    )
+    _store(session, other_project.id, "other-project", _repaired())
+
+    index = repo.get(project_id=project_id, task_index_only=True, include_graph=False)
+    scoped = next(task.agent_stats for task in index.tasks if task.key == "scope")
+    focused = repo.get(project_id=project_id, task_key="scope")
+    assert focused.tasks[0].agent_stats == scoped
+    assert scoped.coverage.usage_status == state
+    assert scoped.coverage.classification_status == state
+    assert scoped.reported_usage.total == (None if state == "unavailable" else 0)
+    assert (
+        scoped.launch_attempts == {"empty": 0, "unavailable": 1, "complete": 1, "partial": 2}[state]
+    )
+    if focused.tickets:
+        assert focused.tickets[0].agent_stats == scoped
+    assert (
+        repo.agent_stats(project_id=project_id).totals.launch_attempts == scoped.launch_attempts + 4
+    )
+
+
+@pytest.mark.parametrize("task_count", [1, 20])
+def test_task_metrics_batch_queries_stay_bounded(
+    session: Session, project_id: int, task_count: int
+):
+    repo = TrackerRepository(session)
+    tracker = repo.ensure_tracker(project_id=project_id)
+    for index in range(task_count):
+        task = TrackerTask(
+            tracker_id=tracker.id,
+            project_id=project_id,
+            key=f"task-{index}",
+            title="Task",
+            status=TrackerItemStatus.NOT_STARTED,
+            source_kind=TrackerSourceKind.MANUAL,
+        )
+        session.add(task)
+        session.flush()
+        session.add(
+            TrackerTicket(
+                tracker_id=tracker.id,
+                project_id=project_id,
+                task_id=task.id,
+                key=f"ticket-{index}",
+                title="Ticket",
+                status=TrackerItemStatus.NOT_STARTED,
+                kind=TrackerTicketKind.TICKET,
+                source_kind=TrackerSourceKind.MANUAL,
+                completion_evidence_json={"automatic_delivery": _repaired()},
+            )
+        )
+    session.commit()
+    session.expire_all()
+    statements = []
+
+    def capture(_conn, _cursor, statement, _parameters, _context, _many):
+        statements.append(statement)
+
+    event.listen(session.get_bind(), "before_cursor_execute", capture)
+    try:
+        index = repo.get(project_id=project_id, task_index_only=True, include_graph=False)
+        assert len(statements) <= 8
+        assert all(statement.lstrip().upper().startswith("SELECT") for statement in statements)
+        statements.clear()
+        full = repo.get(project_id=project_id, include_graph=False)
+        assert len(statements) <= 16
+    finally:
+        event.remove(session.get_bind(), "before_cursor_execute", capture)
+    assert len(index.tasks) == task_count
+    assert index.tickets == index.dependencies == index.links == []
+    assert index.graph is None
+    assert all(task.agent_stats.reported_usage.total == 100 for task in index.tasks)
+    assert [task.agent_stats for task in full.tasks] == [task.agent_stats for task in index.tasks]
 
 
 def test_repaired_current_archive_dedup_and_one_phase_review_mirror(

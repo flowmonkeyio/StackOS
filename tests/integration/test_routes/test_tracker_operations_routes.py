@@ -4,12 +4,62 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from tests.integration.test_repositories.test_agent_statistics import _repaired, _store
+from tests.integration.test_repositories.test_agent_statistics import _receipt, _repaired, _store
 
 
 def _operation_data(response):
     body = response.json()
     return body.get("data", body)
+
+
+def test_tracker_metrics_survive_raw_and_compact_browser_projections(
+    api: TestClient, project_id: int
+) -> None:
+    with Session(api.app.state.engine) as session:
+        _store(session, project_id, "repaired", _repaired())
+        unknown = _receipt()
+        unknown.pop("usage")
+        _store(session, project_id, "unknown", {"attempt": 1, "delivery": unknown})
+    browser = api.get("/api/v1/auth/ui-token").json()["token"]
+    headers = {"Authorization": f"Bearer {browser}"}
+    expected = None
+    for index_only in (True, False):
+        for mode in ("raw", "compact"):
+            result = api.post(
+                "/api/v1/operations/tracker.get/call",
+                headers=headers,
+                json={
+                    "arguments": {
+                        "project_id": project_id,
+                        "task_key": "overview",
+                        "task_index_only": index_only,
+                        "include_graph": False,
+                        "response_mode": mode,
+                    }
+                },
+            )
+            assert result.status_code == 200, result.text
+            data = _operation_data(result)
+            metrics = data["tasks"][0]["agent_stats"]
+            assert metrics["reported_usage"]["total"] == 100
+            assert metrics["launch_attempts"] == 5
+            assert metrics["coverage"]["usage_status"] == "partial"
+            expected = metrics if expected is None else expected
+            assert metrics == expected
+            assert "PRIVATE" not in str(metrics)
+            if not index_only:
+                unknown_metrics = next(
+                    t["agent_stats"] for t in data["tickets"] if t["key"] == "unknown"
+                )
+                assert unknown_metrics["reported_usage"] == {
+                    "unit": "tokens",
+                    "input": None,
+                    "output": None,
+                    "total": None,
+                }
+                assert unknown_metrics["coverage"]["usage_status"] == "unavailable"
+            if mode == "compact":
+                assert "PRIVATE" not in result.text
 
 
 def test_agent_statistics_are_browser_readable_with_exact_usage_and_no_ack(

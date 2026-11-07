@@ -72,7 +72,8 @@ def _measured(receipt: dict[str, Any]) -> dict[str, int] | None:
     return measured
 
 
-def _summarize(receipts: Iterable[dict[str, Any]]) -> AgentStatsMetricsOut:
+def summarize_receipts(receipts: Iterable[dict[str, Any]]) -> AgentStatsMetricsOut:
+    """Summarize deduplicated ticket receipts for every statistics projection."""
     total = measured_count = classified = rejects = 0
     usage = dict.fromkeys(("input", "output", "total"), 0)
     for receipt in receipts:
@@ -109,6 +110,25 @@ def _summarize(receipts: Iterable[dict[str, Any]]) -> AgentStatsMetricsOut:
             classification_status=_coverage(classified, total),
         ),
     )
+
+
+def query_task_agent_stats(
+    session: Session, *, tracker_id: int, task_ids: set[int]
+) -> dict[int, AgentStatsMetricsOut]:
+    """Batch whole-task totals, independent of visible tickets or graph filters."""
+    if not task_ids:
+        return {}
+    receipts_by_task: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    statement = select(
+        col(TrackerTicket.task_id), col(TrackerTicket.completion_evidence_json)
+    ).where(
+        col(TrackerTicket.tracker_id) == tracker_id,
+        col(TrackerTicket.task_id).in_(task_ids),
+    )
+    for task_id, evidence in session.execute(statement):
+        # Deduplication is ticket-local; never add parent/group subtotals.
+        receipts_by_task[task_id].extend(invocation_receipts(evidence))
+    return {task_id: summarize_receipts(receipts_by_task[task_id]) for task_id in task_ids}
 
 
 def _text(value: Any) -> str | None:
@@ -167,13 +187,13 @@ def query_agent_stats(
                 selected_role=role,
                 host_key=host,
                 model=model,
-                **_summarize(receipts).model_dump(),
+                **summarize_receipts(receipts).model_dump(),
             )
         )
     return TrackerAgentStatsOut(
         project_id=project_id,
         is_active=is_active,
         as_of=datetime.now(UTC),
-        totals=_summarize(all_receipts),
+        totals=summarize_receipts(all_receipts),
         rows=rows,
     )

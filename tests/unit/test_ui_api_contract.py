@@ -27,13 +27,20 @@ from stackos.operations.finance import (
     FinanceRecordOut,
     FinanceStatusInput,
 )
-from stackos.operations.tracker.schemas import TrackerAgentStatsAllInput, TrackerAgentStatsInput
+from stackos.operations.tracker.schemas import (
+    TrackerAgentStatsAllInput,
+    TrackerAgentStatsInput,
+    TrackerGetInput,
+)
 from stackos.repositories.tracker.schema import (
     AgentStatsCoverageOut,
     AgentStatsMetricsOut,
     AgentStatsRowOut,
     AgentStatsUsageOut,
     TrackerAgentStatsOut,
+    TrackerSnapshotOut,
+    TrackerTaskOut,
+    TrackerTicketOut,
 )
 from stackos.server import create_app
 
@@ -90,6 +97,10 @@ def test_ui_generation_includes_registry_owned_durable_contracts(
         TrackerAgentStatsInput,
         TrackerAgentStatsAllInput,
         TrackerAgentStatsOut,
+        TrackerGetInput,
+        TrackerSnapshotOut,
+        TrackerTaskOut,
+        TrackerTicketOut,
         AgentStatsMetricsOut,
         AgentStatsUsageOut,
         AgentStatsCoverageOut,
@@ -108,6 +119,11 @@ def test_ui_generation_includes_registry_owned_durable_contracts(
         assert f"Schema{model.__name__}" in generated
     for reference in re.findall(r'"\$ref": "#/components/schemas/([^\"]+)"', target.read_text()):
         assert reference in schemas
+    for name in ("TrackerTaskOut", "TrackerTicketOut"):
+        assert schemas[name]["properties"]["agent_stats"]["anyOf"] == [
+            {"$ref": "#/components/schemas/AgentStatsMetricsOut"},
+            {"type": "null"},
+        ]
 
 
 def test_finance_precision_history_native_schema_and_generated_types() -> None:

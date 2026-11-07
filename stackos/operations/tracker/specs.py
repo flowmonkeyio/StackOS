@@ -368,7 +368,10 @@ def operation_specs() -> list[OperationSpec]:
             purpose=(
                 "Use this for UI rendering, list review by task/ticket ids, or when "
                 "the agent needs a bounded project work map. Use task_index_only for a "
-                "complete operator task selector before loading one focused graph."
+                "complete operator task selector before loading one focused graph. "
+                "Task agent_stats always cover all own ticket receipts; ticket agent_stats "
+                "cover only that ticket. "
+                "Compact responses preserve metrics and their usage/classification coverage."
             ),
             examples=(
                 OperationExample(

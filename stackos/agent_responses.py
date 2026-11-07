@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from enum import Enum
 from typing import Any
 
@@ -303,6 +304,7 @@ def compact_tracker_task(value: Any) -> dict[str, Any]:
             ),
         )
     _add_completion_evidence_flag(result, data)
+    _add_agent_stats(result, data)
     return result
 
 
@@ -345,6 +347,7 @@ def compact_tracker_snapshot_task(value: Any) -> dict[str, Any]:
             ),
         )
     _add_completion_evidence_flag(result, data)
+    _add_agent_stats(result, data)
     return result
 
 
@@ -376,6 +379,7 @@ def compact_tracker_ticket(value: Any) -> dict[str, Any]:
         if result.get(key) == 0:
             result.pop(key)
     _add_completion_evidence_flag(result, _as_dict(value))
+    _add_agent_stats(result, _as_dict(value))
     return result
 
 
@@ -406,7 +410,15 @@ def compact_tracker_snapshot_ticket(value: Any) -> dict[str, Any]:
         if result.get(key) == 0:
             result.pop(key)
     _add_completion_evidence_flag(result, _as_dict(value))
+    _add_agent_stats(result, _as_dict(value))
     return result
+
+
+def _add_agent_stats(result: dict[str, Any], source: dict[str, Any]) -> None:
+    metrics = _as_dict(source.get("agent_stats"))
+    if metrics:
+        # This typed safe projection needs its nulls: unknown usage is not zero.
+        result["agent_stats"] = deepcopy(metrics)
 
 
 def _add_completion_evidence_flag(result: dict[str, Any], source: dict[str, Any]) -> None:
