@@ -115,6 +115,7 @@ def run_agent(
             return AgentRunResult(None, error=f"Could not launch Codex: {exc}")
         thread_id = None
         native_error = None
+        terminal_error = None
         usage = None
         for line in process.stdout.splitlines():
             try:
@@ -124,6 +125,9 @@ def run_agent(
             if isinstance(event, dict) and event.get("type") == "thread.started":
                 thread_id = event.get("thread_id")
             if isinstance(event, dict) and event.get("type") == "turn.completed":
+                # Codex reports recoverable stream interruptions as error events.
+                # A later completion clears those, but never a terminal turn failure.
+                native_error = None
                 counters = event.get("usage")
                 # Native exec emits the thread's cumulative total (verified in
                 # 0.167.0 usage_from_last_total), including on resume. Cached
@@ -141,14 +145,17 @@ def run_agent(
                     if isinstance(counters, dict)
                     else None
                 )
-            if isinstance(event, dict) and event.get("type") in {"error", "turn.failed"}:
+            if isinstance(event, dict) and event.get("type") == "error":
                 native_error = str(event.get("error") or event.get("message") or "Codex failed.")
-        if process.returncode != 0 or native_error:
+            if isinstance(event, dict) and event.get("type") == "turn.failed":
+                terminal_error = str(event.get("error") or event.get("message") or "Codex failed.")
+        if process.returncode != 0 or terminal_error or native_error:
             return AgentRunResult(
                 process.returncode,
                 thread_id=thread_id,
                 usage=usage,
-                error=native_error
+                error=terminal_error
+                or native_error
                 or process.stderr.strip()
                 or process.stdout.strip()
                 or "Codex exited unsuccessfully.",

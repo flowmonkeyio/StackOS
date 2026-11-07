@@ -684,8 +684,13 @@ native auth-status commands where available. `codex login status`,
 `claude auth status`, and `hermes auth status` (for the selected provider/profile)
 only report native authentication state, not entitlement to every model.
 Gemini/Grok auth-status support is unverified. Actual launch failures, including
-errors on stdout, missing credentials, inaccessible models, and broken CLI shims,
-stop the current task with their reason. No credential setup is performed.
+unrecovered errors on stdout, missing credentials, inaccessible models, and broken
+CLI shims, stop the current task with their reason. Codex can recover a stream
+interruption within the same invocation: a later `turn.completed`, exit code zero,
+and valid structured result supersede an earlier transient `error`. A terminal
+`turn.failed`, later error, nonzero exit, or invalid result still fails. StackOS
+does not launch an extra retry or replace the session. No credential setup is
+performed.
 
 Ordinary automatic review allows only the one durable scoped repair pass above;
 dependency-driven corrections preserve that consumed allowance. Delivery does

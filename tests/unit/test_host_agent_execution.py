@@ -618,6 +618,78 @@ def test_codex_stdout_error_wins_over_success_file(project, monkeypatch, event_t
     assert "Model access denied" in result.error
 
 
+@pytest.mark.parametrize("resume_thread_id", [None, "native-thread"])
+def test_codex_completed_turn_recovers_stream_error(project, monkeypatch, resume_thread_id):
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fake/codex")
+    calls = []
+
+    def execute(command, **kwargs):
+        calls.append(command)
+        Path(command[command.index("-o") + 1]).write_text('{"summary":"delivered"}')
+        events = [
+            {"type": "thread.started", "thread_id": "native-thread"},
+            {"type": "error", "message": "Reconnecting... 2/5 (IO error: Broken pipe)"},
+            {
+                "type": "turn.completed",
+                "usage": {"input_tokens": 100, "cached_input_tokens": 80, "output_tokens": 5},
+            },
+        ]
+        return subprocess.CompletedProcess(command, 0, "\n".join(map(json.dumps, events)), "")
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    result = run_agent(
+        "codex", project, "Instructions", "Work", SCHEMA, resume_thread_id=resume_thread_id
+    )
+    assert result.ok
+    assert result.result == {"summary": "delivered"}
+    assert result.thread_id == "native-thread"
+    assert result.usage["snapshot"]["cache_read"] == 80
+    assert len(calls) == 1
+    if resume_thread_id:
+        assert calls[0][-3:] == ["resume", resume_thread_id, "-"]
+
+
+@pytest.mark.parametrize(
+    ("event_types", "exit_code", "payload", "expected_error"),
+    [
+        (["turn.completed", "error"], 0, '{"summary":"done"}', "Stream disconnected"),
+        (["turn.failed", "turn.completed"], 0, '{"summary":"done"}', "Turn failed"),
+        (["turn.completed", "turn.failed"], 0, '{"summary":"done"}', "Turn failed"),
+        (["error", "turn.completed"], 1, '{"summary":"done"}', "Process failed"),
+        (["error", "turn.completed"], 0, None, "Invalid Codex result"),
+        (["error", "turn.completed"], 0, "not JSON", "Invalid Codex result"),
+        (["error", "turn.completed"], 0, '{"wrong":"schema"}', "Invalid Codex result"),
+    ],
+)
+def test_codex_stream_recovery_preserves_failure_checks(
+    project, monkeypatch, event_types, exit_code, payload, expected_error
+):
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fake/codex")
+
+    def execute(command, **kwargs):
+        if payload is not None:
+            Path(command[command.index("-o") + 1]).write_text(payload)
+        events = [
+            {
+                "type": kind,
+                "message": "Turn failed" if kind == "turn.failed" else "Stream disconnected",
+            }
+            for kind in event_types
+        ]
+        return subprocess.CompletedProcess(
+            command,
+            exit_code,
+            "\n".join(map(json.dumps, events)),
+            "Process failed" if exit_code else "",
+        )
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    result = run_agent("codex", project, "Instructions", "Work", SCHEMA)
+    assert not result.ok
+    assert result.exit_code == exit_code
+    assert expected_error in result.error
+
+
 @pytest.mark.parametrize(
     ("host", "selection", "reason"),
     [
