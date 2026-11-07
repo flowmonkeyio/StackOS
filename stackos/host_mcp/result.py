@@ -39,7 +39,15 @@ def validate_agent_result(
 
 
 def usage_snapshot(
-    scope: Any, basis: Any, input_count: Any, output_count: Any, total: Any = None
+    scope: Any,
+    basis: Any,
+    input_count: Any,
+    output_count: Any,
+    total: Any = None,
+    *,
+    cache_read: Any = None,
+    cache_write: Any = None,
+    reasoning: Any = None,
 ) -> dict[str, Any] | None:
     """Safe native counters, independent of the agent-authored result contract."""
     if not isinstance(basis, str) or basis not in {"invocation", "session"}:
@@ -52,11 +60,23 @@ def usage_snapshot(
         total = input_count + output_count
     if type(total) is not int or total != input_count + output_count:
         return None
+    # Details are subsets, independently available from the valid parent counts.
+    details = {"cache_read": cache_read, "cache_write": cache_write, "reasoning": reasoning}
+    for key, count in details.items():
+        parent = output_count if key == "reasoning" else input_count
+        if type(count) is not int or not 0 <= count <= parent:
+            details[key] = None
+    if (
+        details["cache_read"] is not None
+        and details["cache_write"] is not None
+        and details["cache_read"] + details["cache_write"] > input_count
+    ):
+        details["cache_read"] = details["cache_write"] = None
     return {
         "unit": "tokens",
         "scope": scope,
         "basis": basis,
-        "snapshot": {"input": input_count, "output": output_count, "total": total},
+        "snapshot": {"input": input_count, "output": output_count, "total": total, **details},
     }
 
 
@@ -80,6 +100,9 @@ def normalize_usage(
         snapshot.get("input"),
         snapshot.get("output"),
         snapshot.get("total"),
+        cache_read=snapshot.get("cache_read"),
+        cache_write=snapshot.get("cache_write"),
+        reasoning=snapshot.get("reasoning"),
     )
     if safe is None or usage.get("unit") != "tokens":
         return {**unavailable, "reason": "malformed"}
@@ -100,15 +123,44 @@ def normalize_usage(
             else:
                 baseline = previous.get("snapshot")
                 if not isinstance(baseline, dict) or any(
-                    type(baseline.get(k)) is not int or baseline[k] < 0 for k in measured
+                    type(baseline.get(k)) is not int or baseline[k] < 0
+                    for k in ("input", "output", "total")
                 ):
                     reason = "missing_baseline"
                 else:
-                    measured = {k: n - baseline[k] for k, n in measured.items()}
-                    if any(n < 0 for n in measured.values()) or (
-                        measured["total"] != measured["input"] + measured["output"]
-                    ):
+                    prior = usage_snapshot(
+                        safe["scope"],
+                        safe["basis"],
+                        baseline["input"],
+                        baseline["output"],
+                        baseline["total"],
+                        cache_read=baseline.get("cache_read"),
+                        cache_write=baseline.get("cache_write"),
+                        reasoning=baseline.get("reasoning"),
+                    )
+                    if prior is None:
                         reason = "invalid_delta"
+                    else:
+                        counts = {
+                            k: n - prior["snapshot"][k]
+                            if n is not None and prior["snapshot"][k] is not None
+                            else None
+                            for k, n in measured.items()
+                        }
+                        delta = usage_snapshot(
+                            safe["scope"],
+                            safe["basis"],
+                            counts["input"],
+                            counts["output"],
+                            counts["total"],
+                            cache_read=counts["cache_read"],
+                            cache_write=counts["cache_write"],
+                            reasoning=counts["reasoning"],
+                        )
+                        if delta is None:
+                            reason = "invalid_delta"
+                        else:
+                            measured = delta["snapshot"]
     return {
         **safe,
         "session_id": session_id,

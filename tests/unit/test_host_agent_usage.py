@@ -136,6 +136,9 @@ def test_captured_codex_0167_cumulative_usage(tmp_path, monkeypatch):
             result.usage, session_id=result.thread_id, resumed=resumed, previous=previous
         )
         assert measured["basis"] == "session"
+        assert measured["measured"]["cache_read"] == (18304 if resumed else 7168)
+        assert measured["measured"]["cache_write"] == 0
+        assert measured["measured"]["reasoning"] == (0 if resumed else 14)
         totals.append(measured["measured"]["total"])
         previous = measured
     assert totals == [18442, 18483]
@@ -177,6 +180,9 @@ def test_captured_grok_1077_invocation_usage(tmp_path, monkeypatch):
             result.usage, session_id=result.thread_id, resumed=resumed, previous=previous
         )
         assert measured["basis"] == "invocation"
+        assert measured["measured"]["cache_read"] == (15616 if resumed else 8832)
+        assert measured["measured"]["cache_write"] == 0
+        assert measured["measured"]["reasoning"] == (28 if resumed else 52)
         totals.append(measured["measured"]["total"])
         previous = measured
     assert totals == [15709, 15796]
@@ -186,7 +192,8 @@ def test_captured_grok_1077_invocation_usage(tmp_path, monkeypatch):
 def test_captured_claude_21319_mapping_is_preserved():
     previous = None
     totals = []
-    for resumed, counts in enumerate(((2, 0, 1098, 52), (6, 1098, 1178, 104))):
+    # Detailed native-fields evidence: fresh, then cumulative same-session resume.
+    for resumed, counts in enumerate(((2, 0, 7624, 52, 0), (6, 7624, 7714, 271, 166))):
         value = {
             **CLAUDE,
             "modelUsage": {
@@ -197,6 +204,7 @@ def test_captured_claude_21319_mapping_is_preserved():
                             "cacheReadInputTokens",
                             "cacheCreationInputTokens",
                             "outputTokens",
+                            "thinkingTokens",
                         ),
                         counts,
                         strict=True,
@@ -209,8 +217,11 @@ def test_captured_claude_21319_mapping_is_preserved():
             result.usage, session_id=result.thread_id, resumed=bool(resumed), previous=previous
         )
         totals.append(measured["measured"]["total"])
+        assert measured["measured"]["cache_read"] == (7624 if resumed else 0)
+        assert measured["measured"]["cache_write"] == (90 if resumed else 7624)
+        assert measured["measured"]["reasoning"] == (166 if resumed else 0)
         previous = measured
-    assert totals == [1152, 1234]
+    assert totals == [7678, 7937]
 
 
 @pytest.mark.parametrize(
@@ -251,7 +262,14 @@ def test_grok_usage_survives_result_errors(tmp_path, monkeypatch, fault):
     )
     assert result.ok is (fault is None)
     assert result.thread_id == "session"
-    assert result.usage["snapshot"] == {"input": 15652, "output": 57, "total": 15709}
+    assert result.usage["snapshot"] == {
+        "input": 15652,
+        "output": 57,
+        "total": 15709,
+        "cache_read": 8832,
+        "cache_write": 0,
+        "reasoning": 52,
+    }
 
 
 @pytest.mark.parametrize(
@@ -492,11 +510,262 @@ def test_optional_malformed_usage_never_raises(usage):
     assert normalize_usage(usage, session_id="a", resumed=False)["measured"] is None
 
 
+@pytest.mark.parametrize("reset", [False, True])
+def test_details_do_not_invalidate_legacy_or_reset_base_delta(reset):
+    previous = {
+        "unit": "tokens",
+        "scope": "fixture",
+        "basis": "session",
+        "session_id": "a",
+        "snapshot": {"input": 100, "output": 50, "total": 150},
+        "status": "unavailable" if reset else "measured",
+        "reason": "operator_reset" if reset else None,
+        "measured": None,
+    }
+    current = normalize_usage(
+        usage_snapshot("fixture", "session", 160, 70, cache_read=40, cache_write=10, reasoning=5),
+        session_id="a",
+        resumed=True,
+        previous=previous,
+    )
+    assert current["status"] == "measured"
+    assert current["measured"] == {
+        "input": 60,
+        "output": 20,
+        "total": 80,
+        "cache_read": None,
+        "cache_write": None,
+        "reasoning": None,
+    }
+    following = normalize_usage(
+        usage_snapshot("fixture", "session", 170, 75, cache_read=40, cache_write=12, reasoning=8),
+        session_id="a",
+        resumed=True,
+        previous=current,
+    )
+    assert following["measured"] == {
+        "input": 10,
+        "output": 5,
+        "total": 15,
+        "cache_read": 0,
+        "cache_write": 2,
+        "reasoning": 3,
+    }
+
+
+@pytest.mark.parametrize(
+    "details,expected",
+    [
+        ({}, {"cache_read": None, "cache_write": None, "reasoning": None}),
+        (
+            {"cache_read": 0, "cache_write": 0, "reasoning": 0},
+            {"cache_read": 0, "cache_write": 0, "reasoning": 0},
+        ),
+        (
+            {"cache_read": True, "cache_write": "1", "reasoning": []},
+            {"cache_read": None, "cache_write": None, "reasoning": None},
+        ),
+        (
+            {"cache_read": 101, "cache_write": 5, "reasoning": 51},
+            {"cache_read": None, "cache_write": 5, "reasoning": None},
+        ),
+        (
+            {"cache_read": 70, "cache_write": 40, "reasoning": 10},
+            {"cache_read": None, "cache_write": None, "reasoning": 10},
+        ),
+    ],
+)
+def test_optional_detail_validation_preserves_base(details, expected):
+    # Exercise both the adapter helper and the untrusted persisted-map boundary.
+    for usage in (
+        usage_snapshot("fixture", "invocation", 100, 50, **details),
+        {
+            "unit": "tokens",
+            "scope": "fixture",
+            "basis": "invocation",
+            "snapshot": {"input": 100, "output": 50, "total": 150, **details},
+        },
+    ):
+        result = normalize_usage(usage, session_id="a", resumed=False)
+        assert result["status"] == "measured"
+        assert result["measured"] == {"input": 100, "output": 50, "total": 150, **expected}
+
+
+@pytest.mark.parametrize(
+    "current_details,expected",
+    [
+        (
+            {"cache_read": 19, "cache_write": 12, "reasoning": 4},
+            {"cache_read": None, "cache_write": 2, "reasoning": None},
+        ),
+        (
+            {"cache_read": 65, "cache_write": 30, "reasoning": 10},
+            {"cache_read": None, "cache_write": None, "reasoning": 5},
+        ),
+        (
+            {"cache_read": 25, "cache_write": 10, "reasoning": 30},
+            {"cache_read": 5, "cache_write": 0, "reasoning": None},
+        ),
+    ],
+)
+def test_detail_delta_bounds_do_not_erase_base(current_details, expected):
+    previous = normalize_usage(
+        usage_snapshot("fixture", "session", 100, 50, cache_read=20, cache_write=10, reasoning=5),
+        session_id="a",
+        resumed=False,
+    )
+    result = normalize_usage(
+        usage_snapshot("fixture", "session", 160, 70, **current_details),
+        session_id="a",
+        resumed=True,
+        previous=previous,
+    )
+    assert result["measured"] == {"input": 60, "output": 20, "total": 80, **expected}
+
+
+def test_gemini_details_use_models_once_and_leave_cache_write_unknown():
+    first = normalize_usage(
+        gemini_cli._agent_result(json.dumps(GEMINI)).usage,
+        session_id="session",
+        resumed=False,
+    )
+    assert first["measured"] == {
+        "input": 110,
+        "output": 40,
+        "total": 150,
+        "cache_read": 80,
+        "cache_write": None,
+        "reasoning": 10,
+    }
+    value = json.loads(json.dumps(GEMINI))
+    value["stats"]["models"]["main"]["tokens"].update(
+        prompt=120,
+        cached=90,
+        thoughts=15,
+        total=160,
+    )
+    second = normalize_usage(
+        gemini_cli._agent_result(json.dumps(value)).usage,
+        session_id="session",
+        resumed=True,
+        previous=first,
+    )
+    assert second["measured"] == {
+        "input": 20,
+        "output": 5,
+        "total": 25,
+        "cache_read": 10,
+        "cache_write": None,
+        "reasoning": 5,
+    }
+
+
+@pytest.mark.parametrize("host", ["gemini", "grok"])
+@pytest.mark.parametrize("detail", [None, True, -1, "10", 99999])
+def test_invalid_native_optional_detail_preserves_other_counts(host, detail):
+    if host == "gemini":
+        value = json.loads(json.dumps(GEMINI))
+        value["stats"]["models"]["helper"]["tokens"]["cached"] = detail
+        result = gemini_cli._agent_result(json.dumps(value))
+        assert result.usage["snapshot"] == {
+            "input": 110,
+            "output": 40,
+            "total": 150,
+            "cache_read": None,
+            "cache_write": None,
+            "reasoning": 10,
+        }
+    else:
+        value = {
+            "sessionId": "session",
+            "stopReason": "end_turn",
+            "text": '{"summary":"OK"}',
+            "usage": {**GROK_1077[0], "reasoning_tokens": detail},
+        }
+        result = grok._agent_result(json.dumps(value))
+        assert result.usage["snapshot"] == {
+            "input": 15652,
+            "output": 57,
+            "total": 15709,
+            "cache_read": 8832,
+            "cache_write": 0,
+            "reasoning": None,
+        }
+    assert result.ok
+
+
+def test_missing_detail_is_not_bridged_on_the_next_resume():
+    previous = normalize_usage(
+        usage_snapshot("fixture", "session", 100, 50, cache_read=20, cache_write=10, reasoning=5),
+        session_id="a",
+        resumed=False,
+    )
+    missing = normalize_usage(
+        usage_snapshot("fixture", "session", 160, 70, cache_write=10, reasoning=10),
+        session_id="a",
+        resumed=True,
+        previous=previous,
+    )
+    current = normalize_usage(
+        usage_snapshot("fixture", "session", 200, 90, cache_read=30, cache_write=10, reasoning=15),
+        session_id="a",
+        resumed=True,
+        previous=missing,
+    )
+    assert current["measured"] == {
+        "input": 40,
+        "output": 20,
+        "total": 60,
+        "cache_read": None,
+        "cache_write": 0,
+        "reasoning": 5,
+    }
+
+
+@pytest.mark.parametrize("thinking", [None, True, -1, "10", 100])
+def test_claude_optional_thinking_requires_all_model_rows(thinking):
+    value = json.loads(json.dumps(CLAUDE))
+    value["modelUsage"]["main"]["thinkingTokens"] = thinking
+    value["modelUsage"]["helper"]["thinkingTokens"] = 5
+    result = claude_code._agent_result(json.dumps(value), native_version="2.1.319")
+    assert result.ok
+    assert result.usage["snapshot"] == {
+        "input": 110,
+        "output": 40,
+        "total": 150,
+        "cache_read": 80,
+        "cache_write": 15,
+        "reasoning": None,
+    }
+
+
 @pytest.mark.parametrize(
     "host,envelope,expected",
     [
-        ("claude-code", CLAUDE, {"input": 110, "output": 40, "total": 150}),
-        ("gemini-cli", GEMINI, {"input": 110, "output": 40, "total": 150}),
+        (
+            "claude-code",
+            CLAUDE,
+            {
+                "input": 110,
+                "output": 40,
+                "total": 150,
+                "cache_read": 80,
+                "cache_write": 15,
+                "reasoning": None,
+            },
+        ),
+        (
+            "gemini-cli",
+            GEMINI,
+            {
+                "input": 110,
+                "output": 40,
+                "total": 150,
+                "cache_read": 80,
+                "cache_write": None,
+                "reasoning": 10,
+            },
+        ),
     ],
 )
 @pytest.mark.parametrize("fault", [None, "native", "exit", "schema", "session", "text"])
@@ -565,6 +834,9 @@ def test_codex_usage_survives_all_result_paths(tmp_path, monkeypatch, fault):
     )
     assert result.ok is (fault is None)
     assert result.usage["snapshot"]["total"] == 150
+    assert result.usage["snapshot"]["cache_read"] is None
+    assert result.usage["snapshot"]["cache_write"] is None
+    assert result.usage["snapshot"]["reasoning"] is None
 
 
 @pytest.mark.parametrize("host,envelope", [("claude-code", CLAUDE), ("gemini-cli", GEMINI)])

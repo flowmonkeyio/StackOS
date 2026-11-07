@@ -134,6 +134,9 @@ def run_agent(
                         "session",
                         counters.get("input_tokens"),
                         counters.get("output_tokens"),
+                        cache_read=counters.get("cached_input_tokens"),
+                        cache_write=counters.get("cache_write_input_tokens"),
+                        reasoning=counters.get("reasoning_output_tokens"),
                     )
                     if isinstance(counters, dict)
                     else None

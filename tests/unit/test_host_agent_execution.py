@@ -90,7 +90,14 @@ def test_codex_native_usage_is_separate_from_agent_output(project, monkeypatch):
     result = run_agent("codex", project, "Instructions", "Work", SCHEMA)
     assert result.ok
     assert result.usage["basis"] == "session"
-    assert result.usage["snapshot"] == {"input": 100, "output": 50, "total": 150}
+    assert result.usage["snapshot"] == {
+        "input": 100,
+        "output": 50,
+        "total": 150,
+        "cache_read": 80,
+        "cache_write": None,
+        "reasoning": 20,
+    }
 
 
 @pytest.mark.parametrize(("host", "model", "provider", "envelope"), NATIVE_CASES)

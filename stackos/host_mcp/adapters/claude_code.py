@@ -124,6 +124,8 @@ def _agent_usage(value: dict[str, Any], native_version: str | None) -> dict[str,
     ):
         return None
     inputs = outputs = 0
+    cache_read = cache_write = 0
+    reasoning: int | None = 0
     for row in models.values():
         if not isinstance(row, dict):
             return None
@@ -140,8 +142,24 @@ def _agent_usage(value: dict[str, Any], native_version: str | None) -> dict[str,
             return None
         inputs += sum(counts[:3])
         outputs += counts[3]
+        cache_read += counts[1]
+        cache_write += counts[2]
+        # A partial model subtotal is not a full-scope reasoning measurement.
+        thinking = row.get("thinkingTokens")
+        if reasoning is not None and type(thinking) is int and 0 <= thinking <= counts[3]:
+            reasoning += thinking
+        else:
+            reasoning = None
     # A versioned scope cannot reuse an older, unproven cumulative baseline.
-    return usage_snapshot("claude.model-usage.v2.1", basis, inputs, outputs)
+    return usage_snapshot(
+        "claude.model-usage.v2.1",
+        basis,
+        inputs,
+        outputs,
+        cache_read=cache_read,
+        cache_write=cache_write,
+        reasoning=reasoning,
+    )
 
 
 def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:

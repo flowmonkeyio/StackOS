@@ -102,6 +102,8 @@ def _agent_usage(value: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(models, dict) or not models:
         return None
     inputs = outputs = total = 0
+    cache_read: int | None = 0
+    reasoning = 0
     for row in models.values():
         counters = row.get("tokens") if isinstance(row, dict) else None
         if not isinstance(counters, dict):
@@ -116,7 +118,21 @@ def _agent_usage(value: dict[str, Any]) -> dict[str, Any] | None:
         inputs += counts[0]
         outputs += sum(counts[1:4])
         total += counts[4]
-    return usage_snapshot("gemini.models", "session", inputs, outputs, total)
+        reasoning += counts[2]
+        cached = counters.get("cached")
+        if cache_read is not None and type(cached) is int and 0 <= cached <= counts[0]:
+            cache_read += cached
+        else:
+            cache_read = None
+    return usage_snapshot(
+        "gemini.models",
+        "session",
+        inputs,
+        outputs,
+        total,
+        cache_read=cache_read,
+        reasoning=reasoning,
+    )
 
 
 def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:

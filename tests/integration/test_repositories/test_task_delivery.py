@@ -1904,7 +1904,13 @@ def feedback_harness(
         calls.append({"key": key, "phase": phase, "resume": resume, "packet": packet})
         identity = f"{key}-{phase}"
         usage = usage_snapshot(
-            "fixture", usage_basis, 160 if previous else 100, 70 if previous else 50
+            "fixture",
+            usage_basis,
+            160 if previous else 100,
+            70 if previous else 50,
+            cache_read=40 if previous else 20,
+            cache_write=10,
+            reasoning=5,
         )
         if phase == "delivery":
             sha = commit(tmp_path, f"{key}-{len(calls)}")
@@ -2022,10 +2028,25 @@ def test_feedback_reject_repair_approve_preserves_sessions_attempts_and_notes(
         assert evidence[phase]["validated_outcome"] == "success"
         assert prior[phase]["usage"]["snapshot"]["total"] == 150
         assert prior[phase]["usage"]["measured"]["total"] == 150
-        assert evidence[phase]["usage"]["snapshot"] == {"input": 160, "output": 70, "total": 230}
+        assert prior[phase]["usage"]["measured"]["cache_read"] == 20
+        assert evidence[phase]["usage"]["snapshot"] == {
+            "input": 160,
+            "output": 70,
+            "total": 230,
+            "cache_read": 40,
+            "cache_write": 10,
+            "reasoning": 5,
+        }
         assert evidence[phase]["usage"]["measured"]["total"] == (
             80 if usage_basis == "session" else 230
         )
+        assert evidence[phase]["usage"]["measured"]["cache_read"] == (
+            20 if usage_basis == "session" else 40
+        )
+        assert evidence[phase]["usage"]["measured"]["cache_write"] == (
+            0 if usage_basis == "session" else 10
+        )
+        assert evidence["repair_pass_used"] is True
     assert prior["candidate"]["commit_sha"] != evidence["candidate"]["commit_sha"]
     assert evidence["candidate"]["base_commit_sha"] == prior["candidate"]["commit_sha"]
     assert (
@@ -2229,7 +2250,9 @@ def test_feedback_requeue_preserves_consumed_repair_budget(
         assert attempt["review"]["validated_outcome"] == "repair"
 
 
-@pytest.mark.parametrize("baseline_kind", ["compatible", "missing", "invocation"])
+@pytest.mark.parametrize(
+    "baseline_kind", ["compatible", "legacy", "operator_reset", "missing", "invocation"]
+)
 def test_cumulative_receipt_requeue_retains_unknown_and_redaction_boundary(
     session, project_id, tmp_path, monkeypatch, baseline_kind
 ):
@@ -2249,7 +2272,13 @@ def test_cumulative_receipt_requeue_retains_unknown_and_redaction_boundary(
             thread_id=f"{key}-{phase}",
             result=generic_result("blocked" if len(calls) == 2 else "success"),
             usage=usage_snapshot(
-                "codex.turn", "session", 36895 if resumed else 18419, 30 if resumed else 23
+                "codex.turn",
+                "session",
+                36895 if resumed else 18419,
+                30 if resumed else 23,
+                cache_read=25472 if resumed else 7168,
+                cache_write=0,
+                reasoning=14,
             ),
         )
 
@@ -2266,8 +2295,20 @@ def test_cumulative_receipt_requeue_retains_unknown_and_redaction_boundary(
             "input": 18419,
             "output": 23,
             "total": 18442,
+            "cache_read": 7168,
+            "cache_write": 0,
+            "reasoning": 14,
         }
-        if baseline_kind == "missing":
+        if baseline_kind in {"legacy", "operator_reset"}:
+            for key in ("cache_read", "cache_write", "reasoning"):
+                automatic[phase]["usage"]["snapshot"].pop(key)
+            if baseline_kind == "operator_reset":
+                automatic[phase]["usage"].update(
+                    status="unavailable",
+                    reason="operator_reset",
+                    measured=None,
+                )
+        elif baseline_kind == "missing":
             automatic[phase].pop("usage")
         elif baseline_kind == "invocation":
             # The former collector mislabeled cumulative snapshots. Even the
@@ -2295,9 +2336,18 @@ def test_cumulative_receipt_requeue_retains_unknown_and_redaction_boundary(
         assert receipt["validated_outcome"] == "success"
         assert receipt["usage"]["snapshot"]["total"] == 36925
         assert receipt["usage"]["measured"] == (
-            {"input": 18476, "output": 7, "total": 18483} if baseline_kind == "compatible" else None
+            {
+                "input": 18476,
+                "output": 7,
+                "total": 18483,
+                "cache_read": 18304 if baseline_kind == "compatible" else None,
+                "cache_write": 0 if baseline_kind == "compatible" else None,
+                "reasoning": 0 if baseline_kind == "compatible" else None,
+            }
+            if baseline_kind in {"compatible", "legacy", "operator_reset"}
+            else None
         )
-        if baseline_kind != "compatible":
+        if baseline_kind in {"missing", "invocation"}:
             assert receipt["usage"]["reason"] == "missing_baseline"
         old = automatic["attempts"][0][phase]
         assert (

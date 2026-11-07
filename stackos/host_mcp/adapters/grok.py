@@ -132,7 +132,16 @@ def _agent_usage(value: dict[str, Any]) -> dict[str, Any] | None:
     ]
     if any(type(n) is not int or n < 0 for n in counts):
         return None
-    return usage_snapshot("grok.headless", "invocation", sum(counts[:3]), counts[3], counts[4])
+    return usage_snapshot(
+        "grok.headless",
+        "invocation",
+        sum(counts[:3]),
+        counts[3],
+        counts[4],
+        cache_read=counts[1],
+        cache_write=counts[2],
+        reasoning=counters.get("reasoning_tokens"),
+    )
 
 
 def grok_home(home: Path) -> Path:

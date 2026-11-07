@@ -169,8 +169,22 @@ def test_native_cumulative_deltas_exact_result_and_classification(tmp_path):
     native = repair.read_native(write_native(tmp_path))
     first, first_proof = repair.recover(receipt(), native)
     second, second_proof = repair.recover(receipt(second=True), native)
-    assert first["usage"]["measured"] == {"input": 100, "output": 20, "total": 120}
-    assert second["usage"]["measured"] == {"input": 80, "output": 10, "total": 90}
+    assert first["usage"]["measured"] == {
+        "input": 100,
+        "output": 20,
+        "total": 120,
+        "cache_read": None,
+        "cache_write": None,
+        "reasoning": None,
+    }
+    assert second["usage"]["measured"] == {
+        "input": 80,
+        "output": 10,
+        "total": 90,
+        "cache_read": None,
+        "cache_write": None,
+        "reasoning": None,
+    }
     assert first["selected_role"] is None and second["validated_outcome"] is None
     assert first_proof["result_sha256"] == repair.digest(RESULT)
     assert second_proof["baseline_turn_id"] == "one"

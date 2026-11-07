@@ -269,7 +269,8 @@ status are not substitutes. Older receipts can lack these facts.
 
 Optional native usage travels separately from agent-authored outputs through
 `AgentRunResult.usage`. The shared owner in `host_mcp/result.py` validates
-`usage_snapshot(scope, basis, input_count, output_count, total)` and measures
+`usage_snapshot(scope, basis, input_count, output_count, total, *, cache_read=None,
+cache_write=None, reasoning=None)` and measures
 `normalize_usage(usage, session_id=..., resumed=..., previous=...)` for the
 receipt. Numeric fields use safe names because credential redaction masks keys
 containing `token`, including numeric values; credential redaction is unchanged.
@@ -281,10 +282,10 @@ The receipt's `usage` value has this shape:
   "scope": "gemini.models",
   "basis": "session",
   "session_id": "native-session-id",
-  "snapshot": {"input": 160, "output": 70, "total": 230},
+  "snapshot": {"input": 160, "output": 70, "total": 230, "cache_read": 100, "cache_write": null, "reasoning": 10},
   "status": "measured",
   "reason": null,
-  "measured": {"input": 60, "output": 20, "total": 80}
+  "measured": {"input": 60, "output": 20, "total": 80, "cache_read": 20, "cache_write": null, "reasoning": 5}
 }
 ```
 
@@ -305,6 +306,45 @@ no separate ledger or historical rewrite is involved. A receipt occurrence is
 identified by ticket, attempt number and phase; tracker-history copies are not
 additional invocations.
 
+The optional detail fields are `cache_read`, `cache_write`, and `reasoning` in
+both `snapshot` and `measured`. New snapshots always include these keys with
+nonnegative integers or `null`; older three-counter maps remain valid. Input
+already includes cache reads and writes; output already includes reasoning.
+Total remains input + output. Cache in analytics means cache read, a subset of
+Input; cache write is retained detail, not another headline or an extra total.
+Known details satisfy cache_read + cache_write <= input and reasoning <= output.
+A malformed, negative, or out-of-bounds detail becomes null without discarding
+valid parent counters. If both cache values individually fit but their sum does
+not, both are unknown. Each detail needs its own compatible baseline on resume;
+decreasing or out-of-bounds detail deltas become null independently of base usage.
+
+For example, fresh Codex counters contribute their full snapshot:
+
+```json
+{"input":100,"output":50,"total":150,"cache_read":20,"cache_write":10,"reasoning":5}
+```
+
+A same-session snapshot of input 160, output 70, cache read 40, cache write 10
+and reasoning 5 contributes this `measured` map, including measured zeros:
+
+```json
+{"input":60,"output":20,"total":80,"cache_read":20,"cache_write":0,"reasoning":0}
+```
+
+If the preceding snapshot contains only input 100, output 50 and total 150,
+the same current snapshot still contributes valid base usage:
+
+```json
+{"input":60,"output":20,"total":80,"cache_read":null,"cache_write":null,"reasoning":null}
+```
+
+The current detailed snapshot then provides the next compatible detail baseline.
+This also holds when the preceding receipt has `status=unavailable`,
+`reason=operator_reset`, `measured=null` but retains its native snapshot. The
+marker changes analytics eligibility, not the snapshot's resume identity. An
+intervening missing snapshot still prevents bridging. No historical backfill is
+performed by collection.
+
 Supported native contracts, checked 2026-11-06:
 
 | Host / scope | Native basis and arithmetic |
@@ -314,6 +354,28 @@ Supported native contracts, checked 2026-11-06:
 | Gemini CLI / `gemini.models` | [Headless JSON](https://google-gemini.github.io/gemini-cli/docs/cli/headless.html) supplies `stats.models`; [telemetry hydration](https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/telemetry/uiTelemetry.ts) restores these counters on resume. Sum each model once: input is prompt (already includes cached), output is candidates plus thoughts plus tool, total must match their sum. Nested role counters and the uncached input subtotal are not added. |
 | Hermes / unavailable | The [CLI reference](https://hermes-agent.nousresearch.com/docs/reference/cli-commands) does not prove a usage report compatible with the integrated `chat --oneshot` command. No telemetry flag is appended. |
 | Grok / `grok.headless` | Native `--output-format json` reports invocation usage, verified with CLI 1.0.77 fresh/resume captures and the [headless contract](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/14-headless-mode.md#json). Full input is `input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens`; output already includes `reasoning_tokens`. Require all counters and a matching `total_tokens`. The captured calls contribute 15709 and 15796 (31505 total). Do not add `modelUsage` again or apply this arithmetic to persisted session `inputTokens`, which already includes cache. Missing, malformed or explicitly incomplete native usage remains unavailable; agent-authored usage is ignored. |
+
+Native detail mappings (same scope and basis as their parent counters):
+
+| Host | cache_read | cache_write | reasoning |
+| --- | --- | --- | --- |
+| Codex | `cached_input_tokens` | `cache_write_input_tokens` | `reasoning_output_tokens` |
+| Claude Code | Sum `modelUsage.*.cacheReadInputTokens` | Sum `modelUsage.*.cacheCreationInputTokens`; TTL partitions are not added again | Sum `modelUsage.*.thinkingTokens`, only when every model reports a valid subset of its output |
+| Grok | `usage.cache_read_input_tokens` | `usage.cache_creation_input_tokens` | `usage.reasoning_tokens` |
+| Gemini CLI | Sum `stats.models.*.tokens.cached`, only when every model reports a valid subset of its prompt | Unavailable | Sum `stats.models.*.tokens.thoughts`, already included in output; nested roles are not added |
+| Hermes | Unavailable | Unavailable | Unavailable |
+
+Claude and Grok still require their native cache buckets to compute valid full
+input; an absent bucket cannot be assumed zero. Missing optional thinking or
+reasoning never erases valid base usage. Codex/Gemini missing optional cache
+detail likewise preserves their already-inclusive input. Native arguments,
+version checks, session identity, scopes and bases are unchanged. Grok fresh and
+resumed invocations each contribute their entire map once, even with a previous
+receipt; they are never differenced. Gemini mappings are covered by structured
+counter fixtures/source contracts, not new authenticated Gemini calls. The
+[native usage specs](../tests/unit/test_host_agent_usage.py) preserve minimal
+native-shaped Codex, Claude and Grok captures; positive Codex cache-write
+behavior was not observed in those native samples.
 
 Usage is optional evidence, including when native execution, result/schema
 validation or session checks fail. Malformed or unsupported telemetry never
