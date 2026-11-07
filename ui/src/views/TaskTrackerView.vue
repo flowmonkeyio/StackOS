@@ -324,6 +324,7 @@ useProjectScopedLoader({
       :tasks-count="tasks.length"
       :task-available="Boolean(activeTaskRow)"
       :graph-summary="`${graphTicketStatLabel} · ${graphEdgeStatLabel}`"
+      :task-agent-stats="activeTaskRow?.task.agent_stats"
       @task-select="selectMapTask"
       @update:view-mode="setViewMode"
       @update:search="navigate({ search: $event }, true)"

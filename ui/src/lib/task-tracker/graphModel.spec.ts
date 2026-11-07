@@ -8,6 +8,7 @@ import {
   TRACKER_TICKET_NODE_WIDTH,
 } from './graphModel'
 import type { TrackerSnapshot } from './types'
+import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 
 const snapshot: TrackerSnapshot = {
   tracker: {
@@ -217,6 +218,18 @@ const snapshot: TrackerSnapshot = {
 }
 
 describe('buildTrackerFlowModel', () => {
+  it('projects each ticket own metrics rather than a parent task total or graph data subtotal', () => {
+    const fixture = structuredClone(snapshot)
+    fixture.tasks[0]!.agent_stats = agentStatsFixture().totals
+    const own = agentStatsFixture().totals
+    own.reported_usage.total = 7
+    fixture.tickets[0]!.agent_stats = own
+    fixture.tickets[1]!.agent_stats = null
+    const model = buildTrackerFlowModel(fixture)
+    expect(model.nodes.find(node => node.id === 'ticket:prepare')!.data!.agentStats).toEqual(own)
+    expect(model.nodes.find(node => node.id === 'ticket:deliver')!.data!.agentStats).toBeNull()
+  })
+
   it('fits a six-ticket dependency tree in a compact width without overlapping nodes and preserves large graph spacing', () => {
     function modelFor(count: number, pairs: number[][]) {
       const nodes = Array.from({ length: count }, (_, index) => ({
@@ -265,7 +278,7 @@ describe('buildTrackerFlowModel', () => {
       sourceKind: 'workflow',
     })
     expect(TRACKER_TICKET_NODE_WIDTH).toBe(296)
-    expect(TRACKER_TICKET_NODE_HEIGHT).toBe(176)
+    expect(TRACKER_TICKET_NODE_HEIGHT).toBe(208)
     expect(model.edges).toEqual([
       expect.objectContaining({
         id: 'dependency:prepare:deliver',

@@ -1,64 +1,40 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, onUpdated, ref } from 'vue'
-import { BarController, BarElement, CategoryScale, Chart, LinearScale } from 'chart.js'
-import type { AgentStatsRow } from './agentActivity'
+import { computed } from 'vue'
+import type { AgentStatsRow } from '@/lib/agentActivity'
 
-Chart.register(BarController, BarElement, CategoryScale, LinearScale)
 const props = defineProps<{ rows: AgentStatsRow[]; global?: boolean }>()
-const canvas = ref<HTMLCanvasElement | null>(null)
-let chart: Chart<'bar'> | null = null
-let observer: MutationObserver | null = null
-let signature = ''
-
-function paint(): void {
-  if (!canvas.value) return
-  const next = JSON.stringify([props.rows, props.global, document.documentElement.dataset.theme])
-  if (chart && next === signature) return
-  signature = next
-  const style = getComputedStyle(canvas.value)
-  const color = style.getPropertyValue('--color-accent-primary').trim()
-  const data = {
-    labels: props.rows.slice(0, 8).map(row => `${props.global ? `${row.project_name} #${row.project_id} · ` : ''}${row.agent_name ?? 'Unknown agent'} · ${row.selected_role ?? 'Unknown role'} · ${row.host_key ?? 'Unknown host'} · ${row.model ?? 'Unknown model'}`),
-    datasets: [{ label: 'Launch attempts', data: props.rows.slice(0, 8).map(row => row.launch_attempts), backgroundColor: color, barThickness: 12 }],
-  }
-  const options = {
-    indexAxis: 'y' as const, responsive: true, maintainAspectRatio: false, animation: false as const,
-    scales: {
-      x: {
-        beginAtZero: true,
-        ticks: { precision: 0, color: style.getPropertyValue('--color-fg-subtle').trim() },
-        grid: { color: style.getPropertyValue('--color-border-subtle').trim() },
-      },
-      y: { display: false },
-    },
-    plugins: { legend: { display: false } },
-  }
-  if (chart) { chart.data = data; chart.options = options; chart.update('none') }
-  else chart = new Chart(canvas.value, { type: 'bar', data, options })
-}
-onMounted(() => {
-  paint()
-  observer = new MutationObserver(paint)
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
-})
-onUpdated(paint)
-onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy() })
+const visibleRows = computed(() => props.rows.slice(0, 8))
+const maximum = computed(() => Math.max(1, ...visibleRows.value.map(row => row.launch_attempts)))
 </script>
 
 <template>
   <figure aria-label="Launch attempts by recorded group">
-    <figcaption class="mb-2 text-xs text-fg-muted">
-      Launch attempts by recorded group · {{ rows.length > 8 ? 'First 8 groups; all groups in the table below' : 'Groups follow table order' }}
+    <figcaption class="mb-3 text-xs text-fg-muted">
+      Launch attempts by recorded group<span v-if="rows.length > 8"> · First 8 groups; all groups in the table below</span>
     </figcaption>
-    <div
-      class="relative min-w-0"
-      :style="{ height: `${Math.max(60, Math.min(rows.length, 8) * 22 + 28)}px` }"
-    >
-      <canvas
-        ref="canvas"
-        role="img"
-        aria-label="Launch attempts by recorded group. Exact values and identities are in the Agent activity breakdown table."
-      />
-    </div>
+    <ul class="space-y-3">
+      <li
+        v-for="(row, index) in visibleRows"
+        :key="index"
+        class="min-w-0"
+      >
+        <div class="mb-1 flex items-start justify-between gap-3 text-xs">
+          <span class="min-w-0 break-words text-fg-muted">
+            <span v-if="global">{{ row.project_name }} #{{ row.project_id }} · </span>
+            {{ row.agent_name ?? 'Unknown agent' }} · {{ row.selected_role ?? 'Unknown role' }} · {{ row.host_key ?? 'Unknown host' }} · {{ row.model ?? 'Unknown model' }}
+          </span>
+          <span class="shrink-0 tabular-nums text-fg-strong">{{ row.launch_attempts.toLocaleString('en-US') }} <span class="sr-only">launch attempts</span></span>
+        </div>
+        <div
+          aria-hidden="true"
+          class="h-3 overflow-hidden rounded-sm bg-bg-sunken"
+        >
+          <div
+            class="h-full"
+            :style="{ width: `${row.launch_attempts / maximum * 100}%`, backgroundColor: 'var(--color-accent-primary)' }"
+          />
+        </div>
+      </li>
+    </ul>
   </figure>
 </template>

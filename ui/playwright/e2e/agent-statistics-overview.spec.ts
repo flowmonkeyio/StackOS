@@ -1,6 +1,7 @@
 import { expect, test, type Locator } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import type { SchemaTrackerAgentStatsOut } from '../../src/api'
+import type { TrackerSnapshot } from '../../src/lib/task-tracker/types'
 import { createProject, getBaseUrl, getDaemonToken, resetProjects, trackConsoleErrors } from '../helpers'
 
 async function operation<T>(name: string, args: Record<string, unknown>): Promise<T> {
@@ -77,6 +78,14 @@ test('synthetic receipts reconcile through both actual Home views and existing p
   await metrics(region, projectStats)
   await expect(region).toContainText('Partial · 4 of 5 attempts measured')
   await expect(region).toContainText('Partial · 4 of 5 attempts classified')
+  const chartGroups = region.getByRole('figure', { name: 'Launch attempts by recorded group' }).getByRole('listitem')
+  await expect(chartGroups).toHaveCount(projectStats.rows.length)
+  for (let index = 0; index < projectStats.rows.length; index++) {
+    const row = projectStats.rows[index]!
+    await expect(chartGroups.nth(index)).toContainText(row.agent_name ?? 'Unknown agent')
+    await expect(chartGroups.nth(index)).toContainText(row.model ?? 'Unknown model')
+    await expect(chartGroups.nth(index)).toContainText(`${row.launch_attempts} launch attempts`)
+  }
   const table = region.getByRole('table', { name: 'Agent activity breakdown' })
   await expect(table.locator('tbody tr')).toHaveCount(projectStats.rows.length)
   for (const row of projectStats.rows) {
@@ -132,4 +141,71 @@ test('synthetic receipts reconcile through both actual Home views and existing p
     path: evidence,
     contentType: 'application/json',
   })
+})
+
+test('Work uses projected task and ticket tokens through filtering, scope changes and refresh', async ({ page }, testInfo) => {
+  expect(new URL(getBaseUrl()).port).not.toBe('5180')
+  expect(process.env.STACKOS_E2E_BASE_URL).toBe(getBaseUrl())
+  await resetProjects()
+  const errors = trackConsoleErrors(page)
+  const project = await createProject({ name: 'Work Usage Proof', slug: 'work-usage-proof', domain: 'work.test' })
+  await seed(project.id, { attempt: 1, delivery: receipt('delivery_agent', 'success', 100, 'recorded-sol') })
+  await operation('tracker.createTicket', { project_id: project.id, task_key: 'synthetic-stats', key: 'legacy', title: 'Legacy usage' })
+  const unavailable = { attempt: 1, delivery: { agent: 'legacy', launch: { host_key: 'codex' } } }
+  await operation('tracker.updateTicket', { project_id: project.id, ticket_key: 'legacy', patch_json: { completion_evidence_json: { automatic_delivery: unavailable } } })
+  for (const [key, automatic] of [
+    ['zero', { attempt: 1, delivery: receipt('delivery_agent', 'success', 0, 'zero-model') }],
+    ['unknown', unavailable],
+    ['empty', null],
+  ] as const) {
+    await operation('tracker.createTask', { project_id: project.id, key, title: `Usage ${key}` })
+    if (automatic) {
+      await operation('tracker.createTicket', { project_id: project.id, task_key: key, key: `${key}-ticket`, title: `Usage ${key} ticket` })
+      await operation('tracker.updateTicket', { project_id: project.id, ticket_key: `${key}-ticket`, patch_json: { completion_evidence_json: { automatic_delivery: automatic } } })
+    }
+  }
+  const index = await operation<TrackerSnapshot>('tracker.get', { project_id: project.id, task_index_only: true, include_graph: false })
+  const focused = await operation<TrackerSnapshot>('tracker.get', { project_id: project.id, task_key: 'synthetic-stats', include_graph: true })
+  const taskTotal = focused.tasks[0]!.agent_stats!
+  expect(taskTotal.reported_usage.total).toBe(100)
+  expect(taskTotal.coverage.usage_status).toBe('partial')
+  expect(index.tasks.find(task => task.key === 'synthetic-stats')!.agent_stats).toEqual(taskTotal)
+  expect(focused.tickets.find(ticket => ticket.key === 'synthetic-receipts')!.agent_stats!.reported_usage.total).toBe(100)
+  const before = await operation('tracker.get', { project_id: project.id })
+  await page.goto(`/projects/${project.id}/tasks`)
+  const board = page.getByRole('region', { name: 'Task board', exact: true })
+  await expect(board.getByRole('button', { name: /Synthetic statistics proof/ })).toContainText('100 tokens · Partial')
+  await expect(board.getByRole('button', { name: /Usage zero$/ })).toContainText('0 tokens')
+  await expect(board.getByRole('button', { name: /Usage unknown$/ })).toContainText('Tokens unavailable')
+  await expect(board.getByRole('button', { name: /Usage empty$/ })).toContainText('No recorded attempts')
+  await page.screenshot({ path: testInfo.outputPath('work-usage-board.png'), fullPage: true })
+
+  await page.goto(`/projects/${project.id}/tasks?view=graph&task=synthetic-stats`)
+  const header = page.locator('.tracker-command-panel__usage')
+  await expect(header).toHaveText('Task total: 100 tokens · Partial')
+  await expect(page.locator('.ticket-graph-node').filter({ hasText: 'synthetic-receipts' }).locator('.ticket-graph-node__usage')).toHaveText('100 tokens')
+  await expect(page.locator('.ticket-graph-node').filter({ hasText: 'Legacy usage' }).locator('.ticket-graph-node__usage')).toHaveText('Tokens unavailable')
+  await page.getByRole('region', { name: 'Task dependency graph' }).getByRole('button', { name: /^Complete/ }).click()
+  await expect(page.locator('.ticket-graph-node')).toHaveCount(0)
+  await expect(header).toHaveText('Task total: 100 tokens · Partial')
+  await page.getByRole('button', { name: 'Clear graph filters' }).click()
+  await expect(page.locator('.ticket-graph-node')).toHaveCount(2)
+  await page.screenshot({ path: testInfo.outputPath('work-usage-graph.png'), fullPage: true })
+  await page.setViewportSize({ width: 760, height: 800 })
+  await expect(header).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.screenshot({ path: testInfo.outputPath('work-usage-narrow.png'), fullPage: true })
+
+  for (const [key, label] of [['zero', '0 tokens'], ['unknown', 'Tokens unavailable'], ['empty', 'No recorded attempts']]) {
+    await page.goto(`/projects/${project.id}/tasks?view=graph&task=${key}`)
+    await expect(header).toHaveText(`Task total: ${label}`)
+  }
+  expect(await operation('tracker.get', { project_id: project.id })).toEqual(before)
+  await operation('tracker.updateTicket', { project_id: project.id, ticket_key: 'synthetic-receipts', patch_json: { completion_evidence_json: { automatic_delivery: { attempt: 1, delivery: receipt('delivery_agent', 'success', 125, 'recorded-sol') } } } })
+  await page.goto(`/projects/${project.id}/tasks?view=graph&task=synthetic-stats`)
+  await expect(header).toHaveText('Task total: 125 tokens · Partial')
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await expect(header).toHaveText('Task total: 125 tokens · Partial')
+  errors.assertNone()
+  writeFileSync(testInfo.outputPath('work-api-ui-reconciliation.json'), JSON.stringify({ synthetic: true, base_url: getBaseUrl(), index, focused, taskTotal, console_errors: errors.errors }, null, 2))
 })

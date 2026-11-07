@@ -3,6 +3,7 @@ import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import type { TrackerSnapshot, TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
+import { agentStatsFixture } from './home/agentStatsFixtures'
 import TaskTrackerView from './TaskTrackerView.vue'
 
 const mocks = vi.hoisted(() => ({ callOperation: vi.fn(), close: vi.fn(), stream: vi.fn() }))
@@ -14,11 +15,18 @@ const taskB = trackerTask({ id: 2, key: 'task-b', title: 'Beta task', status: 'c
 const ticketA = trackerTicket()
 const ticketB = trackerTicket({ id: 12, key: 'ticket-b', title: 'Beta ticket', task_id: 2, task_key: 'task-b', status: 'complete' })
 
-function dataMock(tasks = [taskA, taskB], tickets = [ticketA, ticketB]) {
+function dataMock(tasks = [taskA, taskB], tickets = [ticketA, ticketB], graphNodes = false) {
   mocks.callOperation.mockImplementation(async (operation: string, args: Record<string, unknown>) => {
     if (operation === 'executionContext.list') return { items: [], total_estimate: 0, next_cursor: null }
     if (operation !== 'tracker.get') throw new Error(`Unexpected operation ${operation}`)
-    if (args.task_key) return trackerSnapshot(tasks.filter(task => task.key === args.task_key), tickets.filter(ticket => ticket.task_key === args.task_key), args.include_graph === true)
+    if (args.task_key) {
+      const result = trackerSnapshot(tasks.filter(task => task.key === args.task_key), tickets.filter(ticket => ticket.task_key === args.task_key), args.include_graph === true)
+      if (result.graph && graphNodes) result.graph.nodes = result.tickets.map(ticket => ({
+        id: `ticket:${ticket.key}`, type: 'ticket', parent_id: null, label: ticket.title,
+        status: ticket.status, lane_key: ticket.lane_key, priority_key: ticket.priority_key, data: {},
+      }))
+      return result
+    }
     const index = tasks.map(task => {
       const children = tickets.filter(ticket => ticket.task_key === task.key)
       return { ...task, ticket_summary: {
@@ -43,9 +51,9 @@ async function render(url = '/projects/7/tasks', realDialogs = false) {
     attachTo: realDialogs ? document.body : undefined,
     global: { plugins: [router, createPinia()], stubs: {
       ProjectPageHeader: { template: '<header><slot name="actions" /></header>' },
-      TaskTrackerCommandPanel: { name: 'TaskTrackerCommandPanel', props: ['viewMode','activeTaskKey','taskOptions','search','filtersActive'], template: '<nav />' },
+      TaskTrackerCommandPanel: { name: 'TaskTrackerCommandPanel', props: ['viewMode','activeTaskKey','taskOptions','search','filtersActive','taskAgentStats'], template: '<nav />' },
       TrackerBoardPanel: { name: 'TrackerBoardPanel', props: ['rows'], template: '<section data-test="board" />' },
-      TrackerGraphPanel: { name: 'TrackerGraphPanel', props: ['loading','activeTaskTitle','selectedTicket','selectionVisible','selectionLabel'], template: '<section data-test="graph" />' },
+      TrackerGraphPanel: { name: 'TrackerGraphPanel', props: ['loading','activeTaskTitle','selectedTicket','selectionVisible','selectionLabel','flow'], template: '<section data-test="graph" />' },
       TrackerWarningSummary: true,
       TrackerTaskDetailDialog: realDialogs ? false : { name: 'TrackerTaskDetailDialog', props: ['modelValue','task','tickets','loading','error','contexts','ticket','ticketKey'], template: '<aside />' },
       TrackerTicketDetailPanel: realDialogs ? false : { name: 'TrackerTicketDetailPanel', props: ['modelValue','ticket','error','presentation'], template: '<aside />' },
@@ -58,6 +66,35 @@ async function render(url = '/projects/7/tasks', realDialogs = false) {
 const popup = () => new DOMWrapper(document.body)
 
 describe('Work board navigation', () => {
+  it('keeps board/header totals whole through graph filtering, task switching and live refresh', async () => {
+    const alpha = agentStatsFixture().totals
+    const beta = structuredClone(alpha)
+    beta.reported_usage.total = 12
+    const own = structuredClone(alpha)
+    own.reported_usage.total = 7
+    dataMock([{ ...taskA, agent_stats: alpha }, { ...taskB, agent_stats: beta }], [{ ...ticketA, agent_stats: own }, ticketB], true)
+    const { wrapper, controls, board } = await render('/projects/7/tasks?view=graph&task=task-a')
+    expect(controls().props('taskAgentStats')).toEqual(alpha)
+    expect(board().props('rows').find((row: { key: string }) => row.key === 'task-a').task.agent_stats).toEqual(alpha)
+    const graph = () => wrapper.findComponent({ name: 'TrackerGraphPanel' })
+    expect(graph().props('flow').nodes[0].data.agentStats.reported_usage.total).toBe(7)
+    graph().vm.$emit('toggle-status', 'complete')
+    await flushPromises()
+    expect(graph().props('flow').nodes).toHaveLength(0)
+    expect(controls().props('taskAgentStats')).toEqual(alpha)
+    controls().vm.$emit('taskSelect', 'task-b')
+    await flushPromises()
+    expect(controls().props('taskAgentStats')).toEqual(beta)
+    const refreshed = structuredClone(beta)
+    refreshed.reported_usage.total = 99
+    dataMock([{ ...taskA, agent_stats: alpha }, { ...taskB, agent_stats: refreshed }])
+    mocks.stream.mock.calls.at(-1)![0].onEvent({ id: 9901, event_type: 'tracker.ticket.updated', metadata_json: { task_key: 'task-b' } })
+    await flushPromises()
+    expect(controls().props('taskAgentStats')).toEqual(refreshed)
+    expect(board().props('rows').find((row: { key: string }) => row.key === 'task-b').task.agent_stats).toEqual(refreshed)
+    wrapper.unmount()
+  })
+
   beforeEach(() => {
     setActivePinia(createPinia())
     sessionStorage.clear()

@@ -52,17 +52,19 @@ that nested router because `HomeConsoleView` owns its complete page chrome.
 
 ## Mode continuity
 
-Work uses one wrapper for all three views:
+Work uses one wrapper for Board and Graph:
 
 ```text
 Project page header
-  -> task selector + Graph / Stories / Tickets
-  -> shared filters and task totals
+  -> Board / Graph switch + view-specific controls
+  -> Board filters, or graph task picker + whole-task token total
   -> mode content (only this region changes)
 ```
 
-Changing project preserves the current operating route. Changing Work mode
-does not move the selector, view control, filters, or page boundaries. The
-Graph is the default because it exposes sequence, parallel work, and
-blockers fastest; Stories translates the same state into goals/outcomes, and
-Tickets provides exact inventory.
+Changing project preserves the current operating route. Board is the default
+and shows whole-task token totals on its cards. Graph retains its selected
+task independently of Board filters; the command panel shows that task's same
+API-projected total, while ticket nodes show their own usage. Graph filters
+change visible tickets without changing the task total. Token coverage stays
+visible at narrow widths, wrapping below the controls when needed. Both Home
+surfaces pair each activity bar with a wrapping group identity and exact count.

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { UiButton, UiIcon, UiInput, UiSegmentedControl, UiSelect, UiToolbar } from '@/components/ui'
+import { usageCoverage, usageLabel, type AgentStatsMetrics } from '@/lib/agentActivity'
 import type { TrackerSelectOption, TrackerTaskSelectOption, ViewMode } from './viewTypes'
 
 defineProps<{
@@ -16,6 +17,7 @@ defineProps<{
   filtersActive: boolean
   taskAvailable: boolean
   graphSummary: string
+  taskAgentStats?: AgentStatsMetrics | null
 }>()
 defineEmits<{
   (e: 'taskSelect', value: string | number | null): void
@@ -99,6 +101,11 @@ const viewOptions = [{ key: 'board', label: 'Board' }, { key: 'graph', label: 'G
           @change="$emit('taskSelect', $event)"
         />
       </div>
+      <span
+        v-if="taskAvailable"
+        class="tracker-command-panel__usage text-xs tabular-nums text-fg-muted"
+        :title="usageCoverage(taskAgentStats)"
+      >Task total: {{ usageLabel(taskAgentStats) }}</span>
       <span class="tracker-command-panel__count text-xs text-fg-muted">{{ graphSummary }}</span>
       <UiButton
         variant="secondary"
@@ -121,9 +128,13 @@ const viewOptions = [{ key: 'board', label: 'Board' }, { key: 'graph', label: 'G
 .tracker-command-panel__assignee { flex-basis: 160px; }
 .tracker-command-panel__task { flex: 1 1 0; min-width: 160px; }
 .tracker-command-panel__count { margin-left: auto; flex: none; white-space: nowrap; }
+.tracker-command-panel__usage { flex: 0 1 auto; overflow-wrap: anywhere; }
 @media (max-width: 1100px) {
   .tracker-command-panel__count { display: none; }
   .tracker-command-panel__filter { flex-basis: 120px; min-width: 95px; }
 }
-@media (max-width: 800px) { .tracker-command-panel { overflow-x: auto; } }
+@media (max-width: 800px) {
+  .tracker-command-panel { flex-wrap: wrap; }
+  .tracker-command-panel__usage { flex: 1 1 100%; order: 1; }
+}
 </style>

@@ -4,11 +4,34 @@ import type { TrackerStatus, TrackerTask } from '@/lib/task-tracker/types'
 import { trackerStatus } from '@/design/status'
 import { UiIcon } from '@/components/ui'
 import { formatAbsoluteDateTime } from '@/lib/stackos/time'
+import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 import { buildTaskProgressRows } from './viewModel'
 import TrackerBoardPanel from './TrackerBoardPanel.vue'
 import TaskTrackerCommandPanel from './TaskTrackerCommandPanel.vue'
 
 describe('Work board presentation', () => {
+  it('renders the API task total with coverage and updates without a per-card request', async () => {
+    const metrics = agentStatsFixture().totals
+    const record = { ...task('in-progress'), agent_stats: metrics }
+    const rows = () => buildTaskProgressRows([record], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
+    const wrapper = mount(TrackerBoardPanel, { props: { rows: rows() } })
+    expect(wrapper.get('button').text()).toContain('100 tokens')
+    metrics.reported_usage.total = 0
+    await wrapper.setProps({ rows: rows() })
+    expect(wrapper.get('button').text()).toContain('0 tokens')
+    metrics.coverage.usage_status = 'partial' as never
+    metrics.reported_usage.total = 42
+    await wrapper.setProps({ rows: rows() })
+    expect(wrapper.get('button').text()).toContain('42 tokens · Partial')
+    metrics.coverage.usage_status = 'unavailable' as never
+    metrics.reported_usage.total = null
+    await wrapper.setProps({ rows: rows() })
+    expect(wrapper.get('button').text()).toContain('Tokens unavailable')
+    metrics.coverage.usage_status = 'empty' as never
+    await wrapper.setProps({ rows: rows() })
+    expect(wrapper.get('button').text()).toContain('No recorded attempts')
+  })
+
   it('keeps all seven columns, including empty columns, with read-only cards', async () => {
     const rows = buildTaskProgressRows([task('in-progress')], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
     const wrapper = mount(TrackerBoardPanel, { props: { rows } })
@@ -97,6 +120,14 @@ describe('Work board presentation', () => {
     await wrapper.setProps({ viewMode: 'graph' })
     expect(wrapper.find('[aria-label="Selected task"]').exists()).toBe(true)
     expect(wrapper.find('[aria-label="Search tasks"]').exists()).toBe(false)
+    const metrics = agentStatsFixture().totals
+    await wrapper.setProps({ taskAgentStats: metrics })
+    expect(wrapper.get('.tracker-command-panel__usage').text()).toBe('Task total: 100 tokens')
+    expect(wrapper.get('.tracker-command-panel__usage').attributes('title')).toBe('Complete · 4 of 4 attempts measured')
+    await wrapper.setProps({ taskAgentStats: null })
+    expect(wrapper.get('.tracker-command-panel__usage').text()).toBe('Task total: Tokens unavailable')
+    await wrapper.setProps({ taskAvailable: false })
+    expect(wrapper.find('.tracker-command-panel__usage').exists()).toBe(false)
   })
 })
 

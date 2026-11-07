@@ -1,5 +1,6 @@
 import dagre, { Graph } from '@dagrejs/dagre'
 import { MarkerType, Position, type Edge, type Node } from '@vue-flow/core'
+import type { AgentStatsMetrics } from '@/lib/agentActivity'
 
 import type {
   TrackerGraphEdge,
@@ -25,6 +26,7 @@ export interface TrackerVueNodeData {
   agent?: string | null
   sourceKind?: string | null
   runPlanId?: number | null
+  agentStats?: AgentStatsMetrics | null
   active?: boolean
   recentlyUpdated?: boolean
   raw: TrackerTask | TrackerTicket | TrackerGraphNode
@@ -55,7 +57,7 @@ export interface TrackerFlowModel {
 type EdgeFocusTone = 'default' | 'muted' | 'upstream' | 'downstream' | 'active' | 'highlighted'
 
 export const TRACKER_TICKET_NODE_WIDTH = 296
-export const TRACKER_TICKET_NODE_HEIGHT = 176
+export const TRACKER_TICKET_NODE_HEIGHT = 208
 
 const TASK_WIDTH = 392
 const TICKET_WIDTH = TRACKER_TICKET_NODE_WIDTH
@@ -65,7 +67,7 @@ const TASK_GAP_Y = 416
 const CHILD_GAP_X = 30
 const CHILD_GAP_Y = 26
 const DEPENDENCY_LAYER_GAP_X = 430
-const DEPENDENCY_ROW_GAP_Y = 224
+const DEPENDENCY_ROW_GAP_Y = 256
 const DEPENDENCY_GROUP_GAP_Y = 460
 const LINK_GAP_X = 222
 const EDGE_STROKE_WIDTH = 1.2
@@ -637,6 +639,7 @@ function vueNodeData(
     agent: trackerAgent(raw),
     sourceKind: ticket?.source_kind ?? task?.source_kind ?? null,
     runPlanId: ticket?.run_plan_id,
+    agentStats: ticket ? ticket.agent_stats : task?.agent_stats,
     active: options.activeNodeIds?.has(graphNode.id) === true,
     recentlyUpdated: options.recentNodeIds?.has(graphNode.id) === true,
     raw,

@@ -2,10 +2,29 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
 import type { TrackerVueNodeData } from '@/lib/task-tracker/graphModel'
+import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 
 import TicketGraphNode from './TicketGraphNode.vue'
 
 describe('TicketGraphNode', () => {
+  it('renders own projected usage and truthfully refreshes unavailable and partial coverage', async () => {
+    const metrics = agentStatsFixture().totals
+    const wrapper = mount(TicketGraphNode, {
+      props: { data: nodeData({ agentStats: metrics }) }, global: { stubs: { Handle: true } },
+    })
+    expect(wrapper.get('.ticket-graph-node__usage').text()).toBe('100 tokens')
+    const partial = structuredClone(metrics)
+    partial.reported_usage.total = 0
+    partial.coverage.usage_status = 'partial' as never
+    await wrapper.setProps({ data: nodeData({ agentStats: partial }) })
+    expect(wrapper.get('.ticket-graph-node__usage').text()).toBe('0 tokens · Partial')
+    await wrapper.setProps({ data: nodeData({ agentStats: null }) })
+    expect(wrapper.get('.ticket-graph-node__usage').text()).toBe('Tokens unavailable')
+    partial.coverage.usage_status = 'empty' as never
+    await wrapper.setProps({ data: nodeData({ agentStats: partial }) })
+    expect(wrapper.get('.ticket-graph-node__usage').text()).toBe('No recorded attempts')
+  })
+
   it('renders status text plus active and recent state affordances', () => {
     const active = mount(TicketGraphNode, {
       props: { data: nodeData({ active: true, status: 'in-progress' }) },

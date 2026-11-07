@@ -1,4 +1,4 @@
-import type { AgentStats } from './agentActivity'
+import type { AgentStats } from '@/lib/agentActivity'
 
 export function agentStatsFixture(overrides: Partial<AgentStats> = {}): AgentStats {
   const metrics = {

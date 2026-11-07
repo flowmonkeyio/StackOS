@@ -5,7 +5,7 @@ import type { DataTableColumn } from '@/components/types'
 import { UiCallout, UiMetricCard, UiSectionHeader, UiSkeleton } from '@/components/ui'
 import { formatAbsoluteDateTime } from '@/lib/stackos/time'
 import AgentActivityChart from './AgentActivityChart.vue'
-import { rejectCoverage, rejectValue, usageCoverage, usageValue, type AgentStats } from './agentActivity'
+import { rejectCoverage, rejectValue, usageCoverage, usageValue, type AgentStats } from '@/lib/agentActivity'
 
 const props = defineProps<{ summary: AgentStats | null; loading: boolean; error: string | null; global?: boolean }>()
 // IDs are presentation keys only. Counts and grouping remain backend-owned.

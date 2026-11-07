@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 
 import { resolveStatus } from '@/design/status'
+import { usageCoverage, usageLabel } from '@/lib/agentActivity'
 import type { TrackerVueNodeData } from '@/lib/task-tracker/graphModel'
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
 import type { TrackerStatus } from '@/lib/task-tracker/types'
@@ -110,6 +111,11 @@ function humanize(value: string | null | undefined): string | null {
       </div>
     </dl>
 
+    <p
+      class="ticket-graph-node__usage"
+      :title="usageCoverage(data.agentStats)"
+    >{{ usageLabel(data.agentStats) }}</p>
+
     <div class="ticket-graph-node__meta">
       <span>{{ sourceLabel }}</span>
       <span>{{ humanize(data.laneKey) }}</span>
@@ -130,7 +136,7 @@ function humanize(value: string | null | undefined): string | null {
   position: relative;
   box-sizing: border-box;
   width: var(--tracker-ticket-node-width, 296px);
-  min-height: var(--tracker-ticket-node-height, 176px);
+  min-height: var(--tracker-ticket-node-height, 208px);
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-md);
   background: var(--color-bg-surface);
@@ -334,6 +340,16 @@ function humanize(value: string | null | undefined): string | null {
   line-height: 1.1;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.ticket-graph-node__usage {
+  position: relative;
+  margin-top: 8px;
+  color: var(--color-fg-muted);
+  font-size: 10px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
 }
 
 .ticket-graph-node__meta {

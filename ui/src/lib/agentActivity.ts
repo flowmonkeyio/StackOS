@@ -4,14 +4,21 @@ export type AgentStats = SchemaTrackerAgentStatsOut
 export type AgentStatsRow = AgentStats['rows'][number]
 export type AgentStatsMetrics = AgentStats['totals']
 
-export function usageValue(metrics: AgentStatsMetrics): string {
-  return metrics.reported_usage.total === null ? 'Unavailable' : metrics.reported_usage.total.toLocaleString('en-US')
+export function usageValue(metrics: AgentStatsMetrics | null | undefined): string {
+  return metrics?.reported_usage.total == null ? 'Unavailable' : metrics.reported_usage.total.toLocaleString('en-US')
 }
 
-export function usageCoverage(metrics: AgentStatsMetrics): string {
+export function usageCoverage(metrics: AgentStatsMetrics | null | undefined): string {
+  if (!metrics) return 'Usage not available'
   const c = metrics.coverage
   if (c.usage_status === 'empty') return 'No recorded attempts'
   return `${c.usage_status === 'complete' ? 'Complete' : c.usage_status === 'partial' ? 'Partial' : 'Unavailable'} · ${c.usage_measured_attempts} of ${metrics.launch_attempts} attempts measured`
+}
+
+export function usageLabel(metrics: AgentStatsMetrics | null | undefined): string {
+  if (metrics?.coverage.usage_status === 'empty') return 'No recorded attempts'
+  if (metrics?.reported_usage.total == null) return 'Tokens unavailable'
+  return `${usageValue(metrics)} tokens${metrics.coverage.usage_status === 'partial' ? ' · Partial' : ''}`
 }
 
 export function rejectCoverage(metrics: AgentStatsMetrics): string {
