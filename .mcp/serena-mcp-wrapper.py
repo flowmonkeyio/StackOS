@@ -7,9 +7,9 @@ stale references keep working; do not add logic here, and do not fork the
 canonical wrapper again.
 """
 
-from pathlib import Path
 import os
 import sys
+from pathlib import Path
 
 CANONICAL = Path.home() / ".serena/bin/serena-mcp-wrapper.py"
 if not CANONICAL.is_file():
