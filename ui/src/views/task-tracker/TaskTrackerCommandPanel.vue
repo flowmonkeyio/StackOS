@@ -37,6 +37,7 @@ const viewOptions = [{ key: 'board', label: 'Board' }, { key: 'graph', label: 'G
   <UiToolbar
     aria-label="Work view controls"
     class="tracker-command-panel"
+    :class="{ 'tracker-command-panel--graph': viewMode === 'graph' }"
     :variant="viewMode === 'board' ? 'plain' : 'default'"
   >
     <UiSegmentedControl
@@ -106,40 +107,44 @@ const viewOptions = [{ key: 'board', label: 'Board' }, { key: 'graph', label: 'G
       <UiBadge v-if="taskAvailable && taskAutomated">
         Automated
       </UiBadge>
-      <div
-        v-if="taskAvailable"
-        class="tracker-command-panel__usage"
-        aria-label="Lifetime task usage"
-      >
-        <AgentUsageSummary
-          :metrics="taskAgentStats"
-          compact
-          title="Lifetime task usage. Cache is included in Input."
-        />
+      <div class="tracker-command-panel__usage-actions">
+        <div
+          v-if="taskAvailable"
+          class="tracker-command-panel__usage"
+          aria-label="Lifetime task usage"
+        >
+          <AgentUsageSummary
+            :metrics="taskAgentStats"
+            compact
+            title="Lifetime task usage. Cache is included in Input."
+          />
+        </div>
+        <span class="tracker-command-panel__count tracker-command-panel__graph-count text-xs text-fg-muted">{{ graphSummary }}</span>
+        <UiButton
+          variant="secondary"
+          size="sm"
+          icon-left="file-text"
+          :disabled="!taskAvailable"
+          @click="$emit('openTaskDetail')"
+        >
+          Task details
+        </UiButton>
       </div>
-      <span class="tracker-command-panel__count tracker-command-panel__graph-count text-xs text-fg-muted">{{ graphSummary }}</span>
-      <UiButton
-        variant="secondary"
-        size="sm"
-        icon-left="file-text"
-        :disabled="!taskAvailable"
-        @click="$emit('openTaskDetail')"
-      >
-        Task details
-      </UiButton>
     </template>
   </UiToolbar>
 </template>
 
 <style scoped>
 .tracker-command-panel { flex: none; flex-wrap: nowrap; min-width: 0; gap: 8px; }
+.tracker-command-panel--graph { flex-wrap: wrap; }
 .tracker-command-panel__views { flex: none; flex-wrap: nowrap; white-space: nowrap; }
 .tracker-command-panel__search { flex: 0 1 280px; min-width: 120px; }
 .tracker-command-panel__filter { flex: 0 1 180px; min-width: 110px; }
 .tracker-command-panel__assignee { flex-basis: 160px; }
-.tracker-command-panel__task { flex: 1 1 0; min-width: 160px; }
+.tracker-command-panel__task { flex: 1 1 240px; min-width: 160px; }
 .tracker-command-panel__count { margin-left: auto; flex: none; white-space: nowrap; }
-.tracker-command-panel__usage { flex: 0 0 280px; min-width: 0; }
+.tracker-command-panel__usage-actions { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
+.tracker-command-panel__usage { flex: 1 1 280px; min-width: 240px; }
 @media (max-width: 1350px) {
   .tracker-command-panel__graph-count { display: none; }
 }
@@ -149,6 +154,5 @@ const viewOptions = [{ key: 'board', label: 'Board' }, { key: 'graph', label: 'G
 }
 @media (max-width: 800px) {
   .tracker-command-panel { flex-wrap: wrap; }
-  .tracker-command-panel__usage { flex: 1 1 100%; order: 1; }
 }
 </style>

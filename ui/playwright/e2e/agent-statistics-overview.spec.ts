@@ -306,9 +306,35 @@ test('Work uses shared Input Cache Output through filtering, details and refresh
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
   await expect(viewport).toHaveAttribute('style', pannedViewport!)
   await page.screenshot({ path: testInfo.outputPath('work-usage-graph.png'), fullPage: true })
+  const toolbar = page.getByRole('toolbar', { name: 'Work view controls' })
+  for (const width of [760, 900, 1024, 1280]) {
+    await page.setViewportSize({ width, height: 800 })
+    const controls = [
+      toolbar.getByRole('tab', { name: 'Board', exact: true }),
+      toolbar.getByRole('tab', { name: 'Graph', exact: true }),
+      toolbar.getByLabel('Selected task', { exact: true }),
+      toolbar.getByText('Automated', { exact: true }),
+      toolbar.getByRole('button', { name: 'Task details', exact: true }),
+      ...(['input', 'cache_read', 'output'] as const).flatMap(field => [
+        header.locator(`[data-usage-field="${field}"] dt`),
+        header.locator(`[data-usage-field="${field}"] dd[tabindex]`),
+      ]),
+    ]
+    for (const control of controls) {
+      await expect(control).toBeInViewport({ ratio: 1 })
+      const frame = await toolbar.boundingBox()
+      const box = await control.boundingBox()
+      expect(frame).not.toBeNull()
+      expect(box).not.toBeNull()
+      expect(box!.x, `${width}px: ${await control.textContent()} left`).toBeGreaterThanOrEqual(frame!.x - 1)
+      expect(box!.x + box!.width, `${width}px: ${await control.textContent()} right`).toBeLessThanOrEqual(frame!.x + frame!.width + 1)
+    }
+    await workMetrics(header, taskTotal)
+    await toolbar.getByRole('button', { name: 'Task details', exact: true }).click()
+    await expect(dialog).toBeVisible()
+    await dialog.getByRole('button', { name: 'Close', exact: true }).first().click()
+  }
   await page.setViewportSize({ width: 760, height: 800 })
-  await expect(header).toBeVisible()
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('work-usage-narrow.png'), fullPage: true })
 
   for (const key of ['zero', 'unknown', 'missing-cache', 'empty', 'reset']) {
