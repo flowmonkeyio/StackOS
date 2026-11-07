@@ -114,6 +114,17 @@ Each page's existing refresh/polling owner continues loading statistics
 alongside ticket counts. Work consumers retain lifetime task/ticket projections,
 independent of these Home date filters.
 
+Work reuses the compact `AgentUsageSummary` on Board cards, the graph task
+header, individual ticket nodes, task details, and `TrackerTicketDetailContent`
+(shared by the task popup and graph inspector). Board/header/task details pass
+the backend lifetime task projection; nodes and ticket details pass only their
+own ticket projection. Graph visibility never recomputes these totals. Exact
+values and independent missing-field notes remain available on focus/hover.
+`Automated` sits with task identity/status and uses the unchanged persisted
+delivery predicate, including stopped and complete executions. Ticket geometry
+is centrally defined as 328 × 248px in `lib/task-tracker/graphModel.ts`, including
+layout, CSS variables and minimap consumers, to fit the three-value summary.
+
 Route views are composition roots, not feature implementations. Use the
 following ownership split for new work and when a touched view has accumulated
 multiple independent lifecycles:

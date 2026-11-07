@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { UiButton, UiIcon, UiInput, UiSegmentedControl, UiSelect, UiToolbar } from '@/components/ui'
-import { usageCoverage, usageLabel, type AgentStatsMetrics } from '@/lib/agentActivity'
+import { UiBadge, UiButton, UiIcon, UiInput, UiSegmentedControl, UiSelect, UiToolbar } from '@/components/ui'
+import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
+import type { AgentStatsMetrics } from '@/lib/agentActivity'
 import type { TrackerSelectOption, TrackerTaskSelectOption, ViewMode } from './viewTypes'
 
 defineProps<{
@@ -18,6 +19,7 @@ defineProps<{
   taskAvailable: boolean
   graphSummary: string
   taskAgentStats?: AgentStatsMetrics | null
+  taskAutomated?: boolean
 }>()
 defineEmits<{
   (e: 'taskSelect', value: string | number | null): void
@@ -101,12 +103,21 @@ const viewOptions = [{ key: 'board', label: 'Board' }, { key: 'graph', label: 'G
           @change="$emit('taskSelect', $event)"
         />
       </div>
-      <span
+      <UiBadge v-if="taskAvailable && taskAutomated">
+        Automated
+      </UiBadge>
+      <div
         v-if="taskAvailable"
-        class="tracker-command-panel__usage text-xs tabular-nums text-fg-muted"
-        :title="usageCoverage(taskAgentStats)"
-      >Task total: {{ usageLabel(taskAgentStats) }}</span>
-      <span class="tracker-command-panel__count text-xs text-fg-muted">{{ graphSummary }}</span>
+        class="tracker-command-panel__usage"
+        aria-label="Lifetime task usage"
+      >
+        <AgentUsageSummary
+          :metrics="taskAgentStats"
+          compact
+          title="Lifetime task usage. Cache is included in Input."
+        />
+      </div>
+      <span class="tracker-command-panel__count tracker-command-panel__graph-count text-xs text-fg-muted">{{ graphSummary }}</span>
       <UiButton
         variant="secondary"
         size="sm"
@@ -128,7 +139,10 @@ const viewOptions = [{ key: 'board', label: 'Board' }, { key: 'graph', label: 'G
 .tracker-command-panel__assignee { flex-basis: 160px; }
 .tracker-command-panel__task { flex: 1 1 0; min-width: 160px; }
 .tracker-command-panel__count { margin-left: auto; flex: none; white-space: nowrap; }
-.tracker-command-panel__usage { flex: 0 1 auto; overflow-wrap: anywhere; }
+.tracker-command-panel__usage { flex: 0 0 280px; min-width: 0; }
+@media (max-width: 1350px) {
+  .tracker-command-panel__graph-count { display: none; }
+}
 @media (max-width: 1100px) {
   .tracker-command-panel__count { display: none; }
   .tracker-command-panel__filter { flex-basis: 120px; min-width: 95px; }

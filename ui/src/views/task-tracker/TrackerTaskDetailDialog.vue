@@ -17,6 +17,7 @@ import {
 } from '@/components/ui'
 import MarkdownView from '@/components/MarkdownView.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import type { TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
 import { isAutomaticDeliveryTask } from '@/lib/task-tracker/delivery'
@@ -318,11 +319,23 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
             :status="task.status"
           />
           <UiBadge v-if="isAutomaticDeliveryTask(task)">
-            Automatic
+            Automated
           </UiBadge>
           <span>Owner <span class="text-fg-default">{{ task.owner ?? 'Unassigned' }}</span></span>
           <span>{{ completedCount }} of {{ tickets.length }} tickets complete</span>
         </div>
+        <section
+          class="space-y-2"
+          aria-label="Lifetime task usage"
+        >
+          <AgentUsageSummary
+            :metrics="task.agent_stats"
+            compact
+          />
+          <p class="text-xs text-fg-muted">
+            Lifetime task usage. Cache is included in Input.
+          </p>
+        </section>
         <section class="space-y-2 border-t border-subtle pt-4">
           <div class="flex items-center justify-between gap-3">
             <h3 class="t-h3 text-fg-strong">

@@ -6,6 +6,7 @@ import { UiBadge, UiButton, UiCallout, UiEmptyState, UiLoadingState, UiPageShell
 import { callOperation } from '@/lib/operations'
 import { resolveStatus, trackerStatus } from '@/design/status'
 import type { TrackerSnapshot, TrackerStatus, TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
+import { isAutomaticDeliveryTask } from '@/lib/task-tracker/delivery'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import TaskTrackerCommandPanel from './task-tracker/TaskTrackerCommandPanel.vue'
@@ -325,6 +326,7 @@ useProjectScopedLoader({
       :task-available="Boolean(activeTaskRow)"
       :graph-summary="`${graphTicketStatLabel} · ${graphEdgeStatLabel}`"
       :task-agent-stats="activeTaskRow?.task.agent_stats"
+      :task-automated="isAutomaticDeliveryTask(activeTaskRow?.task)"
       @task-select="selectMapTask"
       @update:view-mode="setViewMode"
       @update:search="navigate({ search: $event }, true)"

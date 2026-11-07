@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 
 import { resolveStatus } from '@/design/status'
-import { usageCoverage, usageLabel } from '@/lib/agentActivity'
+import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
 import type { TrackerVueNodeData } from '@/lib/task-tracker/graphModel'
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
 import type { TrackerStatus } from '@/lib/task-tracker/types'
@@ -111,10 +111,12 @@ function humanize(value: string | null | undefined): string | null {
       </div>
     </dl>
 
-    <p
+    <AgentUsageSummary
       class="ticket-graph-node__usage"
-      :title="usageCoverage(data.agentStats)"
-    >{{ usageLabel(data.agentStats) }}</p>
+      :metrics="data.agentStats"
+      compact
+      title="Own ticket usage. Cache is included in Input."
+    />
 
     <div class="ticket-graph-node__meta">
       <span>{{ sourceLabel }}</span>
@@ -135,8 +137,8 @@ function humanize(value: string | null | undefined): string | null {
 
   position: relative;
   box-sizing: border-box;
-  width: var(--tracker-ticket-node-width, 296px);
-  min-height: var(--tracker-ticket-node-height, 208px);
+  width: var(--tracker-ticket-node-width, 328px);
+  min-height: var(--tracker-ticket-node-height, 248px);
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-md);
   background: var(--color-bg-surface);

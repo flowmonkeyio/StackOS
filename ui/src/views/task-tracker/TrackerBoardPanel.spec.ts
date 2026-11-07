@@ -15,12 +15,13 @@ describe('Work board presentation', () => {
     const record = task('in-progress')
     const rows = () => buildTaskProgressRows([record], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
     const wrapper = mount(TrackerBoardPanel, { props: { rows: rows() } })
-    expect(wrapper.get('button').text()).not.toContain('Automatic')
+    expect(wrapper.get('button').text()).not.toContain('Automated')
     for (const status of ['queued', 'running', 'stopped', 'complete']) {
       record.metadata_json = { delivery: { status, job_ref: 'task-delivery:1:1', delivery_agent: agent, review_agent: agent } }
       await wrapper.setProps({ rows: rows() })
       const badge = wrapper.get('.ui-badge')
-      expect(badge.text()).toBe('Automatic')
+      expect(badge.text()).toBe('Automated')
+      expect(badge.element.parentElement?.className).toBe('tracker-board__identity')
       expect(badge.classes()).toContain('text-neutral-fg')
       expect(badge.element.tagName).toBe('SPAN')
     }
@@ -29,26 +30,25 @@ describe('Work board presentation', () => {
     expect(wrapper.find('.ui-badge').exists()).toBe(false)
   })
 
-  it('renders the API task total with coverage and updates without a per-card request', async () => {
+  it('renders all three projected fields with exact values, independent missing data and zero', async () => {
     const metrics = agentStatsFixture().totals
     const record = { ...task('in-progress'), agent_stats: metrics }
-    const rows = () => buildTaskProgressRows([record], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
+    const rows = () => buildTaskProgressRows([{ ...record, agent_stats: structuredClone(metrics) }], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
     const wrapper = mount(TrackerBoardPanel, { props: { rows: rows() } })
-    expect(wrapper.get('button').text()).toContain('100 tokens')
-    metrics.reported_usage.total = 0
+    expect(wrapper.findAll('dt').map(label => label.text())).toEqual(['Input', 'Cache', 'Output'])
+    expect(wrapper.get('[data-usage-field="input"] dd').attributes('aria-label')).toContain('70 tokens')
+    metrics.reported_usage.input = 0
     await wrapper.setProps({ rows: rows() })
-    expect(wrapper.get('button').text()).toContain('0 tokens')
+    expect(wrapper.get('[data-usage-field="input"] dd').text()).toBe('0')
     metrics.coverage.usage_status = 'partial' as never
-    metrics.reported_usage.total = 42
+    metrics.reported_usage.cache_read = null
     await wrapper.setProps({ rows: rows() })
-    expect(wrapper.get('button').text()).toContain('42 tokens · Partial')
-    metrics.coverage.usage_status = 'unavailable' as never
-    metrics.reported_usage.total = null
+    expect(wrapper.get('[data-usage-field="cache_read"] dd').text()).toBe('Not reported')
+    expect(wrapper.get('[data-usage-field="output"] dd').text()).toBe('30')
+    expect(wrapper.text()).not.toContain('Partial')
+    metrics.launch_attempts = 0
     await wrapper.setProps({ rows: rows() })
-    expect(wrapper.get('button').text()).toContain('Tokens unavailable')
-    metrics.coverage.usage_status = 'empty' as never
-    await wrapper.setProps({ rows: rows() })
-    expect(wrapper.get('button').text()).toContain('No recorded attempts')
+    expect(wrapper.get('button').text()).toContain('No recorded usage')
   })
 
   it('keeps all seven columns, including empty columns, with read-only cards', async () => {
@@ -141,10 +141,12 @@ describe('Work board presentation', () => {
     expect(wrapper.find('[aria-label="Search tasks"]').exists()).toBe(false)
     const metrics = agentStatsFixture().totals
     await wrapper.setProps({ taskAgentStats: metrics })
-    expect(wrapper.get('.tracker-command-panel__usage').text()).toBe('Task total: 100 tokens')
-    expect(wrapper.get('.tracker-command-panel__usage').attributes('title')).toBe('Complete · 4 of 4 attempts measured')
-    await wrapper.setProps({ taskAgentStats: null })
-    expect(wrapper.get('.tracker-command-panel__usage').text()).toBe('Task total: Tokens unavailable')
+    expect(wrapper.get('.tracker-command-panel__usage').findAll('dt').map(label => label.text())).toEqual(['Input', 'Cache', 'Output'])
+    expect(wrapper.get('[data-usage-field="cache_read"] dd').text()).toBe('40')
+    await wrapper.setProps({ taskAgentStats: null, taskAutomated: true })
+    expect(wrapper.get('.tracker-command-panel__usage').text()).toContain('Not reported')
+    expect(wrapper.get('.ui-badge').text()).toBe('Automated')
+    expect(wrapper.get('.tracker-command-panel__usage').find('.ui-badge').exists()).toBe(false)
     await wrapper.setProps({ taskAvailable: false })
     expect(wrapper.find('.tracker-command-panel__usage').exists()).toBe(false)
   })

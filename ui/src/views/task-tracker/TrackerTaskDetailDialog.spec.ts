@@ -3,6 +3,7 @@ import { nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/lib/client'
 import { formatDateTime } from '@/lib/stackos/json'
+import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 
 import type { TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
 
@@ -19,26 +20,44 @@ describe('TrackerTaskDetailDialog', () => {
     document.body.innerHTML = ''
   })
 
-  it('shows Automatic beside status and updates when switching tasks or refreshing metadata', async () => {
+  it('shows Automated beside status and updates when switching tasks or refreshing metadata', async () => {
     const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
     const automatic = { ...task(), metadata_json: { delivery: {
       status: 'stopped', job_ref: 'task-delivery:1:1', delivery_agent: agent, review_agent: agent,
     } } }
     const wrapper = mount(TrackerTaskDetailDialog, { props: { modelValue: true, task: automatic } })
-    const badge = popup().findAll('.ui-badge').find(badge => badge.text() === 'Automatic')!
-    expect(badge.text()).toBe('Automatic')
+    const badge = popup().findAll('.ui-badge').find(badge => badge.text() === 'Automated')!
+    expect(badge.text()).toBe('Automated')
     expect(badge.classes()).toContain('text-neutral-fg')
     expect(badge.element.previousElementSibling?.textContent).toContain('In Progress')
     await wrapper.setProps({ task: { ...task(), key: 'terminal-managed', owner: 'Codex' } })
-    expect(popup().text()).not.toContain('Automatic')
+    expect(popup().text()).not.toContain('Automated')
     await wrapper.setProps({ task: { ...automatic, status: 'complete', metadata_json: {
       delivery: { ...automatic.metadata_json.delivery, status: 'complete' },
     } } })
-    expect(popup().findAll('.ui-badge').some(badge => badge.text() === 'Automatic')).toBe(true)
+    expect(popup().findAll('.ui-badge').some(badge => badge.text() === 'Automated')).toBe(true)
     await wrapper.setProps({ task: { ...automatic, metadata_json: { delivery: [] } } })
-    expect(popup().text()).not.toContain('Automatic')
+    expect(popup().text()).not.toContain('Automated')
     await wrapper.setProps({ task: null })
-    expect(popup().text()).not.toContain('Automatic')
+    expect(popup().text()).not.toContain('Automated')
+    wrapper.unmount()
+  })
+
+  it('uses the lifetime task projection while shared ticket content uses only the selected ticket', async () => {
+    const totals = agentStatsFixture().totals
+    const own = structuredClone(totals)
+    own.reported_usage.input = 12
+    own.reported_usage.cache_read = null
+    const source = { ...sourceTicket(), agent_stats: own }
+    const wrapper = mount(TrackerTaskDetailDialog, { props: { modelValue: true, task: { ...task(), agent_stats: totals }, tickets: [source] } })
+    expect(popup().get('[aria-label="Lifetime task usage"] [data-usage-field="input"] dd').text()).toBe('70')
+    await wrapper.setProps({ ticketKey: source.key, ticket: source })
+    await flushPromises()
+    const usage = popup().get('[aria-label="Own ticket usage"]')
+    expect(usage.get('[data-usage-field="input"] dd').text()).toBe('12')
+    expect(usage.get('[data-usage-field="cache_read"] dd').text()).toBe('Not reported')
+    expect(usage.get('[data-usage-field="output"] dd').text()).toBe('30')
+    expect(usage.text()).not.toContain('Partial')
     wrapper.unmount()
   })
 

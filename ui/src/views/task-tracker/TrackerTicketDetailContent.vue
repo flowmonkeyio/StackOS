@@ -9,6 +9,7 @@ import {
   UiMetadataStrip,
 } from '@/components/ui'
 import StatusBadge from '@/components/StatusBadge.vue'
+import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
 import type { TrackerTicket } from '@/lib/task-tracker/types'
@@ -119,6 +120,18 @@ function relationSummary(ticket: TrackerTicket): string {
             {{ relationSummary(ticket) }}
           </p>
         </div>
+      </div>
+      <div
+        class="space-y-2"
+        aria-label="Own ticket usage"
+      >
+        <AgentUsageSummary
+          :metrics="ticket.agent_stats"
+          compact
+        />
+        <p class="text-xs text-fg-muted">
+          Own ticket usage. Cache is included in Input.
+        </p>
       </div>
       <UiMetadataStrip
         :items="ticketFacts"

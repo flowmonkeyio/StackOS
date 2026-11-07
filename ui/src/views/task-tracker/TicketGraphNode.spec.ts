@@ -12,17 +12,23 @@ describe('TicketGraphNode', () => {
     const wrapper = mount(TicketGraphNode, {
       props: { data: nodeData({ agentStats: metrics }) }, global: { stubs: { Handle: true } },
     })
-    expect(wrapper.get('.ticket-graph-node__usage').text()).toBe('100 tokens')
+    expect(wrapper.get('.ticket-graph-node__usage').findAll('dt').map(label => label.text())).toEqual(['Input', 'Cache', 'Output'])
+    expect(wrapper.get('[data-usage-field="input"] dd').attributes('title')).toContain('70 tokens')
     const partial = structuredClone(metrics)
-    partial.reported_usage.total = 0
+    partial.reported_usage.input = 0
+    partial.reported_usage.cache_read = null
     partial.coverage.usage_status = 'partial' as never
     await wrapper.setProps({ data: nodeData({ agentStats: partial }) })
-    expect(wrapper.get('.ticket-graph-node__usage').text()).toBe('0 tokens · Partial')
+    expect(wrapper.get('[data-usage-field="input"] dd').text()).toBe('0')
+    expect(wrapper.get('[data-usage-field="cache_read"] dd').text()).toBe('Not reported')
+    expect(wrapper.get('[data-usage-field="output"] dd').text()).toBe('30')
+    expect(wrapper.text()).not.toContain('Partial')
     await wrapper.setProps({ data: nodeData({ agentStats: null }) })
-    expect(wrapper.get('.ticket-graph-node__usage').text()).toBe('Tokens unavailable')
+    expect(wrapper.get('.ticket-graph-node__usage').findAll('dd').map(value => value.text())).toEqual(['Not reported', 'Not reported', 'Not reported'])
     partial.coverage.usage_status = 'empty' as never
+    partial.launch_attempts = 0
     await wrapper.setProps({ data: nodeData({ agentStats: partial }) })
-    expect(wrapper.get('.ticket-graph-node__usage').text()).toBe('No recorded attempts')
+    expect(wrapper.get('.ticket-graph-node__usage').text()).toContain('No recorded usage')
   })
 
   it('renders status text plus active and recent state affordances', () => {

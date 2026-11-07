@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { UiBadge, UiIcon } from '@/components/ui'
 import { trackerStatus } from '@/design/status'
-import { usageCoverage, usageLabel } from '@/lib/agentActivity'
+import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
 import { resolveAgentOwnerLogo } from '@/lib/stackos/agentIdentity'
 import { formatAbsoluteDateTime, formatShortDate } from '@/lib/stackos/time'
 import type { TrackerStatus } from '@/lib/task-tracker/types'
@@ -55,23 +55,23 @@ function initials(owner: string): string {
           @focus="($event.currentTarget as HTMLElement).scrollIntoView({ block: 'nearest', inline: 'nearest' })"
           @click="$emit('openTask', row.key)"
         >
+          <span class="tracker-board__identity">
+            <span class="tracker-board__id">#{{ row.id }}</span>
+            <UiBadge v-if="isAutomaticDeliveryTask(row.task)">
+              Automated
+            </UiBadge>
+          </span>
           <span
             class="tracker-board__title"
             :title="row.task.title"
           >{{ row.task.title }}</span>
-          <span class="flex flex-wrap items-center gap-2">
-            <span
-              class="text-xs tabular-nums text-fg-muted"
-              :title="usageCoverage(row.task.agent_stats)"
-            >{{ usageLabel(row.task.agent_stats) }}</span>
-            <UiBadge v-if="isAutomaticDeliveryTask(row.task)">
-              Automatic
-            </UiBadge>
-          </span>
+          <AgentUsageSummary
+            :metrics="row.task.agent_stats"
+            compact
+            title="Lifetime task usage. Cache is included in Input."
+          />
           <span class="tracker-board__meta">
             <span class="tracker-board__identity">
-              <span class="tracker-board__id">#{{ row.id }}</span>
-              <span aria-hidden="true">·</span>
               <time
                 :datetime="row.task.created_at"
                 :title="`Created ${formatAbsoluteDateTime(row.task.created_at)}`"
@@ -125,7 +125,7 @@ function initials(owner: string): string {
 .tracker-board__card--selected { border-color: var(--color-border-focus); }
 .tracker-board__title { min-width: 0; color: var(--color-fg-strong); font-size: 14px; font-weight: 500; line-height: 20px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .tracker-board__meta { display: flex; min-width: 0; min-height: 20px; align-items: center; gap: 12px; color: var(--color-fg-muted); font-size: 12px; line-height: 18px; }
-.tracker-board__identity { display: flex; min-width: 0; align-items: center; gap: 8px; margin-right: auto; white-space: nowrap; }
+.tracker-board__identity { display: flex; min-width: 0; align-items: center; gap: 8px; margin-right: auto; white-space: nowrap; color: var(--color-fg-muted); font-size: 12px; }
 .tracker-board__identity time { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tracker-board__id { flex: none; font-variant-numeric: tabular-nums; }
 .tracker-board__progress { display: inline-flex; flex: none; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }

@@ -99,23 +99,6 @@ export function localActivityFilters(now = new Date()): AgentStatsFilters {
   return { start_date: localDate(start), end_date: localDate(now), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, group_by: 'model' as ActivityGroup }
 }
 
-export function usageValue(metrics: AgentStatsMetrics | null | undefined): string {
-  return metrics?.reported_usage.total == null ? 'Unavailable' : metrics.reported_usage.total.toLocaleString('en-US')
-}
-
-export function usageCoverage(metrics: AgentStatsMetrics | null | undefined): string {
-  if (!metrics) return 'Usage not available'
-  const c = metrics.coverage
-  if (c.usage_status === 'empty') return 'No recorded attempts'
-  return `${c.usage_status === 'complete' ? 'Complete' : c.usage_status === 'partial' ? 'Partial' : 'Unavailable'} · ${c.usage_measured_attempts} of ${metrics.launch_attempts} attempts measured`
-}
-
-export function usageLabel(metrics: AgentStatsMetrics | null | undefined): string {
-  if (metrics?.coverage.usage_status === 'empty') return 'No recorded attempts'
-  if (metrics?.reported_usage.total == null) return 'Tokens unavailable'
-  return `${usageValue(metrics)} tokens${metrics.coverage.usage_status === 'partial' ? ' · Partial' : ''}`
-}
-
 export function rejectCoverage(metrics: AgentStatsMetrics): string {
   const c = metrics.coverage
   if (c.classification_status === 'empty') return 'No recorded attempts'

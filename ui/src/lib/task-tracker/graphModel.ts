@@ -56,8 +56,8 @@ export interface TrackerFlowModel {
 
 type EdgeFocusTone = 'default' | 'muted' | 'upstream' | 'downstream' | 'active' | 'highlighted'
 
-export const TRACKER_TICKET_NODE_WIDTH = 296
-export const TRACKER_TICKET_NODE_HEIGHT = 208
+export const TRACKER_TICKET_NODE_WIDTH = 328
+export const TRACKER_TICKET_NODE_HEIGHT = 248
 
 const TASK_WIDTH = 392
 const TICKET_WIDTH = TRACKER_TICKET_NODE_WIDTH

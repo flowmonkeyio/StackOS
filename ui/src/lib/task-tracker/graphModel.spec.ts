@@ -249,7 +249,8 @@ describe('buildTrackerFlowModel', () => {
     const small = modelFor(6, [[0, 1], [1, 2], [1, 3], [2, 4], [3, 5]])
     const positions = small.nodes.map(node => node.position)
     const width = Math.max(...positions.map(point => point.x)) - Math.min(...positions.map(point => point.x)) + TRACKER_TICKET_NODE_WIDTH
-    expect(width).toBeLessThan(1400)
+    // Four ranks keep the prior 216px total spacing budget as the usage row grows.
+    expect(width).toBeLessThan(4 * TRACKER_TICKET_NODE_WIDTH + 216)
     for (let first = 0; first < positions.length; first++) {
       for (let second = first + 1; second < positions.length; second++) {
         const a = positions[first]!
@@ -277,8 +278,8 @@ describe('buildTrackerFlowModel', () => {
       agent: 'codex',
       sourceKind: 'workflow',
     })
-    expect(TRACKER_TICKET_NODE_WIDTH).toBe(296)
-    expect(TRACKER_TICKET_NODE_HEIGHT).toBe(208)
+    expect(TRACKER_TICKET_NODE_WIDTH).toBe(328)
+    expect(TRACKER_TICKET_NODE_HEIGHT).toBe(248)
     expect(model.edges).toEqual([
       expect.objectContaining({
         id: 'dependency:prepare:deliver',

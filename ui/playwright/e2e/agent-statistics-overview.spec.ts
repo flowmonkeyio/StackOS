@@ -1,6 +1,7 @@
 import { expect, test, type Locator } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import type { SchemaTrackerAgentStatsOut } from '../../src/api'
+import type { AgentStatsMetrics } from '../../src/lib/agentActivity'
 import type { TrackerSnapshot } from '../../src/lib/task-tracker/types'
 import { createProject, getBaseUrl, getDaemonToken, resetProjects, trackConsoleErrors } from '../helpers'
 import { formatTokens, localActivityFilters } from '../../src/lib/agentActivity'
@@ -196,7 +197,16 @@ test('synthetic receipts reconcile through both actual Home views and existing p
   })
 })
 
-test('Work uses projected task and ticket tokens through filtering, scope changes and refresh', async ({ page }, testInfo) => {
+async function workMetrics(region: Locator, totals: AgentStatsMetrics) {
+  for (const field of ['input', 'cache_read', 'output'] as const) {
+    const value = region.locator(`[data-usage-field="${field}"] dd[tabindex]`)
+    await expect(value).toHaveText(formatTokens(totals.reported_usage[field]))
+    await expect(value).toHaveAttribute('title', new RegExp(totals.reported_usage[field] == null ? 'Not reported' : `${totals.reported_usage[field]!.toLocaleString('en-US')} tokens`))
+  }
+  await expect(region).not.toContainText('Partial')
+}
+
+test('Work uses shared Input Cache Output through filtering, details and refresh', async ({ page }, testInfo) => {
   expect(new URL(getBaseUrl()).port).not.toBe('5180')
   expect(process.env.STACKOS_E2E_BASE_URL).toBe(getBaseUrl())
   await resetProjects()
@@ -209,13 +219,20 @@ test('Work uses projected task and ticket tokens through filtering, scope change
   for (const [key, automatic] of [
     ['zero', { attempt: 1, delivery: receipt('delivery_agent', 'success', 0, 'zero-model') }],
     ['unknown', unavailable],
+    ['missing-cache', { attempt: 1, delivery: { ...receipt('delivery_agent', 'success', 50, 'older-model'), usage: { unit: 'tokens', status: 'measured', measured: { input: 50, output: 0, total: 50 } } } }],
     ['empty', null],
+    ['reset', { attempt: 1, delivery: { ...receipt('delivery_agent', 'success', 999, 'reset-model'), usage: { status: 'unavailable', reason: 'operator_reset', measured: null } } }],
   ] as const) {
     await operation('tracker.createTask', { project_id: project.id, key, title: `Usage ${key}` })
     if (automatic) {
       await operation('tracker.createTicket', { project_id: project.id, task_key: key, key: `${key}-ticket`, title: `Usage ${key} ticket` })
       await operation('tracker.updateTicket', { project_id: project.id, ticket_key: `${key}-ticket`, patch_json: { completion_evidence_json: { automatic_delivery: automatic } } })
     }
+  }
+  // Persisted method identity only. No delivery jobs or native agents are started.
+  const agent = { name: 'synthetic', instructions: 'Synthetic frozen identity fixture.' }
+  for (const [task_key, status] of [['synthetic-stats', 'stopped'], ['zero', 'complete']]) {
+    await operation('tracker.updateTask', { project_id: project.id, task_key, patch_json: { metadata_json: { delivery: { status, job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent } } } })
   }
   const index = await operation<TrackerSnapshot>('tracker.get', { project_id: project.id, task_index_only: true, include_graph: false })
   const focused = await operation<TrackerSnapshot>('tracker.get', { project_id: project.id, task_key: 'synthetic-stats', include_graph: true })
@@ -227,38 +244,84 @@ test('Work uses projected task and ticket tokens through filtering, scope change
   const before = await operation('tracker.get', { project_id: project.id })
   await page.goto(`/projects/${project.id}/tasks`)
   const board = page.getByRole('region', { name: 'Task board', exact: true })
-  await expect(board.getByRole('button', { name: /Synthetic statistics proof/ })).toContainText('100 tokens · Partial')
-  await expect(board.getByRole('button', { name: /Usage zero$/ })).toContainText('0 tokens')
-  await expect(board.getByRole('button', { name: /Usage unknown$/ })).toContainText('Tokens unavailable')
-  await expect(board.getByRole('button', { name: /Usage empty$/ })).toContainText('No recorded attempts')
+  const card = board.getByRole('button', { name: /Synthetic statistics proof/ })
+  await workMetrics(card, taskTotal)
+  await expect(card.locator('.tracker-board__identity').first()).toContainText('Automated')
+  await expect(board.getByRole('button', { name: /Usage zero$/ })).toContainText('Automated')
+  await expect(board.getByRole('button', { name: /Usage unknown$/ })).not.toContainText('Automated')
+  for (const key of ['zero', 'unknown', 'missing-cache', 'empty', 'reset']) {
+    const task = index.tasks.find(task => task.key === key)!
+    const row = board.getByRole('button', { name: new RegExp(`Usage ${key}$`) })
+    await workMetrics(row, task.agent_stats!)
+    if (['empty', 'reset'].includes(key)) await expect(row).toContainText('No recorded usage')
+  }
   await page.screenshot({ path: testInfo.outputPath('work-usage-board.png'), fullPage: true })
+  await card.click()
+  const dialog = page.getByRole('dialog')
+  await workMetrics(dialog.getByLabel('Lifetime task usage', { exact: true }), taskTotal)
+  await dialog.getByRole('button', { name: /Synthetic recorded attempts/ }).click()
+  const own = focused.tickets.find(ticket => ticket.key === 'synthetic-receipts')!.agent_stats!
+  await workMetrics(dialog.getByLabel('Own ticket usage', { exact: true }), own)
+  await page.screenshot({ path: testInfo.outputPath('work-ticket-popup.png'), fullPage: true })
+  await dialog.getByRole('button', { name: 'Back to task', exact: true }).click()
+  await workMetrics(dialog.getByLabel('Lifetime task usage', { exact: true }), taskTotal)
+  await dialog.getByRole('button', { name: 'Close', exact: true }).first().click()
+
+  await page.goto(`/projects/${project.id}`)
+  const activity = page.getByRole('region', { name: 'Agent activity', exact: true })
+  await activity.getByLabel('Through', { exact: true }).fill('2099-01-02')
+  await activity.getByLabel('Through', { exact: true }).press('Tab')
+  await activity.getByLabel('From', { exact: true }).fill('2099-01-02')
+  await activity.getByLabel('From', { exact: true }).press('Tab')
+  await expect(activity).toContainText('No recorded usage in this date range')
 
   await page.goto(`/projects/${project.id}/tasks?view=graph&task=synthetic-stats`)
   const header = page.locator('.tracker-command-panel__usage')
-  await expect(header).toHaveText('Task total: 100 tokens · Partial')
-  await expect(page.locator('.ticket-graph-node').filter({ hasText: 'synthetic-receipts' }).locator('.ticket-graph-node__usage')).toHaveText('100 tokens')
-  await expect(page.locator('.ticket-graph-node').filter({ hasText: 'Legacy usage' }).locator('.ticket-graph-node__usage')).toHaveText('Tokens unavailable')
+  await workMetrics(header, taskTotal)
+  const node = page.locator('.ticket-graph-node').filter({ hasText: 'synthetic-receipts' })
+  await workMetrics(node, own)
+  await workMetrics(page.locator('.ticket-graph-node').filter({ hasText: 'Legacy usage' }), focused.tickets.find(ticket => ticket.key === 'legacy')!.agent_stats!)
+  await node.click()
+  await page.getByRole('button', { name: 'Details', exact: true }).click()
+  await workMetrics(page.getByLabel('Own ticket usage', { exact: true }), own)
+  await page.screenshot({ path: testInfo.outputPath('work-ticket-inspector.png'), fullPage: true })
+  await page.getByRole('button', { name: 'Close', exact: true }).last().click()
   await page.getByRole('region', { name: 'Task dependency graph' }).getByRole('button', { name: /^Complete/ }).click()
   await expect(page.locator('.ticket-graph-node')).toHaveCount(0)
-  await expect(header).toHaveText('Task total: 100 tokens · Partial')
+  await workMetrics(header, taskTotal)
   await page.getByRole('button', { name: 'Clear graph filters' }).click()
   await expect(page.locator('.ticket-graph-node')).toHaveCount(2)
+  const viewport = page.locator('.vue-flow__transformationpane')
+  const initialViewport = await viewport.getAttribute('style')
+  await page.locator('.vue-flow__controls button').first().click()
+  await expect(viewport).not.toHaveAttribute('style', initialViewport!)
+  const zoomedViewport = await viewport.getAttribute('style')
+  const pane = await page.locator('.vue-flow__pane').boundingBox()
+  expect(pane).not.toBeNull()
+  await page.mouse.move(pane!.x + 20, pane!.y + 40)
+  await page.mouse.wheel(0, 80)
+  await expect(viewport).not.toHaveAttribute('style', zoomedViewport!)
+  await workMetrics(header, taskTotal)
+  const pannedViewport = await viewport.getAttribute('style')
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await expect(viewport).toHaveAttribute('style', pannedViewport!)
   await page.screenshot({ path: testInfo.outputPath('work-usage-graph.png'), fullPage: true })
   await page.setViewportSize({ width: 760, height: 800 })
   await expect(header).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.screenshot({ path: testInfo.outputPath('work-usage-narrow.png'), fullPage: true })
 
-  for (const [key, label] of [['zero', '0 tokens'], ['unknown', 'Tokens unavailable'], ['empty', 'No recorded attempts']]) {
+  for (const key of ['zero', 'unknown', 'missing-cache', 'empty', 'reset']) {
     await page.goto(`/projects/${project.id}/tasks?view=graph&task=${key}`)
-    await expect(header).toHaveText(`Task total: ${label}`)
+    await workMetrics(header, index.tasks.find(task => task.key === key)!.agent_stats!)
   }
   expect(await operation('tracker.get', { project_id: project.id })).toEqual(before)
   await operation('tracker.updateTicket', { project_id: project.id, ticket_key: 'synthetic-receipts', patch_json: { completion_evidence_json: { automatic_delivery: { attempt: 1, delivery: receipt('delivery_agent', 'success', 125, 'recorded-sol') } } } })
   await page.goto(`/projects/${project.id}/tasks?view=graph&task=synthetic-stats`)
-  await expect(header).toHaveText('Task total: 125 tokens · Partial')
+  const refreshed = await operation<TrackerSnapshot>('tracker.get', { project_id: project.id, task_key: 'synthetic-stats', include_graph: true })
+  await workMetrics(header, refreshed.tasks[0]!.agent_stats!)
   await page.getByRole('button', { name: 'Refresh', exact: true }).click()
-  await expect(header).toHaveText('Task total: 125 tokens · Partial')
+  await workMetrics(header, refreshed.tasks[0]!.agent_stats!)
   errors.assertNone()
   writeFileSync(testInfo.outputPath('work-api-ui-reconciliation.json'), JSON.stringify({ synthetic: true, base_url: getBaseUrl(), index, focused, taskTotal, console_errors: errors.errors }, null, 2))
 })
