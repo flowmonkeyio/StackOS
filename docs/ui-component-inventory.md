@@ -53,7 +53,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 |---|---|
 | `ProjectPageHeader` | project-aware title, breadcrumbs, utility action slot, and route chrome |
 | `ProviderMark` | canonical provider logo/initial mark backed by `provider-presentation.json`; shared by Connections and Plugins |
-| `AgentUsageSummary` | Shared available Input / Cache / Output renderer; accepts `metrics: AgentStatsMetrics \| null` and `compact?: boolean`. Both modes omit unsupported fields and retain measured zero with exact focus/hover values. Partial-field coverage stays in accessible exact-value labels, rather than permanent missing-value slots or notes. Cache means cache read included in Input. No receipt parsing or subtotal calculation. |
+| `AgentUsageSummary` | Shared available Input / Cache / Output renderer; accepts `metrics: AgentStatsMetrics \| null` and `compact?: boolean`. Default mode keeps the analytics headline scale; compact mode is a muted inline list of indivisible label/value pairs that can wrap together. Both modes omit unsupported fields and summaries without recorded attempts, and retain measured zero with exact focus/hover values. Partial-field coverage stays in accessible exact-value labels. Cache means cache read included in Input. No receipt parsing or subtotal calculation. |
 
 ## Shipped — app-level primitives (`ui/src/components/`)
 
@@ -128,10 +128,17 @@ header, individual ticket nodes, task details, and `TrackerTicketDetailContent`
 the backend lifetime task projection; nodes and ticket details pass only their
 own ticket projection. Graph visibility never recomputes these totals. Exact
 values and field coverage remain available in exact focus/hover labels.
+Manual tasks and tickets render no usage furniture, even with measured values.
+The existing `isAutomaticDeliveryTask` predicate owns eligibility; graph data
+propagates its parent-task result, and both ticket inspectors receive the parent
+task. No workflow-name, defaults or token-value inference is used. Missing
+parent identity hides ticket usage. Compact summaries have no metric panels,
+dividers, missing-field copy or reserved empty space.
 `Automated` sits with task identity/status and uses the unchanged persisted
-delivery predicate, including stopped and complete executions. Ticket geometry
+delivery predicate, including stopped and complete executions, with the existing
+subtle info badge tone on Board, Graph toolbar and task details. Ticket geometry
 is centrally defined as 328 × 248px in `lib/task-tracker/graphModel.ts`, including
-layout, CSS variables and minimap consumers, to fit the three-value summary.
+layout, CSS variables and minimap consumers. Usage remains secondary within it.
 
 Route views are composition roots, not feature implementations. Use the
 following ownership split for new work and when a touched view has accumulated

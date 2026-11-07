@@ -57,7 +57,10 @@ function initials(owner: string): string {
         >
           <span class="tracker-board__identity">
             <span class="tracker-board__id">#{{ row.id }}</span>
-            <UiBadge v-if="isAutomaticDeliveryTask(row.task)">
+            <UiBadge
+              v-if="isAutomaticDeliveryTask(row.task)"
+              tone="info"
+            >
               Automated
             </UiBadge>
           </span>
@@ -66,6 +69,7 @@ function initials(owner: string): string {
             :title="row.task.title"
           >{{ row.task.title }}</span>
           <AgentUsageSummary
+            v-if="isAutomaticDeliveryTask(row.task)"
             :metrics="row.task.agent_stats"
             compact
             title="Lifetime task usage. Cache is included in Input."

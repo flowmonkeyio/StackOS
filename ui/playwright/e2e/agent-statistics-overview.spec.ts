@@ -196,6 +196,10 @@ test('synthetic receipts reconcile through both actual Home views and existing p
 })
 
 async function workMetrics(region: Locator, totals: AgentStatsMetrics) {
+  if (!totals.launch_attempts || !['input', 'cache_read', 'output'].some(field => totals.reported_usage[field as 'input' | 'cache_read' | 'output'] != null)) {
+    await expect(region.locator('[data-usage-field]')).toHaveCount(0)
+    return
+  }
   for (const field of ['input', 'cache_read', 'output'] as const) {
     const value = region.locator(`[data-usage-field="${field}"] dd[tabindex]`)
     if (totals.reported_usage[field] == null) { await expect(value).toHaveCount(0); continue }
@@ -225,6 +229,7 @@ test('Work uses shared Input Cache Output through filtering, details and refresh
     ['missing-cache', { attempt: 1, delivery: { ...receipt('delivery_agent', 'success', 50, 'older-model'), usage: { unit: 'tokens', status: 'measured', measured: { input: 50, output: 0, total: 50 } } } }],
     ['empty', null],
     ['reset', { attempt: 1, delivery: { ...receipt('delivery_agent', 'success', 999, 'reset-model'), usage: { status: 'unavailable', reason: 'operator_reset', measured: null } } }],
+    ['manual', { attempt: 1, delivery: receipt('delivery_agent', 'success', 520193, 'manual-fixture') }],
   ] as const) {
     await operation('tracker.createTask', { project_id: project.id, key, title: `Usage ${key}` })
     if (automatic) {
@@ -234,8 +239,16 @@ test('Work uses shared Input Cache Output through filtering, details and refresh
   }
   // Persisted method identity only. No delivery jobs or native agents are started.
   const agent = { name: 'synthetic', instructions: 'Synthetic frozen identity fixture.' }
-  for (const [task_key, status] of [['synthetic-stats', 'stopped'], ['zero', 'complete']]) {
+  for (const [task_key, status] of [['synthetic-stats', 'stopped'], ['zero', 'complete'], ['missing-cache', 'complete'], ['empty', 'complete']]) {
     await operation('tracker.updateTask', { project_id: project.id, task_key, patch_json: { metadata_json: { delivery: { status, job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent } } } })
+  }
+  for (const [key, input, cache, output] of [['large', 181384707, 157292160, 520193], ['billion', 1250000000, 0, 0]] as const) {
+    await operation('tracker.createTask', { project_id: project.id, key, title: `Long automated task title for ${key} usage and readable progress` })
+    await operation('tracker.createTicket', { project_id: project.id, task_key: key, key: `${key}-ticket`, title: `Large ${key} ticket` })
+    const recorded = receipt('delivery_agent', 'success', input, 'large-model')
+    recorded.usage.measured = { ...recorded.usage.measured, input, cache_read: cache, output, total: input + output }
+    await operation('tracker.updateTicket', { project_id: project.id, ticket_key: `${key}-ticket`, patch_json: { completion_evidence_json: { automatic_delivery: { attempt: 1, delivery: recorded } } } })
+    await operation('tracker.updateTask', { project_id: project.id, task_key: key, patch_json: { metadata_json: { delivery: { status: 'complete', job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent } } } })
   }
   const index = await operation<TrackerSnapshot>('tracker.get', { project_id: project.id, task_index_only: true, include_graph: false })
   const focused = await operation<TrackerSnapshot>('tracker.get', { project_id: project.id, task_key: 'synthetic-stats', include_graph: true })
@@ -252,10 +265,35 @@ test('Work uses shared Input Cache Output through filtering, details and refresh
   await expect(card.locator('.tracker-board__identity').first()).toContainText('Automated')
   await expect(board.getByRole('button', { name: /Usage zero$/ })).toContainText('Automated')
   await expect(board.getByRole('button', { name: /Usage unknown$/ })).not.toContainText('Automated')
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate(theme => {
+      document.documentElement.dataset.theme = theme
+      document.documentElement.classList.toggle('dark', theme === 'dark')
+      document.documentElement.style.colorScheme = theme
+    }, theme)
+    for (const key of ['large', 'billion']) {
+      const large = board.getByRole('button', { name: new RegExp(`Long automated task title for ${key}`) })
+      await large.scrollIntoViewIfNeeded()
+      await workMetrics(large, index.tasks.find(task => task.key === key)!.agent_stats!)
+      const dimensions = await large.evaluate(card => ({ width: card.getBoundingClientRect().width, overflowing: card.scrollWidth > card.clientWidth }))
+      expect(dimensions.width).toBeGreaterThanOrEqual(280)
+      expect(dimensions.width).toBeLessThanOrEqual(320)
+      expect(dimensions.overflowing).toBe(false)
+      for (const value of await large.locator('dd[tabindex]').all()) {
+        await expect(value).toHaveCSS('white-space', 'nowrap')
+        await value.focus()
+        await expect(value).toBeFocused()
+        await expect(value).toHaveAttribute('title', /tokens/)
+      }
+      await expect(large.locator('.ui-badge')).toHaveClass(/text-info-fg/)
+    }
+    await page.screenshot({ path: testInfo.outputPath(`work-large-${theme}.png`), fullPage: true })
+  }
   for (const key of ['zero', 'unknown', 'missing-cache', 'empty', 'reset']) {
     const task = index.tasks.find(task => task.key === key)!
     const row = board.getByRole('button', { name: new RegExp(`Usage ${key}$`) })
-    await workMetrics(row, task.agent_stats!)
+    if (['unknown', 'reset'].includes(key)) await expect(row.locator('.agent-usage-summary')).toHaveCount(0)
+    else await workMetrics(row, task.agent_stats!)
     await expect(row).not.toContainText('No recorded usage')
   }
   for (const width of [1280, 760]) {
@@ -264,7 +302,8 @@ test('Work uses shared Input Cache Output through filtering, details and refresh
     for (const key of ['missing-cache', 'unknown']) {
       const row = board.getByRole('button', { name: new RegExp(`Usage ${key}$`) })
       await row.scrollIntoViewIfNeeded()
-      await workMetrics(row, index.tasks.find(task => task.key === key)!.agent_stats!)
+      if (key === 'unknown') await expect(row.locator('.agent-usage-summary')).toHaveCount(0)
+      else await workMetrics(row, index.tasks.find(task => task.key === key)!.agent_stats!)
       await readableMissingValues(row)
     }
   }
@@ -353,8 +392,25 @@ test('Work uses shared Input Cache Output through filtering, details and refresh
 
   for (const key of ['zero', 'unknown', 'missing-cache', 'empty', 'reset']) {
     await page.goto(`/projects/${project.id}/tasks?view=graph&task=${key}`)
-    await workMetrics(header, index.tasks.find(task => task.key === key)!.agent_stats!)
+    if (['unknown', 'reset'].includes(key)) await expect(header).toHaveCount(0)
+    else await workMetrics(header, index.tasks.find(task => task.key === key)!.agent_stats!)
   }
+  // Manual work remains free of usage on every inspection path, even with measured tokens.
+  await page.goto(`/projects/${project.id}/tasks`)
+  const manualCard = board.getByRole('button', { name: /Usage manual$/ })
+  await expect(manualCard.locator('.agent-usage-summary')).toHaveCount(0)
+  await manualCard.click()
+  await expect(dialog.getByLabel('Lifetime task usage', { exact: true })).toHaveCount(0)
+  await dialog.getByRole('button', { name: /Usage manual ticket/ }).click()
+  await expect(dialog.getByLabel('Own ticket usage', { exact: true })).toHaveCount(0)
+  await dialog.getByRole('button', { name: 'Close', exact: true }).first().click()
+  await page.goto(`/projects/${project.id}/tasks?view=graph&task=manual`)
+  await expect(header).toHaveCount(0)
+  const manualNode = page.locator('.ticket-graph-node')
+  await expect(manualNode.locator('.agent-usage-summary')).toHaveCount(0)
+  await manualNode.click()
+  await page.getByRole('button', { name: 'Details', exact: true }).click()
+  await expect(page.getByLabel('Own ticket usage', { exact: true })).toHaveCount(0)
   expect(await operation('tracker.get', { project_id: project.id })).toEqual(before)
   await operation('tracker.updateTicket', { project_id: project.id, ticket_key: 'synthetic-receipts', patch_json: { completion_evidence_json: { automatic_delivery: { attempt: 1, delivery: receipt('delivery_agent', 'success', 125, 'recorded-sol') } } } })
   await page.goto(`/projects/${project.id}/tasks?view=graph&task=synthetic-stats`)

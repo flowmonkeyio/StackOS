@@ -11,6 +11,7 @@ import type {
   TrackerTicket,
 } from './types'
 import { trackerStatusSortOrder } from './status'
+import { isAutomaticDeliveryTask } from './delivery'
 
 export interface TrackerVueNodeData {
   label: string
@@ -27,6 +28,7 @@ export interface TrackerVueNodeData {
   sourceKind?: string | null
   runPlanId?: number | null
   agentStats?: AgentStatsMetrics | null
+  taskAutomated?: boolean
   active?: boolean
   recentlyUpdated?: boolean
   raw: TrackerTask | TrackerTicket | TrackerGraphNode
@@ -620,6 +622,7 @@ function vueNodeData(
   const raw = rawForGraphNode(graphNode, snapshot) ?? graphNode
   const ticket = isTrackerTicket(raw) ? raw : null
   const task = isTrackerTask(raw) ? raw : null
+  const parentTask = task ?? snapshot.tasks.find((candidate) => candidate.key === ticket?.task_key)
   return {
     label: graphNode.label,
     status: graphNode.status,
@@ -640,6 +643,7 @@ function vueNodeData(
     sourceKind: ticket?.source_kind ?? task?.source_kind ?? null,
     runPlanId: ticket?.run_plan_id,
     agentStats: ticket ? ticket.agent_stats : task?.agent_stats,
+    taskAutomated: isAutomaticDeliveryTask(parentTask),
     active: options.activeNodeIds?.has(graphNode.id) === true,
     recentlyUpdated: options.recentNodeIds?.has(graphNode.id) === true,
     raw,

@@ -104,21 +104,21 @@ const viewOptions = [{ key: 'board', label: 'Board' }, { key: 'graph', label: 'G
           @change="$emit('taskSelect', $event)"
         />
       </div>
-      <UiBadge v-if="taskAvailable && taskAutomated">
+      <UiBadge
+        v-if="taskAvailable && taskAutomated"
+        tone="info"
+      >
         Automated
       </UiBadge>
       <div class="tracker-command-panel__usage-actions">
-        <div
-          v-if="taskAvailable"
+        <AgentUsageSummary
+          v-if="taskAvailable && taskAutomated"
           class="tracker-command-panel__usage"
+          :metrics="taskAgentStats"
+          compact
           aria-label="Lifetime task usage"
-        >
-          <AgentUsageSummary
-            :metrics="taskAgentStats"
-            compact
-            title="Lifetime task usage. Cache is included in Input."
-          />
-        </div>
+          title="Lifetime task usage. Cache is included in Input."
+        />
         <span class="tracker-command-panel__count tracker-command-panel__graph-count text-xs text-fg-muted">{{ graphSummary }}</span>
         <UiButton
           variant="secondary"
@@ -143,8 +143,8 @@ const viewOptions = [{ key: 'board', label: 'Board' }, { key: 'graph', label: 'G
 .tracker-command-panel__assignee { flex-basis: 160px; }
 .tracker-command-panel__task { flex: 1 1 240px; min-width: 160px; }
 .tracker-command-panel__count { margin-left: auto; flex: none; white-space: nowrap; }
-.tracker-command-panel__usage-actions { display: flex; flex: 1 1 auto; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
-.tracker-command-panel__usage { flex: 1 1 280px; min-width: 240px; }
+.tracker-command-panel__usage-actions { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; margin-left: auto; }
+.tracker-command-panel__usage { flex: 0 1 auto; min-width: 0; }
 @media (max-width: 1350px) {
   .tracker-command-panel__graph-count { display: none; }
 }

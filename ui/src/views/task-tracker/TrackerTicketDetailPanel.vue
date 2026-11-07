@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { UiButton } from '@/components/ui'
 import InspectableDetailDrawer from '@/components/InspectableDetailDrawer.vue'
-import type { TrackerTicket } from '@/lib/task-tracker/types'
+import type { TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
 import TrackerTicketDetailContent from './TrackerTicketDetailContent.vue'
 
 defineProps<{
   modelValue: boolean
   ticket: TrackerTicket | null
+  parentTask?: TrackerTask | null
   title: string
   description?: string
 }>()
@@ -27,7 +28,10 @@ defineEmits<{
     empty-description="Pick a ticket from the graph."
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <TrackerTicketDetailContent :ticket="ticket" />
+    <TrackerTicketDetailContent
+      :ticket="ticket"
+      :parent-task="parentTask"
+    />
     <template #footer>
       <UiButton
         variant="secondary"

@@ -9,11 +9,14 @@ import { buildTaskProgressRows } from './viewModel'
 import TrackerBoardPanel from './TrackerBoardPanel.vue'
 import TaskTrackerCommandPanel from './TaskTrackerCommandPanel.vue'
 
+const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
+const automaticMetadata = { delivery: { status: 'running', job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent } }
+
 describe('Work board presentation', () => {
   it('indicates persisted automatic delivery and removes the badge when task metadata changes', async () => {
     const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
     const record = task('in-progress')
-    const rows = () => buildTaskProgressRows([record], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
+    const rows = () => buildTaskProgressRows([structuredClone(record)], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
     const wrapper = mount(TrackerBoardPanel, { props: { rows: rows() } })
     expect(wrapper.get('button').text()).not.toContain('Automated')
     for (const status of ['queued', 'running', 'stopped', 'complete']) {
@@ -22,7 +25,7 @@ describe('Work board presentation', () => {
       const badge = wrapper.get('.ui-badge')
       expect(badge.text()).toBe('Automated')
       expect(badge.element.parentElement?.className).toBe('tracker-board__identity')
-      expect(badge.classes()).toContain('text-neutral-fg')
+      expect(badge.classes()).toContain('text-info-fg')
       expect(badge.element.tagName).toBe('SPAN')
     }
     record.metadata_json = { delivery: { status: 'running' } }
@@ -32,7 +35,7 @@ describe('Work board presentation', () => {
 
   it('renders all three projected fields with exact values, independent missing data and zero', async () => {
     const metrics = agentStatsFixture().totals
-    const record = { ...task('in-progress'), agent_stats: metrics }
+    const record = { ...task('in-progress'), metadata_json: automaticMetadata, agent_stats: metrics }
     const rows = () => buildTaskProgressRows([{ ...record, agent_stats: structuredClone(metrics) }], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
     const wrapper = mount(TrackerBoardPanel, { props: { rows: rows() } })
     expect(wrapper.findAll('dt').map(label => label.text())).toEqual(['Input', 'Cache', 'Output'])
@@ -53,6 +56,22 @@ describe('Work board presentation', () => {
     metrics.launch_attempts = 0
     await wrapper.setProps({ rows: rows() })
     expect(wrapper.get('button').text()).not.toContain('No recorded usage')
+  })
+
+  it('omits usage for manual workflow tasks despite measured tokens and shows non-engineering automation', async () => {
+    const record = { ...task('in-progress'), task_type: 'workflow', source_kind: 'workflow', source_json: { template_key: 'seo.content-refresh' }, agent_stats: agentStatsFixture().totals }
+    const rows = () => buildTaskProgressRows([structuredClone(record)], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
+    const wrapper = mount(TrackerBoardPanel, { props: { rows: rows() } })
+    expect(wrapper.find('.agent-usage-summary').exists()).toBe(false)
+    expect(wrapper.text()).not.toMatch(/Input|Cache|Output|No recorded usage/)
+    record.metadata_json = automaticMetadata
+    await wrapper.setProps({ rows: rows() })
+    expect(wrapper.get('.agent-usage-summary').classes()).toContain('agent-usage-summary--compact')
+    record.agent_stats.reported_usage.input = null
+    record.agent_stats.reported_usage.cache_read = null
+    record.agent_stats.reported_usage.output = null
+    await wrapper.setProps({ rows: rows() })
+    expect(wrapper.find('.agent-usage-summary').exists()).toBe(false)
   })
 
   it('keeps all seven columns, including empty columns, with read-only cards', async () => {
@@ -145,12 +164,14 @@ describe('Work board presentation', () => {
     expect(wrapper.find('[aria-label="Search tasks"]').exists()).toBe(false)
     const metrics = agentStatsFixture().totals
     await wrapper.setProps({ taskAgentStats: metrics })
+    expect(wrapper.find('.tracker-command-panel__usage').exists()).toBe(false)
+    await wrapper.setProps({ taskAutomated: true })
     expect(wrapper.get('.tracker-command-panel__usage').findAll('dt').map(label => label.text())).toEqual(['Input', 'Cache', 'Output'])
     expect(wrapper.get('[data-usage-field="cache_read"] dd').text()).toBe('40')
     await wrapper.setProps({ taskAgentStats: null, taskAutomated: true })
-    expect(wrapper.get('.tracker-command-panel__usage').findAll('dd')).toHaveLength(0)
+    expect(wrapper.find('.tracker-command-panel__usage').exists()).toBe(false)
     expect(wrapper.get('.ui-badge').text()).toBe('Automated')
-    expect(wrapper.get('.tracker-command-panel__usage').find('.ui-badge').exists()).toBe(false)
+    expect(wrapper.get('.ui-badge').classes()).toContain('text-info-fg')
     await wrapper.setProps({ taskAvailable: false })
     expect(wrapper.find('.tracker-command-panel__usage').exists()).toBe(false)
   })

@@ -51,12 +51,12 @@ async function render(url = '/projects/7/tasks', realDialogs = false) {
     attachTo: realDialogs ? document.body : undefined,
     global: { plugins: [router, createPinia()], stubs: {
       ProjectPageHeader: { template: '<header><slot name="actions" /></header>' },
-      TaskTrackerCommandPanel: { name: 'TaskTrackerCommandPanel', props: ['viewMode','activeTaskKey','taskOptions','search','filtersActive','taskAgentStats'], template: '<nav />' },
+      TaskTrackerCommandPanel: { name: 'TaskTrackerCommandPanel', props: ['viewMode','activeTaskKey','taskOptions','search','filtersActive','taskAgentStats','taskAutomated'], template: '<nav />' },
       TrackerBoardPanel: { name: 'TrackerBoardPanel', props: ['rows'], template: '<section data-test="board" />' },
       TrackerGraphPanel: { name: 'TrackerGraphPanel', props: ['loading','activeTaskTitle','selectedTicket','selectionVisible','selectionLabel','flow'], template: '<section data-test="graph" />' },
       TrackerWarningSummary: true,
       TrackerTaskDetailDialog: realDialogs ? false : { name: 'TrackerTaskDetailDialog', props: ['modelValue','task','tickets','loading','error','contexts','ticket','ticketKey'], template: '<aside />' },
-      TrackerTicketDetailPanel: realDialogs ? false : { name: 'TrackerTicketDetailPanel', props: ['modelValue','ticket','error','presentation'], template: '<aside />' },
+      TrackerTicketDetailPanel: realDialogs ? false : { name: 'TrackerTicketDetailPanel', props: ['modelValue','ticket','parentTask','error','presentation'], template: '<aside />' },
     }},
   })
   await flushPromises()
@@ -72,12 +72,19 @@ describe('Work board navigation', () => {
     beta.reported_usage.total = 12
     const own = structuredClone(alpha)
     own.reported_usage.total = 7
-    dataMock([{ ...taskA, agent_stats: alpha }, { ...taskB, agent_stats: beta }], [{ ...ticketA, agent_stats: own }, ticketB], true)
+    const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
+    const automaticTask = { ...taskA, agent_stats: alpha, metadata_json: { delivery: { status: 'running', job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent } } }
+    dataMock([automaticTask, { ...taskB, agent_stats: beta }], [{ ...ticketA, agent_stats: own }, ticketB], true)
     const { wrapper, controls, board } = await render('/projects/7/tasks?view=graph&task=task-a')
     expect(controls().props('taskAgentStats')).toEqual(alpha)
+    expect(controls().props('taskAutomated')).toBe(true)
     expect(board().props('rows').find((row: { key: string }) => row.key === 'task-a').task.agent_stats).toEqual(alpha)
     const graph = () => wrapper.findComponent({ name: 'TrackerGraphPanel' })
     expect(graph().props('flow').nodes[0].data.agentStats.reported_usage.total).toBe(7)
+    expect(graph().props('flow').nodes[0].data.taskAutomated).toBe(true)
+    graph().vm.$emit('node-click', { event: { stopPropagation: vi.fn() }, node: graph().props('flow').nodes[0] })
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'TrackerTicketDetailPanel' }).props('parentTask')).toMatchObject(automaticTask)
     graph().vm.$emit('toggle-status', 'complete')
     await flushPromises()
     expect(graph().props('flow').nodes).toHaveLength(0)
@@ -85,6 +92,7 @@ describe('Work board navigation', () => {
     controls().vm.$emit('taskSelect', 'task-b')
     await flushPromises()
     expect(controls().props('taskAgentStats')).toEqual(beta)
+    expect(controls().props('taskAutomated')).toBe(false)
     const refreshed = structuredClone(beta)
     refreshed.reported_usage.total = 99
     dataMock([{ ...taskA, agent_stats: alpha }, { ...taskB, agent_stats: refreshed }])

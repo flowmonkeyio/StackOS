@@ -218,6 +218,17 @@ const snapshot: TrackerSnapshot = {
 }
 
 describe('buildTrackerFlowModel', () => {
+  it('propagates the persisted parent task method rather than inferring automation from receipts or workflow', () => {
+    const fixture = structuredClone(snapshot)
+    fixture.tickets[0]!.agent_stats = agentStatsFixture().totals
+    const data = () => buildTrackerFlowModel(fixture).nodes.find(node => node.id === 'ticket:prepare')!.data!
+    expect(data().taskAutomated).toBe(false)
+    const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
+    fixture.tasks[0]!.metadata_json = { delivery: { status: 'complete', job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent } }
+    expect(data().taskAutomated).toBe(true)
+    fixture.tasks = []
+    expect(data().taskAutomated).toBe(false)
+  })
   it('projects each ticket own metrics rather than a parent task total or graph data subtotal', () => {
     const fixture = structuredClone(snapshot)
     fixture.tasks[0]!.agent_stats = agentStatsFixture().totals

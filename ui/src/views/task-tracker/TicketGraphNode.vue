@@ -112,6 +112,7 @@ function humanize(value: string | null | undefined): string | null {
     </dl>
 
     <AgentUsageSummary
+      v-if="data.taskAutomated"
       class="ticket-graph-node__usage"
       :metrics="data.agentStats"
       compact
@@ -351,7 +352,6 @@ function humanize(value: string | null | undefined): string | null {
   font-size: 10px;
   line-height: 16px;
   font-variant-numeric: tabular-nums;
-  overflow-wrap: anywhere;
 }
 
 .ticket-graph-node__meta {

@@ -452,6 +452,7 @@ useProjectScopedLoader({
     <TrackerTicketDetailPanel
       :model-value="viewMode === 'graph' && graphDetailPanelOpen && !detailTaskKey && !detailTicketKey"
       :ticket="graphSelectedTicket"
+      :parent-task="tasks.find(task => task.key === graphSelectedTicket?.task_key)"
       :title="graphSelectedTicket?.title ?? 'Ticket details'"
       :description="graphSelectedTicket?.key"
       @update:model-value="graphDetailPanelOpen = $event"

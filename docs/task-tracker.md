@@ -1262,10 +1262,23 @@ The Work UI provides two views, Board and Graph. It renders:
   statuses do not. Search, workflow and assignee filters narrow the Board.
   Task-status filters apply to tasks; `ticket_status` links explicitly filter
   tasks containing tickets with that status.
-- a small neutral `Automatic` badge on Board cards and beside status in task
-  details when the task has a persisted automatic-delivery handoff record.
+- a small semantic info `Automated` badge on Board cards, the Graph toolbar,
+  and beside status in task details when the task has a persisted
+  automatic-delivery handoff record. Its subdued tint stays distinct from
+  lifecycle status in both themes.
   Queued, running, stopped and completed executions retain the badge: it names
   the delivery method. Project agent defaults alone do not add the indication.
+- compact muted inline Input / Cache / Output metadata only for those automated
+  tasks and their tickets, using `isAutomaticDeliveryTask` as the eligibility
+  owner. Parent task identity reaches graph nodes and both ticket inspectors;
+  workflow names, defaults and nonzero measurements never imply automation.
+  Manual work shows no usage labels, zeros or empty copy. Unsupported fields
+  and summaries without recorded attempts are omitted; measured zero remains
+  visible. Each label/value pair wraps together, keeping K/M/B suffixes intact.
+  Exact supported values and coverage are available on keyboard focus and hover.
+  Board, toolbar and task details use lifetime task projections; nodes and
+  ticket details use their own ticket projection. Graph filtering changes
+  visibility without recomputing usage. Title, status and progress remain primary.
 - a task selector only in Graph, independent of Board filters and
   including terminal tasks. After the project index loads, an explicit URL
   selection takes precedence over the last valid selection remembered for

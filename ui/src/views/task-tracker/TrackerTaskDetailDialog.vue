@@ -318,24 +318,22 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
             domain="tracker"
             :status="task.status"
           />
-          <UiBadge v-if="isAutomaticDeliveryTask(task)">
+          <UiBadge
+            v-if="isAutomaticDeliveryTask(task)"
+            tone="info"
+          >
             Automated
           </UiBadge>
           <span>Owner <span class="text-fg-default">{{ task.owner ?? 'Unassigned' }}</span></span>
           <span>{{ completedCount }} of {{ tickets.length }} tickets complete</span>
         </div>
-        <section
-          class="space-y-2"
+        <AgentUsageSummary
+          v-if="isAutomaticDeliveryTask(task)"
+          :metrics="task.agent_stats"
+          compact
           aria-label="Lifetime task usage"
-        >
-          <AgentUsageSummary
-            :metrics="task.agent_stats"
-            compact
-          />
-          <p class="text-xs text-fg-muted">
-            Lifetime task usage. Cache is included in Input.
-          </p>
-        </section>
+          title="Lifetime task usage. Cache is included in Input."
+        />
         <section class="space-y-2 border-t border-subtle pt-4">
           <div class="flex items-center justify-between gap-3">
             <h3 class="t-h3 text-fg-strong">
@@ -856,6 +854,7 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
       v-if="ticketKey"
       :key="ticketKey"
       :ticket="ticket"
+      :parent-task="task"
       :loading="loading"
       :error="ticketError"
       @vue:mounted="enterTicket"

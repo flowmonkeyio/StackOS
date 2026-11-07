@@ -12,12 +12,14 @@ import StatusBadge from '@/components/StatusBadge.vue'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
-import type { TrackerTicket } from '@/lib/task-tracker/types'
+import { isAutomaticDeliveryTask } from '@/lib/task-tracker/delivery'
+import type { TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
 
 import { hasJsonObject } from './detailUtils'
 
 const props = defineProps<{
   ticket: TrackerTicket | null
+  parentTask?: TrackerTask | null
   loading?: boolean
   error?: string | null
 }>()
@@ -121,18 +123,13 @@ function relationSummary(ticket: TrackerTicket): string {
           </p>
         </div>
       </div>
-      <div
-        class="space-y-2"
+      <AgentUsageSummary
+        v-if="parentTask?.key === ticket.task_key && isAutomaticDeliveryTask(parentTask)"
+        :metrics="ticket.agent_stats"
+        compact
         aria-label="Own ticket usage"
-      >
-        <AgentUsageSummary
-          :metrics="ticket.agent_stats"
-          compact
-        />
-        <p class="text-xs text-fg-muted">
-          Own ticket usage. Cache is included in Input.
-        </p>
-      </div>
+        title="Own ticket usage. Cache is included in Input."
+      />
       <UiMetadataStrip
         :items="ticketFacts"
         aria-label="Ticket core metadata"

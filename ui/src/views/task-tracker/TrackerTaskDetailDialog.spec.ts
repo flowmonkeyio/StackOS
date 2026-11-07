@@ -28,7 +28,7 @@ describe('TrackerTaskDetailDialog', () => {
     const wrapper = mount(TrackerTaskDetailDialog, { props: { modelValue: true, task: automatic } })
     const badge = popup().findAll('.ui-badge').find(badge => badge.text() === 'Automated')!
     expect(badge.text()).toBe('Automated')
-    expect(badge.classes()).toContain('text-neutral-fg')
+    expect(badge.classes()).toContain('text-info-fg')
     expect(badge.element.previousElementSibling?.textContent).toContain('In Progress')
     await wrapper.setProps({ task: { ...task(), key: 'terminal-managed', owner: 'Codex' } })
     expect(popup().text()).not.toContain('Automated')
@@ -49,12 +49,18 @@ describe('TrackerTaskDetailDialog', () => {
     own.reported_usage.input = 12
     own.reported_usage.cache_read = null
     const source = { ...sourceTicket(), agent_stats: own }
-    const wrapper = mount(TrackerTaskDetailDialog, { props: { modelValue: true, task: { ...task(), agent_stats: totals }, tickets: [source] } })
+    const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
+    const automatic = { ...task(), agent_stats: totals, metadata_json: { delivery: { status: 'complete', job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent } } }
+    const wrapper = mount(TrackerTaskDetailDialog, { props: { modelValue: true, task: automatic, tickets: [source] } })
     expect(popup().get('[aria-label="Lifetime task usage"] [data-usage-field="input"] dd').text()).toBe('70')
     await wrapper.setProps({ ticketKey: source.key, ticket: source })
     await flushPromises()
     const usage = popup().get('[aria-label="Own ticket usage"]')
     expect(usage.get('[data-usage-field="input"] dd').text()).toBe('12')
+    await wrapper.setProps({ task: { ...automatic, metadata_json: null } })
+    expect(popup().find('[aria-label="Own ticket usage"]').exists()).toBe(false)
+    await wrapper.setProps({ ticketKey: '', ticket: null })
+    expect(popup().find('[aria-label="Lifetime task usage"]').exists()).toBe(false)
     expect(usage.find('[data-usage-field="cache_read"]').exists()).toBe(false)
     expect(usage.get('[data-usage-field="output"] dd').text()).toBe('30')
     expect(usage.text()).not.toContain('Partial')

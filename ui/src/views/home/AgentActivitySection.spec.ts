@@ -131,7 +131,7 @@ describe('Agent usage presentation', () => {
     expect(compact.findAll('dt').map(item => item.text())).toEqual(['Input', 'Cache', 'Output'])
     expect(compact.get('[data-usage-field="input"] dd[tabindex]').attributes('title')).toContain('70 tokens')
     await compact.setProps({ metrics: empty.totals })
-    expect(compact.findAll('dd[tabindex]').map(item => item.text())).toEqual(['0', '0', '0'])
+    expect(compact.find('.agent-usage-summary').exists()).toBe(false)
     compact.unmount(); wrapper.unmount()
   })
 })

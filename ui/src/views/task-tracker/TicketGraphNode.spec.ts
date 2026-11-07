@@ -7,10 +7,15 @@ import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 import TicketGraphNode from './TicketGraphNode.vue'
 
 describe('TicketGraphNode', () => {
+  it('omits usage without parent automation identity even with measured tokens', async () => {
+    const wrapper = mount(TicketGraphNode, { props: { data: nodeData({ agentStats: agentStatsFixture().totals }) }, global: { stubs: { Handle: true } } })
+    expect(wrapper.find('.agent-usage-summary').exists()).toBe(false)
+    expect(wrapper.text()).not.toMatch(/Input|Cache|Output|No recorded usage/)
+  })
   it('renders own projected usage and truthfully refreshes unavailable and partial coverage', async () => {
     const metrics = agentStatsFixture().totals
     const wrapper = mount(TicketGraphNode, {
-      props: { data: nodeData({ agentStats: metrics }) }, global: { stubs: { Handle: true } },
+      props: { data: nodeData({ agentStats: metrics, taskAutomated: true }) }, global: { stubs: { Handle: true } },
     })
     expect(wrapper.get('.ticket-graph-node__usage').findAll('dt').map(label => label.text())).toEqual(['Input', 'Cache', 'Output'])
     expect(wrapper.get('[data-usage-field="input"] dd').attributes('title')).toContain('70 tokens')
@@ -18,17 +23,17 @@ describe('TicketGraphNode', () => {
     partial.reported_usage.input = 0
     partial.reported_usage.cache_read = null
     partial.coverage.usage_status = 'partial' as never
-    await wrapper.setProps({ data: nodeData({ agentStats: partial }) })
+    await wrapper.setProps({ data: nodeData({ agentStats: partial, taskAutomated: true }) })
     expect(wrapper.get('[data-usage-field="input"] dd').text()).toBe('0')
     expect(wrapper.find('[data-usage-field="cache_read"]').exists()).toBe(false)
     expect(wrapper.get('[data-usage-field="output"] dd').text()).toBe('30')
     expect(wrapper.text()).not.toContain('Partial')
-    await wrapper.setProps({ data: nodeData({ agentStats: null }) })
+    await wrapper.setProps({ data: nodeData({ agentStats: null, taskAutomated: true }) })
     expect(wrapper.findAll('.ticket-graph-node__usage dd')).toHaveLength(0)
     partial.coverage.usage_status = 'empty' as never
     partial.launch_attempts = 0
-    await wrapper.setProps({ data: nodeData({ agentStats: partial }) })
-    expect(wrapper.get('.ticket-graph-node__usage').text()).not.toContain('No recorded usage')
+    await wrapper.setProps({ data: nodeData({ agentStats: partial, taskAutomated: true }) })
+    expect(wrapper.find('.ticket-graph-node__usage').exists()).toBe(false)
   })
 
   it('renders status text plus active and recent state affordances', () => {
