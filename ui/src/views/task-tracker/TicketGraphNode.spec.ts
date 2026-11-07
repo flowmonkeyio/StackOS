@@ -20,15 +20,15 @@ describe('TicketGraphNode', () => {
     partial.coverage.usage_status = 'partial' as never
     await wrapper.setProps({ data: nodeData({ agentStats: partial }) })
     expect(wrapper.get('[data-usage-field="input"] dd').text()).toBe('0')
-    expect(wrapper.get('[data-usage-field="cache_read"] dd').text()).toBe('Not reported')
+    expect(wrapper.find('[data-usage-field="cache_read"]').exists()).toBe(false)
     expect(wrapper.get('[data-usage-field="output"] dd').text()).toBe('30')
     expect(wrapper.text()).not.toContain('Partial')
     await wrapper.setProps({ data: nodeData({ agentStats: null }) })
-    expect(wrapper.get('.ticket-graph-node__usage').findAll('dd').map(value => value.text())).toEqual(['Not reported', 'Not reported', 'Not reported'])
+    expect(wrapper.findAll('.ticket-graph-node__usage dd')).toHaveLength(0)
     partial.coverage.usage_status = 'empty' as never
     partial.launch_attempts = 0
     await wrapper.setProps({ data: nodeData({ agentStats: partial }) })
-    expect(wrapper.get('.ticket-graph-node__usage').text()).toContain('No recorded usage')
+    expect(wrapper.get('.ticket-graph-node__usage').text()).not.toContain('No recorded usage')
   })
 
   it('renders status text plus active and recent state affordances', () => {

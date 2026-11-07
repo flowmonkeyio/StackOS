@@ -20,49 +20,35 @@ afterEach(() => { vi.clearAllMocks(); vi.restoreAllMocks(); delete document.docu
 function render() { return mount(AgentActivityChart, { props: { days: agentStatsFixture().daily, timezone: 'America/Los_Angeles' } }) }
 
 describe('Daily stacked usage chart', () => {
-  it('renders cache + remaining + unknown split without double counting and exposes exact keyboard values', async () => {
+  it('offers exactly two views with equal measured totals, exact values and a fixed daily table', async () => {
     const wrapper = render()
     const config = mocks.created.mock.calls[0]![0]
-    expect(config.data.datasets.map((item: { data: number[] }) => item.data)).toEqual([[40], [30]])
+    expect(config.data.datasets.map((item: { data: number[] }) => item.data)).toEqual([[40], [30], [30]])
     expect(config.options.scales.x.stacked).toBe(true)
     expect(config.options.scales.y.stacked).toBe(true)
-    expect(wrapper.get('[aria-label="Chart legend"]').text()).not.toContain('Cache split not reported')
+    expect(wrapper.findAll('button').map(item => item.text())).toEqual(['Tokens', 'Agents'])
+    expect(wrapper.findComponent({ name: 'UiSelect' }).exists()).toBe(false)
     await wrapper.get('canvas').trigger('focus')
-    expect(wrapper.get('[aria-live="polite"]').text()).toContain('2026-11-06 · 70 tokens')
-    expect(wrapper.get('[aria-live="polite"]').text()).toContain('Cache read: 40')
-    expect(mocks.active).toHaveBeenCalledWith([{ datasetIndex: 0, index: 0 }, { datasetIndex: 1, index: 0 }])
-    expect(wrapper.get('table[aria-label="Exact daily usage"]').text()).toContain('70')
-    config.options.onHover({}, [{ index: 0 }])
-    await nextTick()
-    expect(wrapper.get('[aria-live="polite"]').text()).toContain('Remaining input: 30')
-    expect(config.options.plugins.tooltip.callbacks.footer([{ dataIndex: 0 }])).toEqual(['Total: 70'])
+    expect(wrapper.get('[aria-live="polite"]').text()).toContain('Reported total: 100 tokens')
+    expect(wrapper.get('[aria-live="polite"]').text()).toContain('Cache: 40')
+    expect(config.options.plugins.tooltip.callbacks.footer([{ dataIndex: 0 }])).toEqual(['Reported total: 100'])
+    const headers = wrapper.findAll('th[scope="col"]').map(item => item.text())
+    expect(headers).toEqual(['Date', 'Input', 'Cache', 'Output', 'Reported total'])
+    await wrapper.findAll('button')[1]!.trigger('click')
+    expect(wrapper.text()).toContain('Tokens by agent per day')
+    expect(wrapper.get('[aria-label="Chart legend"]').text()).toBe('Same-name')
+    const chart = mocks.updated.mock.contexts.at(-1) as { data: { datasets: { data: number[] }[] } }
+    expect(chart.data.datasets.map(item => item.data)).toEqual([[100]])
+    expect(wrapper.findAll('th[scope="col"]').map(item => item.text())).toEqual(headers)
+    expect(mocks.created).toHaveBeenCalledOnce()
     wrapper.unmount()
     expect(mocks.destroyed).toHaveBeenCalledOnce()
   })
 
-  it('switches metrics/colors locally, resets incompatible Input type and retains exact attempts/model identity', async () => {
-    const wrapper = render()
-    const selects = wrapper.findAllComponents({ name: 'UiSelect' })
-    selects[0]!.vm.$emit('update:modelValue', 'output')
-    await nextTick()
-    expect(selects[1]!.props('modelValue')).toBe('model')
-    expect(selects[1]!.props('options').map((item: { value: string }) => item.value)).toEqual(['agent', 'model'])
-    expect(wrapper.text()).toContain('Output tokens per day')
-    expect(wrapper.get('[aria-label="Chart legend"]').text()).toBe('recorded-sol')
-    selects[1]!.vm.$emit('update:modelValue', 'agent')
-    selects[0]!.vm.$emit('update:modelValue', 'attempts')
-    await nextTick()
-    expect(wrapper.get('[aria-label="Chart legend"]').text()).toBe('same-name')
-    await wrapper.get('canvas').trigger('focus')
-    expect(wrapper.get('[aria-live="polite"]').text()).toContain('4 attempts')
-    expect(mocks.created).toHaveBeenCalledOnce()
-    wrapper.unmount()
-  })
-
-  it('keeps keyboard day selection stable while the pointer is still over another bar', async () => {
+  it('keeps keyboard day selection stable while a pointer is over another bar', async () => {
     const days = agentStatsFixture().daily
     days.push({ ...structuredClone(days[0]!), date: '2026-11-07' })
-    const wrapper = mount(AgentActivityChart, { attachTo: document.body, props: { days, timezone: 'America/Los_Angeles' } })
+    const wrapper = mount(AgentActivityChart, { attachTo: document.body, props: { days, timezone: 'UTC' } })
     const canvas = wrapper.get('canvas')
     ;(canvas.element as HTMLCanvasElement).focus()
     await canvas.trigger('keydown', { key: 'End' })
@@ -78,26 +64,21 @@ describe('Daily stacked usage chart', () => {
     wrapper.unmount()
   })
 
-  it('emits the incompatible-color reset before a controlling parent updates its metric prop', async () => {
-    const wrapper = mount(AgentActivityChart, { props: { days: agentStatsFixture().daily, timezone: 'UTC', metric: 'input', color: 'input_type', 'onUpdate:metric': () => {}, 'onUpdate:color': () => {} } })
-    wrapper.findAllComponents({ name: 'UiSelect' })[0]!.vm.$emit('update:modelValue', 'output')
-    await nextTick()
-    expect(wrapper.emitted('update:metric')?.at(-1)).toEqual(['output'])
-    expect(wrapper.emitted('update:color')?.at(-1)).toEqual(['model'])
-    wrapper.unmount()
-  })
-
-  it('keeps missing cache null, zero measured and updates semantic colors with the theme', async () => {
-    vi.spyOn(window, 'getComputedStyle').mockImplementation(() => ({ fontFamily: 'system-ui', getPropertyValue: (key: string) => `${document.documentElement.dataset.theme ?? 'light'}:${key}` }) as CSSStyleDeclaration)
+  it('omits unsupported cache, distinguishes a partial stack and preserves zero/theme lifecycle', async () => {
+    vi.spyOn(window, 'getComputedStyle').mockImplementation(() => ({ fontFamily: 'Inter', getPropertyValue: (key: string) => `${document.documentElement.dataset.theme ?? 'light'}:${key}` }) as CSSStyleDeclaration)
     const wrapper = render()
     const days = agentStatsFixture().daily
-    days[0]!.reported_usage = { ...days[0]!.reported_usage, cache_read: null, remaining_input: null, input_with_unknown_cache: 70 }
+    days[0]!.reported_usage = { ...days[0]!.reported_usage, cache_read: null, remaining_input: null, input_with_unknown_cache: 70, output: 0, total: 70 }
     await wrapper.setProps({ days })
-    const chart = mocks.updated.mock.contexts.at(-1) as { data: { datasets: { data: (number | null)[]; backgroundColor: string }[] } }
-    expect(chart.data.datasets.map(item => item.data)).toEqual([[null], [null], [70]])
+    const chart = mocks.updated.mock.contexts.at(-1) as { data: { datasets: { data: (number | null)[]; backgroundColor: string }[] }; options: { plugins: { tooltip: { callbacks: { footer: (items: { dataIndex: number }[]) => string[] } } } } }
+    expect(chart.data.datasets.map(item => item.data)).toEqual([[0]])
+    expect(chart.options.plugins.tooltip.callbacks.footer([{ dataIndex: 0 }])).toEqual(['Shown: 0'])
+    await wrapper.get('canvas').trigger('focus')
+    expect(wrapper.get('[aria-live="polite"]').text()).toContain('Shown: 0 tokens')
+    expect(wrapper.text()).not.toMatch(/Not reported|Cache split|New input/)
+    expect(wrapper.findAll('th[scope="col"]').map(item => item.text())).toEqual(['Date', 'Input', 'Output', 'Reported total'])
     document.documentElement.dataset.theme = 'dark'
-    await vi.waitFor(() => expect(chart.data.datasets[0]!.backgroundColor).toBe('dark:--color-accent-primary'))
+    await vi.waitFor(() => expect(chart.data.datasets[0]!.backgroundColor).toBe('dark:--color-success-default'))
     wrapper.unmount()
-    expect(mocks.destroyed).toHaveBeenCalledOnce()
   })
 })

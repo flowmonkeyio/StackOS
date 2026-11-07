@@ -27,7 +27,8 @@ describe('Agent usage presentation', () => {
     expect(detail.text()).toContain('Cache write: 10')
     expect(detail.text()).toContain('Reasoning: 5')
     expect(detail.text()).toContain('Changes requested: 1')
-    expect(detail.text()).toContain('Not an approval rate')
+    expect(detail.text()).toContain('Reviews passed: 1')
+    expect(wrapper.text()).not.toMatch(/classified|review_agent|delivery_agent|No recorded review/)
     expect(wrapper.findComponent({ name: 'AgentActivityChart' }).props('days')).toEqual(fixture.daily)
     expect(wrapper.text()).not.toContain('Partial')
     wrapper.unmount()
@@ -41,31 +42,37 @@ describe('Agent usage presentation', () => {
     wrapper.unmount()
   })
 
-  it('retains metric and color choices while a new date/group scope loads', async () => {
+  it('retains the chart view while a new date/group scope loads', async () => {
     const wrapper = render()
-    wrapper.findComponent({ name: 'AgentActivityChart' }).vm.$emit('update:metric', 'output')
-    wrapper.findComponent({ name: 'AgentActivityChart' }).vm.$emit('update:color', 'agent')
+    wrapper.findComponent({ name: 'AgentActivityChart' }).vm.$emit('update:view', 'agents')
     await wrapper.setProps({ summary: null, loading: true })
     await wrapper.setProps({ summary: agentStatsFixture(), loading: false })
-    expect(wrapper.findComponent({ name: 'AgentActivityChart' }).props('metric')).toBe('output')
-    expect(wrapper.findComponent({ name: 'AgentActivityChart' }).props('color')).toBe('agent')
+    expect(wrapper.findComponent({ name: 'AgentActivityChart' }).props('view')).toBe('agents')
     wrapper.unmount()
   })
 
   it('keeps independently missing cache truthful while retaining known parents and measured zero', async () => {
     const fixture = agentStatsFixture()
     fixture.totals.reported_usage.cache_read = null
+    fixture.totals.reported_usage.remaining_input = null
+    fixture.rows[0]!.reported_usage.cache_read = null
+    fixture.totals.reported_usage.cache_write = null
+    fixture.totals.reported_usage.reasoning = null
+    fixture.totals.review_outcomes = {}
     fixture.totals.coverage.fields!.cache_read!.unavailable_attempts = 4
     fixture.totals.reported_usage.output = 0
     const wrapper = render(fixture)
-    expect(wrapper.findAll('.agent-usage-summary dd[tabindex]').map(item => item.text())).toEqual(['70', 'Not reported', '0'])
-    expect(wrapper.text()).toContain('Cache not reported')
-    expect(wrapper.text()).toContain('Cache share not available')
+    expect(wrapper.findAll('.agent-usage-summary dd[tabindex]').map(item => item.text())).toEqual(['70', '0'])
+    expect(wrapper.text()).not.toMatch(/Not reported|not reported|not available|Cache split/)
+    expect(wrapper.find('[aria-label="Input details"]').exists()).toBe(false)
+    expect(wrapper.findAll('button').some(item => item.text() === 'See token details')).toBe(false)
+    expect(wrapper.get('table').findAll('th').map(item => item.text())).toEqual(['Selected model', 'Attempts', 'Input', 'Output'])
     expect(wrapper.text()).not.toContain('57.1%')
     fixture.totals.reported_usage.cache_read = 10
     fixture.totals.coverage.fields!.cache_read!.unavailable_attempts = 2
     await wrapper.setProps({ summary: structuredClone(fixture) })
-    expect(wrapper.text()).toContain('Cache missing for 2 attempts')
+    expect(wrapper.text()).not.toContain('Cache missing for 2 attempts')
+    expect(wrapper.get('[data-usage-field="cache_read"] dd[tabindex]').attributes('title')).toContain('Cache missing for 2 attempts')
     expect(wrapper.text()).not.toContain('Partial')
     wrapper.unmount()
   })
@@ -84,11 +91,18 @@ describe('Agent usage presentation', () => {
     await wrapper.setProps({ summary: empty, error: null })
     expect(wrapper.text()).toContain('No recorded usage in this date range')
     expect(wrapper.findComponent({ name: 'AgentActivityChart' }).exists()).toBe(false)
+    const unknown = agentStatsFixture()
+    unknown.totals.reported_usage = { unit: 'tokens', input: null, output: null, total: null, cache_read: null, cache_write: null, reasoning: null, remaining_input: null, input_with_unknown_cache: null }
+    unknown.daily[0]!.reported_usage = structuredClone(unknown.totals.reported_usage)
+    await wrapper.setProps({ summary: unknown })
+    expect(wrapper.findComponent({ name: 'AgentActivityChart' }).exists()).toBe(false)
+    expect(wrapper.find('.agent-usage-summary').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Not reported')
     const compact = mount(AgentUsageSummary, { props: { metrics: fixture.totals, compact: true } })
     expect(compact.findAll('dt').map(item => item.text())).toEqual(['Input', 'Cache', 'Output'])
     expect(compact.get('[data-usage-field="input"] dd[tabindex]').attributes('title')).toContain('70 tokens')
     await compact.setProps({ metrics: empty.totals })
-    expect(compact.text()).toContain('No recorded usage')
+    expect(compact.findAll('dd[tabindex]').map(item => item.text())).toEqual(['0', '0', '0'])
     compact.unmount(); wrapper.unmount()
   })
 })

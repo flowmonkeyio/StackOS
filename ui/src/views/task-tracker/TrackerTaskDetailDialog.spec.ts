@@ -55,7 +55,7 @@ describe('TrackerTaskDetailDialog', () => {
     await flushPromises()
     const usage = popup().get('[aria-label="Own ticket usage"]')
     expect(usage.get('[data-usage-field="input"] dd').text()).toBe('12')
-    expect(usage.get('[data-usage-field="cache_read"] dd').text()).toBe('Not reported')
+    expect(usage.find('[data-usage-field="cache_read"]').exists()).toBe(false)
     expect(usage.get('[data-usage-field="output"] dd').text()).toBe('30')
     expect(usage.text()).not.toContain('Partial')
     wrapper.unmount()

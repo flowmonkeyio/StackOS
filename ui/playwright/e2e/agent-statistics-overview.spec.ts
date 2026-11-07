@@ -37,6 +37,7 @@ async function seed(projectId: number, automatic: object) {
 async function metrics(region: Locator, stats: SchemaTrackerAgentStatsOut) {
   for (const field of ['input', 'cache_read', 'output'] as const) {
     const value = region.locator(`.agent-usage-summary [data-usage-field="${field}"] dd[tabindex]`)
+    if (stats.totals.reported_usage[field] == null) { await expect(value).toHaveCount(0); continue }
     await expect(value).toHaveText(formatTokens(stats.totals.reported_usage[field]))
     await expect(value).toHaveAttribute('aria-label', new RegExp(stats.totals.reported_usage[field] === null ? 'Not reported' : `${stats.totals.reported_usage[field]} tokens`))
   }
@@ -84,7 +85,7 @@ test('synthetic receipts reconcile through both actual Home views and existing p
   await expect(page.getByRole('heading', { level: 1, name: project.name })).toBeVisible()
   await metrics(region, projectStats)
   await expect(region).toContainText('Usage missing for 1 attempt')
-  await expect(region).toContainText('Cache missing for 1 attempt')
+  await expect(region).not.toContainText('Cache missing for 1 attempt')
   await expect(region).not.toContainText('Partial')
   await expect(region.getByLabel('From', { exact: true })).toHaveValue(filters.start_date)
   await expect(region.getByLabel('Through', { exact: true })).toHaveValue(filters.end_date)
@@ -93,44 +94,39 @@ test('synthetic receipts reconcile through both actual Home views and existing p
   await expect(table.locator('tbody tr')).toHaveCount(projectStats.rows.length)
   for (const row of projectStats.rows) {
     const rendered = table.locator('tbody tr').filter({ hasText: row.model ?? 'Model not recorded' })
-    for (const field of ['input', 'cache_read', 'output'] as const)
-      await expect(rendered.locator(`[aria-label^="${field === 'cache_read' ? 'Cache' : field === 'input' ? 'Input' : 'Output'}:"]`)).toHaveText(formatTokens(row.reported_usage[field]))
+    for (const field of ['input', 'cache_read', 'output'] as const) {
+      const value = rendered.locator(`[aria-label^="${field === 'cache_read' ? 'Cache' : field === 'input' ? 'Input' : 'Output'}:"]`)
+      if (row.reported_usage[field] == null) await expect(value).toHaveCount(0)
+      else await expect(value).toHaveText(formatTokens(row.reported_usage[field]))
+    }
   }
   await region.getByRole('button', { name: 'See token details' }).click()
   await expect(region.getByLabel('Token details', { exact: true })).toContainText('Changes requested: 1')
-  await expect(region.getByLabel('Token details', { exact: true })).toContainText('Not an approval rate')
+  await expect(region.getByLabel('Token details', { exact: true })).toContainText('Reviews passed: 1')
+  await expect(region).not.toContainText('classified')
   await region.getByRole('button', { name: 'Hide token details' }).click()
   await region.locator('.activity-chart canvas').focus()
   await region.locator('.activity-chart canvas').press('End')
   await expect(region.locator('[aria-live="polite"]')).toContainText('100 tokens')
-  await region.getByLabel('Metric', { exact: true }).click()
-  await region.getByRole('option', { name: 'Output tokens', exact: true }).click()
-  await expect(region.getByLabel('Color by', { exact: true })).toContainText('Selected model')
-  await region.getByLabel('Color by', { exact: true }).click()
-  await expect(region.getByRole('option', { name: 'Input type', exact: true })).toHaveCount(0)
-  await region.getByRole('option', { name: 'Agent', exact: true }).click()
-  for (const metric of ['Cache tokens', 'Attempts', 'Input tokens']) {
-    await region.getByLabel('Metric', { exact: true }).click()
-    await region.getByRole('option', { name: metric, exact: true }).click()
-    await expect(region.getByRole('heading', { name: `${metric} per day` })).toBeVisible()
-  }
-  await region.getByLabel('Color by', { exact: true }).click()
-  await region.getByRole('option', { name: 'Input type', exact: true }).click()
+  const chartViews = region.getByRole('group', { name: 'Chart view', exact: true })
+  await expect(chartViews.getByRole('button')).toHaveText(['Tokens', 'Agents'])
+  await expect(region.getByLabel('Metric', { exact: true })).toHaveCount(0)
+  await expect(region.getByLabel('Color by', { exact: true })).toHaveCount(0)
+  await chartViews.getByRole('button', { name: 'Agents', exact: true }).click()
+  await region.locator('.activity-chart canvas').focus()
+  await region.locator('.activity-chart canvas').press('End')
+  await expect(region.locator('[aria-live="polite"]')).toContainText('100 tokens')
   await region.getByText('Daily values', { exact: true }).click()
   const daily = region.getByRole('table', { name: 'Exact daily usage' })
   await expect(daily.locator('tbody tr').last()).toContainText('100')
+  await expect(daily.locator('thead th')).toHaveText(['Date', 'Input', 'Cache', 'Output', 'Reported total'])
   await region.getByText('Daily values', { exact: true }).click()
-  await region.getByLabel('Metric', { exact: true }).click()
-  await region.getByRole('option', { name: 'Output tokens', exact: true }).click()
-  await region.getByLabel('Color by', { exact: true }).click()
-  await region.getByRole('option', { name: 'Agent', exact: true }).click()
   for (const [label, group_by] of [['Agent', 'agent'], ['Agent + model', 'agent_model'], ['Model', 'model']] as const) {
     await region.getByRole('group', { name: 'Group agent usage' }).getByRole('button', { name: label, exact: true }).click()
     const grouped = await operation<SchemaTrackerAgentStatsOut>('tracker.agentStats', { project_id: project.id, ...filters, group_by })
     await expect(table.locator('tbody tr')).toHaveCount(grouped.rows.length)
     await metrics(region, grouped)
-    await expect(region.getByLabel('Metric', { exact: true })).toContainText('Output tokens')
-    await expect(region.getByLabel('Color by', { exact: true })).toContainText('Agent')
+    await expect(chartViews.getByRole('button', { name: 'Agents', exact: true })).toHaveAttribute('aria-pressed', 'true')
   }
   const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1)
   const future = localActivityFilters(tomorrow).end_date
@@ -177,7 +173,9 @@ test('synthetic receipts reconcile through both actual Home views and existing p
   // Project-keyed route remounts clear previous values; measured zero differs from unavailable.
   await page.goto(`/projects/${legacy.id}`)
   await metrics(region, await operation<SchemaTrackerAgentStatsOut>('tracker.agentStats', { project_id: legacy.id, ...filters }))
-  await expect(region.locator('[data-usage-field="input"] dd[tabindex]')).toHaveText('Not reported')
+  await expect(region.locator('[data-usage-field="input"]')).toHaveCount(0)
+  await expect(region.getByLabel('Input details', { exact: true })).toHaveCount(0)
+  await expect(region).not.toContainText('Not reported')
   await page.getByRole('button', { name: /Switch project/ }).click()
   await page.getByRole('option', { name: /Measured Zero/ }).click()
   await expect(page).toHaveURL(new RegExp(`/projects/${zero.id}$`))
@@ -200,6 +198,7 @@ test('synthetic receipts reconcile through both actual Home views and existing p
 async function workMetrics(region: Locator, totals: AgentStatsMetrics) {
   for (const field of ['input', 'cache_read', 'output'] as const) {
     const value = region.locator(`[data-usage-field="${field}"] dd[tabindex]`)
+    if (totals.reported_usage[field] == null) { await expect(value).toHaveCount(0); continue }
     await expect(value).toHaveText(formatTokens(totals.reported_usage[field]))
     await expect(value).toHaveAttribute('title', new RegExp(totals.reported_usage[field] == null ? 'Not reported' : `${totals.reported_usage[field]!.toLocaleString('en-US')} tokens`))
   }
@@ -207,31 +206,7 @@ async function workMetrics(region: Locator, totals: AgentStatsMetrics) {
 }
 
 async function readableMissingValues(region: Locator) {
-  const values = region.locator('.agent-usage-summary dd[tabindex]').filter({ hasText: 'Not reported' })
-  expect(await values.count()).toBeGreaterThan(0)
-  for (const value of await values.all()) {
-    const layout = await value.evaluate(element => {
-      const metric = element.closest('[data-usage-field]')!.getBoundingClientRect()
-      const words: { text: string; fragments: number; contained: boolean }[] = []
-      const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT)
-      for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-        for (const match of node.textContent!.matchAll(/\S+/g)) {
-          const range = document.createRange()
-          range.setStart(node, match.index!)
-          range.setEnd(node, match.index! + match[0].length)
-          const rects = [...range.getClientRects()].filter(rect => rect.width > 0)
-          words.push({ text: match[0], fragments: rects.length, contained: rects.every(rect => rect.left >= metric.left - 1 && rect.right <= metric.right + 1) })
-        }
-      }
-      return { words, lines: element.getBoundingClientRect().height / parseFloat(getComputedStyle(element).lineHeight) }
-    })
-    expect(layout.words.map(word => word.text)).toEqual(['Not', 'reported'])
-    for (const word of layout.words) {
-      expect(word.fragments, `${word.text} must stay whole`).toBe(1)
-      expect(word.contained, `${word.text} must fit its metric`).toBe(true)
-    }
-    expect(layout.lines).toBeLessThanOrEqual(2)
-  }
+  await expect(region.locator('.agent-usage-summary dd').filter({ hasText: 'Not reported' })).toHaveCount(0)
 }
 
 test('Work uses shared Input Cache Output through filtering, details and refresh', async ({ page }, testInfo) => {
@@ -281,7 +256,7 @@ test('Work uses shared Input Cache Output through filtering, details and refresh
     const task = index.tasks.find(task => task.key === key)!
     const row = board.getByRole('button', { name: new RegExp(`Usage ${key}$`) })
     await workMetrics(row, task.agent_stats!)
-    if (['empty', 'reset'].includes(key)) await expect(row).toContainText('No recorded usage')
+    await expect(row).not.toContainText('No recorded usage')
   }
   for (const width of [1280, 760]) {
     await page.setViewportSize({ width, height: 800 })

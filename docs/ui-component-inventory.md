@@ -93,26 +93,29 @@ protection. Defaults are today plus the previous six local calendar days and
 the browser's visibly identified IANA timezone. Global Active/Archived/All
 selection remains with the existing page owner.
 
-`AgentActivityChart.vue` uses Chart.js vertical daily stacks. Input / Cache /
-Output / Attempts and Agent / Selected model colors use backend daily
-projections. Input type is available only for Input and stacks cache read,
-remaining input (including cache write), and measured input with an unreported
-cache split when present. It never adds cache to its parent Input. Leaving
-Input resets incompatible Input-type color to Selected model. Hover and chart
-keyboard focus (Left/Right, Home/End) expose exact values; a disclosure contains
-the complete daily table. Its existing mount/update/theme/unmount lifecycle
+`AgentActivityChart.vue` uses Chart.js vertical daily stacks with exactly two
+views: Tokens and Agents. Tokens shows disjoint Cache, New input (including
+cache write) and Output using the backend's paired measurements. Agents uses
+the same reported Input + Output split by agent. Unsupported series are absent;
+missing cache never becomes an invented remainder or unknown-cache category.
+An incomplete stack is labelled Shown. Model/version grouping remains in the
+breakdown list. Hover and keyboard focus (Left/Right, Home/End) expose exact
+values; a bounded vertical daily disclosure has fixed Date/Input/Cache/Output/
+Reported total columns, omitting unsupported fields rather than growing agent
+columns. Its existing mount/update/theme/unmount lifecycle
 owns the chart; it adds no polling.
 
 `components/domain/AgentUsageSummary.vue` accepts the existing typed summary
 metrics shared by Home and Work; consumers pass the appropriate backend
 projection, with no client receipt aggregation. `lib/agentActivity.ts` owns its
-compact/exact formatting, per-field missing notes, cache-share eligibility, and
-bounded review-fact copy. A measured zero stays zero; missing cache does not
-erase valid Input/Output. Optional cache-write/reasoning and explicitly recorded
-review outcomes remain available in details without an inferred approval rate.
-Compact missing values use smaller muted text and wrap only between words so
-`Not reported` remains readable in the Board's 64px value cells; measured values
-retain the numeric hierarchy and exact-value disclosure.
+compact/exact formatting, accessible field coverage, cache-share eligibility,
+readable agent names and plain review counts. A measured zero stays zero;
+unsupported summary fields and wholly unsupported breakdown columns disappear,
+while missing individual cells stay empty. Missing cache does not erase valid
+Input/Output. Only supported cache-write/reasoning and recorded review outcomes
+appear in details; ordinary copy omits raw roles, classification and empty review
+sentences. Model versions remain exact. Existing Work layout remains owned by
+its consumers and the summary's compact mode.
 Each page's existing refresh/polling owner continues loading statistics
 alongside ticket counts. Work consumers retain lifetime task/ticket projections,
 independent of these Home date filters.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
-import { activitySeries, cacheShare, exactUsage, fieldCoverage, formatTokens, localActivityFilters } from './agentActivity'
+import { activitySeries, agentLabel, cacheShare, exactUsage, fieldCoverage, formatTokens, localActivityFilters, reviewFacts } from './agentActivity'
 
 describe('Shared recorded token formatting', () => {
   it('formats exact and compact values and discloses field-level missing counts independently', () => {
@@ -16,16 +16,34 @@ describe('Shared recorded token formatting', () => {
     expect(exactUsage(metrics, 'input')).toContain('70 tokens')
   })
 
-  it('renders backend input decomposition and independent color projections without inventing unknown cache', () => {
+  it('uses paired measured cache composition and the same Input + Output total by agent', () => {
     const days = agentStatsFixture().daily
+    expect(activitySeries(days, 'tokens').map(item => item.values)).toEqual([[40], [30], [30]])
+    expect(activitySeries(days, 'agents')[0]!.values).toEqual([100])
     days[0]!.reported_usage = { ...days[0]!.reported_usage, input: 100, cache_read: 40, remaining_input: 30, input_with_unknown_cache: 30 }
-    expect(activitySeries(days, 'input', 'input_type').map(item => item.values)).toEqual([[40], [30], [30]])
-    days[0]!.by_model[0]!.model = null
-    expect(activitySeries(days, 'attempts', 'model')[0]).toMatchObject({ label: 'Model not recorded', values: [4] })
-    expect(activitySeries(days, 'input', 'agent', true)[0]!.label).toBe('same-name · Fixture project')
+    // Unknown cache on another receipt must not inflate New input to 60.
+    expect(activitySeries(days, 'tokens').map(item => item.values)).toEqual([[40], [30], [30]])
+    expect(activitySeries(days, 'agents', true)[0]!.label).toBe('Same-name · Fixture project')
+    days[0]!.reported_usage.cache_read = days[0]!.reported_usage.remaining_input = null
+    expect(activitySeries(days, 'tokens').map(item => item.key)).toEqual(['output'])
+    days[0]!.reported_usage.output = 0
+    expect(activitySeries(days, 'tokens')[0]!.values).toEqual([0])
+    const unknown = structuredClone(days[0]!)
+    unknown.reported_usage.total = null
+    unknown.by_agent = []
+    days.push(unknown)
+    expect(activitySeries(days, 'agents')[0]!.values).toEqual([100, null])
     const filters = localActivityFilters(new Date(2026, 0, 2))
     expect(filters).toMatchObject({ start_date: '2025-12-27', end_date: '2026-01-02', group_by: 'model' })
     expect(filters.timezone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone)
+  })
+  it('keeps plain review counts and readable agent names without erasing exact versions', () => {
+    const metrics = agentStatsFixture().totals
+    metrics.review_outcomes = { success: 2, repair: 1, failed: 1, blocked: 1, validation_failed: 1 }
+    expect(reviewFacts(metrics)).toBe('Reviews passed: 2 · Changes requested: 1 · Reviews failed: 1 · Reviews blocked: 1 · Invalid review results: 1')
+    metrics.review_outcomes = {}
+    expect(reviewFacts(metrics)).toBe('')
+    expect(agentLabel('sdlc_delivery_reviewer')).toBe('Delivery reviewer')
   })
   it('preserves measured zero, independent missing fields, empty and absent projection states', () => {
     const metrics = agentStatsFixture().totals

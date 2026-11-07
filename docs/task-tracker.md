@@ -586,22 +586,32 @@ expose the same `agent_stats` field. The optional/null schema default supports
 objects without an attached projection; it does not establish measured zero.
 
 Project Home and the main Overview share an **Agent usage** section backed by
-these operations. Input / Cache / Output remain visible alongside launch
+these operations. Available Input / Cache / Output appear alongside launch
 attempts, daily stacked bars and a complete Agent / Model / Agent+model table.
 Cache means cache read included in Input. Summary, table and chart use the same
 selected date range, defaulting to today plus the previous six local calendar
-days in the visibly identified browser IANA timezone. Chart metric/color controls,
-Input-type decomposition and exact values on hover/keyboard focus follow the
+days in the visibly identified browser IANA timezone. Exactly two chart views,
+**Tokens** and **Agents**, share this scope. Tokens stacks Cache, New input and
+Output; New input uses the repository's paired Input-minus-Cache projection,
+never an aggregate subtraction that invents a remainder for missing cache.
+Agents splits the same reported Input + Output by agent. Incomplete composition
+is labelled **Shown**, rather than a complete total. Exact hover/keyboard values follow the
 [shared Home component contract](ui-component-inventory.md#view-decomposition-pattern).
 Overview retains its existing Active/Archived/All project visibility. Agent
 groups retain project identity; Model grouping combines the selected projects.
 Model labels reflect recorded selections, independent of current Agent defaults.
 
-A measured zero stays `0`; missing fields say `Not reported` with field-specific
-coverage beside totals and row values, preserving any known Input/Cache/Output.
-Details retain optional cache-write/reasoning measurements and explicitly recorded
-review outcomes with classified/unclassified attempt counts, without an inferred
-approval rate. A failed refresh retains same-scope values with a warning and
+A measured zero stays `0`; unsupported metrics are omitted from summaries,
+columns, legends, sidebars and details. An individual missing cell stays empty;
+known Input/Cache/Output remain visible and null remains null in the API. There
+is no synthetic unknown-cache series. A fixed-column, vertically bounded daily
+table shows Date and available Input, Cache, Output and Reported total, independent
+of agent count. Readable agent names preserve exact recorded model versions.
+Details retain supported cache-write/reasoning values and plain recorded review
+counts (passed, changes requested, blocked, failed or invalid result), with no
+empty review sentences, raw role keys, classification prose or inferred approval
+rate. Exact-value accessible labels retain field coverage for partial measurements.
+A failed refresh retains same-scope values with a warning and
 their original update time; scope changes clear those values. Both pages reuse
 their existing refresh owner, with no statistics writes, receipt aggregation in
 Vue, or extra timer.

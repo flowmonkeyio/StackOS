@@ -43,17 +43,16 @@ describe('Work board presentation', () => {
     metrics.coverage.usage_status = 'partial' as never
     metrics.reported_usage.cache_read = null
     await wrapper.setProps({ rows: rows() })
-    expect(wrapper.get('[data-usage-field="cache_read"] dd').text()).toBe('Not reported')
+    expect(wrapper.find('[data-usage-field="cache_read"]').exists()).toBe(false)
     expect(wrapper.get('[data-usage-field="output"] dd').text()).toBe('30')
     expect(wrapper.text()).not.toContain('Partial')
     metrics.reported_usage.input = null
     metrics.reported_usage.output = null
     await wrapper.setProps({ rows: rows() })
-    expect(wrapper.findAll('dd[tabindex]').map(value => value.text())).toEqual(['Not reported', 'Not reported', 'Not reported'])
-    expect(wrapper.findAll('dd[tabindex]').every(value => value.attributes('aria-label')?.includes('Not reported'))).toBe(true)
+    expect(wrapper.findAll('dd[tabindex]')).toHaveLength(0)
     metrics.launch_attempts = 0
     await wrapper.setProps({ rows: rows() })
-    expect(wrapper.get('button').text()).toContain('No recorded usage')
+    expect(wrapper.get('button').text()).not.toContain('No recorded usage')
   })
 
   it('keeps all seven columns, including empty columns, with read-only cards', async () => {
@@ -149,7 +148,7 @@ describe('Work board presentation', () => {
     expect(wrapper.get('.tracker-command-panel__usage').findAll('dt').map(label => label.text())).toEqual(['Input', 'Cache', 'Output'])
     expect(wrapper.get('[data-usage-field="cache_read"] dd').text()).toBe('40')
     await wrapper.setProps({ taskAgentStats: null, taskAutomated: true })
-    expect(wrapper.get('.tracker-command-panel__usage').text()).toContain('Not reported')
+    expect(wrapper.get('.tracker-command-panel__usage').findAll('dd')).toHaveLength(0)
     expect(wrapper.get('.ui-badge').text()).toBe('Automated')
     expect(wrapper.get('.tracker-command-panel__usage').find('.ui-badge').exists()).toBe(false)
     await wrapper.setProps({ taskAvailable: false })
