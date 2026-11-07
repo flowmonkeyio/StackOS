@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { UiIcon } from '@/components/ui'
+import { UiBadge, UiIcon } from '@/components/ui'
 import { trackerStatus } from '@/design/status'
 import { usageCoverage, usageLabel } from '@/lib/agentActivity'
 import { resolveAgentOwnerLogo } from '@/lib/stackos/agentIdentity'
 import { formatAbsoluteDateTime, formatShortDate } from '@/lib/stackos/time'
 import type { TrackerStatus } from '@/lib/task-tracker/types'
+import { isAutomaticDeliveryTask } from '@/lib/task-tracker/delivery'
 import type { TaskProgressRow } from './viewTypes'
 
 const props = defineProps<{ rows: TaskProgressRow[]; selectedTaskKey?: string }>()
@@ -58,10 +59,15 @@ function initials(owner: string): string {
             class="tracker-board__title"
             :title="row.task.title"
           >{{ row.task.title }}</span>
-          <span
-            class="text-xs tabular-nums text-fg-muted"
-            :title="usageCoverage(row.task.agent_stats)"
-          >{{ usageLabel(row.task.agent_stats) }}</span>
+          <span class="flex flex-wrap items-center gap-2">
+            <span
+              class="text-xs tabular-nums text-fg-muted"
+              :title="usageCoverage(row.task.agent_stats)"
+            >{{ usageLabel(row.task.agent_stats) }}</span>
+            <UiBadge v-if="isAutomaticDeliveryTask(row.task)">
+              Automatic
+            </UiBadge>
+          </span>
           <span class="tracker-board__meta">
             <span class="tracker-board__identity">
               <span class="tracker-board__id">#{{ row.id }}</span>

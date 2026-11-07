@@ -19,6 +19,29 @@ describe('TrackerTaskDetailDialog', () => {
     document.body.innerHTML = ''
   })
 
+  it('shows Automatic beside status and updates when switching tasks or refreshing metadata', async () => {
+    const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
+    const automatic = { ...task(), metadata_json: { delivery: {
+      status: 'stopped', job_ref: 'task-delivery:1:1', delivery_agent: agent, review_agent: agent,
+    } } }
+    const wrapper = mount(TrackerTaskDetailDialog, { props: { modelValue: true, task: automatic } })
+    const badge = popup().findAll('.ui-badge').find(badge => badge.text() === 'Automatic')!
+    expect(badge.text()).toBe('Automatic')
+    expect(badge.classes()).toContain('text-neutral-fg')
+    expect(badge.element.previousElementSibling?.textContent).toContain('In Progress')
+    await wrapper.setProps({ task: { ...task(), key: 'terminal-managed', owner: 'Codex' } })
+    expect(popup().text()).not.toContain('Automatic')
+    await wrapper.setProps({ task: { ...automatic, status: 'complete', metadata_json: {
+      delivery: { ...automatic.metadata_json.delivery, status: 'complete' },
+    } } })
+    expect(popup().findAll('.ui-badge').some(badge => badge.text() === 'Automatic')).toBe(true)
+    await wrapper.setProps({ task: { ...automatic, metadata_json: { delivery: [] } } })
+    expect(popup().text()).not.toContain('Automatic')
+    await wrapper.setProps({ task: null })
+    expect(popup().text()).not.toContain('Automatic')
+    wrapper.unmount()
+  })
+
   it('keeps description-save feedback and focus in the footer even below a long input history', async () => {
     const record = { ...task(), context_json: { operator_inputs: Array.from({ length: 6 }, (_, index) => ({
       id: `input-${index}`, text: 'Long history '.repeat(80), created_at: '2026-10-28T00:00:00Z', actor: 'operator',

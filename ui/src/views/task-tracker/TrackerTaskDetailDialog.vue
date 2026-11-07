@@ -19,6 +19,7 @@ import MarkdownView from '@/components/MarkdownView.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import type { TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
+import { isAutomaticDeliveryTask } from '@/lib/task-tracker/delivery'
 import { isGraphBlockedTicket } from './viewModel'
 import { useTrackerTaskContent } from './useTrackerTaskContent'
 import TrackerTicketDetailContent from './TrackerTicketDetailContent.vue'
@@ -316,6 +317,9 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
             domain="tracker"
             :status="task.status"
           />
+          <UiBadge v-if="isAutomaticDeliveryTask(task)">
+            Automatic
+          </UiBadge>
           <span>Owner <span class="text-fg-default">{{ task.owner ?? 'Unassigned' }}</span></span>
           <span>{{ completedCount }} of {{ tickets.length }} tickets complete</span>
         </div>

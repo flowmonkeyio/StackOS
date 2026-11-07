@@ -1089,6 +1089,10 @@ The Work UI provides two views, Board and Graph. It renders:
   statuses do not. Search, workflow and assignee filters narrow the Board.
   Task-status filters apply to tasks; `ticket_status` links explicitly filter
   tasks containing tickets with that status.
+- a small neutral `Automatic` badge on Board cards and beside status in task
+  details when the task has a persisted automatic-delivery handoff record.
+  Queued, running, stopped and completed executions retain the badge: it names
+  the delivery method. Project agent defaults alone do not add the indication.
 - a task selector only in Graph, independent of Board filters and
   including terminal tasks. After the project index loads, an explicit URL
   selection takes precedence over the last valid selection remembered for

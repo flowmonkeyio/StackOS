@@ -10,6 +10,25 @@ import TrackerBoardPanel from './TrackerBoardPanel.vue'
 import TaskTrackerCommandPanel from './TaskTrackerCommandPanel.vue'
 
 describe('Work board presentation', () => {
+  it('indicates persisted automatic delivery and removes the badge when task metadata changes', async () => {
+    const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
+    const record = task('in-progress')
+    const rows = () => buildTaskProgressRows([record], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
+    const wrapper = mount(TrackerBoardPanel, { props: { rows: rows() } })
+    expect(wrapper.get('button').text()).not.toContain('Automatic')
+    for (const status of ['queued', 'running', 'stopped', 'complete']) {
+      record.metadata_json = { delivery: { status, job_ref: 'task-delivery:1:1', delivery_agent: agent, review_agent: agent } }
+      await wrapper.setProps({ rows: rows() })
+      const badge = wrapper.get('.ui-badge')
+      expect(badge.text()).toBe('Automatic')
+      expect(badge.classes()).toContain('text-neutral-fg')
+      expect(badge.element.tagName).toBe('SPAN')
+    }
+    record.metadata_json = { delivery: { status: 'running' } }
+    await wrapper.setProps({ rows: rows() })
+    expect(wrapper.find('.ui-badge').exists()).toBe(false)
+  })
+
   it('renders the API task total with coverage and updates without a per-card request', async () => {
     const metrics = agentStatsFixture().totals
     const record = { ...task('in-progress'), agent_stats: metrics }
