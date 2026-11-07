@@ -309,11 +309,11 @@ Supported native contracts, checked 2026-11-06:
 
 | Host / scope | Native basis and arithmetic |
 | --- | --- |
-| Codex / `codex.turn` | [`turn.completed.usage`](https://github.com/openai/codex/blob/main/sdk/typescript/src/events.ts) is invocation usage. Input plus output gives total; cached input and reasoning output are subsets and are not added again. |
+| Codex / `codex.turn` | Native `exec --json` emits cumulative thread usage on `turn.completed`, verified with CLI 0.167.0 fresh/resume captures and the [native producer](https://github.com/openai/codex/blob/rust-v0.167.0/codex-rs/exec/src/event_processor_with_jsonl_output.rs) (`usage_from_last_total`). Normalize as session snapshots: 18442 then 36925 contribute 18442 then 18483, totaling 36925. Input plus output gives total; cached input/cache writes and reasoning output are already included subsets. `last_token_usage` covers only the latest model request and is not a substitute for a multi-request invocation. No historical version boundary is inferred from the captures. |
 | Claude Code / `claude.model-usage.v2.1` | The [Agent SDK cost-tracking contract](https://code.claude.com/docs/en/agent-sdk/cost-tracking#accumulate-costs-across-multiple-calls) defines a version boundary for `claude -p`: stable 2.1 releases before 2.1.277 report per-invocation `modelUsage`; 2.1.277+ restore session totals on resume. A bounded `--version` probe of the same selected executable establishes the basis. Unknown, prerelease, unsupported-series or failed version probes leave usage unavailable and preserve execution. Sum models' input, cache-read and cache-creation counts for input, plus output for total. The narrower main-loop `usage` is not a fallback. Missing counters and potentially zeroed crash results are unavailable. |
 | Gemini CLI / `gemini.models` | [Headless JSON](https://google-gemini.github.io/gemini-cli/docs/cli/headless.html) supplies `stats.models`; [telemetry hydration](https://github.com/google-gemini/gemini-cli/blob/main/packages/core/src/telemetry/uiTelemetry.ts) restores these counters on resume. Sum each model once: input is prompt (already includes cached), output is candidates plus thoughts plus tool, total must match their sum. Nested role counters and the uncached input subtotal are not added. |
 | Hermes / unavailable | The [CLI reference](https://hermes-agent.nousresearch.com/docs/reference/cli-commands) does not prove a usage report compatible with the integrated `chat --oneshot` command. No telemetry flag is appended. |
-| Grok / unavailable | No compatible token schema is proven for the existing JSON command in the [headless contract](https://docs.x.ai/build/cli/headless-scripting). Agent-authored usage is ignored. |
+| Grok / `grok.headless` | Native `--output-format json` reports invocation usage, verified with CLI 1.0.77 fresh/resume captures and the [headless contract](https://github.com/xai-org/grok-build/blob/main/crates/codegen/xai-grok-pager/docs/user-guide/14-headless-mode.md#json). Full input is `input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens`; output already includes `reasoning_tokens`. Require all counters and a matching `total_tokens`. The captured calls contribute 15709 and 15796 (31505 total). Do not add `modelUsage` again or apply this arithmetic to persisted session `inputTokens`, which already includes cache. Missing, malformed or explicitly incomplete native usage remains unavailable; agent-authored usage is ignored. |
 
 Usage is optional evidence, including when native execution, result/schema
 validation or session checks fail. Malformed or unsupported telemetry never
@@ -327,6 +327,13 @@ auth, model, session or execution gate. The `v2.1` scope identifies the supporte
 stable release series and excludes snapshots recorded under the earlier
 unproven `claude.model-usage` scope from cumulative baselines. A missing compatible
 baseline stays unavailable even when the current version is known.
+
+Codex receipts recorded with the former `basis=invocation` mapping cannot serve
+as cumulative baselines. On resume, retain the new session snapshot with
+`reason=missing_baseline`; the next compatible receipt can produce a delta.
+Correcting collection does not rewrite historical receipts or activate an
+already installed daemon. Historical repair and installed activation require
+their separately reviewed evidence.
 
 ### Recorded agent statistics
 

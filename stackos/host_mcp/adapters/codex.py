@@ -125,11 +125,13 @@ def run_agent(
                 thread_id = event.get("thread_id")
             if isinstance(event, dict) and event.get("type") == "turn.completed":
                 counters = event.get("usage")
-                # events.ts: cached input and reasoning output are subsets.
+                # Native exec emits the thread's cumulative total (verified in
+                # 0.167.0 usage_from_last_total), including on resume. Cached
+                # input and reasoning output are already included subsets.
                 usage = (
                     usage_snapshot(
                         "codex.turn",
-                        "invocation",
+                        "session",
                         counters.get("input_tokens"),
                         counters.get("output_tokens"),
                     )

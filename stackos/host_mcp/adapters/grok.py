@@ -23,7 +23,13 @@ from stackos.host_mcp.bridge import (
     token_preflight,
 )
 from stackos.host_mcp.discovery import resolve_cli_bin, subprocess_env_for_cli
-from stackos.host_mcp.result import AgentRunResult, AgentSandbox, HostMcpResult, looks_secretish
+from stackos.host_mcp.result import (
+    AgentRunResult,
+    AgentSandbox,
+    HostMcpResult,
+    looks_secretish,
+    usage_snapshot,
+)
 from stackos.host_mcp.toml_config import remove_mcp_server
 
 HOST_KEY = "grok"
@@ -80,19 +86,53 @@ def run_agent(
 def _agent_result(stdout: str) -> AgentRunResult:
     # Native --output-format json, not the separate streaming-messages-json envelope.
     value = json_object(stdout)
+    usage = _agent_usage(value)
     if value.get("error") or value.get("type") == "error":
         return AgentRunResult(
             0,
             thread_id=value.get("sessionId"),
+            usage=usage,
             error=str(value.get("error") or value.get("message") or "Grok failed."),
         )
     if value.get("stopReason") != "end_turn":
         return AgentRunResult(
             0,
             thread_id=value.get("sessionId"),
+            usage=usage,
             error=f"Grok did not complete: {value.get('stopReason', 'missing stopReason')}",
         )
-    return AgentRunResult(0, thread_id=value.get("sessionId"), result=json_object(value["text"]))
+    try:
+        result = json_object(value["text"])
+    except (ValueError, KeyError, TypeError) as exc:
+        return AgentRunResult(
+            0,
+            thread_id=value.get("sessionId"),
+            usage=usage,
+            error=f"Invalid Grok result: {exc}",
+        )
+    return AgentRunResult(0, thread_id=value.get("sessionId"), result=result, usage=usage)
+
+
+def _agent_usage(value: dict[str, Any]) -> dict[str, Any] | None:
+    # Headless 1.0.77 usage covers this invocation, even on resume. Its input
+    # excludes both cache buckets; output already includes reasoning. Persisted
+    # session inputTokens has different semantics and is not this projection.
+    counters = value.get("usage")
+    if not isinstance(counters, dict) or value.get("usage_is_incomplete"):
+        return None
+    counts = [
+        counters.get(k)
+        for k in (
+            "input_tokens",
+            "cache_read_input_tokens",
+            "cache_creation_input_tokens",
+            "output_tokens",
+            "total_tokens",
+        )
+    ]
+    if any(type(n) is not int or n < 0 for n in counts):
+        return None
+    return usage_snapshot("grok.headless", "invocation", sum(counts[:3]), counts[3], counts[4])
 
 
 def grok_home(home: Path) -> Path:

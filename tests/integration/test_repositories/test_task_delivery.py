@@ -2229,9 +2229,9 @@ def test_feedback_requeue_preserves_consumed_repair_budget(
         assert attempt["review"]["validated_outcome"] == "repair"
 
 
-@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize("baseline_kind", ["compatible", "missing", "invocation"])
 def test_cumulative_receipt_requeue_retains_unknown_and_redaction_boundary(
-    session, project_id, tmp_path, monkeypatch, legacy
+    session, project_id, tmp_path, monkeypatch, baseline_kind
 ):
     """Actual tracker writes/readbacks/archive, with a resumed baseline gap."""
     from stackos import task_delivery
@@ -2249,7 +2249,7 @@ def test_cumulative_receipt_requeue_retains_unknown_and_redaction_boundary(
             thread_id=f"{key}-{phase}",
             result=generic_result("blocked" if len(calls) == 2 else "success"),
             usage=usage_snapshot(
-                "fixture", "session", 160 if resumed else 100, 70 if resumed else 50
+                "codex.turn", "session", 36895 if resumed else 18419, 30 if resumed else 23
             ),
         )
 
@@ -2262,9 +2262,17 @@ def test_cumulative_receipt_requeue_retains_unknown_and_redaction_boundary(
     evidence = repo.brief(project_id=project_id, ticket_key="first").ticket.completion_evidence_json
     automatic = evidence["automatic_delivery"]
     for phase in ("delivery", "review"):
-        assert automatic[phase]["usage"]["measured"] == {"input": 100, "output": 50, "total": 150}
-        if legacy:
+        assert automatic[phase]["usage"]["measured"] == {
+            "input": 18419,
+            "output": 23,
+            "total": 18442,
+        }
+        if baseline_kind == "missing":
             automatic[phase].pop("usage")
+        elif baseline_kind == "invocation":
+            # The former collector mislabeled cumulative snapshots. Even the
+            # same scope/session cannot make that receipt a compatible baseline.
+            automatic[phase]["usage"]["basis"] = "invocation"
     evidence["credential_token"] = "must-stay-secret"
     repo.update_ticket(
         project_id=project_id,
@@ -2285,9 +2293,76 @@ def test_cumulative_receipt_requeue_retains_unknown_and_redaction_boundary(
     for phase in ("delivery", "review"):
         receipt = automatic[phase]
         assert receipt["validated_outcome"] == "success"
-        assert receipt["usage"]["snapshot"]["total"] == 230
+        assert receipt["usage"]["snapshot"]["total"] == 36925
         assert receipt["usage"]["measured"] == (
-            None if legacy else {"input": 60, "output": 20, "total": 80}
+            {"input": 18476, "output": 7, "total": 18483} if baseline_kind == "compatible" else None
         )
+        if baseline_kind != "compatible":
+            assert receipt["usage"]["reason"] == "missing_baseline"
         old = automatic["attempts"][0][phase]
-        assert ("usage" not in old) if legacy else old["usage"]["snapshot"]["total"] == 150
+        assert (
+            ("usage" not in old)
+            if baseline_kind == "missing"
+            else old["usage"]["snapshot"]["total"] == 18442
+        )
+
+
+@pytest.mark.parametrize("host", ["codex", "grok"])
+@pytest.mark.parametrize("fault", ["text", "schema", "native"])
+def test_native_collector_failure_persists_session_and_available_usage(
+    session, project_id, tmp_path, monkeypatch, host, fault
+):
+    """Actual native adapter -> normalizer -> tracker receipt on failed output."""
+    from stackos.host_mcp.adapters import codex, grok
+
+    prepared_task(session, project_id)
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fake/codex")
+    monkeypatch.setattr(grok, "resolve_grok_bin", lambda _home: "/fake/grok")
+    real_run = subprocess.run
+
+    def execute(command, **kwargs):
+        if command[0] not in {"/fake/codex", "/fake/grok"}:
+            return real_run(command, **kwargs)
+        text = "bad" if fault == "text" else "{}"
+        if host == "codex":
+            Path(command[command.index("-o") + 1]).write_text(text)
+            events = [
+                {"type": "thread.started", "thread_id": "native-session"},
+                {"type": "turn.completed", "usage": {"input_tokens": 18419, "output_tokens": 23}},
+            ]
+            if fault == "native":
+                events.append({"type": "turn.failed", "error": "denied"})
+            stdout = "\n".join(map(json.dumps, events))
+        else:
+            stdout = json.dumps(
+                {
+                    "sessionId": "native-session",
+                    "stopReason": "end_turn",
+                    "text": text,
+                    "error": "denied" if fault == "native" else None,
+                    "usage": {
+                        "input_tokens": 6820,
+                        "cache_read_input_tokens": 8832,
+                        "cache_creation_input_tokens": 0,
+                        "output_tokens": 57,
+                        "reasoning_tokens": 52,
+                        "total_tokens": 15709,
+                    },
+                }
+            )
+        return subprocess.CompletedProcess(command, int(fault == "native"), stdout, "")
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler, host_key=host)
+    scheduler.run()
+    session.expire_all()
+    ticket = TrackerRepository(session).brief(project_id=project_id, ticket_key="first").ticket
+    assert ticket.status == "failed"
+    evidence = ticket.completion_evidence_json["automatic_delivery"]
+    receipt = evidence["delivery"]
+    assert receipt["thread_id"] == "native-session"
+    assert receipt["error"]
+    assert receipt["validated_outcome"] is None
+    assert receipt["usage"]["measured"]["total"] == (18442 if host == "codex" else 15709)
+    assert "review" not in evidence

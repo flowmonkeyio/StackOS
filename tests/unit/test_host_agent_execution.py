@@ -67,7 +67,7 @@ def fake_native_discovery(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_codex_native_usage_is_separate_from_agent_output(project, monkeypatch):
-    """Official SDK events.ts: turn.completed usage covers this invocation."""
+    """Native exec's cumulative counters are separate from agent-authored output."""
     monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fake/codex")
 
     def execute(command, **kwargs):
@@ -89,6 +89,7 @@ def test_codex_native_usage_is_separate_from_agent_output(project, monkeypatch):
     monkeypatch.setattr(subprocess, "run", execute)
     result = run_agent("codex", project, "Instructions", "Work", SCHEMA)
     assert result.ok
+    assert result.usage["basis"] == "session"
     assert result.usage["snapshot"] == {"input": 100, "output": 50, "total": 150}
 
 

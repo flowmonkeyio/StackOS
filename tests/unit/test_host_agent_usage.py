@@ -1,6 +1,7 @@
 """Native contracts checked 2026-11-06; no agent-authored usage is trusted.
 
-Sources: Codex sdk/typescript/src/events.ts; Claude Agent SDK cost-tracking;
+Sources: Codex rust-v0.167.0 exec/event_processor_with_jsonl_output.rs;
+Grok Build headless-mode contract; Claude Agent SDK cost-tracking;
 Gemini CLI headless JSON and core/src/telemetry/uiTelemetry.ts (hydrate).
 """
 
@@ -15,6 +16,42 @@ from stackos.host_mcp.adapters import claude_code, codex, gemini_cli, grok, herm
 from stackos.host_mcp.result import normalize_usage, usage_snapshot
 
 SCHEMA = {"type": "object", "required": ["summary"]}
+# Minimal native counters captured 2026-11-06 in the approved usage probe.
+# Session IDs and response text are synthetic; no transcript is retained.
+CODEX_0167 = [
+    {
+        "input_tokens": 18419,
+        "cached_input_tokens": 7168,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 23,
+        "reasoning_output_tokens": 14,
+    },
+    {
+        "input_tokens": 36895,
+        "cached_input_tokens": 25472,
+        "cache_write_input_tokens": 0,
+        "output_tokens": 30,
+        "reasoning_output_tokens": 14,
+    },
+]
+GROK_1077 = [
+    {
+        "input_tokens": 6820,
+        "cache_read_input_tokens": 8832,
+        "cache_creation_input_tokens": 0,
+        "output_tokens": 57,
+        "reasoning_tokens": 52,
+        "total_tokens": 15709,
+    },
+    {
+        "input_tokens": 147,
+        "cache_read_input_tokens": 15616,
+        "cache_creation_input_tokens": 0,
+        "output_tokens": 33,
+        "reasoning_tokens": 28,
+        "total_tokens": 15796,
+    },
+]
 CLAUDE = {
     "type": "result",
     "session_id": "session",
@@ -66,6 +103,190 @@ GEMINI = {
         }
     },
 }
+
+
+def test_captured_codex_0167_cumulative_usage(tmp_path, monkeypatch):
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fake/codex")
+    launches = []
+
+    def execute(command, **kwargs):
+        counters = CODEX_0167[len(launches)]
+        launches.append(command)
+        Path(command[command.index("-o") + 1]).write_text('{"summary":"OK"}')
+        events = [
+            {"type": "thread.started", "thread_id": "session"},
+            {"type": "turn.completed", "usage": counters},
+        ]
+        return subprocess.CompletedProcess(command, 0, "\n".join(map(json.dumps, events)), "")
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    previous = None
+    totals = []
+    for resumed in (False, True):
+        result = run_agent(
+            "codex",
+            tmp_path,
+            "Instructions",
+            "Work",
+            SCHEMA,
+            resume_thread_id="session" if resumed else None,
+        )
+        assert result.ok
+        measured = normalize_usage(
+            result.usage, session_id=result.thread_id, resumed=resumed, previous=previous
+        )
+        assert measured["basis"] == "session"
+        totals.append(measured["measured"]["total"])
+        previous = measured
+    assert totals == [18442, 18483]
+    assert sum(totals) == 36925  # Never 55367, nor last_token_usage for a multi-request turn.
+    assert len(launches) == 2
+
+
+def test_captured_grok_1077_invocation_usage(tmp_path, monkeypatch):
+    monkeypatch.setattr(grok, "resolve_grok_bin", lambda _home: "/fake/grok")
+    launches = []
+
+    def execute(command, **kwargs):
+        counters = GROK_1077[len(launches)]
+        launches.append(command)
+        envelope = {
+            "sessionId": "session",
+            "stopReason": "end_turn",
+            "text": '{"summary":"OK"}',
+            "usage": counters,
+            # Same native facts in another projection must not be added twice.
+            "modelUsage": {"grok-4.7-build": {"inputTokens": 999999}},
+        }
+        return subprocess.CompletedProcess(command, 0, json.dumps(envelope), "")
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    previous = None
+    totals = []
+    for resumed in (False, True):
+        result = run_agent(
+            "grok",
+            tmp_path,
+            "Instructions",
+            "Work",
+            SCHEMA,
+            resume_thread_id="session" if resumed else None,
+        )
+        assert result.ok
+        measured = normalize_usage(
+            result.usage, session_id=result.thread_id, resumed=resumed, previous=previous
+        )
+        assert measured["basis"] == "invocation"
+        totals.append(measured["measured"]["total"])
+        previous = measured
+    assert totals == [15709, 15796]
+    assert sum(totals) == 31505
+
+
+def test_captured_claude_21319_mapping_is_preserved():
+    previous = None
+    totals = []
+    for resumed, counts in enumerate(((2, 0, 1098, 52), (6, 1098, 1178, 104))):
+        value = {
+            **CLAUDE,
+            "modelUsage": {
+                "claude-opus-5-5": dict(
+                    zip(
+                        (
+                            "inputTokens",
+                            "cacheReadInputTokens",
+                            "cacheCreationInputTokens",
+                            "outputTokens",
+                        ),
+                        counts,
+                        strict=True,
+                    )
+                )
+            },
+        }
+        result = claude_code._agent_result(json.dumps(value), native_version="2.1.319")
+        measured = normalize_usage(
+            result.usage, session_id=result.thread_id, resumed=bool(resumed), previous=previous
+        )
+        totals.append(measured["measured"]["total"])
+        previous = measured
+    assert totals == [1152, 1234]
+
+
+@pytest.mark.parametrize(
+    "fault", [None, "native", "exit", "schema", "text", "missing_text", "session", "stop"]
+)
+def test_grok_usage_survives_result_errors(tmp_path, monkeypatch, fault):
+    monkeypatch.setattr(grok, "resolve_grok_bin", lambda _home: "/fake/grok")
+    value = {
+        "sessionId": "session",
+        "stopReason": "end_turn",
+        "text": '{"summary":"OK"}',
+        "usage": GROK_1077[0],
+    }
+    if fault == "native":
+        value.update(type="error", error="denied")
+    elif fault == "schema":
+        value["text"] = "{}"
+    elif fault == "text":
+        value["text"] = "bad"
+    elif fault == "missing_text":
+        value.pop("text")
+    elif fault == "stop":
+        value["stopReason"] = "max_tokens"
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda command, **_: subprocess.CompletedProcess(
+            command, int(fault == "exit"), json.dumps(value), ""
+        ),
+    )
+    result = run_agent(
+        "grok",
+        tmp_path,
+        "Instructions",
+        "Work",
+        SCHEMA,
+        resume_thread_id="wrong" if fault == "session" else None,
+    )
+    assert result.ok is (fault is None)
+    assert result.thread_id == "session"
+    assert result.usage["snapshot"] == {"input": 15652, "output": 57, "total": 15709}
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"input_tokens": None},
+        {"cache_read_input_tokens": True},
+        {"cache_creation_input_tokens": -1},
+        {"output_tokens": "57"},
+        {"total_tokens": 1},
+        {"total_tokens": None},
+    ],
+)
+def test_grok_malformed_usage_is_optional(change):
+    value = {
+        "sessionId": "session",
+        "stopReason": "end_turn",
+        "text": '{"summary":"OK"}',
+        "usage": {**GROK_1077[0], **change},
+    }
+    result = grok._agent_result(json.dumps(value))
+    assert result.ok and result.thread_id == "session"
+    assert result.usage is None
+
+
+def test_grok_cache_creation_and_incomplete_usage():
+    value = {
+        "sessionId": "session",
+        "stopReason": "end_turn",
+        "text": '{"summary":"OK"}',
+        "usage": {**GROK_1077[0], "cache_creation_input_tokens": 10, "total_tokens": 15719},
+    }
+    assert grok._agent_result(json.dumps(value)).usage["snapshot"]["total"] == 15719
+    # The native contract explicitly marks incomplete aggregation; do not publish a full total.
+    assert grok._agent_result(json.dumps({**value, "usage_is_incomplete": True})).usage is None
 
 
 @pytest.mark.parametrize(
