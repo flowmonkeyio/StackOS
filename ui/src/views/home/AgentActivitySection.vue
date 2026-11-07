@@ -79,7 +79,7 @@ const columns = computed<DataTableColumn<Row>[]>(() => [
           max-height="24rem"
         >
           <template #cell:project_name="{ row }">
-            <span :title="row.project_slug">{{ row.project_name }}</span>
+            <span :title="row.project_slug ?? undefined">{{ row.project_name }}</span>
             <p class="text-2xs text-fg-subtle">#{{ row.project_id }} · {{ row.project_slug }}</p>
           </template>
           <template #cell:agent_name="{ row }">
