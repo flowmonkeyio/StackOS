@@ -2,10 +2,12 @@ import { computed, onBeforeUnmount, ref, type Ref } from 'vue'
 import type { SchemaTrackerAgentStatsOut } from '@/api'
 import { callOperation } from '@/lib/operations'
 import { formatApiError } from '@/lib/client'
+import { localActivityFilters, type AgentStatsFilters } from '@/lib/agentActivity'
 
 export function useAgentStats(projectId?: Ref<number>) {
   const visibility = ref<boolean | null>(true)
-  const scope = computed(() => projectId ? `project:${projectId.value}` : `all:${visibility.value}`)
+  const filters = ref<AgentStatsFilters>(localActivityFilters())
+  const scope = computed(() => JSON.stringify([projectId ? `project:${projectId.value}` : `all:${visibility.value}`, filters.value]))
   const loaded = ref<{ scope: string; data: SchemaTrackerAgentStatsOut } | null>(null)
   const failure = ref<{ scope: string; message: string } | null>(null)
   const loading = ref(false)
@@ -19,10 +21,17 @@ export function useAgentStats(projectId?: Ref<number>) {
     const requestedScope = scope.value
     loading.value = true
     failure.value = null
+    const { start_date, end_date } = filters.value
+    const duration = (Date.parse(end_date) - Date.parse(start_date)) / 86_400_000
+    if (!start_date || !end_date || !Number.isFinite(duration) || duration < 0 || duration > 365) {
+      failure.value = { scope: requestedScope, message: 'Choose an ordered date range of up to 366 days.' }
+      loading.value = false
+      return
+    }
     try {
       const data = projectId
-        ? await callOperation<SchemaTrackerAgentStatsOut>('tracker.agentStats', { project_id: projectId.value })
-        : await callOperation<SchemaTrackerAgentStatsOut>('tracker.agentStatsAll', { is_active: visibility.value })
+        ? await callOperation<SchemaTrackerAgentStatsOut>('tracker.agentStats', { project_id: projectId.value, ...filters.value })
+        : await callOperation<SchemaTrackerAgentStatsOut>('tracker.agentStatsAll', { is_active: visibility.value, ...filters.value })
       if (request === generation && requestedScope === scope.value) loaded.value = { scope: requestedScope, data }
     } catch (err) {
       if (request === generation && requestedScope === scope.value)
@@ -37,5 +46,9 @@ export function useAgentStats(projectId?: Ref<number>) {
     loaded.value = null
     await load()
   }
-  return { summary, loading, error, load, setVisibility }
+  async function setFilters(value: Partial<AgentStatsFilters>): Promise<void> {
+    filters.value = { ...filters.value, ...value }
+    await load()
+  }
+  return { summary, loading, error, filters, load, setVisibility, setFilters }
 }

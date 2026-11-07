@@ -21,7 +21,7 @@ const portfolio = useHomePortfolioInsights()
 const { items, loading: projectsLoading, error: projectsError, nextCursor, total, filters } = portfolio
 const tickets = useTicketCounts()
 const agents = useAgentStats()
-const { summary: agentSummary, loading: agentsLoading, error: agentsError } = agents
+const { summary: agentSummary, loading: agentsLoading, error: agentsError, filters: agentFilters } = agents
 const { summary, visibility, loading: countsLoading, error: countsError } = tickets
 const { hostStatuses, hostStatusSummary, loadHostStatuses, applyHostStatuses } =
   useHomeAgentHostStatuses(isShell)
@@ -111,7 +111,9 @@ function selectStatus(status: TrackerStatus | null): void {
       :summary="agentSummary"
       :loading="agentsLoading"
       :error="agentsError"
+      :filters="agentFilters"
       global
+      @filters="agents.setFilters"
     />
     <HomeProjectsSection
       :items="items"

@@ -53,6 +53,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 |---|---|
 | `ProjectPageHeader` | project-aware title, breadcrumbs, utility action slot, and route chrome |
 | `ProviderMark` | canonical provider logo/initial mark backed by `provider-presentation.json`; shared by Connections and Plugins |
+| `AgentUsageSummary` | Shared Input / Cache / Output renderer; accepts `metrics: AgentStatsMetrics \| null` and `compact?: boolean`. Compact mode retains all three labels and exact focus/hover values; full mode also shows independent missing-field notes. Cache means cache read included in Input. No receipt parsing or subtotal calculation. |
 
 ## Shipped — app-level primitives (`ui/src/components/`)
 
@@ -84,16 +85,34 @@ exception is signed off.
 
 ## View decomposition pattern
 
-Both Home pages share `views/home/AgentActivitySection.vue` (three metrics,
-coverage, labeled attempt bars, accessible `DataTable`) and
-`useAgentStats.ts` (the accepted project/global statistics reads, explicit scope
-and stale-response protection). `AgentActivityChart.vue` displays up to eight
-backend groups with a wrapping agent/role/host/model identity and exact count
-beside each bar; global groups also show project identity. The table contains
-all groups. `lib/agentActivity.ts` owns token value and coverage formatting
-for Home and Work, distinguishing measured zero, partial coverage, unavailable
-usage and no recorded attempts. Each page's
-existing refresh/polling owner loads statistics alongside ticket counts.
+Both Home pages share `views/home/AgentActivitySection.vue`: Input / Cache /
+Output headlines, date controls, daily chart with input detail, and an accessible
+Agent / Model / Agent+model `DataTable`. `useAgentStats.ts` owns one dated,
+grouped project/global statistics request, with scope and stale-response
+protection. Defaults are today plus the previous six local calendar days and
+the browser's visibly identified IANA timezone. Global Active/Archived/All
+selection remains with the existing page owner.
+
+`AgentActivityChart.vue` uses Chart.js vertical daily stacks. Input / Cache /
+Output / Attempts and Agent / Selected model colors use backend daily
+projections. Input type is available only for Input and stacks cache read,
+remaining input (including cache write), and measured input with an unreported
+cache split when present. It never adds cache to its parent Input. Leaving
+Input resets incompatible Input-type color to Selected model. Hover and chart
+keyboard focus (Left/Right, Home/End) expose exact values; a disclosure contains
+the complete daily table. Its existing mount/update/theme/unmount lifecycle
+owns the chart; it adds no polling.
+
+`components/domain/AgentUsageSummary.vue` accepts the existing typed summary
+metrics shared by Home and Work; consumers pass the appropriate backend
+projection, with no client receipt aggregation. `lib/agentActivity.ts` owns its
+compact/exact formatting, per-field missing notes, cache-share eligibility, and
+bounded review-fact copy. A measured zero stays zero; missing cache does not
+erase valid Input/Output. Optional cache-write/reasoning and explicitly recorded
+review outcomes remain available in details without an inferred approval rate.
+Each page's existing refresh/polling owner continues loading statistics
+alongside ticket counts. Work consumers retain lifetime task/ticket projections,
+independent of these Home date filters.
 
 Route views are composition roots, not feature implementations. Use the
 following ownership split for new work and when a touched view has accumulated

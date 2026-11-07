@@ -1,72 +1,94 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import AgentActivitySection from './AgentActivitySection.vue'
+import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
+import { localActivityFilters } from '@/lib/agentActivity'
 import { agentStatsFixture } from './agentStatsFixtures'
 
 function render(summary = agentStatsFixture(), extra = {}) {
-  return mount(AgentActivitySection, { props: { summary, loading: false, error: null, ...extra }, global: { stubs: { AgentActivityChart: true } } })
+  return mount(AgentActivitySection, { props: { summary, loading: false, error: null, filters: localActivityFilters(), ...extra }, global: { stubs: { AgentActivityChart: true } } })
 }
-
-describe('Agent activity presentation', () => {
-  it('renders backend facts, recorded identities and coverage in an accessible breakdown', () => {
+describe('Agent usage presentation', () => {
+  it('renders the shared Input/Cache/Output composition and bounded recorded review details', async () => {
     const fixture = agentStatsFixture()
-    fixture.rows.push({ ...fixture.rows[0]!, project_id: 2, project_name: 'Other project', project_slug: 'other', model: 'recorded-astra' })
     const wrapper = render(fixture, { global: true })
-    const values = wrapper.findAllComponents({ name: 'UiMetricCard' }).map(card => card.props('value'))
-    expect(values).toEqual(['4', '100', '1'])
-    expect(wrapper.text()).toContain('Recorded StackOS automation only')
-    expect(wrapper.text()).toContain('do not guarantee model execution')
+    expect(wrapper.findComponent(AgentUsageSummary).props('metrics')).toEqual(fixture.totals)
+    expect(wrapper.findAll('.agent-usage-summary dd[tabindex]').map(item => item.text())).toEqual(['70', '40', '30'])
+    expect(wrapper.text()).toContain('Cache is included in Input')
+    expect(wrapper.text()).toContain('57.1%')
+    expect(wrapper.text()).toContain('America/')
     const table = wrapper.get('table[aria-label="Agent activity breakdown"]')
-    expect(table.findAll('tbody tr')).toHaveLength(2)
-    expect(table.text()).toContain('Fixture project')
-    expect(table.text()).toContain('Other project')
+    expect(table.findAll('th').map(item => item.text())).toEqual(['Selected model', 'Attempts', 'Input', 'Cache', 'Output'])
+    expect(table.findAll('th').every(item => item.attributes('scope') === 'col')).toBe(true)
     expect(table.text()).toContain('recorded-sol')
-    expect(table.text()).toContain('recorded-astra')
-    expect(table.text()).toContain('delivery_agent')
-    expect(table.text()).toContain('codex')
-    expect(table.findAll('th').every(cell => cell.attributes('scope') === 'col')).toBe(true)
-    expect(wrapper.findComponent({ name: 'AgentActivityChart' }).props('rows')).toEqual(fixture.rows)
+    expect(table.get('[aria-label^="Cache:"]').attributes('aria-label')).toContain('40 tokens')
+    await wrapper.findAll('button').find(item => item.text() === 'See token details')!.trigger('click')
+    const detail = wrapper.get('[aria-label="Token details"]')
+    expect(detail.text()).toContain('Cache write: 10')
+    expect(detail.text()).toContain('Reasoning: 5')
+    expect(detail.text()).toContain('Changes requested: 1')
+    expect(detail.text()).toContain('Not an approval rate')
+    expect(wrapper.findComponent({ name: 'AgentActivityChart' }).props('days')).toEqual(fixture.daily)
+    expect(wrapper.text()).not.toContain('Partial')
     wrapper.unmount()
   })
 
-  it('distinguishes measured zero, partial sums and unavailable usage/classification', async () => {
+  it('emits functional date/group changes without client aggregation', async () => {
+    const wrapper = render()
+    await wrapper.get('input[type="date"]').setValue('2026-11-01')
+    await wrapper.findAll('button').find(item => item.text() === 'Agent + model')!.trigger('click')
+    expect(wrapper.emitted('filters')).toEqual([[{ start_date: '2026-11-01' }], [{ group_by: 'agent_model' }]])
+    wrapper.unmount()
+  })
+
+  it('retains metric and color choices while a new date/group scope loads', async () => {
+    const wrapper = render()
+    wrapper.findComponent({ name: 'AgentActivityChart' }).vm.$emit('update:metric', 'output')
+    wrapper.findComponent({ name: 'AgentActivityChart' }).vm.$emit('update:color', 'agent')
+    await wrapper.setProps({ summary: null, loading: true })
+    await wrapper.setProps({ summary: agentStatsFixture(), loading: false })
+    expect(wrapper.findComponent({ name: 'AgentActivityChart' }).props('metric')).toBe('output')
+    expect(wrapper.findComponent({ name: 'AgentActivityChart' }).props('color')).toBe('agent')
+    wrapper.unmount()
+  })
+
+  it('keeps independently missing cache truthful while retaining known parents and measured zero', async () => {
     const fixture = agentStatsFixture()
-    fixture.totals.reported_usage.total = 0
+    fixture.totals.reported_usage.cache_read = null
+    fixture.totals.coverage.fields!.cache_read!.unavailable_attempts = 4
+    fixture.totals.reported_usage.output = 0
     const wrapper = render(fixture)
-    expect(wrapper.findAllComponents({ name: 'UiMetricCard' })[1]!.props('value')).toBe('0')
-    expect(wrapper.text()).toContain('Complete · 4 of 4 attempts measured')
-    fixture.totals.coverage.usage_status = 'partial' as never
-    fixture.totals.coverage.usage_measured_attempts = 1
-    fixture.totals.coverage.usage_unavailable_attempts = 3
-    fixture.totals.coverage.classification_status = 'partial' as never
-    fixture.totals.coverage.classification_known_attempts = 1
-    fixture.totals.coverage.classification_unknown_attempts = 3
+    expect(wrapper.findAll('.agent-usage-summary dd[tabindex]').map(item => item.text())).toEqual(['70', 'Not reported', '0'])
+    expect(wrapper.text()).toContain('Cache not reported')
+    expect(wrapper.text()).toContain('Cache share not available')
+    expect(wrapper.text()).not.toContain('57.1%')
+    fixture.totals.reported_usage.cache_read = 10
+    fixture.totals.coverage.fields!.cache_read!.unavailable_attempts = 2
     await wrapper.setProps({ summary: structuredClone(fixture) })
-    expect(wrapper.text()).toContain('Partial · 1 of 4 attempts measured')
-    expect(wrapper.text()).toContain('Partial · 1 of 4 attempts classified')
-    fixture.totals.reported_usage.total = null
-    fixture.totals.coverage.usage_status = 'unavailable' as never
-    fixture.totals.coverage.classification_status = 'unavailable' as never
-    await wrapper.setProps({ summary: structuredClone(fixture) })
-    expect(wrapper.findAllComponents({ name: 'UiMetricCard' }).map(card => card.props('value'))).toEqual(['4', 'Unavailable', 'Unavailable'])
+    expect(wrapper.text()).toContain('Cache missing for 2 attempts')
+    expect(wrapper.text()).not.toContain('Partial')
     wrapper.unmount()
   })
 
-  it('shows loading, initial error, refresh error and empty scope without false success', async () => {
+  it('shows honest loading/error/empty/undated states and prepares compact reuse', async () => {
     const wrapper = render(undefined, { summary: null, loading: true })
     expect(wrapper.find('[aria-label="Loading Agent activity"]').exists()).toBe(true)
-    expect(wrapper.findComponent({ name: 'UiMetricCard' }).exists()).toBe(false)
     await wrapper.setProps({ loading: false, error: 'Request failed' })
     expect(wrapper.text()).toContain('Request failed')
-    expect(wrapper.text()).not.toContain('No recorded agent')
-    await wrapper.setProps({ summary: agentStatsFixture() })
-    expect(wrapper.text()).toContain('Previously loaded Agent activity is shown')
-    const empty = agentStatsFixture({ rows: [] })
-    empty.totals.launch_attempts = 0
-    empty.totals.coverage.usage_status = 'empty' as never
+    const fixture = agentStatsFixture()
+    fixture.undated.launch_attempts = 1
+    await wrapper.setProps({ summary: fixture })
+    expect(wrapper.text()).toContain('Previously loaded Agent activity')
+    expect(wrapper.text()).toContain('1 attempt has no recorded start date')
+    const empty = agentStatsFixture({ rows: [], daily: [], totals: agentStatsFixture().undated })
     await wrapper.setProps({ summary: empty, error: null })
-    expect(wrapper.text()).toContain('No recorded agent launch attempts in this scope')
+    expect(wrapper.text()).toContain('No recorded usage in this date range')
     expect(wrapper.findComponent({ name: 'AgentActivityChart' }).exists()).toBe(false)
-    wrapper.unmount()
+    const compact = mount(AgentUsageSummary, { props: { metrics: fixture.totals, compact: true } })
+    expect(compact.findAll('dt').map(item => item.text())).toEqual(['Input', 'Cache', 'Output'])
+    expect(compact.get('[data-usage-field="input"] dd[tabindex]').attributes('title')).toContain('70 tokens')
+    await compact.setProps({ metrics: empty.totals })
+    expect(compact.text()).toContain('No recorded usage')
+    compact.unmount(); wrapper.unmount()
   })
 })

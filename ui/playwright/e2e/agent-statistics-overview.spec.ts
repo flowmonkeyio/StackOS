@@ -3,6 +3,7 @@ import { writeFileSync } from 'node:fs'
 import type { SchemaTrackerAgentStatsOut } from '../../src/api'
 import type { TrackerSnapshot } from '../../src/lib/task-tracker/types'
 import { createProject, getBaseUrl, getDaemonToken, resetProjects, trackConsoleErrors } from '../helpers'
+import { formatTokens, localActivityFilters } from '../../src/lib/agentActivity'
 
 async function operation<T>(name: string, args: Record<string, unknown>): Promise<T> {
   const response = await fetch(`${getBaseUrl()}/api/v1/operations/${name}/call`, {
@@ -18,8 +19,8 @@ async function operation<T>(name: string, args: Record<string, unknown>): Promis
 function receipt(role: string, outcome: string, total: number, model: string) {
   return {
     agent: 'same-name', selected_role: role, validated_outcome: outcome,
-    launch: { agent: 'same-name', host_key: 'codex', model },
-    usage: { unit: 'tokens', status: 'measured', measured: { input: total, output: 0, total } },
+    launch: { agent: 'same-name', host_key: 'codex', model, started_at: new Date().toISOString() },
+    usage: { unit: 'tokens', status: 'measured', measured: { input: total, output: 0, total, cache_read: Math.floor(total * 0.6), cache_write: 0, reasoning: 0 } },
   }
 }
 
@@ -33,11 +34,12 @@ async function seed(projectId: number, automatic: object) {
 }
 
 async function metrics(region: Locator, stats: SchemaTrackerAgentStatsOut) {
-  const cards = region.locator('.ui-metric-card')
-  await expect(cards).toHaveCount(3)
-  await expect(cards.nth(0).locator('span.tabular-nums')).toHaveText(String(stats.totals.launch_attempts))
-  await expect(cards.nth(1).locator('span.tabular-nums')).toHaveText(stats.totals.reported_usage.total === null ? 'Unavailable' : String(stats.totals.reported_usage.total))
-  await expect(cards.nth(2).locator('span.tabular-nums')).toHaveText(stats.totals.coverage.classification_status === 'unavailable' ? 'Unavailable' : String(stats.totals.recorded_reviewer_rejects))
+  for (const field of ['input', 'cache_read', 'output'] as const) {
+    const value = region.locator(`.agent-usage-summary [data-usage-field="${field}"] dd[tabindex]`)
+    await expect(value).toHaveText(formatTokens(stats.totals.reported_usage[field]))
+    await expect(value).toHaveAttribute('aria-label', new RegExp(stats.totals.reported_usage[field] === null ? 'Not reported' : `${stats.totals.reported_usage[field]} tokens`))
+  }
+  await expect(region).toContainText(`${stats.totals.launch_attempts} agent`)
 }
 
 test('synthetic receipts reconcile through both actual Home views and existing project visibility', async ({ page }, testInfo) => {
@@ -50,22 +52,26 @@ test('synthetic receipts reconcile through both actual Home views and existing p
   const archive = await createProject({ name: 'Archived Activity', slug: 'archived-activity', domain: 'archived.test' })
   const legacy = await createProject({ name: 'Legacy Activity', slug: 'legacy-activity', domain: 'legacy.test' })
   const zero = await createProject({ name: 'Measured Zero', slug: 'measured-zero', domain: 'zero.test' })
+  const reset = await createProject({ name: 'Reset Only', slug: 'reset-only', domain: 'reset.test' })
+  const filters = localActivityFilters()
   const first = { attempt: 1, delivery: receipt('delivery_agent', 'success', 10, 'recorded-sol'), review: receipt('review_agent', 'repair', 20, 'recorded-astra') }
   const second = { attempt: 2, delivery: receipt('delivery_agent', 'success', 30, 'recorded-sol'), review: receipt('review_agent', 'success', 40, 'recorded-astra') }
   await seed(project.id, { ...second, attempts: [first, second] })
   // A legacy missing measurement/classification creates truthful partial totals.
   await operation('tracker.createTicket', { project_id: project.id, task_key: 'synthetic-stats', key: 'legacy', title: 'Legacy attempt' })
-  await operation('tracker.updateTicket', { project_id: project.id, ticket_key: 'legacy', patch_json: { completion_evidence_json: { automatic_delivery: { attempt: 1, delivery: { agent: 'legacy', launch: { host_key: 'codex' } } } } } })
+  const unreported = { agent: 'legacy', launch: { host_key: 'codex', started_at: new Date().toISOString() } }
+  await operation('tracker.updateTicket', { project_id: project.id, ticket_key: 'legacy', patch_json: { completion_evidence_json: { automatic_delivery: { attempt: 1, delivery: unreported } } } })
   await seed(archive.id, { attempt: 1, delivery: receipt('delivery_agent', 'success', 50, 'archived-model') })
-  await seed(legacy.id, { attempt: 1, delivery: { agent: 'legacy', launch: { host_key: 'codex' } } })
+  await seed(legacy.id, { attempt: 1, delivery: unreported })
   await seed(zero.id, { attempt: 1, delivery: receipt('delivery_agent', 'success', 0, 'zero-model') })
+  await seed(reset.id, { attempt: 1, delivery: { ...receipt('delivery_agent', 'success', 999, 'reset-model'), usage: { status: 'unavailable', reason: 'operator_reset', measured: null } } })
   const archived = await fetch(`${getBaseUrl()}/api/v1/projects/${archive.id}`, {
     method: 'PATCH', headers: { Authorization: `Bearer ${getDaemonToken()}`, 'content-type': 'application/json' },
     body: JSON.stringify({ is_active: false }),
   })
   expect(archived.ok).toBe(true)
   const before = await operation('tracker.get', { project_id: project.id })
-  const projectStats = await operation<SchemaTrackerAgentStatsOut>('tracker.agentStats', { project_id: project.id })
+  const projectStats = await operation<SchemaTrackerAgentStatsOut>('tracker.agentStats', { project_id: project.id, ...filters })
   expect(projectStats.totals.launch_attempts).toBe(5)
   expect(projectStats.totals.reported_usage.total).toBe(100)
   expect(projectStats.totals.recorded_reviewer_rejects).toBe(1)
@@ -76,47 +82,91 @@ test('synthetic receipts reconcile through both actual Home views and existing p
   const region = page.getByRole('region', { name: 'Agent activity', exact: true })
   await expect(page.getByRole('heading', { level: 1, name: project.name })).toBeVisible()
   await metrics(region, projectStats)
-  await expect(region).toContainText('Partial · 4 of 5 attempts measured')
-  await expect(region).toContainText('Partial · 4 of 5 attempts classified')
-  const chartGroups = region.getByRole('figure', { name: 'Launch attempts by recorded group' }).getByRole('listitem')
-  await expect(chartGroups).toHaveCount(projectStats.rows.length)
-  for (let index = 0; index < projectStats.rows.length; index++) {
-    const row = projectStats.rows[index]!
-    await expect(chartGroups.nth(index)).toContainText(row.agent_name ?? 'Unknown agent')
-    await expect(chartGroups.nth(index)).toContainText(row.model ?? 'Unknown model')
-    await expect(chartGroups.nth(index)).toContainText(`${row.launch_attempts} launch attempts`)
-  }
+  await expect(region).toContainText('Usage missing for 1 attempt')
+  await expect(region).toContainText('Cache missing for 1 attempt')
+  await expect(region).not.toContainText('Partial')
+  await expect(region.getByLabel('From', { exact: true })).toHaveValue(filters.start_date)
+  await expect(region.getByLabel('Through', { exact: true })).toHaveValue(filters.end_date)
+  await expect(region).toContainText(filters.timezone)
   const table = region.getByRole('table', { name: 'Agent activity breakdown' })
   await expect(table.locator('tbody tr')).toHaveCount(projectStats.rows.length)
   for (const row of projectStats.rows) {
-    const rendered = table.locator('tbody tr').filter({ hasText: row.model ?? 'Unknown model' })
-    await expect(rendered).toContainText(row.agent_name ?? 'Unknown agent')
-    await expect(rendered).toContainText(row.reported_usage.total === null ? 'Unavailable' : String(row.reported_usage.total))
+    const rendered = table.locator('tbody tr').filter({ hasText: row.model ?? 'Model not recorded' })
+    for (const field of ['input', 'cache_read', 'output'] as const)
+      await expect(rendered.locator(`[aria-label^="${field === 'cache_read' ? 'Cache' : field === 'input' ? 'Input' : 'Output'}:"]`)).toHaveText(formatTokens(row.reported_usage[field]))
   }
+  await region.getByRole('button', { name: 'See token details' }).click()
+  await expect(region.getByLabel('Token details', { exact: true })).toContainText('Changes requested: 1')
+  await expect(region.getByLabel('Token details', { exact: true })).toContainText('Not an approval rate')
+  await region.getByRole('button', { name: 'Hide token details' }).click()
+  await region.locator('.activity-chart canvas').focus()
+  await region.locator('.activity-chart canvas').press('End')
+  await expect(region.locator('[aria-live="polite"]')).toContainText('100 tokens')
+  await region.getByLabel('Metric', { exact: true }).click()
+  await region.getByRole('option', { name: 'Output tokens', exact: true }).click()
+  await expect(region.getByLabel('Color by', { exact: true })).toContainText('Selected model')
+  await region.getByLabel('Color by', { exact: true }).click()
+  await expect(region.getByRole('option', { name: 'Input type', exact: true })).toHaveCount(0)
+  await region.getByRole('option', { name: 'Agent', exact: true }).click()
+  for (const metric of ['Cache tokens', 'Attempts', 'Input tokens']) {
+    await region.getByLabel('Metric', { exact: true }).click()
+    await region.getByRole('option', { name: metric, exact: true }).click()
+    await expect(region.getByRole('heading', { name: `${metric} per day` })).toBeVisible()
+  }
+  await region.getByLabel('Color by', { exact: true }).click()
+  await region.getByRole('option', { name: 'Input type', exact: true }).click()
+  await region.getByText('Daily values', { exact: true }).click()
+  const daily = region.getByRole('table', { name: 'Exact daily usage' })
+  await expect(daily.locator('tbody tr').last()).toContainText('100')
+  await region.getByText('Daily values', { exact: true }).click()
+  await region.getByLabel('Metric', { exact: true }).click()
+  await region.getByRole('option', { name: 'Output tokens', exact: true }).click()
+  await region.getByLabel('Color by', { exact: true }).click()
+  await region.getByRole('option', { name: 'Agent', exact: true }).click()
+  for (const [label, group_by] of [['Agent', 'agent'], ['Agent + model', 'agent_model'], ['Model', 'model']] as const) {
+    await region.getByRole('group', { name: 'Group agent usage' }).getByRole('button', { name: label, exact: true }).click()
+    const grouped = await operation<SchemaTrackerAgentStatsOut>('tracker.agentStats', { project_id: project.id, ...filters, group_by })
+    await expect(table.locator('tbody tr')).toHaveCount(grouped.rows.length)
+    await metrics(region, grouped)
+    await expect(region.getByLabel('Metric', { exact: true })).toContainText('Output tokens')
+    await expect(region.getByLabel('Color by', { exact: true })).toContainText('Agent')
+  }
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1)
+  const future = localActivityFilters(tomorrow).end_date
+  await region.getByLabel('Through', { exact: true }).fill(future)
+  await region.getByLabel('Through', { exact: true }).press('Tab')
+  await region.getByLabel('From', { exact: true }).fill(future)
+  await region.getByLabel('From', { exact: true }).press('Tab')
+  await expect(region).toContainText('No recorded usage in this date range')
+  await region.getByLabel('From', { exact: true }).fill(filters.start_date)
+  await region.getByLabel('From', { exact: true }).press('Tab')
+  await region.getByLabel('Through', { exact: true }).fill(filters.end_date)
+  await region.getByLabel('Through', { exact: true }).press('Tab')
+  await metrics(region, projectStats)
   await expect(page.getByRole('heading', { name: 'Tickets by status', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Project connections', exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Configured workflows', exact: true })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('project-agent-activity.png'), fullPage: true })
 
   await page.goto('/')
-  const activeStats = await operation<SchemaTrackerAgentStatsOut>('tracker.agentStatsAll', { is_active: true })
+  const activeStats = await operation<SchemaTrackerAgentStatsOut>('tracker.agentStatsAll', { is_active: true, ...filters })
   await metrics(region, activeStats)
   await expect(page.getByRole('region', { name: 'System status', exact: true })).toBeVisible()
   await expect(page.getByRole('table', { name: 'Project portfolio' })).toBeVisible()
   await expect(region.getByRole('table').getByText('Archived Activity', { exact: true })).toHaveCount(0)
   await page.getByRole('tab', { name: 'All', exact: true }).click()
-  const allStats = await operation<SchemaTrackerAgentStatsOut>('tracker.agentStatsAll', { is_active: null })
+  const allStats = await operation<SchemaTrackerAgentStatsOut>('tracker.agentStatsAll', { is_active: null, ...filters })
   expect(allStats.totals.launch_attempts).toBe(8)
   expect(allStats.totals.reported_usage.total).toBe(150)
   await metrics(region, allStats)
   await expect(region.getByRole('table').locator('tbody tr')).toHaveCount(allStats.rows.length)
-  await expect(region.getByRole('table').getByText('Activity Proof', { exact: true })).toHaveCount(projectStats.rows.length)
-  await expect(region.getByRole('table').getByText('Archived Activity', { exact: true })).toBeVisible()
+  await region.getByRole('group', { name: 'Group agent usage' }).getByRole('button', { name: 'Agent', exact: true }).click()
+  await expect(region.getByRole('table', { name: 'Agent activity breakdown' }).getByText(/Archived Activity/).first()).toBeVisible()
   await expect(page.getByText('Checking connections…', { exact: true })).toHaveCount(0)
   await page.screenshot({ path: testInfo.outputPath('global-agent-activity.png'), fullPage: true })
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
   await page.getByRole('tab', { name: 'Archived', exact: true }).click()
-  const archivedStats = await operation<SchemaTrackerAgentStatsOut>('tracker.agentStatsAll', { is_active: false })
+  const archivedStats = await operation<SchemaTrackerAgentStatsOut>('tracker.agentStatsAll', { is_active: false, ...filters })
   await metrics(region, archivedStats)
   expect(archivedStats.totals.reported_usage.total).toBe(50)
   await expect(region.getByRole('table').locator('tbody tr')).toHaveCount(1)
@@ -125,13 +175,16 @@ test('synthetic receipts reconcile through both actual Home views and existing p
 
   // Project-keyed route remounts clear previous values; measured zero differs from unavailable.
   await page.goto(`/projects/${legacy.id}`)
-  await metrics(region, await operation<SchemaTrackerAgentStatsOut>('tracker.agentStats', { project_id: legacy.id }))
-  await expect(region.locator('.ui-metric-card').nth(1)).toContainText('Unavailable')
+  await metrics(region, await operation<SchemaTrackerAgentStatsOut>('tracker.agentStats', { project_id: legacy.id, ...filters }))
+  await expect(region.locator('[data-usage-field="input"] dd[tabindex]')).toHaveText('Not reported')
   await page.getByRole('button', { name: /Switch project/ }).click()
   await page.getByRole('option', { name: /Measured Zero/ }).click()
   await expect(page).toHaveURL(new RegExp(`/projects/${zero.id}$`))
-  await metrics(region, await operation<SchemaTrackerAgentStatsOut>('tracker.agentStats', { project_id: zero.id }))
-  await expect(region.locator('.ui-metric-card').nth(1)).toContainText('Complete · 1 of 1 attempts measured')
+  await metrics(region, await operation<SchemaTrackerAgentStatsOut>('tracker.agentStats', { project_id: zero.id, ...filters }))
+  await expect(region.locator('[data-usage-field="input"] dd[tabindex]')).toHaveText('0')
+  await page.goto(`/projects/${reset.id}`)
+  await expect(region).toContainText('No recorded usage in this date range')
+  await expect(region).not.toContainText('reset-model')
   const after = await operation('tracker.get', { project_id: project.id })
   expect(after).toEqual(before)
   errors.assertNone()

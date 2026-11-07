@@ -7,6 +7,7 @@ import { callOperation } from '@/lib/operations'
 import HomeConsoleView from './HomeConsoleView.vue'
 import { portfolioFixture, ticketSummaryFixture } from './home/overviewFixtures'
 import { agentStatsFixture } from './home/agentStatsFixtures'
+import { localActivityFilters } from '@/lib/agentActivity'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
 vi.mock('@/lib/client', async (original) => ({ ...(await original<object>()), apiFetch: vi.fn() }))
@@ -91,7 +92,7 @@ describe('project ticket overview', () => {
   it('shows current ticket counts and terminal work, and only actual configured workflows/Account state', async () => {
     const { wrapper, router } = await mountProject()
     expect(callOperation).toHaveBeenCalledWith('tracker.ticketCounts', { project_id: 1 })
-    expect(callOperation).toHaveBeenCalledWith('tracker.agentStats', { project_id: 1 })
+    expect(callOperation).toHaveBeenCalledWith('tracker.agentStats', { project_id: 1, ...localActivityFilters() })
     expect(wrapper.findComponent({ name: 'AgentActivitySection' }).props('summary').totals.reported_usage.total).toBe(100)
     await wrapper.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click')
     await flushPromises()

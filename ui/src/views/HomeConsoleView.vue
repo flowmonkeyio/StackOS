@@ -34,7 +34,7 @@ const { project, accounts, workflows, task, loading, errors } = overview
 const description = computed(() => project.value?.domain || 'Current project work')
 const tickets = useTicketCounts(projectId)
 const agents = useAgentStats(projectId)
-const { summary: agentSummary, loading: agentsLoading, error: agentsError } = agents
+const { summary: agentSummary, loading: agentsLoading, error: agentsError, filters: agentFilters } = agents
 const { summary, loading: countsLoading, error: countsError } = tickets
 const { running, refresh } = usePolling(
   async () => {
@@ -254,6 +254,8 @@ function inspectStatus(status: TrackerStatus): void {
       :summary="agentSummary"
       :loading="agentsLoading"
       :error="agentsError"
+      :filters="agentFilters"
+      @filters="agents.setFilters"
     />
     <div
       class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-default bg-bg-surface px-4 py-3"
