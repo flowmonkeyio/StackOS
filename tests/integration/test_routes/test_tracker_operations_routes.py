@@ -4,7 +4,12 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
-from tests.integration.test_repositories.test_agent_statistics import _receipt, _repaired, _store
+from tests.integration.test_repositories.test_agent_statistics import (
+    _receipt,
+    _repaired,
+    _store,
+    seed_dated_statistics,
+)
 
 
 def _operation_data(response):
@@ -56,6 +61,11 @@ def test_tracker_metrics_survive_raw_and_compact_browser_projections(
                     "input": None,
                     "output": None,
                     "total": None,
+                    "cache_read": None,
+                    "cache_write": None,
+                    "reasoning": None,
+                    "remaining_input": None,
+                    "input_with_unknown_cache": None,
                 }
                 assert unknown_metrics["coverage"]["usage_status"] == "unavailable"
             if mode == "compact":
@@ -91,6 +101,54 @@ def test_agent_statistics_are_browser_readable_with_exact_usage_and_no_ack(
             json={"arguments": {**arguments, "response_mode": "ack"}},
         )
         assert denied.status_code == 422, denied.text
+
+
+def test_dated_statistics_browser_contract_and_invalid_filters(api: TestClient, project_id: int):
+    with Session(api.app.state.engine) as session:
+        filters, _ = seed_dated_statistics(session, project_id)
+    filters = {
+        **filters,
+        "start_date": filters["start_date"].isoformat(),
+        "end_date": filters["end_date"].isoformat(),
+    }
+    browser = api.get("/api/v1/auth/ui-token").json()["token"]
+    headers = {"Authorization": f"Bearer {browser}"}
+    for name, scope in (
+        ("tracker.agentStats", {"project_id": project_id}),
+        ("tracker.agentStatsAll", {"is_active": True}),
+    ):
+        baseline = None
+        for mode in ("raw", "compact"):
+            response = api.post(
+                f"/api/v1/operations/{name}/call",
+                headers=headers,
+                json={"arguments": {**scope, **filters, "response_mode": mode}},
+            )
+            assert response.status_code == 200, response.text
+            data = _operation_data(response)
+            assert data["totals"]["reported_usage"]["cache_read"] == 160
+            assert data["totals"]["reported_usage"]["total"] == 410
+            assert data["timezone"] == "America/Los_Angeles"
+            assert data["undated"]["launch_attempts"] == 1
+            assert [day["reported_usage"]["total"] for day in data["daily"]] == [350, 60, 0]
+            facts = {k: v for k, v in data.items() if k != "as_of"}
+            assert baseline is None or facts == baseline
+            baseline = facts
+        for invalid in (
+            {"start_date": None},
+            {"end_date": "2026-10-31"},
+            {"end_date": "2027-11-02"},
+            {"timezone": "No/Such_Zone"},
+            {"timezone": "../UTC"},
+            {"group_by": "role"},
+            {"start_date": "not-a-date"},
+        ):
+            response = api.post(
+                f"/api/v1/operations/{name}/call",
+                headers=headers,
+                json={"arguments": {**scope, **filters, **invalid}},
+            )
+            assert response.status_code == 422, response.text
 
 
 def test_tracker_operations_rest_vertical_slice(api: TestClient, project_id: int) -> None:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import (
     Any,
     Literal,
@@ -24,6 +24,7 @@ from stackos.db.models import (
     TrackerTicketKind,
 )
 from stackos.mcp.contract import MCPInput
+from stackos.repositories.tracker.agent_stats import stats_timezone
 
 TrackerResponseMode = Literal["compact", "raw", "standard", "verbose"]
 
@@ -116,11 +117,33 @@ class TrackerProjectInput(MCPInput):
     )
 
 
-class TrackerAgentStatsInput(TrackerProjectInput):
+class AgentStatsFilters(BaseModel):
+    group_by: Literal["agent", "model", "agent_model"] = "agent_model"
+    start_date: date | None = Field(
+        default=None,
+        description="Inclusive local calendar date; supply with end_date, at most 366 days.",
+    )
+    end_date: date | None = Field(
+        default=None, description="Inclusive local calendar date; supply with start_date."
+    )
+    timezone: str = Field(
+        default="UTC",
+        description=(
+            "IANA timezone for launch.started_at calendar days. UI chooses its own default range."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def validate_dates(self) -> AgentStatsFilters:
+        stats_timezone(self.start_date, self.end_date, self.timezone)
+        return self
+
+
+class TrackerAgentStatsInput(TrackerProjectInput, AgentStatsFilters):
     project_id: int = Field(ge=1)
 
 
-class TrackerAgentStatsAllInput(MCPInput):
+class TrackerAgentStatsAllInput(MCPInput, AgentStatsFilters):
     model_config = ConfigDict(extra="forbid")
     is_active: StrictBool | None = True
 

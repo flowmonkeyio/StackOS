@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import (
     Any,
     Literal,
@@ -88,12 +89,42 @@ from stackos.repositories.tracker.workflow_graph_analysis import (
 class TrackerQueryMixin:
     """Tracker read/query helpers and response shaping."""
 
-    def agent_stats(self, *, project_id: int) -> TrackerAgentStatsOut:
+    def agent_stats(
+        self,
+        *,
+        project_id: int,
+        group_by: Literal["agent", "model", "agent_model"] = "agent_model",
+        start_date: date | None = None,
+        end_date: date | None = None,
+        timezone: str = "UTC",
+    ) -> TrackerAgentStatsOut:
         self._require_project(project_id)
-        return query_agent_stats(self._s, project_id=project_id)
+        return query_agent_stats(
+            self._s,
+            project_id=project_id,
+            group_by=group_by,
+            start_date=start_date,
+            end_date=end_date,
+            timezone=timezone,
+        )
 
-    def agent_stats_all(self, *, is_active: bool | None = True) -> TrackerAgentStatsOut:
-        return query_agent_stats(self._s, is_active=is_active)
+    def agent_stats_all(
+        self,
+        *,
+        is_active: bool | None = True,
+        group_by: Literal["agent", "model", "agent_model"] = "agent_model",
+        start_date: date | None = None,
+        end_date: date | None = None,
+        timezone: str = "UTC",
+    ) -> TrackerAgentStatsOut:
+        return query_agent_stats(
+            self._s,
+            is_active=is_active,
+            group_by=group_by,
+            start_date=start_date,
+            end_date=end_date,
+            timezone=timezone,
+        )
 
     def ticket_counts(self, *, project_id: int) -> TrackerTicketCountsOut:
         self._tracker_or_none(project_id=project_id)

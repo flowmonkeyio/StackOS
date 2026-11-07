@@ -2356,6 +2356,10 @@ export interface components {
             classification_status: AgentStatsCoverageOutClassification_status;
             /** Classification Unknown Attempts */
             classification_unknown_attempts: number;
+            /** Fields */
+            fields?: {
+                [key: string]: components["schemas"]["AgentStatsFieldCoverageOut"];
+            };
             /** Usage Measured Attempts */
             usage_measured_attempts: number;
             /**
@@ -2366,6 +2370,43 @@ export interface components {
             /** Usage Unavailable Attempts */
             usage_unavailable_attempts: number;
         };
+        /** AgentStatsDayOut */
+        AgentStatsDayOut: {
+            /** By Agent */
+            by_agent: components["schemas"]["AgentStatsRowOut"][];
+            /** By Model */
+            by_model: components["schemas"]["AgentStatsRowOut"][];
+            coverage: components["schemas"]["AgentStatsCoverageOut"];
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Launch Attempts */
+            launch_attempts: number;
+            /** Recorded Reviewer Rejects */
+            recorded_reviewer_rejects: number;
+            reported_usage: components["schemas"]["AgentStatsUsageOut"];
+            /**
+             * Review Outcomes
+             * @description Explicit review-role validated outcomes only; validation_failed is an explicit null outcome.
+             */
+            review_outcomes?: {
+                [key: string]: number;
+            };
+        };
+        /** AgentStatsFieldCoverageOut */
+        AgentStatsFieldCoverageOut: {
+            /** Measured Attempts */
+            measured_attempts: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: AgentStatsFieldCoverageOutStatus;
+            /** Unavailable Attempts */
+            unavailable_attempts: number;
+        };
         /** AgentStatsMetricsOut */
         AgentStatsMetricsOut: {
             coverage: components["schemas"]["AgentStatsCoverageOut"];
@@ -2374,12 +2415,21 @@ export interface components {
             /** Recorded Reviewer Rejects */
             recorded_reviewer_rejects: number;
             reported_usage: components["schemas"]["AgentStatsUsageOut"];
+            /**
+             * Review Outcomes
+             * @description Explicit review-role validated outcomes only; validation_failed is an explicit null outcome.
+             */
+            review_outcomes?: {
+                [key: string]: number;
+            };
         };
         /** AgentStatsRowOut */
         AgentStatsRowOut: {
             /** Agent Name */
             agent_name: string | null;
             coverage: components["schemas"]["AgentStatsCoverageOut"];
+            /** Group Key */
+            group_key: string;
             /** Host Key */
             host_key: string | null;
             /** Launch Attempts */
@@ -2387,23 +2437,59 @@ export interface components {
             /** Model */
             model: string | null;
             /** Project Id */
-            project_id: number;
+            project_id: number | null;
+            /** Project Ids */
+            project_ids: number[];
             /** Project Name */
-            project_name: string;
+            project_name: string | null;
             /** Project Slug */
-            project_slug: string;
+            project_slug: string | null;
             /** Recorded Reviewer Rejects */
             recorded_reviewer_rejects: number;
             reported_usage: components["schemas"]["AgentStatsUsageOut"];
+            /**
+             * Review Outcomes
+             * @description Explicit review-role validated outcomes only; validation_failed is an explicit null outcome.
+             */
+            review_outcomes?: {
+                [key: string]: number;
+            };
             /** Selected Role */
             selected_role: AgentStatsRowOutSelected_roleAnyOf0 | null;
         };
         /** AgentStatsUsageOut */
         AgentStatsUsageOut: {
+            /**
+             * Cache Read
+             * @default null
+             */
+            cache_read: number | null;
+            /**
+             * Cache Write
+             * @default null
+             */
+            cache_write: number | null;
             /** Input */
             input: number | null;
+            /**
+             * Input With Unknown Cache
+             * @description Measured input whose cache-read split is unreported; never assigned to remaining input.
+             * @default null
+             */
+            input_with_unknown_cache: number | null;
             /** Output */
             output: number | null;
+            /**
+             * Reasoning
+             * @default null
+             */
+            reasoning: number | null;
+            /**
+             * Remaining Input
+             * @description Input less cache read, only for receipts with known cache read. Includes cache write.
+             * @default null
+             */
+            remaining_input: number | null;
             /** Total */
             total: number | null;
             /**
@@ -6166,10 +6252,22 @@ export interface components {
         /** TrackerAgentStatsAllInput */
         TrackerAgentStatsAllInput: {
             /**
+             * End Date
+             * @description Inclusive local calendar date; supply with start_date.
+             * @default null
+             */
+            end_date: string | null;
+            /**
              * Expected Etag
              * @default null
              */
             expected_etag: string | null;
+            /**
+             * Group By
+             * @default agent_model
+             * @enum {string}
+             */
+            group_by: TrackerAgentStatsAllInputGroup_by;
             /**
              * Idempotency Key
              * @default null
@@ -6191,6 +6289,18 @@ export interface components {
              * @default null
              */
             run_token: string | null;
+            /**
+             * Start Date
+             * @description Inclusive local calendar date; supply with end_date, at most 366 days.
+             * @default null
+             */
+            start_date: string | null;
+            /**
+             * Timezone
+             * @description IANA timezone for launch.started_at calendar days. UI chooses its own default range.
+             * @default UTC
+             */
+            timezone: string;
         };
         /**
          * TrackerAgentStatsInput
@@ -6201,10 +6311,22 @@ export interface components {
          */
         TrackerAgentStatsInput: {
             /**
+             * End Date
+             * @description Inclusive local calendar date; supply with start_date.
+             * @default null
+             */
+            end_date: string | null;
+            /**
              * Expected Etag
              * @default null
              */
             expected_etag: string | null;
+            /**
+             * Group By
+             * @default agent_model
+             * @enum {string}
+             */
+            group_by: TrackerAgentStatsInputGroup_by;
             /**
              * Idempotency Key
              * @default null
@@ -6224,6 +6346,18 @@ export interface components {
              * @default null
              */
             run_token: string | null;
+            /**
+             * Start Date
+             * @description Inclusive local calendar date; supply with end_date, at most 366 days.
+             * @default null
+             */
+            start_date: string | null;
+            /**
+             * Timezone
+             * @description IANA timezone for launch.started_at calendar days. UI chooses its own default range.
+             * @default UTC
+             */
+            timezone: string;
         };
         /** TrackerAgentStatsOut */
         TrackerAgentStatsOut: {
@@ -6232,13 +6366,28 @@ export interface components {
              * Format: date-time
              */
             as_of: string;
+            /** Daily */
+            daily: components["schemas"]["AgentStatsDayOut"][];
+            /** End Date */
+            end_date: string | null;
+            /**
+             * Group By
+             * @enum {string}
+             */
+            group_by: TrackerAgentStatsOutGroup_by;
             /** Is Active */
             is_active: boolean | null;
             /** Project Id */
             project_id: number | null;
             /** Rows */
             rows: components["schemas"]["AgentStatsRowOut"][];
+            /** Start Date */
+            start_date: string | null;
+            /** Timezone */
+            timezone: string;
             totals: components["schemas"]["AgentStatsMetricsOut"];
+            /** @description Eligible receipts without a valid offset-aware launch.started_at, excluded when a date range is supplied. */
+            undated: components["schemas"]["AgentStatsMetricsOut"];
         };
         /** TrackerConfigureDeliveryInput */
         TrackerConfigureDeliveryInput: {
@@ -7779,6 +7928,8 @@ export type SchemaActionExposureOut = components['schemas']['ActionExposureOut']
 export type SchemaActionOut = components['schemas']['ActionOut'];
 export type SchemaAgentRequestOut = components['schemas']['AgentRequestOut'];
 export type SchemaAgentStatsCoverageOut = components['schemas']['AgentStatsCoverageOut'];
+export type SchemaAgentStatsDayOut = components['schemas']['AgentStatsDayOut'];
+export type SchemaAgentStatsFieldCoverageOut = components['schemas']['AgentStatsFieldCoverageOut'];
 export type SchemaAgentStatsMetricsOut = components['schemas']['AgentStatsMetricsOut'];
 export type SchemaAgentStatsRowOut = components['schemas']['AgentStatsRowOut'];
 export type SchemaAgentStatsUsageOut = components['schemas']['AgentStatsUsageOut'];
@@ -11169,6 +11320,12 @@ export enum AgentStatsCoverageOutUsage_status {
     partial = "partial",
     unavailable = "unavailable"
 }
+export enum AgentStatsFieldCoverageOutStatus {
+    empty = "empty",
+    complete = "complete",
+    partial = "partial",
+    unavailable = "unavailable"
+}
 export enum AgentStatsRowOutSelected_roleAnyOf0 {
     delivery_agent = "delivery_agent",
     review_agent = "review_agent"
@@ -11422,6 +11579,11 @@ export enum RunStatus {
     failed = "failed",
     aborted = "aborted"
 }
+export enum TrackerAgentStatsAllInputGroup_by {
+    agent = "agent",
+    model = "model",
+    agent_model = "agent_model"
+}
 export enum TrackerAgentStatsAllInputResponse_modeAnyOf0 {
     compact = "compact",
     raw = "raw",
@@ -11429,11 +11591,21 @@ export enum TrackerAgentStatsAllInputResponse_modeAnyOf0 {
     standard = "standard",
     verbose = "verbose"
 }
+export enum TrackerAgentStatsInputGroup_by {
+    agent = "agent",
+    model = "model",
+    agent_model = "agent_model"
+}
 export enum TrackerAgentStatsInputResponse_mode {
     compact = "compact",
     raw = "raw",
     standard = "standard",
     verbose = "verbose"
+}
+export enum TrackerAgentStatsOutGroup_by {
+    agent = "agent",
+    model = "model",
+    agent_model = "agent_model"
 }
 export enum TrackerConfigureDeliveryInputResponse_mode {
     compact = "compact",

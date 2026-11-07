@@ -445,18 +445,36 @@ and `null` all projects. A project read includes its receipts even when archived
 Neither operation creates a tracker, launches work, or changes configuration.
 
 Both return `TrackerAgentStatsOut`: scope (`project_id`, `is_active`), `as_of`,
-`totals`, and `rows`. Each row groups project ID/name/slug, recorded `agent_name`,
-`selected_role`, `host_key`, and `model`. Agent/role/host/model come from receipts,
-never current defaults; missing historical identities remain null.
+`group_by`, `start_date`, `end_date`, `timezone`, `totals`, `rows`, `daily`, and
+`undated`. `group_by` accepts `agent`, `model`, or `agent_model` (default).
+Agent and Agent+model preserve project identity globally. Explicit Model groups
+combine the visible projects and expose `project_ids`; singular project fields
+are null for a multi-project group. `group_key` is an opaque stable series key.
+Role and host do not split groups. They remain metadata when uniform, otherwise
+null. Agent/model labels come from recorded launch selections, never current
+defaults or name-inferred roles. `model` is the **selected model**, not a claim
+about a measured actual model; missing identity stays null/unrecorded.
+
+Statistics exclude exactly `usage.status="unavailable"`,
+`usage.reason="operator_reset"`, and an explicitly present `usage.measured=null`
+before counting, classification, grouping, coverage and daily projection. Near
+misses, including an absent `measured` key, remain eligible. The canonical
+`invocation_receipts` operational inventory, archived/current deduplication,
+snapshots, sessions, outcomes and recovery state are unchanged. Reset-only
+scopes have empty metrics and no rows.
 
 - **Launch attempts** (`launch_attempts`) count recorded invocation receipts once
   per ticket/attempt/phase across current and archived attempts. Resumes are new
   occurrences. Tracker history, configured unused roles and group tickets without
   invocation receipts contribute nothing. An attempt need not have reached a model.
-- **Reported tokens** (`reported_usage`, unit `tokens`, with numeric `input`,
-  `output`, `total`) sum only normalized `usage.measured` contributions. Snapshots,
-  cache/reasoning subsets and provider subtotals are never added again. No usable
-  contribution means null; measured zero is zero; an empty scope has zero totals.
+- **Reported tokens** (`reported_usage`, unit `tokens`) sum only normalized
+  `usage.measured` contributions: `input`, `output`, `total`, nullable
+  `cache_read`, `cache_write`, and `reasoning`. Cache read/write are subsets of
+  Input; reasoning is a subset of Output; total remains Input+Output. Snapshots
+  and native/provider fields are never guessed or added again. Optional detail
+  validation reuses the native result owner's subset validator and cannot erase
+  valid parent totals. No usable contribution means null; measured zero is zero;
+  an empty scope has zero totals.
 - **Recorded reviewer rejects** (`recorded_reviewer_rejects`) count explicit
   `selected_role=review_agent` plus `validated_outcome=repair`, including reviewer
   mirrors stored in the delivery phase. Failed, blocked, native/schema/candidate
@@ -467,9 +485,83 @@ Totals and rows include `coverage`: `usage_measured_attempts`,
 `classification_unknown_attempts`. `usage_status` and `classification_status` are
 `empty`, `complete`, `partial` or `unavailable`. Explicit null validated outcomes
 record known validation failure; absent outcomes or roles remain unclassified.
-Display coverage with the values: historical unknown does not establish zero use
-or zero rejects. Compact and raw responses retain the same complete facts and
-rows, excluding prompts, instructions, raw execution output and credentials.
+`coverage.fields` maps each of `input`, `output`, `total`, `cache_read`,
+`cache_write`, `reasoning` to `measured_attempts`, `unavailable_attempts`, and
+`status` with the same coverage enum. Each denominator is all eligible attempts
+in that scope. A partial cache sum describes only known measurements; it does
+not imply zero cache for the others. `review_outcomes` counts explicit
+review-role validated `success`, `repair`, `blocked`, `failed`, or
+`validation_failed` (explicit null); absent/unknown role or outcome remains
+unclassified. This is not an approval rate. Display missing facts specifically
+alongside values. Compact and raw responses retain identical complete facts,
+including daily series and missing-date disclosure, excluding prompts,
+instructions, raw output and credentials. Neither operation accepts `ack`.
+
+For Input-type chart stacks, `remaining_input` sums Input minus cache read
+**only on receipts with known cache read**, including cache write in that
+remainder. `input_with_unknown_cache` is measured Input on receipts whose
+cache-read split is unknown. The three portions (known cache read, known
+remainder, input with unreported split) reconcile to measured Input. The last
+portion must be labeled as unreported cache split, never as uncached input.
+When all cache reads are unknown, cache and remainder stay null; an all-empty
+scope returns zeros. Do not subtract a partial cache sum from all Input.
+
+Supply `start_date` and `end_date` together as inclusive local calendar dates,
+ordered and at most 366 days, with an IANA `timezone` (default `UTC`). Invalid
+filters reject before the query. UI owns the last-seven-calendar-days default
+and browser timezone selection. Daily attribution uses only offset-aware
+`launch.started_at`, converted to the requested timezone; completion time and
+receipt order are not substitutes. Each date appears once, including empty
+days. Totals, table rows and daily totals use exactly the same selected
+occurrences. Every day also carries `by_agent` and `by_model` summaries with
+stable keys, so chart colors are independent of table grouping without client
+receipt aggregation. These series and each day's totals reconcile, including
+per-field coverage and review facts.
+
+`undated` summarizes eligible receipts with missing, invalid or offset-free
+launch dates in the selected project visibility. With a date range they are
+excluded from totals/rows/days and disclosed separately. Without dates,
+totals/rows cover retained lifetime usage including `undated`, and `daily` is
+empty (no unbounded all-history time series). Work projections always use
+retained lifetime usage, independently of these analytics filters.
+
+Request example for `tracker.agentStats` (`tracker.agentStatsAll` accepts the
+same filters and `is_active` instead of `project_id`):
+
+```json
+{"project_id":1,"group_by":"agent_model","start_date":"2026-11-01","end_date":"2026-11-03","timezone":"America/Los_Angeles","response_mode":"compact"}
+```
+
+The reusable deterministic receipt fixture is
+[`tests/fixtures/agent_statistics_dated.json`](../tests/fixtures/agent_statistics_dated.json).
+`seed_dated_statistics` in `test_agent_statistics.py` loads it into an isolated
+test database, including a duplicate current/archive occurrence, a fall-back
+hour repeated twice, measured zero with unrecorded identity, missing cache/date,
+a reset-only agent and an archived project. Primary-project response excerpts:
+
+```json
+{
+  "totals": {
+    "launch_attempts": 4,
+    "recorded_reviewer_rejects": 1,
+    "review_outcomes": {"repair":1},
+    "reported_usage": {"unit":"tokens","input":350,"output":60,"total":410,"cache_read":160,"cache_write":30,"reasoning":9,"remaining_input":140,"input_with_unknown_cache":50},
+    "coverage": {"fields":{"cache_read":{"measured_attempts":3,"unavailable_attempts":1,"status":"partial"}}}
+  },
+  "undated": {"launch_attempts":1,"reported_usage":{"input":7,"output":1,"total":8}},
+  "daily": [
+    {"date":"2026-11-01","reported_usage":{"input":300,"output":50,"total":350,"cache_read":160}},
+    {"date":"2026-11-02","reported_usage":{"input":50,"output":10,"total":60,"cache_read":null,"remaining_input":null,"input_with_unknown_cache":50}},
+    {"date":"2026-11-03","reported_usage":{"input":0,"output":0,"total":0,"cache_read":0}}
+  ]
+}
+```
+
+This is an excerpt, not a replacement schema; generated `ui/src/api.ts` exposes
+the complete typed rows, daily color series and coverage. Primary lifetime
+total is 428; All-project dated total is 454; the combined `selected-sol` Model
+group is 394 across the primary and archived projects. Consumers should render
+these returned metrics directly and retain explicit missing-data coverage.
 
 For example, delivery 10 → reviewer repair 20 → resumed delivery 30 → reviewer
 success 40 produces four attempts, 100 reported tokens and one reject, even when

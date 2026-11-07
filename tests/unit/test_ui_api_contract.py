@@ -34,6 +34,8 @@ from stackos.operations.tracker.schemas import (
 )
 from stackos.repositories.tracker.schema import (
     AgentStatsCoverageOut,
+    AgentStatsDayOut,
+    AgentStatsFieldCoverageOut,
     AgentStatsMetricsOut,
     AgentStatsRowOut,
     AgentStatsUsageOut,
@@ -104,6 +106,8 @@ def test_ui_generation_includes_registry_owned_durable_contracts(
         AgentStatsMetricsOut,
         AgentStatsUsageOut,
         AgentStatsCoverageOut,
+        AgentStatsDayOut,
+        AgentStatsFieldCoverageOut,
         AgentStatsRowOut,
         FinanceStatusInput,
         FinanceQueryInput,

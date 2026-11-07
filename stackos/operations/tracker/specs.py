@@ -97,7 +97,8 @@ _AGENT_STATS_RESPONSE_POLICY = OperationResponsePolicy(
     allowed_modes=("compact", "raw"),
     ack_safe=False,
     compact_notes=(
-        "Keep scope, as_of, totals, all grouped rows and complete usage/classification coverage.",
+        "Keep scope, dates, timezone, group_by, as_of, totals, every row/day/series, "
+        "undated facts and per-field/classification coverage.",
     ),
 )
 
@@ -284,11 +285,24 @@ def operation_specs() -> list[OperationSpec]:
             grant_policy="direct-read",
             response_policy=_AGENT_STATS_RESPONSE_POLICY,
             purpose=(
-                "Read deduplicated current/archive invocation facts; missing telemetry "
-                "and classification remain explicit."
+                "Read reset-aware deduplicated invocation facts. Group by agent, selected model "
+                "or agent_model. Optional inclusive dates (at most 366 days) and IANA timezone "
+                "scope totals/rows/daily identically; undated receipts are disclosed separately. "
+                "Cache read is included in Input; reasoning in Output. "
+                "Missing fields stay explicit."
             ),
             examples=(
                 OperationExample(title="Read project agent activity", arguments={"project_id": 1}),
+                OperationExample(
+                    title="Read dated agent activity",
+                    arguments={
+                        "project_id": 1,
+                        "group_by": "agent",
+                        "start_date": "2026-11-01",
+                        "end_date": "2026-11-07",
+                        "timezone": "America/Los_Angeles",
+                    },
+                ),
             ),
         ),
         operation_spec(
@@ -301,8 +315,10 @@ def operation_specs() -> list[OperationSpec]:
             grant_policy="local-admin-read",
             response_policy=_AGENT_STATS_RESPONSE_POLICY,
             purpose=(
-                "Local-console read over the same receipt projection; preserves recorded "
-                "agent/role/host/model identity."
+                "Local-console read over the same reset-aware dated projection. Agent identity "
+                "stays project-scoped; explicit Model grouping combines visible projects. "
+                "Model means recorded launch selection, not measured actual model. "
+                "No role/host splitting."
             ),
             examples=(
                 OperationExample(
@@ -312,6 +328,16 @@ def operation_specs() -> list[OperationSpec]:
                     title="Read archived project activity", arguments={"is_active": False}
                 ),
                 OperationExample(title="Read all project activity", arguments={"is_active": None}),
+                OperationExample(
+                    title="Compare selected models across visible projects",
+                    arguments={
+                        "is_active": True,
+                        "group_by": "model",
+                        "start_date": "2026-11-01",
+                        "end_date": "2026-11-07",
+                        "timezone": "America/Los_Angeles",
+                    },
+                ),
             ),
         ),
         operation_spec(

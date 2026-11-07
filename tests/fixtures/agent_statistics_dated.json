@@ -1,0 +1,44 @@
+{
+  "request": {"start_date": "2026-11-01", "end_date": "2026-11-03", "timezone": "America/Los_Angeles", "group_by": "agent_model"},
+  "occurrences": [
+    {"project": "primary", "key": "before-range", "receipt": {
+      "selected_role": "delivery_agent", "validated_outcome": "success",
+      "launch": {"agent": "worker", "host_key": "codex", "model": "selected-sol", "started_at": "2026-11-01T06:59:59Z"},
+      "usage": {"unit": "tokens", "status": "measured", "measured": {"input": 10, "output": 0, "total": 10}}
+    }},
+    {"project": "primary", "key": "fall-back-first", "receipt": {
+      "selected_role": "review_agent", "validated_outcome": "repair",
+      "launch": {"agent": "worker", "host_key": "codex", "model": "selected-sol", "started_at": "2026-11-01T08:30:00Z"},
+      "usage": {"unit": "tokens", "status": "measured", "measured": {"input": 100, "output": 20, "total": 120, "cache_read": 60, "cache_write": 10, "reasoning": 5}}
+    }},
+    {"project": "primary", "key": "fall-back-second", "receipt": {
+      "selected_role": "delivery_agent", "validated_outcome": "success",
+      "launch": {"agent": "worker", "host_key": "claude", "model": "selected-sol", "started_at": "2026-11-01T09:30:00Z"},
+      "usage": {"unit": "tokens", "status": "measured", "measured": {"input": 200, "output": 30, "total": 230, "cache_read": 100, "cache_write": 20, "reasoning": 0}}
+    }},
+    {"project": "primary", "key": "unknown-cache", "receipt": {
+      "selected_role": "delivery_agent", "validated_outcome": "success",
+      "launch": {"agent": "worker", "host_key": "codex", "model": "selected-astra", "started_at": "2026-11-02T08:00:00Z"},
+      "usage": {"unit": "tokens", "status": "measured", "measured": {"input": 50, "output": 10, "total": 60, "reasoning": 4}}
+    }},
+    {"project": "primary", "key": "measured-zero", "receipt": {
+      "launch": {"started_at": "2026-11-03T12:00:00Z"},
+      "usage": {"unit": "tokens", "status": "measured", "measured": {"input": 0, "output": 0, "total": 0, "cache_read": 0, "cache_write": 0, "reasoning": 0}}
+    }},
+    {"project": "primary", "key": "undated", "receipt": {
+      "selected_role": "delivery_agent", "validated_outcome": "success",
+      "launch": {"agent": "worker", "host_key": "codex", "model": "selected-sol"},
+      "usage": {"unit": "tokens", "status": "measured", "measured": {"input": 7, "output": 1, "total": 8, "cache_read": 2}}
+    }},
+    {"project": "primary", "key": "reset", "receipt": {
+      "selected_role": "review_agent", "validated_outcome": "repair",
+      "launch": {"agent": "reset-only", "host_key": "codex", "model": "old-selected", "started_at": "2026-11-02T08:00:00Z"},
+      "usage": {"unit": "tokens", "status": "unavailable", "reason": "operator_reset", "measured": null, "snapshot": {"input": 900, "output": 100, "total": 1000}}
+    }},
+    {"project": "archived", "key": "archived", "receipt": {
+      "selected_role": "delivery_agent", "validated_outcome": "success",
+      "launch": {"agent": "worker", "host_key": "codex", "model": "selected-sol", "started_at": "2026-11-01T08:30:00Z"},
+      "usage": {"unit": "tokens", "status": "measured", "measured": {"input": 40, "output": 4, "total": 44, "cache_read": 20, "cache_write": 0, "reasoning": 1}}
+    }}
+  ]
+}

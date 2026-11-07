@@ -39,7 +39,12 @@ async def tracker_agent_stats(
     inp: TrackerAgentStatsInput, ctx: MCPContext, _emitter: ProgressEmitter
 ) -> TrackerAgentStatsOut:
     return await run_in_threadpool(
-        TrackerRepository(ctx.session).agent_stats, project_id=inp.project_id
+        TrackerRepository(ctx.session).agent_stats,
+        project_id=inp.project_id,
+        group_by=inp.group_by,
+        start_date=inp.start_date,
+        end_date=inp.end_date,
+        timezone=inp.timezone,
     )
 
 
@@ -47,7 +52,12 @@ async def tracker_agent_stats_all(
     inp: TrackerAgentStatsAllInput, ctx: MCPContext, _emitter: ProgressEmitter
 ) -> TrackerAgentStatsOut:
     return await run_in_threadpool(
-        TrackerRepository(ctx.session).agent_stats_all, is_active=inp.is_active
+        TrackerRepository(ctx.session).agent_stats_all,
+        is_active=inp.is_active,
+        group_by=inp.group_by,
+        start_date=inp.start_date,
+        end_date=inp.end_date,
+        timezone=inp.timezone,
     )
 
 

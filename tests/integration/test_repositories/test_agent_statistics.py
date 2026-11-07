@@ -1,6 +1,9 @@
 """Recorded invocations, rather than configuration or tracker history, own metrics."""
 
+import json
 from copy import deepcopy
+from datetime import date
+from pathlib import Path
 
 import pytest
 from sqlalchemy import event
@@ -18,6 +21,7 @@ from stackos.operations.registry import build_operation_registry
 from stackos.operations.responses import shape_operation_response
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.tracker import TrackerRepository
+from stackos.repositories.tracker.agent_stats import invocation_receipts, summarize_receipts
 from tests.integration.test_repositories.test_ticket_overviews import _ticket
 
 
@@ -61,6 +65,221 @@ def _store(session, project_id, key, automatic):
         ticket_key=key,
         patch_json={"completion_evidence_json": {"automatic_delivery": automatic}},
     )
+
+
+def seed_dated_statistics(session: Session, project_id: int):
+    """Shared deterministic source fixture for API and downstream UI proof; no live state."""
+    fixture = json.loads(
+        (Path(__file__).parents[2] / "fixtures/agent_statistics_dated.json").read_text()
+    )
+    projects = ProjectRepository(session)
+    archived = projects.create(
+        slug="dated-archive", name="Dated Archive", domain="archive.test"
+    ).data
+    projects.update(archived.id, is_active=False)
+    for item in fixture["occurrences"]:
+        occurrence = {"attempt": 1, "delivery": item["receipt"]}
+        # Current/archive duplication must never change the dated occurrence set.
+        _store(
+            session,
+            project_id if item["project"] == "primary" else archived.id,
+            item["key"],
+            {**occurrence, "attempts": [deepcopy(occurrence)]},
+        )
+    return {
+        **fixture["request"],
+        "start_date": date(2026, 11, 1),
+        "end_date": date(2026, 11, 3),
+    }, archived.id
+
+
+def test_dated_groups_daily_and_lifetime_reconcile(session: Session, project_id: int):
+    filters, archived_id = seed_dated_statistics(session, project_id)
+    repo = TrackerRepository(session)
+    project = repo.agent_stats(project_id=project_id, **filters)
+    assert project.totals.launch_attempts == 4
+    assert project.totals.reported_usage.model_dump() == {
+        "unit": "tokens",
+        "input": 350,
+        "output": 60,
+        "total": 410,
+        "cache_read": 160,
+        "cache_write": 30,
+        "reasoning": 9,
+        "remaining_input": 140,
+        "input_with_unknown_cache": 50,
+    }
+    assert project.totals.coverage.fields["cache_read"].model_dump() == {
+        "measured_attempts": 3,
+        "unavailable_attempts": 1,
+        "status": "partial",
+    }
+    assert project.totals.coverage.fields["input"].status == "complete"
+    assert project.totals.review_outcomes == {"repair": 1}
+    assert project.undated.reported_usage.total == 8
+    assert [d.date.isoformat() for d in project.daily] == ["2026-11-01", "2026-11-02", "2026-11-03"]
+    assert [d.reported_usage.total for d in project.daily] == [350, 60, 0]
+    assert project.daily[1].reported_usage.cache_read is None
+    assert project.daily[1].reported_usage.remaining_input is None
+    assert project.daily[1].reported_usage.input_with_unknown_cache == 50
+    assert project.daily[2].reported_usage.cache_read == 0
+    assert len(project.daily[0].by_agent) == len(project.daily[0].by_model) == 1
+    assert project.daily[0].by_agent[0].selected_role is None
+    assert project.daily[0].by_agent[0].host_key is None
+    for grouping, row_count in (("agent", 3), ("model", 3), ("agent_model", 4)):
+        result = repo.agent_stats_all(is_active=None, **{**filters, "group_by": grouping})
+        assert len(result.rows) == row_count
+        assert result.totals.reported_usage.total == 454
+        assert result.totals.reported_usage.cache_read == 180
+        assert sum(row.launch_attempts for row in result.rows) == result.totals.launch_attempts == 5
+        for field in (
+            "input",
+            "output",
+            "total",
+            "cache_read",
+            "cache_write",
+            "reasoning",
+            "remaining_input",
+            "input_with_unknown_cache",
+        ):
+            assert sum(getattr(row.reported_usage, field) or 0 for row in result.rows) == getattr(
+                result.totals.reported_usage, field
+            )
+            assert sum(getattr(day.reported_usage, field) or 0 for day in result.daily) == getattr(
+                result.totals.reported_usage, field
+            )
+        for day in result.daily:
+            for rows in (day.by_agent, day.by_model):
+                assert sum(row.launch_attempts for row in rows) == day.launch_attempts
+                assert (
+                    sum(row.reported_usage.total or 0 for row in rows) == day.reported_usage.total
+                )
+        if grouping == "model":
+            shared = next(row for row in result.rows if row.model == "selected-sol")
+            assert shared.project_id is None
+            assert shared.project_ids == sorted([project_id, archived_id])
+            assert shared.agent_name is None
+            assert shared.reported_usage.total == 394
+        else:
+            assert {row.project_id for row in result.rows} == {project_id, archived_id}
+    assert repo.agent_stats_all(is_active=False, **filters).totals.reported_usage.total == 44
+    assert repo.agent_stats_all(**filters).totals == project.totals
+    lifetime = repo.agent_stats(project_id=project_id)
+    assert lifetime.totals.reported_usage.total == 428
+    assert lifetime.daily == []
+    assert lifetime.undated == project.undated
+    assert (
+        repo.get(project_id=project_id, task_index_only=True, include_graph=False)
+        .tasks[0]
+        .agent_stats
+        == lifetime.totals
+    )
+    assert (
+        repo.brief(
+            project_id=project_id, ticket_key="unknown-cache"
+        ).ticket.agent_stats.reported_usage.total
+        == 60
+    )
+    empty = repo.agent_stats(
+        project_id=project_id,
+        **{**filters, "start_date": date(2026, 11, 4), "end_date": date(2026, 11, 5)},
+    )
+    assert empty.rows == []
+    assert empty.totals.launch_attempts == 0
+    assert len(empty.daily) == 2
+    assert all(day.coverage.usage_status == "empty" for day in empty.daily)
+    assert empty.undated.launch_attempts == 1
+
+
+@pytest.mark.parametrize(
+    "details",
+    [
+        {"cache_read": True, "cache_write": -1, "reasoning": 1},
+        {"cache_read": 20, "cache_write": 20, "reasoning": 100},
+        {"cache_read": 10, "cache_write": 30},
+    ],
+)
+def test_invalid_optional_details_preserve_valid_parents(details):
+    receipt = _receipt(total=30)
+    receipt["usage"]["measured"].update(details)
+    result = summarize_receipts([receipt])
+    assert result.reported_usage.input == 30
+    assert result.reported_usage.output == 0
+    assert result.reported_usage.cache_read is None
+    assert result.reported_usage.cache_write is None
+    assert result.coverage.fields["cache_read"].unavailable_attempts == 1
+
+
+@pytest.mark.parametrize("started_at", [None, "bad-date", "2026-03-08T02:30:00"])
+def test_unknown_launch_date_is_disclosed_not_invented(session, project_id, started_at):
+    receipt = _receipt(total=10)
+    receipt["launch"]["started_at"] = started_at
+    _store(session, project_id, "unknown-day", {"attempt": 1, "delivery": receipt})
+    result = TrackerRepository(session).agent_stats(
+        project_id=project_id,
+        start_date=date(2026, 3, 8),
+        end_date=date(2026, 3, 8),
+        timezone="America/Los_Angeles",
+    )
+    assert result.totals.launch_attempts == 0
+    assert result.daily[0].launch_attempts == 0
+    assert result.undated.launch_attempts == 1
+
+
+def test_spring_forward_local_midnight_and_last_day_inclusion(session, project_id):
+    for index, stamp in enumerate(
+        (
+            "2026-03-08T07:59:59Z",
+            "2026-03-08T08:00:00Z",
+            "2026-03-08T09:59:59Z",
+            "2026-03-08T10:00:00Z",
+            "2026-03-09T06:59:59Z",
+            "2026-03-09T07:00:00Z",
+        )
+    ):
+        receipt = _receipt(total=10)
+        receipt["launch"]["started_at"] = stamp
+        _store(session, project_id, f"spring-{index}", {"attempt": 1, "delivery": receipt})
+    result = TrackerRepository(session).agent_stats(
+        project_id=project_id,
+        start_date=date(2026, 3, 8),
+        end_date=date(2026, 3, 8),
+        timezone="America/Los_Angeles",
+    )
+    assert result.totals.launch_attempts == result.daily[0].launch_attempts == 4
+    assert result.totals.reported_usage.total == 40
+
+
+def test_exact_operator_reset_is_statistics_only(session: Session, project_id: int):
+    reset = _receipt("review_agent", "repair")
+    reset["usage"].update(status="unavailable", reason="operator_reset", measured=None)
+    evidence = {"automatic_delivery": {"attempt": 1, "review": reset}}
+    before = deepcopy(evidence)
+    assert len(invocation_receipts(evidence)) == 1
+    assert summarize_receipts(invocation_receipts(evidence)).launch_attempts == 0
+    _store(session, project_id, "reset", evidence["automatic_delivery"])
+    stored = session.exec(select(TrackerTicket).where(TrackerTicket.key == "reset")).one()
+    stored_before = deepcopy(stored.completion_evidence_json)
+    repo = TrackerRepository(session)
+    result = repo.agent_stats(project_id=project_id)
+    assert result.totals.launch_attempts == 0
+    assert result.totals.recorded_reviewer_rejects == 0
+    assert result.totals.coverage.usage_status == "empty"
+    assert result.rows == []
+    assert repo.get(project_id=project_id).tasks[0].agent_stats == result.totals
+    assert repo.brief(project_id=project_id, ticket_key="reset").ticket.agent_stats == result.totals
+    assert stored.completion_evidence_json == stored_before
+    assert (
+        stored.completion_evidence_json["automatic_delivery"]["review"]["usage"] == reset["usage"]
+    )
+    assert evidence == before
+    for key, value in (("status", "measured"), ("reason", "other"), ("measured", {})):
+        near_miss = deepcopy(reset)
+        near_miss["usage"][key] = value
+        assert summarize_receipts([near_miss]).launch_attempts == 1
+    missing_marker = deepcopy(reset)
+    missing_marker["usage"].pop("measured")
+    assert summarize_receipts([missing_marker]).launch_attempts == 1
 
 
 def test_task_and_ticket_projections_share_receipt_totals(session: Session, project_id: int):
@@ -234,7 +453,7 @@ def test_repaired_current_archive_dedup_and_one_phase_review_mirror(
     assert stats.totals.reported_usage.total == 100
     assert stats.totals.coverage.usage_status == "complete"
     assert stats.totals.coverage.classification_status == "complete"
-    assert len(stats.rows) == 2
+    assert len(stats.rows) == 1  # Role is provenance, never a grouping splitter.
     assert "PRIVATE" not in stats.model_dump_json()
     _store(
         session,
@@ -274,7 +493,15 @@ def test_coverage_invalid_results_requeues_and_measured_zero(session: Session, p
     assert result.totals.coverage.usage_unavailable_attempts == 1
     assert result.totals.coverage.usage_status == "partial"
     assert result.totals.coverage.classification_status == "partial"
-    assert next(row for row in result.rows if row.selected_role is None).launch_attempts == 1
+    assert result.rows[0].selected_role is None  # Mixed known/unknown roles.
+    assert result.rows[0].launch_attempts == 6
+    assert result.totals.coverage.classification_unknown_attempts == 1
+    assert result.totals.review_outcomes == {
+        "repair": 2,
+        "blocked": 1,
+        "failed": 1,
+        "validation_failed": 1,
+    }
 
 
 def test_project_visibility_historical_identity_and_read_only_projection(

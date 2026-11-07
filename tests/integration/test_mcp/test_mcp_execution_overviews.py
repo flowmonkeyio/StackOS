@@ -8,7 +8,12 @@ from sqlmodel import Session, select
 from stackos.db.models import ActionCall, ActionCallStatus, TrackerItemStatus
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.tracker import TrackerRepository
-from tests.integration.test_repositories.test_agent_statistics import _receipt, _repaired, _store
+from tests.integration.test_repositories.test_agent_statistics import (
+    _receipt,
+    _repaired,
+    _store,
+    seed_dated_statistics,
+)
 from tests.integration.test_repositories.test_execution_overviews import _call
 from tests.integration.test_repositories.test_ticket_overviews import _ticket
 
@@ -312,6 +317,11 @@ def test_agent_statistics_persisted_rest_mcp_parity_scope_and_privacy(
             "input": 100,
             "output": 0,
             "total": 100,
+            "cache_read": None,
+            "cache_write": None,
+            "reasoning": None,
+            "remaining_input": None,
+            "input_with_unknown_cache": 100,
         }
         assert stats["totals"]["coverage"]["usage_measured_attempts"] == 4
         assert "PRIVATE" not in str(stats)
@@ -367,3 +377,47 @@ def test_agent_statistics_persisted_rest_mcp_parity_scope_and_privacy(
         assert (
             TrackerRepository(session).get(project_id=project_id).model_dump(mode="json") == before
         )
+
+
+def test_dated_agent_statistics_scoped_mcp_matches_rest(
+    mcp_client: MCPClient, seeded_project: dict
+):
+    project_id = seeded_project["data"]["id"]
+    with Session(mcp_client.test_client.app.state.engine) as session:
+        filters, _ = seed_dated_statistics(session, project_id)
+    filters = {
+        **filters,
+        "start_date": filters["start_date"].isoformat(),
+        "end_date": filters["end_date"].isoformat(),
+    }
+    mcp_client.call_tool_structured(
+        "workspace.connect",
+        {
+            "project_id": project_id,
+            "repo_fingerprint": "path:dated-stats",
+            "last_known_root": "/tmp/dated-stats",
+        },
+    )
+    proxy, client = _scoped_bridge(
+        mcp_client, cwd="/tmp/dated-stats", repo_fingerprint="path:dated-stats"
+    )
+    _initialize(proxy, client)
+    _send(proxy, client, method="tools/list")
+    for mode in ("raw", "compact"):
+        for grouping in ("agent", "model", "agent_model"):
+            arguments = {**filters, "group_by": grouping, "response_mode": mode}
+            rest = _rest(mcp_client, "tracker.agentStats", {"project_id": project_id, **arguments})
+            assert rest.status_code == 200, rest.text
+            expected = _operation_data(rest.json())
+            response = _toolbox_call(proxy, client, "tracker.agentStats", arguments)
+            assert not response["result"].get("isError"), response
+            actual = _operation_data(_structured(response))
+            assert {k: v for k, v in actual.items() if k != "as_of"} == {
+                k: v for k, v in expected.items() if k != "as_of"
+            }
+            assert actual["totals"]["reported_usage"]["cache_read"] == 160
+            assert actual["undated"]["launch_attempts"] == 1
+    invalid = _toolbox_call(
+        proxy, client, "tracker.agentStats", {**filters, "timezone": "Invalid/Zone"}
+    )
+    assert invalid["result"]["isError"] is True

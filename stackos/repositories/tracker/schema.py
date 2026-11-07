@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -249,6 +249,28 @@ class AgentStatsUsageOut(BaseModel):
     input: int | None
     output: int | None
     total: int | None
+    cache_read: int | None = None
+    cache_write: int | None = None
+    reasoning: int | None = None
+    remaining_input: int | None = Field(
+        default=None,
+        description=(
+            "Input less cache read, only for receipts with known cache read. Includes cache write."
+        ),
+    )
+    input_with_unknown_cache: int | None = Field(
+        default=None,
+        description=(
+            "Measured input whose cache-read split is unreported; "
+            "never assigned to remaining input."
+        ),
+    )
+
+
+class AgentStatsFieldCoverageOut(BaseModel):
+    measured_attempts: int
+    unavailable_attempts: int
+    status: Literal["empty", "complete", "partial", "unavailable"]
 
 
 class AgentStatsCoverageOut(BaseModel):
@@ -258,23 +280,39 @@ class AgentStatsCoverageOut(BaseModel):
     classification_unknown_attempts: int
     usage_status: Literal["empty", "complete", "partial", "unavailable"]
     classification_status: Literal["empty", "complete", "partial", "unavailable"]
+    fields: dict[str, AgentStatsFieldCoverageOut] = Field(default_factory=dict)
 
 
 class AgentStatsMetricsOut(BaseModel):
     launch_attempts: int
     recorded_reviewer_rejects: int
+    review_outcomes: dict[str, int] = Field(
+        default_factory=dict,
+        description=(
+            "Explicit review-role validated outcomes only; "
+            "validation_failed is an explicit null outcome."
+        ),
+    )
     reported_usage: AgentStatsUsageOut
     coverage: AgentStatsCoverageOut
 
 
 class AgentStatsRowOut(AgentStatsMetricsOut):
-    project_id: int
-    project_name: str
-    project_slug: str
+    group_key: str
+    project_ids: list[int]
+    project_id: int | None
+    project_name: str | None
+    project_slug: str | None
     agent_name: str | None
     selected_role: Literal["delivery_agent", "review_agent"] | None
     host_key: str | None
     model: str | None
+
+
+class AgentStatsDayOut(AgentStatsMetricsOut):
+    date: date
+    by_agent: list[AgentStatsRowOut]
+    by_model: list[AgentStatsRowOut]
 
 
 class TrackerAgentStatsOut(BaseModel):
@@ -283,6 +321,17 @@ class TrackerAgentStatsOut(BaseModel):
     as_of: datetime
     totals: AgentStatsMetricsOut
     rows: list[AgentStatsRowOut]
+    group_by: Literal["agent", "model", "agent_model"]
+    start_date: date | None
+    end_date: date | None
+    timezone: str
+    daily: list[AgentStatsDayOut]
+    undated: AgentStatsMetricsOut = Field(
+        description=(
+            "Eligible receipts without a valid offset-aware launch.started_at, "
+            "excluded when a date range is supplied."
+        )
+    )
 
 
 class TrackerTicketCountsOut(BaseModel):

@@ -48,7 +48,13 @@ def test_agent_stats_handlers_keep_the_event_loop_responsive(monkeypatch, global
     expected = object()
 
     def slow_read(_repository, **arguments):
-        assert arguments == ({"is_active": None} if global_scope else {"project_id": 1})
+        assert arguments == {
+            **({"is_active": None} if global_scope else {"project_id": 1}),
+            "group_by": "agent_model",
+            "start_date": None,
+            "end_date": None,
+            "timezone": "UTC",
+        }
         time.sleep(0.05)
         return expected
 
