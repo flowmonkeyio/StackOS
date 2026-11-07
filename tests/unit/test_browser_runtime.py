@@ -203,6 +203,37 @@ async def test_unhealthy_owner_and_stopped_session_receive_native_context(tmp_pa
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["session_context", "start_session"])
+async def test_profile_conflict_offers_reuse_without_stopping_healthy_owner(
+    tmp_path: Path, operation: str
+) -> None:
+    data_dir = tmp_path / "data"
+    _executable, server = _runtime_layout(data_dir / "browser-runtime")
+    started_at = datetime.now(tz=UTC) - timedelta(seconds=2)
+    owner_args = _session_args(data_dir, "owner")
+    _state(owner_args["state_file"], pid=9124, server=server, started_at=started_at)  # type: ignore[arg-type]
+    before = Path(owner_args["state_file"]).read_bytes()  # type: ignore[arg-type]
+    runtime = BrowserRuntime(
+        data_dir=data_dir,
+        process_inspector=_Inspector(
+            {9124: ProcessIdentity(pid=9124, started_at=started_at, command=f"bun run {server}")}
+        ),
+        health_probe=_healthy,
+    )
+
+    with pytest.raises(ConflictError) as raised:
+        await getattr(runtime, operation)(**_session_args(data_dir, "next-ticket"))
+
+    assert raised.value.data["owner_session_ref"] == owner_args["session_ref"]
+    assert raised.value.data["owner_healthy"] is True
+    repair = raised.value.data["repair"]
+    assert "task-owned tab" in repair and "--tab-id" in repair
+    assert "separate profile" in repair and "authority" in repair
+    assert Path(owner_args["state_file"]).read_bytes() == before  # type: ignore[arg-type]
+    assert (await runtime.inspect_session(**owner_args)).healthy is True  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
 async def test_stopped_session_context_is_available_without_another_owner(tmp_path: Path) -> None:
     data_dir = tmp_path / "data"
     executable, _server = _runtime_layout(data_dir / "browser-runtime")

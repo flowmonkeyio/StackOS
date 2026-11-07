@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { UiBadge, UiButton, UiIcon, UiInput, UiSegmentedControl, UiSelect, UiToolbar } from '@/components/ui'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
+import TaskDeliveryStop from '@/components/domain/TaskDeliveryStop.vue'
+import type { TaskDeliveryState } from '@/lib/task-tracker/delivery'
 import type { AgentStatsMetrics } from '@/lib/agentActivity'
 import type { TrackerSelectOption, TrackerTaskSelectOption, ViewMode } from './viewTypes'
 
@@ -20,6 +22,7 @@ defineProps<{
   graphSummary: string
   taskAgentStats?: AgentStatsMetrics | null
   taskAutomated?: boolean
+  taskDelivery?: TaskDeliveryState | null
 }>()
 defineEmits<{
   (e: 'taskSelect', value: string | number | null): void
@@ -110,6 +113,11 @@ const viewOptions = [{ key: 'board', label: 'Board' }, { key: 'graph', label: 'G
       >
         Automated
       </UiBadge>
+      <TaskDeliveryStop
+        v-if="taskAvailable"
+        class="tracker-command-panel__delivery"
+        :delivery="taskDelivery ?? null"
+      />
       <div class="tracker-command-panel__usage-actions">
         <AgentUsageSummary
           v-if="taskAvailable && taskAutomated"
@@ -142,6 +150,7 @@ const viewOptions = [{ key: 'board', label: 'Board' }, { key: 'graph', label: 'G
 .tracker-command-panel__filter { flex: 0 1 180px; min-width: 110px; }
 .tracker-command-panel__assignee { flex-basis: 160px; }
 .tracker-command-panel__task { flex: 1 1 240px; min-width: 160px; }
+.tracker-command-panel__delivery { flex: 0 1 340px; }
 .tracker-command-panel__count { margin-left: auto; flex: none; white-space: nowrap; }
 .tracker-command-panel__usage-actions { display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; margin-left: auto; }
 .tracker-command-panel__usage { flex: 0 1 auto; min-width: 0; }

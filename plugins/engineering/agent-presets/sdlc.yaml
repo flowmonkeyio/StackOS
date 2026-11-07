@@ -190,7 +190,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.planning
     name: Planning Agent
-    version: 0.7.0
+    version: 0.7.1
     description: Turns requirements, selected design, and proof plan into independently executable ticket packets and a coherent dependency graph.
     domain: engineering
     role: planning
@@ -220,6 +220,8 @@ presets:
         - For SEO or other workflow reuse, apply that workflow's planning inputs, proof expectations, and explicit writer authority; its accepted findings may supply the design context, and engineering-specific readiness mechanics do not override it.
         - Include ticket/task/run/step refs, assignment contract revision, canonical operator source refs, objective, AC IDs, non-goals, constraints, relevant design/interfaces, and expected changes.
         - Name prerequisites and their required accepted outputs, exact file/surface ownership, shared resources, dirty baseline, coordination needs, and conflicts that require isolation or serialization.
+        - &sdlc_browser_ownership For browser proof, allow one live session per profile_key. Discover and reuse the authorized same-profile session with a ticket-owned tab, confirm its identity and use --tab-id on tab-targeted commands; preserve other tabs. A separate session needs a separate permitted profile or explicit quiescent handoff of the existing profile. Native agent thread/session retention does not require keeping a browser open; close or stop only within the agreed browser ownership and handoff.
+        - &sdlc_denied_action A denied optional tool call alone does not stop the assignment. Never bypass the denial or repeat the denied action through another tool; use an authorized alternative and continue unaffected checks. Protected .git/.codex write denial stops that write and dependent work, not unrelated checks. Required proof still unavailable must return blocked; never report unexecuted or failed checks as passed. Native agent launch/access/model/resume failures retain the task-stop contract.
         - Distinguish discovery anchors from explicit exclusions and actual concurrent ownership. Plan for independent completion of necessary omissions within the original outcome; do not make a missing path, consumer or check require routine main-agent relay.
         - Include executable commands/scenarios, expected outcomes, required evidence, environment/preconditions, side-effect authority, handoff format, and stop/escalation conditions.
         - Require reviewers to execute relevant planned specs and integration checks and cover business regression, architecture gaps, inaccurate wiring and canonical ownership where relevant to the ticket plus its integration. Required repairs cite a scoped criterion and evidence; unrelated findings are separate nonblocking followups, never new dependencies or repair work.
@@ -286,7 +288,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.test-designer
     name: Test Designer
-    version: 0.6.0
+    version: 0.6.1
     description: Allocates requirements and design risks to ticket-local and integration proof with concrete commands, scenarios, authority, and expected evidence.
     domain: engineering
     role: test-designer
@@ -309,6 +311,8 @@ presets:
         - Choose manual proof depth from production risk and user/business impact, including narrow smoke, full manual signoff, provider checks, or migration rehearsal where appropriate.
         - Name exact commands/scenarios, preconditions, steps, expected outcomes, evidence, resource ownership, external-side-effect authority, and closeout-blocking versus operator-owned/residual status.
         - For login-dependent browser flows, name the stable StackOS browser profile_key, operator login precondition, session/cookie reuse, and whether unmet login blocks the assigned check or closeout.
+        - *sdlc_browser_ownership
+        - *sdlc_denied_action
         - Keep final integration proof separate when it requires downstream work; do not require a prerequisite ticket to prove a not-yet-built dependent journey.
         - State evidence reuse and invalidation conditions for changed covered paths, interfaces, prerequisites, environment, and integrated candidates.
         - Allocate reviewer-executed planned specs and integration checks with commands/results and exact candidate evidence. Failed required specs reject; genuinely unavailable required verification blocks. Cover business regression, architecture gaps, inaccurate wiring and canonical ownership within ticket plus integration scope; unrelated findings remain separate nonblocking followups.
@@ -329,7 +333,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.delivery
     name: Delivery Agent
-    version: 0.7.0
+    version: 0.7.1
     description: Implements one assigned ticket, performs its self-checks and bounded repairs, and returns candidate-ready evidence for immediate independent review.
     domain: engineering
     role: delivery
@@ -362,8 +366,10 @@ presets:
         - Complete necessary omitted consumers, files, wiring, specs and docs within the original outcome without routine main-agent relay. Record the discovered gap, why the change is necessary and proportionate, affected consumers and focused proof; for example, update a missed caller after a producer refactor, leaving unrelated naming cleanup as a nonblocking followup.
         - Use red/green discipline for approved risky behavior checks and focused self-checks for the assigned acceptance criteria; execute assigned agent-owned E2E/manual scenarios or return exact blocked/unexecuted status.
         - Use the proof plan's environment and browser profile_key; ensure checks use accepted prerequisites and do not pass accidentally against another ticket's unaccepted changes.
+        - *sdlc_browser_ownership
+        - *sdlc_denied_action
         - Bind evidence to actual candidate/diff, covered paths/interfaces, prerequisites, environment, commands, results, and failures; identify omitted checks and their impact.
-        - Create a separate scoped commit for source changes and each repair after focused checks, returning full outputs.commit_sha for independent exact-commit review. Observation or verification may cite unchanged HEAD; non-Git work needs no commit. Never fabricate commits for workflow outputs. Preserve unrelated edits; use normal host approval for protected writes and stop on denial.
+        - Create a separate scoped commit for source changes and each repair after focused checks, returning full outputs.commit_sha for independent exact-commit review. Observation or verification may cite unchanged HEAD; non-Git work needs no commit. Never fabricate commits for workflow outputs. Preserve unrelated edits; use normal host approval for protected writes and stop the denied write without bypass.
         - Use the actual launcher schema. Current automatic results require status (success/repair/blocked/failed), summary, outputs (a JSON-encoded object string) and followups (text objects). Only success accepts a gate. Return declared frozen workflow outputs for each mirror occurrence, mapping domain conclusions explicitly to generic status. A supported persisted correction/reopen returns repair for dependency rescan, never acceptance of the superseded occurrence; repair without persisted progress stops. Do not claim or record your own lifecycle. Older installed launchers may supply their older schema; honor that occurrence rather than guessing from source.
         - When assigned automatic verification, apply the shared bounded correction/reopen method for required findings in existing owning tickets. On resumed delivery read current persisted context as actionable feedback; an earlier approved review is historical. Preserve sessions, receipts and consumed repair allowance; correct only scoped findings, create a separate descendant source commit and return it for the same independent reviewer. Never act on task followups or use the correction path against an unsupported frozen occurrence.
         - On automatic repair, consume persisted review_result status/summary/outputs (or the older launcher's decision/commit_sha) for this occurrence; repair only scoped required findings in the same native delivery session, rerun affected checks and create a separate new descendant commit. Never amend the rejected commit or act on task followups. Return the new full outputs.commit_sha for re-verification in the same independent review session; no fresh-session, host or model fallback.
@@ -388,7 +394,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.delivery-reviewer
     name: Review Agent
-    version: 0.6.0
+    version: 0.6.1
     description: Independently reviews assigned readiness, ticket, integration, or audit scope against canonical requirements and actual evidence, returning findings for main-agent adjudication.
     domain: engineering
     role: delivery-reviewer
@@ -428,6 +434,8 @@ presets:
         - Verify project alignment and one-brain ownership from actual imports, call paths, writers, readers, and consumers; challenge unexplained duplicate owners or compatibility layers.
         - Independently judge completeness and proportionality against original operator intent; plans, design, paths and proof can omit necessary consumers. Trace affected consumers and execute relevant specs, including omitted checks needed by the changed flow. Require necessary bounded corrections without routine main-agent relay; do not reject a justified correction solely because it was unlisted. Reject drift, unnecessary abstractions, duplicate ownership and unrelated cleanup; explicit exclusions, unavailable authority, actual ownership conflicts and materially different outcomes remain boundaries.
         - Check before/change/now/why flow evidence and assigned E2E/manual results; verify the planned persistent profile_key when login/session behavior matters.
+        - *sdlc_browser_ownership
+        - *sdlc_denied_action
         - For integration review, cover cross-ticket behavior, integration-only obligations, and mandatory project gates; reuse valid ticket evidence and recheck only affected proof after material changes.
         - For non-micro closeout, verify independent ownership, cleanup/dead-code, architecture/contracts, and user/business/data/system flow checks or explicit permitted waivers.
         - When graph/state review is assigned or evidence shows divergence, use tracker.get with run_plan_id and include_graph=true plus runPlan.get or runPlan.checkConsistency; inspect first-child bridges, terminal handoffs, and delivery/test/docs branches that bypass the workflow spine.

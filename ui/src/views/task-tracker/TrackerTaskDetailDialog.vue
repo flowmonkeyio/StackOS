@@ -18,9 +18,10 @@ import {
 import MarkdownView from '@/components/MarkdownView.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
+import TaskDeliveryStop from '@/components/domain/TaskDeliveryStop.vue'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import type { TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
-import { isAutomaticDeliveryTask } from '@/lib/task-tracker/delivery'
+import { isAutomaticDeliveryTask, taskDeliveryState } from '@/lib/task-tracker/delivery'
 import { isGraphBlockedTicket } from './viewModel'
 import { useTrackerTaskContent } from './useTrackerTaskContent'
 import TrackerTicketDetailContent from './TrackerTicketDetailContent.vue'
@@ -327,6 +328,11 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
           <span>Owner <span class="text-fg-default">{{ task.owner ?? 'Unassigned' }}</span></span>
           <span>{{ completedCount }} of {{ tickets.length }} tickets complete</span>
         </div>
+        <TaskDeliveryStop
+          :delivery="taskDeliveryState(task)"
+          :tickets="tickets"
+          detailed
+        />
         <AgentUsageSummary
           v-if="isAutomaticDeliveryTask(task)"
           :metrics="task.agent_stats"

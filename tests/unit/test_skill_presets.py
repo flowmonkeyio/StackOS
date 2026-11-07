@@ -71,7 +71,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     contract = loaded.preset.operating_contract
     action = loaded.preset.project_adaptation.required_agent_action.lower()
 
-    assert loaded.preset.version == "0.8.0"
+    assert loaded.preset.version == "0.8.1"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "canonical owner" in action
@@ -231,6 +231,18 @@ def test_sdlc_orchestrator_manual_adoption_and_bounded_repair() -> None:
     )
     for text in (source, local):
         for requirement in (
+            "one live browser session per",
+            "ticket-owned tab",
+            "--tab-id",
+            "preserve other tabs",
+            "explicit quiescent handoff",
+            "Native agent thread/session retention does not require keeping a browser open",
+            "denied optional tool call alone does not stop the assignment",
+            "denied action through another tool",
+            "continue unaffected checks",
+            "Required proof still unavailable must return blocked",
+            "never report unexecuted or failed checks as passed",
+            "Native agent launch/access/model/resume failures retain the task-stop contract",
             "fallible evidence",
             "original outcome",
             "necessary omitted",

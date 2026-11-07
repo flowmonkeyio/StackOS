@@ -11,7 +11,7 @@ import type {
   TrackerTicket,
 } from './types'
 import { trackerStatusSortOrder } from './status'
-import { isAutomaticDeliveryTask } from './delivery'
+import { taskDeliveryState } from './delivery'
 
 export interface TrackerVueNodeData {
   label: string
@@ -29,6 +29,8 @@ export interface TrackerVueNodeData {
   runPlanId?: number | null
   agentStats?: AgentStatsMetrics | null
   taskAutomated?: boolean
+  deliveryStopped?: boolean
+  deliveryStopReason?: string | null
   active?: boolean
   recentlyUpdated?: boolean
   raw: TrackerTask | TrackerTicket | TrackerGraphNode
@@ -59,7 +61,7 @@ export interface TrackerFlowModel {
 type EdgeFocusTone = 'default' | 'muted' | 'upstream' | 'downstream' | 'active' | 'highlighted'
 
 export const TRACKER_TICKET_NODE_WIDTH = 328
-export const TRACKER_TICKET_NODE_HEIGHT = 248
+export const TRACKER_TICKET_NODE_HEIGHT = 200
 
 const TASK_WIDTH = 392
 const TICKET_WIDTH = TRACKER_TICKET_NODE_WIDTH
@@ -623,6 +625,8 @@ function vueNodeData(
   const ticket = isTrackerTicket(raw) ? raw : null
   const task = isTrackerTask(raw) ? raw : null
   const parentTask = task ?? snapshot.tasks.find((candidate) => candidate.key === ticket?.task_key)
+  const delivery = taskDeliveryState(parentTask)
+  const deliveryStopped = delivery?.status === 'stopped' && delivery.ticketKey === ticket?.key
   return {
     label: graphNode.label,
     status: graphNode.status,
@@ -643,8 +647,10 @@ function vueNodeData(
     sourceKind: ticket?.source_kind ?? task?.source_kind ?? null,
     runPlanId: ticket?.run_plan_id,
     agentStats: ticket ? ticket.agent_stats : task?.agent_stats,
-    taskAutomated: isAutomaticDeliveryTask(parentTask),
-    active: options.activeNodeIds?.has(graphNode.id) === true,
+    taskAutomated: delivery !== null,
+    deliveryStopped,
+    deliveryStopReason: deliveryStopped ? delivery?.reason : null,
+    active: delivery?.status !== 'stopped' && options.activeNodeIds?.has(graphNode.id) === true,
     recentlyUpdated: options.recentNodeIds?.has(graphNode.id) === true,
     raw,
   }

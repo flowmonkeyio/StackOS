@@ -861,11 +861,11 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     expected_versions = {
         "requirements-flow-definer": "0.6.0",
         "codebase-explorer": "0.6.0",
-        "planning": "0.7.0",
+        "planning": "0.7.1",
         "architecture": "0.6.0",
-        "test-designer": "0.6.0",
-        "delivery": "0.7.0",
-        "delivery-reviewer": "0.6.0",
+        "test-designer": "0.6.1",
+        "delivery": "0.7.1",
+        "delivery-reviewer": "0.6.1",
     }
     presets = {
         key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset for key in expected_versions
@@ -999,6 +999,27 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
 
 def test_sdlc_source_and_local_verification_repair_contracts() -> None:
     loader = AgentPresetLoader()
+    for role in ("planning", "test-designer", "delivery", "delivery-reviewer"):
+        source = loader.describe_preset(key=f"stackos.sdlc.{role}").preset
+        local = tomllib.loads((REPO_ROOT / f".codex/agents/sdlc-{role}.toml").read_text())
+        for text in (" ".join(source.prompt_contract.must_do), local["developer_instructions"]):
+            for requirement in (
+                "one live session per profile_key",
+                "authorized same-profile session",
+                "ticket-owned tab",
+                "--tab-id",
+                "preserve other tabs",
+                "separate permitted profile or explicit quiescent handoff",
+                "Native agent thread/session retention does not require keeping a browser open",
+                "denied optional tool call alone does not stop the assignment",
+                "Never bypass the denial or repeat the denied action through another tool",
+                "continue unaffected checks",
+                "write denial stops that write and dependent work, not unrelated checks",
+                "Required proof still unavailable must return blocked",
+                "never report unexecuted or failed checks as passed",
+                "Native agent launch/access/model/resume failures retain the task-stop contract",
+            ):
+                assert requirement in text, (role, requirement)
     for role in ("planning", "test-designer", "delivery-reviewer"):
         source = loader.describe_preset(key=f"stackos.sdlc.{role}").preset
         source_text = " ".join(source.prompt_contract.must_do)

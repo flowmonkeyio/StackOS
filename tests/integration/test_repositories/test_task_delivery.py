@@ -141,6 +141,10 @@ def test_agent_reopen_rescans_dependencies_and_resumes_original_sessions(
         status = "success"
         outputs = {}
         if key == "producer":
+            if phase == "delivery":
+                assert "a denial stops this task" not in packet["assignment"]
+                assert "continue unaffected checks" in packet["assignment"]
+                assert "Missing required proof remains blocked" in packet["assignment"]
             correcting = ticket["context_json"].get("correction") is not None
             if correcting:
                 assert ticket["context_json"] == {
@@ -1092,6 +1096,173 @@ def submit(session: Session, project_id: int, tmp_path: Path, scheduler: QueuedS
         extras={"session_factory": lambda: Session(session.get_bind()), "scheduler": scheduler},
     )
     return asyncio.run(tracker_start_delivery(arguments, context, None)).data
+
+
+@pytest.mark.parametrize("failure", ["native", "candidate", "blocked"])
+@pytest.mark.parametrize(
+    "requeue",
+    [
+        "same",
+        "tracked-change",
+        "untracked-change",
+        "index-change",
+        "session-change",
+        "dirty-success",
+    ],
+)
+def test_dirty_delivery_requeue_requires_unchanged_owned_work_and_saved_session(
+    session, project_id, tmp_path, monkeypatch, failure, requeue
+):
+    from stackos import task_delivery
+
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="deliver", title="Deliver")
+    repo.create_ticket(project_id=project_id, task_key="deliver", key="first", title="First")
+    base = git(tmp_path, "rev-parse", "HEAD")
+    calls = []
+
+    def run_agent(*args, **kwargs):
+        packet = json.loads(args[3])
+        phase = packet["phase"]
+        calls.append((phase, kwargs.get("resume_thread_id")))
+        if len(calls) == 1:
+            (tmp_path / "baseline").write_text("staged edit")
+            git(tmp_path, "add", "baseline")
+            (tmp_path / "baseline").write_text("unstaged edit")
+            (tmp_path / "new-file").write_text("new work")
+            if failure == "native":
+                return scenario_result(1, thread_id="first-delivery", error="Interrupted")
+            return scenario_result(
+                0,
+                thread_id="first-delivery",
+                result=generic_result(
+                    "blocked" if failure == "blocked" else "success",
+                    {"commit_sha": base},
+                    "Commit unfinished",
+                ),
+            )
+        if phase == "delivery":
+            assert kwargs["resume_thread_id"] == "first-delivery"
+            assert packet["candidate"]["base_commit_sha"] == base
+            if requeue == "dirty-success":
+                # Omitting a SHA must not bypass the clean candidate gate either.
+                return scenario_result(0, thread_id="first-delivery", result=generic_result())
+            git(tmp_path, "add", "baseline", "new-file")
+            git(tmp_path, "commit", "-m", "Finish original work")
+        return scenario_result(
+            0,
+            thread_id=f"first-{phase}",
+            result=generic_result(outputs={"commit_sha": git(tmp_path, "rev-parse", "HEAD")}),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", run_agent)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    ticket = repo.brief(project_id=project_id, ticket_key="first").ticket
+    assert ticket.status == "failed"
+    evidence = ticket.completion_evidence_json["automatic_delivery"]
+    receipt = evidence["owned_work"]
+    assert receipt["base_commit_sha"] == base
+    assert receipt["session"] == evidence["sessions"]["delivery"]
+    assert receipt["source"] == "delivery_return"
+    assert receipt["snapshot"]["paths"] == ["baseline", "new-file"]
+    assert "unstaged edit" not in json.dumps(receipt)
+    if requeue == "tracked-change":
+        (tmp_path / "baseline").write_text("someone else's edit")
+    elif requeue == "untracked-change":
+        (tmp_path / "other-file").write_text("someone else's work")
+    elif requeue == "index-change":
+        git(tmp_path, "add", "baseline")  # Same final bytes, different staged content.
+    elif requeue == "session-change":
+        evidence["sessions"]["delivery"]["thread_id"] = "different-session"
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="first",
+            patch_json={"completion_evidence_json": {"automatic_delivery": evidence}},
+        )
+    repo.update_ticket(
+        project_id=project_id, ticket_key="first", patch_json={"status": "in-progress"}
+    )
+    repo.update_ticket(
+        project_id=project_id, ticket_key="first", patch_json={"status": "not-started"}
+    )
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    ticket = repo.brief(project_id=project_id, ticket_key="first").ticket
+    final = ticket.completion_evidence_json["automatic_delivery"]
+    assert final["attempts"][0]["owned_work"] == receipt
+    assert final["attempts"][0]["candidate"]["base_commit_sha"] == base
+    if requeue == "same":
+        assert calls == [("delivery", None), ("delivery", "first-delivery"), ("review", None)]
+        assert ticket.status == "complete"
+        assert final["candidate"]["base_commit_sha"] == base
+        assert not git(tmp_path, "status", "--porcelain")
+        assert "owned_work" not in final
+    else:
+        assert ticket.status == "failed"
+        assert len(calls) == (2 if requeue == "dirty-success" else 1)
+        assert "dirty" in ticket.outcome.lower()
+
+
+def test_fresh_dirty_delivery_never_launches_or_adopts_work(
+    session, project_id, tmp_path, monkeypatch
+):
+    from stackos import task_delivery
+
+    prepared_task(session, project_id)
+    (tmp_path / "unrelated").write_text("preserve this")
+    monkeypatch.setattr(task_delivery, "run_agent", lambda *args, **kwargs: pytest.fail("launched"))
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    ticket = TrackerRepository(session).brief(project_id=project_id, ticket_key="first").ticket
+    assert ticket.status == "failed"
+    assert "dirty" in ticket.outcome
+    assert "owned_work" not in ticket.completion_evidence_json["automatic_delivery"]
+    assert (tmp_path / "unrelated").read_text() == "preserve this"
+
+
+def test_operator_adopts_legacy_dirty_work_without_replacing_original_baseline(tmp_path):
+    from stackos import task_delivery
+
+    original_base = git(tmp_path, "rev-parse", "HEAD")
+    new_head = commit(tmp_path, "runtime-fix")
+    identity = {
+        "agent": "builder",
+        "host_key": "codex",
+        "project_dir": str(tmp_path),
+        "thread_id": "original-session",
+    }
+    evidence = {"candidate": {"base_commit_sha": original_base}, "sessions": {"delivery": identity}}
+    (tmp_path / "baseline").write_text("original unfinished work")
+    with pytest.raises(ValidationError, match="dirty"):
+        task_delivery._launch_baseline(str(tmp_path), "first", evidence, "delivery", identity)
+    receipt = task_delivery._owned_work_receipt(
+        str(tmp_path),
+        "first",
+        evidence,
+        operator_recovery={
+            "actor": "operator",
+            "reason": "Reviewed original failed session files; resume authorized",
+        },
+    )
+    evidence["owned_work"] = receipt
+    assert receipt["source"] == "operator_recovery"
+    assert receipt["snapshot"]["head_commit_sha"] == new_head
+    assert task_delivery._launch_baseline(
+        str(tmp_path), "first", evidence, "delivery", identity
+    ) == {"base_commit_sha": original_base}
+    for key, phase, native in [
+        ("other-ticket", "delivery", identity),
+        ("first", "review", identity),
+        ("first", "delivery", {**identity, "thread_id": "other-session"}),
+    ]:
+        with pytest.raises(ValidationError, match="dirty"):
+            task_delivery._launch_baseline(str(tmp_path), key, evidence, phase, native)
 
 
 def test_role_host_model_provider_reach_launch_and_receipt(

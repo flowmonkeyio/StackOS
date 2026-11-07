@@ -19,7 +19,9 @@ const priorityClass = computed(() => `ticket-graph-node--priority-${props.data.p
 const statusLabel = computed(
   () => resolveStatus('tracker', props.data.status as TrackerStatus).label,
 )
-const displayedStateLabel = computed(() => (props.data.active ? 'Active now' : statusLabel.value))
+const displayedStateLabel = computed(() => props.data.deliveryStopped
+  ? resolveStatus('delivery', 'stopped').label
+  : props.data.active ? 'Active now' : statusLabel.value)
 const ownerLabel = computed(() => identityLabel(props.data.owner) ?? 'Unassigned')
 const agentLabel = computed(() => identityLabel(props.data.agent) ?? 'Not recorded')
 const sourceLabel = computed(() => humanize(props.data.sourceKind) ?? 'Tracker')
@@ -57,7 +59,7 @@ function humanize(value: string | null | undefined): string | null {
       priorityClass,
       {
         'ticket-graph-node--blocked': isBlocked,
-        'ticket-graph-node--active': data.active,
+        'ticket-graph-node--active': data.active && !data.deliveryStopped,
         'ticket-graph-node--recent': data.recentlyUpdated,
       },
     ]"
@@ -80,34 +82,55 @@ function humanize(value: string | null | undefined): string | null {
     <span class="ticket-graph-node__priority">
       {{ data.priorityKey.toUpperCase() }}
     </span>
-    <div class="ticket-graph-node__floating-state">
+    <div
+      class="ticket-graph-node__floating-state"
+      :title="data.deliveryStopped ? data.deliveryStopReason ?? undefined : undefined"
+      :style="data.deliveryStopped ? { color: `var(--color-${resolveStatus('delivery', 'stopped').tone}-fg)` } : undefined"
+    >
       <span class="ticket-graph-node__dot" />
       <span>{{ displayedStateLabel }}</span>
       <strong v-if="!data.active && data.recentlyUpdated">Updated</strong>
     </div>
 
     <div class="ticket-graph-node__heading">
-      <p class="ticket-graph-node__title">
+      <p
+        class="ticket-graph-node__title"
+        :title="data.label"
+      >
         {{ data.label }}
       </p>
-      <span class="ticket-graph-node__key">{{ data.itemKey }}</span>
+      <span
+        class="ticket-graph-node__key"
+        :title="data.itemKey"
+      >{{ data.itemKey }}</span>
     </div>
 
-    <p v-if="data.subtitle" class="ticket-graph-node__subtitle">
+    <p
+      v-if="data.subtitle"
+      class="ticket-graph-node__subtitle"
+      :title="data.subtitle"
+    >
       {{ data.subtitle }}
     </p>
-    <p v-else class="ticket-graph-node__subtitle ticket-graph-node__subtitle--empty">
+    <p
+      v-else
+      class="ticket-graph-node__subtitle ticket-graph-node__subtitle--empty"
+    >
       No additional work context recorded.
     </p>
 
     <dl class="ticket-graph-node__people">
       <div>
         <dt>Owner</dt>
-        <dd>{{ ownerLabel }}</dd>
+        <dd :title="ownerLabel">
+          {{ ownerLabel }}
+        </dd>
       </div>
       <div>
         <dt>Agent</dt>
-        <dd>{{ agentLabel }}</dd>
+        <dd :title="agentLabel">
+          {{ agentLabel }}
+        </dd>
       </div>
     </dl>
 
@@ -120,12 +143,15 @@ function humanize(value: string | null | undefined): string | null {
     />
 
     <div class="ticket-graph-node__meta">
-      <span>{{ sourceLabel }}</span>
-      <span>{{ humanize(data.laneKey) }}</span>
+      <span :title="sourceLabel">{{ sourceLabel }}</span>
+      <span :title="humanize(data.laneKey) ?? undefined">{{ humanize(data.laneKey) }}</span>
       <span v-if="data.runPlanId">Run {{ data.runPlanId }}</span>
     </div>
 
-    <p v-if="isBlocked" class="ticket-graph-node__blocked">
+    <p
+      v-if="isBlocked"
+      class="ticket-graph-node__blocked"
+    >
       Blocked by {{ data.blockedBy?.join(', ') }}
     </p>
   </div>
@@ -139,12 +165,12 @@ function humanize(value: string | null | undefined): string | null {
   position: relative;
   box-sizing: border-box;
   width: var(--tracker-ticket-node-width, 328px);
-  min-height: var(--tracker-ticket-node-height, 248px);
+  min-height: var(--tracker-ticket-node-height, 200px);
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-md);
   background: var(--color-bg-surface);
   box-shadow: var(--shadow-xs);
-  padding: 22px 14px 12px 16px;
+  padding: 20px 14px 12px 16px;
 }
 
 .ticket-graph-node::before {
@@ -278,7 +304,7 @@ function humanize(value: string | null | undefined): string | null {
   overflow: hidden;
   min-width: 0;
   color: var(--color-fg-strong);
-  font-size: var(--fs-xs);
+  font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
   line-height: 1.35;
   -webkit-box-orient: vertical;
@@ -327,20 +353,18 @@ function humanize(value: string | null | undefined): string | null {
 
 .ticket-graph-node__people dt {
   color: var(--color-fg-subtle);
-  font-size: 8px;
+  font-size: 9px;
   font-weight: var(--fw-medium);
-  letter-spacing: 0.05em;
   line-height: 1;
-  text-transform: uppercase;
 }
 
 .ticket-graph-node__people dd {
   overflow: hidden;
   margin-top: 3px;
   color: var(--color-fg-default);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: var(--fw-medium);
-  line-height: 1.1;
+  line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -361,7 +385,7 @@ function humanize(value: string | null | undefined): string | null {
   overflow: hidden;
   margin-top: 8px;
   color: var(--color-fg-subtle);
-  font-size: 9px;
+  font-size: 10px;
   line-height: 1;
   white-space: nowrap;
 }

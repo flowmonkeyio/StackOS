@@ -10,9 +10,10 @@ import {
 } from '@/components/ui'
 import StatusBadge from '@/components/StatusBadge.vue'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
+import TaskDeliveryStop from '@/components/domain/TaskDeliveryStop.vue'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
-import { isAutomaticDeliveryTask } from '@/lib/task-tracker/delivery'
+import { isAutomaticDeliveryTask, taskDeliveryState } from '@/lib/task-tracker/delivery'
 import type { TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
 
 import { hasJsonObject } from './detailUtils'
@@ -23,6 +24,8 @@ const props = defineProps<{
   loading?: boolean
   error?: string | null
 }>()
+
+const delivery = computed(() => props.parentTask?.key === props.ticket?.task_key ? taskDeliveryState(props.parentTask) : null)
 
 const ticketFacts = computed(() => {
   const ticket = props.ticket
@@ -123,6 +126,12 @@ function relationSummary(ticket: TrackerTicket): string {
           </p>
         </div>
       </div>
+      <TaskDeliveryStop
+        v-if="delivery?.ticketKey === ticket.key"
+        :delivery="delivery"
+        :tickets="[ticket]"
+        detailed
+      />
       <AgentUsageSummary
         v-if="parentTask?.key === ticket.task_key && isAutomaticDeliveryTask(parentTask)"
         :metrics="ticket.agent_stats"

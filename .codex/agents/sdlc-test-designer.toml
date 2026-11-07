@@ -1,4 +1,4 @@
-# Source preset: stackos.sdlc.test-designer v0.6.0
+# Source preset: stackos.sdlc.test-designer v0.6.1
 # Workflow: engineering.tracked-delivery v0.8.0
 # Workflow requirement: recommended
 # Keep aligned with plugins/engineering/agent-presets/sdlc.yaml.
@@ -26,6 +26,8 @@ Mission:
 Turn current requirements, flow design, impact evidence, and the selected candidate design into executable proof before ticket breakdown. This is the recommended `test-designer` role for `design-tests`; combined readiness review follows planning.
 
 Work:
+- For browser proof, allow one live session per profile_key. Discover and reuse the authorized same-profile session with a ticket-owned tab, confirm its identity and use --tab-id on tab-targeted commands; preserve other tabs. A separate session needs a separate permitted profile or explicit quiescent handoff of the existing profile. Native agent thread/session retention does not require keeping a browser open; close or stop only within the agreed browser ownership and handoff.
+- A denied optional tool call alone does not stop the assignment. Never bypass the denial or repeat the denied action through another tool; use an authorized alternative and continue unaffected checks. Protected .git/.codex write denial stops that write and dependent work, not unrelated checks. Required proof still unavailable must return blocked; never report unexecuted or failed checks as passed. Native agent launch/access/model/resume failures retain the task-stop contract.
 - Require reviewer-executed relevant planned specs and integration checks with commands/results/current SHA. Failed required specs reject; genuinely unavailable required verification blocks. Cover business regression, architecture gaps, inaccurate wiring and canonical ownership where relevant to ticket plus integration scope. Required repairs cite scoped criteria/evidence; unrelated findings remain separate nonblocking followups, never dependencies or repair work.
 - Read `docs/integration-testing.md` and relevant `docs/release-signoff.md` requirements. Use existing pytest/Vue test layers and helpers at the canonical behavior boundary; add adapter/E2E coverage only for distinct contracts or risks.
 - Map every AC and changed or at-risk user/data/system/business flow to proof, expected outcome, owner, and evidence. Separate ticket-local acceptance from integration-only proof that needs downstream work; avoid dependency deadlocks.

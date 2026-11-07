@@ -81,6 +81,14 @@ export const trackerStatus = defineStatuses({
   skipped: { label: 'Skipped', tone: 'neutral', icon: 'skip-forward' },
 });
 
+// Task execution metadata does not change its tracker/workflow lifecycle.
+export const deliveryStatus = defineStatuses({
+  queued: { label: 'Delivery queued', tone: 'neutral', icon: 'clock' },
+  running: { label: 'Delivering', tone: 'info', icon: 'loader', dot: true, inFlight: true },
+  stopped: { label: 'Delivery stopped', tone: 'warning', icon: 'pause' },
+  complete: { label: 'Delivery complete', tone: 'success', icon: 'check-circle' },
+});
+
 export const projectState = defineStatuses({
   archived: { label: 'Archived', tone: 'neutral', icon: 'archive' },
   setup: { label: 'Setup', tone: 'info', icon: 'settings' },
@@ -180,6 +188,7 @@ export const statusRegistry = {
   run: runStatus,
   step: stepStatus,
   tracker: trackerStatus,
+  delivery: deliveryStatus,
   project: projectState,
   integration: integrationHealth,
   budget: budgetState,

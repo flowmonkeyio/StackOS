@@ -13,6 +13,22 @@ const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
 const automaticMetadata = { delivery: { status: 'running', job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent } }
 
 describe('Work board presentation', () => {
+  it('shows stopped delivery without moving the task column and clears it after resume', async () => {
+    const metadata = { delivery: { ...automaticMetadata.delivery, status: 'stopped', ticket_key: 'fix-chart', reason: 'Browser access denied.' } }
+    const record = { ...task('in-progress'), metadata_json: metadata }
+    const rows = () => buildTaskProgressRows([structuredClone(record)], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
+    const wrapper = mount(TrackerBoardPanel, { props: { rows: rows() } })
+    const card = wrapper.get('[aria-label="In Progress"] button')
+    expect(card.text()).toContain('Automated')
+    expect(card.text()).toContain('Delivery stopped')
+    expect(card.text()).toContain('fix-chart')
+    expect(card.get('.task-delivery-stop').attributes('title')).toBe('Browser access denied.')
+    expect(card.find('.task-delivery-stop__reason').exists()).toBe(false)
+    record.metadata_json.delivery.status = 'running'
+    await wrapper.setProps({ rows: rows() })
+    expect(wrapper.get('[aria-label="In Progress"] button').text()).not.toContain('Delivery stopped')
+    expect(wrapper.find('.task-delivery-stop').exists()).toBe(false)
+  })
   it('indicates persisted automatic delivery and removes the badge when task metadata changes', async () => {
     const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
     const record = task('in-progress')
@@ -172,8 +188,12 @@ describe('Work board presentation', () => {
     expect(wrapper.find('.tracker-command-panel__usage').exists()).toBe(false)
     expect(wrapper.get('.ui-badge').text()).toBe('Automated')
     expect(wrapper.get('.ui-badge').classes()).toContain('text-info-fg')
+    await wrapper.setProps({ taskDelivery: { status: 'stopped', ticketKey: 'fix-chart', reason: 'Browser access denied.' } })
+    expect(wrapper.get('.tracker-command-panel__delivery').text()).toContain('Delivery stopped')
+    expect(wrapper.get('.tracker-command-panel__delivery').text()).toContain('fix-chart')
     await wrapper.setProps({ taskAvailable: false })
     expect(wrapper.find('.tracker-command-panel__usage').exists()).toBe(false)
+    expect(wrapper.find('.task-delivery-stop').exists()).toBe(false)
   })
 })
 

@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.0
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.1
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Workflow: `engineering.tracked-delivery` v0.8.0 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -151,8 +151,8 @@ and limitations in launch receipts.
 
 Each source-change ticket produces a separate scoped commit after focused checks,
 then receives independent exact-commit review. Both receipts name full
-`commit_sha`. Protected `.git`/`.codex` writes use normal approval review; stop on
-denial. Automatic delivery mechanically records approved child results and
+`commit_sha`. Protected `.git`/`.codex` writes use normal approval review; stop
+the denied write without bypass. Automatic delivery mechanically records approved child results and
 advances serially. A valid scoped rejection is persisted before one automatic
 repair pass in the same native delivery session; require a separate new descendant
 repair commit, then resume the same independent review session on that exact SHA.
@@ -250,6 +250,20 @@ provider live proof or migration rehearsal. Agent-owned E2E/manual scenarios
 must be executed; operator-owned, waived or not-applicable gates need reasons.
 Login-dependent proof uses the planned stable StackOS browser `profile_key`,
 with operator-login prerequisites and cookie/session reuse made explicit.
+Plan one live browser session per `profile_key`. Discover and reuse the authorized
+same-profile session with a ticket-owned tab; confirm its identity, use `--tab-id`
+on tab-targeted commands and preserve other tabs. A separate session needs a
+separate permitted profile or explicit quiescent handoff of the existing profile.
+Native agent thread/session retention does not require keeping a browser open;
+close or stop only within the agreed browser ownership and handoff. Follow
+`docs/browser-automation.md` for lifecycle and tab selection.
+
+A denied optional tool call alone does not stop the assignment. Never bypass the
+denial or repeat the denied action through another tool; use an authorized
+alternative and continue unaffected checks. Protected `.git`/`.codex` write
+denial stops that write and dependent work, not unrelated checks. Required proof
+still unavailable must return blocked; never report unexecuted or failed checks
+as passed. Native agent launch/access/model/resume failures retain the task-stop contract.
 
 The main agent adjudicates reviewer claims against the operator contract and
 actual code/evidence: required fix, already covered, unsupported, out of scope,

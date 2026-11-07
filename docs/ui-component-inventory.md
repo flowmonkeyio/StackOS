@@ -137,8 +137,19 @@ dividers, missing-field copy or reserved empty space.
 `Automated` sits with task identity/status and uses the unchanged persisted
 delivery predicate, including stopped and complete executions, with the existing
 subtle info badge tone on Board, Graph toolbar and task details. Ticket geometry
-is centrally defined as 328 × 248px in `lib/task-tracker/graphModel.ts`, including
-layout, CSS variables and minimap consumers. Usage remains secondary within it.
+is centrally defined as 328 × 200px in `lib/task-tracker/graphModel.ts`, including
+layout, CSS variables and minimap consumers. Titles and status lead the compact
+card; owner/agent labels and a quiet provenance footer organize its metadata.
+Clamped titles, context and identities retain their full values on hover.
+Usage remains secondary within it.
+
+`TaskDeliveryStop` renders the shared `taskDeliveryState` projection separately
+from canonical tracker/workflow status: Board and Graph show a compact
+“Delivery stopped” notice with the recorded ticket; task and owning-ticket
+details also expose its reason. Loaded ticket titles are preferred, with the
+recorded key as fallback. Resuming clears the stop notice and stale reason.
+Graph focus remains available while a stopped task never presents a node as
+“Active now”; only the recorded stopped ticket gets the stop marker.
 
 Route views are composition roots, not feature implementations. Use the
 following ownership split for new work and when a touched view has accumulated

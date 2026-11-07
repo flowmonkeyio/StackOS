@@ -9,6 +9,7 @@ from collections.abc import Callable, Mapping
 from copy import deepcopy
 from dataclasses import asdict
 from datetime import UTC, datetime
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -80,7 +81,7 @@ def _workflow_scope(repo, project_id, task, run_plan_id, step_id, *, starting=Fa
     return context["parent_ticket_key"]
 
 
-def _git(project_dir: str, *args: str) -> str:
+def _git(project_dir: str, *args: str, strip: bool = True) -> str:
     process = subprocess.run(
         ["git", "-C", project_dir, *args],
         capture_output=True,
@@ -90,7 +91,7 @@ def _git(project_dir: str, *args: str) -> str:
     if process.returncode:
         reason = process.stderr.strip() or f"{args[0]} exited with status {process.returncode}"
         raise ValidationError(f"Git candidate check failed: {reason}")
-    return process.stdout.strip()
+    return process.stdout.strip() if strip else process.stdout
 
 
 def _committed_head(project_dir: str) -> str:
@@ -118,6 +119,83 @@ def _baseline(project_dir: str) -> dict[str, str]:
     if any((parent / ".git").exists() for parent in (directory, *directory.parents)):
         return {"base_commit_sha": _committed_head(project_dir)}
     return {}
+
+
+def _worktree_snapshot(project_dir: str) -> dict[str, Any]:
+    """Fingerprint staged, unstaged and untracked work without storing contents."""
+    root = Path(_git(project_dir, "rev-parse", "--show-toplevel"))
+    paths: set[str] = set()
+    snapshot: dict[str, Any] = {
+        "head_commit_sha": _git(project_dir, "rev-parse", "HEAD"),
+    }
+    for label, args in (("staged", ("--cached",)), ("unstaged", ())):
+        diff = _git(
+            str(root), "diff", "--binary", "--no-ext-diff", "--no-textconv", *args, strip=False
+        )
+        snapshot[label] = sha256(diff.encode()).hexdigest()
+        paths.update(
+            filter(
+                None, _git(str(root), "diff", "--name-only", "-z", *args, strip=False).split("\0")
+            )
+        )
+    snapshot["untracked"] = {}
+    for name in filter(
+        None,
+        _git(str(root), "ls-files", "--others", "--exclude-standard", "-z", strip=False).split(
+            "\0"
+        ),
+    ):
+        path = root / name
+        contents = str(path.readlink()).encode() if path.is_symlink() else path.read_bytes()
+        snapshot["untracked"][name] = {
+            "sha256": sha256(contents).hexdigest(),
+            "mode": path.lstat().st_mode,
+        }
+        paths.add(name)
+    snapshot["paths"] = sorted(paths)
+    return snapshot
+
+
+def _owned_work_receipt(
+    project_dir: str,
+    ticket_key: str,
+    evidence: dict[str, Any],
+    *,
+    operator_recovery: dict[str, str] | None = None,
+) -> dict[str, Any] | None:
+    """Capture a returned delivery, or an explicitly reviewed legacy recovery."""
+    base = evidence.get("candidate", {}).get("base_commit_sha")
+    native_session = evidence.get("sessions", {}).get("delivery")
+    if not base or not native_session or not native_session.get("thread_id"):
+        return None
+    snapshot = _worktree_snapshot(project_dir)
+    if not snapshot["paths"]:
+        return None
+    return {
+        "ticket_key": ticket_key,
+        "base_commit_sha": base,
+        "session": deepcopy(native_session),
+        "snapshot": snapshot,
+        "source": "operator_recovery" if operator_recovery else "delivery_return",
+        "captured_at": datetime.now(UTC).isoformat(),
+        **({"operator_recovery": deepcopy(operator_recovery)} if operator_recovery else {}),
+    }
+
+
+def _launch_baseline(project_dir, ticket_key, evidence, phase, native_session):
+    receipt = evidence.get("owned_work")
+    if (
+        phase == "delivery"
+        and native_session
+        and receipt
+        and receipt.get("ticket_key") == ticket_key
+        and receipt.get("session") == native_session
+        and receipt.get("base_commit_sha") == evidence.get("candidate", {}).get("base_commit_sha")
+        and receipt.get("snapshot") == _worktree_snapshot(project_dir)
+    ):
+        return {"base_commit_sha": receipt["base_commit_sha"]}
+    # A fresh launch, changed work, another role or another session still needs clean Git.
+    return _baseline(project_dir)
 
 
 def _descendants(tickets, parent_key):
@@ -297,7 +375,7 @@ def _archive_attempt(evidence: dict[str, Any]) -> None:
         evidence.setdefault("attempts", []).append(
             {
                 key: deepcopy(evidence[key])
-                for key in ("attempt", "candidate", "delivery", "review")
+                for key in ("attempt", "candidate", "delivery", "review", "owned_work")
                 if key in evidence
             }
         )
@@ -487,7 +565,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                     (selected.completion_evidence_json or {}).get("automatic_delivery", {})
                 )
                 _archive_attempt(evidence)
-                evidence["candidate"] = _baseline(state["project_dir"])
+                baseline_pending = True
                 role = state["agent_assignments"].get(ticket_key, "delivery_agent")
                 if workflow_step is None:
                     repo.update_ticket(
@@ -536,6 +614,11 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                     resume_thread_id = native_session["thread_id"]
                 elif any(phase in attempt for attempt in evidence["attempts"]):
                     raise ValidationError(f"Cannot resume {phase}: missing native session ID")
+                if baseline_pending:
+                    evidence["candidate"] = _launch_baseline(
+                        state["project_dir"], ticket_key, evidence, phase, native_session
+                    )
+                    baseline_pending = False
                 launch = {
                     **identity,
                     "sandbox": sandbox,
@@ -603,7 +686,9 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                                     "need no fabricated commit. Return optional commit_sha "
                                     "inside outputs. "
                                     "Use normal approval review for authorized .git/.codex writes; "
-                                    "a denial stops this task. Never bypass it. "
+                                    "a denial stops that write and its dependent work. Never bypass "
+                                    "the denial; continue unaffected checks and authorized "
+                                    "alternatives. Missing required proof remains blocked. "
                                     "When review_result is present, repair only "
                                     "its scoped findings, run "
                                     "focused checks and create a new descendant commit."
@@ -700,6 +785,10 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                         outputs = json.loads(value["outputs"])
                         if not isinstance(outputs, dict):
                             raise ValidationError("outputs must encode a JSON object")
+                        if decision in {"success", "repair"} and evidence["candidate"].get(
+                            "base_commit_sha"
+                        ):
+                            _committed_head(state["project_dir"])
                         returned_sha = outputs.get("commit_sha")
                         previous_candidate: dict[str, Any] = next(
                             (
@@ -745,6 +834,17 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                 # Error receipts can still identify the exact native session for explicit requeue.
                 elif native_session is None and result.thread_id:
                     sessions[phase] = {**identity, "thread_id": result.thread_id}
+
+                if (
+                    phase == "delivery"
+                    and result.thread_id
+                    and sessions.get("delivery") == {**identity, "thread_id": result.thread_id}
+                ):
+                    receipt = _owned_work_receipt(state["project_dir"], ticket_key, evidence)
+                    if receipt:
+                        evidence["owned_work"] = receipt
+                    else:
+                        evidence.pop("owned_work", None)
 
                 if workflow_step is None and valid:
                     evidence[phase]["validated_outcome"] = decision

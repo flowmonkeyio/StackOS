@@ -51,7 +51,7 @@ async function render(url = '/projects/7/tasks', realDialogs = false) {
     attachTo: realDialogs ? document.body : undefined,
     global: { plugins: [router, createPinia()], stubs: {
       ProjectPageHeader: { template: '<header><slot name="actions" /></header>' },
-      TaskTrackerCommandPanel: { name: 'TaskTrackerCommandPanel', props: ['viewMode','activeTaskKey','taskOptions','search','filtersActive','taskAgentStats','taskAutomated'], template: '<nav />' },
+      TaskTrackerCommandPanel: { name: 'TaskTrackerCommandPanel', props: ['viewMode','activeTaskKey','taskOptions','search','filtersActive','taskAgentStats','taskAutomated','taskDelivery'], template: '<nav />' },
       TrackerBoardPanel: { name: 'TrackerBoardPanel', props: ['rows'], template: '<section data-test="board" />' },
       TrackerGraphPanel: { name: 'TrackerGraphPanel', props: ['loading','activeTaskTitle','selectedTicket','selectionVisible','selectionLabel','flow'], template: '<section data-test="graph" />' },
       TrackerWarningSummary: true,
@@ -66,6 +66,30 @@ async function render(url = '/projects/7/tasks', realDialogs = false) {
 const popup = () => new DOMWrapper(document.body)
 
 describe('Work board navigation', () => {
+  it('refreshes stopped delivery in the header, graph and inspector without changing task lifecycle', async () => {
+    const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
+    const delivery = { status: 'stopped', ticket_key: ticketA.key, reason: 'Browser access denied.', job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent }
+    const automatic = { ...taskA, metadata_json: { delivery } }
+    dataMock([automatic, taskB], [ticketA, ticketB], true)
+    const { wrapper, controls, board } = await render('/projects/7/tasks?view=graph&task=task-a')
+    const graph = () => wrapper.findComponent({ name: 'TrackerGraphPanel' })
+    expect(controls().props('taskDelivery')).toEqual({ status: 'stopped', ticketKey: ticketA.key, reason: delivery.reason })
+    expect(graph().props('flow').nodes[0].data).toMatchObject({ active: false, deliveryStopped: true })
+    expect(board().props('rows').find((row: { key: string }) => row.key === taskA.key).task.status).toBe(taskA.status)
+    graph().vm.$emit('node-click', { event: { stopPropagation: vi.fn() }, node: graph().props('flow').nodes[0] })
+    await flushPromises()
+    expect(wrapper.findComponent({ name: 'TrackerTicketDetailPanel' }).props('parentTask').metadata_json.delivery.status).toBe('stopped')
+    const resumed = { ...automatic, metadata_json: { delivery: { ...delivery, status: 'running' } } }
+    dataMock([resumed, taskB], [ticketA, ticketB], true)
+    mocks.stream.mock.calls.at(-1)![0].onEvent({ id: 9902, event_type: 'tracker.task.updated', metadata_json: { task_key: 'task-a' } })
+    await flushPromises()
+    expect(controls().props('taskDelivery')).toEqual({ status: 'running', ticketKey: ticketA.key, reason: null })
+    expect(graph().props('flow').nodes[0].data.deliveryStopped).toBe(false)
+    controls().vm.$emit('taskSelect', 'task-b')
+    await flushPromises()
+    expect(controls().props('taskDelivery')).toBeNull()
+    wrapper.unmount()
+  })
   it('keeps board/header totals whole through graph filtering, task switching and live refresh', async () => {
     const alpha = agentStatsFixture().totals
     const beta = structuredClone(alpha)

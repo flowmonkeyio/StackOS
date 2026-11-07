@@ -3,10 +3,11 @@ import { computed } from 'vue'
 import { UiBadge, UiIcon } from '@/components/ui'
 import { trackerStatus } from '@/design/status'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
+import TaskDeliveryStop from '@/components/domain/TaskDeliveryStop.vue'
 import { resolveAgentOwnerLogo } from '@/lib/stackos/agentIdentity'
 import { formatAbsoluteDateTime, formatShortDate } from '@/lib/stackos/time'
 import type { TrackerStatus } from '@/lib/task-tracker/types'
-import { isAutomaticDeliveryTask } from '@/lib/task-tracker/delivery'
+import { isAutomaticDeliveryTask, taskDeliveryState } from '@/lib/task-tracker/delivery'
 import type { TaskProgressRow } from './viewTypes'
 
 const props = defineProps<{ rows: TaskProgressRow[]; selectedTaskKey?: string }>()
@@ -68,6 +69,7 @@ function initials(owner: string): string {
             class="tracker-board__title"
             :title="row.task.title"
           >{{ row.task.title }}</span>
+          <TaskDeliveryStop :delivery="taskDeliveryState(row.task)" />
           <AgentUsageSummary
             v-if="isAutomaticDeliveryTask(row.task)"
             :metrics="row.task.agent_stats"

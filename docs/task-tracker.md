@@ -627,7 +627,17 @@ to clean current HEAD and descend from the observed base. Observation work may
 cite unchanged HEAD. Engineering guidance still requires separate source-change
 and repair commits; a supplied repair candidate must be a new descendant.
 Invalid/mismatched candidates, dirty Git state and review of a different SHA stop
-the task. Preserve unrelated dirty work and reconcile it before handoff.
+the task. Preserve unrelated dirty work and reconcile it before handoff. A returned
+delivery that leaves unfinished Git changes records an `owned_work` receipt in the
+ticket's `automatic_delivery` evidence: original base, current HEAD, exact native
+session identity, affected paths and hashes of staged, unstaged and untracked work.
+Explicit requeue can resume that same ticket/session with those exact unchanged
+files; it retains the original base and archives the earlier attempt and receipt.
+Fresh dirty work, changed snapshots, other tickets and other role sessions still
+fail before launch. Legacy failures without a receipt need explicit operator
+review/adoption using the same snapshot helper, with actor and reason recorded;
+there is no general allow-dirty switch. A successful or repair result still requires
+clean Git before review or advancement, including when its outputs omit a SHA.
 Independent tasks retain the existing parent-task rollup. An active duplicate
 handoff for the same scope returns the current execution instead
 of scheduling another job. Inspect the full task metadata and ticket evidence
@@ -635,7 +645,9 @@ with `tracker.get` using `response_mode="raw"`.
 
 Codex delivery and review use `--approve-for-me` for workspace-write execution with
 automatic approval review; authorized `.git` and `.codex` writes go through
-normal escalation and a denial stops the task. Review instructions prohibit
+normal escalation. A denial stops that write and dependent work without bypass;
+unaffected checks and authorized alternatives may continue. Unavailable required
+proof still blocks acceptance. Review instructions prohibit
 production-file, acceptance-test and commit changes while permitting ordinary
 test outputs. Reasoning settings remain inherited; native mode comes from the
 shared `agent_review_sandbox` capability owner, not guidance or a permission bypass.

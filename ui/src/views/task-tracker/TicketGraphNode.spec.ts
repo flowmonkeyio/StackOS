@@ -7,6 +7,37 @@ import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 import TicketGraphNode from './TicketGraphNode.vue'
 
 describe('TicketGraphNode', () => {
+  it('keeps full ticket context and identities discoverable when compact labels truncate', () => {
+    const data = nodeData({
+      label: 'A long ticket title with enough detail to exceed two lines in the compact graph card',
+      itemKey: 'a-very-long-ticket-key-with-required-scope-and-provenance',
+      subtitle: 'A longer description that remains available without expanding the graph card.',
+      owner: 'A very long delivery owner name',
+      agent: 'A very long project agent name',
+    })
+    const wrapper = mount(TicketGraphNode, {
+      props: { data },
+      global: { stubs: { Handle: true } },
+    })
+    expect(wrapper.get('.ticket-graph-node__title').attributes('title')).toBe(data.label)
+    expect(wrapper.get('.ticket-graph-node__key').attributes('title')).toBe(data.itemKey)
+    expect(wrapper.get('.ticket-graph-node__subtitle').attributes('title')).toBe(data.subtitle)
+    expect(wrapper.findAll('.ticket-graph-node__people dd').map(value => value.attributes('title'))).toEqual([
+      data.owner,
+      data.agent,
+    ])
+  })
+
+  it('shows the recorded stop instead of treating focus as a running agent', () => {
+    const wrapper = mount(TicketGraphNode, {
+      props: { data: nodeData({ active: true, status: 'failed', deliveryStopped: true, deliveryStopReason: 'Browser access denied.' }) },
+      global: { stubs: { Handle: true } },
+    })
+    expect(wrapper.text()).toContain('Delivery stopped')
+    expect(wrapper.text()).not.toContain('Active now')
+    expect(wrapper.classes()).not.toContain('ticket-graph-node--active')
+    expect(wrapper.get('.ticket-graph-node__floating-state').attributes('title')).toBe('Browser access denied.')
+  })
   it('omits usage without parent automation identity even with measured tokens', async () => {
     const wrapper = mount(TicketGraphNode, { props: { data: nodeData({ agentStats: agentStatsFixture().totals }) }, global: { stubs: { Handle: true } } })
     expect(wrapper.find('.agent-usage-summary').exists()).toBe(false)

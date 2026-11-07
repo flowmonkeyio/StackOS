@@ -45,6 +45,18 @@ login/MFA in the selected profile, then keep reusing its `profile_key`. Differen
 profiles have separate cookies and storage. One live process owns a profile;
 another session cannot use it concurrently.
 
+Plan one live session per `profile_key`. Discover and reuse the authorized
+same-profile session, assigning each ticket its own tab and preserving other
+tabs. A different `session_key` does not isolate the profile. A separate session
+needs a separate permitted profile or an explicit handoff after the current
+owner has finished its browser work and stopped the session. Do not replace a
+required authenticated profile with a throwaway profile.
+
+Retaining an agent's native thread/session for feedback is separate from browser
+lifecycle. It does not require leaving the browser open forever. Close only
+ticket-owned tabs; stop a shared session only within the agreed ownership and
+handoff, after other users' browser work is quiescent.
+
 For background work in an existing tab, read native `tabs`, confirm the target
 ID, and append upstream `--tab-id <id>` to each command:
 
@@ -85,6 +97,14 @@ its requested command does, including native startup and recovery.
 Native commands can stop or restart the selected browser. Later StackOS session
 observations reconcile its state. `browser.session.stop` remains available for
 StackOS-managed shutdown and waits for observed process/state retirement.
+
+Respect denied actions without bypassing them through another tool. Use an
+authorized alternative and continue unaffected checks when an optional tool
+call is denied. A protected `.git`/`.codex` write denial stops that write and
+dependent work, not unrelated browser checks. If required proof remains
+unavailable, report it as blocked; never turn missing or failed proof into a
+pass. Native agent launch/access/model/resume failures retain their task-stop
+contract.
 
 ## Context And Discovery
 
