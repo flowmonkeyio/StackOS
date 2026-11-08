@@ -275,11 +275,20 @@ def _timeline_stream(
             if usage != previous_usage or page.items:
                 updates = None
                 if project_id is not None:
+                    affected = [
+                        item.metadata_json
+                        for item in page.items
+                        if isinstance(item.metadata_json, dict)
+                        and isinstance(item.metadata_json.get("task_key"), str)
+                        and isinstance(item.metadata_json.get("ticket_key"), str)
+                    ]
                     with Session(engine) as session:
                         updates = usage_refresh(
                             session,
                             project_id,
-                            None if previous_usage is None else [*usage, *previous_usage],
+                            None
+                            if previous_usage is None
+                            else [*usage, *previous_usage, *affected],
                         )
                         updates["replace"] = previous_usage is None
                 yield sse_frame(

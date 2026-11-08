@@ -27,8 +27,8 @@ describe('one shared usage transport', () => {
     stop()
   })
   it('shares scoped subscriptions, releases hidden/unmounted consumers and keeps global scope separate', () => {
-    const first = vi.fn(), second = vi.fn(), other = vi.fn()
-    const one = subscribeUsageUpdates(1, { usage: first })
+    const first = vi.fn(), second = vi.fn(), other = vi.fn(), status = vi.fn()
+    const one = subscribeUsageUpdates(1, { usage: first, status })
     const two = subscribeUsageUpdates(1, { usage: second })
     const global = subscribeUsageUpdates(null, { usage: other })
     expect(openTrackerStatusStream).toHaveBeenCalledTimes(2)
@@ -36,6 +36,9 @@ describe('one shared usage transport', () => {
     projectStream.onUsage?.()
     expect(first).toHaveBeenCalledTimes(1); expect(second).toHaveBeenCalledTimes(1); expect(other).not.toHaveBeenCalled()
     projectStream.onEvent({ id: 1, event_type: 'tracker.execution.changed' } as never)
+    expect(status).toHaveBeenCalledTimes(1)
+    projectStream.onEvent({ id: 2, event_type: 'tracker.usage.changed' } as never)
+    expect(status).toHaveBeenCalledTimes(1)
     // The server emits one usage refresh per cycle, including final receipt
     // events. Its durable status companion must not reload analytics again.
     expect(first).toHaveBeenCalledTimes(1); expect(second).toHaveBeenCalledTimes(1)

@@ -50,7 +50,11 @@ function open(channel: Channel): void {
       }
       channel.listeners.forEach((listener) => listener.usage(updates))
     },
-    onEvent: (event) => channel.listeners.forEach((listener) => listener.status?.(event)),
+    onEvent: (event) => {
+      // Its usage frame already refreshed every consumer. Receipt-only writes
+      // do not require a second whole-page Work/status reload.
+      if (event.event_type !== 'tracker.usage.changed') channel.listeners.forEach((listener) => listener.status?.(event))
+    },
     onError: (cause) => channel.listeners.forEach((listener) => listener.error?.(cause)),
   })
 }

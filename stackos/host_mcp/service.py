@@ -60,6 +60,7 @@ class ActiveInvocation:
     usage: dict[str, Any] | None = None
     samples: deque = field(default_factory=lambda: deque(maxlen=120))
     measured_at: str | None = None
+    finished: bool = False
 
     def projection(self) -> dict[str, Any]:
         return {
@@ -95,6 +96,8 @@ def _sample_invocations(now: datetime | None = None) -> None:
     cutoff = (now or datetime.now(UTC)).timestamp() - 600
     with _active_invocations_lock:
         for call in _active_invocations.values():
+            if call.finished:
+                continue
             while (
                 call.samples and datetime.fromisoformat(call.samples[0]["at"]).timestamp() < cutoff
             ):
@@ -132,7 +135,7 @@ def _collect() -> None:
         _collector_wake.wait(5)
         _collector_wake.clear()
         with _active_invocations_lock:
-            if not _active_invocations:
+            if not any(not call.finished for call in _active_invocations.values()):
                 _collector = None
                 return
         _sample_invocations()
@@ -161,6 +164,33 @@ def _unregister(call: ActiveInvocation) -> None:
             _collector_wake.set()
 
 
+def _finish(
+    call: ActiveInvocation, result: AgentRunResult | None, resume_thread_id: str | None = None
+) -> None:
+    """End native observation; hold only its snapshot for the synchronous receipt handoff."""
+    with _active_invocations_lock:
+        if result is not None and (
+            resume_thread_id is None or result.thread_id == resume_thread_id
+        ):
+            final = normalize_usage(
+                result.usage,
+                session_id=result.thread_id,
+                resumed=call.resumed,
+                previous=call.previous_usage,
+            )
+            if final["status"] == "measured":
+                call.usage = final
+        call.finished = True
+        if call.reader:
+            call.reader.close()
+            call.reader = None
+        call.samples.clear()
+        call.previous_usage = None
+        call.session_id = None
+        if not any(not other.finished for other in _active_invocations.values()):
+            _collector_wake.set()
+
+
 def shutdown_usage() -> None:
     with _active_invocations_lock:
         for call in list(_active_invocations.values()):
@@ -180,7 +210,7 @@ def usage_executions(project_id: int | None = None) -> list[dict[str, Any]]:
                 **call.projection(),
             }
             for call in _active_invocations.values()
-            if project_id is None or call.scope.project_id == project_id
+            if not call.finished and (project_id is None or call.scope.project_id == project_id)
         ]
 
 
@@ -208,6 +238,7 @@ def active_execution(
             for call in _active_invocations.values()
             if call.scope.project_id == project_id
             and call.scope.task_key == task_key
+            and not call.finished
             and (ticket_key is None or call.scope.ticket_key == ticket_key)
         ]
         return max(matches, key=lambda call: call.started_at).projection() if matches else None
@@ -349,6 +380,7 @@ def run_agent(
         else None
     )
     progress_kwargs: dict[str, Any] = {}
+    result: AgentRunResult | None = None
     if call is not None and host_key == "codex":
         progress_kwargs["on_session"] = lambda session_id: _attach_session(
             call, session_id, Path(project_dir), resume_thread_id
@@ -377,8 +409,15 @@ def run_agent(
         )
     finally:
         if call is not None:
-            _unregister(call)
-            _notify_execution(on_execution_change, call, False)
+            _finish(call, result, resume_thread_id)
+            try:
+                # The caller may persist usage after native exit. During that
+                # short handoff reads still have the snapshot, never a live
+                # identity/reader/trace. Cleanup also runs if the callback fails.
+                _notify_execution(on_execution_change, call, False)
+            finally:
+                _unregister(call)
+    assert result is not None
     if resume_thread_id is not None and result.thread_id != resume_thread_id:
         return AgentRunResult(
             result.exit_code,
@@ -396,7 +435,11 @@ def _attach_session(
     call: ActiveInvocation, session_id: str, project_dir: Path, resume_thread_id: str | None
 ) -> None:
     with _active_invocations_lock:
-        if call.invocation_id not in _active_invocations or call.session_id is not None:
+        if (
+            call.invocation_id not in _active_invocations
+            or call.finished
+            or call.session_id is not None
+        ):
             return
         if resume_thread_id is not None and session_id != resume_thread_id:
             return

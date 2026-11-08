@@ -533,10 +533,40 @@ def start_delivery(
     return _receipt(task_key, state)
 
 
+def _record_execution_transition(
+    session_factory: Callable[[], Session], call: ActiveInvocation, active: bool
+) -> None:
+    with session_factory() as session:
+        if not active and call.usage is not None:
+            repo = TrackerRepository(session)
+            ticket = repo.brief(
+                project_id=call.scope.project_id, ticket_key=call.scope.ticket_key
+            ).ticket
+            completion = deepcopy(ticket.completion_evidence_json or {})
+            automatic = completion.get("automatic_delivery", {})
+            receipt = automatic.get(call.scope.phase)
+            if (
+                automatic.get("attempt") == call.scope.attempt
+                and isinstance(receipt, dict)
+                and "exit_code" not in receipt
+                and "result" not in receipt
+            ):
+                # Persist only measured usage, not an outcome/session acceptance.
+                # Native result and candidate validation continue below unchanged.
+                receipt["usage"] = deepcopy(call.usage)
+                repo.update_ticket(
+                    project_id=call.scope.project_id,
+                    ticket_key=call.scope.ticket_key,
+                    patch_json={"completion_evidence_json": completion},
+                    actor=ACTOR,
+                    commit=False,
+                )
+        record_execution_change(session, call, active)
+
+
 def run_delivery(*, session_factory: Callable[[], Session], project_id: int, task_key: str) -> None:
     def execution_changed(call: ActiveInvocation, active: bool) -> None:
-        with session_factory() as session:
-            record_execution_change(session, call, active)
+        _record_execution_transition(session_factory, call, active)
 
     ticket_key = None
     evidence: dict[str, Any] = {}

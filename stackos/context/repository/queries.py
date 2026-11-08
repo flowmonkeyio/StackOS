@@ -15,6 +15,7 @@ from stackos.repositories.tracker.events import (
     TRACKER_EXECUTION_CHANGED,
     TRACKER_TASK_STATUS_CHANGED,
     TRACKER_TICKET_STATUS_CHANGED,
+    TRACKER_USAGE_CHANGED,
 )
 
 from .schema import ContextItemOut, ContextPageOut, ContextQueryOut, ProjectEventOut
@@ -146,6 +147,7 @@ class ContextQueryMixin(ContextRepositorySupport):
             TRACKER_TASK_STATUS_CHANGED,
             TRACKER_TICKET_STATUS_CHANGED,
             TRACKER_EXECUTION_CHANGED,
+            TRACKER_USAGE_CHANGED,
         ]
         filters: list[Any] = [
             col(ProjectEvent.event_type).in_(event_types),
@@ -183,6 +185,7 @@ class ContextQueryMixin(ContextRepositorySupport):
             TRACKER_TASK_STATUS_CHANGED,
             TRACKER_TICKET_STATUS_CHANGED,
             TRACKER_EXECUTION_CHANGED,
+            TRACKER_USAGE_CHANGED,
         ]
         filters: list[Any] = [
             col(ProjectEvent.event_type).in_(event_types),

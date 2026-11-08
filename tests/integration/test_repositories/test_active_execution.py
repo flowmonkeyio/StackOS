@@ -316,3 +316,240 @@ async def test_usage_stream_initial_and_reconnect_replace_state_with_safe_projec
         assert reconnect["updates"]["tickets"][0]["agent_stats"]["reported_usage"]["total"] == 105
     finally:
         service._unregister(call)
+
+
+def test_native_exit_hands_usage_to_receipt_before_return_without_active_resources(
+    session, project_id, monkeypatch, tmp_path
+):
+    from stackos.task_delivery import _record_execution_transition
+
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="handoff", title="Handoff")
+    repo.create_ticket(
+        project_id=project_id, task_key="handoff", key="handoff-child", title="Child"
+    )
+    stamp = datetime.now(UTC).isoformat()
+
+    def measured(i, o, cache):
+        return normalize_usage(
+            usage_snapshot("fixture", "invocation", i, o, cache_read=cache),
+            session_id="native",
+            resumed=False,
+        )
+
+    old = {
+        "launch": {"agent": "reviewer", "model": "selected", "started_at": stamp},
+        "usage": measured(100, 5, 80),
+        "exit_code": 0,
+    }
+    pending = {"launch": {"agent": "reviewer", "model": "selected", "started_at": stamp}}
+    evidence = {
+        "automatic_delivery": {
+            "attempt": 2,
+            "attempts": [{"attempt": 1, "delivery": old}],
+            "review": pending,
+        }
+    }
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="handoff-child",
+        patch_json={"completion_evidence_json": evidence},
+    )
+    observations = []
+    resources = SimpleNamespace(closed=False)
+
+    def close():
+        resources.closed = True
+
+    def observe(stage):
+        # Separate sessions reproduce the SSE/API reader, not a cached writer row.
+        with Session(session.get_bind()) as reader:
+            read_repo = TrackerRepository(reader)
+            brief = read_repo.brief(project_id=project_id, ticket_key="handoff-child")
+            day = date.fromisoformat(stamp[:10])
+            project = read_repo.agent_stats(
+                project_id=project_id, start_date=day, end_date=day, timezone="UTC"
+            )
+            global_stats = read_repo.agent_stats_all(start_date=day, end_date=day, timezone="UTC")
+            index = read_repo.get(project_id=project_id, task_index_only=True, include_graph=False)
+            projections = [
+                brief.ticket.agent_stats,
+                brief.task.agent_stats,
+                index.tasks[0].agent_stats,
+                project.totals,
+                project.daily[0],
+                project.rows[0],
+                global_stats.totals,
+            ]
+            observations.append(
+                (
+                    stage,
+                    [value.reported_usage.total for value in projections],
+                    brief.ticket.active_execution is not None,
+                )
+            )
+
+    def runner(*args, **kwargs):
+        call = next(iter(service._active_invocations.values()))
+        call.reader = SimpleNamespace(close=close, read=lambda: None)
+        call.usage = measured(200, 8, 160)
+        call.measured_at = stamp
+        call.samples.append({"at": stamp, **call.usage["measured"]})
+        observe("last-native-checkpoint")
+        return AgentRunResult(
+            0,
+            thread_id="native",
+            result={},
+            usage=usage_snapshot("fixture", "invocation", 200, 8, cache_read=160),
+        )
+
+    transition_resources = []
+
+    def transition(call, active):
+        if not active:
+            collector = service._collector
+            if collector:
+                collector.join(2)
+            transition_resources.append(
+                (resources.closed, bool(call.samples), bool(service.usage_executions(project_id)))
+            )
+            assert service._collector is None
+            # Deliberately delay the receipt write with multiple intervening read
+            # cycles after native exit. No sleep or persist-before-exit fixture.
+            observe("native-exited-before-receipt")
+            observe("delayed-receipt")
+        _record_execution_transition(lambda: Session(session.get_bind()), call, active)
+
+    monkeypatch.setattr(service, "agent_selection_error", lambda *a, **kw: None)
+    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    service.run_agent(
+        "fixture",
+        tmp_path,
+        "Instructions",
+        "Prompt",
+        {},
+        execution_scope=service.AgentExecutionScope(
+            project_id, "handoff", "handoff-child", "reviewer", 2, "review"
+        ),
+        on_execution_change=transition,
+    )
+    observe("returned-before-validation-and-final-receipt")
+    session.expire_all()
+    persisted = repo.brief(
+        project_id=project_id, ticket_key="handoff-child"
+    ).ticket.completion_evidence_json
+    assert persisted["automatic_delivery"]["review"]["usage"] == measured(200, 8, 160)
+    assert "result" not in persisted["automatic_delivery"]["review"]
+    assert "exit_code" not in persisted["automatic_delivery"]["review"]
+    persisted["automatic_delivery"]["review"].update(
+        {"exit_code": 0, "result": {}, "usage": measured(200, 8, 160)}
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="handoff-child",
+        patch_json={"completion_evidence_json": persisted},
+    )
+    observe("final-receipt")
+    assert [row[1] for row in observations] == [[313] * 7] * 5
+    assert [row[2] for row in observations] == [True, False, False, False, False]
+    assert transition_resources == [(True, False, False)]
+    assert not service._active_invocations
+
+
+@pytest.mark.asyncio
+async def test_receipt_only_commit_refreshes_existing_and_reconnected_streams(session, project_id):
+    import asyncio
+
+    from stackos.api.context import _timeline_stream
+
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="receipt-only", title="Receipt only")
+    repo.create_ticket(
+        project_id=project_id, task_key="receipt-only", key="receipt-child", title="Child"
+    )
+    stamp = datetime.now(UTC).isoformat()
+    evidence = {
+        "automatic_delivery": {
+            "attempt": 1,
+            "delivery": {"launch": {"agent": "worker", "started_at": stamp}},
+        }
+    }
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="receipt-child",
+        patch_json={"completion_evidence_json": evidence},
+    )
+
+    async def disconnected():
+        return False
+
+    def stream(pid):
+        return _timeline_stream(
+            pid,
+            SimpleNamespace(is_disconnected=disconnected),
+            None,
+            None,
+            25,
+            1,
+            15000,
+            None,
+            False,
+            session.get_bind(),
+        ).body_iterator
+
+    project_stream, global_stream = stream(project_id), stream(None)
+    try:
+        await anext(project_stream)
+        await anext(global_stream)
+        cursor = ContextRepository(session).latest_tracker_status_event_id(project_id=project_id)
+        final = normalize_usage(
+            usage_snapshot("fixture", "invocation", 200, 8, cache_read=160),
+            session_id="private-native",
+            resumed=False,
+        )
+        evidence["automatic_delivery"]["delivery"].update(
+            {"usage": final, "exit_code": 0, "result": {}}
+        )
+        # No task/ticket status or active-registry transition accompanies this write.
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="receipt-child",
+            patch_json={"completion_evidence_json": evidence},
+        )
+        frame = await asyncio.wait_for(anext(project_stream), timeout=1)
+        assert frame.startswith("event: tracker-usage\n")
+        data = json.loads(frame.split("data: ", 1)[1])
+        assert data["executions"] == []
+        assert data["updates"]["tickets"][0]["key"] == "receipt-child"
+        assert data["updates"]["tasks"][0]["agent_stats"]["reported_usage"]["total"] == 208
+        assert "private-native" not in frame
+        assert (await asyncio.wait_for(anext(global_stream), timeout=1)).startswith(
+            "event: tracker-usage\n"
+        )
+        events = (
+            ContextRepository(session)
+            .tracker_status_timeline(project_id=project_id, after_id=cursor)
+            .items
+        )
+        assert [event.event_type for event in events] == ["tracker.usage.changed"]
+        last = events[-1].id
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="receipt-child",
+            patch_json={"completion_evidence_json": deepcopy(evidence)},
+        )
+        assert (
+            ContextRepository(session).latest_tracker_status_event_id(project_id=project_id) == last
+        )
+        reconnect = stream(project_id)
+        try:
+            frame = await anext(reconnect)
+            data = json.loads(frame.split("data: ", 1)[1])
+            assert data["updates"]["replace"] is True
+            assert data["updates"]["tickets"][0]["agent_stats"]["reported_usage"]["total"] == 208
+            assert data["updates"]["tickets"][0]["active_execution"] is None
+        finally:
+            await reconnect.aclose()
+    finally:
+        await project_stream.aclose()
+        await global_stream.aclose()

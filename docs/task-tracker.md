@@ -1346,6 +1346,23 @@ cover the entire invocation. Readers, callbacks and recent samples are released
 on exit, failure, cancellation or shutdown. No sample table or per-tick tracker
 write exists. Native-session reads are independent of UI visibility and view count.
 
+At native exit the registry immediately removes the live identity, closes its
+reader and discards recent samples. It holds only the measured counter snapshot
+during the synchronous receipt handoff. Automatic delivery commits that usage
+to the existing unfinished invocation receipt before releasing the snapshot;
+result, session and candidate validation still determine the outcome afterwards.
+Thus delayed final-receipt validation does not make recorded totals temporarily
+regress. The handoff uses final native counters and the same fixed resume baseline,
+and never adds a second receipt. The snapshot is released even if notification
+fails; it is not a pending-history store or a retry queue.
+
+Changes to recorded receipt statistics emit `tracker.usage.changed` in the
+receipt write's existing transaction. The shared SSE owner uses its safe task
+and ticket keys to refresh those projections even when no call or status is
+changing. Repeated identical receipt writes emit no usage change. The UI consumes
+the usage frame without a second whole-page Work reload; reconnect reads the same
+committed totals.
+
 Board and Graph keep whole-task/ticket numbers. Optional tiny discrete traces
 show only the active invocation's recent native measurements, with independent
 metric scales. Hover/focus text explains this scope distinction and the latest

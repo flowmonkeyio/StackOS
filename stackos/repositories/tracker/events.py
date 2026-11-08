@@ -11,10 +11,12 @@ from stackos.db.models import ProjectEvent, TrackerItemStatus, TrackerTask, Trac
 from stackos.events import StackOSEvent, StackOSEventSource
 from stackos.host_mcp.service import ActiveInvocation
 from stackos.repositories.project_events import StackOSEventEmitter
+from stackos.repositories.tracker.agent_stats import invocation_receipts, summarize_receipts
 
 TRACKER_TASK_STATUS_CHANGED = "tracker.task.status_changed"
 TRACKER_TICKET_STATUS_CHANGED = "tracker.ticket.status_changed"
 TRACKER_EXECUTION_CHANGED = "tracker.execution.changed"
+TRACKER_USAGE_CHANGED = "tracker.usage.changed"
 
 
 def record_execution_change(session: Session, call: ActiveInvocation, active: bool) -> None:
@@ -53,6 +55,24 @@ class TrackerEventMixin:
     """Append tracker status changes to the project timeline."""
 
     _s: Session
+
+    def _record_tracker_usage_event(
+        self, ticket: TrackerTicket, task: TrackerTask, before_evidence: Any
+    ) -> None:
+        before = summarize_receipts(invocation_receipts(before_evidence))
+        after = summarize_receipts(invocation_receipts(ticket.completion_evidence_json))
+        if before == after:
+            return
+        StackOSEventEmitter(self._s).emit(
+            StackOSEvent(
+                project_id=ticket.project_id,
+                source=StackOSEventSource(type="tracker_ticket", id=ticket.id),
+                event_type=TRACKER_USAGE_CHANGED,
+                title="Agent usage updated",
+                tags=["tracker", "usage"],
+                metadata={"task_key": task.key, "ticket_key": ticket.key},
+            )
+        )
 
     def _record_tracker_task_status_event(
         self,

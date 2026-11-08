@@ -437,6 +437,14 @@ the same local-admin transport for Overview's global scope. Reconnect sends the
 current transient state; durable tracker events retain their existing cursor.
 UI subscribers share the transport and refresh owner; usage-only Work updates
 patch metrics and execution in place without rebuilding the page or graph.
+Native exit releases readers, samples and live identity before the synchronous
+usage-to-receipt handoff completes. Its one measured snapshot remains readable
+until automatic delivery commits usage to the existing receipt; native result and
+candidate acceptance are still validated afterwards. Receipt-statistics changes
+publish `tracker.usage.changed` atomically with that write, including evidence-only
+updates. The stream includes affected task/ticket projections after persistence;
+the UI does not treat that usage event as another page-reload request. There is
+no per-sample event write, retained finished-call history or retry policy.
 `tracker.configureDelivery` is the narrow local-admin REST-only setup write for
 `TaskTracker.config_json.delivery`; it replaces that object while preserving
 unrelated tracker configuration. Send `arguments` with `project_id` and

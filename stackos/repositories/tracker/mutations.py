@@ -873,6 +873,8 @@ class TrackerMutationMixin:
         before = self._ticket_snapshot(ticket)
         old_status = ticket.status
         self._apply_ticket_patch(tracker, ticket, patch_json)
+        if "completion_evidence_json" in patch_json:
+            self._record_tracker_usage_event(ticket, task, before.get("completion_evidence_json"))
         self._record_tracker_ticket_status_event(
             ticket,
             old_status,

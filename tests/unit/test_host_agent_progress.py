@@ -122,6 +122,65 @@ def test_final_receipt_wins_before_unregister_and_late_attach_is_ignored(tmp_pat
     assert provisional_receipt(1, "child", evidence) == [final]
 
 
+@pytest.mark.parametrize("resumed", [False, True])
+def test_exit_handoff_uses_final_native_counters_and_always_releases_snapshot(
+    monkeypatch, tmp_path, resumed
+):
+    baseline = call().previous_usage
+    reader = Reader()
+    observed = []
+
+    def runner(*args, on_session, **kwargs):
+        on_session("native")
+        invocation = next(iter(service._active_invocations.values()))
+        invocation.usage = normalize_usage(
+            usage_snapshot("codex.turn", "session", 150, 15, cache_read=100),
+            session_id="native",
+            resumed=resumed,
+            previous=baseline,
+        )
+        return AgentRunResult(
+            0,
+            thread_id="native",
+            result={},
+            usage=usage_snapshot("codex.turn", "session", 200, 20, cache_read=160),
+        )
+
+    def changed(invocation, active):
+        if active:
+            return
+        # Final totals can exceed the last five-second checkpoint. They use the
+        # same fixed prior invocation baseline, not that last checkpoint.
+        service._attach_session(invocation, "late", tmp_path, None)
+        observed.append(
+            (
+                invocation.usage["measured"]["total"],
+                reader.closed,
+                bool(invocation.samples),
+                service.active_execution(1, "task"),
+                invocation.reader,
+            )
+        )
+        raise RuntimeError("optional observer failure")
+
+    monkeypatch.setattr(service, "agent_selection_error", lambda *a, **kw: None)
+    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    monkeypatch.setattr(service, "CodexCounterReader", lambda *a, **kw: reader)
+    result = service.run_agent(
+        "codex",
+        tmp_path,
+        "Instructions",
+        "Prompt",
+        {},
+        execution_scope=service.AgentExecutionScope(1, "task", "child", "worker", 2, "delivery"),
+        previous_usage=baseline,
+        resume_thread_id="native" if resumed else None,
+        on_execution_change=changed,
+    )
+    assert result.ok and observed == [(110 if resumed else 220, True, False, None, None)]
+    assert not service._active_invocations and not service.provisional_usage(1, "child")
+
+
 @pytest.mark.parametrize("failure", [False, True, "cancel"])
 def test_lifetime_cleanup_success_error_cancel_and_no_idle_collector(
     monkeypatch, tmp_path, failure
