@@ -106,7 +106,11 @@ claiming a complete total. Both views keep the same 215px plot, fixed axis gutte
 identities are visually elided, with the unchanged name available on focus/hover;
 agent identities are never rewritten. Model/version grouping remains in the
 breakdown list. Hover and keyboard focus (Left/Right, Home/End) expose exact
-values; per-series exact text is screen-reader-only rather than a visible
+values. Pointer hover uses Chart.js's external-tooltip hook and a bounded panel
+inside the unchanged plot: date and exact total remain visible while the series
+list scrolls, preserving every measured value even with many agents. Leaving
+the plot closes it; canvas keyboard focus uses the existing exact-value live
+region instead. Per-series exact text is screen-reader-only rather than a visible
 transcript. A bounded vertical daily disclosure has fixed Date/Input/Cache/Output/
 Total columns, omitting unsupported fields rather than growing agent
 columns. Compact daily values retain exact focus/hover labels. Its existing mount/update/theme/unmount lifecycle

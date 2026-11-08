@@ -8,6 +8,7 @@ Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip)
 const props = defineProps<{ days: AgentStatsDay[]; timezone: string; global?: boolean }>()
 const view = defineModel<ActivityView>('view', { default: 'tokens' })
 const selectedDay = ref<number | null>(null)
+const hoverDay = ref<number | null>(null)
 const canvas = ref<HTMLCanvasElement | null>(null)
 const detailId = `daily-values-${useId()}`
 let chart: Chart<'bar'> | null = null
@@ -29,17 +30,17 @@ function incomplete(index: number): boolean { return value(index) !== props.days
 const partial = computed(() => props.days.some((_day, index) => value(index) != null && incomplete(index)))
 function valueLabel(index: number): string { return incomplete(index) ? 'Available tokens' : 'Tokens' }
 function focusDay(index: number): void {
+  hoverDay.value = null
   selectedDay.value = index
   if (chart) {
-    if (chart.options.plugins?.tooltip) chart.options.plugins.tooltip.enabled = false
     chart.setActiveElements(series.value.map((_, datasetIndex) => ({ datasetIndex, index })))
     chart.update('none')
   }
 }
 function blurChart(): void {
+  hoverDay.value = null
   selectedDay.value = null
   if (chart) {
-    if (chart.options.plugins?.tooltip) chart.options.plugins.tooltip.enabled = true
     chart.setActiveElements([])
     chart.update('none')
   }
@@ -103,15 +104,12 @@ function paint(): void {
     plugins: {
       legend: { display: false },
       tooltip: {
-        enabled: document.activeElement !== canvas.value,
-        backgroundColor: token('bg-surface'), titleColor: token('fg-strong'), bodyColor: token('fg-default'), borderColor: token('border-strong'), borderWidth: 1,
-        callbacks: {
-          title: items => props.days[items[0]?.dataIndex ?? 0]?.date ?? '',
-          label: item => `${(item.dataset.label ?? '').length > 36 ? `${item.dataset.label!.slice(0, 35)}…` : item.dataset.label}: ${formatTokens(item.raw as number | null, false)}`,
-          footer: items => {
-            const index = items[0]?.dataIndex ?? 0
-            return value(index) == null ? [] : [`${valueLabel(index)}: ${formatTokens(value(index), false)}`]
-          },
+        enabled: false,
+        external: ({ tooltip }) => {
+          if (document.activeElement === canvas.value) { hoverDay.value = null; return }
+          // Keep the panel while the pointer moves from the canvas into its
+          // scrollable values. Leaving the plot closes it.
+          if (tooltip.opacity > 0) hoverDay.value = tooltip.dataPoints[0]?.dataIndex ?? null
         },
       },
     },
@@ -157,7 +155,10 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy(); chart = null }
       </UiButtonGroup>
     </figcaption>
     <div class="activity-chart__body">
-      <div class="activity-chart__plot">
+      <div
+        class="activity-chart__plot"
+        @mouseleave="hoverDay = null"
+      >
         <canvas
           ref="canvas"
           role="img"
@@ -168,6 +169,38 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy(); chart = null }
           @blur="blurChart"
           @keydown="moveDay"
         />
+        <div
+          v-if="hoverDay != null && days[hoverDay]"
+          class="activity-chart__tooltip"
+          role="tooltip"
+          aria-label="Daily usage details"
+        >
+          <strong>{{ days[hoverDay]!.date }}</strong>
+          <ul
+            class="activity-chart__tooltip-values focus-ring"
+            aria-label="Daily series values"
+            tabindex="0"
+          >
+            <li
+              v-for="item in series.filter(item => item.values[hoverDay!] != null)"
+              :key="item.key"
+            >
+              <span
+                class="activity-chart__swatch"
+                :style="{ backgroundColor: `var(--color-${item.token})` }"
+                aria-hidden="true"
+              />
+              <span
+                class="activity-chart__tooltip-label"
+                :title="item.label"
+              >{{ item.label }}</span>
+              <span>{{ formatTokens(item.values[hoverDay], false) }}</span>
+            </li>
+          </ul>
+          <footer v-if="value(hoverDay) != null">
+            {{ valueLabel(hoverDay) }}: {{ formatTokens(value(hoverDay), false) }}
+          </footer>
+        </div>
       </div>
       <ul
         class="activity-chart__legend"
@@ -269,6 +302,12 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy(); chart = null }
 .activity-chart { min-width: 0; margin: 0; }
 .activity-chart__header { display: flex; align-items: start; justify-content: space-between; gap: 12px; min-height: 44px; }
 .activity-chart__plot { position: relative; height: 215px; margin-top: 12px; }
+.activity-chart__tooltip { position: absolute; z-index: 1; top: 8px; right: 8px; width: min(400px, calc(100% - 16px)); max-height: calc(100% - 16px); display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); background: var(--color-bg-surface); color: var(--color-fg-default); font-size: 12px; line-height: 18px; box-shadow: var(--shadow-md); }
+.activity-chart__tooltip strong, .activity-chart__tooltip footer { flex: none; font-weight: 600; color: var(--color-fg-strong); }
+.activity-chart__tooltip-values { min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
+.activity-chart__tooltip-values li { display: grid; grid-template-columns: 10px minmax(0, 1fr) max-content; align-items: center; gap: 6px; padding: 2px 0; font-variant-numeric: tabular-nums; }
+.activity-chart__tooltip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-chart__tooltip-values li > span:last-child { white-space: nowrap; }
 .activity-chart__body { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 227px 56px; gap: 8px; }
 .activity-chart__legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 24px; align-content: start; gap: 4px 16px; height: 56px; margin: 0; overflow-y: auto; scrollbar-gutter: stable; color: var(--color-fg-default); font-size: 12px; }
 .activity-chart__legend li { min-width: 0; display: flex; align-items: center; gap: 6px; }
