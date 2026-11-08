@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, type Ref } from 'vue'
 import type { SchemaTrackerAgentStatsOut } from '@/api'
 import { callOperation } from '@/lib/operations'
 import { formatApiError } from '@/lib/client'
@@ -18,23 +18,32 @@ export function useAgentStats(projectId?: Ref<number>) {
   const error = computed(() => failure.value?.scope === scope.value ? failure.value.message : null)
   let generation = 0
   let unsubscribe: (() => void) | null = null
+  let connectedProject: number | null | undefined
+  let disposed = false
   let refreshing = false
   let pending = false
   async function refresh(): Promise<void> {
+    if (disposed) return
     if (refreshing) { pending = true; return }
     refreshing = true
-    do { pending = false; await load() } while (pending)
+    do { pending = false; await load() } while (pending && !disposed)
     refreshing = false
   }
   function connect(): void {
+    const project = projectId?.value ?? null
+    if (disposed || connectedProject === project) return
     unsubscribe?.()
-    unsubscribe = subscribeUsageUpdates(projectId?.value ?? null, { usage: () => { void refresh() } })
+    connectedProject = project
+    unsubscribe = subscribeUsageUpdates(project, { usage: () => { if (connectedProject === project) void refresh() } })
   }
   onMounted(connect)
-  if (projectId) watch(projectId, connect)
-  onBeforeUnmount(() => { unsubscribe?.(); pending = false; generation += 1 })
+  onBeforeUnmount(() => { disposed = true; unsubscribe?.(); pending = false; generation += 1 })
 
   async function load(): Promise<void> {
+    if (disposed) return
+    // Project routes remount by scope; explicit/manual loads also reconcile a
+    // changed project ref before requesting its data.
+    connect()
     const request = ++generation
     const requestedScope = scope.value
     loading.value = true

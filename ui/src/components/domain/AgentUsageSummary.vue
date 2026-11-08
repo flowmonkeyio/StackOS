@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { usageFields, usageValue, formatUsage, exactUsage, type AgentStatsMetrics } from '@/lib/agentActivity'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, onUpdated, ref } from 'vue'
 import type { ActiveExecution } from '@/lib/task-tracker/types'
 import { liveUsageTitle, stepTrace } from '@/lib/liveUsage'
 import UsageTrace from './UsageTrace.vue'
@@ -19,7 +19,7 @@ function measure(): void {
   fits.value = width <= root.value.clientWidth
 }
 onMounted(() => { if (typeof ResizeObserver !== 'undefined' && root.value) { observer = new ResizeObserver(measure); observer.observe(root.value) }; measure() })
-watch(() => [props.metrics, props.execution], () => { void nextTick(measure) }, { deep: true })
+onUpdated(measure)
 onBeforeUnmount(() => observer?.disconnect())
 </script>
 

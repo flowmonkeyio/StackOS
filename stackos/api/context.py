@@ -289,6 +289,7 @@ def _timeline_stream(
                             None
                             if previous_usage is None
                             else [*usage, *previous_usage, *affected],
+                            task_key=task_key,
                         )
                         updates["replace"] = previous_usage is None
                 yield sse_frame(

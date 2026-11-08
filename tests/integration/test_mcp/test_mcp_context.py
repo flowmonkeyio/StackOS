@@ -181,12 +181,18 @@ def test_context_timeline_stream_filters_tracker_status_events_by_task(
     response.raise_for_status()
     events = _parse_sse(response.text)
 
-    assert len(events) == 1
-    assert events[0]["event"] == "tracker-status"
-    assert events[0]["data"]["event_type"] == "tracker.ticket.status_changed"
-    assert events[0]["data"]["metadata_json"]["task_key"] == "live-one"
-    assert events[0]["data"]["metadata_json"]["ticket_key"] == "live-one-ticket"
-    assert "live-two-ticket" not in response.text
+    statuses = [event for event in events if event["event"] == "tracker-status"]
+    usage = [event for event in events if event["event"] == "tracker-usage"]
+    assert len(events) == 2
+    assert len(statuses) == len(usage) == 1
+    assert statuses[0]["data"]["event_type"] == "tracker.ticket.status_changed"
+    assert statuses[0]["data"]["metadata_json"]["task_key"] == "live-one"
+    assert statuses[0]["data"]["metadata_json"]["ticket_key"] == "live-one-ticket"
+    updates = usage[0]["data"]["updates"]
+    assert updates["replace"] is True
+    assert [item["key"] for item in updates["tasks"]] == ["live-one"]
+    assert [item["key"] for item in updates["tickets"]] == ["live-one-ticket"]
+    assert "live-two" not in response.text
 
 
 def test_context_writes_are_not_system_granted(

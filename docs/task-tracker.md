@@ -1363,6 +1363,11 @@ changing. Repeated identical receipt writes emit no usage change. The UI consume
 the usage frame without a second whole-page Work reload; reconnect reads the same
 committed totals.
 
+An explicit `task_key` scopes both the stream's executions and its task/ticket
+usage projections, including the initial snapshot, reconnect and later
+receipt-only changes. Unscoped project/global streams retain their full scope;
+transient usage frames never advance the durable status-event cursor.
+
 Each statistics projection copies provisional counters before selecting fresh
 receipt evidence. If a call disappears before that copy, its handoff has already
 committed; if it disappears afterwards, the request keeps its own counter copy.
@@ -1392,6 +1397,10 @@ doing another whole-page reload on usage events. Reconnect replaces the safe
 project usage snapshot, including ended calls. A shared latest-value revision
 protects newer measurements from an older pending Board/Graph/detail response;
 it holds no invocation history and is released with the last scoped subscriber.
+Project-keyed route mounting owns subscription lifetime; explicit statistics
+loads reconcile a changed project ref and release the previous subscription.
+The compact summary remeasures trace fit after component updates and container
+resizes, without Vue watchers or its own refresh timer.
 
 ## UI
 

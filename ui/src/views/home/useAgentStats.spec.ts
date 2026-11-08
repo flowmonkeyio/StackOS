@@ -5,11 +5,12 @@ import { callOperation } from '@/lib/operations'
 import { useAgentStats } from './useAgentStats'
 import { localActivityFilters } from '@/lib/agentActivity'
 import { agentStatsFixture } from './agentStatsFixtures'
+import { subscribeUsageUpdates } from '@/lib/usageUpdates'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
 vi.mock('@/lib/usageUpdates', () => ({ subscribeUsageUpdates: vi.fn(() => vi.fn()) }))
 const wrappers: ReturnType<typeof mount>[] = []
-beforeEach(() => vi.mocked(callOperation).mockReset())
+beforeEach(() => { vi.mocked(callOperation).mockReset(); vi.mocked(subscribeUsageUpdates).mockClear() })
 afterEach(() => wrappers.splice(0).forEach(wrapper => wrapper.unmount()))
 function setup(projectId?: Ref<number>) {
   let stats!: ReturnType<typeof useAgentStats>
@@ -18,6 +19,53 @@ function setup(projectId?: Ref<number>) {
 }
 
 describe('Agent activity query', () => {
+  it('replaces the project subscription on explicit scope loads and releases it on route unmount', async () => {
+    vi.mocked(callOperation).mockResolvedValue(agentStatsFixture())
+    const id = ref(1)
+    const stats = setup(id)
+    const first = vi.mocked(subscribeUsageUpdates).mock.calls[0]![1]
+    const releaseFirst = vi.mocked(subscribeUsageUpdates).mock.results[0]!.value
+    await stats.load()
+    await stats.load()
+    expect(subscribeUsageUpdates).toHaveBeenCalledTimes(1)
+    id.value = 2
+    await stats.load()
+    expect(releaseFirst).toHaveBeenCalledOnce()
+    expect(subscribeUsageUpdates).toHaveBeenLastCalledWith(2, expect.any(Object))
+    const calls = vi.mocked(callOperation).mock.calls.length
+    first.usage()
+    await flushPromises()
+    expect(callOperation).toHaveBeenCalledTimes(calls)
+    const current = vi.mocked(subscribeUsageUpdates).mock.calls[1]![1]
+    current.usage()
+    await flushPromises()
+    expect(callOperation).toHaveBeenCalledTimes(calls + 1)
+    expect(callOperation).toHaveBeenLastCalledWith('tracker.agentStats', { project_id: 2, ...stats.filters.value })
+    const releaseCurrent = vi.mocked(subscribeUsageUpdates).mock.results[1]!.value
+    wrappers.pop()!.unmount()
+    expect(releaseCurrent).toHaveBeenCalledOnce()
+    current.usage()
+    await stats.load()
+    await flushPromises()
+    expect(callOperation).toHaveBeenCalledTimes(calls + 1)
+    expect(subscribeUsageUpdates).toHaveBeenCalledTimes(2)
+  })
+
+  it('drops a queued usage refresh when its global route unmounts during an in-flight load', async () => {
+    let resolve!: (value: unknown) => void
+    vi.mocked(callOperation).mockImplementationOnce(() => new Promise(done => { resolve = done }))
+    const stats = setup()
+    expect(subscribeUsageUpdates).toHaveBeenLastCalledWith(null, expect.any(Object))
+    const listener = vi.mocked(subscribeUsageUpdates).mock.calls[0]![1]
+    listener.usage()
+    listener.usage()
+    wrappers.pop()!.unmount()
+    resolve(agentStatsFixture())
+    await flushPromises()
+    expect(callOperation).toHaveBeenCalledOnce()
+    expect(stats.summary.value).toBeNull()
+  })
+
   it('uses accepted scoped operations and the exact existing visibility values', async () => {
     vi.mocked(callOperation).mockResolvedValue(agentStatsFixture())
     const project = setup(ref(7))

@@ -250,7 +250,11 @@ def _text(value: Any) -> str | None:
 
 
 def usage_refresh(
-    session: Session, project_id: int, calls: list[dict[str, Any]] | None
+    session: Session,
+    project_id: int,
+    calls: list[dict[str, Any]] | None,
+    *,
+    task_key: str | None = None,
 ) -> dict[str, Any]:
     """Safe initial/reconnect snapshot, then minimal affected Work projections."""
     # Snapshot before SQL: removal implies the receipt commit already happened;
@@ -267,6 +271,7 @@ def usage_refresh(
                 .where(
                     col(TrackerTask.project_id) == project_id,
                     col(TaskTracker.key) == DEFAULT_TRACKER_KEY,
+                    true() if task_key is None else col(TrackerTask.key) == task_key,
                     true() if calls is None else col(TrackerTask.key).in_(task_keys),
                 )
             )
@@ -290,6 +295,7 @@ def usage_refresh(
                 provisional=provisional,
             )
         )
+    task_by_id = {task.id: task for task in tasks}
     tickets = (
         list(
             session.execute(
@@ -298,6 +304,7 @@ def usage_refresh(
                 .where(
                     col(TrackerTicket.project_id) == project_id,
                     col(TaskTracker.key) == DEFAULT_TRACKER_KEY,
+                    col(TrackerTicket.task_id).in_(task_by_id),
                     true() if calls is None else col(TrackerTicket.key).in_(ticket_keys),
                 )
             )
@@ -307,7 +314,6 @@ def usage_refresh(
         if calls is None or ticket_keys
         else []
     )
-    task_by_id = {task.id: task for task in tasks}
     ticket_stats = query_ticket_agent_stats(
         session,
         ticket_ids={ticket.id for ticket in tickets if ticket.id is not None},

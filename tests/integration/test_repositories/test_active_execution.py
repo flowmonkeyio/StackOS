@@ -467,6 +467,156 @@ def test_provisional_ticket_task_project_daily_groups_and_final_race(session, pr
 
 
 @pytest.mark.asyncio
+async def test_task_scoped_usage_stream_isolates_initial_reconnect_exit_and_receipt_updates(
+    session, project_id
+):
+    import asyncio
+
+    from stackos.api.context import _timeline_stream
+
+    repo = TrackerRepository(session)
+    stamp = datetime.now(UTC).isoformat()
+    calls = []
+    for key in ("scope-one", "scope-two"):
+        repo.create_task(project_id=project_id, key=key, title=key)
+        repo.create_ticket(project_id=project_id, task_key=key, key=f"{key}-child", title=key)
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key=f"{key}-child",
+            patch_json={
+                "completion_evidence_json": {
+                    "automatic_delivery": {
+                        "attempt": 1,
+                        "delivery": {"launch": {"agent": "worker", "started_at": stamp}},
+                    }
+                }
+            },
+        )
+        call = service.ActiveInvocation(
+            key,
+            service.AgentExecutionScope(project_id, key, f"{key}-child", "worker", 1, "delivery"),
+            "codex",
+            "selected",
+            stamp,
+        )
+        call.usage = normalize_usage(
+            usage_snapshot("fixture", "invocation", 100, 5, cache_read=80),
+            session_id="private-native",
+            resumed=False,
+        )
+        call.measured_at = stamp
+        service._active_invocations[call.invocation_id] = call
+        calls.append(call)
+
+    async def disconnected():
+        return False
+
+    def stream(task_key, after=None, pid=project_id):
+        return _timeline_stream(
+            pid,
+            SimpleNamespace(is_disconnected=disconnected),
+            task_key,
+            after,
+            25,
+            1,
+            15000,
+            None,
+            False,
+            session.get_bind(),
+        ).body_iterator
+
+    async def usage_frame(iterator):
+        while True:
+            frame = await asyncio.wait_for(anext(iterator), timeout=1)
+            assert "scope-two" not in frame
+            assert "private-native" not in frame
+            if frame.startswith("event: tracker-usage\n"):
+                assert "\nid:" not in frame  # transient refresh never changes the durable cursor
+                data = json.loads(frame.split("data: ", 1)[1])
+                assert {item["task_key"] for item in data["executions"]} <= {"scope-one"}
+                assert [item["key"] for item in data["updates"]["tasks"]] == ["scope-one"]
+                assert [item["key"] for item in data["updates"]["tickets"]] == ["scope-one-child"]
+                return data
+            data = json.loads(frame.split("data: ", 1)[1])
+            assert data["metadata_json"]["task_key"] == "scope-one"
+
+    def persist(key, input_tokens, output_tokens):
+        evidence = repo.brief(
+            project_id=project_id, ticket_key=f"{key}-child"
+        ).ticket.completion_evidence_json
+        evidence["automatic_delivery"]["delivery"].update(
+            usage=normalize_usage(
+                usage_snapshot("fixture", "invocation", input_tokens, output_tokens, cache_read=80),
+                session_id="private-native",
+                resumed=False,
+            ),
+            exit_code=0,
+        )
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key=f"{key}-child",
+            patch_json={"completion_evidence_json": evidence},
+        )
+
+    scoped = stream("scope-one")
+    reconnect = None
+    try:
+        initial = await usage_frame(scoped)
+        assert initial["updates"]["replace"] is True
+        assert len(initial["executions"]) == 1
+        assert initial["updates"]["tasks"][0]["agent_stats"]["reported_usage"]["total"] == 105
+        cursor = ContextRepository(session).latest_tracker_status_event_id(project_id=project_id)
+        # An unrelated receipt and active call must remain excluded during the
+        # selected call's exit, on reconnect, and on later receipt-only refresh.
+        persist("scope-two", 900, 90)
+        persist("scope-one", 200, 8)
+        service._unregister(calls[0])
+        exited = await usage_frame(scoped)
+        assert exited["executions"] == []
+        assert exited["updates"]["replace"] is False
+        assert exited["updates"]["tasks"][0]["agent_stats"]["reported_usage"]["total"] == 208
+        reconnect = stream("scope-one", cursor)
+        restored = await usage_frame(reconnect)
+        assert restored["updates"]["replace"] is True
+        assert restored["executions"] == []
+        assert restored["updates"]["tickets"][0]["agent_stats"]["reported_usage"]["total"] == 208
+        persist("scope-two", 950, 95)
+        persist("scope-one", 300, 12)
+        for iterator in (scoped, reconnect):
+            refreshed = await usage_frame(iterator)
+            assert refreshed["updates"]["replace"] is False
+            assert (
+                refreshed["updates"]["tickets"][0]["agent_stats"]["reported_usage"]["total"] == 312
+            )
+        # Unscoped project/global subscribers retain their full replacement.
+        for pid in (project_id, None):
+            full = stream(None, pid=pid)
+            try:
+                data = json.loads((await anext(full)).split("data: ", 1)[1])
+                assert [item["task_key"] for item in data["executions"]] == ["scope-two"]
+                if pid is not None:
+                    assert data["updates"]["replace"] is True
+                    assert {item["key"] for item in data["updates"]["tasks"]} == {
+                        "scope-one",
+                        "scope-two",
+                    }
+                    assert {item["key"] for item in data["updates"]["tickets"]} == {
+                        "scope-one-child",
+                        "scope-two-child",
+                    }
+                else:
+                    assert data["updates"] is None
+            finally:
+                await full.aclose()
+    finally:
+        await scoped.aclose()
+        if reconnect:
+            await reconnect.aclose()
+        for call in calls:
+            service._unregister(call)
+
+
+@pytest.mark.asyncio
 async def test_usage_stream_initial_and_reconnect_replace_state_with_safe_projection(
     session, project_id
 ):
