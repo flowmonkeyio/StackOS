@@ -103,7 +103,10 @@ model control, using canonical daily groups. Unsupported series are absent;
 missing cache never becomes an invented remainder or unknown-cache category.
 An incomplete stack uses ordinary available-measurement context, without
 claiming a complete total. Both views keep the same 215px plot, fixed axis gutter,
-56px two-column scrolling legend below the plot and single-line selection caption. Long legend
+56px responsive wrapping legend below the plot and single-line selection caption.
+Legend entries use their label widths and compact gaps: all three token labels
+and six short identities stay on one row whenever they fit. Wrapping follows
+available width; additional rows scroll within the same bounded legend. Long legend
 identities are visually elided, with the unchanged name available on focus/hover;
 agent identities are never rewritten. Model and combined labels preserve exact
 recorded versions. Group-key colors match bars, legends, tooltips and table

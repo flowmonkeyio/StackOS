@@ -316,8 +316,8 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy(); chart = null }
 .activity-chart__tooltip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .activity-chart__tooltip-values li > span:last-child { white-space: nowrap; }
 .activity-chart__body { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 227px 56px; gap: 8px; }
-.activity-chart__legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 24px; align-content: start; gap: 4px 16px; height: 56px; margin: 0; overflow-y: auto; scrollbar-gutter: stable; color: var(--color-fg-default); font-size: 12px; }
-.activity-chart__legend li { min-width: 0; display: flex; align-items: center; gap: 6px; }
+.activity-chart__legend { display: flex; flex-wrap: wrap; align-content: start; gap: 4px 16px; height: 56px; margin: 0; overflow-y: auto; scrollbar-gutter: stable; color: var(--color-fg-default); font-size: 12px; }
+.activity-chart__legend li { min-width: 0; max-width: 100%; height: 24px; flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
 .activity-chart__legend-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .activity-chart__legend-label:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: -2px; }
 .activity-chart__swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }

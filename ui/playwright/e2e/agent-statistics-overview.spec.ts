@@ -290,6 +290,75 @@ test('one grouping selection aligns identity bars, legends, unfocused hover and 
   writeFileSync(testInfo.outputPath('grouping-proof.json'), JSON.stringify({ evidence, console_errors: errors.errors }, null, 2))
 })
 
+test('shared legends wrap only when token or six short identity labels need more width', async ({ page }, testInfo) => {
+  expect(new URL(getBaseUrl()).port).not.toBe('5180')
+  await resetProjects()
+  const errors = trackConsoleErrors(page)
+  const project = await createProject({ name: 'Legend proof', slug: 'legend-proof', domain: 'synthetic.test' })
+  const names = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot']
+  const attempts = names.map((model, index) => ({ attempt: index + 1, delivery: receipt('delivery_agent', 'success', 100, model) }))
+  await seed(project.id, { ...attempts.at(-1), attempts })
+  const proof: object[] = []
+  for (const scope of ['project', 'global']) {
+    await page.setViewportSize({ width: 1536, height: 800 })
+    await page.goto(scope === 'project' ? `/projects/${project.id}` : '/')
+    const region = page.getByRole('region', { name: 'Agent activity', exact: true })
+    await expect(region.locator('[aria-label="Agent activity breakdown"] tbody tr')).toHaveCount(6)
+    for (const width of [1536, 480, 260]) {
+      await page.setViewportSize({ width, height: 800 })
+      let plot: number[] | null = null
+      for (const view of ['Tokens', 'Agents']) {
+        await region.getByRole('group', { name: 'Chart view', exact: true }).getByRole('button', { name: view, exact: true }).click()
+        const legend = region.getByRole('list', { name: 'Chart legend' })
+        await expect(legend.locator('.activity-chart__legend-label')).toHaveText(view === 'Tokens' ? ['Input', 'Cache', 'Output'] : names)
+        await page.evaluate(() => document.fonts.ready)
+        const state = await legend.evaluate(node => {
+          const style = getComputedStyle(node)
+          const entries = [...node.querySelectorAll<HTMLElement>('li')].map(entry => {
+            const label = entry.querySelector<HTMLElement>('.activity-chart__legend-label')!
+            const text = document.createRange()
+            text.selectNodeContents(label)
+            return { label: label.textContent!.trim(), top: entry.offsetTop, intrinsic: text.getBoundingClientRect().width + 10 + 6, clipped: label.scrollWidth > label.clientWidth + 1 }
+          })
+          const body = node.closest('.activity-chart__body')!
+          // The artificial 260px viewport constrains only this legend contract;
+          // titles can wrap above the body. Compare the shared plot/legend frame.
+          const origin = body.getBoundingClientRect()
+          const plot = body.querySelector('.activity-chart__plot')!.getBoundingClientRect()
+          return { rows: new Set(entries.map(item => item.top)).size, entries, needed: entries.reduce((sum, item) => sum + item.intrinsic, 0) + parseFloat(style.columnGap) * (entries.length - 1), width: node.clientWidth, scrollWidth: node.scrollWidth, height: node.clientHeight, plot: [plot.x - origin.x, plot.y - origin.y, plot.width, plot.height] }
+        })
+        expect(state.scrollWidth).toBeLessThanOrEqual(state.width)
+        expect(state.entries.some(entry => entry.clipped)).toBe(false)
+        expect(state.height).toBe(56)
+        expect(state.plot[3]).toBe(215)
+        if (width === 260) {
+          expect(state.needed).toBeGreaterThan(state.width)
+          expect(state.rows).toBeGreaterThan(1)
+        } else {
+          expect(state.needed).toBeLessThanOrEqual(state.width)
+          expect(state.rows).toBe(1)
+        }
+        if (plot) expect(state.plot).toEqual(plot)
+        else plot = state.plot
+        const last = legend.locator('.activity-chart__legend-label').last()
+        await last.focus()
+        await expect(last).toBeFocused()
+        const visible = await last.evaluate(label => {
+          const box = label.getBoundingClientRect()
+          const bounds = label.closest('.activity-chart__legend')!.getBoundingClientRect()
+          return box.left >= bounds.left && box.right <= bounds.right && box.top >= bounds.top && box.bottom <= bounds.bottom
+        })
+        expect(visible).toBe(true)
+        await expect(last).toHaveAttribute('title', view === 'Tokens' ? 'Output' : 'Foxtrot')
+        if (width !== 480) await region.locator('.activity-chart').screenshot({ path: testInfo.outputPath(`legend-${scope}-${width}-${view}.png`) })
+        proof.push({ scope, viewport_width: width, view, ...state })
+      }
+    }
+  }
+  errors.assertNone()
+  writeFileSync(testInfo.outputPath('responsive-legend-proof.json'), JSON.stringify({ proof, console_errors: errors.errors }, null, 2))
+})
+
 async function workMetrics(region: Locator, totals: AgentStatsMetrics) {
   for (const field of ['input', 'cache_read', 'output'] as const) {
     const source = field === 'input' ? 'remaining_input' : field
