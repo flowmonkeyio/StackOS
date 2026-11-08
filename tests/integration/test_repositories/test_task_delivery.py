@@ -1392,7 +1392,7 @@ def submit(session: Session, project_id: int, tmp_path: Path, scheduler: QueuedS
     return asyncio.run(tracker_start_delivery(arguments, context, None)).data
 
 
-@pytest.mark.parametrize("failure", ["native", "candidate", "blocked"])
+@pytest.mark.parametrize("failure", ["native", "native-candidate", "candidate", "blocked"])
 @pytest.mark.parametrize(
     "requeue",
     [
@@ -1428,8 +1428,15 @@ def test_dirty_delivery_requeue_requires_unchanged_owned_work_and_saved_session(
             git(tmp_path, "add", "baseline")
             (tmp_path / "baseline").write_text("unstaged edit")
             (tmp_path / "new-file").write_text("new work")
-            if failure == "native":
-                return scenario_result(1, thread_id="first-delivery", error="Interrupted")
+            if failure in {"native", "native-candidate"}:
+                return scenario_result(
+                    1,
+                    thread_id="first-delivery",
+                    error="Interrupted",
+                    result=generic_result(outputs={"commit_sha": base})
+                    if failure == "native-candidate"
+                    else None,
+                )
             return scenario_result(
                 0,
                 thread_id="first-delivery",
@@ -1443,14 +1450,18 @@ def test_dirty_delivery_requeue_requires_unchanged_owned_work_and_saved_session(
             assert kwargs["resume_thread_id"] == "first-delivery"
             assert packet["candidate"]["base_commit_sha"] == base
             if requeue == "dirty-success":
-                # Omitting a SHA must not bypass the clean candidate gate either.
+                # Recovery ownership alone does not declare a source candidate.
                 return scenario_result(0, thread_id="first-delivery", result=generic_result())
             git(tmp_path, "add", "baseline", "new-file")
             git(tmp_path, "commit", "-m", "Finish original work")
         return scenario_result(
             0,
             thread_id=f"first-{phase}",
-            result=generic_result(outputs={"commit_sha": git(tmp_path, "rev-parse", "HEAD")}),
+            result=generic_result(
+                outputs={}
+                if failure == "native" and requeue == "dirty-success"
+                else {"commit_sha": git(tmp_path, "rev-parse", "HEAD")}
+            ),
         )
 
     monkeypatch.setattr(task_delivery, "run_agent", run_agent)
@@ -1510,16 +1521,19 @@ def test_dirty_delivery_requeue_requires_unchanged_owned_work_and_saved_session(
     assert final["attempts"][0]["candidate"]["base_commit_sha"] == (
         "0" * 40 if requeue == "base-change" else base
     )
-    if requeue == "same":
+    if requeue == "same" or (failure == "native" and requeue == "dirty-success"):
         assert calls == [("delivery", None), ("delivery", "first-delivery"), ("review", None)]
         assert ticket.status == "complete"
         assert final["candidate"]["base_commit_sha"] == base
-        assert not git(tmp_path, "status", "--porcelain")
+        if requeue == "same":
+            assert not git(tmp_path, "status", "--porcelain")
+        else:
+            assert task_delivery._worktree_snapshot(str(tmp_path)) == receipt["snapshot"]
         assert "owned_work" not in final
     else:
         assert ticket.status == "failed"
         assert len(calls) == (2 if requeue == "dirty-success" else 1)
-        assert "dirty" in ticket.outcome.lower()
+        assert ("real commit_sha" if requeue == "dirty-success" else "dirty") in ticket.outcome
 
 
 @pytest.mark.parametrize("outcome", ["success", "blocked", "native-error", "candidate"])
@@ -1607,6 +1621,72 @@ def test_noncoding_outputs_in_git_need_no_candidate_commit(
         "owned_work" not in ticket.completion_evidence_json["automatic_delivery"]
         for ticket in snapshot.tickets
     )
+
+
+@pytest.mark.parametrize("interruption", ["native", "blocked"])
+@pytest.mark.parametrize("review_repair", [False, True])
+def test_interrupted_noncoding_report_resumes_without_candidate_contract(
+    session, project_id, tmp_path, monkeypatch, interruption, review_repair
+):
+    from stackos import task_delivery
+
+    prepared_task(session, project_id)
+    base = git(tmp_path, "rev-parse", "HEAD")
+    report = tmp_path / "business-report.txt"
+    calls = []
+
+    def launch(*args, **kwargs):
+        packet = json.loads(args[3])
+        key, phase = packet["brief"]["ticket"]["key"], packet["phase"]
+        previous = [call for call in calls if call[:2] == (key, phase)]
+        assert kwargs.get("resume_thread_id") == (f"{key}-{phase}" if previous else None)
+        assert "commit_sha" not in packet["candidate"]
+        calls.append((key, phase, kwargs.get("resume_thread_id")))
+        if len(calls) == 1:
+            report.write_text("Observed business facts\n")
+            if interruption == "native":
+                return AgentRunResult(1, thread_id="first-delivery", error="Interrupted")
+            status = "blocked"
+        else:
+            assert report.read_text() == "Observed business facts\n"
+            status = (
+                "repair"
+                if key == "first" and phase == "review" and review_repair and not previous
+                else "success"
+            )
+        return AgentRunResult(
+            0,
+            thread_id=f"{key}-{phase}",
+            result=generic_result(status, {"report_path": str(report)}),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    repo = TrackerRepository(session)
+    failed = repo.brief(project_id=project_id, ticket_key="first").ticket
+    assert failed.status == "failed"
+    receipt = failed.completion_evidence_json["automatic_delivery"]["owned_work"]
+    assert receipt["snapshot"]["paths"] == ["business-report.txt"]
+    for status in ("in-progress", "not-started"):
+        repo.update_ticket(project_id=project_id, ticket_key="first", patch_json={"status": status})
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    snapshot = repo.get(project_id=project_id, task_key="deliver")
+    assert [ticket.status for ticket in snapshot.tickets] == ["complete", "complete"]
+    assert calls[:2] == [("first", "delivery", None), ("first", "delivery", "first-delivery")]
+    assert len(calls) == (7 if review_repair else 5)
+    final = snapshot.tickets[0].completion_evidence_json["automatic_delivery"]
+    assert final["attempts"][0]["owned_work"] == receipt
+    assert final["repair_count"] == int(review_repair)
+    assert "owned_work" not in final
+    assert final["review"]["validated_outcome"] == "success"
+    assert "commit_sha" not in final["candidate"]
+    assert git(tmp_path, "rev-parse", "HEAD") == base
+    assert task_delivery._worktree_snapshot(str(tmp_path)) == receipt["snapshot"]
 
 
 @pytest.mark.parametrize("outcome", ["success", "candidate", "native-error"])

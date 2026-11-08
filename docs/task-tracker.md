@@ -709,8 +709,11 @@ or an invalid candidate return. A supplied owned-work receipt with a changed
 snapshot, base, ticket or role session fails before launch. Legacy source failures
 without a receipt need explicit operator review/adoption using the same snapshot
 helper, with actor and reason recorded. Owned source work requires clean Git before
-review or advancement, including when its outputs omit a SHA. There is no general
-allow-dirty switch or domain-specific task configuration.
+review or advancement when an explicit source candidate was supplied; prior native
+returns retain that requirement even if execution failed. Ownership alone does not
+require a commit: interrupted noncoding work can resume in its original session,
+retain unchanged report files and return ordinary outputs for independent review.
+There is no general allow-dirty switch or domain-specific task configuration.
 Independent tasks retain the existing parent-task rollup. An active duplicate
 handoff for the same scope returns the current execution instead
 of scheduling another job. Inspect the full task metadata and ticket evidence

@@ -830,7 +830,19 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                     raise ValidationError(f"Cannot resume {phase}: missing native session ID")
                 if baseline_pending:
                     candidate_required = bool(
-                        workflow_step is None and evidence.get("candidate", {}).get("commit_sha")
+                        workflow_step is None
+                        and (
+                            evidence.get("candidate", {}).get("commit_sha")
+                            or any(
+                                "commit_sha"
+                                in json.loads(
+                                    (attempt.get("delivery", {}).get("result") or {}).get(
+                                        "outputs", "{}"
+                                    )
+                                )
+                                for attempt in evidence["attempts"]
+                            )
+                        )
                     )
                     evidence["candidate"] = _launch_baseline(
                         state["project_dir"], ticket_key, evidence, phase, native_session
@@ -1018,8 +1030,6 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                         outputs = json.loads(value["outputs"])
                         if not isinstance(outputs, dict):
                             raise ValidationError("outputs must encode a JSON object")
-                        if decision in {"success", "repair"} and evidence.get("owned_work"):
-                            _committed_head(state["project_dir"])
                         returned_sha = outputs.get("commit_sha")
                         previous_candidate: dict[str, Any] = next(
                             (
