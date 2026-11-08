@@ -1,4 +1,4 @@
-import { expect, test, type Locator } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import { writeFileSync } from 'node:fs'
 import type { SchemaTrackerAgentStatsOut } from '../../src/api'
 import type { AgentStatsMetrics } from '../../src/lib/agentActivity'
@@ -325,6 +325,90 @@ test('analytics keeps its frame stable with many real identities and omits metad
 
 async function readableMissingValues(region: Locator) {
   await expect(region.locator('.agent-usage-summary dd').filter({ hasText: 'Not reported' })).toHaveCount(0)
+}
+
+test('useful analytics disclosures preserve scroll and trigger focus on Home and Overview', async ({ page }, testInfo) => {
+  expect(new URL(getBaseUrl()).port).not.toBe('5180')
+  expect(process.env.STACKOS_E2E_BASE_URL).toBe(getBaseUrl())
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await resetProjects()
+  const errors = trackConsoleErrors(page)
+  const project = await createProject({ name: 'Disclosure scroll proof', slug: 'disclosure-scroll', domain: 'synthetic.test' })
+  await seed(project.id, {
+    attempt: 8,
+    attempts: Array.from({ length: 8 }, (_, index) => ({
+      attempt: index + 1,
+      delivery: receipt('delivery_agent', 'success', 100 + index, `recorded-model-${index}`),
+    })),
+  })
+  const evidence: object[] = []
+  for (const route of [`/projects/${project.id}`, '/']) {
+    await page.goto(route)
+    const region = page.getByRole('region', { name: 'Agent activity', exact: true })
+    await expect(region.getByRole('table', { name: 'Agent activity breakdown' }).locator('tbody tr')).toHaveCount(8)
+    // Overview loads host status separately above analytics. Wait for that
+    // initial layout to finish so this measures the disclosure's own effect.
+    await expect(page.getByRole('button', { name: 'Refresh', exact: true }).first()).not.toHaveAttribute('aria-busy', 'true')
+    if (route === '/') {
+      await expect(page.getByRole('region', { name: 'System status', exact: true })).toContainText('Running')
+      await expect(page.getByRole('region', { name: 'AI tool connections', exact: true }).getByRole('button', { name: 'Refresh', exact: true })).not.toHaveAttribute('aria-busy', 'true')
+    }
+    // Metadata-only row disclosures removed by the accepted prerequisite stay absent.
+    await expect(region.getByRole('table', { name: 'Agent activity breakdown' }).locator('summary, button[aria-expanded]')).toHaveCount(0)
+    for (const trigger of [region.locator('.activity-chart__daily-table > summary'), region.getByRole('button', { name: /^(See|Hide) token details$/ })]) {
+      for (const input of ['pointer', 'Enter', 'Space'] as const) {
+        // The shell permits document scrolling as well as an independently
+        // scrolling main region. Observe both; a constant #cs-main scrollTop
+        // alone can otherwise conceal a document viewport jump.
+        await trigger.evaluate((node, input) => {
+          const main = document.querySelector<HTMLElement>('#cs-main')!
+          const scroller = main.scrollHeight > main.clientHeight ? main : document.scrollingElement!
+          scroller.scrollTop += node.getBoundingClientRect().top - innerHeight / 2
+          if (input === 'pointer' && document.activeElement instanceof HTMLElement) document.activeElement.blur()
+          else if (node instanceof HTMLElement) node.focus({ preventScroll: true })
+        }, input)
+        await settleDisclosure(page)
+        const baseline = await disclosurePosition(trigger)
+        expect(baseline.main.scrollTop + baseline.document.scrollTop).toBeGreaterThan(100)
+        expect(baseline.top).toBeGreaterThan(100)
+        expect(baseline.top).toBeLessThan(650)
+        for (const open of [true, false]) {
+          const before = await disclosurePosition(trigger)
+          if (input === 'pointer') await trigger.click()
+          else await trigger.press(input)
+          await settleDisclosure(page)
+          const after = await disclosurePosition(trigger)
+          evidence.push({ route, trigger: await trigger.textContent(), input, open, before, after })
+          writeFileSync(testInfo.outputPath('analytics-scroll-proof.json'), JSON.stringify({ synthetic: true, evidence, console_errors: errors.errors }, null, 2))
+          const expanded = await trigger.evaluate(node => node.tagName === 'SUMMARY' ? (node.parentElement as HTMLDetailsElement).open : node.getAttribute('aria-expanded') === 'true')
+          expect(expanded).toBe(open)
+          await expect(trigger).toBeFocused()
+          for (const key of ['main', 'document'] as const) {
+            // Collapsing near the page bottom can only retain a valid offset.
+            expect(after[key].scrollTop).toBeCloseTo(Math.min(before[key].scrollTop, after[key].max), 0)
+          }
+          const clamped = before.main.scrollTop - after.main.scrollTop + before.document.scrollTop - after.document.scrollTop
+          expect(after.top).toBeCloseTo(before.top + clamped, 0)
+        }
+      }
+    }
+  }
+  errors.assertNone()
+  writeFileSync(testInfo.outputPath('analytics-scroll-proof.json'), JSON.stringify({ synthetic: true, evidence, console_errors: errors.errors }, null, 2))
+})
+
+async function settleDisclosure(page: Page) {
+  // Browser scroll anchoring runs during layout; read after two painted frames.
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
+}
+
+async function disclosurePosition(trigger: Locator) {
+  return trigger.evaluate(node => {
+    const main = document.querySelector<HTMLElement>('#cs-main')!
+    const root = document.scrollingElement!
+    const scroll = (element: Element) => ({ scrollTop: element.scrollTop, max: element.scrollHeight - element.clientHeight })
+    return { main: scroll(main), document: scroll(root), top: node.getBoundingClientRect().top, focused: document.activeElement === node }
+  })
 }
 
 test('Work uses shared Input Cache Output through filtering, details and refresh', async ({ page }, testInfo) => {
