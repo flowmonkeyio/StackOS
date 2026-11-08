@@ -288,6 +288,15 @@ checks coverage against authoritative operator input as well as derived
 criteria, and rejects dependencies that make a ticket's required proof depend
 on its own blocked consumers.
 
+After final edits, delivery executes relevant tests, lint and area checks derived
+from current requirements/amendments, the whole diff, actual consumers and project
+rules, including necessary omitted checks. It reviews the final diff and artifact
+hygiene, keeps scratch logs/captures/one-off QA scripts outside Git, and records
+commands/results, candidate, prerequisites, environment and proof gaps in the
+existing receipt. Intentional maintained assets and regressions receive their
+applicable checks. Failed or unavailable required proof prevents candidate-ready;
+self-signoff does not replace independent acceptance.
+
 Source implementation and repairs produce separate scoped commits after self-checks.
 A separate reviewer checks that exact commit against the assigned
 requirements and actual evidence, returning the full `commit_sha`. The main
@@ -315,7 +324,10 @@ the ticket stays `in-progress`. There is no separate review ticket by default
 and no new tracker status. Main-agent scheduling and acceptance are guidance,
 not daemon-enforced leases or semantic verification.
 
-Reviewers execute relevant planned specs and integration checks themselves,
+Reviewers independently derive coverage from current requirements/amendments,
+the whole diff, actual affected consumers and project rules. They execute
+relevant planned specs and integration checks, plus necessary omitted tests,
+lint, area and interaction checks themselves,
 reporting commands/results/current SHA and clean unchanged HEAD for reject and
 approve. Failed required specs reject; genuinely unavailable required checks
 block. Within ticket plus integration scope, review business regression,
@@ -333,8 +345,10 @@ require exact scoped commits in `outputs.commit_sha`; observation may cite
 unchanged HEAD and non-Git work needs no fabricated commit. Ordinary test outputs are
 allowed; production files, acceptance tests and commits remain review-only.
 
-Source SDLC roles share the bounded
+Only delivery and reviewer contracts carry the detailed bounded
 [automatic correction method](task-tracker.md#agent-owned-automatic-corrections).
+Other roles retain the authority boundary and return findings without those
+mutations; recommended tools and role names grant no lifecycle authority.
 An assigned automatic verifier/reviewer full-reads and merges scoped feedback on
 the existing owning ticket, preserving source/target/attempt/candidate identity,
 failed criterion/check/evidence, required outcome/recheck, unrelated context and
@@ -346,7 +360,7 @@ Only the runner resumes original sessions and records workflow lifecycle.
 Fresh persisted correction outranks historical approval; corrected source needs
 a separate descendant commit and independent exact-SHA review. This exception
 does not permit self-acceptance, claim/record, dispatch, new work from followups,
-or bypass of actual execution errors or ordinary second-rejection stops.
+or bypass of actual execution errors or the three-pass repair limit.
 Terminal-managed specialists still return evidence for main to route.
 
 Review must identify its candidate, assignment attempt, contract revision and
@@ -355,6 +369,35 @@ check may import another ticket's unaccepted helper or use a shared fixture.
 Wait for the actual dependency or isolate and rerun against an accepted base.
 Final verification/review covers assembled behavior and remaining obligations,
 reusing valid ticket receipts instead of automatically repeating them.
+
+Repair review reassesses original coverage as well as the fix. In the existing
+receipt, distinguish checks executed on the current candidate, valid unchanged
+evidence with scope/prerequisite/environment justification, invalidated evidence
+requiring rerun, and never-executed required checks. A repair-only slice cannot
+inherit an incomplete original review. Preserve failed proof as history; identify
+original omissions separately from later operator amendments.
+
+For visual changes, delivery and review compare the candidate with the approved
+design and current amendments: exact wording, content applicability, hierarchy,
+actual consumer widths and the reported interaction and relevant states. Record
+design/source refs and observed environment. Screenshots and passing counts alone
+do not prove behavior. Source, installed and external observations remain distinct;
+missing required visual or interaction proof blocks the affected claim.
+
+The role revision reviewed official provider guidance on 2026-11-08. OpenAI's
+[skills and prompts guidance](https://developers.openai.com/blog/rethinking-skills-and-prompts-for-gpt-6-astra)
+supports applicable context and clear completion boundaries; its model-specific
+advice does not remove this project's required executed checks.
+[Codex review rules](https://developers.openai.com/blog/custom-code-review-rules-for-codex)
+and [Claude Code practices](https://code.claude.com/docs/en/best-practices)
+support consequential, scoped review against the specification and executable
+evidence. [Google's prompting guidance](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/prompts/prompt-design-strategies)
+informs review of the assembled instructions for ambiguity and unnecessary
+overlap. These are design inputs, not effectiveness proof. Raw/compact resolution
+and source/local contract checks prove instruction availability; the assigned
+native rehearsal must demonstrate omitted-check discovery, final tests/lint,
+truthful self-signoff, independent review and restraint on unrelated cleanup.
+No source-only check proves saved adoption or current native/installed consumption.
 
 Source upgrades do not rewrite existing run-plan snapshots or host-local
 files. Existing runs keep their frozen structure and output contracts. Local

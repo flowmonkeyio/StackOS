@@ -239,10 +239,10 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     expected = {item["preset"]["summary"]["key"]: item for item in raw["required_agents"]}
     actual = {item["preset"]["key"]: item for item in compact["required_agents"]}
     expected_versions = {
-        "stackos.sdlc.requirements-flow-definer": "0.6.1",
-        "stackos.sdlc.planning": "0.7.5",
-        "stackos.sdlc.delivery": "0.7.3",
-        "stackos.sdlc.delivery-reviewer": "0.6.3",
+        "stackos.sdlc.requirements-flow-definer": "0.6.2",
+        "stackos.sdlc.planning": "0.7.6",
+        "stackos.sdlc.delivery": "0.7.4",
+        "stackos.sdlc.delivery-reviewer": "0.6.4",
     }
     assert set(actual) == set(expected) == set(expected_versions)
     for key, item in actual.items():
@@ -263,9 +263,11 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
         assert "assignment attempt" in full_adaptation["required_agent_action"]
         assert "stale, or contradictory inputs" in full_adaptation["required_agent_action"]
         assert "tracker.reopen" in full_adaptation["required_agent_action"]
-        assert (
-            "final mutation, then immediately return repair"
-            in full_adaptation["required_agent_action"]
+        assert "full-read/merge" not in full_adaptation["required_agent_action"]
+        full_rules = expected[key]["preset"]["preset"]["prompt_contract"]["must_do"]
+        has_correction = any("full-read/merge" in rule for rule in full_rules)
+        assert has_correction == (
+            key in {"stackos.sdlc.delivery", "stackos.sdlc.delivery-reviewer"}
         )
         if key in {"stackos.sdlc.delivery", "stackos.sdlc.delivery-reviewer"}:
             # These are recommendations for the bounded method, never controller grants.

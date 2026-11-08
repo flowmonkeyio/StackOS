@@ -108,10 +108,12 @@ project's available guidance; agent files are optional sources, not a launch
 requirement. StackOS passes the instructions to the harness and follows the
 generic dependency traversal. Source changes and repairs create separate scoped
 commits for independent exact-commit review; observation work may cite unchanged
-HEAD and non-Git work needs no commit. Ordinary review may request one scoped
-repair in the same native delivery/review sessions; required failure stops the
-same task with evidence. Workflow handoff uses a running step as entry context,
-then traverses all remaining task work. Mirrors execute their frozen contracts
+HEAD and non-Git work needs no commit. Ordinary review permits up to three scoped
+automatic repair passes in the same native delivery/review sessions, each on a
+separate descendant commit. Preserve consumed repair allowance across requeue;
+blocked required proof, execution failure, candidate mismatch or rejection after
+the third repair stops the same task with evidence. Workflow handoff uses a
+running step as entry context, then traverses all remaining task work. Mirrors execute their frozen contracts
 once after accepted descendants, using existing roles selected by frozen step
 extensions or explicit task assignments. RunPlanRepository alone records their
 lifecycle. Assigned agents execute integration, review, audit and closeout gates;

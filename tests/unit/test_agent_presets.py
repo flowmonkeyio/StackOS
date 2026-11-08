@@ -797,7 +797,7 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
     delivery = loader.describe_preset(key="stackos.sdlc.delivery").preset
     reviewer = loader.describe_preset(key="stackos.sdlc.delivery-reviewer").preset
 
-    assert architecture.version == "0.6.1"
+    assert architecture.version == "0.6.2"
     architecture_text = " ".join(
         [
             *architecture.prompt_contract.responsibilities,
@@ -866,13 +866,13 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
 def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -> None:
     loader = AgentPresetLoader()
     expected_versions = {
-        "requirements-flow-definer": "0.6.1",
-        "codebase-explorer": "0.6.1",
-        "planning": "0.7.5",
-        "architecture": "0.6.1",
-        "test-designer": "0.6.2",
-        "delivery": "0.7.3",
-        "delivery-reviewer": "0.6.3",
+        "requirements-flow-definer": "0.6.2",
+        "codebase-explorer": "0.6.2",
+        "planning": "0.7.6",
+        "architecture": "0.6.2",
+        "test-designer": "0.6.3",
+        "delivery": "0.7.4",
+        "delivery-reviewer": "0.6.4",
     }
     presets = {
         key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset for key in expected_versions
@@ -1065,6 +1065,58 @@ def test_sdlc_source_and_local_verification_repair_contracts() -> None:
     assert "ordinary test outputs are allowed" in text
     assert "genuinely unavailable required verification blocks" in text
     assert "text objects, empty when none" in text
+
+
+def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
+    # Availability/assembly checks only; the native-adoption rehearsal owns behavior proof.
+    loader = AgentPresetLoader()
+    prefixes = {
+        "delivery": ("After final edits,", "Before handoff,", "For visual changes,"),
+        "delivery-reviewer": (
+            "Own the assigned review outcome.",
+            "Re-verification resumes",
+            "For visual changes,",
+        ),
+    }
+    texts = {}
+    for role, required_rules in prefixes.items():
+        preset = loader.describe_preset(key=f"stackos.sdlc.{role}").preset
+        local = tomllib.loads((REPO_ROOT / f".codex/agents/sdlc-{role}.toml").read_text())
+        for prefix in required_rules:
+            rule = next(item for item in preset.prompt_contract.must_do if item.startswith(prefix))
+            assert rule in local["developer_instructions"], (role, prefix)
+        texts[role] = " ".join(preset.prompt_contract.must_do)
+        # Incident-specific checks belong in this project, not the reusable preset.
+        assert "Ruff" not in texts[role]
+        assert "task-filtered SSE" not in texts[role]
+        assert "Ruff" in local["developer_instructions"]
+
+    for obligation in (
+        "EXECUTE relevant tests, lint and area checks",
+        "current requirements/amendments, the whole diff",
+        "actual affected consumers and project rules",
+        "Failed or unavailable required proof prevents candidate-ready",
+        "artifact hygiene",
+        "original omissions from later amendments",
+    ):
+        assert obligation in texts["delivery"]
+    for obligation in (
+        "Independently derive coverage",
+        "repair-only slice cannot inherit an incomplete review",
+        "executed on the current candidate",
+        "valid unchanged evidence with scope/prerequisite/environment justification",
+        "invalidated evidence requiring rerun",
+        "never-executed required checks",
+    ):
+        assert obligation in texts["delivery-reviewer"]
+    for text in texts.values():
+        for obligation in (
+            "approved design and current amendments",
+            "exact wording, content applicability, hierarchy and actual consumer widths",
+            "reported interaction and relevant states",
+            "source and installed observations distinct",
+        ):
+            assert obligation in text
 
 
 def test_customer_support_thread_preset_requires_route_and_media_fidelity() -> None:

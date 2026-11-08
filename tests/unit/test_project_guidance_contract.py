@@ -130,7 +130,7 @@ def _assert_bounded_correction_method(text: str) -> None:
     assert "mirror repair stops" not in text
 
 
-def test_sdlc_source_and_seven_local_roles_share_bounded_correction_authority() -> None:
+def test_sdlc_correction_method_is_scoped_to_verification_roles() -> None:
     loader = AgentPresetLoader()
     shared_local = set()
     for role in (
@@ -143,18 +143,31 @@ def test_sdlc_source_and_seven_local_roles_share_bounded_correction_authority() 
         "delivery-reviewer",
     ):
         preset = loader.describe_preset(key=f"stackos.sdlc.{role}").preset
-        _assert_bounded_correction_method(preset.project_adaptation.required_agent_action)
+        shared = preset.project_adaptation.required_agent_action
+        assert "Only an explicitly assigned automatic verifier/reviewer" in shared
+        assert "Other roles return findings without feedback/reopen mutations" in shared
+        assert "full-read/merge" not in shared
         local = tomllib.loads((ROOT / f".codex/agents/sdlc-{role}.toml").read_text())
         assert "model" not in local and "model_reasoning_effort" not in local
         instructions = local["developer_instructions"]
-        _assert_bounded_correction_method(instructions)
-        shared_local.add(
-            next(
-                line
-                for line in instructions.splitlines()
-                if line.startswith("- For an explicitly assigned automatic verifier/reviewer")
+        if role in {"delivery", "delivery-reviewer"}:
+            source = " ".join(preset.prompt_contract.must_do)
+            _assert_bounded_correction_method(source)
+            _assert_bounded_correction_method(instructions)
+            shared_local.add(
+                next(
+                    line
+                    for line in instructions.splitlines()
+                    if line.startswith(
+                        "- Only for an explicitly assigned automatic verifier/reviewer"
+                    )
+                )
             )
-        )
+        else:
+            assert "full-read/merge" not in instructions
+            assert "complete -> in-progress -> not-started" not in instructions
+            assert "return findings without feedback/reopen mutations" in instructions
+            assert "full-read/merge" not in " ".join(preset.prompt_contract.must_do)
     assert len(shared_local) == 1
 
 
