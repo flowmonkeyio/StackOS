@@ -20,13 +20,29 @@ afterEach(() => { vi.clearAllMocks(); vi.restoreAllMocks(); delete document.docu
 function render() { return mount(AgentActivityChart, { props: { days: agentStatsFixture().daily, timezone: 'America/Los_Angeles' } }) }
 
 describe('Daily stacked usage chart', () => {
+  it('renders N/A in retained daily slots and exact keyboard values while chart samples stay null', async () => {
+    const days = agentStatsFixture().daily
+    days.push({ ...agentStatsFixture().undated, date: '2026-11-07', by_agent: [], by_model: [] })
+    const wrapper = mount(AgentActivityChart, { props: { days, timezone: 'UTC' } })
+    const config = mocks.created.mock.calls[0]![0]
+    expect(config.data.datasets.map((item: { data: (number | null)[] }) => item.data)).toEqual([[30, null], [40, null], [30, null]])
+    expect(wrapper.findAll('tbody tr:last-child td').map(item => item.text())).toEqual(['N/A', 'N/A', 'N/A', 'N/A'])
+    expect(wrapper.get('tbody tr:last-child [aria-label^="Total:"]').attributes('title')).toBe('Total: N/A')
+    await wrapper.get('canvas').trigger('focus')
+    await wrapper.get('canvas').trigger('keydown', { key: 'End' })
+    expect(wrapper.get('[aria-live="polite"]').text()).toContain('Tokens: N/A')
+    expect(wrapper.get('[aria-live="polite"]').text()).toContain('Input: N/A')
+    expect(wrapper.get('[aria-live="polite"]').text()).not.toContain('0 tokens')
+    wrapper.unmount()
+  })
+
   it('keeps exact labels and mixed paired values aligned in bars, hover, keyboard and daily rows', async () => {
     const days = agentStatsFixture().daily
     days[0]!.reported_usage = { ...days[0]!.reported_usage, input: 150, cache_read: 80, remaining_input: 20, output: 8, total: 158, input_with_unknown_cache: 50 }
     const wrapper = mount(AgentActivityChart, { props: { days, timezone: 'UTC' } })
     const config = mocks.created.mock.calls[0]![0]
     expect(config.data.datasets.map((item: { label: string; data: number[] }) => [item.label, item.data])).toEqual([['Input', [20]], ['Cache', [80]], ['Output', [8]]])
-    expect(wrapper.get('[aria-label^="Input:"]').attributes('aria-label')).toBe('Input: 20 tokens')
+    expect(wrapper.get('[aria-label^="Input:"]').attributes('aria-label')).toBe('Input: 20 tokens.')
     await wrapper.get('canvas').trigger('focus')
     expect(wrapper.get('[aria-live="polite"]').text()).toContain('Available tokens: 108 tokens')
     expect(wrapper.get('[aria-live="polite"]').text()).toContain('Input: 20')

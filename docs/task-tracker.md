@@ -498,8 +498,14 @@ not imply zero cache for the others. `review_outcomes` counts explicit
 review-role validated `success`, `repair`, `blocked`, `failed`, or
 `validation_failed` (explicit null); absent/unknown role or outcome remains
 unclassified. This is not an approval rate. Keep missing-data accounting in the
-API and accessible exact-value coverage; omit unsupported normal-UI fields
-rather than displaying permanent placeholders. Compact and raw responses retain
+API and accessible exact-value coverage. Fixed Input / Cache / Output summaries
+show compact muted N/A when measurement is absent; measured zero remains 0.
+The shared display projection checks per-field measured attempts (paired cache
+coverage for Input), never numeric zero alone. Retained group/daily columns use
+N/A for missing cells; wholly unsupported columns and optional panels stay omitted.
+Empty/unavailable chart samples remain null, including absent agent series;
+they do not become zero-height measured bars or synthetic totals.
+Compact and raw responses retain
 identical complete facts, including daily series and missing-date disclosure, excluding prompts,
 instructions, raw output and credentials. Neither operation accepts `ack`.
 
@@ -514,7 +520,8 @@ When the plotted stack differs from
 the reported Input + Output, concise available-measurement context distinguishes
 it from a complete total. Exact accessible values use **Available tokens**.
 When all cache reads are unknown, cache and remainder stay null; an all-empty
-scope returns zeros. Do not subtract a partial cache sum from all Input.
+API scope returns additive zeros with empty coverage, displayed as N/A in fixed
+summaries. Do not subtract a partial cache sum from all Input.
 
 Supply `start_date` and `end_date` together as inclusive local calendar dates,
 ordered and at most 366 days, with an IANA `timezone` (default `UTC`). Invalid
@@ -623,8 +630,9 @@ Overview retains its existing Active/Archived/All project visibility. Agent
 groups retain project identity; Model grouping combines the selected projects.
 Model labels reflect recorded selections, independent of current Agent defaults.
 
-A measured zero stays `0`; unsupported metrics are omitted from summaries,
-columns, legends, sidebars and details. An individual missing cell stays empty;
+A measured zero stays `0`; fixed Input / Cache / Output summaries and missing
+cells in retained columns show `N/A` without measurement. Unsupported optional
+metrics, columns, legends, sidebars and details remain omitted;
 known Input/Cache/Output remain visible and null remains null in the API. There
 is no synthetic unknown-cache series. A fixed-column, vertically bounded daily
 table shows Date and available Input, Cache, Output and Total, independent
@@ -1313,10 +1321,12 @@ The Work UI provides two views, Board and Graph. It renders:
   tasks and their tickets, using `isAutomaticDeliveryTask` as the eligibility
   owner. Parent task identity reaches graph nodes and both ticket inspectors;
   workflow names, defaults and nonzero measurements never imply automation.
-  Manual work shows no usage labels, zeros or empty copy. Unsupported fields
-  and summaries without recorded attempts are omitted; measured zero remains
-  visible. Each label/value pair wraps together, keeping K/M/B suffixes intact.
-  Exact supported values and coverage are available on keyboard focus and hover.
+  Manual work shows no usage labels, zeros, N/A or empty copy. Automated work
+  retains fixed slots with compact muted N/A until measurements exist, including
+  no launches, main-thread planning and pending native receipts; N/A does not
+  attribute work to a particular thread. Measured zero remains visible as 0.
+  Each label/value pair wraps together, keeping K/M/B suffixes intact.
+  Exact values, N/A and measured-field coverage agree on keyboard focus and hover.
   Board, toolbar and task details use lifetime task projections; nodes and
   ticket details use their own ticket projection. Graph filtering changes
   visibility without recomputing usage. Title, status and progress remain primary.

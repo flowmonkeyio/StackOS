@@ -53,7 +53,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 |---|---|
 | `ProjectPageHeader` | project-aware title, breadcrumbs, utility action slot, and route chrome |
 | `ProviderMark` | canonical provider logo/initial mark backed by `provider-presentation.json`; shared by Connections and Plugins |
-| `AgentUsageSummary` | Shared available Input / Cache / Output renderer; accepts `metrics: AgentStatsMetrics \| null` and `compact?: boolean`. Default mode keeps the analytics headline scale; compact mode is a muted inline list of indivisible label/value pairs that can wrap together. Both modes omit unsupported fields and summaries without recorded attempts, and retain measured zero with exact focus/hover values. Partial-field coverage stays in accessible exact-value labels. Input uses paired `remaining_input`, Cache uses `cache_read`, Output uses `output`; raw input stays inclusive. No receipt parsing or subtotal calculation. |
+| `AgentUsageSummary` | Shared fixed Input / Cache / Output renderer; accepts `metrics: AgentStatsMetrics \| null` and `compact?: boolean`. Default mode keeps the analytics headline scale; compact mode is a muted inline list of indivisible label/value pairs that can wrap together. Missing measurements, including empty additive zeros, use compact muted N/A; measured zero stays 0. Exact focus/hover values share measurement availability. Partial-field coverage stays in accessible exact-value labels. Input uses paired `remaining_input`, Cache uses `cache_read`, Output uses `output`; raw input stays inclusive. No receipt parsing or subtotal calculation. Work callers enforce automatic parent-task eligibility. |
 
 ## Shipped — app-level primitives (`ui/src/components/`)
 
@@ -121,10 +121,12 @@ metrics shared by Home and Work; consumers pass the appropriate backend
 projection, with no client receipt aggregation. `lib/agentActivity.ts` owns its
 shared `usageValue` mapping (`input` display → `remaining_input`, Cache →
 `cache_read`, Output → `output`), compact/exact formatting, accessible field coverage, cache-share eligibility,
-unchanged agent identities and plain review counts. A measured zero stays zero;
-unsupported summary fields and wholly unsupported breakdown columns disappear,
-while missing individual cells stay empty. Input availability and coverage follow
-the paired cache measurement; missing cache omits the corresponding Input split,
+unchanged agent identities and plain review counts. Coverage proves measurement;
+numeric zero alone does not. A measured zero stays zero. Fixed summaries retain
+Input / Cache / Output with N/A for unmeasured slots; retained breakdown/daily
+columns use N/A in missing cells. Wholly unsupported breakdown columns and
+optional token details remain omitted. Input availability and coverage follow
+the paired cache measurement; missing cache makes the corresponding Input N/A,
 preserving supported Output. Table numeric data, daily rows, chart series and
 exact disclosures consume that same mapping. Cache share keeps the raw inclusive
 input denominator. Only supported cache-write/reasoning appear in token details;
@@ -153,7 +155,11 @@ The existing `isAutomaticDeliveryTask` predicate owns eligibility; graph data
 propagates its parent-task result, and both ticket inspectors receive the parent
 task. No workflow-name, defaults or token-value inference is used. Missing
 parent identity hides ticket usage. Compact summaries have no metric panels,
-dividers, missing-field copy or reserved empty space.
+dividers, missing-field prose or reserved empty space. Automated tasks and their
+tickets retain all three slots even with no launches, main-thread planning or a
+pending native receipt; N/A describes availability without attributing the work.
+Manual tasks and tickets never acquire a token or N/A row. Chart samples for
+empty/unavailable days or absent agents stay null rather than measured zero.
 `Automated` sits with task identity/status and uses the unchanged persisted
 delivery predicate, including stopped and complete executions, with the existing
 subtle info badge tone on Board, Graph toolbar and task details. Ticket geometry

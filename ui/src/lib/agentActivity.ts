@@ -4,7 +4,7 @@ export type AgentStats = SchemaTrackerAgentStatsOut
 export type AgentStatsRow = AgentStats['rows'][number]
 export type AgentStatsMetrics = AgentStats['totals']
 export type AgentStatsDay = AgentStats['daily'][number]
-export type UsageField = 'input' | 'cache_read' | 'output' | 'cache_write' | 'reasoning'
+export type UsageField = 'input' | 'cache_read' | 'output' | 'cache_write' | 'reasoning' | 'total'
 export type ActivityView = 'tokens' | 'agents'
 export type ActivityGroup = AgentStats['group_by']
 export interface AgentStatsFilters {
@@ -21,9 +21,18 @@ export const usageFields = [
 ] as const
 
 // The repository owns paired receipt arithmetic. Raw input remains inclusive.
-export function usageValue(metrics: Pick<AgentStatsMetrics, 'reported_usage'> | null | undefined, field: UsageField): number | null {
+export function usageValue(metrics: AgentStatsMetrics | null | undefined, field: UsageField): number | null {
+  if (!metrics?.launch_attempts) return null
+  // Empty aggregates contain additive zeros. Only coverage proves measurement;
+  // Input uses the existing paired-cache projection, including its coverage.
+  const coverage = metrics.coverage.fields?.[field === 'input' ? 'cache_read' : field]
+  if ((coverage?.measured_attempts ?? metrics.coverage.usage_measured_attempts) === 0) return null
   const source = usageFields.find(item => item.key === field)?.source ?? field
-  return metrics?.reported_usage[source] ?? null
+  return metrics.reported_usage[source] ?? null
+}
+
+export function formatUsage(value: number | null | undefined, compact = true): string {
+  return value == null ? 'N/A' : formatTokens(value, compact)
 }
 
 export function formatTokens(value: number | null | undefined, compact = true): string {
@@ -43,21 +52,22 @@ export function fieldMissing(metrics: AgentStatsMetrics | null | undefined, fiel
 
 export function fieldCoverage(metrics: AgentStatsMetrics | null | undefined, field: UsageField): string {
   if (metrics?.launch_attempts === 0) return 'No recorded usage'
-  const label = field === 'cache_read' ? 'Cache' : field === 'cache_write' ? 'Cache write' : field === 'reasoning' ? 'Reasoning' : field === 'input' ? 'Input' : 'Output'
+  const label = field === 'cache_read' ? 'Cache' : field === 'cache_write' ? 'Cache write' : field === 'reasoning' ? 'Reasoning' : field === 'input' ? 'Input' : field === 'total' ? 'Total' : 'Output'
   if (usageValue(metrics, field) == null) return `${label} not reported`
   const missing = fieldMissing(metrics, field)
   return missing ? `${label} missing for ${missing} ${missing === 1 ? 'attempt' : 'attempts'}` : ''
 }
 
 export function exactUsage(metrics: AgentStatsMetrics | null | undefined, field: UsageField): string {
-  const label = usageFields.find(item => item.key === field)?.label ?? (field === 'cache_write' ? 'Cache write' : 'Reasoning')
+  const label = usageFields.find(item => item.key === field)?.label ?? (field === 'cache_write' ? 'Cache write' : field === 'total' ? 'Total' : 'Reasoning')
   const value = usageValue(metrics, field)
-  return `${label}: ${formatTokens(value, false)}${value == null ? '' : ' tokens'}. ${fieldCoverage(metrics, field)}`.trim()
+  if (value == null) return `${label}: N/A`
+  return `${label}: ${formatTokens(value, false)} tokens. ${fieldCoverage(metrics, field)}`.trim()
 }
 
 export function cacheShare(metrics: AgentStatsMetrics): string | null {
   const { input, cache_read } = metrics.reported_usage
-  if (!input || cache_read == null || (metrics.coverage.fields?.input?.unavailable_attempts ?? metrics.coverage.usage_unavailable_attempts) !== 0 || fieldMissing(metrics, 'cache_read') !== 0) return null
+  if (!input || cache_read == null || usageValue(metrics, 'cache_read') == null || (metrics.coverage.fields?.input?.unavailable_attempts ?? metrics.coverage.usage_unavailable_attempts) !== 0 || fieldMissing(metrics, 'cache_read') !== 0) return null
   return `${(cache_read / input * 100).toLocaleString('en-US', { maximumFractionDigits: 1 })}%`
 }
 
@@ -83,16 +93,16 @@ export function activitySeries(days: AgentStatsDay[], view: ActivityView, global
   if (view === 'tokens') {
     // The repository subtracts cache only for paired measurements. Subtracting
     // aggregate Cache from inclusive Input would invent a remainder for old receipts.
-    return usageFields.filter(item => days.some(day => day.launch_attempts > 0 && usageValue(day, item.key) != null))
+    return usageFields.filter(item => days.some(day => usageValue(day, item.key) != null))
       .map(item => ({ ...item, values: days.map(day => usageValue(day, item.key)) }))
   }
   const identities = new Map<string, AgentStatsRow>()
-  for (const day of days) for (const row of day.by_agent) if (row.reported_usage.total != null) identities.set(row.group_key, row)
+  for (const day of days) for (const row of day.by_agent) if (usageValue(row, 'total') != null) identities.set(row.group_key, row)
   return [...identities].map(([key, row], index) => ({
     key, label: groupLabel(row, 'agent', global), token: activityColorTokens[index % activityColorTokens.length]!,
     values: days.map(day => {
       const item = day.by_agent.find(candidate => candidate.group_key === key)
-      return !item ? (day.reported_usage.total == null ? null : 0) : item.reported_usage.total
+      return usageValue(item, 'total')
     }),
   }))
 }

@@ -1,8 +1,40 @@
 import { describe, expect, it } from 'vitest'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
-import { activitySeries, agentLabel, cacheShare, exactUsage, fieldCoverage, formatTokens, localActivityFilters, reviewFacts, usageFields, usageValue } from './agentActivity'
+import { activitySeries, agentLabel, cacheShare, exactUsage, fieldCoverage, formatTokens, formatUsage, localActivityFilters, reviewFacts, usageFields, usageValue } from './agentActivity'
 
 describe('Shared recorded token formatting', () => {
+  it('requires measurement evidence for empty, planning and running placeholders, including numeric zeros', () => {
+    const metrics = agentStatsFixture().undated
+    for (const launches of [0, 1]) {
+      metrics.launch_attempts = launches
+      expect(usageFields.map(field => usageValue(metrics, field.key))).toEqual([null, null, null])
+      expect(exactUsage(metrics, 'input')).toBe('Input: N/A')
+      expect(formatUsage(usageValue(metrics, 'output'))).toBe('N/A')
+    }
+    metrics.coverage = structuredClone(agentStatsFixture().totals.coverage)
+    expect(usageFields.map(field => usageValue(metrics, field.key))).toEqual([0, 0, 0])
+    metrics.reported_usage.output = 12
+    expect(usageValue(metrics, 'output')).toBe(12)
+    metrics.coverage.fields!.cache_read!.measured_attempts = 0
+    expect(usageValue(metrics, 'input')).toBeNull()
+    expect(usageValue(metrics, 'cache_read')).toBeNull()
+    expect(usageValue(metrics, 'output')).toBe(12)
+    metrics.reported_usage.output = null
+    expect(usageValue(metrics, 'output')).toBeNull()
+    expect(formatTokens(0)).toBe('0')
+  })
+
+  it('keeps unmeasured and absent chart samples null in both views', () => {
+    const measured = agentStatsFixture().daily[0]!
+    const empty = { ...agentStatsFixture().undated, date: '2026-11-07', by_agent: [], by_model: [] }
+    const unavailable = { ...structuredClone(empty), date: '2026-11-08', launch_attempts: 1, by_agent: [{ ...structuredClone(measured.by_agent[0]!), ...agentStatsFixture().undated, launch_attempts: 1 }] }
+    const days = [measured, empty, unavailable]
+    expect(activitySeries(days, 'tokens').map(item => item.values)).toEqual([[30, null, null], [40, null, null], [30, null, null]])
+    expect(activitySeries(days, 'agents')[0]!.values).toEqual([100, null, null])
+    expect(activitySeries([empty, unavailable], 'tokens')).toEqual([])
+    expect(activitySeries([empty, unavailable], 'agents')).toEqual([])
+  })
+
   it('maps disjoint Input, Cache, Output without changing inclusive counters or totals', () => {
     const metrics = agentStatsFixture().totals
     metrics.reported_usage = { ...metrics.reported_usage, input: 11545485, remaining_input: 312717, cache_read: 11232768, output: 46397, total: 11591882 }
@@ -24,7 +56,7 @@ describe('Shared recorded token formatting', () => {
     expect(fieldCoverage(metrics, 'input')).toBe('Input missing for 1 attempt')
     metrics.reported_usage.remaining_input = null
     expect(usageValue(metrics, 'input')).toBeNull()
-    expect(exactUsage(metrics, 'input')).toBe('Input: Not reported. Input not reported')
+    expect(exactUsage(metrics, 'input')).toBe('Input: N/A')
     metrics.reported_usage.remaining_input = 0
     expect(usageValue(metrics, 'input')).toBe(0)
   })

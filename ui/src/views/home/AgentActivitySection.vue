@@ -6,7 +6,7 @@ import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
 import { UiButton, UiButtonGroup, UiCallout, UiFormField, UiInput, UiSkeleton } from '@/components/ui'
 import { formatAbsoluteDateTime } from '@/lib/stackos/time'
 import AgentActivityChart from './AgentActivityChart.vue'
-import { agentLabel, cacheShare, exactUsage, formatTokens, reviewFacts, usageFields, usageValue, type AgentStats, type AgentStatsFilters, type ActivityGroup, type ActivityView } from '@/lib/agentActivity'
+import { agentLabel, cacheShare, exactUsage, formatTokens, formatUsage, reviewFacts, usageFields, usageValue, type AgentStats, type AgentStatsFilters, type ActivityGroup, type ActivityView } from '@/lib/agentActivity'
 
 const props = defineProps<{ summary: AgentStats | null; loading: boolean; error: string | null; filters: AgentStatsFilters; global?: boolean }>()
 const emit = defineEmits<{ filters: [value: Partial<AgentStatsFilters>] }>()
@@ -30,9 +30,9 @@ const optionalFields = [
   { key: 'cache_write', label: 'Cache write', note: 'included in Input' },
   { key: 'reasoning', label: 'Reasoning', note: 'included in Output' },
 ] as const
-const detailsAvailable = computed(() => !!props.summary && optionalFields.some(field => props.summary!.totals.reported_usage[field.key] != null))
-const inputAvailable = computed(() => !!props.summary && (props.summary.totals.reported_usage.cache_read != null || props.summary.totals.reported_usage.remaining_input != null))
-const chartAvailable = computed(() => props.summary?.daily.some(day => day.reported_usage.total != null && day.launch_attempts > 0))
+const detailsAvailable = computed(() => optionalFields.some(field => usageValue(props.summary?.totals, field.key) != null))
+const inputAvailable = computed(() => usageValue(props.summary?.totals, 'cache_read') != null || usageValue(props.summary?.totals, 'input') != null)
+const chartAvailable = computed(() => props.summary?.daily.some(day => usageValue(day, 'total') != null))
 function setDate(field: 'start_date' | 'end_date', value: string | number | null): void { emit('filters', { [field]: String(value ?? '') }) }
 </script>
 
@@ -86,7 +86,6 @@ function setDate(field: 'start_date' | 'end_date', value: string | number | null
     />
     <template v-else-if="summary">
       <div
-        v-if="summary.totals.launch_attempts"
         class="agent-activity__headline"
       >
         <AgentUsageSummary :metrics="summary.totals" />
@@ -187,8 +186,8 @@ function setDate(field: 'start_date' | 'end_date', value: string | number | null
               v-for="field in optionalFields"
               :key="field.key"
             >
-              <p v-if="summary.totals.reported_usage[field.key] != null">
-                <strong>{{ field.label }}:</strong> {{ formatTokens(summary.totals.reported_usage[field.key], false) }} · {{ field.note }}
+              <p v-if="usageValue(summary.totals, field.key) != null">
+                <strong>{{ field.label }}:</strong> {{ formatTokens(usageValue(summary.totals, field.key), false) }} · {{ field.note }}
               </p>
             </template>
           </div>
@@ -245,12 +244,12 @@ function setDate(field: 'start_date' | 'end_date', value: string | number | null
             #[`cell:${field.key}`]="{ row }"
           >
             <span
-              v-if="usageValue(row, field.key) != null"
               tabindex="0"
               class="focus-ring tabular-nums"
               :title="exactUsage(row, field.key)"
               :aria-label="exactUsage(row, field.key)"
-            >{{ formatTokens(usageValue(row, field.key)) }}</span>
+              :class="{ 'text-fg-muted': usageValue(row, field.key) == null }"
+            >{{ formatUsage(usageValue(row, field.key)) }}</span>
           </template>
         </DataTable>
       </template>

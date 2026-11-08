@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, onUpdated, ref, useId } from 'vue'
 import { BarController, BarElement, CategoryScale, Chart, LinearScale, Tooltip, type ChartOptions, type Plugin } from 'chart.js'
 import { UiButton, UiButtonGroup } from '@/components/ui'
-import { activitySeries, formatTokens, usageFields, usageValue, type ActivityView, type AgentStatsDay } from '@/lib/agentActivity'
+import { activitySeries, exactUsage, formatTokens, formatUsage, usageFields, usageValue, type ActivityView, type AgentStatsDay } from '@/lib/agentActivity'
 
 Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip)
 const props = defineProps<{ days: AgentStatsDay[]; timezone: string; global?: boolean }>()
@@ -21,7 +21,7 @@ type DailyField = (typeof usageFields)[number]['key'] | 'total'
 const dailyFields = computed(() => [...usageFields.map(field => field.key), 'total' as const].filter(key => props.days.some(day => day.launch_attempts > 0 && dailyValue(day, key) != null)))
 const dailyLabels = Object.fromEntries([...usageFields.map(field => [field.key, field.label]), ['total', 'Total']])
 function dailyValue(day: AgentStatsDay, field: DailyField): number | null {
-  return field === 'total' ? day.reported_usage.total : usageValue(day, field)
+  return usageValue(day, field)
 }
 function dayLabel(date: string): string {
   return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
@@ -30,7 +30,7 @@ function value(index: number): number | null {
   const values = series.value.map(item => item.values[index]).filter((amount): amount is number => amount != null)
   return values.length ? values.reduce((sum, amount) => sum + amount, 0) : null
 }
-function incomplete(index: number): boolean { return value(index) !== props.days[index]?.reported_usage.total }
+function incomplete(index: number): boolean { return value(index) !== usageValue(props.days[index], 'total') }
 const partial = computed(() => props.days.some((_day, index) => value(index) != null && incomplete(index)))
 function valueLabel(index: number): string { return incomplete(index) ? 'Available tokens' : 'Tokens' }
 function focusDay(index: number): void {
@@ -104,7 +104,7 @@ function paint(): void {
     interaction: { mode: 'index', intersect: false },
     scales: {
       x: { stacked: true, grid: { display: false }, ticks: { color: token('fg-muted'), font: { family: style.fontFamily, size: 11 }, maxTicksLimit: 8 }, border: { color: token('border-default') } },
-      y: { stacked: true, beginAtZero: true, suggestedMax: Math.max(1, ...props.days.map(day => day.reported_usage.total ?? 0)), afterFit: axis => { axis.width = 88 }, grid: { color: token('border-default') }, border: { display: false }, ticks: { color: token('fg-muted'), maxTicksLimit: 4, callback: tick => formatTokens(Number(tick)).replace(/\.00([MB])$/, '$1') } },
+      y: { stacked: true, beginAtZero: true, suggestedMax: Math.max(1, ...props.days.flatMap(day => usageValue(day, 'total') == null ? [] : [usageValue(day, 'total')!])), afterFit: axis => { axis.width = 88 }, grid: { color: token('border-default') }, border: { display: false }, ticks: { color: token('fg-muted'), maxTicksLimit: 4, callback: tick => formatTokens(Number(tick)).replace(/\.00([MB])$/, '$1') } },
     },
     plugins: {
       legend: { display: false },
@@ -187,7 +187,7 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy(); chart = null }
             tabindex="0"
           >
             <li
-              v-for="item in series.filter(item => item.values[hoverDay!] != null)"
+              v-for="item in series"
               :key="item.key"
             >
               <span
@@ -199,7 +199,7 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy(); chart = null }
                 class="activity-chart__tooltip-label"
                 :title="item.label"
               >{{ item.label }}</span>
-              <span>{{ formatTokens(item.values[hoverDay], false) }}</span>
+              <span :class="{ 'text-fg-muted': item.values[hoverDay] == null }">{{ formatUsage(item.values[hoverDay], false) }}</span>
             </li>
           </ul>
           <footer v-if="value(hoverDay) != null">
@@ -232,8 +232,10 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy(); chart = null }
       class="activity-chart__selection"
       aria-hidden="true"
     >
-      <template v-if="focused && value(selectedDay!) != null">
-        {{ dayLabel(focused.date) }} · {{ formatTokens(value(selectedDay!)) }} tokens<template v-if="incomplete(selectedDay!)">
+      <template v-if="focused">
+        {{ dayLabel(focused.date) }} · {{ formatUsage(value(selectedDay!)) }}<template v-if="value(selectedDay!) != null">
+          tokens
+        </template><template v-if="value(selectedDay!) != null && incomplete(selectedDay!)">
           · available measurements
         </template>
       </template>
@@ -247,11 +249,11 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy(); chart = null }
       aria-live="polite"
     >
       <template v-if="focused">
-        <strong>{{ focused.date }}<template v-if="value(selectedDay!) != null"> · {{ valueLabel(selectedDay!) }}: {{ formatTokens(value(selectedDay!), false) }} tokens</template></strong>
+        <strong>{{ focused.date }} · {{ valueLabel(selectedDay!) }}: {{ formatUsage(value(selectedDay!), false) }}<template v-if="value(selectedDay!) != null"> tokens</template></strong>
         <span
-          v-for="item in series.filter(item => item.values[selectedDay!] != null)"
+          v-for="item in series"
           :key="item.key"
-        >{{ item.label }}: {{ formatTokens(item.values[selectedDay!], false) }}</span>
+        >{{ item.label }}: {{ formatUsage(item.values[selectedDay!], false) }}</span>
       </template>
       <span v-else>Hover a bar or focus the chart and use arrow keys for exact values.</span>
     </div>
@@ -289,11 +291,11 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy(); chart = null }
                 :key="field"
               >
                 <span
-                  v-if="dailyValue(day, field) != null"
                   tabindex="0"
-                  :title="`${dailyLabels[field]}: ${formatTokens(dailyValue(day, field), false)} tokens`"
-                  :aria-label="`${dailyLabels[field]}: ${formatTokens(dailyValue(day, field), false)} tokens`"
-                >{{ formatTokens(dailyValue(day, field)) }}</span>
+                  :title="exactUsage(day, field)"
+                  :aria-label="exactUsage(day, field)"
+                  :class="{ 'text-fg-muted': dailyValue(day, field) == null }"
+                >{{ formatUsage(dailyValue(day, field)) }}</span>
               </td>
             </tr>
           </tbody>

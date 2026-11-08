@@ -10,6 +10,20 @@ function render(summary = agentStatsFixture(), extra = {}) {
   return mount(AgentActivitySection, { props: { summary, loading: false, error: null, filters: localActivityFilters(), ...extra }, global: { stubs: { AgentActivityChart: true } } })
 }
 describe('Agent usage presentation', () => {
+  it.each(['agent', 'model', 'agent_model'] as const)('uses N/A for missing %s cells in retained columns without reviving optional fields', group => {
+    const fixture = agentStatsFixture({ group_by: group as ActivityGroup })
+    fixture.rows.push({ ...structuredClone(fixture.rows[0]!), ...fixture.undated, launch_attempts: 1, group_key: 'unavailable' })
+    const wrapper = render(fixture)
+    const row = wrapper.get('table tbody tr:last-child')
+    expect(row.findAll('[aria-label$="N/A"]').map(item => item.text())).toEqual(['N/A', 'N/A', 'N/A'])
+    wrapper.unmount()
+    const empty = render(agentStatsFixture({ totals: fixture.undated, daily: [], rows: [] }))
+    expect(empty.findAll('.agent-usage-summary dd').map(item => item.text())).toEqual(['N/A', 'N/A', 'N/A'])
+    expect(empty.find('[aria-label="Input details"]').exists()).toBe(false)
+    expect(empty.findAll('button').some(item => item.text() === 'See token details')).toBe(false)
+    empty.unmount()
+  })
+
   it.each(['agent', 'model', 'agent_model'] as const)('uses paired Input for %s row values and numeric table data', group => {
     const fixture = agentStatsFixture()
     fixture.group_by = group as ActivityGroup
@@ -124,7 +138,7 @@ describe('Agent usage presentation', () => {
     fixture.totals.coverage.fields!.cache_read!.unavailable_attempts = 4
     fixture.totals.reported_usage.output = 0
     const wrapper = render(fixture)
-    expect(wrapper.findAll('.agent-usage-summary dd[tabindex]').map(item => item.text())).toEqual(['0'])
+    expect(wrapper.findAll('.agent-usage-summary dd[tabindex]').map(item => item.text())).toEqual(['N/A', 'N/A', '0'])
     expect(wrapper.text()).not.toMatch(/Not reported|not reported|not available|Cache split/)
     expect(wrapper.find('[aria-label="Input details"]').exists()).toBe(false)
     expect(wrapper.findAll('button').some(item => item.text() === 'See token details')).toBe(false)
@@ -158,13 +172,13 @@ describe('Agent usage presentation', () => {
     unknown.daily[0]!.reported_usage = structuredClone(unknown.totals.reported_usage)
     await wrapper.setProps({ summary: unknown })
     expect(wrapper.findComponent({ name: 'AgentActivityChart' }).exists()).toBe(false)
-    expect(wrapper.find('.agent-usage-summary').exists()).toBe(false)
+    expect(wrapper.findAll('.agent-usage-summary dd').map(item => item.text())).toEqual(['N/A', 'N/A', 'N/A'])
     expect(wrapper.text()).not.toContain('Not reported')
     const compact = mount(AgentUsageSummary, { props: { metrics: fixture.totals, compact: true } })
     expect(compact.findAll('dt').map(item => item.text())).toEqual(['Input', 'Cache', 'Output'])
     expect(compact.get('[data-usage-field="input"] dd[tabindex]').attributes('title')).toContain('30 tokens')
     await compact.setProps({ metrics: empty.totals })
-    expect(compact.find('.agent-usage-summary').exists()).toBe(false)
+    expect(compact.findAll('dd').map(item => item.text())).toEqual(['N/A', 'N/A', 'N/A'])
     compact.unmount(); wrapper.unmount()
   })
 })

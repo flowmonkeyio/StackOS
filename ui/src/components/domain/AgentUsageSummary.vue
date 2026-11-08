@@ -1,16 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { usageFields, usageValue, formatTokens, exactUsage, type AgentStatsMetrics } from '@/lib/agentActivity'
+import { usageFields, usageValue, formatUsage, exactUsage, type AgentStatsMetrics } from '@/lib/agentActivity'
 
-const props = withDefaults(defineProps<{ metrics?: AgentStatsMetrics | null; compact?: boolean }>(), { metrics: null, compact: false })
-const fields = computed(() => props.metrics?.launch_attempts
-  ? usageFields.filter(field => usageValue(props.metrics, field.key) != null)
-  : [])
+withDefaults(defineProps<{ metrics?: AgentStatsMetrics | null; compact?: boolean }>(), { metrics: null, compact: false })
+const fields = usageFields
 </script>
 
 <template>
   <dl
-    v-if="fields.length"
     class="agent-usage-summary"
     :class="{ 'agent-usage-summary--compact': compact }"
     :style="compact ? undefined : { gridTemplateColumns: `repeat(${fields.length}, minmax(0, 1fr))` }"
@@ -26,9 +22,10 @@ const fields = computed(() => props.metrics?.launch_attempts
       <dd
         :title="exactUsage(metrics, field.key)"
         :aria-label="exactUsage(metrics, field.key)"
+        :class="{ 'agent-usage-summary__unavailable': usageValue(metrics, field.key) == null }"
         tabindex="0"
       >
-        {{ formatTokens(usageValue(metrics, field.key)) }}
+        {{ formatUsage(usageValue(metrics, field.key)) }}
       </dd>
     </div>
   </dl>
@@ -41,6 +38,7 @@ const fields = computed(() => props.metrics?.launch_attempts
 dt { color: var(--color-fg-muted); font-size: 13px; line-height: 18px; margin-bottom: 6px; }
 dd { width: fit-content; margin: 0; color: var(--color-fg-strong); font-size: 32px; line-height: 38px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.025em; white-space: nowrap; border-radius: var(--radius-xs); }
 dd:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 2px; }
+dd.agent-usage-summary__unavailable { color: var(--color-fg-muted); font-size: 13px; line-height: 38px; font-weight: 500; letter-spacing: 0; }
 @media (max-width: 900px) { .agent-usage-summary { gap: 12px; } .agent-usage-summary__metric + .agent-usage-summary__metric { padding-left: 12px; } dd { font-size: 24px; line-height: 30px; } }
 .agent-usage-summary--compact { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
 .agent-usage-summary--compact .agent-usage-summary__metric { display: inline-flex; flex: none; align-items: baseline; gap: 4px; padding: 0; white-space: nowrap; }

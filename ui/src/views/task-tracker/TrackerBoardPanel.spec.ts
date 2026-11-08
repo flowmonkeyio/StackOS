@@ -64,13 +64,13 @@ describe('Work board presentation', () => {
     metrics.reported_usage.cache_read = null
     metrics.reported_usage.remaining_input = null
     await wrapper.setProps({ rows: rows() })
-    expect(wrapper.find('[data-usage-field="cache_read"]').exists()).toBe(false)
+    expect(wrapper.get('[data-usage-field="cache_read"] dd').text()).toBe('N/A')
     expect(wrapper.get('[data-usage-field="output"] dd').text()).toBe('30')
     expect(wrapper.text()).not.toContain('Partial')
     metrics.reported_usage.input = null
     metrics.reported_usage.output = null
     await wrapper.setProps({ rows: rows() })
-    expect(wrapper.findAll('dd[tabindex]')).toHaveLength(0)
+    expect(wrapper.findAll('dd[tabindex]').map(item => item.text())).toEqual(['N/A', 'N/A', 'N/A'])
     metrics.launch_attempts = 0
     await wrapper.setProps({ rows: rows() })
     expect(wrapper.get('button').text()).not.toContain('No recorded usage')
@@ -90,7 +90,7 @@ describe('Work board presentation', () => {
     record.agent_stats.reported_usage.cache_read = null
     record.agent_stats.reported_usage.output = null
     await wrapper.setProps({ rows: rows() })
-    expect(wrapper.find('.agent-usage-summary').exists()).toBe(false)
+    expect(wrapper.findAll('.agent-usage-summary dd').map(item => item.text())).toEqual(['N/A', 'N/A', 'N/A'])
   })
 
   it('keeps all seven columns, including empty columns, with read-only cards', async () => {
@@ -188,7 +188,7 @@ describe('Work board presentation', () => {
     expect(wrapper.get('.tracker-command-panel__usage').findAll('dt').map(label => label.text())).toEqual(['Input', 'Cache', 'Output'])
     expect(wrapper.get('[data-usage-field="cache_read"] dd').text()).toBe('40')
     await wrapper.setProps({ taskAgentStats: null, taskAutomated: true })
-    expect(wrapper.find('.tracker-command-panel__usage').exists()).toBe(false)
+    expect(wrapper.findAll('.tracker-command-panel__usage dd').map(item => item.text())).toEqual(['N/A', 'N/A', 'N/A'])
     expect(wrapper.get('.ui-badge').text()).toBe('Automated')
     expect(wrapper.get('.ui-badge').classes()).toContain('text-info-fg')
     await wrapper.setProps({ taskDelivery: { status: 'stopped', ticketKey: 'fix-chart', reason: 'Browser access denied.' } })

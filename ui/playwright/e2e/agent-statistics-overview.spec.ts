@@ -38,7 +38,7 @@ async function metrics(region: Locator, stats: SchemaTrackerAgentStatsOut) {
   for (const field of ['input', 'cache_read', 'output'] as const) {
     const source = field === 'input' ? 'remaining_input' : field
     const value = region.locator(`.agent-usage-summary [data-usage-field="${field}"] dd[tabindex]`)
-    if (stats.totals.reported_usage[source] == null) { await expect(value).toHaveCount(0); continue }
+    if (stats.totals.reported_usage[source] == null || !stats.totals.launch_attempts || !stats.totals.coverage.fields?.[field === 'input' ? 'cache_read' : field]?.measured_attempts) { await expect(value).toHaveText('N/A'); continue }
     await expect(value).toHaveText(formatTokens(stats.totals.reported_usage[source]))
     await expect(value).toHaveAttribute('aria-label', new RegExp(`${stats.totals.reported_usage[source]!.toLocaleString('en-US')} tokens`))
   }
@@ -98,7 +98,7 @@ test('synthetic receipts reconcile through both actual Home views and existing p
     for (const field of ['input', 'cache_read', 'output'] as const) {
       const source = field === 'input' ? 'remaining_input' : field
       const value = rendered.locator(`[aria-label^="${field === 'cache_read' ? 'Cache' : field === 'input' ? 'Input' : 'Output'}:"]`)
-      if (row.reported_usage[source] == null) await expect(value).toHaveCount(0)
+      if (row.reported_usage[source] == null || !row.coverage.fields?.[field === 'input' ? 'cache_read' : field]?.measured_attempts) await expect(value).toHaveText('N/A')
       else await expect(value).toHaveText(formatTokens(row.reported_usage[source]))
     }
   }
@@ -175,7 +175,7 @@ test('synthetic receipts reconcile through both actual Home views and existing p
   // Project-keyed route remounts clear previous values; measured zero differs from unavailable.
   await page.goto(`/projects/${legacy.id}`)
   await metrics(region, await operation<SchemaTrackerAgentStatsOut>('tracker.agentStats', { project_id: legacy.id, ...filters }))
-  await expect(region.locator('[data-usage-field="input"]')).toHaveCount(0)
+  await expect(region.locator('[data-usage-field="input"] dd')).toHaveText('N/A')
   await expect(region.getByLabel('Input details', { exact: true })).toHaveCount(0)
   await expect(region).not.toContainText('Not reported')
   await page.getByRole('button', { name: /Switch project/ }).click()
@@ -198,14 +198,14 @@ test('synthetic receipts reconcile through both actual Home views and existing p
 })
 
 async function workMetrics(region: Locator, totals: AgentStatsMetrics) {
-  if (!totals.launch_attempts || !(['remaining_input', 'cache_read', 'output'] as const).some(field => totals.reported_usage[field] != null)) {
-    await expect(region.locator('[data-usage-field]')).toHaveCount(0)
-    return
-  }
   for (const field of ['input', 'cache_read', 'output'] as const) {
     const source = field === 'input' ? 'remaining_input' : field
     const value = region.locator(`[data-usage-field="${field}"] dd[tabindex]`)
-    if (totals.reported_usage[source] == null) { await expect(value).toHaveCount(0); continue }
+    if (totals.reported_usage[source] == null || !totals.launch_attempts || !totals.coverage.fields?.[field === 'input' ? 'cache_read' : field]?.measured_attempts) {
+      await expect(value).toHaveText('N/A')
+      await expect(value).toHaveAttribute('title', `${field === 'input' ? 'Input' : field === 'cache_read' ? 'Cache' : 'Output'}: N/A`)
+      continue
+    }
     await expect(value).toHaveText(formatTokens(totals.reported_usage[source]))
     await expect(value).toHaveAttribute('title', new RegExp(`${totals.reported_usage[source]!.toLocaleString('en-US')} tokens`))
   }
@@ -344,18 +344,21 @@ test('Work uses shared Input Cache Output through filtering, details and refresh
     ['unknown', unavailable],
     ['missing-cache', { attempt: 1, delivery: { ...receipt('delivery_agent', 'success', 50, 'older-model'), usage: { unit: 'tokens', status: 'measured', measured: { input: 50, output: 0, total: 50 } } } }],
     ['empty', null],
+    ['planning', null],
+    ['running', unavailable],
+    ['manual-empty', null],
     ['reset', { attempt: 1, delivery: { ...receipt('delivery_agent', 'success', 999, 'reset-model'), usage: { status: 'unavailable', reason: 'operator_reset', measured: null } } }],
     ['manual', { attempt: 1, delivery: receipt('delivery_agent', 'success', 520193, 'manual-fixture') }],
   ] as const) {
     await operation('tracker.createTask', { project_id: project.id, key, title: `Usage ${key}` })
+    await operation('tracker.createTicket', { project_id: project.id, task_key: key, key: `${key}-ticket`, title: `Usage ${key} ticket` })
     if (automatic) {
-      await operation('tracker.createTicket', { project_id: project.id, task_key: key, key: `${key}-ticket`, title: `Usage ${key} ticket` })
       await operation('tracker.updateTicket', { project_id: project.id, ticket_key: `${key}-ticket`, patch_json: { completion_evidence_json: { automatic_delivery: automatic } } })
     }
   }
   // Persisted method identity only. No delivery jobs or native agents are started.
   const agent = { name: 'synthetic', instructions: 'Synthetic frozen identity fixture.' }
-  for (const [task_key, status] of [['synthetic-stats', 'stopped'], ['zero', 'complete'], ['missing-cache', 'complete'], ['empty', 'complete']]) {
+  for (const [task_key, status] of [['synthetic-stats', 'stopped'], ['zero', 'complete'], ['missing-cache', 'complete'], ['empty', 'complete'], ['planning', 'complete'], ['running', 'running']]) {
     await operation('tracker.updateTask', { project_id: project.id, task_key, patch_json: { metadata_json: { delivery: { status, job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent } } } })
   }
   for (const [key, input, cache, output] of [['large', 181384707, 157292160, 520193], ['billion', 1250000000, 0, 0]] as const) {
@@ -531,6 +534,43 @@ test('Work uses shared Input Cache Output through filtering, details and refresh
   await page.getByRole('button', { name: 'Details', exact: true }).click()
   await expect(page.getByLabel('Own ticket usage', { exact: true })).toHaveCount(0)
   expect(await operation('tracker.get', { project_id: project.id })).toEqual(before)
+  // No native receipts (main-thread planning) and a pending native invocation:
+  // fixed slots agree across all six Work consumers; manual empty stays absent.
+  for (const key of ['planning', 'running', 'manual-empty']) {
+    const totals = index.tasks.find(task => task.key === key)!.agent_stats!
+    await page.goto(`/projects/${project.id}/tasks`)
+    const row = board.getByRole('button', { name: new RegExp(`Usage ${key}$`) })
+    if (key === 'manual-empty') await expect(row.locator('.agent-usage-summary')).toHaveCount(0)
+    else {
+      await workMetrics(row, totals)
+      await expect(row.locator('dd')).toHaveText(['N/A', 'N/A', 'N/A'])
+    }
+    await row.click()
+    if (key === 'manual-empty') await expect(dialog.locator('.agent-usage-summary')).toHaveCount(0)
+    else await workMetrics(dialog.getByLabel('Lifetime task usage', { exact: true }), totals)
+    await dialog.getByRole('button', { name: new RegExp(`Usage ${key} ticket`) }).click()
+    if (key === 'manual-empty') await expect(dialog.locator('.agent-usage-summary')).toHaveCount(0)
+    else await workMetrics(dialog.getByLabel('Own ticket usage', { exact: true }), totals)
+    await dialog.getByRole('button', { name: 'Close', exact: true }).first().click()
+    await page.goto(`/projects/${project.id}/tasks?view=graph&task=${key}`)
+    const node = page.locator('.ticket-graph-node')
+    if (key === 'manual-empty') {
+      await expect(header).toHaveCount(0)
+      await expect(node.locator('.agent-usage-summary')).toHaveCount(0)
+    } else {
+      await workMetrics(header, totals)
+      await workMetrics(node, totals)
+    }
+    await node.click()
+    await page.getByRole('button', { name: 'Details', exact: true }).click()
+    if (key === 'manual-empty') await expect(page.getByLabel('Own ticket usage', { exact: true })).toHaveCount(0)
+    else await workMetrics(page.getByLabel('Own ticket usage', { exact: true }), totals)
+  }
+  await operation('tracker.updateTicket', { project_id: project.id, ticket_key: 'running-ticket', patch_json: { completion_evidence_json: { automatic_delivery: { attempt: 1, delivery: receipt('delivery_agent', 'success', 100, 'recorded-sol') } } } })
+  await page.goto(`/projects/${project.id}/tasks?view=graph&task=running`)
+  await expect(header.locator('dd')).toHaveText(['40', '60', '0'])
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click()
+  await expect(header.locator('dd')).toHaveText(['40', '60', '0'])
   await operation('tracker.updateTicket', { project_id: project.id, ticket_key: 'synthetic-receipts', patch_json: { completion_evidence_json: { automatic_delivery: { attempt: 1, delivery: receipt('delivery_agent', 'success', 125, 'recorded-sol') } } } })
   await page.goto(`/projects/${project.id}/tasks?view=graph&task=synthetic-stats`)
   const refreshed = await operation<TrackerSnapshot>('tracker.get', { project_id: project.id, task_key: 'synthetic-stats', include_graph: true })
