@@ -868,7 +868,7 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     expected_versions = {
         "requirements-flow-definer": "0.6.1",
         "codebase-explorer": "0.6.1",
-        "planning": "0.7.2",
+        "planning": "0.7.3",
         "architecture": "0.6.1",
         "test-designer": "0.6.2",
         "delivery": "0.7.2",

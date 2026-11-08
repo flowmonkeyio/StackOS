@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.2
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.3
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Workflow: `engineering.tracked-delivery` v0.8.1 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -84,14 +84,23 @@ For new v0.8.0 plans the sequence is:
 `scope-work -> define-requirements -> discover-impact -> design-approach ->
 design-tests -> plan-tickets -> review-design -> verify-delivery -> review-delivery -> audit-tracker -> release-closeout`
 
-The readiness review at `review-design` checks requirements, design, proof,
-ticket decomposition, dependencies and prerequisites together. Reconcile every
-derived acceptance criterion with the authoritative request and its amendments;
-a necessary omitted consumer remains within the original outcome; materially
-different outcomes require main reconciliation.
-For non-micro work, design the changed user/data/system/business flows with
-before/change/now/why context, denied/error cases and concrete expected outcomes.
-For unchanged flows, record why they do not need further proof.
+The readiness review at `review-design` checks the assembled plan against the
+original request and current amendments. State the observable outcome, intended
+runtime/data state and acceptance owner. Source-ready does not mean installed
+and checked; an exclusion that removes the requested experience needs an explicit
+operator decision. Keep each amendment, owning ticket and superseded requirement
+concise in existing context. Necessary omitted consumers remain in scope;
+materially different outcomes require main reconciliation.
+
+Trace actual producers, consumers and applicable project guards before selecting
+proof. For non-micro work, retain before/change/now/why flow context. Expected
+data must have an independent source of truth; use a relevant excluded case,
+ordering or real interaction where the changed boundary needs it. For UI, retain
+the selected hierarchy, exact copy and actual consumer width. In this project,
+new Python support scripts need applicable lint/format checks, shared Vue
+lifecycle changes need the existing no-watch guard, and filtered transport needs
+its existing consumer checks. Use `docs/release-signoff.md` for applicable gates;
+do not require every broad suite for every ticket.
 
 For a frozen older plan whose `plan-tickets` precedes design/proof, create a
 provisional breakdown at that step. Its earlier `review-design` satisfies the
@@ -110,14 +119,27 @@ For current plans, plan tickets after design and proof. Each bounded packet cont
 - relevant design decisions, interfaces, reference paths and project rules;
 - accepted prerequisites, dependency refs and acceptance basis;
 - known paths, actual write ownership, shared resources, dirty baseline and isolation needs;
-- ticket-local checks, commands/scenarios, expected results, environment,
-  authority and evidence; separately name remaining integration obligations;
+- ticket-local checks, commands/scenarios, independently derived expected results,
+  environment and authority; separately name remaining integration obligations;
+- concise durable results and decisive evidence references; raw logs, captures
+  and one-off scripts stay outside source history unless intentionally maintained
+  project assets with their applicable checks;
 - return format, candidate identity, stop/blocker conditions and repair route.
 
 Fetch the full current `tracker.brief` with `response_mode=raw` when compact
 navigation omits needed fields. Send applicable context, not the entire thread
 or a demand to rediscover everything. The planner returns proposed packets;
-the main agent validates and writes the durable ticket graph.
+the main agent validates and writes the durable ticket graph. File/check lists
+are discovery anchors, not permission barriers or a complete coverage claim.
+
+Before handoff, self-review outcome coverage, current amendments, proof owners,
+satisfiable dependencies, authority, tool capability and shared-resource use.
+Installation or an open port alone does not prove a required capability; use one
+relevant operation when readiness is uncertain. Resolve contradictory
+instructions or record the affected gap before declaring ready. Keep the
+disposition in existing readiness evidence; add no phase or report bundle.
+Apply final-diff review and relevant checks to main-authored tooling/recovery
+patches too. Passing counts and evidence hashes alone do not prove the outcome.
 
 Ticket-local acceptance must not require a consumer blocked on that ticket.
 For example, accept an interface producer on its contract proof, then unblock

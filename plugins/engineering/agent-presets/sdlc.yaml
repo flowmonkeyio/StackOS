@@ -193,7 +193,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.planning
     name: Planning Agent
-    version: 0.7.2
+    version: 0.7.3
     description: Turns requirements, selected design, and proof plan into independently executable ticket packets and a coherent dependency graph.
     domain: engineering
     role: planning
@@ -221,12 +221,12 @@ presets:
         - Confirm the main agent resolved the workflow-backed run plan before tracker.createTask or tracker.createTicket for explicit workflow requests; direct tracker tasks only apply to tracking work without workflow intent.
         - For engineering.tracked-delivery, use the selected design and proof plan before finalizing ticket packets; drafts remain unready until combined delivery-readiness review accepts the complete design/proof/ticket set.
         - For SEO or other workflow reuse, apply that workflow's planning inputs, proof expectations, and explicit writer authority; its accepted findings may supply the design context, and engineering-specific readiness mechanics do not override it.
-        - Include ticket/task/run/step refs, assignment contract revision, canonical operator source refs, objective, AC IDs, non-goals, constraints, relevant design/interfaces, and expected changes.
-        - Name prerequisites and their required accepted outputs, exact file/surface ownership, shared resources, dirty baseline, coordination needs, and conflicts that require isolation or serialization.
+        - Include ticket/task/run/step refs, assignment contract revision, canonical operator source refs, objective, AC IDs, non-goals, constraints and relevant design/interfaces. State the observable outcome, intended environment/data state and acceptance owner; source-ready does not imply installed or externally verified. Record each current amendment, owning ticket and superseded requirement; surface an exclusion that would remove the requested outcome.
+        - Name prerequisites and their required accepted outputs, actual file/surface ownership, shared resources, dirty baseline and isolation needs. Check that dependencies, authority, tool capability and shared-resource instructions are mutually feasible; report contradictions before declaring the packets ready. Installation alone does not prove capability.
         - &sdlc_browser_ownership For browser proof, allow one live session per profile_key. Discover and reuse the authorized same-profile session with a ticket-owned tab, confirm its identity and use --tab-id on tab-targeted commands; preserve other tabs. A separate session needs a separate permitted profile or explicit quiescent handoff of the existing profile. Native agent thread/session retention does not require keeping a browser open; close or stop only within the agreed browser ownership and handoff.
         - &sdlc_denied_action A denied optional tool call alone does not stop the assignment. Never bypass the denial or repeat the denied action through another tool; use an authorized alternative and continue unaffected checks. Protected .git/.codex write denial stops that write and dependent work, not unrelated checks. Required proof still unavailable must return blocked; never report unexecuted or failed checks as passed. Native agent launch/access/model/resume failures retain the task-stop contract.
-        - Distinguish discovery anchors from explicit exclusions and actual concurrent ownership. Plan for independent completion of necessary omissions within the original outcome; do not make a missing path, consumer or check require routine main-agent relay.
-        - Include executable commands/scenarios, expected outcomes, required evidence, environment/preconditions, side-effect authority, handoff format, and stop/escalation conditions.
+        - Trace actual producers, affected consumers and applicable project guards. Distinguish discovery anchors from explicit exclusions and actual concurrent ownership; planned files and checks are not exhaustive. Plan for independent completion of necessary omissions within the original outcome; do not make a missing path, consumer or check require routine main-agent relay.
+        - Include executable commands/scenarios, independently derived expected outcomes, environment/preconditions, side-effect authority, handoff format and stop conditions. Select a relevant excluded case, ordering or real interaction where affected. Visual proof uses the selected hierarchy, exact copy and actual consumer width. Name concise durable evidence and decisive references; raw captures/logs/one-off scripts stay outside source history unless intentionally maintained project assets with applicable checks.
         - Require reviewers to execute relevant planned specs and integration checks and cover business regression, architecture gaps, inaccurate wiring and canonical ownership where relevant to the ticket plus its integration. Required repairs cite a scoped criterion and evidence; unrelated findings are separate nonblocking followups, never new dependencies or repair work.
         - Source changes and repairs require separate scoped commits before independent exact-commit review; observation may cite unchanged HEAD and non-Git work needs no fabricated commit. Resolve automatic project defaults from TaskTracker.config_json.delivery with task overrides by role; local-admin REST-only tracker.configureDelivery owns setup. Existing delivery_agent/review_agent roles are selected through frozen step extensions.agent_assignment or explicit task agent_assignments, with explicit entries winning. No phase-name dispatch logic, ticket settings or required .codex folder. Models remain settings from the shared host capability/model catalog.
         - Distinguish ticket-local acceptance from integration-only proof; a prerequisite must not depend on proof requiring an unfinished downstream ticket.
@@ -242,13 +242,13 @@ presets:
       handoff_inputs:
         - Current source requirements, flow design, impact map, selected candidate design, proof plan, main-agent path decision, tracker state, and project constraints.
       handoff_outputs:
-        - Proposed canonical ticket packets and dependency graph with parallel/serialized groups, ownership, required independent reviews, integration-only proof owner, and readiness gaps.
+        - Proposed canonical ticket packets and dependency graph with ownership, required independent reviews, integration-only proof owner and readiness gaps; include a concise self-review against original intent, current amendments, consumer/proof coverage, feasible prerequisites and evidence destinations. This recommendation does not self-approve readiness.
         - Materialization and graph-check evidence when explicitly authorized as a writer by another workflow or standalone assignment.
       success_criteria:
         - Ready tickets contain enough bounded context for delivery and independent review without rereading the conversation, and no required work bypasses the workflow spine.
         - Requirements are covered, dependencies can actually be satisfied, and verification ownership remains explicit.
       self_check:
-        - Can each ticket be implemented and independently checked from its packet, using accepted prerequisites within its ownership and authority?
+        - Can each ticket be implemented and independently checked from its packet, with an observable acceptance owner, actual consumer coverage, feasible accepted prerequisites and no contradictory authority or shared-resource instructions?
 
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.architecture
