@@ -110,10 +110,13 @@ Source/local instruction adoption is a reviewed, explicit current-project setup
 action. Copy the full saved delivery object and replace only selected role
 instructions through `tracker.configureDelivery`; preserve names, hosts, models,
 provider/profile and all other fields. Read back exact preserved settings and
-instructions with canonical whitespace normalization. An explicitly authorized
-one-time operational helper may perform this after independent source/local
-approval and old-job completion; source edits alone never update saved settings,
-and no synchronizer or cross-project rollout is implied.
+instructions with canonical whitespace normalization, retaining absent/null fields.
+After independent source/local approval, explicitly authorized instruction-only
+saved-default adoption may occur during a running task. Queued/running snapshots
+stay frozen; explicit rehandoff after complete/stopped execution consumes current
+defaults while preserving receipts, sessions and repair allowance. Source edits
+alone never update saved settings. Installed activation is separately authorized
+and main-owned after task closure; no synchronizer or cross-project rollout is implied.
 
 The handoff is task-level; role objects and their fields can be omitted when
 project defaults supply them:
@@ -1028,7 +1031,9 @@ instructions or frozen jobs. Adoption remains explicit and reviewed per project;
 local agent files are optional sources. Configure/read back only the authorized
 project defaults and prove a subsequent fresh snapshot/prompt, preserving other
 settings and historical receipts. Isolated source rehearsal proves source
-behavior; it does not establish live instruction adoption or installed activation.
+behavior. Readback plus an exact subsequent native prompt can additionally prove
+saved-instruction consumption in that isolated scope; primary installed activation
+and consumption remain separate claims.
 
 ## Status Events
 

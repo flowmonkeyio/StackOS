@@ -412,7 +412,10 @@ occurrence phase/attempt/SHA/persisted scoped feedback belongs in prompts, and
 models remain StackOS configuration. After independent source/local review,
 the main agent may manually refresh selected saved instruction strings through
 local-admin REST-only `tracker.configureDelivery`, preserving every other setting and reading
-back the result. Source edits alone update neither saved instructions nor active
+back the result, including absent/null fields. Explicitly authorized instruction-only
+saved-default adoption may occur during a running task after that review.
+Installed activation is separately authorized and main-owned after task closure.
+Source edits alone update neither saved instructions nor active
 or historical task snapshots. Queued/running executions retain their snapshot;
 an explicit rehandoff after completed/stopped execution resolves current defaults
 and overrides while preserving prior ticket receipts, sessions and consumed repair

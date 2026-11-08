@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.5
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.6
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Workflow: `engineering.tracked-delivery` v0.8.1 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -371,18 +371,19 @@ and candidate identity. Prove the subsequent new rehearsal task snapshot and
 actual prompt include the new method and scoped feedback, excluding followups.
 
 Source edits alone update neither saved instructions nor active/historical task
-snapshots. Queued/running executions stay frozen. Explicit rehandoff after
+snapshots. After independent source/local approval, explicitly authorized
+instruction-only saved-default adoption may occur during a running task.
+Preserve absent/null fields as well as all other configuration. Queued/running
+snapshots stay frozen. Explicit rehandoff after
 completed/stopped execution resolves current defaults/overrides while preserving
 prior ticket receipts, native sessions and consumed repair allowance. Completed
 tasks and frozen run/template snapshots stay unchanged. Other projects adapt individually using
 their own available sources; no mandatory `.codex` folder, synchronizer, watcher
-or cross-project rollout. A specifically authorized, independently reviewed
-one-time helper may perform current-project adoption and installed activation
-after all implementation approvals and old-job completion, then hand off the
-same task once. It must pin the accepted candidate/helper hash, stop on failure,
-preserve rollback bundles and never select another candidate or perform source
-edits or claim/record/recovery writes. Source validation does not claim installed
-activation or subsequent native proof complete.
+or cross-project rollout. Installed activation is separately authorized and
+main-owned after task closure, with lifecycle smoke and subsequent installed
+instruction-consumption evidence. Adoption does not authorize a restart of the
+daemon orchestrating the active task. Source validation does not claim saved
+adoption, isolated native consumption or installed activation complete.
 
 ## Recovery And Closeout
 
@@ -417,6 +418,16 @@ active/accepted counts. Report the outcome, reviewer, admitted findings and
 focused proof. Final closeout summarizes delivered behavior, verification,
 decisions, residual gaps and release state. Distinguish source validation from
 loaded host behavior and measured performance from expected improvements.
+Classify selected original omissions, useful rejects, review escapes, operator
+amendments and execution failures separately, retaining observed facts, cause
+confidence and owner/disposition. Use existing `followups`/`followup_resolutions`
+or linked lesson/decision records to connect the admitted change, independently
+reviewed revision and applicability to adoption/readback and later-use status.
+Follow [the existing resolution method](../../docs/feedback-resolution-spec.md#learn-during-current-delivery);
+return linkage in assigned receipts without competing lifecycle writes.
+Required current defects remain blockers. No comparable opportunity means
+unproven; uncertain, deferred and no-lesson are valid. Rates need denominators
+and comparison scope; one fixture does not prove production prevention.
 
 ## Canonical Project Guidance
 

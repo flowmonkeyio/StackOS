@@ -187,3 +187,37 @@ def test_orchestrator_and_workflow_carry_correction_method_without_new_phase() -
         assert "recovery_reconciliation" in steps[key]["policy_refs"]
         assert "recovery_reconciliation" in " ".join(steps[key]["instructions"])
     assert not any("correction" in key or "repair" in key for key in steps)
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "plugins/engineering/skill-presets/sdlc.yaml",
+        ".codex/orchestrator/sdlc-delivery-orchestrator.md",
+        "docs/task-tracker.md",
+        "docs/agent-presets.md",
+        "docs/agent-operating-model.md",
+    ],
+)
+def test_instruction_adoption_preserves_running_snapshots_and_activation_owner(
+    relative_path: str,
+) -> None:
+    text = " ".join((ROOT / relative_path).read_text().lower().split())
+    assert "instruction-only saved-default adoption may occur during a running task" in text
+    assert "after independent source/local" in text
+    assert "queued/running" in text and "frozen" in text
+    assert "complete/stopped" in text or "completed/stopped" in text
+    assert "receipts" in text and "sessions" in text and "repair allowance" in text
+    assert "main-owned after task closure" in text
+    assert "old-job completion" not in text
+
+
+def test_manual_incident_linkage_reuses_existing_evidence_owners() -> None:
+    text = " ".join((ROOT / "docs/feedback-resolution-spec.md").read_text().split())
+    assert "`followups`/`followup_resolutions`" in text
+    assert "return the linkage in their receipt" in text
+    assert "do not activate followups as work or grant lifecycle writes" in text
+    assert "source attempt/candidate" in text
+    assert "Pending consumption stays pending" in text
+    assert "Required current defects remain blockers" in text
+    assert "one-off QA scratch outside Git" in text

@@ -334,17 +334,20 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     assert "new descendant commit" in " ".join(delivery["must_do"])
     compact_skill = compact["required_skill_presets"][0]["preset"]
     full_skill = raw["required_skill_presets"][0]["preset"]
-    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.5"
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.6"
     full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
     # Skill lists are bounded navigation; raw retains the full contract.
     assert len(compact_skill["must_do"]) == 25
     for brief_rule, full_rule in zip(compact_skill["must_do"], full_instructions[:25], strict=True):
         assert full_rule.startswith(brief_rule.removesuffix("..."))
     assert "Adopt guidance manually per project" in " ".join(compact_skill["must_do"])
+    assert "instruction-only saved-default adoption" in " ".join(compact_skill["must_do"])
     assert "three automatic repair passes per ticket" in " ".join(compact_skill["must_do"])
     assert "repair_count" in " ".join(compact_skill["must_do"])
     assert "rejection after the third repair" in " ".join(compact_skill["must_do"])
     assert "Give concise ticket start/end" in " ".join(full_instructions)
+    assert "followup_resolutions" in " ".join(full_instructions)
+    assert "No comparable opportunity means unproven" in " ".join(full_instructions)
 
 
 def test_branding_content_production_presets_resolve_end_to_end(

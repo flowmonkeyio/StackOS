@@ -71,7 +71,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     contract = loaded.preset.operating_contract
     action = loaded.preset.project_adaptation.required_agent_action.lower()
 
-    assert loaded.preset.version == "0.8.5"
+    assert loaded.preset.version == "0.8.6"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "canonical owner" in action
@@ -290,6 +290,37 @@ def test_sdlc_orchestrator_manual_adoption_and_bounded_repair() -> None:
     assert "without a main-agent message relay" in " ".join(
         preset.operating_contract.responsibilities
     )
+
+
+def test_sdlc_closeout_links_reviewed_changes_without_claiming_later_outcomes() -> None:
+    preset = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
+    source = " ".join(preset.operating_contract.must_do)
+    local = " ".join(
+        (Path(__file__).resolve().parents[2] / ".codex/orchestrator/sdlc-delivery-orchestrator.md")
+        .read_text()
+        .split()
+    )
+    for text in (source, local):
+        for requirement in (
+            "original omissions",
+            "useful rejects",
+            "review escapes",
+            "operator amendments",
+            "execution failures",
+            "observed facts",
+            "cause confidence",
+            "owner/disposition",
+            "followup_resolutions",
+            "independently reviewed revision",
+            "applicability",
+            "later-use status",
+            "No comparable opportunity means unproven",
+            "uncertain, deferred and no-lesson are valid",
+            "Required current defects remain blockers",
+            "denominators",
+            "one fixture does not prove production prevention",
+        ):
+            assert requirement.lower() in text.lower(), requirement
 
 
 def test_branding_skill_preset_names_evidence_lock_and_level2_boundary() -> None:

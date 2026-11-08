@@ -1,6 +1,6 @@
 # Feedback, resolution and verified learning
 
-Revision 0.2, 2026-10-14. Accepted operator direction; phased implementation
+Revision 0.3, 2026-11-08. Accepted operator direction; phased implementation
 proposal. Depends on the working [supervision slice](./session-supervision-spec.md).
 This is documentation, not a workflow, tracker item or authorization to execute.
 
@@ -43,6 +43,32 @@ maintained regression → independent review decision → proposed/reviewed less
 with applicability and later-use evidence. Unknown cause, inconclusive proof and
 no reusable lesson are valid dispositions. Deduplicate reports while retaining
 real repeats, original failures and cumulative budgets.
+
+Classify selected original omissions, useful rejects, review escapes, operator
+amendments and execution failures separately. An existing requirement missed by
+delivery or review is an omission; a later operator change is an amendment. A
+useful reject caught a real defect before acceptance; a review escape was found
+after acceptance. A launch, transport or approval failure is execution evidence,
+not proof of model failure. Preserve observed facts separately from cause
+hypotheses/confidence, with the owning layer, disposition and next actor.
+Required current defects remain blockers; deferral cannot waive acceptance.
+
+Keep this manual linkage in existing ticket receipts, task context
+`followups`/`followup_resolutions`, and linked learning/decision records when
+authorized. Full-read/merge their fields and retain the original observation and
+source attempt/candidate. Resolution records describe disposition; they do not
+activate followups as work or grant lifecycle writes. Assigned delivery agents
+return the linkage in their receipt for the existing state owner to retain.
+Connect the admitted change and exact independently reviewed revision to its
+applicability, adoption owner/readback and later-use status. A proposed lesson,
+accepted source, saved default, native consumption and installed activation are
+distinct observations. Pending consumption stays pending. No comparable later
+opportunity means unproven; uncertain, deferred and no-lesson remain valid.
+
+Keep raw logs, captures and one-off QA scratch outside Git. Existing receipts
+retain decisive facts and resolvable refs; maintained regressions and intentional
+product assets remain in source with applicable checks. Do not commit a second
+incident ledger or reconstruct cleaned historical evidence in Git.
 
 Reuse MYB-100's binding/stale-observation case. Reported merged-red-CI and test-
 target/guard mismatches require exact PR/merge/candidate, CI job/target and

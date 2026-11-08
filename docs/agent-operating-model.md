@@ -122,7 +122,11 @@ writes. Results use the actual launcher schema; the current closed envelope is
 status/summary/outputs/followups, with outputs a JSON-encoded object string.
 Only explicit success advances. Defaults use local-admin REST-only
 `tracker.configureDelivery`. Reviewed instruction adoption is explicit per
-project; source changes never refresh active or historical snapshots. Explicit
+project. After independent source/local approval, explicitly authorized
+instruction-only saved-default adoption may occur during a running task;
+queued/running snapshots stay frozen. Installed activation is separately
+authorized and main-owned after task closure. Source changes never refresh active
+or historical snapshots. Explicit
 rehandoff after a completed/stopped job resolves current defaults and preserves
 ticket sessions, receipts and repair allowance. Jobs do not resume after daemon restart. The shared
 host capability owner selects review mode; Gemini and Hermes use normal native

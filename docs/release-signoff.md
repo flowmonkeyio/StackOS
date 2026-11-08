@@ -41,6 +41,16 @@ transport, and MCP tests remain separate where they detect distinct failures,
 including grants, credential handling, response files, and audit persistence.
 Do not remove those assertions or skip slow tests to meet the runtime budget.
 
+Closeout uses the existing [incident resolution method](./feedback-resolution-spec.md#learn-during-current-delivery)
+to link selected failures and useful review findings to reviewed changes, adoption
+and later observation. Required current defects remain blockers. Retain decisive
+facts and refs in receipts; keep temporary logs, captures and QA scratch outside
+Git while maintaining intentional product assets and regressions. Source review,
+saved-instruction readback, isolated native consumption and primary installed
+activation need their own evidence. Pending later use stays pending; one fixture
+cannot establish production prevention. Final integrated signoff remains required
+even when ticket-local guidance checks pass.
+
 ## Test Runtime And Maintenance
 
 The complete automated signoff should stay below ten minutes on a prepared
