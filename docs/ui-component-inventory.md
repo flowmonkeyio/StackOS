@@ -89,7 +89,9 @@ Both Home pages share `views/home/AgentActivitySection.vue`: Input / Cache /
 Output headlines, date controls, daily chart with input detail, and an accessible
 Agent / Model / Agent+model `DataTable`. `useAgentStats.ts` owns one dated,
 grouped project/global statistics request, with scope and stale-response
-protection. Defaults are today plus the previous six local calendar days and
+protection. Regrouping retains the same dated chart and totals while the request
+loads; the retained rows keep their returned grouping label until replaced.
+Date, project and visibility changes clear the prior scope. Defaults are today plus the previous six local calendar days and
 the browser's visibly identified IANA timezone. Global Active/Archived/All
 selection remains with the existing page owner.
 
@@ -98,26 +100,36 @@ views: Tokens and Agents. Tokens shows disjoint Cache, New input (including
 cache write) and Output using the backend's paired measurements. Agents uses
 the same reported Input + Output split by agent. Unsupported series are absent;
 missing cache never becomes an invented remainder or unknown-cache category.
-An incomplete stack is labelled Shown. Model/version grouping remains in the
+An incomplete stack uses ordinary available-measurement context, without
+claiming a complete total. Both views keep the same 215px plot, fixed axis gutter,
+56px two-column scrolling legend and single-line selection caption. Long legend
+identities are visually elided, with the unchanged name available on focus/hover;
+agent identities are never rewritten. Model/version grouping remains in the
 breakdown list. Hover and keyboard focus (Left/Right, Home/End) expose exact
-values; a bounded vertical daily disclosure has fixed Date/Input/Cache/Output/
-Reported total columns, omitting unsupported fields rather than growing agent
-columns. Its existing mount/update/theme/unmount lifecycle
+values; per-series exact text is screen-reader-only rather than a visible
+transcript. A bounded vertical daily disclosure has fixed Date/Input/Cache/Output/
+Total columns, omitting unsupported fields rather than growing agent
+columns. Compact daily values retain exact focus/hover labels. Its existing mount/update/theme/unmount lifecycle
 owns the chart; it adds no polling.
 
 `components/domain/AgentUsageSummary.vue` accepts the existing typed summary
 metrics shared by Home and Work; consumers pass the appropriate backend
 projection, with no client receipt aggregation. `lib/agentActivity.ts` owns its
 compact/exact formatting, accessible field coverage, cache-share eligibility,
-readable agent names and plain review counts. A measured zero stays zero;
+unchanged agent identities and plain review counts. A measured zero stays zero;
 unsupported summary fields and wholly unsupported breakdown columns disappear,
 while missing individual cells stay empty. Missing cache does not erase valid
-Input/Output. Only supported cache-write/reasoning and recorded review outcomes
-appear in details; ordinary copy omits raw roles, classification and empty review
+Input/Output. Only supported cache-write/reasoning appear in token details;
+recorded review outcomes appear as compact, plainly labelled summary/row facts.
+Ordinary copy omits raw roles, classification and empty review
 sentences. Model versions remain exact. Existing Work layout remains owned by
 its consumers and the summary's compact mode.
-Breakdown rows use plain labels when no supported detail is available; only
-rows with actual project, model, host or review details offer a disclosure.
+Breakdown rows use plain labels, with exact model and relevant project identity
+inline. IDs, project lists, host names, repeated identities and isolated review
+counts do not create disclosures or chevrons. Fixed table columns and elided
+identity cells keep long names and grouping changes from resizing the chart.
+The analytics table reserves its scrollbar gutter so short and scrolling groups
+retain the same column widths in browsers with classic scrollbars.
 Each page's existing refresh/polling owner continues loading statistics
 alongside ticket counts. Work consumers retain lifetime task/ticket projections,
 independent of these Home date filters.

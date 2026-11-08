@@ -13,19 +13,15 @@ const emit = defineEmits<{ filters: [value: Partial<AgentStatsFilters>] }>()
 const detailsOpen = ref(false)
 const chartView = ref<ActivityView>('tokens')
 const groups = [{ value: 'agent', label: 'Agent' }, { value: 'model', label: 'Model' }, { value: 'agent_model', label: 'Agent + model' }] as const
+const displayGroup = computed(() => props.summary?.group_by ?? props.filters.group_by)
 const rows = computed(() => props.summary?.rows.map(row => ({
   ...row, id: row.group_key, input: row.reported_usage.input, cache_read: row.reported_usage.cache_read, output: row.reported_usage.output,
-  detail_lines: [
-    props.global && (row.project_name || row.project_ids.length) ? `${row.project_name ?? 'Projects'} · ${row.project_ids.map(id => `#${id}`).join(', ')}` : null,
-    props.filters.group_by === 'agent' ? row.model : null,
-    row.host_key === 'codex' ? 'Codex' : row.host_key,
-    reviewFacts(row),
-  ].filter((line): line is string => !!line),
+  review_facts: reviewFacts(row),
 })) ?? [])
 type Row = (typeof rows.value)[number]
 const fields = computed(() => usageFields.filter(field => rows.value.some(row => row.reported_usage[field.key] != null)))
 const columns = computed<DataTableColumn<Row>[]>(() => [
-  { key: 'agent_name', label: props.filters.group_by === 'model' ? 'Selected model' : props.filters.group_by === 'agent' ? 'Agent' : 'Agent + model' },
+  { key: 'agent_name', label: displayGroup.value === 'model' ? 'Selected model' : displayGroup.value === 'agent' ? 'Agent' : 'Agent + model' },
   { key: 'launch_attempts', label: 'Attempts', cellClass: 'tabular-nums whitespace-nowrap' },
   ...fields.value.map(field => ({ key: field.key, label: field.label, cellClass: 'tabular-nums whitespace-nowrap' })),
 ])
@@ -34,7 +30,7 @@ const optionalFields = [
   { key: 'cache_write', label: 'Cache write', note: 'included in Input' },
   { key: 'reasoning', label: 'Reasoning', note: 'included in Output' },
 ] as const
-const detailsAvailable = computed(() => !!props.summary && (optionalFields.some(field => props.summary!.totals.reported_usage[field.key] != null) || !!reviewFacts(props.summary.totals)))
+const detailsAvailable = computed(() => !!props.summary && optionalFields.some(field => props.summary!.totals.reported_usage[field.key] != null))
 const inputAvailable = computed(() => !!props.summary && (props.summary.totals.reported_usage.cache_read != null || props.summary.totals.reported_usage.remaining_input != null))
 const chartAvailable = computed(() => props.summary?.daily.some(day => day.reported_usage.total != null && day.launch_attempts > 0))
 function setDate(field: 'start_date' | 'end_date', value: string | number | null): void { emit('filters', { [field]: String(value ?? '') }) }
@@ -110,6 +106,13 @@ function setDate(field: 'start_date' | 'end_date', value: string | number | null
           </p>
         </div>
       </div>
+      <p
+        v-if="reviewFacts(summary.totals)"
+        class="text-xs text-fg-muted"
+        aria-label="Review outcomes"
+      >
+        {{ reviewFacts(summary.totals) }}
+      </p>
       <p
         v-if="summary.undated.launch_attempts"
         class="text-xs text-fg-muted"
@@ -193,9 +196,6 @@ function setDate(field: 'start_date' | 'end_date', value: string | number | null
                 <strong>{{ field.label }}:</strong> {{ formatTokens(summary.totals.reported_usage[field.key], false) }} · {{ field.note }}
               </p>
             </template>
-            <p v-if="reviewFacts(summary.totals)">
-              {{ reviewFacts(summary.totals) }}
-            </p>
           </div>
         </div>
         <div class="flex flex-wrap items-center gap-4">
@@ -220,38 +220,29 @@ function setDate(field: 'start_date' | 'end_date', value: string | number | null
           max-height="24rem"
         >
           <template #cell:agent_name="{ row }">
-            <component
-              :is="row.detail_lines.length ? 'details' : 'div'"
-              class="agent-activity__row-detail"
-            >
-              <component
-                :is="row.detail_lines.length ? 'summary' : 'div'"
-                class="agent-activity__row-label"
-                :class="{ 'focus-ring cursor-pointer': row.detail_lines.length }"
-                :title="filters.group_by === 'model' ? row.model ?? 'Model not recorded' : agentLabel(row.agent_name)"
+            <div class="agent-activity__row-label">
+              <span
+                class="block truncate"
+                :title="displayGroup === 'model' ? row.model ?? 'Model not recorded' : agentLabel(row.agent_name)"
+              >{{ displayGroup === 'model' ? row.model ?? 'Model not recorded' : agentLabel(row.agent_name) }}</span>
+              <span
+                v-if="displayGroup === 'agent_model' && row.model"
+                class="block truncate text-xs text-fg-muted"
+                :title="row.model"
+              >{{ row.model }}</span>
+              <span
+                v-if="global && displayGroup !== 'model'"
+                class="block truncate text-xs text-fg-muted"
+                :title="row.project_name ?? `Project #${row.project_id}`"
+              >{{ row.project_name ?? `Project #${row.project_id}` }}</span>
+              <p
+                v-if="row.review_facts"
+                class="mt-1 truncate text-xs text-fg-muted"
+                :title="row.review_facts"
               >
-                <span>{{ filters.group_by === 'model' ? row.model ?? 'Model not recorded' : agentLabel(row.agent_name) }}</span>
-                <span
-                  v-if="filters.group_by === 'agent_model' && row.model"
-                  class="ml-2 text-fg-muted"
-                >{{ row.model }}</span>
-                <span
-                  v-if="global && filters.group_by !== 'model'"
-                  class="ml-2 text-xs text-fg-muted"
-                >{{ row.project_name }} #{{ row.project_id }}</span>
-              </component>
-              <div
-                v-if="row.detail_lines.length"
-                class="agent-activity__details"
-              >
-                <p
-                  v-for="(line, index) in row.detail_lines"
-                  :key="index"
-                >
-                  {{ line }}
-                </p>
-              </div>
-            </component>
+                {{ row.review_facts }}
+              </p>
+            </div>
           </template>
           <template
             v-for="field in fields"
@@ -292,6 +283,7 @@ function setDate(field: 'start_date' | 'end_date', value: string | number | null
 .agent-activity__split dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .agent-activity__details { display: grid; gap: 8px; white-space: normal; font-size: 12px; line-height: 18px; color: var(--color-fg-muted); padding: 12px 0; max-width: 34rem; overflow-wrap: anywhere; }
 .agent-activity__row-label { overflow-wrap: anywhere; white-space: normal; }
+.agent-activity :deep(.cs-datatable-wrapper > .overflow-x-auto) { scrollbar-gutter: stable; }
 .agent-activity :deep(table) { table-layout: fixed; width: 100%; }
 .agent-activity :deep(th:first-child) { width: 40%; }
 @media (max-width: 1100px) { .agent-activity__headline { grid-template-columns: minmax(0, 1fr); gap: 12px; } .agent-activity__attempts { border: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 12px; } }

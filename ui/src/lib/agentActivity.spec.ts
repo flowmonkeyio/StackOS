@@ -23,7 +23,7 @@ describe('Shared recorded token formatting', () => {
     days[0]!.reported_usage = { ...days[0]!.reported_usage, input: 100, cache_read: 40, remaining_input: 30, input_with_unknown_cache: 30 }
     // Unknown cache on another receipt must not inflate New input to 60.
     expect(activitySeries(days, 'tokens').map(item => item.values)).toEqual([[40], [30], [30]])
-    expect(activitySeries(days, 'agents', true)[0]!.label).toBe('Same-name · Fixture project')
+    expect(activitySeries(days, 'agents', true)[0]!.label).toBe('same-name · Fixture project')
     days[0]!.reported_usage.cache_read = days[0]!.reported_usage.remaining_input = null
     expect(activitySeries(days, 'tokens').map(item => item.key)).toEqual(['output'])
     days[0]!.reported_usage.output = 0
@@ -43,7 +43,8 @@ describe('Shared recorded token formatting', () => {
     expect(reviewFacts(metrics)).toBe('Reviews passed: 2 · Changes requested: 1 · Reviews failed: 1 · Reviews blocked: 1 · Invalid review results: 1')
     metrics.review_outcomes = {}
     expect(reviewFacts(metrics)).toBe('')
-    expect(agentLabel('sdlc_delivery_reviewer')).toBe('Delivery reviewer')
+    expect(agentLabel('sdlc_delivery_reviewer')).toBe('sdlc_delivery_reviewer')
+    expect(agentLabel('Customer_Provided NAME')).toBe('Customer_Provided NAME')
   })
   it('preserves measured zero, independent missing fields, empty and absent projection states', () => {
     const metrics = agentStatsFixture().totals

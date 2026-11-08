@@ -101,8 +101,8 @@ test('synthetic receipts reconcile through both actual Home views and existing p
     }
   }
   await region.getByRole('button', { name: 'See token details' }).click()
-  await expect(region.getByLabel('Token details', { exact: true })).toContainText('Changes requested: 1')
-  await expect(region.getByLabel('Token details', { exact: true })).toContainText('Reviews passed: 1')
+  await expect(region.getByLabel('Review outcomes', { exact: true })).toContainText('Changes requested: 1')
+  await expect(region.getByLabel('Review outcomes', { exact: true })).toContainText('Reviews passed: 1')
   await expect(region).not.toContainText('classified')
   await region.getByRole('button', { name: 'Hide token details' }).click()
   await region.locator('.activity-chart canvas').focus()
@@ -119,7 +119,7 @@ test('synthetic receipts reconcile through both actual Home views and existing p
   await region.getByText('Daily values', { exact: true }).click()
   const daily = region.getByRole('table', { name: 'Exact daily usage' })
   await expect(daily.locator('tbody tr').last()).toContainText('100')
-  await expect(daily.locator('thead th')).toHaveText(['Date', 'Input', 'Cache', 'Output', 'Reported total'])
+  await expect(daily.locator('thead th')).toHaveText(['Date', 'Input', 'Cache', 'Output', 'Total'])
   await region.getByText('Daily values', { exact: true }).click()
   for (const [label, group_by] of [['Agent', 'agent'], ['Agent + model', 'agent_model'], ['Model', 'model']] as const) {
     await region.getByRole('group', { name: 'Group agent usage' }).getByRole('button', { name: label, exact: true }).click()
@@ -208,6 +208,83 @@ async function workMetrics(region: Locator, totals: AgentStatsMetrics) {
   }
   await expect(region).not.toContainText('Partial')
 }
+
+test('analytics keeps its frame stable with many real identities and omits metadata-only expansions', async ({ page }, testInfo) => {
+  test.setTimeout(180_000)
+  expect(new URL(getBaseUrl()).port).not.toBe('5180')
+  await resetProjects()
+  const errors = trackConsoleErrors(page)
+  const project = await createProject({ name: 'Layout stress project', slug: 'layout-stress', domain: 'synthetic.test' })
+  await operation('tracker.createTask', { project_id: project.id, key: 'layout-stress', title: 'Synthetic layout proof' })
+  const filters = localActivityFilters()
+  for (let index = 0; index < 12; index++) {
+    const key = `series-${index}`
+    const name = `Customer_Agent ${index} with a long preserved identity for layout verification`
+    await operation('tracker.createTicket', { project_id: project.id, task_key: 'layout-stress', key, title: name })
+    const entry = receipt(index % 2 ? 'review_agent' : 'delivery_agent', index % 3 ? 'success' : 'repair', 1_250_000_000 + index * 1000, index % 2 ? 'gpt-6-astra' : 'gpt-6.1-sol')
+    entry.agent = name
+    entry.launch.agent = name
+    entry.launch.started_at = new Date(Date.now() - (index < 6 ? 86_400_000 : 0)).toISOString()
+    await operation('tracker.updateTicket', { project_id: project.id, ticket_key: key, patch_json: { completion_evidence_json: { automatic_delivery: { attempt: 1, delivery: entry } } } })
+  }
+  const before = await operation('tracker.get', { project_id: project.id })
+  const evidence: object[] = []
+  for (const width of [1280, 1536]) for (const theme of ['light', 'dark']) for (const scope of ['project', 'global']) {
+    await page.setViewportSize({ width, height: 800 })
+    await page.goto(scope === 'project' ? `/projects/${project.id}` : '/')
+    await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
+    const region = page.getByRole('region', { name: 'Agent activity', exact: true })
+    const table = region.getByRole('table', { name: 'Agent activity breakdown' })
+    await expect(table.locator('tbody tr')).toHaveCount(2)
+    await expect(table.locator('..')).toHaveCSS('scrollbar-gutter', 'stable')
+    const frame = () => region.evaluate(root => {
+      const origin = root.getBoundingClientRect()
+      const bounds = (selector: string) => {
+        const box = root.querySelector(selector)!.getBoundingClientRect()
+        return [box.x - origin.x, box.y - origin.y, box.width, box.height].map(value => Math.round(value * 100) / 100)
+      }
+      return { plot: bounds('.activity-chart__plot'), legend: bounds('.activity-chart__legend'), caption: bounds('.activity-chart__selection'), columns: [...root.querySelectorAll('table[aria-label="Agent activity breakdown"] thead th')].map(cell => Math.round(cell.getBoundingClientRect().width * 100) / 100) }
+    })
+    const baseline = await frame()
+    for (const view of ['Agents', 'Tokens']) {
+      await region.getByRole('group', { name: 'Chart view', exact: true }).getByRole('button', { name: view, exact: true }).click()
+      await expect(region.getByRole('heading', { name: view === 'Tokens' ? 'Tokens per day' : 'Tokens by agent per day' })).toBeVisible()
+      expect(await frame()).toEqual(baseline)
+      const canvas = region.locator('canvas')
+      await canvas.focus()
+      await canvas.press('End')
+      expect(await frame()).toEqual(baseline)
+      await expect(region.locator('.activity-chart__exact')).toHaveClass(/sr-only/)
+      await expect(region.locator('.activity-chart__selection')).not.toContainText(/Reported total|Shown|Customer_Agent|Cache:/)
+      await canvas.hover()
+      expect(await frame()).toEqual(baseline)
+    }
+    for (const [label, group] of [['Agent', 'agent'], ['Agent + model', 'agent_model'], ['Model', 'model']] as const) {
+      await region.getByRole('group', { name: 'Group agent usage' }).getByRole('button', { name: label, exact: true }).click()
+      const stats = await operation<SchemaTrackerAgentStatsOut>(scope === 'project' ? 'tracker.agentStats' : 'tracker.agentStatsAll', { ...(scope === 'project' ? { project_id: project.id } : { is_active: true }), ...filters, group_by: group })
+      await expect(table.locator('thead th').first()).toHaveText(group === 'model' ? 'Selected model' : label)
+      await expect(table.locator('tbody tr')).toHaveCount(stats.rows.length)
+      expect(await frame()).toEqual(baseline)
+      await expect(table.locator('details, summary')).toHaveCount(0)
+      await expect(table).not.toContainText('Codex')
+    }
+    const overflow = await region.evaluate(root => [...root.querySelectorAll<HTMLElement>('*')].filter(node => node.clientWidth > 0 && node.scrollWidth > node.clientWidth + 1 && !node.closest('.sr-only') && !node.matches('.truncate, .activity-chart__legend-label')).map(node => node.className))
+    expect(overflow).toEqual([])
+    await region.getByRole('group', { name: 'Chart view', exact: true }).getByRole('button', { name: 'Agents', exact: true }).click()
+    await expect(region.locator('.activity-chart__legend-label')).toHaveCount(12)
+    await expect(region.locator('.activity-chart__legend-label').first()).toHaveAttribute('title', /Customer_Agent/)
+    expect(await frame()).toEqual(baseline)
+    await region.getByText('Daily values', { exact: true }).click()
+    const daily = region.getByRole('table', { name: 'Exact daily usage' })
+    await expect(daily.locator('tbody span').last()).toHaveAttribute('title', /tokens/)
+    expect((await frame()).plot).toEqual(baseline.plot)
+    await page.screenshot({ path: testInfo.outputPath(`layout-${scope}-${width}-${theme}.png`), fullPage: true })
+    evidence.push({ width, theme, scope, baseline, final: await frame(), overflow })
+  }
+  expect(await operation('tracker.get', { project_id: project.id })).toEqual(before)
+  errors.assertNone()
+  writeFileSync(testInfo.outputPath('analytics-layout-proof.json'), JSON.stringify({ synthetic: true, evidence, console_errors: errors.errors }, null, 2))
+})
 
 async function readableMissingValues(region: Locator) {
   await expect(region.locator('.agent-usage-summary dd').filter({ hasText: 'Not reported' })).toHaveCount(0)

@@ -61,9 +61,7 @@ export function reviewFacts(metrics: AgentStatsMetrics): string {
 }
 
 export function agentLabel(name: string | null): string {
-  if (!name) return 'Agent not recorded'
-  const plain = name.replace(/^sdlc_/, '').replaceAll('_', ' ')
-  return plain.charAt(0).toUpperCase() + plain.slice(1)
+  return name ?? 'Agent not recorded'
 }
 
 export function groupLabel(row: AgentStatsRow, group: 'agent' | 'model', global = false): string {

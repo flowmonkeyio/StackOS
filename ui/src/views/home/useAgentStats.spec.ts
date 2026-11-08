@@ -80,6 +80,29 @@ describe('Agent activity query', () => {
     expect(stats.summary.value).toBeNull()
   })
 
+  it('retains the dated chart during regrouping and preserves honest failures and date invalidation', async () => {
+    const stats = setup()
+    vi.mocked(callOperation).mockResolvedValueOnce(agentStatsFixture())
+    await stats.load()
+    const daily = stats.summary.value!.daily
+    let resolveGroup!: (value: unknown) => void
+    vi.mocked(callOperation).mockImplementationOnce(() => new Promise(resolve => { resolveGroup = resolve }))
+    const pending = stats.setFilters({ group_by: 'agent' as never })
+    expect(stats.loading.value).toBe(true)
+    expect(stats.summary.value?.group_by).toBe('model')
+    expect(stats.summary.value?.daily).toEqual(daily)
+    resolveGroup(agentStatsFixture({ group_by: 'agent' as never }))
+    await pending
+    expect(stats.summary.value?.group_by).toBe('agent')
+    vi.mocked(callOperation).mockRejectedValueOnce(new Error('grouping failed'))
+    await stats.setFilters({ group_by: 'agent_model' as never })
+    expect(stats.summary.value?.group_by).toBe('agent')
+    expect(stats.error.value).toContain('grouping failed')
+    await stats.setFilters({ end_date: 'invalid' })
+    expect(stats.summary.value).toBeNull()
+    expect(stats.error.value).toContain('ordered date range')
+  })
+
   it('uses one date/group selection for every response and invalidates pending prior dates', async () => {
     const stats = setup()
     let resolveOld!: (value: unknown) => void

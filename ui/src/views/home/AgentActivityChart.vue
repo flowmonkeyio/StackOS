@@ -17,7 +17,7 @@ const title = computed(() => view.value === 'tokens' ? 'Tokens per day' : 'Token
 const series = computed(() => activitySeries(props.days, view.value, props.global))
 const focused = computed(() => selectedDay.value == null ? null : props.days[selectedDay.value] ?? null)
 const dailyFields = computed(() => ['input', 'cache_read', 'output', 'total'].filter(key => props.days.some(day => day.launch_attempts > 0 && day.reported_usage[key as 'input'] != null)) as ('input' | 'cache_read' | 'output' | 'total')[])
-const dailyLabels = { input: 'Input', cache_read: 'Cache', output: 'Output', total: 'Reported total' }
+const dailyLabels = { input: 'Input', cache_read: 'Cache', output: 'Output', total: 'Total' }
 function dayLabel(date: string): string {
   return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 }
@@ -25,7 +25,9 @@ function value(index: number): number | null {
   const values = series.value.map(item => item.values[index]).filter((amount): amount is number => amount != null)
   return values.length ? values.reduce((sum, amount) => sum + amount, 0) : null
 }
-function totalLabel(index: number): string { return value(index) === props.days[index]?.reported_usage.total ? 'Reported total' : 'Shown' }
+function incomplete(index: number): boolean { return value(index) !== props.days[index]?.reported_usage.total }
+const partial = computed(() => props.days.some((_day, index) => value(index) != null && incomplete(index)))
+function valueLabel(index: number): string { return incomplete(index) ? 'Available tokens' : 'Tokens' }
 function focusDay(index: number): void {
   selectedDay.value = index
   if (chart) {
@@ -61,7 +63,7 @@ const totalsPlugin: Plugin<'bar'> = {
     props.days.forEach((_day, index) => {
       const amount = value(index)
       if (amount != null && props.days.length <= 14)
-        ctx.fillText(`${totalLabel(index) === 'Shown' ? 'Shown ' : ''}${formatTokens(amount)}`, scales.x!.getPixelForValue(index), Math.max(12, scales.y!.getPixelForValue(amount) - 8))
+        ctx.fillText(formatTokens(amount), scales.x!.getPixelForValue(index), Math.max(12, scales.y!.getPixelForValue(amount) - 8))
       if (view.value === 'tokens' && series.value[0]?.key === 'cache_read') {
         const bar = instance.getDatasetMeta(0).data[index] as BarElement | undefined
         const box = bar?.getProps(['x', 'y', 'base', 'width'], true)
@@ -96,7 +98,7 @@ function paint(): void {
     interaction: { mode: 'index', intersect: false },
     scales: {
       x: { stacked: true, grid: { display: false }, ticks: { color: token('fg-muted'), font: { family: style.fontFamily, size: 11 }, maxTicksLimit: 8 }, border: { color: token('border-default') } },
-      y: { stacked: true, beginAtZero: true, grid: { color: token('border-default') }, border: { display: false }, ticks: { color: token('fg-muted'), maxTicksLimit: 4, callback: tick => formatTokens(Number(tick)).replace(/\.00([MB])$/, '$1') } },
+      y: { stacked: true, beginAtZero: true, suggestedMax: Math.max(1, ...props.days.map(day => day.reported_usage.total ?? 0)), afterFit: axis => { axis.width = 88 }, grid: { color: token('border-default') }, border: { display: false }, ticks: { color: token('fg-muted'), maxTicksLimit: 4, callback: tick => formatTokens(Number(tick)).replace(/\.00([MB])$/, '$1') } },
     },
     plugins: {
       legend: { display: false },
@@ -105,10 +107,10 @@ function paint(): void {
         backgroundColor: token('bg-surface'), titleColor: token('fg-strong'), bodyColor: token('fg-default'), borderColor: token('border-strong'), borderWidth: 1,
         callbacks: {
           title: items => props.days[items[0]?.dataIndex ?? 0]?.date ?? '',
-          label: item => `${item.dataset.label}: ${formatTokens(item.raw as number | null, false)} tokens`,
+          label: item => `${(item.dataset.label ?? '').length > 36 ? `${item.dataset.label!.slice(0, 35)}…` : item.dataset.label}: ${formatTokens(item.raw as number | null, false)}`,
           footer: items => {
             const index = items[0]?.dataIndex ?? 0
-            return value(index) == null ? [] : [`${totalLabel(index)}: ${formatTokens(value(index), false)}`]
+            return value(index) == null ? [] : [`${valueLabel(index)}: ${formatTokens(value(index), false)}`]
           },
         },
       },
@@ -130,7 +132,6 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy(); chart = null }
 <template>
   <figure
     class="activity-chart"
-    :class="{ 'activity-chart--agents': view === 'agents' }"
     aria-label="Daily recorded agent usage"
   >
     <figcaption class="activity-chart__header">
@@ -180,17 +181,35 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy(); chart = null }
             class="activity-chart__swatch"
             :style="{ backgroundColor: `var(--color-${item.token})` }"
             aria-hidden="true"
-          />{{ item.label }}
+          />
+          <span
+            class="activity-chart__legend-label"
+            :title="item.label"
+            tabindex="0"
+          >{{ item.label }}</span>
         </li>
       </ul>
     </div>
+    <p
+      class="activity-chart__selection"
+      aria-hidden="true"
+    >
+      <template v-if="focused && value(selectedDay!) != null">
+        {{ dayLabel(focused.date) }} · {{ formatTokens(value(selectedDay!)) }} tokens<template v-if="incomplete(selectedDay!)">
+          · available measurements
+        </template>
+      </template>
+      <template v-else>
+        {{ partial ? 'Available measurements; some token details are missing.' : 'Hover a day or use arrow keys for exact values.' }}
+      </template>
+    </p>
     <div
       :id="detailId"
-      class="activity-chart__exact"
+      class="activity-chart__exact sr-only"
       aria-live="polite"
     >
       <template v-if="focused">
-        <strong>{{ focused.date }}<template v-if="value(selectedDay!) != null"> · {{ totalLabel(selectedDay!) }}: {{ formatTokens(value(selectedDay!), false) }} tokens</template></strong>
+        <strong>{{ focused.date }}<template v-if="value(selectedDay!) != null"> · {{ valueLabel(selectedDay!) }}: {{ formatTokens(value(selectedDay!), false) }} tokens</template></strong>
         <span
           v-for="item in series.filter(item => item.values[selectedDay!] != null)"
           :key="item.key"
@@ -231,9 +250,12 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy(); chart = null }
                 v-for="field in dailyFields"
                 :key="field"
               >
-                <template v-if="day.reported_usage[field] != null">
-                  {{ formatTokens(day.reported_usage[field], false) }}
-                </template>
+                <span
+                  v-if="day.reported_usage[field] != null"
+                  tabindex="0"
+                  :title="`${dailyLabels[field]}: ${formatTokens(day.reported_usage[field], false)} tokens`"
+                  :aria-label="`${dailyLabels[field]}: ${formatTokens(day.reported_usage[field], false)} tokens`"
+                >{{ formatTokens(day.reported_usage[field]) }}</span>
               </td>
             </tr>
           </tbody>
@@ -245,22 +267,20 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy(); chart = null }
 
 <style scoped>
 .activity-chart { min-width: 0; margin: 0; }
-.activity-chart__header { display: flex; flex-wrap: wrap; align-items: start; justify-content: space-between; gap: 12px; }
+.activity-chart__header { display: flex; align-items: start; justify-content: space-between; gap: 12px; min-height: 44px; }
 .activity-chart__plot { position: relative; height: 215px; margin-top: 12px; }
-.activity-chart__body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, 140px); align-items: center; gap: 12px; }
-.activity-chart__legend { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; max-height: 215px; overflow-y: auto; color: var(--color-fg-default); font-size: 13px; }
-.activity-chart__legend li { display: flex; align-items: center; gap: 6px; overflow-wrap: anywhere; }
-.activity-chart--agents .activity-chart__body { display: block; }
-.activity-chart--agents .activity-chart__legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 16px; max-height: 144px; }
+.activity-chart__body { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 227px 56px; gap: 8px; }
+.activity-chart__legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 24px; align-content: start; gap: 4px 16px; height: 56px; margin: 0; overflow-y: auto; scrollbar-gutter: stable; color: var(--color-fg-default); font-size: 12px; }
+.activity-chart__legend li { min-width: 0; display: flex; align-items: center; gap: 6px; }
+.activity-chart__legend-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.activity-chart__legend-label:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: -2px; }
 .activity-chart__swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
 .activity-chart__plot canvas:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 2px; border-radius: var(--radius-xs); }
-.activity-chart__exact { min-height: 36px; display: flex; flex-wrap: wrap; gap: 2px 12px; font-size: 12px; line-height: 18px; color: var(--color-fg-muted); padding-top: 8px; }
-.activity-chart__exact strong { color: var(--color-fg-default); font-weight: 500; }
+.activity-chart__selection { height: 26px; margin: 0; padding-top: 6px; white-space: nowrap; font-size: 12px; line-height: 18px; color: var(--color-fg-muted); }
 .activity-chart__daily-table { margin-top: 4px; }
 .activity-chart__daily-scroll { max-height: 240px; overflow-y: auto; }
 table { table-layout: fixed; }
 thead { position: sticky; top: 0; background: var(--color-bg-surface); }
-th, td { text-align: right; padding: 6px 4px; border-bottom: 1px solid var(--color-border-subtle); overflow-wrap: anywhere; }
+th, td { text-align: right; padding: 6px 4px; border-bottom: 1px solid var(--color-border-subtle); white-space: nowrap; }
 th:first-child { text-align: left; }
-@media (max-width: 1350px) { .activity-chart__body { display: block; } .activity-chart__legend { flex-direction: row; flex-wrap: wrap; gap: 8px 16px; font-size: 12px; } }
 </style>

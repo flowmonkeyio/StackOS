@@ -13,28 +13,32 @@ describe('Agent usage presentation', () => {
     const fixture = agentStatsFixture()
     fixture.rows[0]!.host_key = null
     fixture.rows[0]!.review_outcomes = {}
+    fixture.group_by = group as ActivityGroup
     if (group === 'agent') fixture.rows[0]!.model = null
     const wrapper = render(fixture, { filters: { ...localActivityFilters(), group_by: group as ActivityGroup } })
     const row = wrapper.get('table tbody tr')
     expect(row.find('details').exists()).toBe(false)
     expect(row.find('summary').exists()).toBe(false)
-    expect(row.text()).toContain(group === 'model' ? 'recorded-sol' : 'Same-name')
+    expect(row.text()).toContain(group === 'model' ? 'recorded-sol' : 'same-name')
     expect(row.text()).toContain('70')
     wrapper.unmount()
   })
 
-  it.each(['host', 'review', 'model', 'project'] as const)('retains a disclosure with supported %s details', async detail => {
+  it.each(['host', 'review', 'model', 'project'] as const)('does not turn %s metadata into a disclosure', detail => {
     const fixture = agentStatsFixture()
     fixture.rows[0]!.host_key = detail === 'host' ? 'codex' : null
     fixture.rows[0]!.review_outcomes = detail === 'review' ? { repair: 1 } : {}
+    fixture.group_by = (detail === 'model' ? 'agent' : 'model') as ActivityGroup
     const wrapper = render(fixture, {
       global: detail === 'project',
       filters: { ...localActivityFilters(), group_by: (detail === 'model' ? 'agent' : 'model') as ActivityGroup },
     })
-    const disclosure = wrapper.get('table tbody tr details')
-    expect(disclosure.get('summary').text()).toBeTruthy()
-    await disclosure.get('summary').trigger('click')
-    expect(disclosure.get('.agent-activity__details').text()).toContain({ host: 'Codex', review: 'Changes requested: 1', model: 'recorded-sol', project: 'Fixture project' }[detail])
+    const row = wrapper.get('table tbody tr')
+    expect(row.find('details').exists()).toBe(false)
+    expect(row.find('summary').exists()).toBe(false)
+    expect(row.find('.agent-activity__details').exists()).toBe(false)
+    expect(row.text()).not.toMatch(/Codex|#1/)
+    if (detail === 'review') expect(row.text()).toContain('Changes requested: 1')
     wrapper.unmount()
   })
 
@@ -55,8 +59,8 @@ describe('Agent usage presentation', () => {
     const detail = wrapper.get('[aria-label="Token details"]')
     expect(detail.text()).toContain('Cache write: 10')
     expect(detail.text()).toContain('Reasoning: 5')
-    expect(detail.text()).toContain('Changes requested: 1')
-    expect(detail.text()).toContain('Reviews passed: 1')
+    expect(wrapper.get('[aria-label="Review outcomes"]').text()).toContain('Changes requested: 1')
+    expect(wrapper.get('[aria-label="Review outcomes"]').text()).toContain('Reviews passed: 1')
     expect(wrapper.text()).not.toMatch(/classified|review_agent|delivery_agent|No recorded review/)
     expect(wrapper.findComponent({ name: 'AgentActivityChart' }).props('days')).toEqual(fixture.daily)
     expect(wrapper.text()).not.toContain('Partial')
@@ -77,6 +81,20 @@ describe('Agent usage presentation', () => {
     await wrapper.setProps({ summary: null, loading: true })
     await wrapper.setProps({ summary: agentStatsFixture(), loading: false })
     expect(wrapper.findComponent({ name: 'AgentActivityChart' }).props('view')).toBe('agents')
+    wrapper.unmount()
+  })
+
+  it('labels retained rows with their loaded grouping while a new grouping loads', async () => {
+    const wrapper = render()
+    const chart = wrapper.findComponent({ name: 'AgentActivityChart' })
+    await wrapper.setProps({ filters: { ...localActivityFilters(), group_by: 'agent' as ActivityGroup }, loading: true })
+    expect(wrapper.get('table th').text()).toBe('Selected model')
+    expect(wrapper.get('table tbody tr').text()).toContain('recorded-sol')
+    expect(wrapper.findComponent({ name: 'AgentActivityChart' }).vm).toBe(chart.vm)
+    const fixture = agentStatsFixture({ group_by: 'agent' as ActivityGroup })
+    await wrapper.setProps({ summary: fixture, loading: false })
+    expect(wrapper.get('table th').text()).toBe('Agent')
+    expect(wrapper.get('table tbody tr').text()).toContain('same-name')
     wrapper.unmount()
   })
 

@@ -504,8 +504,9 @@ remainder. `input_with_unknown_cache` is measured Input on receipts whose
 cache-read split is unknown. These three internal accounting portions (known
 cache read, known remainder, Input with unreported split) reconcile to measured
 Input. The unknown-cache portion is not a displayed chart series. Tokens shows
-only available Cache, New input and Output; when the shown stack differs from
-the reported Input + Output, its label is **Shown**, not a complete total.
+only available Cache, New input and Output; when the plotted stack differs from
+the reported Input + Output, concise available-measurement context distinguishes
+it from a complete total. Exact accessible values use **Available tokens**.
 When all cache reads are unknown, cache and remainder stay null; an all-empty
 scope returns zeros. Do not subtract a partial cache sum from all Input.
 
@@ -598,7 +599,11 @@ days in the visibly identified browser IANA timezone. Exactly two chart views,
 Output; New input uses the repository's paired Input-minus-Cache projection,
 never an aggregate subtraction that invents a remainder for missing cache.
 Agents splits the same reported Input + Output by agent. Incomplete composition
-is labelled **Shown**, rather than a complete total. Exact hover/keyboard values follow the
+uses available-measurement context rather than claiming a complete total. Both
+views retain the same plot, axis gutter, bounded legend and selection-caption
+dimensions. Long legend names are elided with their unchanged identity available
+on focus/hover; exact per-series text stays accessible without a visible raw-value
+transcript. Exact hover/keyboard values follow the
 [shared Home component contract](ui-component-inventory.md#view-decomposition-pattern).
 Overview retains its existing Active/Archived/All project visibility. Agent
 groups retain project identity; Model grouping combines the selected projects.
@@ -608,14 +613,19 @@ A measured zero stays `0`; unsupported metrics are omitted from summaries,
 columns, legends, sidebars and details. An individual missing cell stays empty;
 known Input/Cache/Output remain visible and null remains null in the API. There
 is no synthetic unknown-cache series. A fixed-column, vertically bounded daily
-table shows Date and available Input, Cache, Output and Reported total, independent
-of agent count. Readable agent names preserve exact recorded model versions.
-Details retain supported cache-write/reasoning values and plain recorded review
-counts (passed, changes requested, blocked, failed or invalid result), with no
+table shows Date and available Input, Cache, Output and Total, independent
+of agent count. Compact values retain exact focus/hover labels. Agent identities
+are preserved unchanged, as are exact recorded model versions. Breakdown rows
+have plain labels with compact review facts; project IDs/lists, host names,
+repeated identity and isolated counts do not create row disclosures. Token
+details retain supported cache-write/reasoning values, while compact summary/row
+facts show recorded review counts (passed, changes requested, blocked, failed or invalid result), with no
 empty review sentences, raw role keys, classification prose or inferred approval
 rate. Exact-value accessible labels retain field coverage for partial measurements.
 A failed refresh retains same-scope values with a warning and
-their original update time; scope changes clear those values. Both pages reuse
+their original update time. Regrouping retains the dated chart/totals and the
+returned grouping label on existing rows until the next response; date, project
+and visibility changes clear those values. Both pages reuse
 their existing refresh owner, with no statistics writes, receipt aggregation in
 Vue, or extra timer.
 
