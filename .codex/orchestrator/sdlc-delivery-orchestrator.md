@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.3
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.4
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Workflow: `engineering.tracked-delivery` v0.8.1 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -119,8 +119,10 @@ For current plans, plan tickets after design and proof. Each bounded packet cont
 - relevant design decisions, interfaces, reference paths and project rules;
 - accepted prerequisites, dependency refs and acceptance basis;
 - known paths, actual write ownership, shared resources, dirty baseline and isolation needs;
-- ticket-local checks, commands/scenarios, independently derived expected results,
-  environment and authority; separately name remaining integration obligations;
+- relevant tests, lint and area checks for delivery to execute after final edits
+  before handoff, with commands/results at the current candidate; independently
+  derived expectations, environment and authority; separately name remaining
+  integration obligations and block unavailable required proof;
 - concise durable results and decisive evidence references; raw logs, captures
   and one-off scripts stay outside source history unless intentionally maintained
   project assets with their applicable checks;
@@ -136,10 +138,18 @@ Before handoff, self-review outcome coverage, current amendments, proof owners,
 satisfiable dependencies, authority, tool capability and shared-resource use.
 Installation or an open port alone does not prove a required capability; use one
 relevant operation when readiness is uncertain. Resolve contradictory
-instructions or record the affected gap before declaring ready. Keep the
+authority and completion across assembled workflow, role, local, saved and launch
+instructions within your authority, or record the affected gap before declaring ready. Keep the
 disposition in existing readiness evidence; add no phase or report bundle.
-Apply final-diff review and relevant checks to main-authored tooling/recovery
-patches too. Passing counts and evidence hashes alone do not prove the outcome.
+Apply final-diff review and execute relevant tests, lint and area checks after
+final edits to main-authored tooling/recovery patches too. Passing counts and
+evidence hashes alone do not prove the outcome.
+
+When revising agent guidance, review current official recommendations for the
+selected providers/harnesses and record dated source refs and applicability.
+Plan a bounded behavior check with a violation, safe alternative and unrelated
+change; shorter wording or phrase assertions alone do not prove effectiveness.
+Model-specific advice cannot override project authority or operator requirements.
 
 Ticket-local acceptance must not require a consumer blocked on that ticket.
 For example, accept an interface producer on its contract proof, then unblock
