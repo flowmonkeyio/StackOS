@@ -6,7 +6,7 @@ import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
 import { UiButton, UiButtonGroup, UiCallout, UiFormField, UiInput, UiSkeleton } from '@/components/ui'
 import { formatAbsoluteDateTime } from '@/lib/stackos/time'
 import AgentActivityChart from './AgentActivityChart.vue'
-import { agentLabel, cacheShare, exactUsage, formatTokens, formatUsage, reviewFacts, usageFields, usageValue, type AgentStats, type AgentStatsFilters, type ActivityGroup, type ActivityView } from '@/lib/agentActivity'
+import { activityColor, agentLabel, cacheShare, exactUsage, formatTokens, formatUsage, groupLabel, reviewFacts, usageFields, usageValue, type AgentStats, type AgentStatsFilters, type ActivityGroup, type ActivityView } from '@/lib/agentActivity'
 
 const props = defineProps<{ summary: AgentStats | null; loading: boolean; error: string | null; filters: AgentStatsFilters; global?: boolean }>()
 const emit = defineEmits<{ filters: [value: Partial<AgentStatsFilters>] }>()
@@ -127,6 +127,7 @@ function setDate(field: 'start_date' | 'end_date', value: string | number | null
           <AgentActivityChart
             v-model:view="chartView"
             :days="summary.daily"
+            :group="displayGroup"
             :timezone="filters.timezone"
             :global="global"
           />
@@ -214,28 +215,38 @@ function setDate(field: 'start_date' | 'end_date', value: string | number | null
           max-height="24rem"
         >
           <template #cell:agent_name="{ row }">
-            <div class="agent-activity__row-label">
+            <div class="agent-activity__identity">
               <span
-                class="block truncate"
-                :title="displayGroup === 'model' ? row.model ?? 'Model not recorded' : agentLabel(row.agent_name)"
-              >{{ displayGroup === 'model' ? row.model ?? 'Model not recorded' : agentLabel(row.agent_name) }}</span>
-              <span
-                v-if="displayGroup === 'agent_model' && row.model"
-                class="block truncate text-xs text-fg-muted"
-                :title="row.model"
-              >{{ row.model }}</span>
-              <span
-                v-if="global && displayGroup !== 'model'"
-                class="block truncate text-xs text-fg-muted"
-                :title="row.project_name ?? `Project #${row.project_id}`"
-              >{{ row.project_name ?? `Project #${row.project_id}` }}</span>
-              <p
-                v-if="row.review_facts"
-                class="mt-1 truncate text-xs text-fg-muted"
-                :title="row.review_facts"
+                class="agent-activity__swatch"
+                :style="{ backgroundColor: `var(--color-${activityColor(row.group_key)})` }"
+                aria-hidden="true"
+              />
+              <div
+                class="agent-activity__row-label"
+                :title="groupLabel(row, displayGroup, global)"
               >
-                {{ row.review_facts }}
-              </p>
+                <span
+                  class="block truncate"
+                  :title="displayGroup === 'model' ? row.model ?? 'Model not recorded' : agentLabel(row.agent_name)"
+                >{{ displayGroup === 'model' ? row.model ?? 'Model not recorded' : agentLabel(row.agent_name) }}</span>
+                <span
+                  v-if="displayGroup === 'agent_model'"
+                  class="block truncate text-xs text-fg-muted"
+                  :title="row.model ?? 'Model not recorded'"
+                >{{ row.model ?? 'Model not recorded' }}</span>
+                <span
+                  v-if="global && displayGroup !== 'model'"
+                  class="block truncate text-xs text-fg-muted"
+                  :title="row.project_name ?? `Project #${row.project_id}`"
+                >{{ row.project_name ?? `Project #${row.project_id}` }}</span>
+                <p
+                  v-if="row.review_facts"
+                  class="mt-1 truncate text-xs text-fg-muted"
+                  :title="row.review_facts"
+                >
+                  {{ row.review_facts }}
+                </p>
+              </div>
             </div>
           </template>
           <template
@@ -277,6 +288,9 @@ function setDate(field: 'start_date' | 'end_date', value: string | number | null
 .agent-activity__split dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .agent-activity__details { display: grid; gap: 8px; white-space: normal; font-size: 12px; line-height: 18px; color: var(--color-fg-muted); padding: 12px 0; max-width: 34rem; overflow-wrap: anywhere; }
 .agent-activity__row-label { overflow-wrap: anywhere; white-space: normal; }
+.agent-activity__identity { display: flex; align-items: start; gap: 6px; }
+.agent-activity__identity > .agent-activity__row-label { min-width: 0; }
+.agent-activity__swatch { width: 10px; height: 10px; margin-top: 4px; border-radius: 2px; flex: none; }
 .agent-activity :deep(.cs-datatable-wrapper > .overflow-x-auto) { scrollbar-gutter: stable; }
 .agent-activity :deep(table) { table-layout: fixed; width: 100%; }
 .agent-activity :deep(th:first-child) { width: 40%; }

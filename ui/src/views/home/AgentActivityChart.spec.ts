@@ -2,7 +2,7 @@ import { mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import AgentActivityChart from './AgentActivityChart.vue'
-import { agentStatsFixture } from './agentStatsFixtures'
+import { agentStatsFixture, groupedAgentStatsFixture } from './agentStatsFixtures'
 
 const mocks = vi.hoisted(() => ({ created: vi.fn(), updated: vi.fn(), destroyed: vi.fn(), active: vi.fn() }))
 vi.mock('chart.js', () => ({
@@ -20,9 +20,28 @@ afterEach(() => { vi.clearAllMocks(); vi.restoreAllMocks(); delete document.docu
 function render() { return mount(AgentActivityChart, { props: { days: agentStatsFixture().daily, timezone: 'America/Los_Angeles' } }) }
 
 describe('Daily stacked usage chart', () => {
+  it.each(['agent', 'model', 'agent_model'] as const)('uses %s identities in bars, legend, pointer tooltip and keyboard values', async group => {
+    const fixture = groupedAgentStatsFixture(group)
+    const wrapper = mount(AgentActivityChart, { props: { days: fixture.daily, timezone: 'UTC', group, view: 'agents' } })
+    const config = mocks.created.mock.calls[0]![0]
+    const labels = config.data.datasets.map((item: { label: string }) => item.label)
+    expect(wrapper.findAll('.activity-chart__legend-label').map(item => item.text())).toEqual(labels)
+    config.options.plugins.tooltip.external({ tooltip: { opacity: 1, dataPoints: [{ dataIndex: 0 }] } })
+    await nextTick()
+    expect(wrapper.findAll('.activity-chart__tooltip-label').map(item => item.text())).toEqual(labels)
+    expect(wrapper.get('[role="tooltip"] footer').text()).toBe('Tokens: 600')
+    await wrapper.get('canvas').trigger('focus')
+    expect(wrapper.get('[aria-live="polite"]').text()).toContain('Tokens: 600 tokens')
+    for (const label of labels) expect(wrapper.get('[aria-live="polite"]').text()).toContain(label)
+    await wrapper.setProps({ group: group === 'model' ? 'agent_model' : 'model' })
+    expect(mocks.updated).toHaveBeenCalled()
+    expect(mocks.created).toHaveBeenCalledOnce()
+    wrapper.unmount()
+  })
+
   it('renders N/A in retained daily slots and exact keyboard values while chart samples stay null', async () => {
     const days = agentStatsFixture().daily
-    days.push({ ...agentStatsFixture().undated, date: '2026-11-07', by_agent: [], by_model: [] })
+    days.push({ ...agentStatsFixture().undated, date: '2026-11-07', by_agent: [], by_model: [], by_agent_model: [] })
     const wrapper = mount(AgentActivityChart, { props: { days, timezone: 'UTC' } })
     const config = mocks.created.mock.calls[0]![0]
     expect(config.data.datasets.map((item: { data: (number | null)[] }) => item.data)).toEqual([[30, null], [40, null], [30, null]])

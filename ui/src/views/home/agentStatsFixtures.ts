@@ -1,5 +1,5 @@
 import { AgentStatsCoverageOutClassification_status as Classification, AgentStatsCoverageOutUsage_status as Usage, AgentStatsFieldCoverageOutStatus as Field, AgentStatsRowOutSelected_roleAnyOf0 as Role, TrackerAgentStatsOutGroup_by as Group } from '@/api'
-import type { AgentStats, AgentStatsMetrics, AgentStatsRow } from '@/lib/agentActivity'
+import type { ActivityGroup, AgentStats, AgentStatsMetrics, AgentStatsRow } from '@/lib/agentActivity'
 
 export function agentStatsFixture(overrides: Partial<AgentStats> = {}): AgentStats {
   const metrics: AgentStatsMetrics = {
@@ -23,7 +23,23 @@ export function agentStatsFixture(overrides: Partial<AgentStats> = {}): AgentSta
   return {
     project_id: 1, is_active: null, as_of: '2026-11-06T20:00:00Z', totals: metrics,
     rows: [row], group_by: Group.model, start_date: '2026-11-01', end_date: '2026-11-07', timezone: 'America/Los_Angeles',
-    daily: [{ ...structuredClone(metrics), date: '2026-11-06', by_agent: [{ ...structuredClone(row), group_key: 'fixture-agent' }], by_model: [structuredClone(row)] }], undated: empty,
+    daily: [{ ...structuredClone(metrics), date: '2026-11-06', by_agent: [{ ...structuredClone(row), group_key: 'fixture-agent' }], by_model: [structuredClone(row)], by_agent_model: [{ ...structuredClone(row), group_key: 'fixture-agent-model' }] }], undated: empty,
     ...overrides,
   }
+}
+
+// Three recorded identities: one agent uses two exact versions, another shares one.
+export function groupedAgentStatsFixture(group: `${ActivityGroup}`): AgentStats {
+  const fixture = agentStatsFixture({ group_by: group as Group })
+  function row(key: string, agent: string | null, model: string | null, total: number): AgentStatsRow {
+    return { ...structuredClone(fixture.rows[0]!), group_key: key, agent_name: agent, model,
+      reported_usage: { ...fixture.totals.reported_usage, input: total, remaining_input: total, cache_read: 0, output: 0, total } }
+  }
+  const by_agent = [row('agent-a', 'Agent A', null, 300), row('agent-b', 'Agent B', 'gpt-6.1-sol', 300)]
+  const by_model = [row('model-61', null, 'gpt-6.1-sol', 400), row('model-6', null, 'gpt-6-sol', 200)]
+  const by_agent_model = [row('a-61', 'Agent A', 'gpt-6.1-sol', 100), row('a-6', 'Agent A', 'gpt-6-sol', 200), row('b-61', 'Agent B', 'gpt-6.1-sol', 300)]
+  fixture.daily[0] = { ...fixture.daily[0]!, ...row('total', null, null, 600), by_agent, by_model, by_agent_model }
+  fixture.rows = structuredClone(group === 'model' ? by_model : group === 'agent_model' ? by_agent_model : by_agent)
+  fixture.totals = structuredClone(fixture.daily[0]!)
+  return fixture
 }

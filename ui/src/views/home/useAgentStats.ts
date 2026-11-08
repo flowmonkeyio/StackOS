@@ -7,8 +7,8 @@ import { localActivityFilters, type AgentStatsFilters } from '@/lib/agentActivit
 export function useAgentStats(projectId?: Ref<number>) {
   const visibility = ref<boolean | null>(true)
   const filters = ref<AgentStatsFilters>(localActivityFilters())
-  // Grouping changes the rows, not the dated totals or daily chart. Keep the
-  // current response mounted while regrouping; its own group_by labels its rows.
+  // Grouping changes identities, not dated totals. Keep the current response
+  // mounted while regrouping; its own group_by labels both rows and chart.
   const scope = computed(() => JSON.stringify([projectId ? `project:${projectId.value}` : `all:${visibility.value}`, filters.value.start_date, filters.value.end_date, filters.value.timezone]))
   const loaded = ref<{ scope: string; data: SchemaTrackerAgentStatsOut } | null>(null)
   const failure = ref<{ scope: string; message: string } | null>(null)

@@ -80,28 +80,36 @@ export function agentLabel(name: string | null): string {
   return name ?? 'Agent not recorded'
 }
 
-export function groupLabel(row: AgentStatsRow, group: 'agent' | 'model', global = false): string {
+export function groupLabel(row: AgentStatsRow, group: `${ActivityGroup}`, global = false): string {
   if (group === 'model') return row.model ?? 'Model not recorded'
-  return `${agentLabel(row.agent_name)}${global ? ` · ${row.project_name ?? `Project #${row.project_id}`}` : ''}`
+  return `${agentLabel(row.agent_name)}${group === 'agent_model' ? ` · ${row.model ?? 'Model not recorded'}` : ''}${global ? ` · ${row.project_name ?? `Project #${row.project_id}`}` : ''}`
 }
 
 export interface ActivitySeries { key: string; label: string; values: (number | null)[]; token: string }
 export const activityColorTokens = ['accent-primary', 'info-default', 'success-default', 'warning-default', 'danger-default', 'fg-subtle']
 
+// Canonical group keys keep colors stable across dates, row sorting and scope.
+export function activityColor(key: string): string {
+  let hash = 0
+  for (const char of key) hash = (Math.imul(hash, 31) + char.charCodeAt(0)) >>> 0
+  return activityColorTokens[hash % activityColorTokens.length]!
+}
+
 // Project backend daily projections only. No receipt parsing or regrouping here.
-export function activitySeries(days: AgentStatsDay[], view: ActivityView, global = false): ActivitySeries[] {
+export function activitySeries(days: AgentStatsDay[], view: ActivityView, global = false, group: `${ActivityGroup}` = 'agent'): ActivitySeries[] {
   if (view === 'tokens') {
     // The repository subtracts cache only for paired measurements. Subtracting
     // aggregate Cache from inclusive Input would invent a remainder for old receipts.
     return usageFields.filter(item => days.some(day => usageValue(day, item.key) != null))
       .map(item => ({ ...item, values: days.map(day => usageValue(day, item.key)) }))
   }
+  const projection = group === 'model' ? 'by_model' : group === 'agent_model' ? 'by_agent_model' : 'by_agent'
   const identities = new Map<string, AgentStatsRow>()
-  for (const day of days) for (const row of day.by_agent) if (usageValue(row, 'total') != null) identities.set(row.group_key, row)
-  return [...identities].map(([key, row], index) => ({
-    key, label: groupLabel(row, 'agent', global), token: activityColorTokens[index % activityColorTokens.length]!,
+  for (const day of days) for (const row of day[projection]) if (usageValue(row, 'total') != null) identities.set(row.group_key, row)
+  return [...identities].map(([key, row]) => ({
+    key, label: groupLabel(row, group, global), token: activityColor(key),
     values: days.map(day => {
-      const item = day.by_agent.find(candidate => candidate.group_key === key)
+      const item = day[projection].find(candidate => candidate.group_key === key)
       return usageValue(item, 'total')
     }),
   }))

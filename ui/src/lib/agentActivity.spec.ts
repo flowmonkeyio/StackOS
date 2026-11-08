@@ -1,8 +1,24 @@
 import { describe, expect, it } from 'vitest'
-import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
+import { agentStatsFixture, groupedAgentStatsFixture } from '@/views/home/agentStatsFixtures'
 import { activitySeries, agentLabel, cacheShare, exactUsage, fieldCoverage, formatTokens, formatUsage, localActivityFilters, reviewFacts, usageFields, usageValue } from './agentActivity'
 
 describe('Shared recorded token formatting', () => {
+  it.each(['agent', 'model', 'agent_model'] as const)('projects canonical %s groups with exact labels and stable colors', group => {
+    const fixture = groupedAgentStatsFixture(group)
+    const series = activitySeries(fixture.daily, 'agents', false, group)
+    const expected = group === 'agent' ? { 'Agent A': 300, 'Agent B': 300 }
+      : group === 'model' ? { 'gpt-6.1-sol': 400, 'gpt-6-sol': 200 }
+        : { 'Agent A · gpt-6.1-sol': 100, 'Agent A · gpt-6-sol': 200, 'Agent B · gpt-6.1-sol': 300 }
+    expect(Object.fromEntries(series.map(item => [item.label, item.values[0]]))).toEqual(expected)
+    expect(Object.fromEntries(series.map(item => [item.key, item.values[0]]))).toEqual(Object.fromEntries(fixture.rows.map(row => [row.group_key, row.reported_usage.total])))
+    const reversed = structuredClone(fixture.daily)
+    for (const day of reversed) { day.by_agent.reverse(); day.by_model.reverse(); day.by_agent_model.reverse() }
+    expect(activitySeries(reversed, 'agents', false, group).sort((a, b) => a.key.localeCompare(b.key))).toEqual([...series].sort((a, b) => a.key.localeCompare(b.key)))
+    const sparse = structuredClone(fixture.daily)
+    for (const day of sparse) { day.by_agent.splice(0, 1); day.by_model.splice(0, 1); day.by_agent_model.splice(0, 1) }
+    for (const item of activitySeries(sparse, 'agents', false, group)) expect(item.token).toBe(series.find(original => original.key === item.key)!.token)
+  })
+
   it('requires measurement evidence for empty, planning and running placeholders, including numeric zeros', () => {
     const metrics = agentStatsFixture().undated
     for (const launches of [0, 1]) {
@@ -26,7 +42,7 @@ describe('Shared recorded token formatting', () => {
 
   it('keeps unmeasured and absent chart samples null in both views', () => {
     const measured = agentStatsFixture().daily[0]!
-    const empty = { ...agentStatsFixture().undated, date: '2026-11-07', by_agent: [], by_model: [] }
+    const empty = { ...agentStatsFixture().undated, date: '2026-11-07', by_agent: [], by_model: [], by_agent_model: [] }
     const unavailable = { ...structuredClone(empty), date: '2026-11-08', launch_attempts: 1, by_agent: [{ ...structuredClone(measured.by_agent[0]!), ...agentStatsFixture().undated, launch_attempts: 1 }] }
     const days = [measured, empty, unavailable]
     expect(activitySeries(days, 'tokens').map(item => item.values)).toEqual([[30, null, null], [40, null, null], [30, null, null]])

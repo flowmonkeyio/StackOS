@@ -2374,6 +2374,8 @@ export interface components {
         AgentStatsDayOut: {
             /** By Agent */
             by_agent: components["schemas"]["AgentStatsRowOut"][];
+            /** By Agent Model */
+            by_agent_model: components["schemas"]["AgentStatsRowOut"][];
             /** By Model */
             by_model: components["schemas"]["AgentStatsRowOut"][];
             coverage: components["schemas"]["AgentStatsCoverageOut"];

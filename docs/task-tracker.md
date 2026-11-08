@@ -530,9 +530,14 @@ and browser timezone selection. Daily attribution uses only offset-aware
 `launch.started_at`, converted to the requested timezone; completion time and
 receipt order are not substitutes. Each date appears once, including empty
 days. Totals, table rows and daily totals use exactly the same selected
-occurrences. Every day also carries `by_agent` and `by_model` summaries with
-stable keys, so chart colors are independent of table grouping without client
-receipt aggregation. These series and each day's totals reconcile, including
+occurrences. Every day also carries `by_agent`, `by_model` and `by_agent_model`
+summaries with stable keys, produced by the same `_group_rows` owner as the
+table. The existing Agent / Model / Agent + model selection controls both table
+and identity chart. Model labels preserve the exact recorded version; combined
+labels include agent and version. Both use the loaded response's `group_by`
+while a regrouping request is pending. Shared group-key colors match the daily
+bars, below-plot legend, tooltip and table markers without client receipt
+aggregation. These series and each day's totals reconcile, including
 per-field coverage and review facts.
 
 `undated` summarizes eligible receipts with missing, invalid or offset-free

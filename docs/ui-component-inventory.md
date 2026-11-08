@@ -90,7 +90,7 @@ Output headlines, date controls, daily chart with input detail, and an accessibl
 Agent / Model / Agent+model `DataTable`. `useAgentStats.ts` owns one dated,
 grouped project/global statistics request, with scope and stale-response
 protection. Regrouping retains the same dated chart and totals while the request
-loads; the retained rows keep their returned grouping label until replaced.
+loads; the retained rows and chart keep their returned grouping labels until replaced.
 Date, project and visibility changes clear the prior scope. Defaults are today plus the previous six local calendar days and
 the browser's visibly identified IANA timezone. Global Active/Archived/All
 selection remains with the existing page owner.
@@ -98,14 +98,16 @@ selection remains with the existing page owner.
 `AgentActivityChart.vue` uses Chart.js vertical daily stacks with exactly two
 views: Tokens and Agents. Tokens shows disjoint Input (including cache write),
 Cache and Output, in that order, using the backend's paired measurements. Agents uses
-the same reported Input + Output split by agent. Unsupported series are absent;
+the same reported Input + Output split by the existing Agent / Model / Agent +
+model control, using canonical daily groups. Unsupported series are absent;
 missing cache never becomes an invented remainder or unknown-cache category.
 An incomplete stack uses ordinary available-measurement context, without
 claiming a complete total. Both views keep the same 215px plot, fixed axis gutter,
-56px two-column scrolling legend and single-line selection caption. Long legend
+56px two-column scrolling legend below the plot and single-line selection caption. Long legend
 identities are visually elided, with the unchanged name available on focus/hover;
-agent identities are never rewritten. Model/version grouping remains in the
-breakdown list. Hover and keyboard focus (Left/Right, Home/End) expose exact
+agent identities are never rewritten. Model and combined labels preserve exact
+recorded versions. Group-key colors match bars, legends, tooltips and table
+markers across date changes and row sorting. Hover and keyboard focus (Left/Right, Home/End) expose exact
 values. Pointer hover uses Chart.js's external-tooltip hook and a bounded panel
 inside the unchanged plot: date and exact total remain visible while the series
 list scrolls, preserving every measured value even with many agents. Leaving

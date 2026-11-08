@@ -149,7 +149,7 @@ def test_dated_groups_daily_and_lifetime_reconcile(session: Session, project_id:
                 result.totals.reported_usage, field
             )
         for day in result.daily:
-            for rows in (day.by_agent, day.by_model):
+            for rows in (day.by_agent, day.by_model, day.by_agent_model):
                 assert sum(row.launch_attempts for row in rows) == day.launch_attempts
                 assert (
                     sum(row.reported_usage.total or 0 for row in rows) == day.reported_usage.total
@@ -540,6 +540,56 @@ def test_project_visibility_historical_identity_and_read_only_projection(
     assert all(s.lstrip().upper().startswith("SELECT") for s in statements)
     assert all("tracker_history" not in s and "tracker_revisions" not in s for s in statements)
     assert repo.get(project_id=project_id).model_dump() == before
+
+
+@pytest.mark.parametrize("grouping", ["agent", "model", "agent_model"])
+def test_daily_identity_projection_matches_table_and_operation_contract(
+    session: Session, project_id: int, grouping: str
+):
+    # Agent A changes exact versions; Agent B shares the first recorded version.
+    for index, (agent, model, total) in enumerate(
+        [
+            ("Agent A", "gpt-6.1-sol", 100),
+            ("Agent A", "gpt-6-sol", 200),
+            ("Agent B", "gpt-6.1-sol", 300),
+        ]
+    ):
+        receipt = _receipt(total=total, model=model)
+        receipt["launch"].update(agent=agent, started_at="2026-11-06T12:00:00Z")
+        receipt["usage"]["measured"]["cache_read"] = 0
+        _store(session, project_id, f"identity-{index}", {"attempt": 1, "delivery": receipt})
+    result = TrackerRepository(session).agent_stats(
+        project_id=project_id,
+        group_by=grouping,
+        start_date=date(2026, 11, 6),
+        end_date=date(2026, 11, 6),
+    )
+    day = result.daily[0]
+    projected = getattr(day, f"by_{grouping}")
+    assert projected == result.rows
+    expected = {
+        "agent": {("Agent A", None): 300, ("Agent B", "gpt-6.1-sol"): 300},
+        "model": {(None, "gpt-6.1-sol"): 400, (None, "gpt-6-sol"): 200},
+        "agent_model": {
+            ("Agent A", "gpt-6.1-sol"): 100,
+            ("Agent A", "gpt-6-sol"): 200,
+            ("Agent B", "gpt-6.1-sol"): 300,
+        },
+    }
+    assert {(row.agent_name, row.model): row.reported_usage.total for row in projected} == expected[
+        grouping
+    ]
+    assert sum(row.reported_usage.total for row in projected) == day.reported_usage.total == 600
+    payload = result.model_dump(mode="json")
+    for name in ("tracker.agentStats", "tracker.agentStatsAll"):
+        spec = build_operation_registry().get(name)
+        assert shape_operation_response(spec, payload, response_mode="compact")["data"] == payload
+        schema = spec.describe_out().output_schema
+        daily_schema = schema["$defs"]["AgentStatsDayOut"]
+        assert "by_agent_model" in daily_schema["required"]
+        assert daily_schema["properties"]["by_agent_model"]["items"]["$ref"].endswith(
+            "/AgentStatsRowOut"
+        )
 
 
 def test_empty_read_does_not_create_a_tracker(session: Session, project_id: int):

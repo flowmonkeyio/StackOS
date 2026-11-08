@@ -2,10 +2,10 @@
 import { computed, onBeforeUnmount, onMounted, onUpdated, ref, useId } from 'vue'
 import { BarController, BarElement, CategoryScale, Chart, LinearScale, Tooltip, type ChartOptions, type Plugin } from 'chart.js'
 import { UiButton, UiButtonGroup } from '@/components/ui'
-import { activitySeries, exactUsage, formatTokens, formatUsage, usageFields, usageValue, type ActivityView, type AgentStatsDay } from '@/lib/agentActivity'
+import { activitySeries, exactUsage, formatTokens, formatUsage, usageFields, usageValue, type ActivityGroup, type ActivityView, type AgentStatsDay } from '@/lib/agentActivity'
 
 Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip)
-const props = defineProps<{ days: AgentStatsDay[]; timezone: string; global?: boolean }>()
+const props = withDefaults(defineProps<{ days: AgentStatsDay[]; timezone: string; global?: boolean; group?: `${ActivityGroup}` }>(), { group: 'agent' })
 const view = defineModel<ActivityView>('view', { default: 'tokens' })
 const selectedDay = ref<number | null>(null)
 const hoverDay = ref<number | null>(null)
@@ -14,8 +14,8 @@ const detailId = `daily-values-${useId()}`
 let chart: Chart<'bar'> | null = null
 let observer: MutationObserver | null = null
 let signature = ''
-const title = computed(() => view.value === 'tokens' ? 'Tokens per day' : 'Tokens by agent per day')
-const series = computed(() => activitySeries(props.days, view.value, props.global))
+const title = computed(() => view.value === 'tokens' ? 'Tokens per day' : `Tokens by ${props.group === 'model' ? 'model' : props.group === 'agent_model' ? 'agent + model' : 'agent'} per day`)
+const series = computed(() => activitySeries(props.days, view.value, props.global, props.group))
 const focused = computed(() => selectedDay.value == null ? null : props.days[selectedDay.value] ?? null)
 type DailyField = (typeof usageFields)[number]['key'] | 'total'
 const dailyFields = computed(() => [...usageFields.map(field => field.key), 'total' as const].filter(key => props.days.some(day => day.launch_attempts > 0 && dailyValue(day, key) != null)))
@@ -86,7 +86,7 @@ const totalsPlugin: Plugin<'bar'> = {
 }
 function paint(): void {
   if (!canvas.value) return
-  const next = JSON.stringify([props.days, props.global, view.value, document.documentElement.dataset.theme])
+  const next = JSON.stringify([props.days, props.global, props.group, view.value, document.documentElement.dataset.theme])
   if (chart && signature === next) return
   signature = next
   const style = getComputedStyle(canvas.value)

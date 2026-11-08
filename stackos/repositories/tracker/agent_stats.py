@@ -321,6 +321,7 @@ def query_agent_stats(
                     date=day,
                     by_agent=_group_rows(members, "agent"),
                     by_model=_group_rows(members, "model"),
+                    by_agent_model=_group_rows(members, "agent_model"),
                     **summarize_receipts(r for _, _, _, r in members).model_dump(),
                 )
             )

@@ -118,11 +118,13 @@ describe('Agent usage presentation', () => {
     await wrapper.setProps({ filters: { ...localActivityFilters(), group_by: 'agent' as ActivityGroup }, loading: true })
     expect(wrapper.get('table th').text()).toBe('Selected model')
     expect(wrapper.get('table tbody tr').text()).toContain('recorded-sol')
+    expect(chart.props('group')).toBe('model')
     expect(wrapper.findComponent({ name: 'AgentActivityChart' }).vm).toBe(chart.vm)
     const fixture = agentStatsFixture({ group_by: 'agent' as ActivityGroup })
     await wrapper.setProps({ summary: fixture, loading: false })
     expect(wrapper.get('table th').text()).toBe('Agent')
     expect(wrapper.get('table tbody tr').text()).toContain('same-name')
+    expect(chart.props('group')).toBe('agent')
     wrapper.unmount()
   })
 

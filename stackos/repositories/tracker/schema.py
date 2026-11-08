@@ -313,6 +313,7 @@ class AgentStatsDayOut(AgentStatsMetricsOut):
     date: date
     by_agent: list[AgentStatsRowOut]
     by_model: list[AgentStatsRowOut]
+    by_agent_model: list[AgentStatsRowOut]
 
 
 class TrackerAgentStatsOut(BaseModel):
