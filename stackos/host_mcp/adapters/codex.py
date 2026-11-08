@@ -161,28 +161,38 @@ def run_agent(
                 native_error = str(event.get("error") or event.get("message") or "Codex failed.")
             if isinstance(event, dict) and event.get("type") == "turn.failed":
                 terminal_error = str(event.get("error") or event.get("message") or "Codex failed.")
-        if process.returncode != 0 or terminal_error or native_error:
-            return AgentRunResult(
-                process.returncode,
-                thread_id=thread_id,
-                usage=usage,
-                error=terminal_error
-                or native_error
-                or process.stderr.strip()
-                or process.stdout.strip()
-                or "Codex exited unsuccessfully.",
+        execution_error = (
+            terminal_error
+            or native_error
+            or (
+                process.stderr.strip() or process.stdout.strip() or "Codex exited unsuccessfully."
+                if process.returncode != 0
+                else None
             )
+        )
+        # The primary final can still contain useful facts after native failure.
+        # Retaining it never overrides the process/transport success boundary.
         try:
             result = json.loads(result_path.read_text(encoding="utf-8"))
             if not isinstance(result, dict):
                 raise ValueError("expected a JSON object")
         except (OSError, ValueError) as exc:
-            detail = process.stderr.strip() or process.stdout.strip() or str(exc)
+            detail = f"Invalid Codex result: {exc}"
+            native_detail = execution_error or process.stderr.strip() or process.stdout.strip()
             return AgentRunResult(
-                0, thread_id=thread_id, usage=usage, error=f"Invalid Codex result: {detail}"
+                process.returncode,
+                thread_id=thread_id,
+                usage=usage,
+                error=f"{native_detail}\n{detail}" if native_detail else detail,
             )
         return validate_agent_result(
-            AgentRunResult(0, thread_id=thread_id, result=result, usage=usage),
+            AgentRunResult(
+                process.returncode,
+                thread_id=thread_id,
+                result=result,
+                usage=usage,
+                error=execution_error,
+            ),
             output_schema,
             "Codex",
         )

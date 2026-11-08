@@ -2177,9 +2177,13 @@ def feedback_harness(
                 value["commit_sha"] = commit(tmp_path, "reviewer-commit")
             elif fault == "schema":
                 value.pop("followups")
-            elif fault == "native":
+            elif fault in {"native", "native-final"}:
                 return scenario_result(
-                    1, thread_id=identity, error="Required check unavailable", usage=usage
+                    1,
+                    thread_id=identity,
+                    result=value if fault == "native-final" else None,
+                    error="Required check unavailable",
+                    usage=usage,
                 )
         if fault == "missing-id" or (fault == "missing-review-id" and phase == "review"):
             identity = None
@@ -2432,6 +2436,7 @@ def test_feedback_schema_error_requeue_excludes_serialized_followups(
         ("mutating-review", "reject", 2),
         ("schema", "approve", 2),
         ("native", "approve", 2),
+        ("native-final", "reject", 2),
     ],
 )
 def test_feedback_identity_schema_and_check_failures_stop(
@@ -2454,6 +2459,10 @@ def test_feedback_identity_schema_and_check_failures_stop(
     phase = calls[-1]["phase"]
     assert evidence[phase]["validated_outcome"] is None
     assert evidence[phase]["usage"]["measured"]["total"] in {150, 230}
+    if fault == "native-final":
+        assert evidence["review"]["result"]["status"] == "repair"
+        assert evidence["review"]["error"] == "Required check unavailable"
+        assert evidence["repair_count"] == 0
 
 
 def test_feedback_requeue_preserves_consumed_repair_budget(
@@ -2755,8 +2764,11 @@ def test_cumulative_receipt_requeue_retains_unknown_and_redaction_boundary(
         )
 
 
-@pytest.mark.parametrize("host", ["codex", "grok"])
-@pytest.mark.parametrize("fault", ["text", "schema", "native"])
+@pytest.mark.parametrize(
+    "host,fault",
+    [(host, fault) for host in ("codex", "grok") for fault in ("text", "schema", "native")]
+    + [("codex", "native-success"), ("codex", "native-blocked")],
+)
 def test_native_collector_failure_persists_session_and_available_usage(
     session, project_id, tmp_path, monkeypatch, host, fault
 ):
@@ -2768,18 +2780,28 @@ def test_native_collector_failure_persists_session_and_available_usage(
     monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fake/codex")
     monkeypatch.setattr(grok, "resolve_grok_bin", lambda _home: "/fake/grok")
     real_run = subprocess.run
+    calls = []
+    native_failure = fault.startswith("native")
+    final = (
+        generic_result(
+            "blocked" if fault == "native-blocked" else "success", summary="Available final"
+        )
+        if fault in {"native-success", "native-blocked"}
+        else None
+    )
 
     def execute(command, **kwargs):
         if command[0] not in {"/fake/codex", "/fake/grok"}:
             return real_run(command, **kwargs)
-        text = "bad" if fault == "text" else "{}"
+        calls.append(command)
+        text = json.dumps(final) if final else ("bad" if fault == "text" else "{}")
         if host == "codex":
             Path(command[command.index("-o") + 1]).write_text(text)
             events = [
                 {"type": "thread.started", "thread_id": "native-session"},
                 {"type": "turn.completed", "usage": {"input_tokens": 18419, "output_tokens": 23}},
             ]
-            if fault == "native":
+            if native_failure:
                 events.append({"type": "turn.failed", "error": "denied"})
             stdout = "\n".join(map(json.dumps, events))
         else:
@@ -2788,7 +2810,7 @@ def test_native_collector_failure_persists_session_and_available_usage(
                     "sessionId": "native-session",
                     "stopReason": "end_turn",
                     "text": text,
-                    "error": "denied" if fault == "native" else None,
+                    "error": "denied" if native_failure else None,
                     "usage": {
                         "input_tokens": 6820,
                         "cache_read_input_tokens": 8832,
@@ -2799,7 +2821,7 @@ def test_native_collector_failure_persists_session_and_available_usage(
                     },
                 }
             )
-        return subprocess.CompletedProcess(command, int(fault == "native"), stdout, "")
+        return subprocess.CompletedProcess(command, int(native_failure), stdout, "")
 
     monkeypatch.setattr(subprocess, "run", execute)
 
@@ -2818,6 +2840,16 @@ def test_native_collector_failure_persists_session_and_available_usage(
     receipt = evidence["delivery"]
     assert receipt["thread_id"] == "native-session"
     assert receipt["error"]
+    assert receipt["result"] == final
+    if native_failure:
+        assert "denied" in receipt["error"]
+    if fault == "native" and host == "codex":
+        assert "Invalid" in receipt["error"]
     assert receipt["validated_outcome"] is None
     assert receipt["usage"]["measured"]["total"] == (18442 if host == "codex" else 15709)
     assert "review" not in evidence
+    assert evidence["sessions"]["delivery"]["thread_id"] == "native-session"
+    assert evidence["attempts"] == []
+    assert ticket.agent_stats.launch_attempts == 1
+    assert ticket.agent_stats.reported_usage.total == receipt["usage"]["measured"]["total"]
+    assert len(calls) == 1

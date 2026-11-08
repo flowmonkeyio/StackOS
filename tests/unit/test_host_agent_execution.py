@@ -11,6 +11,7 @@ import pytest
 
 from stackos.host_mcp import AgentRunResult, run_agent, service
 from stackos.host_mcp.adapters import claude_code, codex, gemini_cli, grok, hermes
+from stackos.host_mcp.result import validate_agent_result
 
 SCHEMA = {
     "type": "object",
@@ -535,6 +536,9 @@ def test_empty_instructions_stop_before_discovery(
     ("exit_code", "final_text", "expected_error"),
     [
         (7, None, "host failed"),
+        (7, '{"summary":"available final"}', "host failed"),
+        (7, "not JSON", "host failed"),
+        (7, '{"unexpected": true}', "host failed"),
         (0, None, "Invalid Codex result"),
         (0, "not JSON", "Invalid Codex result"),
         (0, '{"unexpected": true}', "Invalid Codex result"),
@@ -567,6 +571,11 @@ def test_codex_failure_is_not_success_or_retried(
     assert result.exit_code == exit_code
     assert result.thread_id == "failed-thread"
     assert expected_error in (result.error or "")
+    assert result.result == (
+        {"summary": "available final"} if final_text == '{"summary":"available final"}' else None
+    )
+    if final_text != '{"summary":"available final"}':
+        assert "Invalid Codex result" in result.error
     assert len(calls) == 1
 
 
@@ -631,17 +640,22 @@ def test_codex_stdout_error_wins_over_success_file(project, monkeypatch, event_t
     monkeypatch.setattr(subprocess, "run", execute)
     result = run_agent("codex", project, "Instructions", "packet", SCHEMA)
     assert not result.ok
+    assert result.result == {"summary": "selected"}
     assert "Model access denied" in result.error
 
 
 @pytest.mark.parametrize("resume_thread_id", [None, "native-thread"])
-def test_codex_completed_turn_recovers_stream_error(project, monkeypatch, resume_thread_id):
+@pytest.mark.parametrize("status", ["success", "blocked"])
+def test_codex_completed_turn_recovers_stream_error(project, monkeypatch, resume_thread_id, status):
+    from stackos.task_delivery import RESULT_SCHEMA
+
     monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fake/codex")
     calls = []
+    final = {"status": status, "summary": "delivered", "outputs": "{}", "followups": []}
 
     def execute(command, **kwargs):
         calls.append(command)
-        Path(command[command.index("-o") + 1]).write_text('{"summary":"delivered"}')
+        Path(command[command.index("-o") + 1]).write_text(json.dumps(final))
         events = [
             {"type": "thread.started", "thread_id": "native-thread"},
             {"type": "error", "message": "Reconnecting... 2/5 (IO error: Broken pipe)"},
@@ -654,10 +668,10 @@ def test_codex_completed_turn_recovers_stream_error(project, monkeypatch, resume
 
     monkeypatch.setattr(subprocess, "run", execute)
     result = run_agent(
-        "codex", project, "Instructions", "Work", SCHEMA, resume_thread_id=resume_thread_id
+        "codex", project, "Instructions", "Work", RESULT_SCHEMA, resume_thread_id=resume_thread_id
     )
     assert result.ok
-    assert result.result == {"summary": "delivered"}
+    assert result.result == final
     assert result.thread_id == "native-thread"
     assert result.usage["snapshot"]["cache_read"] == 80
     assert len(calls) == 1
@@ -677,15 +691,18 @@ def test_codex_completed_turn_recovers_stream_error(project, monkeypatch, resume
         (["error", "turn.completed"], 0, '{"wrong":"schema"}', "Invalid Codex result"),
     ],
 )
+@pytest.mark.parametrize("resume_thread_id", [None, "native-thread"])
 def test_codex_stream_recovery_preserves_failure_checks(
-    project, monkeypatch, event_types, exit_code, payload, expected_error
+    project, monkeypatch, event_types, exit_code, payload, expected_error, resume_thread_id
 ):
     monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fake/codex")
+    calls = []
 
     def execute(command, **kwargs):
+        calls.append(command)
         if payload is not None:
             Path(command[command.index("-o") + 1]).write_text(payload)
-        events = [
+        events = [{"type": "thread.started", "thread_id": "native-thread"}] + [
             {
                 "type": kind,
                 "message": "Turn failed" if kind == "turn.failed" else "Stream disconnected",
@@ -700,10 +717,37 @@ def test_codex_stream_recovery_preserves_failure_checks(
         )
 
     monkeypatch.setattr(subprocess, "run", execute)
-    result = run_agent("codex", project, "Instructions", "Work", SCHEMA)
+    result = run_agent(
+        "codex", project, "Instructions", "Work", SCHEMA, resume_thread_id=resume_thread_id
+    )
     assert not result.ok
     assert result.exit_code == exit_code
     assert expected_error in result.error
+    assert result.result == ({"summary": "done"} if payload == '{"summary":"done"}' else None)
+    assert result.thread_id == "native-thread"
+    assert len(calls) == 1
+    if resume_thread_id:
+        assert calls[0][-3:] == ["resume", resume_thread_id, "-"]
+
+
+@pytest.mark.parametrize(
+    "exit_code,error", [(1, None), (0, "transport failed"), (1, "transport failed")]
+)
+@pytest.mark.parametrize("valid", [False, True])
+def test_schema_validation_retains_execution_failure(exit_code, error, valid):
+    final = {"summary": "available"} if valid else {"wrong": "schema"}
+    native = AgentRunResult(exit_code, thread_id="original-session", result=final, error=error)
+    result = validate_agent_result(native, SCHEMA, "Codex")
+    assert not result.ok
+    assert result.exit_code == exit_code
+    assert result.thread_id == "original-session"
+    assert result.result == (final if valid else None)
+    if valid:
+        assert result.error == error
+    else:
+        assert "Invalid Codex result" in result.error
+        if error:
+            assert error in result.error
 
 
 @pytest.mark.parametrize(

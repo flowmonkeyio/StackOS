@@ -29,12 +29,15 @@ def validate_agent_result(
     result: AgentRunResult, schema: dict[str, Any], host: str
 ) -> AgentRunResult:
     """All native adapters enforce the same caller-supplied result contract."""
-    if result.error is not None or result.exit_code != 0:
+    if result.result is None and (result.error is not None or result.exit_code != 0):
         return result
     try:
         validate(result.result, schema)
     except ValidationError as exc:
-        return replace(result, result=None, error=f"Invalid {host} result: {exc}")
+        detail = f"Invalid {host} result: {exc}"
+        return replace(
+            result, result=None, error=f"{result.error}\n{detail}" if result.error else detail
+        )
     return result
 
 
