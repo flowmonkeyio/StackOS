@@ -214,18 +214,21 @@ def usage_executions(project_id: int | None = None) -> list[dict[str, Any]]:
         ]
 
 
-def provisional_usage(
-    project_id: int, ticket_key: str
-) -> list[tuple[int | None, str | None, dict[str, Any]]]:
-    """Safe native contributions; tracker owns receipt identity and aggregation."""
+type ProvisionalUsage = dict[tuple[int, str], list[tuple[int | None, str | None, dict[str, Any]]]]
+
+
+def provisional_usage(project_id: int | None = None) -> ProvisionalUsage:
+    """Copy counters before the caller loads receipts; no reader or sample lifetime."""
     with _active_invocations_lock:
-        return [
-            (call.scope.attempt, call.scope.phase, deepcopy(call.usage))
-            for call in _active_invocations.values()
-            if call.scope.project_id == project_id
-            and call.scope.ticket_key == ticket_key
-            and call.usage is not None
-        ]
+        snapshot: ProvisionalUsage = {}
+        for call in _active_invocations.values():
+            if call.usage is not None and (
+                project_id is None or call.scope.project_id == project_id
+            ):
+                snapshot.setdefault((call.scope.project_id, call.scope.ticket_key), []).append(
+                    (call.scope.attempt, call.scope.phase, deepcopy(call.usage))
+                )
+        return snapshot
 
 
 def active_execution(

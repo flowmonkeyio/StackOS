@@ -108,18 +108,56 @@ def test_final_receipt_wins_before_unregister_and_late_attach_is_ignored(tmp_pat
     service._sample_invocations(datetime.fromisoformat(counter(2)[0]))
     pending = {"agent": "worker", "launch": {"agent": "worker"}}
     evidence = {"automatic_delivery": {"attempt": 2, "delivery": pending}}
-    receipts = provisional_receipt(1, "child", evidence)
+    receipts = provisional_receipt(1, "child", evidence, service.provisional_usage())
     assert len(receipts) == 1 and summarize_receipts(receipts).reported_usage.total == 22
     assert "usage" not in pending
-    assert provisional_receipt(2, "child", evidence) == [pending]
+    assert provisional_receipt(2, "child", evidence, service.provisional_usage()) == [pending]
     final = {**pending, "exit_code": 0, "usage": invocation.usage}
     evidence["automatic_delivery"]["delivery"] = final
-    assert provisional_receipt(1, "child", evidence) == [final]
-    assert summarize_receipts(provisional_receipt(1, "child", evidence)).reported_usage.total == 22
+    assert provisional_receipt(1, "child", evidence, service.provisional_usage()) == [final]
+    assert (
+        summarize_receipts(
+            provisional_receipt(1, "child", evidence, service.provisional_usage())
+        ).reported_usage.total
+        == 22
+    )
     service._unregister(invocation)
     service._attach_session(invocation, "late", tmp_path, None)
     assert invocation.reader is None
-    assert provisional_receipt(1, "child", evidence) == [final]
+    assert provisional_receipt(1, "child", evidence, service.provisional_usage()) == [final]
+
+
+def test_request_counter_copy_survives_exit_and_newer_recorded_handoff_wins():
+    invocation = call()
+    invocation.usage = normalize_usage(
+        usage_snapshot("fixture", "invocation", 20, 2, cache_read=10),
+        session_id="native",
+        resumed=False,
+    )
+    service._active_invocations[invocation.invocation_id] = invocation
+    captured = service.provisional_usage(1)
+    pending = {"launch": {"agent": "worker"}}
+    evidence = {"automatic_delivery": {"attempt": 2, "delivery": pending}}
+    service._unregister(invocation)
+    assert not service.provisional_usage()
+    assert (
+        summarize_receipts(provisional_receipt(1, "child", evidence, captured)).reported_usage.total
+        == 22
+    )
+    final_usage = normalize_usage(
+        usage_snapshot("fixture", "invocation", 30, 3, cache_read=15),
+        session_id="native",
+        resumed=False,
+    )
+    # The native-exit receipt already has final measured counters but result
+    # validation has not added exit_code/result yet. An older copy cannot win.
+    pending["usage"] = final_usage
+    assert (
+        summarize_receipts(provisional_receipt(1, "child", evidence, captured)).reported_usage.total
+        == 33
+    )
+    captured[(1, "child")][0][2]["measured"]["input"] = 999
+    assert pending["usage"] == final_usage
 
 
 @pytest.mark.parametrize("resumed", [False, True])
@@ -178,7 +216,7 @@ def test_exit_handoff_uses_final_native_counters_and_always_releases_snapshot(
         on_execution_change=changed,
     )
     assert result.ok and observed == [(110 if resumed else 220, True, False, None, None)]
-    assert not service._active_invocations and not service.provisional_usage(1, "child")
+    assert not service._active_invocations and not service.provisional_usage(1)
 
 
 @pytest.mark.parametrize("failure", [False, True, "cancel"])

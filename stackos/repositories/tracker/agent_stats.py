@@ -12,7 +12,7 @@ from sqlmodel import Session, col
 
 from stackos.db.models import Project, TaskTracker, TrackerTask, TrackerTicket
 from stackos.host_mcp.result import usage_snapshot
-from stackos.host_mcp.service import active_execution, provisional_usage
+from stackos.host_mcp.service import ProvisionalUsage, active_execution, provisional_usage
 from stackos.repositories.tracker.schema import (
     AgentStatsCoverageOut,
     AgentStatsDayOut,
@@ -52,16 +52,24 @@ def invocation_receipts(evidence: Any) -> list[dict[str, Any]]:
     return list(unique.values())
 
 
-def provisional_receipt(project_id: int, ticket_key: str, evidence: Any) -> list[dict[str, Any]]:
-    """Merge current native measurement into its unfinished receipt exactly once."""
+def provisional_receipt(
+    project_id: int, ticket_key: str, evidence: Any, provisional: ProvisionalUsage
+) -> list[dict[str, Any]]:
+    """Pure merge of a pre-query counter copy and fresh receipts, exactly once."""
     receipts = invocation_receipts(evidence)
     automatic = evidence.get("automatic_delivery", {}) if isinstance(evidence, dict) else {}
-    for attempt, phase, usage in provisional_usage(project_id, ticket_key):
+    for attempt, phase, usage in provisional.get((project_id, ticket_key), []):
         if automatic.get("attempt") != attempt or phase is None:
             continue
         current = automatic.get(phase)
-        # Persisted final wins even if a reader update was already in flight.
-        if not isinstance(current, dict) or "exit_code" in current or "result" in current:
+        # Recorded usage includes the native-exit handoff. It wins over an older
+        # counter copy even before full result validation adds exit_code/result.
+        if (
+            not isinstance(current, dict)
+            or "exit_code" in current
+            or "result" in current
+            or _measured(current) is not None
+        ):
             continue
         receipts = [receipt for receipt in receipts if receipt is not current]
         receipts.append({**current, "usage": usage})
@@ -185,11 +193,17 @@ def summarize_receipts(receipts: Iterable[dict[str, Any]]) -> AgentStatsMetricsO
 
 
 def query_task_agent_stats(
-    session: Session, *, tracker_id: int, task_ids: set[int]
+    session: Session,
+    *,
+    tracker_id: int,
+    task_ids: set[int],
+    provisional: ProvisionalUsage | None = None,
 ) -> dict[int, AgentStatsMetricsOut]:
     """Batch whole-task totals, independent of visible tickets or graph filters."""
     if not task_ids:
         return {}
+    if provisional is None:
+        provisional = provisional_usage()
     receipts_by_task: dict[int, list[dict[str, Any]]] = defaultdict(list)
     statement = select(
         col(TrackerTicket.task_id),
@@ -202,8 +216,33 @@ def query_task_agent_stats(
     )
     for task_id, project_id, ticket_key, evidence in session.execute(statement):
         # Deduplication is ticket-local; never add parent/group subtotals.
-        receipts_by_task[task_id].extend(provisional_receipt(project_id, ticket_key, evidence))
+        receipts_by_task[task_id].extend(
+            provisional_receipt(project_id, ticket_key, evidence, provisional)
+        )
     return {task_id: summarize_receipts(receipts_by_task[task_id]) for task_id in task_ids}
+
+
+def query_ticket_agent_stats(
+    session: Session,
+    *,
+    ticket_ids: set[int],
+    provisional: ProvisionalUsage | None = None,
+) -> dict[int, AgentStatsMetricsOut]:
+    """Fresh scalar evidence avoids stale ORM rows loaded before native exit."""
+    if not ticket_ids:
+        return {}
+    if provisional is None:
+        provisional = provisional_usage()
+    statement = select(
+        col(TrackerTicket.id),
+        col(TrackerTicket.project_id),
+        col(TrackerTicket.key),
+        col(TrackerTicket.completion_evidence_json),
+    ).where(col(TrackerTicket.id).in_(ticket_ids))
+    return {
+        ticket_id: summarize_receipts(provisional_receipt(project_id, key, evidence, provisional))
+        for ticket_id, project_id, key, evidence in session.execute(statement)
+    }
 
 
 def _text(value: Any) -> str | None:
@@ -214,6 +253,10 @@ def usage_refresh(
     session: Session, project_id: int, calls: list[dict[str, Any]] | None
 ) -> dict[str, Any]:
     """Safe initial/reconnect snapshot, then minimal affected Work projections."""
+    # Snapshot before SQL: removal implies the receipt commit already happened;
+    # otherwise this request owns its counter copy through projection. No DB I/O
+    # runs under the registry lock and no finished-call history is retained.
+    provisional = provisional_usage(project_id)
     task_keys = {call["task_key"] for call in calls or []}
     ticket_keys = {call["ticket_key"] for call in calls or []}
     tasks = (
@@ -244,6 +287,7 @@ def usage_refresh(
                     for task in tasks
                     if task.id is not None and task.tracker_id == tracker_id
                 },
+                provisional=provisional,
             )
         )
     tickets = (
@@ -264,6 +308,11 @@ def usage_refresh(
         else []
     )
     task_by_id = {task.id: task for task in tasks}
+    ticket_stats = query_ticket_agent_stats(
+        session,
+        ticket_ids={ticket.id for ticket in tickets if ticket.id is not None},
+        provisional=provisional,
+    )
     return {
         "tasks": [
             {
@@ -276,9 +325,7 @@ def usage_refresh(
         "tickets": [
             {
                 "key": ticket.key,
-                "agent_stats": summarize_receipts(
-                    provisional_receipt(project_id, ticket.key, ticket.completion_evidence_json)
-                ).model_dump(mode="json"),
+                "agent_stats": ticket_stats[ticket.id].model_dump(mode="json"),
                 "active_execution": active_execution(
                     project_id, task_by_id[ticket.task_id].key, ticket.key
                 ),
@@ -377,6 +424,7 @@ def query_agent_stats(
     zone = stats_timezone(start_date, end_date, timezone)
     if group_by not in ("agent", "model", "agent_model"):
         raise ValueError("group_by must be agent, model or agent_model")
+    provisional = provisional_usage(project_id)
     statement = (
         select(
             col(Project.id),
@@ -400,7 +448,7 @@ def query_agent_stats(
     by_day: dict[date, list[tuple[int, str, str, dict[str, Any]]]] = defaultdict(list)
     undated = []
     for pid, name, slug, _ticket_id, ticket_key, evidence in session.execute(statement):
-        for receipt in provisional_receipt(pid, ticket_key, evidence):
+        for receipt in provisional_receipt(pid, ticket_key, evidence, provisional):
             if not _eligible(receipt):
                 continue
             day = _launch_day(receipt, zone)

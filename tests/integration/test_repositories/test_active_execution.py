@@ -1,6 +1,7 @@
 """Real host-service lifetimes projected through tracker reads and its existing SSE feed."""
 
 import json
+import threading
 from copy import deepcopy
 from datetime import UTC, date, datetime
 from types import SimpleNamespace
@@ -12,7 +13,237 @@ from stackos.context import ContextRepository
 from stackos.host_mcp import service
 from stackos.host_mcp.result import AgentRunResult, normalize_usage, usage_snapshot
 from stackos.repositories.tracker import TrackerRepository
+from stackos.repositories.tracker import agent_stats as stats_projection
 from stackos.repositories.tracker.events import record_execution_change
+
+
+@pytest.mark.parametrize("mode", ["brief", "stream", "index", "get", "project", "global"])
+@pytest.mark.parametrize("handoff_at", ["before_capture", "after_capture", "after_receipt_read"])
+def test_overlapping_receipt_handoff_keeps_inflight_projections_consistent(
+    session, project_id, monkeypatch, tmp_path, mode, handoff_at
+):
+    import asyncio
+
+    from stackos.api.context import _timeline_stream
+    from stackos.db.connection import make_engine
+    from stackos.task_delivery import _record_execution_transition
+    from tests.helpers.sqlite_schema import capture_database_snapshot, restore_database_snapshot
+
+    # Independent thread connections need the production file/WAL engine, not
+    # the per-thread in-memory repository fixture.
+    engine = make_engine(tmp_path / "overlap.db")
+    restore_database_snapshot(engine, capture_database_snapshot(session.get_bind()))
+    session = Session(engine)
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="overlap", title="Overlap")
+    repo.create_ticket(
+        project_id=project_id, task_key="overlap", key="overlap-child", title="Child"
+    )
+    stamp = datetime.now(UTC).isoformat()
+
+    def measured(i, o, cache):
+        return normalize_usage(
+            usage_snapshot("fixture", "invocation", i, o, cache_read=cache),
+            session_id="native",
+            resumed=False,
+        )
+
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="overlap-child",
+        patch_json={
+            "completion_evidence_json": {
+                "automatic_delivery": {
+                    "attempt": 2,
+                    "attempts": [
+                        {
+                            "attempt": 1,
+                            "delivery": {
+                                "launch": {
+                                    "agent": "worker",
+                                    "model": "selected",
+                                    "started_at": stamp,
+                                },
+                                "exit_code": 0,
+                                "usage": measured(100, 5, 80),
+                            },
+                        }
+                    ],
+                    "review": {
+                        "launch": {"agent": "reviewer", "model": "selected", "started_at": stamp}
+                    },
+                }
+            },
+        },
+    )
+    started, native_exit, ready, persist, returned = [threading.Event() for _ in range(5)]
+    errors = []
+
+    def runner(*a, **kw):
+        call = next(iter(service._active_invocations.values()))
+        call.usage = measured(200, 8, 160)
+        call.measured_at = stamp
+        started.set()
+        assert native_exit.wait(5)
+        return AgentRunResult(
+            0,
+            thread_id="native",
+            result={},
+            usage=usage_snapshot("fixture", "invocation", 200, 8, cache_read=160),
+        )
+
+    def transition(call, active):
+        if not active:
+            ready.set()
+            assert persist.wait(5)
+        _record_execution_transition(lambda: Session(session.get_bind()), call, active)
+
+    def launch():
+        try:
+            service.run_agent(
+                "fixture",
+                tmp_path,
+                "Instructions",
+                "Prompt",
+                {},
+                execution_scope=service.AgentExecutionScope(
+                    project_id, "overlap", "overlap-child", "reviewer", 2, "review"
+                ),
+                on_execution_change=transition,
+            )
+        except BaseException as exc:
+            errors.append(exc)
+        finally:
+            returned.set()
+
+    monkeypatch.setattr(service, "agent_selection_error", lambda *a, **kw: None)
+    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    thread = threading.Thread(target=launch)
+    thread.start()
+    try:
+        assert started.wait(5)
+        native_exit.set()
+        assert ready.wait(5)
+        assert service.active_execution(project_id, "overlap") is None
+        original = stats_projection.provisional_usage
+        reader_thread = threading.get_ident()
+        armed = True
+
+        def crossing(*args, **kwargs):
+            nonlocal armed
+            if threading.get_ident() != reader_thread or not armed:
+                return original(*args, **kwargs)
+            armed = False
+            captured = original(*args, **kwargs) if handoff_at == "after_capture" else None
+            persist.set()
+            assert returned.wait(5)
+            assert not errors
+            assert not service._active_invocations
+            return captured if handoff_at == "after_capture" else original(*args, **kwargs)
+
+        original_merge = stats_projection.provisional_receipt
+
+        def crossing_receipts(*args, **kwargs):
+            nonlocal armed
+            if threading.get_ident() == reader_thread and armed:
+                # The SQL result is already loaded. Only the request's earlier
+                # counter copy remains when the real callback unregisters now.
+                armed = False
+                persist.set()
+                assert returned.wait(5)
+                assert not errors and not service._active_invocations
+            return original_merge(*args, **kwargs)
+
+        with Session(session.get_bind()) as reader:
+            read_repo = TrackerRepository(reader)
+            # Keep the old ORM receipt cached, as an already-running request can.
+            cached = read_repo._ticket_by_key(
+                repo.status(project_id=project_id).tracker.id, "overlap-child"
+            )
+            assert "usage" not in cached.completion_evidence_json["automatic_delivery"]["review"]
+            with monkeypatch.context() as patch:
+                if handoff_at == "after_receipt_read":
+                    patch.setattr(stats_projection, "provisional_receipt", crossing_receipts)
+                else:
+                    patch.setattr(stats_projection, "provisional_usage", crossing)
+                if mode == "stream":
+
+                    async def first():
+                        async def disconnected():
+                            return False
+
+                        stream = _timeline_stream(
+                            project_id,
+                            SimpleNamespace(is_disconnected=disconnected),
+                            None,
+                            None,
+                            25,
+                            1,
+                            15000,
+                            None,
+                            False,
+                            session.get_bind(),
+                        ).body_iterator
+                        try:
+                            data = json.loads((await anext(stream)).split("data: ", 1)[1])
+                            return [
+                                entry["agent_stats"]["reported_usage"]
+                                for key in ("tasks", "tickets")
+                                for entry in data["updates"][key]
+                            ]
+                        finally:
+                            await stream.aclose()
+
+                    usage = asyncio.run(first())
+                elif mode in {"project", "global"}:
+                    day = date.fromisoformat(stamp[:10])
+                    kwargs = {"start_date": day, "end_date": day, "timezone": "UTC"}
+                    summary = (
+                        read_repo.agent_stats(project_id=project_id, **kwargs)
+                        if mode == "project"
+                        else read_repo.agent_stats_all(**kwargs)
+                    )
+                    usage = [
+                        value.reported_usage.model_dump()
+                        for value in (summary.totals, summary.daily[0])
+                    ]
+                    assert sorted(row.reported_usage.total for row in summary.rows) == [105, 208]
+                    assert sorted(
+                        row.reported_usage.total for row in summary.daily[0].by_agent
+                    ) == [105, 208]
+                elif mode == "brief":
+                    brief = read_repo.brief(project_id=project_id, ticket_key="overlap-child")
+                    usage = [
+                        value.agent_stats.reported_usage.model_dump()
+                        for value in (brief.ticket, brief.task)
+                    ]
+                else:
+                    result = read_repo.get(
+                        project_id=project_id, task_index_only=mode == "index", include_graph=False
+                    )
+                    usage = [
+                        value.agent_stats.reported_usage.model_dump()
+                        for value in [*result.tasks, *result.tickets]
+                    ]
+            assert not armed
+            assert all(
+                (value["total"], value["remaining_input"], value["cache_read"], value["output"])
+                == (313, 60, 240, 13)
+                for value in usage
+            )
+            assert (
+                read_repo.brief(
+                    project_id=project_id, ticket_key="overlap-child"
+                ).ticket.agent_stats.reported_usage.total
+                == 313
+            )
+    finally:
+        native_exit.set()
+        persist.set()
+        thread.join(5)
+        assert not thread.is_alive() and not errors
+        session.close()
+        engine.dispose()
 
 
 @pytest.mark.parametrize("exit_kind", ["success", "error", "exception", "cancel"])

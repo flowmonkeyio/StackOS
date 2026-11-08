@@ -1363,6 +1363,15 @@ changing. Repeated identical receipt writes emit no usage change. The UI consume
 the usage frame without a second whole-page Work reload; reconnect reads the same
 committed totals.
 
+Each statistics projection copies provisional counters before selecting fresh
+receipt evidence. If a call disappears before that copy, its handoff has already
+committed; if it disappears afterwards, the request keeps its own counter copy.
+Recorded measured usage wins over an older copy, including the early exit
+handoff before result validation. Ticket metrics use a batched scalar evidence
+query rather than potentially stale ORM ticket rows. SSE task/ticket projections
+share one request copy. These copies contain no native reader or recent samples,
+hold no registry lock during SQL, and live only for the projection call.
+
 Board and Graph keep whole-task/ticket numbers. Optional tiny discrete traces
 show only the active invocation's recent native measurements, with independent
 metric scales. Hover/focus text explains this scope distinction and the latest

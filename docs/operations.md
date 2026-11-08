@@ -445,6 +445,11 @@ publish `tracker.usage.changed` atomically with that write, including evidence-o
 updates. The stream includes affected task/ticket projections after persistence;
 the UI does not treat that usage event as another page-reload request. There is
 no per-sample event write, retained finished-call history or retry policy.
+Statistics readers copy provisional counters before loading fresh receipt
+evidence, so a request overlapping the handoff cannot lose both contributions.
+Recorded usage wins over an older request copy; the existing SSE refresh shares
+that copy across its task/ticket metrics. No database read holds the registry
+lock or extends an invocation's reader/sample lifetime.
 `tracker.configureDelivery` is the narrow local-admin REST-only setup write for
 `TaskTracker.config_json.delivery`; it replaces that object while preserving
 unrelated tracker configuration. Send `arguments` with `project_id` and
