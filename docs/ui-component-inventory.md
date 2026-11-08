@@ -145,8 +145,11 @@ counts do not create disclosures or chevrons. Fixed table columns and elided
 identity cells keep long names and grouping changes from resizing the chart.
 The analytics table reserves its scrollbar gutter so short and scrolling groups
 retain the same column widths in browsers with classic scrollbars.
-Each page's existing refresh/polling owner continues loading statistics
-alongside ticket counts. Work consumers retain lifetime task/ticket projections,
+Home and Overview receive usage updates through the shared `usageUpdates`
+SSE transport. `useAgentStats` owns statistics requests, date/group/scope filters
+and stale-response protections, including manual and filter refreshes. Their
+30-second page polls retain ticket counts and, on project Home, overview data;
+they do not refresh usage. Work consumers retain lifetime task/ticket projections,
 independent of these Home date filters.
 
 Work reuses the compact `AgentUsageSummary` on Board cards, the graph task
