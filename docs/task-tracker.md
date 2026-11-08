@@ -207,7 +207,7 @@ evidence, including mirrors assigned either existing role. The envelope's
 
 Agents explicitly map their domain conclusions to a generic disposition.
 The runtime has no domain verdict table. Only `success` advances.
-An ordinary review `repair` invokes the existing one-pass loop. A supported
+An ordinary review `repair` invokes the bounded three-repair loop. A supported
 persisted correction/reopen causes a dependency rescan after a valid native
 return; it never accepts the superseded mirror occurrence. Mirror `repair`
 without that persisted progress, blocked/failed, malformed output and native
@@ -247,14 +247,18 @@ remain intact.
 
 Ticket `completion_evidence_json.automatic_delivery` stores native `sessions`
 by delivery/review role (thread ID and harness identity), prior `attempts`, latest
-receipts and `repair_pass_used`. First launch creates a session; later launches
+receipts and `repair_count`. First launch creates a session; later launches
 resume that exact role session with task-frozen settings. Roles/tickets stay
 distinct. Persist the scoped rejection before repair, supplying occurrence
 phase/attempt/candidate and persisted `review_result` status/summary/outputs.
-One automatic repair pass requires a separate new descendant commit, then the
-same reviewer rechecks that exact SHA. The consumed pass survives explicit
-requeue. Blocked required verification, native/access/model/resume/schema failure,
-dirty/mismatched candidate or a second rejection stops the same task with history;
+Up to three automatic repair passes are allowed per ticket after the initial
+delivery. Each pass requires a separate new descendant commit, then the same
+reviewer rechecks that exact SHA. The runner increments the durable count before
+launching a repair; explicit requeue preserves it and cannot bypass the limit.
+Legacy evidence with `repair_pass_used=true` and no count means one consumed
+repair, not a fresh allowance. Rejection after the third repair stops the task.
+Blocked required verification, native/access/model/resume/schema failure or a
+dirty/mismatched candidate also stops the same task with history;
 there is no fresh-session, host or model fallback. Current independent approval
 completes the ordinary ticket; historical approval cannot satisfy a correction.
 
@@ -714,7 +718,7 @@ and valid structured result supersede an earlier transient `error`. A terminal
 does not launch an extra retry or replace the session. No credential setup is
 performed.
 
-Ordinary automatic review allows only the one durable scoped repair pass above;
+Ordinary automatic review allows up to three durable scoped repair passes above;
 dependency-driven corrections preserve that consumed allowance. Delivery does
 not resume an interrupted job after daemon restart. `tracker.execute` remains a read-only
 brief operation. Explicit taskwide handoff delegates mechanical mirror progression; agents retain
@@ -927,7 +931,7 @@ self-acceptance, step claim/record, agent dispatch or replacement workflow.
    Persist target/source ticket refs, source attempt and inspected candidate,
    failed criterion/check and concrete evidence, required outcome and affected
    recheck. Preserve unrelated context and `automatic_delivery` sessions,
-   attempts, receipts and `repair_pass_used`. Save current failed findings and
+   attempts, receipts and `repair_count`. Save current failed findings and
    outputs outside step `result_json` before rewind clears it.
 3. Requeue affected ordinary children with `tracker.updateTicket`, using
    `complete -> in-progress -> not-started` for completed children, and reconcile
@@ -947,7 +951,7 @@ delivery/review/verifier sessions. No phase-name selector or correction service
 is involved. Fresh persisted correction is actionable before an earlier approved
 review, which remains historical evidence. Corrected source needs a separate
 descendant commit and independent exact-SHA approval; consumed ordinary repair
-allowance is preserved, never reset to evade a second rejection. Unsupported
+count is preserved, never reset to evade the three-repair limit. Unsupported
 or no-progress correction and actual native/access/model/resume/schema/candidate
 errors stop without fallback. An old success cannot accept a reset occurrence.
 

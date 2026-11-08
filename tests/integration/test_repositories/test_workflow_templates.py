@@ -671,7 +671,7 @@ def test_engineering_readiness_and_acceptance_contract_survives_plan_derivation(
         "audit-tracker",
         "release-closeout",
     ]
-    assert spec.version == "0.8.0"
+    assert spec.version == "0.8.1"
     assert [step.id for step in spec.steps] == expected_order
     assert spec.metadata_json["step_ids"] == expected_order
     assert spec.skill_preset_requirements[0].applies_to_steps == expected_order
@@ -722,7 +722,7 @@ def test_engineering_readiness_and_acceptance_contract_survives_plan_derivation(
     validation = validate_run_plan_obj(plan.model_dump(mode="json"))
     assert validation.valid, validation.errors
     assert validation.warnings == []
-    assert plan.template_version == "0.8.0"
+    assert plan.template_version == "0.8.1"
     assert [step.id for step in plan.steps] == expected_order
     assert {step.id: step.depends_on for step in plan.steps} == expected_dependencies
     derived_verify = next(step for step in plan.steps if step.id == "verify-delivery")

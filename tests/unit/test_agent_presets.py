@@ -157,6 +157,13 @@ def _assert_sdlc_materializations(agent_dir: Path) -> None:
         assert "native StackOS MCP" in prompt
         assert "fallible evidence of the original operator outcome" in prompt
         assert "without routine main-agent relay" in prompt
+        assert "three automatic repair passes per ticket" in prompt
+        assert "initial delivery plus three repairs" in prompt
+        assert "Persist repair_count across explicit requeue; never reset it" in prompt
+        assert (
+            "When repair_count is absent, historical repair_pass_used=true counts as one" in prompt
+        )
+        assert "rejection after the third repair" in prompt
         for boundary in (
             "Explicit exclusions",
             "unavailable authority",
@@ -790,7 +797,7 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
     delivery = loader.describe_preset(key="stackos.sdlc.delivery").preset
     reviewer = loader.describe_preset(key="stackos.sdlc.delivery-reviewer").preset
 
-    assert architecture.version == "0.6.0"
+    assert architecture.version == "0.6.1"
     architecture_text = " ".join(
         [
             *architecture.prompt_contract.responsibilities,
@@ -859,13 +866,13 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
 def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -> None:
     loader = AgentPresetLoader()
     expected_versions = {
-        "requirements-flow-definer": "0.6.0",
-        "codebase-explorer": "0.6.0",
-        "planning": "0.7.1",
-        "architecture": "0.6.0",
-        "test-designer": "0.6.1",
-        "delivery": "0.7.1",
-        "delivery-reviewer": "0.6.1",
+        "requirements-flow-definer": "0.6.1",
+        "codebase-explorer": "0.6.1",
+        "planning": "0.7.2",
+        "architecture": "0.6.1",
+        "test-designer": "0.6.2",
+        "delivery": "0.7.2",
+        "delivery-reviewer": "0.6.2",
     }
     presets = {
         key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset for key in expected_versions
@@ -1045,7 +1052,9 @@ def test_sdlc_source_and_local_verification_repair_contracts() -> None:
                 "same native delivery",
                 "separate repair commit",
                 "explicit requeue",
-                "second rejection",
+                "three automatic repair passes per ticket",
+                "repair_count",
+                "rejection after the third repair",
                 "active/historical snapshots",
             ):
                 assert requirement in text, (role, requirement)

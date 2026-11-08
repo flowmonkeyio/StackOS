@@ -58,6 +58,7 @@ RESULT_SCHEMA = {
     "additionalProperties": False,
 }
 ACTOR = "tracker.task-delivery"
+MAX_REPAIR_PASSES = 3
 
 
 def _workflow_scope(repo, project_id, task, run_plan_id, step_id, *, starting=False):
@@ -375,7 +376,14 @@ def _archive_attempt(evidence: dict[str, Any]) -> None:
         evidence.setdefault("attempts", []).append(
             {
                 key: deepcopy(evidence[key])
-                for key in ("attempt", "candidate", "delivery", "review", "owned_work")
+                for key in (
+                    "attempt",
+                    "candidate",
+                    "delivery",
+                    "review",
+                    "owned_work",
+                    "repair_count",
+                )
                 if key in evidence
             }
         )
@@ -564,6 +572,8 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                 evidence = deepcopy(
                     (selected.completion_evidence_json or {}).get("automatic_delivery", {})
                 )
+                if workflow_step is None:
+                    evidence.setdefault("repair_count", int(bool(evidence.get("repair_pass_used"))))
                 _archive_attempt(evidence)
                 baseline_pending = True
                 role = state["agent_assignments"].get(ticket_key, "delivery_agent")
@@ -619,6 +629,20 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                         state["project_dir"], ticket_key, evidence, phase, native_session
                     )
                     baseline_pending = False
+                if (
+                    workflow_step is None
+                    and phase == "delivery"
+                    and evidence["attempts"]
+                    and evidence["attempts"][-1].get("review", {}).get("validated_outcome")
+                    == "repair"
+                ):
+                    if evidence["repair_count"] >= MAX_REPAIR_PASSES:
+                        raise ValidationError(
+                            f"Automatic repair limit reached ({MAX_REPAIR_PASSES} passes)"
+                        )
+                    # Persist with the launch below. Requeue of this delivery resumes the
+                    # same counted pass; a pending rejected review consumes the next pass.
+                    evidence["repair_count"] += 1
                 launch = {
                     **identity,
                     "sandbox": sandbox,
@@ -686,8 +710,8 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                                     "need no fabricated commit. Return optional commit_sha "
                                     "inside outputs. "
                                     "Use normal approval review for authorized .git/.codex writes; "
-                                    "a denial stops that write and its dependent work. Never bypass "
-                                    "the denial; continue unaffected checks and authorized "
+                                    "a denial stops that write and its dependent work. Never "
+                                    "bypass the denial; continue unaffected checks and authorized "
                                     "alternatives. Missing required proof remains blocked. "
                                     "When review_result is present, repair only "
                                     "its scoped findings, run "
@@ -818,7 +842,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                             if workflow_step is not None or phase == "delivery":
                                 if (
                                     workflow_step is None
-                                    and (evidence.get("repair_pass_used") or changed_candidate)
+                                    and (evidence.get("repair_count", 0) or changed_candidate)
                                     and sha == evidence["candidate"].get("base_commit_sha")
                                 ):
                                     raise ValidationError("Repair requires a new descendant commit")
@@ -854,11 +878,9 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                     and workflow_step is None
                     and phase == "review"
                     and decision == "repair"
-                    and not evidence.get("repair_pass_used", False)
+                    and evidence["repair_count"] < MAX_REPAIR_PASSES
                 )
                 accepted = valid and decision == "success"
-                if repair:
-                    evidence["repair_pass_used"] = True
                 with session_factory() as session:
                     repo = TrackerRepository(session)
                     task = _task(repo, project_id, task_key)
@@ -891,6 +913,16 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                             or value.get("summary")
                             or f"{phase} failed"
                         )
+                        if (
+                            valid
+                            and workflow_step is None
+                            and phase == "review"
+                            and decision == "repair"
+                        ):
+                            reason = (
+                                f"Automatic repair limit reached ({MAX_REPAIR_PASSES} passes): "
+                                f"{reason}"
+                            )
                         patch.update(status="failed", outcome=reason)
                     elif accepted and phase == "review":
                         patch.update(status="complete", outcome=value["summary"])

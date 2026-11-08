@@ -455,7 +455,7 @@ without persisted progress stops; mirrors do not enter a duplicate ordinary-tick
 review loop. See the
 [agent-owned correction method](task-tracker.md#agent-owned-automatic-corrections).
 
-Ordinary tickets retain independent review and one scoped repair in the same
+Ordinary tickets retain independent review and up to three scoped repairs in the same
 delivery/review sessions, with persisted rejection, attempt receipts and consumed
 repair allowance surviving requeue. Reviewers execute planned specs and relevant
 integration checks; failures report repair, unavailable required checks blocked.
@@ -466,7 +466,7 @@ Git is optional. Supplied `outputs.commit_sha` evidence retains clean-current-HE
 ancestry and exact review identity checks. Observation may cite unchanged HEAD;
 project guidance requires separate commits for source changes/repairs.
 Non-Git tasks invoke no Git commands; Codex uses `--skip-git-repo-check`.
-Native/access/model/resume/schema failure, candidate mismatch or second rejection
+Native/access/model/resume/schema failure, candidate mismatch or rejection after the third repair
 stops the same task, with no fresh-session, host or model fallback.
 See [task delivery](task-tracker.md#automated-task-delivery) for session/followup
 storage and native execution modes.

@@ -6,6 +6,7 @@ import asyncio
 import json
 import shutil
 import subprocess
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -153,18 +154,15 @@ def test_agent_reopen_rescans_dependencies_and_resumes_original_sessions(
                 }
                 # A previous approval is history, never the current repair request.
                 assert packet["review_result"] is None
-                assert (
-                    ticket["completion_evidence_json"]["automatic_delivery"].get(
-                        "repair_pass_used", False
-                    )
-                    is consumed_repair
-                )
+                assert ticket["completion_evidence_json"]["automatic_delivery"].get(
+                    "repair_count", 0
+                ) == (3 if consumed_repair else 0)
             if phase == "delivery" and not (
                 correcting
                 and observation_result in {"stale-correction", "missing-correction-candidate"}
             ):
                 commits.append(commit(tmp_path, f"producer-{len(commits)}"))
-            elif consumed_repair and (len(prior_calls) == 0 or correcting):
+            elif consumed_repair and (len(prior_calls) < 3 or correcting):
                 status = "repair"
             outputs = {"commit_sha": commits[-1]}
             if correcting and observation_result == "missing-correction-candidate":
@@ -288,12 +286,12 @@ def test_agent_reopen_rescans_dependencies_and_resumes_original_sessions(
         return
     producer = repo.brief(project_id=project_id, ticket_key="producer").ticket
     evidence = producer.completion_evidence_json["automatic_delivery"]
-    assert evidence.get("repair_pass_used", False) is consumed_repair
+    assert evidence["repair_count"] == (3 if consumed_repair else 0)
     assert evidence["sessions"]["delivery"]["thread_id"] == "producer-delivery"
     assert evidence["sessions"]["review"]["thread_id"] == "producer-review"
     assert evidence["attempts"][-1]["review"]["validated_outcome"] == "success"
     assert evidence["review"]["validated_outcome"] == ("repair" if consumed_repair else "success")
-    assert len(commits) == (3 if consumed_repair else 2)
+    assert len(commits) == (5 if consumed_repair else 2)
     assert git(tmp_path, "merge-base", "--is-ancestor", commits[-2], commits[-1]) == ""
     observation = repo.brief(project_id=project_id, ticket_key=measure).ticket
     assert observation.context_json["failed_outputs"] == failed_outputs
@@ -710,9 +708,7 @@ def test_mirror_unsuccessful_or_malformed_result_stops_through_plan_owner(
     final = plans.get(plan.id)
     assert final.steps[0].status in {"blocked", "failed"}
     assert final.steps[1].status != "success"
-    assert (
-        "repair_pass_used" not in snapshot.tickets[0].completion_evidence_json["automatic_delivery"]
-    )
+    assert "repair_count" not in snapshot.tickets[0].completion_evidence_json["automatic_delivery"]
     receipt = snapshot.tickets[0].completion_evidence_json["automatic_delivery"]["review"]
     assert receipt["selected_role"] == "review_agent"
     assert receipt["validated_outcome"] == (
@@ -2069,7 +2065,7 @@ def feedback_harness(
             with Session(session.get_bind()) as check:
                 durable = TrackerRepository(check).brief(project_id=project_id, ticket_key=key)
                 evidence = durable.ticket.completion_evidence_json["automatic_delivery"]
-                assert evidence["repair_pass_used"] is True
+                assert 1 <= evidence["repair_count"] <= 3
                 assert evidence["attempts"][-1]["review"]["result"]["status"] == "repair"
             assert packet["review_result"]["result"]["summary"] == "Scoped repair"
         calls.append({"key": key, "phase": phase, "resume": resume, "packet": packet})
@@ -2217,7 +2213,7 @@ def test_feedback_reject_repair_approve_preserves_sessions_attempts_and_notes(
         assert evidence[phase]["usage"]["measured"]["cache_write"] == (
             0 if usage_basis == "session" else 10
         )
-        assert evidence["repair_pass_used"] is True
+        assert evidence["repair_count"] == 1
     assert prior["candidate"]["commit_sha"] != evidence["candidate"]["commit_sha"]
     assert evidence["candidate"]["base_commit_sha"] == prior["candidate"]["commit_sha"]
     assert (
@@ -2245,11 +2241,11 @@ def test_feedback_reject_repair_approve_preserves_sessions_attempts_and_notes(
 
 
 @pytest.mark.parametrize("decision", ["approve", "blocked", "reject"])
-def test_feedback_followup_only_blocked_and_second_reject(
+def test_feedback_followup_only_blocked_and_fourth_reject(
     session, project_id, tmp_path, monkeypatch, decision
 ):
     feedback_task(session, project_id)
-    decisions = ["approve", "approve"] if decision == "approve" else [decision, decision]
+    decisions = ["approve", "approve"] if decision == "approve" else [decision] * 4
     calls = feedback_harness(session, project_id, tmp_path, monkeypatch, decisions)
     scheduler = QueuedScheduler()
     submit(session, project_id, tmp_path, scheduler)
@@ -2260,20 +2256,20 @@ def test_feedback_followup_only_blocked_and_second_reject(
     assert snapshot.tasks[0].metadata_json["delivery"]["status"] == (
         "complete" if decision == "approve" else "stopped"
     )
-    assert len(calls) == (2 if decision == "blocked" else 4)
+    assert len(calls) == {"blocked": 2, "approve": 4, "reject": 8}[decision]
     if decision != "approve":
         assert snapshot.tickets[1].status == "not-started"
     context = snapshot.tasks[0].context_json
     assert context["operator_inputs"] == ["Keep input"] and context["other"] == "preserved"
     notes = context["followups"]
-    assert len(notes) == (2 if decision == "blocked" else 3)
+    assert len(notes) == {"blocked": 2, "approve": 3, "reject": 5}[decision]
     assert notes[1]["text"] == "SIDE NOTE first 2"
     assert notes[1]["source_ticket_key"] == "first"
     assert notes[1]["source_attempt"] == 1
     assert notes[1]["created_at"]
     if decision == "blocked":
         evidence = snapshot.tickets[0].completion_evidence_json["automatic_delivery"]
-        assert not evidence.get("repair_pass_used", False)
+        assert evidence["repair_count"] == 0
         assert evidence["review"]["result"]["status"] == "blocked"
 
 
@@ -2342,7 +2338,7 @@ def test_feedback_schema_error_requeue_excludes_serialized_followups(
     assert [ticket.status for ticket in stopped.tickets] == ["failed", "not-started"]
     evidence = stopped.tickets[0].completion_evidence_json["automatic_delivery"]
     assert evidence["attempts"][0]["review"]["error"] == error
-    assert not evidence.get("repair_pass_used", False)
+    assert evidence["repair_count"] == 0
     assert evidence["review"]["result"]["status"] == "blocked"
 
 
@@ -2389,13 +2385,11 @@ def test_feedback_requeue_preserves_consumed_repair_budget(
     session, project_id, tmp_path, monkeypatch
 ):
     feedback_task(session, project_id)
-    calls = feedback_harness(
-        session, project_id, tmp_path, monkeypatch, ["reject", "reject", "reject"]
-    )
+    calls = feedback_harness(session, project_id, tmp_path, monkeypatch, ["reject"] * 4)
     scheduler = QueuedScheduler()
     submit(session, project_id, tmp_path, scheduler)
     scheduler.run()
-    assert len(calls) == 4
+    assert len(calls) == 8
     session.expire_all()
     repo = TrackerRepository(session)
     repo.update_ticket(
@@ -2406,19 +2400,177 @@ def test_feedback_requeue_preserves_consumed_repair_budget(
     )
     submit(session, project_id, tmp_path, scheduler)
     scheduler.run()
-    assert len(calls) == 6
+    assert len(calls) == 8  # Requeue cannot obtain an unmetered fifth delivery.
     session.expire_all()
     snapshot = repo.get(project_id=project_id, task_key="deliver")
     assert [ticket.status for ticket in snapshot.tickets] == ["failed", "not-started"]
     evidence = snapshot.tickets[0].completion_evidence_json["automatic_delivery"]
-    assert evidence["repair_pass_used"] is True
-    assert len(evidence["attempts"]) == 2
-    assert [a["review"]["result"]["status"] for a in evidence["attempts"]] == ["repair", "repair"]
-    for attempt in [*evidence["attempts"], evidence]:
+    assert evidence["repair_count"] == 3
+    assert "repair limit" in snapshot.tickets[0].outcome.lower()
+    assert len(evidence["attempts"]) == 4
+    assert [a["repair_count"] for a in evidence["attempts"]] == [0, 1, 2, 3]
+    assert [a["review"]["result"]["status"] for a in evidence["attempts"]] == ["repair"] * 4
+    for attempt in evidence["attempts"]:
         for phase in ("delivery", "review"):
             assert attempt[phase]["selected_role"] == f"{phase}_agent"
             assert attempt[phase]["usage"]["measured"]["total"] in {150, 230}
         assert attempt["review"]["validated_outcome"] == "repair"
+
+
+def test_three_repairs_reach_approval_in_original_sessions(
+    session, project_id, tmp_path, monkeypatch
+):
+    feedback_task(session, project_id)
+    calls = feedback_harness(
+        session,
+        project_id,
+        tmp_path,
+        monkeypatch,
+        ["reject", "reject", "reject", "approve", "approve"],
+    )
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    snapshot = TrackerRepository(session).get(project_id=project_id, task_key="deliver")
+    assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "complete"
+    assert [ticket.status for ticket in snapshot.tickets] == ["complete", "complete"]
+    evidence = snapshot.tickets[0].completion_evidence_json["automatic_delivery"]
+    attempts = [*evidence["attempts"], evidence]
+    assert [attempt["repair_count"] for attempt in attempts] == [0, 1, 2, 3]
+    assert "repair_pass_used" not in evidence
+    assert len(calls) == 10
+    for previous, repaired in pairwise(attempts):
+        old_sha = previous["candidate"]["commit_sha"]
+        new_sha = repaired["candidate"]["commit_sha"]
+        assert repaired["candidate"]["base_commit_sha"] == old_sha
+        assert old_sha != new_sha
+        assert git(tmp_path, "merge-base", "--is-ancestor", old_sha, new_sha) == ""
+        assert repaired["delivery"]["launch"]["resume_thread_id"] == "first-delivery"
+        assert repaired["review"]["launch"]["resume_thread_id"] == "first-review"
+
+
+@pytest.mark.parametrize("legacy", [True, False, None])
+def test_pending_legacy_rejection_requeue_consumes_next_repair(
+    session, project_id, tmp_path, monkeypatch, legacy
+):
+    from stackos import task_delivery
+
+    feedback_task(session, project_id)
+    consumed = int(bool(legacy))
+    decisions = ["reject"] * (consumed + 1)
+    calls = feedback_harness(session, project_id, tmp_path, monkeypatch, decisions)
+    scheduler = QueuedScheduler()
+    # Recreate a stopped pending rejection under the previous effective allowance.
+    monkeypatch.setattr(task_delivery, "MAX_REPAIR_PASSES", consumed)
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    repo = TrackerRepository(session)
+    ticket = repo.brief(project_id=project_id, ticket_key="first").ticket
+    evidence = ticket.completion_evidence_json["automatic_delivery"]
+    assert evidence["review"]["validated_outcome"] == "repair"
+    for attempt in [*evidence["attempts"], evidence]:
+        attempt.pop("repair_count")
+    if legacy is not None:
+        evidence["repair_pass_used"] = legacy
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="first",
+        patch_json={
+            "status": "in-progress",
+            "completion_evidence_json": {
+                **ticket.completion_evidence_json,
+                "automatic_delivery": evidence,
+            },
+        },
+    )
+    repo.update_ticket(
+        project_id=project_id, ticket_key="first", patch_json={"status": "not-started"}
+    )
+    monkeypatch.setattr(task_delivery, "MAX_REPAIR_PASSES", 3)
+    decisions.extend(["approve", "approve"])
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    final = repo.brief(project_id=project_id, ticket_key="first").ticket
+    assert final.status == "complete"
+    automatic = final.completion_evidence_json["automatic_delivery"]
+    assert automatic["repair_count"] == consumed + 1
+    assert automatic.get("repair_pass_used") is legacy
+    assert automatic["delivery"]["launch"]["resume_thread_id"] == "first-delivery"
+    assert automatic["review"]["launch"]["resume_thread_id"] == "first-review"
+    assert len(calls) == (consumed + 1) * 2 + 4
+
+
+@pytest.mark.parametrize("fault", ["native", "blocked", "candidate"])
+def test_failed_repair_resumes_same_counted_pass(session, project_id, tmp_path, monkeypatch, fault):
+    from stackos import task_delivery
+
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="deliver", title="Deliver")
+    repo.create_ticket(project_id=project_id, task_key="deliver", key="first", title="First")
+    calls = []
+
+    def launch(*args, **selection):
+        packet = json.loads(args[3])
+        phase = packet["phase"]
+        previous = [call for call in calls if call == phase]
+        assert selection.get("resume_thread_id") == (f"first-{phase}" if previous else None)
+        calls.append(phase)
+        with Session(session.get_bind()) as check:
+            durable = TrackerRepository(check).brief(project_id=project_id, ticket_key="first")
+            count = durable.ticket.completion_evidence_json["automatic_delivery"]["repair_count"]
+        assert count == (0 if len(calls) <= 2 else 1)
+        if len(calls) == 3:
+            if fault == "native":
+                return scenario_result(1, thread_id="first-delivery", error="Native unavailable")
+            return scenario_result(
+                0,
+                thread_id="first-delivery",
+                result=generic_result(
+                    "blocked" if fault == "blocked" else "success",
+                    {"commit_sha": git(tmp_path, "rev-parse", "HEAD")},
+                    "Repair interrupted",
+                ),
+            )
+        sha = (
+            commit(tmp_path, f"candidate-{len(calls)}")
+            if phase == "delivery"
+            else git(tmp_path, "rev-parse", "HEAD")
+        )
+        status = "repair" if len(calls) == 2 else "success"
+        return scenario_result(
+            0, thread_id=f"first-{phase}", result=generic_result(status, {"commit_sha": sha})
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    stopped = repo.get(project_id=project_id, task_key="deliver")
+    assert stopped.tickets[0].status == "failed"
+    assert stopped.tasks[0].metadata_json["delivery"]["status"] == "stopped"
+    assert calls == ["delivery", "review", "delivery"]
+    evidence = stopped.tickets[0].completion_evidence_json["automatic_delivery"]
+    assert evidence["repair_count"] == 1
+    assert evidence["delivery"]["validated_outcome"] == ("blocked" if fault == "blocked" else None)
+    repo.update_ticket(
+        project_id=project_id, ticket_key="first", patch_json={"status": "in-progress"}
+    )
+    repo.update_ticket(
+        project_id=project_id, ticket_key="first", patch_json={"status": "not-started"}
+    )
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    final = repo.brief(project_id=project_id, ticket_key="first").ticket
+    assert final.status == "complete"
+    evidence = final.completion_evidence_json["automatic_delivery"]
+    assert evidence["repair_count"] == 1
+    assert [attempt["repair_count"] for attempt in evidence["attempts"]] == [0, 1]
+    assert calls == ["delivery", "review", "delivery", "delivery", "review"]
 
 
 @pytest.mark.parametrize(

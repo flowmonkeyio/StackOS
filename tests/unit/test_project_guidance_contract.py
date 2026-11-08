@@ -112,7 +112,7 @@ def _assert_bounded_correction_method(text: str) -> None:
         "required outcome",
         "affected recheck",
         "outside step result_json",
-        "repair_pass_used",
+        "repair_count",
         "complete -> in-progress -> not-started",
         "tracker.updateticket",
         "earliest affected bound gate",

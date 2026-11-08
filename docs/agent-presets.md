@@ -296,11 +296,11 @@ mechanically complete approved ordinary tickets and advance serially through all
 remaining dependency-ready task work. Mirrors execute their remaining frozen
 contract once using an existing selected role; only RunPlanRepository records
 their lifecycle. A valid scoped
-rejection is persisted before one automatic repair pass in the same native
-delivery session, with a separate new descendant repair commit and re-verification
-in the same independent review session. The consumed pass survives explicit
+rejection is persisted before each of up to three automatic repair passes in the
+same native delivery session, with a separate new descendant repair commit and
+re-verification in the same independent review session. The consumed count survives explicit
 requeue; blocked required verification, native/access/model/resume failure,
-candidate mismatch or a second rejection stops that task. Main retains scope
+candidate mismatch or rejection after the third repair stops that task. Main retains scope
 admission and final claims. In automatic delivery, assigned agents execute
 integration and workflow phase gates; main observes without lifecycle writes.
 Defaults use `TaskTracker.config_json.delivery`

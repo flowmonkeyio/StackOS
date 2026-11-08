@@ -239,10 +239,10 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     expected = {item["preset"]["summary"]["key"]: item for item in raw["required_agents"]}
     actual = {item["preset"]["key"]: item for item in compact["required_agents"]}
     expected_versions = {
-        "stackos.sdlc.requirements-flow-definer": "0.6.0",
-        "stackos.sdlc.planning": "0.7.1",
-        "stackos.sdlc.delivery": "0.7.1",
-        "stackos.sdlc.delivery-reviewer": "0.6.1",
+        "stackos.sdlc.requirements-flow-definer": "0.6.1",
+        "stackos.sdlc.planning": "0.7.2",
+        "stackos.sdlc.delivery": "0.7.2",
+        "stackos.sdlc.delivery-reviewer": "0.6.2",
     }
     assert set(actual) == set(expected) == set(expected_versions)
     for key, item in actual.items():
@@ -316,7 +316,9 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
         "nonblocking followups",
         "when Git evidence is supplied",
         "genuinely unavailable required verification blocks",
-        "second rejection",
+        "three automatic repair passes per ticket",
+        "repair_count",
+        "rejection after the third repair",
         "completeness and proportionality",
         "omitted checks",
     ):
@@ -330,15 +332,16 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     assert "new descendant commit" in " ".join(delivery["must_do"])
     compact_skill = compact["required_skill_presets"][0]["preset"]
     full_skill = raw["required_skill_presets"][0]["preset"]
-    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.1"
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.2"
     full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
     # Skill lists are bounded navigation; raw retains the full contract.
     assert len(compact_skill["must_do"]) == 25
     for brief_rule, full_rule in zip(compact_skill["must_do"], full_instructions[:25], strict=True):
         assert full_rule.startswith(brief_rule.removesuffix("..."))
     assert "Adopt guidance manually per project" in " ".join(compact_skill["must_do"])
-    assert "one automatic repair pass" in " ".join(compact_skill["must_do"])
-    assert "second rejection" in " ".join(compact_skill["must_do"])
+    assert "three automatic repair passes per ticket" in " ".join(compact_skill["must_do"])
+    assert "repair_count" in " ".join(compact_skill["must_do"])
+    assert "rejection after the third repair" in " ".join(compact_skill["must_do"])
     assert "Give concise ticket start/end" in " ".join(full_instructions)
 
 

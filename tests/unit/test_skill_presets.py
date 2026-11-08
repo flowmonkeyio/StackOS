@@ -71,7 +71,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     contract = loaded.preset.operating_contract
     action = loaded.preset.project_adaptation.required_agent_action.lower()
 
-    assert loaded.preset.version == "0.8.1"
+    assert loaded.preset.version == "0.8.2"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "canonical owner" in action
@@ -258,12 +258,15 @@ def test_sdlc_orchestrator_manual_adoption_and_bounded_repair() -> None:
         ):
             assert requirement.lower() in text.lower(), requirement
         for requirement in (
-            "one automatic repair pass",
+            "three automatic repair passes per ticket",
+            "initial delivery plus three repairs",
+            "repair_count",
+            "historical repair_pass_used=true counts as one pass",
             "same native delivery session",
             "same independent review session",
             "separate",
             "explicit requeue",
-            "second rejection",
+            "rejection after the third repair",
             "clean unchanged HEAD",
             "planned specs and integration checks",
             "business regression",

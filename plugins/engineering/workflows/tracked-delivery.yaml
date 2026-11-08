@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: engineering.tracked-delivery
 name: Engineering Tracked Delivery
-version: 0.8.0
+version: 0.8.1
 description: Reusable SDLC workflow for requirements, project-native design and proof planning, executable ticket breakdown, delegated delivery with immediate independent review, integrated verification, and truthful release closeout.
 domain: engineering
 owner:
@@ -257,7 +257,7 @@ policies:
     description: Main owns scope admission and final claims. Terminal-managed delivery keeps workflow/tracker writes and acceptance with main. Explicit tracker.startDelivery handoff delegates all remaining dependency-ready task work to StackOS, including integration and frozen workflow gates through assigned agents. Ordinary tickets require independent review; RunPlanRepository alone records mirror/plan/run lifecycle. Specialists return evidence and never complete their own tickets.
   - key: delegated_ticket_acceptance
     kind: delivery
-    description: Terminal-managed delivery allows up to three active ticket lifecycles within host capacity. Source changes and each repair create separate scoped commits before independent exact-commit review; observation work may cite unchanged HEAD and needs no fabricated commit. Every executable child needs independent review. Explicit automatic delivery advances serially and permits one durable scoped repair in the same native delivery/review sessions. Blocked verification, native failure, candidate mismatch or second rejection stops the task. Generated mirrors execute the frozen contract once through an existing selected role, without a duplicate ordinary review loop; child approval alone never satisfies integration or final signoff.
+    description: Terminal-managed delivery allows up to three active ticket lifecycles within host capacity. Source changes and each repair create separate scoped commits before independent exact-commit review; observation work may cite unchanged HEAD and needs no fabricated commit. Every executable child needs independent review. Explicit automatic delivery advances serially and permits up to three automatic repair passes per ticket after valid scoped rejections (initial delivery plus three repairs) in the same native delivery/review sessions. Persist repair_count across explicit requeue; never reset it. When repair_count is absent, historical repair_pass_used=true counts as one pass. Blocked verification, native agent launch/access/model/resume failure, candidate mismatch or rejection after the third repair stops the task. Generated mirrors execute the frozen contract once through an existing selected role, without a duplicate ordinary review loop; child approval alone never satisfies integration or final signoff.
   - key: ticket_and_integration_proof
     kind: verification
     description: Ticket acceptance proves the assigned local obligations against accepted prerequisite state; combined business requirements remain explicit integration obligations. A ticket cannot pass by relying on an unaccepted sibling candidate. Integrate its reviewed result and validate any relevant integration changes before completion releases dependents. Reuse current ticket evidence at later gates and execute the remaining combined proof.
@@ -271,7 +271,7 @@ policies:
       may route a scoped required correction through existing owning tickets without
       main relay. Read full source/target briefs, context and evidence; full-read/merge
       supplied JSON fields, retaining unrelated context, automatic_delivery sessions,
-      attempts, receipts and repair_pass_used. Persist target/source ticket refs,
+      attempts, receipts and repair_count. Persist target/source ticket refs,
       source attempt and inspected candidate, failed criterion/check/evidence,
       required outcome and affected recheck. Preserve current findings/outputs outside
       step result_json before rewind clears results. Choose the earliest affected
@@ -1081,7 +1081,7 @@ failure_handling:
   - If project guidance or host-agent format is missing, record the exact gap and ask for it before writing local agent files.
   - If tracker dependencies reveal blocked work, update ticket blockers instead of continuing with invisible chat-only state.
   - If verification fails, use root-cause debugging before broad reruns or speculative fixes.
-  - Keep ordinary review/repair in the same ticket. Terminal-managed findings route through main; automatic delivery routes persisted scoped rejection once in the same native delivery/review sessions. Unrelated followups never become automatic work. Supported automatic verification/review corrections use recovery_reconciliation through owning tickets and the earliest bound gate; mirror repair without persisted progress stops for controller diagnosis.
+  - Keep ordinary review/repair in the same ticket. Terminal-managed findings route through main; automatic delivery routes persisted scoped rejections within the three-pass repair budget in the same native delivery/review sessions. Unrelated followups never become automatic work. Supported automatic verification/review corrections use recovery_reconciliation through owning tickets and the earliest bound gate; mirror repair without persisted progress stops for controller diagnosis.
   - For terminal-managed rewind after a material scope change or late integration failure, stop all active assignments and their processes, preserve receipts, and explicitly reconcile affected children/dependencies. For supported assigned automatic correction finish the caller's checks and quiesce other affected work, then make tracker.reopen the final mutation before returning repair; the caller must not wait for itself to terminate. Reopening a run-plan step alone does not reopen completed children.
   - Resume affected assignments with a new attempt and current contract revision; ignore superseded results and invalidate only affected evidence. Never rewrite an existing run's frozen step order to match a newer template.
   - Necessary omitted consumers, files, wiring, specs and docs within the original outcome do not require routine main-agent relay or workflow rewind. Record necessity, proportionality, affected consumers and proof. Explicit exclusions, unavailable authority, actual ownership conflicts or materially different outcomes stop affected work; material outcome changes return to affected impact discovery, architecture and test design.

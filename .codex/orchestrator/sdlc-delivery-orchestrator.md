@@ -1,8 +1,8 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.1
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.2
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
-Workflow: `engineering.tracked-delivery` v0.8.0 source contract
+Workflow: `engineering.tracked-delivery` v0.8.1 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
 
 This is the StackOS repository adaptation, not a subagent. The main agent owns
@@ -153,13 +153,16 @@ Each source-change ticket produces a separate scoped commit after focused checks
 then receives independent exact-commit review. Both receipts name full
 `commit_sha`. Protected `.git`/`.codex` writes use normal approval review; stop
 the denied write without bypass. Automatic delivery mechanically records approved child results and
-advances serially. A valid scoped rejection is persisted before one automatic
-repair pass in the same native delivery session; require a separate new descendant
-repair commit, then resume the same independent review session on that exact SHA.
-Validate clean unchanged HEAD for reject and approve. Preserve native sessions,
-attempt history and `repair_pass_used` across explicit requeue. Blocked required
-verification, native/access/model/resume failure, candidate mismatch or a second
-rejection stops the same task without fresh-session, host or model fallback.
+advances serially. Up to three automatic repair passes per ticket follow valid
+persisted scoped rejections: initial delivery plus three repairs in the same native
+delivery session. Each pass requires a separate new descendant repair commit and
+the same independent review session on that exact SHA. Validate clean unchanged
+HEAD for reject and approve. Preserve native sessions, attempt history and
+`repair_count` across explicit requeue; never reset the count. When repair_count
+is absent, historical repair_pass_used=true counts as one pass. Blocked required
+verification, native agent launch/access/model/resume failure, candidate mismatch
+or rejection after the third repair stops the same task without fresh-session,
+host or model fallback.
 Observation may cite unchanged HEAD; non-Git work needs no fabricated commit.
 Automatic delivery traverses all remaining dependency-ready task work, including
 workflow mirrors. Frozen step extensions.agent_assignment select existing
@@ -291,7 +294,7 @@ fields rather than replacing unrelated content. Persist target/source ticket ref
 source attempt and inspected candidate, failed criterion/check and concrete
 evidence, required outcome and affected recheck. Preserve current findings/outputs
 outside step result_json and retain automatic_delivery sessions, attempts, receipts
-and repair_pass_used before rewind clears current step results.
+and repair_count before rewind clears current step results.
 
 Choose the earliest affected bound gate from actual provenance/dependencies.
 Requeue affected ordinary children through complete -> in-progress -> not-started
@@ -307,8 +310,8 @@ bound gate and resuming original delivery/review/verifier sessions.
 
 Fresh persisted correction outranks old approved review, which remains history.
 Corrected source requires a separate descendant commit and independent exact-SHA
-review. Preserve consumed ordinary repair allowance; never reopen to evade a
-second rejection. Unsupported/no-progress correction and actual execution/access/
+review. Preserve repair_count; never reopen to reset the count or evade rejection
+after the third repair. Unsupported/no-progress correction and actual execution/access/
 model/resume/schema/candidate errors stop without fallback. Followups stay
 nonblocking; exclusions, authority/ownership conflicts and materially different
 outcomes require main reconciliation. Source edits do not activate this method on

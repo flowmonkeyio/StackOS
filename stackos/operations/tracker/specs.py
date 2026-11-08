@@ -184,7 +184,8 @@ def operation_specs() -> list[OperationSpec]:
             purpose=(
                 "Select taskwide dependency-driven execution for a prepared task. "
                 "Resolve generic tracker delivery defaults with task overrides by role once. "
-                "Ordinary work retains independent review and one same-session scoped repair. "
+                "Ordinary work retains independent review and up to three "
+                "same-session scoped repairs. "
                 "Workflow mirrors execute their frozen contracts through the run-plan owner. "
                 "Explicit unsuccessful results or native failures stop the same task."
             ),
