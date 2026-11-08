@@ -369,6 +369,9 @@ def _build_lifespan(
             yield
         finally:
             log.info("daemon.shutdown.clean")
+            from stackos.host_mcp.service import shutdown_usage
+
+            shutdown_usage()
             try:
                 await delivery.stop()
             finally:

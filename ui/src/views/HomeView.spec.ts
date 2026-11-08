@@ -11,6 +11,20 @@ import { localActivityFilters } from '@/lib/agentActivity'
 const ORIG_FETCH = globalThis.fetch
 
 describe('HomeView', () => {
+  it('keeps ticket-count polling without repeating usage refresh in the page timer', async () => {
+    vi.useFakeTimers()
+    globalThis.fetch = vi.fn(async (input) => defaultFetch(String(input))) as typeof fetch
+    const wrapper = await mountHome()
+    try {
+      const count = (operation: string) => vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => String(url).includes(operation)).length
+      const usage = count('tracker.agentStatsAll')
+      const tickets = count('tracker.ticketCounts')
+      expect(usage).toBeGreaterThan(0)
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(count('tracker.agentStatsAll')).toBe(usage)
+      expect(count('tracker.ticketCounts')).toBeGreaterThan(tickets)
+    } finally { wrapper.unmount(); vi.useRealTimers() }
+  })
   beforeEach(() => {
     setActivePinia(createPinia())
     Reflect.deleteProperty(window, 'stackosDesktop')

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -66,6 +66,7 @@ def run_agent(
     provider: str | None = None,
     profile: str | None = None,
     resume_thread_id: str | None = None,
+    on_session: Callable[[str], None] | None = None,
 ) -> AgentRunResult:
     """Run supplied instructions in a new or explicitly selected native thread."""
     if not instructions.strip():
@@ -102,15 +103,26 @@ def run_agent(
             "-",
         ]
         try:
-            process = subprocess.run(
-                command,
-                input=prompt,
-                cwd=project_dir,
-                env=subprocess_env_for_cli(codex_bin),
-                capture_output=True,
-                text=True,
-                check=False,
-            )
+            if on_session is not None:
+                from stackos.host_mcp.progress import run_codex_process
+
+                process = run_codex_process(
+                    command,
+                    input=prompt,
+                    cwd=project_dir,
+                    env=subprocess_env_for_cli(codex_bin),
+                    on_session=on_session,
+                )
+            else:
+                process = subprocess.run(
+                    command,
+                    input=prompt,
+                    cwd=project_dir,
+                    env=subprocess_env_for_cli(codex_bin),
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
         except OSError as exc:
             return AgentRunResult(None, error=f"Could not launch Codex: {exc}")
         thread_id = None

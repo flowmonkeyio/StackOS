@@ -28,8 +28,9 @@ const { hostStatuses, hostStatusSummary, loadHostStatuses, applyHostStatuses } =
 const { health, systemBusy, statusTone, statusLabel, systemFacts, loadHealth, runSystemAction } =
   useHomeSystemStatus({ onDoctorResult: applyHostStatuses, onRepairComplete: loadHostStatuses })
 
-usePolling(async () => { await Promise.all([tickets.load(), agents.load()]) }, { intervalMs: 30_000 })
+usePolling(async () => { await tickets.load() }, { intervalMs: 30_000 })
 onMounted(() => {
+  void agents.load()
   void loadHealth()
   void loadHostStatuses()
   void portfolio.load()

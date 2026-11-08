@@ -1,4 +1,5 @@
 import { apiStream } from '@/lib/client'
+import type { UsageProjection } from '@/lib/usageUpdates'
 
 export interface ProjectTimelineEvent {
   id: number
@@ -22,11 +23,12 @@ export interface SseMessage {
 }
 
 export interface TrackerStatusStreamOptions {
-  projectId: number
+  projectId: number | null
   taskKey?: string
   afterId?: number | null
   onEvent: (event: ProjectTimelineEvent) => void
   onError?: (error: unknown) => void
+  onUsage?: (updates?: UsageProjection) => void
 }
 
 export interface TrackerStatusStream {
@@ -105,6 +107,10 @@ export function openTrackerStatusStream(options: TrackerStatusStreamOptions): Tr
       if (done) break
       const chunk = decoder.decode(value, { stream: true })
       for (const message of parser.push(chunk)) {
+        if (message.event === 'tracker-usage') {
+          try { options.onUsage?.(JSON.parse(message.data).updates ?? undefined) } catch { /* Ignore malformed optional telemetry. */ }
+          continue
+        }
         const event = projectTimelineEventFromMessage(message)
         if (!event) continue
         lastEventId = event.id
@@ -137,7 +143,7 @@ export function openTrackerStatusStream(options: TrackerStatusStreamOptions): Tr
 }
 
 export function trackerStatusStreamPath(
-  projectId: number,
+  projectId: number | null,
   query: URLSearchParams | { taskKey?: string; afterId?: number | null },
 ): string {
   const params =
@@ -151,7 +157,7 @@ export function trackerStatusStreamPath(
   if (!(query instanceof URLSearchParams) && query.afterId !== null && query.afterId !== undefined) {
     params.set('after', String(query.afterId))
   }
-  return `/api/v1/projects/${projectId}/context/timeline/stream?${params.toString()}`
+  return `${projectId === null ? '/api/v1' : `/api/v1/projects/${projectId}`}/context/timeline/stream?${params.toString()}`
 }
 
 function parseSseBlock(block: string): SseMessage | null {

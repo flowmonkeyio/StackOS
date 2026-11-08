@@ -4,6 +4,8 @@ import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter, type Loca
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import { UiBadge, UiButton, UiCallout, UiEmptyState, UiLoadingState, UiPageShell } from '@/components/ui'
 import { callOperation } from '@/lib/operations'
+import { patchUsageSnapshot, patchUsageAfter, usageCheckpoint } from '@/lib/usageUpdates'
+import type { UsageProjection } from '@/lib/usageUpdates'
 import { resolveStatus, trackerStatus } from '@/design/status'
 import type { TrackerSnapshot, TrackerStatus, TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
 import { isAutomaticDeliveryTask, taskDeliveryState } from '@/lib/task-tracker/delivery'
@@ -67,6 +69,7 @@ const liveTaskKey = computed(() => viewMode.value === 'graph' ? mapTaskKey.value
 const graph = useTrackerGraphSession({
   projectId, activeTaskKey: mapTaskKey, liveTaskKey, activeTaskRow, snapshot, routeError: error,
   reload: (options) => load(options),
+  refreshUsage,
 })
 const {
   loading: graphLoading, graphDataAvailable, statusFilters: graphStatusFilters, blockFilters: graphBlockFilters,
@@ -86,6 +89,12 @@ const {
 let loadSequence = 0
 let detailSequence = 0
 let alive = true
+function refreshUsage(next?: UsageProjection): void {
+  if (!currentScope() || !next) return
+  patchUsageSnapshot(snapshot.value, next)
+  patchUsageSnapshot(detailSnapshot.value, next)
+  graph.patchUsage(next)
+}
 
 function currentScope(): boolean {
   return alive && projectId.value === viewProjectId && route.path === viewPath
@@ -94,6 +103,7 @@ function currentScope(): boolean {
 async function load(options: { refocus?: boolean; restartStream?: boolean } = {}): Promise<void> {
   if (!projectId.value || !currentScope()) return
   const sequence = ++loadSequence
+  const usageVersion = usageCheckpoint()
   loading.value = true
   error.value = null
   try {
@@ -101,6 +111,7 @@ async function load(options: { refocus?: boolean; restartStream?: boolean } = {}
       project_id: projectId.value, task_index_only: true, include_graph: false,
     })
     if (!currentScope() || sequence !== loadSequence) return
+    patchUsageAfter(next, projectId.value, usageVersion)
     snapshot.value = next
     if (viewMode.value === 'graph') mapTaskKey.value = resolveMapTaskKey()
     else if (!queryText(route.query.task)) mapTaskKey.value = validRememberedMapTask()
@@ -135,6 +146,7 @@ async function loadMap(refocus?: boolean): Promise<void> {
 async function loadDetail(taskKey: string): Promise<void> {
   if (!currentScope() || detailTaskKey.value !== taskKey) return
   const sequence = ++detailSequence
+  const usageVersion = usageCheckpoint()
   detailLoading.value = true
   detailError.value = null
   if (detailSnapshot.value?.tasks[0]?.key !== taskKey) {
@@ -147,6 +159,7 @@ async function loadDetail(taskKey: string): Promise<void> {
       project_id: projectId.value, task_key: taskKey, include_graph: false,
     })
     if (!currentScope() || sequence !== detailSequence || detailTaskKey.value !== taskKey) return
+    patchUsageAfter(next, projectId.value, usageVersion)
     const task = next.tasks.find((item) => item.key === taskKey)
     if (!task) throw new Error('This task is no longer available in this project.')
     detailSnapshot.value = next
@@ -163,6 +176,7 @@ async function loadDetail(taskKey: string): Promise<void> {
 }
 
 async function refreshTaskContent(taskKey: string): Promise<TrackerTask> {
+  const usageVersion = usageCheckpoint()
   const [index, focused] = await Promise.all([
     callOperation<TrackerSnapshot>('tracker.get', {
       project_id: projectId.value, task_index_only: true, include_graph: false,
@@ -171,6 +185,8 @@ async function refreshTaskContent(taskKey: string): Promise<TrackerTask> {
       project_id: projectId.value, task_key: taskKey, include_graph: false,
     }),
   ])
+  patchUsageAfter(index, projectId.value, usageVersion)
+  patchUsageAfter(focused, projectId.value, usageVersion)
   const task = focused.tasks.find((item) => item.key === taskKey)
   if (!task) throw new Error('This task is no longer available in this project.')
   if (currentScope() && detailTaskKey.value === taskKey) {

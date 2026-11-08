@@ -87,6 +87,7 @@ function initials(owner: string): string {
           <AgentUsageSummary
             v-if="isAutomaticDeliveryTask(row.task)"
             :metrics="row.task.agent_stats"
+            :execution="row.task.active_execution"
             compact
             title="Lifetime task usage"
           />

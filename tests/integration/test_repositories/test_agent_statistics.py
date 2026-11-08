@@ -593,6 +593,8 @@ def test_daily_identity_projection_matches_table_and_operation_contract(
 
 
 def test_empty_read_does_not_create_a_tracker(session: Session, project_id: int):
+    from stackos.repositories.tracker.agent_stats import usage_refresh
+
     repo = TrackerRepository(session)
     result = repo.agent_stats(project_id=project_id)
     assert result.totals.launch_attempts == 0
@@ -604,6 +606,7 @@ def test_empty_read_does_not_create_a_tracker(session: Session, project_id: int)
     session.add(other)
     session.commit()
     assert repo.agent_stats(project_id=project_id).totals.launch_attempts == 0
+    assert usage_refresh(session, project_id, None) == {"tasks": [], "tickets": []}
 
 
 def test_malformed_usage_is_unavailable_and_defaults_do_not_relabel_history(

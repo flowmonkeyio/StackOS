@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from stackos.api.actions import router as actions_router
 from stackos.api.auth import router as auth_router
 from stackos.api.auth_providers import router as auth_providers_router
+from stackos.api.context import global_router as global_context_router
 from stackos.api.context import router as context_router
 from stackos.api.errors import (
     RequestIdMiddleware,
@@ -71,6 +72,7 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(hubspot_ingress_router)
     # Project memory/context primitives.
     app.include_router(context_router)
+    app.include_router(global_context_router)
     # Reusable workflow templates.
     app.include_router(workflow_templates_router)
     # Project routers land before project-scoped run plans/runs.

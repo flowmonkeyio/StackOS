@@ -699,6 +699,14 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                 # context is authoritative when an agent reopens accepted work.
                 if prior_review and prior_review.get("validated_outcome") != "repair":
                     prior_review = None
+                previous = next(
+                    (
+                        attempt[phase].get("usage")
+                        for attempt in reversed(evidence["attempts"])
+                        if phase in attempt
+                    ),
+                    None,
+                )
                 result = run_agent(
                     host_key,
                     state["project_dir"],
@@ -772,21 +780,16 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                         task_key=task_key,
                         ticket_key=ticket_key,
                         agent=agent["name"],
+                        attempt=evidence["attempt"],
+                        phase=phase,
                     ),
                     on_execution_change=execution_changed,
+                    **({"previous_usage": previous} if previous is not None else {}),
                     **selection,
                     **({"resume_thread_id": resume_thread_id} if resume_thread_id else {}),
                 )
                 # The shared schema owner also protects controlled/injected harnesses.
                 result = validate_agent_result(result, schema, host_key)
-                previous = next(
-                    (
-                        attempt[phase].get("usage")
-                        for attempt in reversed(evidence["attempts"])
-                        if phase in attempt
-                    ),
-                    None,
-                )
                 evidence[phase] = {
                     "agent": agent["name"],
                     "selected_role": selected_role,

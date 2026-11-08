@@ -34,8 +34,11 @@ from stackos.context import (
     ProjectEventOut,
 )
 from stackos.context.repository.utils import MAX_CONTEXT_LIMIT
+from stackos.host_mcp.service import usage_executions
+from stackos.repositories.tracker.agent_stats import usage_refresh
 
 router = APIRouter(prefix="/api/v1/projects/{project_id}", tags=["project-memory"])
+global_router = APIRouter(prefix="/api/v1", tags=["project-memory"])
 
 TRACKER_STREAM_EVENT = "tracker-status"
 
@@ -213,11 +216,39 @@ async def context_timeline_stream(
     engine: Engine = Depends(get_engine),
 ) -> StreamingResponse:
     """Stream tracker status timeline updates as Server-Sent Events."""
+    return _timeline_stream(
+        project_id,
+        request,
+        task_key,
+        after,
+        limit,
+        poll_ms,
+        heartbeat_ms,
+        max_events,
+        replay,
+        engine,
+    )
+
+
+@global_router.get("/context/timeline/stream")
+async def global_context_timeline_stream(
+    request: Request,
+    after: int | None = Query(default=None, ge=0),
+    engine: Engine = Depends(get_engine),
+) -> StreamingResponse:
+    """The same local-admin tracker transport for Overview's global usage scope."""
+    return _timeline_stream(None, request, None, after, 50, 1000, 15_000, None, False, engine)
+
+
+def _timeline_stream(
+    project_id, request, task_key, after, limit, poll_ms, heartbeat_ms, max_events, replay, engine
+) -> StreamingResponse:
 
     async def event_source():
         cursor = after
         emitted = 0
         next_heartbeat = time.monotonic() + heartbeat_ms / 1000
+        previous_usage = None
         if cursor is None and not replay:
             with Session(engine) as session:
                 cursor = ContextRepository(session).latest_tracker_status_event_id(
@@ -235,6 +266,26 @@ async def context_timeline_stream(
                     after_id=cursor,
                     task_key=task_key,
                 )
+
+            usage = usage_executions(project_id)
+            if task_key:
+                usage = [call for call in usage if call["task_key"] == task_key]
+            # Full replaceable transient snapshot also repairs reconnect/exit state.
+            # It has no durable event ID and never advances the timeline cursor.
+            if usage != previous_usage or page.items:
+                updates = None
+                if project_id is not None:
+                    with Session(engine) as session:
+                        updates = usage_refresh(
+                            session,
+                            project_id,
+                            None if previous_usage is None else [*usage, *previous_usage],
+                        )
+                        updates["replace"] = previous_usage is None
+                yield sse_frame(
+                    event="tracker-usage", data={"executions": usage, "updates": updates}
+                )
+                previous_usage = usage
 
             if page.items:
                 for item in page.items:

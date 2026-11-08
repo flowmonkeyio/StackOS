@@ -110,6 +110,28 @@ class TrackerTaskTicketSummaryOut(BaseModel):
     search_text: str = ""
 
 
+class UsageSampleOut(BaseModel):
+    at: str
+    input: int
+    output: int
+    total: int
+    cache_read: int | None = None
+    cache_write: int | None = None
+    reasoning: int | None = None
+
+
+class LiveUsageSnapshotOut(BaseModel):
+    unit: Literal["tokens"] = "tokens"
+    status: Literal["measured"] = "measured"
+    measured: AgentStatsUsageOut
+
+
+class LiveUsageOut(BaseModel):
+    usage: LiveUsageSnapshotOut
+    measured_at: str
+    samples: list[UsageSampleOut] = Field(default_factory=list, max_length=120)
+
+
 class ActiveExecutionOut(BaseModel):
     """Actual host-call identity; absent when no call is registered in this daemon."""
 
@@ -119,6 +141,7 @@ class ActiveExecutionOut(BaseModel):
     model: str | None
     started_at: str
     ticket_key: str
+    live_usage: LiveUsageOut | None = None
 
 
 class TrackerTaskOut(BaseModel):

@@ -2692,6 +2692,7 @@ def test_native_collector_failure_persists_session_and_available_usage(
     session, project_id, tmp_path, monkeypatch, host, fault
 ):
     """Actual native adapter -> normalizer -> tracker receipt on failed output."""
+    from stackos.host_mcp import progress
     from stackos.host_mcp.adapters import codex, grok
 
     prepared_task(session, project_id)
@@ -2732,6 +2733,12 @@ def test_native_collector_failure_persists_session_and_available_usage(
         return subprocess.CompletedProcess(command, int(fault == "native"), stdout, "")
 
     monkeypatch.setattr(subprocess, "run", execute)
+
+    def stream(command, *, on_session, **kwargs):
+        on_session("native-session")
+        return execute(command, **kwargs)
+
+    monkeypatch.setattr(progress, "run_codex_process", stream)
     scheduler = QueuedScheduler()
     submit(session, project_id, tmp_path, scheduler, host_key=host)
     scheduler.run()

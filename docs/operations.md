@@ -424,7 +424,19 @@ Its host calls register actual agent/model/start lifetime at
 expose the same nullable `active_execution` projection; persisted status never
 substitutes for an active call. Registration/cleanup publish
 `tracker.execution.changed` through the existing tracker SSE feed without changing
-ticket status. No native-session polling or usage collection is implied.
+ticket status. The same host-service registry owns live usage observation for
+active Codex calls: one five-second collector reads appended native counters
+from the exact rollout source, with a fixed prior-call baseline on resume.
+No active calls means no collector timer or native reads. Other hosts retain
+their existing final collection; unproven live counters remain unavailable.
+
+The existing context timeline SSE transport also sends replaceable
+`tracker-usage` frames, without durable event IDs or per-sample database writes.
+Project streams retain project scope; `/api/v1/context/timeline/stream` supplies
+the same local-admin transport for Overview's global scope. Reconnect sends the
+current transient state; durable tracker events retain their existing cursor.
+UI subscribers share the transport and refresh owner; usage-only Work updates
+patch metrics and execution in place without rebuilding the page or graph.
 `tracker.configureDelivery` is the narrow local-admin REST-only setup write for
 `TaskTracker.config_json.delivery`; it replaces that object while preserving
 unrelated tracker configuration. Send `arguments` with `project_id` and

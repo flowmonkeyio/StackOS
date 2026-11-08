@@ -133,13 +133,14 @@ class ContextQueryMixin(ContextRepositorySupport):
     def tracker_status_timeline(
         self,
         *,
-        project_id: int,
+        project_id: int | None,
         limit: int | None = None,
         after_id: int | None = None,
         task_key: str | None = None,
     ) -> Page[ProjectEventOut]:
         """Page tracker task/ticket status events for realtime UI streams."""
-        self._require_project(project_id)
+        if project_id is not None:
+            self._require_project(project_id)
         n = _normalise_limit(limit)
         event_types = [
             TRACKER_TASK_STATUS_CHANGED,
@@ -147,9 +148,10 @@ class ContextQueryMixin(ContextRepositorySupport):
             TRACKER_EXECUTION_CHANGED,
         ]
         filters: list[Any] = [
-            col(ProjectEvent.project_id) == project_id,
             col(ProjectEvent.event_type).in_(event_types),
         ]
+        if project_id is not None:
+            filters.append(col(ProjectEvent.project_id) == project_id)
         if task_key:
             metadata_json: Any = ProjectEvent.metadata_json
             filters.append(metadata_json["task_key"].as_string() == task_key)
@@ -172,19 +174,21 @@ class ContextQueryMixin(ContextRepositorySupport):
     def latest_tracker_status_event_id(
         self,
         *,
-        project_id: int,
+        project_id: int | None,
         task_key: str | None = None,
     ) -> int | None:
-        self._require_project(project_id)
+        if project_id is not None:
+            self._require_project(project_id)
         event_types = [
             TRACKER_TASK_STATUS_CHANGED,
             TRACKER_TICKET_STATUS_CHANGED,
             TRACKER_EXECUTION_CHANGED,
         ]
         filters: list[Any] = [
-            col(ProjectEvent.project_id) == project_id,
             col(ProjectEvent.event_type).in_(event_types),
         ]
+        if project_id is not None:
+            filters.append(col(ProjectEvent.project_id) == project_id)
         if task_key:
             metadata_json: Any = ProjectEvent.metadata_json
             filters.append(metadata_json["task_key"].as_string() == task_key)

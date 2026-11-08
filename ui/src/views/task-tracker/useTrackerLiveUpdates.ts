@@ -2,52 +2,47 @@ import { onBeforeUnmount, ref, type Ref } from 'vue'
 
 import { formatApiError } from '@/lib/client'
 import {
-  openTrackerStatusStream,
   type ProjectTimelineEvent,
-  type TrackerStatusStream,
 } from '@/lib/task-tracker/liveEvents'
+import { subscribeUsageUpdates } from '@/lib/usageUpdates'
+import type { UsageProjection } from '@/lib/usageUpdates'
 
 interface UseTrackerLiveUpdatesOptions {
   projectId: Readonly<Ref<number>>
   activeTaskKey: Readonly<Ref<string>>
   reload: () => Promise<void>
+  refreshUsage?: (updates?: UsageProjection) => void
 }
-
-const streamCursorByProjectTask = new Map<string, number>()
 
 export function useTrackerLiveUpdates(options: UseTrackerLiveUpdatesOptions) {
   const { projectId, activeTaskKey, reload } = options
   const liveError = ref<string | null>(null)
   const recentNodeIds = ref<Set<string>>(new Set())
   const recentNodeTimers = new Map<string, number>()
-  let statusStream: TrackerStatusStream | null = null
+  let unsubscribe: (() => void) | null = null
 
   function restart(): void {
     stop()
     if (!validProjectId(projectId.value)) return
-    const taskKey = activeTaskKey.value
-    const cursorKey = projectTaskCursorKey(projectId.value, taskKey)
     liveError.value = null
-    statusStream = openTrackerStatusStream({
-      projectId: projectId.value,
-      taskKey: taskKey || undefined,
-      afterId: streamCursorByProjectTask.get(cursorKey) ?? null,
-      onEvent,
-      onError(cause) {
+    unsubscribe = subscribeUsageUpdates(projectId.value, {
+      usage: (updates) => options.refreshUsage?.(updates),
+      resume: () => { void reload() },
+      status: onEvent,
+      error(cause) {
         liveError.value = formatApiError(cause, 'Live tracker updates paused')
       },
     })
   }
 
   function stop(): void {
-    statusStream?.close()
-    statusStream = null
+    unsubscribe?.()
+    unsubscribe = null
   }
 
   function onEvent(event: ProjectTimelineEvent): void {
-    if (validProjectId(projectId.value)) {
-      streamCursorByProjectTask.set(projectTaskCursorKey(projectId.value, activeTaskKey.value), event.id)
-    }
+    const metadata = eventMetadata(event)
+    if (activeTaskKey.value && metadata.task_key !== activeTaskKey.value) return
     const touchedNodes = touchedGraphNodeIds(event)
     markRecentNodes(touchedNodes)
     void reload().then(() => markRecentNodes(touchedNodes))
@@ -80,10 +75,6 @@ export function useTrackerLiveUpdates(options: UseTrackerLiveUpdatesOptions) {
   })
 
   return { liveError, recentNodeIds, restart, stop }
-}
-
-function projectTaskCursorKey(projectId: number, taskKey: string): string {
-  return `${projectId}:${taskKey}`
 }
 
 function validProjectId(projectId: number): boolean {

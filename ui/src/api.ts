@@ -380,6 +380,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/context/timeline/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Global Context Timeline Stream
+         * @description The same local-admin tracker transport for Overview's global usage scope.
+         */
+        get: operations["global_context_timeline_stream_api_v1_context_timeline_stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health": {
         parameters: {
             query?: never;
@@ -2291,6 +2311,8 @@ export interface components {
             host_key: string;
             /** Invocation Id */
             invocation_id: string;
+            /** @default null */
+            live_usage: components["schemas"]["LiveUsageOut"] | null;
             /** Model */
             model: string | null;
             /** Started At */
@@ -4753,6 +4775,30 @@ export interface components {
             /** Tags */
             tags?: string[] | null;
         };
+        /** LiveUsageOut */
+        LiveUsageOut: {
+            /** Measured At */
+            measured_at: string;
+            /** Samples */
+            samples?: components["schemas"]["UsageSampleOut"][];
+            usage: components["schemas"]["LiveUsageSnapshotOut"];
+        };
+        /** LiveUsageSnapshotOut */
+        LiveUsageSnapshotOut: {
+            measured: components["schemas"]["AgentStatsUsageOut"];
+            /**
+             * Status
+             * @default measured
+             * @constant
+             */
+            status: "measured";
+            /**
+             * Unit
+             * @default tokens
+             * @constant
+             */
+            unit: "tokens";
+        };
         /** LoadedWorkflowTemplate */
         LoadedWorkflowTemplate: {
             project_extension?: components["schemas"]["WorkflowTemplateExtensionOut"] | null;
@@ -7078,6 +7124,32 @@ export interface components {
             /** Token */
             token: string;
         };
+        /** UsageSampleOut */
+        UsageSampleOut: {
+            /** At */
+            at: string;
+            /**
+             * Cache Read
+             * @default null
+             */
+            cache_read: number | null;
+            /**
+             * Cache Write
+             * @default null
+             */
+            cache_write: number | null;
+            /** Input */
+            input: number;
+            /** Output */
+            output: number;
+            /**
+             * Reasoning
+             * @default null
+             */
+            reasoning: number | null;
+            /** Total */
+            total: number;
+        };
         /** ValidationError */
         ValidationError: {
             /** Context */
@@ -8027,6 +8099,8 @@ export type SchemaLearningCreateRequest = components['schemas']['LearningCreateR
 export type SchemaLearningHookSpec = components['schemas']['LearningHookSpec'];
 export type SchemaLearningOut = components['schemas']['LearningOut'];
 export type SchemaLearningUpdateRequest = components['schemas']['LearningUpdateRequest'];
+export type SchemaLiveUsageOut = components['schemas']['LiveUsageOut'];
+export type SchemaLiveUsageSnapshotOut = components['schemas']['LiveUsageSnapshotOut'];
 export type SchemaLoadedWorkflowTemplate = components['schemas']['LoadedWorkflowTemplate'];
 export type SchemaLocalAgentChatCreateMessageInput = components['schemas']['LocalAgentChatCreateMessageInput'];
 export type SchemaLocalAgentChatMessageOut = components['schemas']['LocalAgentChatMessageOut'];
@@ -8109,6 +8183,7 @@ export type SchemaTrackerTaskTicketSummaryOut = components['schemas']['TrackerTa
 export type SchemaTrackerTicketOut = components['schemas']['TrackerTicketOut'];
 export type SchemaTrackerUpdateTaskContentInput = components['schemas']['TrackerUpdateTaskContentInput'];
 export type SchemaUiTokenResponse = components['schemas']['UiTokenResponse'];
+export type SchemaUsageSampleOut = components['schemas']['UsageSampleOut'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type SchemaWorkflowAgentRequirementSpec = components['schemas']['WorkflowAgentRequirementSpec'];
 export type SchemaWorkflowExperienceSpec = components['schemas']['WorkflowExperienceSpec'];
@@ -8801,6 +8876,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PluginCatalogOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    global_context_timeline_stream_api_v1_context_timeline_stream_get: {
+        parameters: {
+            query?: {
+                after?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

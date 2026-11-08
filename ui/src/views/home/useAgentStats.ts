@@ -1,8 +1,9 @@
-import { computed, onBeforeUnmount, ref, type Ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import type { SchemaTrackerAgentStatsOut } from '@/api'
 import { callOperation } from '@/lib/operations'
 import { formatApiError } from '@/lib/client'
 import { localActivityFilters, type AgentStatsFilters } from '@/lib/agentActivity'
+import { subscribeUsageUpdates } from '@/lib/usageUpdates'
 
 export function useAgentStats(projectId?: Ref<number>) {
   const visibility = ref<boolean | null>(true)
@@ -16,7 +17,22 @@ export function useAgentStats(projectId?: Ref<number>) {
   const summary = computed(() => loaded.value?.scope === scope.value ? loaded.value.data : null)
   const error = computed(() => failure.value?.scope === scope.value ? failure.value.message : null)
   let generation = 0
-  onBeforeUnmount(() => { generation += 1 })
+  let unsubscribe: (() => void) | null = null
+  let refreshing = false
+  let pending = false
+  async function refresh(): Promise<void> {
+    if (refreshing) { pending = true; return }
+    refreshing = true
+    do { pending = false; await load() } while (pending)
+    refreshing = false
+  }
+  function connect(): void {
+    unsubscribe?.()
+    unsubscribe = subscribeUsageUpdates(projectId?.value ?? null, { usage: () => { void refresh() } })
+  }
+  onMounted(connect)
+  if (projectId) watch(projectId, connect)
+  onBeforeUnmount(() => { unsubscribe?.(); pending = false; generation += 1 })
 
   async function load(): Promise<void> {
     const request = ++generation

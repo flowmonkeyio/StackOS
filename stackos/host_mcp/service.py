@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+import atexit
 import logging
+from collections import deque
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
-from threading import RLock
+from threading import Event, RLock, Thread
 from typing import Any, Literal, Protocol
 from uuid import uuid4
 
 from stackos.host_mcp.adapters import claude_code, claude_desktop, codex, gemini_cli, grok, hermes
 from stackos.host_mcp.bridge import MCP_SERVER_NAME, default_home, token_preflight
+from stackos.host_mcp.progress import CodexCounterReader
 from stackos.host_mcp.result import (
     AgentCapabilities,
     AgentRunResult,
@@ -21,6 +25,7 @@ from stackos.host_mcp.result import (
     HostMcpConnectionState,
     HostMcpResult,
     HostMcpSetupPolicy,
+    normalize_usage,
 )
 
 Action = Literal["inspect", "register", "repair", "remove"]
@@ -37,15 +42,24 @@ class AgentExecutionScope:
     task_key: str
     ticket_key: str
     agent: str
+    attempt: int | None = None
+    phase: str | None = None
 
 
-@dataclass(frozen=True)
+@dataclass
 class ActiveInvocation:
     invocation_id: str
     scope: AgentExecutionScope
     host_key: str
     model: str | None
     started_at: str
+    previous_usage: Any = None
+    resumed: bool = False
+    session_id: str | None = None
+    reader: CodexCounterReader | None = None
+    usage: dict[str, Any] | None = None
+    samples: deque = field(default_factory=lambda: deque(maxlen=120))
+    measured_at: str | None = None
 
     def projection(self) -> dict[str, Any]:
         return {
@@ -55,13 +69,133 @@ class ActiveInvocation:
             "model": self.model,
             "started_at": self.started_at,
             "ticket_key": self.scope.ticket_key,
+            "live_usage": {
+                "usage": {
+                    "unit": "tokens",
+                    "status": "measured",
+                    "measured": deepcopy(self.usage["measured"]),
+                },
+                "measured_at": self.measured_at,
+                "samples": list(self.samples),
+            }
+            if self.usage is not None
+            else None,
         }
 
 
-# The host service owns actual invocation lifetime. No persisted status, prompt,
-# native transcript, session reader or timer belongs in this minimal registry.
+# One invocation registry owns identity, reader and bounded provisional counters.
+# Neither UI subscriptions nor tracker reads start collection.
 _active_invocations: dict[str, ActiveInvocation] = {}
 _active_invocations_lock = RLock()
+_collector: Thread | None = None
+_collector_wake = Event()
+
+
+def _sample_invocations(now: datetime | None = None) -> None:
+    cutoff = (now or datetime.now(UTC)).timestamp() - 600
+    with _active_invocations_lock:
+        for call in _active_invocations.values():
+            while (
+                call.samples and datetime.fromisoformat(call.samples[0]["at"]).timestamp() < cutoff
+            ):
+                call.samples.popleft()
+            if call.reader is None:
+                continue
+            try:
+                sample = call.reader.read()
+            except (OSError, ValueError):
+                call.reader.close()
+                call.reader = None
+                continue
+            if sample is None:
+                continue
+            stamp, raw = sample
+            measured = datetime.fromisoformat(stamp)
+            if measured < datetime.fromisoformat(call.started_at) or (
+                call.measured_at and measured <= datetime.fromisoformat(call.measured_at)
+            ):
+                continue
+            usage = normalize_usage(
+                raw, session_id=call.session_id, resumed=call.resumed, previous=call.previous_usage
+            )
+            if usage["status"] != "measured":
+                continue
+            call.usage = usage
+            call.measured_at = stamp
+            if measured.timestamp() >= cutoff:
+                call.samples.append({"at": stamp, **usage["measured"]})
+
+
+def _collect() -> None:
+    global _collector
+    while True:
+        _collector_wake.wait(5)
+        _collector_wake.clear()
+        with _active_invocations_lock:
+            if not _active_invocations:
+                _collector = None
+                return
+        _sample_invocations()
+
+
+def _register(call: ActiveInvocation) -> None:
+    global _collector
+    with _active_invocations_lock:
+        _active_invocations[call.invocation_id] = call
+        if _collector is None:
+            _collector = Thread(target=_collect, name="stackos-agent-usage", daemon=True)
+            _collector.start()
+
+
+def _unregister(call: ActiveInvocation) -> None:
+    with _active_invocations_lock:
+        _active_invocations.pop(call.invocation_id, None)
+        if call.reader:
+            call.reader.close()
+            call.reader = None
+        call.samples.clear()
+        call.usage = None
+        call.previous_usage = None
+        call.session_id = None
+        if not _active_invocations:
+            _collector_wake.set()
+
+
+def shutdown_usage() -> None:
+    with _active_invocations_lock:
+        for call in list(_active_invocations.values()):
+            _unregister(call)
+
+
+atexit.register(shutdown_usage)
+
+
+def usage_executions(project_id: int | None = None) -> list[dict[str, Any]]:
+    """Safe transient transport state; no native I/O or durable samples."""
+    with _active_invocations_lock:
+        return [
+            {
+                "project_id": call.scope.project_id,
+                "task_key": call.scope.task_key,
+                **call.projection(),
+            }
+            for call in _active_invocations.values()
+            if project_id is None or call.scope.project_id == project_id
+        ]
+
+
+def provisional_usage(
+    project_id: int, ticket_key: str
+) -> list[tuple[int | None, str | None, dict[str, Any]]]:
+    """Safe native contributions; tracker owns receipt identity and aggregation."""
+    with _active_invocations_lock:
+        return [
+            (call.scope.attempt, call.scope.phase, deepcopy(call.usage))
+            for call in _active_invocations.values()
+            if call.scope.project_id == project_id
+            and call.scope.ticket_key == ticket_key
+            and call.usage is not None
+        ]
 
 
 def active_execution(
@@ -176,6 +310,7 @@ def run_agent(
     resume_thread_id: str | None = None,
     execution_scope: AgentExecutionScope | None = None,
     on_execution_change: Callable[[ActiveInvocation, bool], None] | None = None,
+    previous_usage: Any = None,
 ) -> AgentRunResult:
     """Run a project agent through the same host registry used by Overview."""
     if not instructions.strip():
@@ -207,14 +342,20 @@ def run_agent(
             host_key=host_key,
             model=model,
             started_at=datetime.now(UTC).isoformat(),
+            previous_usage=deepcopy(previous_usage),
+            resumed=resume_thread_id is not None,
         )
         if execution_scope is not None
         else None
     )
+    progress_kwargs: dict[str, Any] = {}
+    if call is not None and host_key == "codex":
+        progress_kwargs["on_session"] = lambda session_id: _attach_session(
+            call, session_id, Path(project_dir), resume_thread_id
+        )
     try:
         if call is not None:
-            with _active_invocations_lock:
-                _active_invocations[call.invocation_id] = call
+            _register(call)
             _notify_execution(on_execution_change, call, True)
         result = definition.run_agent(
             Path(project_dir).expanduser().resolve(),
@@ -222,6 +363,7 @@ def run_agent(
             prompt,
             output_schema,
             sandbox=sandbox,
+            **progress_kwargs,
             **{
                 key: value
                 for key, value in {
@@ -235,8 +377,7 @@ def run_agent(
         )
     finally:
         if call is not None:
-            with _active_invocations_lock:
-                _active_invocations.pop(call.invocation_id, None)
+            _unregister(call)
             _notify_execution(on_execution_change, call, False)
     if resume_thread_id is not None and result.thread_id != resume_thread_id:
         return AgentRunResult(
@@ -249,6 +390,24 @@ def run_agent(
             ),
         )
     return result
+
+
+def _attach_session(
+    call: ActiveInvocation, session_id: str, project_dir: Path, resume_thread_id: str | None
+) -> None:
+    with _active_invocations_lock:
+        if call.invocation_id not in _active_invocations or call.session_id is not None:
+            return
+        if resume_thread_id is not None and session_id != resume_thread_id:
+            return
+        if any(
+            other.session_id == session_id and other.reader is not None
+            for other in _active_invocations.values()
+            if other is not call
+        ):
+            return
+        call.session_id = session_id
+        call.reader = CodexCounterReader(session_id, project_dir, resumed=call.resumed)
 
 
 def agent_review_sandbox(host_key: str) -> AgentSandbox:

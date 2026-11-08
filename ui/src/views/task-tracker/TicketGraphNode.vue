@@ -97,6 +97,7 @@ const displayedStateLabel = computed(() => props.data.deliveryStopped
       v-if="data.taskAutomated"
       class="ticket-graph-node__usage"
       :metrics="data.agentStats"
+      :execution="data.activeExecution"
       compact
       title="Own ticket usage"
     />

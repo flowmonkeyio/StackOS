@@ -1,16 +1,36 @@
 <script setup lang="ts">
 import { usageFields, usageValue, formatUsage, exactUsage, type AgentStatsMetrics } from '@/lib/agentActivity'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { ActiveExecution } from '@/lib/task-tracker/types'
+import { liveUsageTitle, stepTrace } from '@/lib/liveUsage'
+import UsageTrace from './UsageTrace.vue'
 
-withDefaults(defineProps<{ metrics?: AgentStatsMetrics | null; compact?: boolean }>(), { metrics: null, compact: false })
+const props = withDefaults(defineProps<{ metrics?: AgentStatsMetrics | null; compact?: boolean; execution?: ActiveExecution | null }>(), { metrics: null, compact: false, execution: null })
 const fields = usageFields
+const root = ref<HTMLElement | null>(null)
+const fits = ref(false)
+const samples = computed(() => props.execution?.live_usage?.samples ?? [])
+const hasTraces = computed(() => props.compact && fields.some((field) => stepTrace(samples.value, field.key)))
+let observer: ResizeObserver | null = null
+function measure(): void {
+  if (!root.value) return
+  const metrics = [...root.value.querySelectorAll<HTMLElement>('.agent-usage-summary__metric')]
+  const width = metrics.reduce((total, metric, index) => total + ((metric.querySelector('dt') as HTMLElement)?.offsetWidth ?? 0) + ((metric.querySelector('dd') as HTMLElement)?.offsetWidth ?? 0) + 2 + (stepTrace(samples.value, fields[index]!.key) ? 22 : 0), 0) + 8
+  fits.value = width <= root.value.clientWidth
+}
+onMounted(() => { if (typeof ResizeObserver !== 'undefined' && root.value) { observer = new ResizeObserver(measure); observer.observe(root.value) }; measure() })
+watch(() => [props.metrics, props.execution], () => { void nextTick(measure) }, { deep: true })
+onBeforeUnmount(() => observer?.disconnect())
 </script>
 
 <template>
   <dl
+    ref="root"
     class="agent-usage-summary"
-    :class="{ 'agent-usage-summary--compact': compact }"
+    :class="{ 'agent-usage-summary--compact': compact, 'agent-usage-summary--live': hasTraces }"
     :style="compact ? undefined : { gridTemplateColumns: `repeat(${fields.length}, minmax(0, 1fr))` }"
     aria-label="Recorded token usage"
+    :title="liveUsageTitle(execution) || undefined"
   >
     <div
       v-for="field in fields"
@@ -20,13 +40,18 @@ const fields = usageFields
     >
       <dt>{{ field.label }}</dt>
       <dd
-        :title="exactUsage(metrics, field.key)"
-        :aria-label="exactUsage(metrics, field.key)"
+        :title="`${exactUsage(metrics, field.key)} ${liveUsageTitle(execution)}`.trim()"
+        :aria-label="`${exactUsage(metrics, field.key)} ${liveUsageTitle(execution)}`.trim()"
         :class="{ 'agent-usage-summary__unavailable': usageValue(metrics, field.key) == null }"
         tabindex="0"
       >
         {{ formatUsage(usageValue(metrics, field.key)) }}
       </dd>
+      <UsageTrace
+        v-if="hasTraces && fits"
+        :samples="samples"
+        :metric="field.key"
+      />
     </div>
   </dl>
 </template>
@@ -45,4 +70,6 @@ dd.agent-usage-summary__unavailable { color: var(--color-fg-muted); font-size: 1
 .agent-usage-summary--compact .agent-usage-summary__metric + .agent-usage-summary__metric { border: 0; padding: 0; }
 .agent-usage-summary--compact dt { color: var(--color-fg-muted); font-size: 11px; line-height: 18px; margin: 0; }
 .agent-usage-summary--compact dd { color: var(--color-fg-muted); font-size: 11px; line-height: 18px; font-weight: 500; letter-spacing: 0; }
+.agent-usage-summary--live { column-gap: 4px; }
+.agent-usage-summary--live .agent-usage-summary__metric { gap: 2px; }
 </style>

@@ -1304,7 +1304,8 @@ remains a separate visual affordance. Graph nodes stay 328×200. Full identity a
 local start date are available on hover/focus and in task/ticket details; historical
 owner/assignee and receipts remain in details. The approved compact reference is
 [`compact-live-activity.png`](assets/usage-785/compact-live-activity.png). Its token
-traces are a separate live-usage contract; identity alone creates no sampler.
+traces follow the live-usage contract below; status or selection alone never
+registers a native call or starts collection.
 Bounded overview surfaces that do not need a complete selector may also pass
 `task_statuses` (for example, `not-started` and `in-progress`). This filters the
 top-level task rows while retaining aggregate summaries across each returned
@@ -1317,6 +1318,54 @@ surfaced by dry-run preview. Workflow-spine warnings are stronger tracker-truth
 signals: missing child bridges, detached child branches, next-step handoff gaps,
 and open children under a workflow step should be investigated and may be
 blocking for tracker audit or release closeout when they hide required work.
+
+### Live usage during native calls
+
+The host execution service extends the same active-call registry with one
+replaceable provisional contribution and up to 120 measured, timestamped samples
+per call. One daemon collector samples at five-second intervals only while calls
+are active. Codex identity is exposed before process exit; the exact native
+rollout path is resolved once by exact ID in the native thread index, metadata
+checks its ID and working directory, and
+subsequent reads advance a byte cursor. A newly announced file may not exist yet;
+the reader waits for that exact path, without searching historical sessions.
+Resumes skip the pre-invocation file prefix and use the unchanged previous
+invocation baseline and native ID.
+
+These are native `token_count` checkpoints, not continuous token streaming.
+Repeated cumulative polls replace provisional usage; they are never summed.
+Existing receipt normalization and aggregation serve ticket, task, project,
+daily and grouped summaries. A persisted final receipt wins over any in-flight
+provisional observation. Native result/error handling and repair rules remain
+unchanged. Missing or unsupported telemetry is N/A; final collection still runs
+for every supported host. Claude/Grok full-scope live subagent/cache accounting
+has not been established, so their live adapters remain disabled.
+
+The rolling ten-minute history bounds charts only; collection and final totals
+cover the entire invocation. Readers, callbacks and recent samples are released
+on exit, failure, cancellation or shutdown. No sample table or per-tick tracker
+write exists. Native-session reads are independent of UI visibility and view count.
+
+Board and Graph keep whole-task/ticket numbers. Optional tiny discrete traces
+show only the active invocation's recent native measurements, with independent
+metric scales. Hover/focus text explains this scope distinction and the latest
+native measurement time. All traces hide together if they would make the row
+wrap; card dimensions, readable values and information hierarchy take priority.
+Existing task/ticket details add one approximately 70px strip scoped to the
+current agent and start. Manual work has no usage furniture. Traces disappear
+on exit while finalized totals remain. No smoothing, synthetic zero prefix,
+speed estimate, animation or per-card chart instance is used.
+
+Home, Overview and Work share the existing SSE transport through
+`usageUpdates`; `useAgentStats` retains date/group/scope and stale-response
+protections. Home's 30-second page poll no longer refreshes usage. Manual and
+filter refreshes still use the shared statistics owner; unrelated overview,
+ticket-count, health and host polling remain unchanged. Work patches usage in
+place from minimal server projections rather than fetching ticket history or
+doing another whole-page reload on usage events. Reconnect replaces the safe
+project usage snapshot, including ended calls. A shared latest-value revision
+protects newer measurements from an older pending Board/Graph/detail response;
+it holds no invocation history and is released with the last scoped subscriber.
 
 ## UI
 

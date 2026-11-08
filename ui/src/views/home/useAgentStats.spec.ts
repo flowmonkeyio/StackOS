@@ -7,6 +7,7 @@ import { localActivityFilters } from '@/lib/agentActivity'
 import { agentStatsFixture } from './agentStatsFixtures'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
+vi.mock('@/lib/usageUpdates', () => ({ subscribeUsageUpdates: vi.fn(() => vi.fn()) }))
 const wrappers: ReturnType<typeof mount>[] = []
 beforeEach(() => vi.mocked(callOperation).mockReset())
 afterEach(() => wrappers.splice(0).forEach(wrapper => wrapper.unmount()))

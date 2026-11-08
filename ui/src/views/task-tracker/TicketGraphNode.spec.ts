@@ -127,4 +127,4 @@ function nodeData(overrides: Partial<TrackerVueNodeData> = {}): TrackerVueNodeDa
   }
 }
 
-const execution = { invocation_id: 'call-review', agent: 'Delivery reviewer', host_key: 'codex', model: 'gpt-6-astra', started_at: '2026-11-08T01:08:00Z', ticket_key: 'tracker-chart-live-client' }
+const execution = { live_usage: null, invocation_id: 'call-review', agent: 'Delivery reviewer', host_key: 'codex', model: 'gpt-6-astra', started_at: '2026-11-08T01:08:00Z', ticket_key: 'tracker-chart-live-client' }

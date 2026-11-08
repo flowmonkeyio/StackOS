@@ -89,6 +89,18 @@ async function mountProject() {
 }
 
 describe('project ticket overview', () => {
+  it('retains overview/count polling while usage refresh stays with its shared owner', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = await mountProject()
+    try {
+      const count = (operation: string) => vi.mocked(callOperation).mock.calls.filter(([name]) => name === operation).length
+      const usage = count('tracker.agentStats'), tickets = count('tracker.ticketCounts')
+      expect(usage).toBeGreaterThan(0)
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(count('tracker.agentStats')).toBe(usage)
+      expect(count('tracker.ticketCounts')).toBeGreaterThan(tickets)
+    } finally { wrapper.unmount(); vi.useRealTimers() }
+  })
   it('shows current ticket counts and terminal work, and only actual configured workflows/Account state', async () => {
     const { wrapper, router } = await mountProject()
     expect(callOperation).toHaveBeenCalledWith('tracker.ticketCounts', { project_id: 1 })

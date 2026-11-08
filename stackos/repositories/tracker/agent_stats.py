@@ -7,11 +7,12 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import select
+from sqlalchemy import select, true
 from sqlmodel import Session, col
 
-from stackos.db.models import Project, TaskTracker, TrackerTicket
+from stackos.db.models import Project, TaskTracker, TrackerTask, TrackerTicket
 from stackos.host_mcp.result import usage_snapshot
+from stackos.host_mcp.service import active_execution, provisional_usage
 from stackos.repositories.tracker.schema import (
     AgentStatsCoverageOut,
     AgentStatsDayOut,
@@ -49,6 +50,22 @@ def invocation_receipts(evidence: Any) -> list[dict[str, Any]]:
             if isinstance(receipt, dict) and isinstance(receipt.get("launch"), dict):
                 unique[attempt, phase] = receipt
     return list(unique.values())
+
+
+def provisional_receipt(project_id: int, ticket_key: str, evidence: Any) -> list[dict[str, Any]]:
+    """Merge current native measurement into its unfinished receipt exactly once."""
+    receipts = invocation_receipts(evidence)
+    automatic = evidence.get("automatic_delivery", {}) if isinstance(evidence, dict) else {}
+    for attempt, phase, usage in provisional_usage(project_id, ticket_key):
+        if automatic.get("attempt") != attempt or phase is None:
+            continue
+        current = automatic.get(phase)
+        # Persisted final wins even if a reader update was already in flight.
+        if not isinstance(current, dict) or "exit_code" in current or "result" in current:
+            continue
+        receipts = [receipt for receipt in receipts if receipt is not current]
+        receipts.append({**current, "usage": usage})
+    return receipts
 
 
 def _coverage(known: int, total: int) -> Literal["empty", "complete", "partial", "unavailable"]:
@@ -175,19 +192,101 @@ def query_task_agent_stats(
         return {}
     receipts_by_task: dict[int, list[dict[str, Any]]] = defaultdict(list)
     statement = select(
-        col(TrackerTicket.task_id), col(TrackerTicket.completion_evidence_json)
+        col(TrackerTicket.task_id),
+        col(TrackerTicket.project_id),
+        col(TrackerTicket.key),
+        col(TrackerTicket.completion_evidence_json),
     ).where(
         col(TrackerTicket.tracker_id) == tracker_id,
         col(TrackerTicket.task_id).in_(task_ids),
     )
-    for task_id, evidence in session.execute(statement):
+    for task_id, project_id, ticket_key, evidence in session.execute(statement):
         # Deduplication is ticket-local; never add parent/group subtotals.
-        receipts_by_task[task_id].extend(invocation_receipts(evidence))
+        receipts_by_task[task_id].extend(provisional_receipt(project_id, ticket_key, evidence))
     return {task_id: summarize_receipts(receipts_by_task[task_id]) for task_id in task_ids}
 
 
 def _text(value: Any) -> str | None:
     return value if isinstance(value, str) and value.strip() else None
+
+
+def usage_refresh(
+    session: Session, project_id: int, calls: list[dict[str, Any]] | None
+) -> dict[str, Any]:
+    """Safe initial/reconnect snapshot, then minimal affected Work projections."""
+    task_keys = {call["task_key"] for call in calls or []}
+    ticket_keys = {call["ticket_key"] for call in calls or []}
+    tasks = (
+        list(
+            session.execute(
+                select(TrackerTask)
+                .join(TaskTracker, col(TaskTracker.id) == col(TrackerTask.tracker_id))
+                .where(
+                    col(TrackerTask.project_id) == project_id,
+                    col(TaskTracker.key) == DEFAULT_TRACKER_KEY,
+                    true() if calls is None else col(TrackerTask.key).in_(task_keys),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if calls is None or task_keys
+        else []
+    )
+    task_stats = {}
+    for tracker_id in {task.tracker_id for task in tasks}:
+        task_stats.update(
+            query_task_agent_stats(
+                session,
+                tracker_id=tracker_id,
+                task_ids={
+                    task.id
+                    for task in tasks
+                    if task.id is not None and task.tracker_id == tracker_id
+                },
+            )
+        )
+    tickets = (
+        list(
+            session.execute(
+                select(TrackerTicket)
+                .join(TaskTracker, col(TaskTracker.id) == col(TrackerTicket.tracker_id))
+                .where(
+                    col(TrackerTicket.project_id) == project_id,
+                    col(TaskTracker.key) == DEFAULT_TRACKER_KEY,
+                    true() if calls is None else col(TrackerTicket.key).in_(ticket_keys),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        if calls is None or ticket_keys
+        else []
+    )
+    task_by_id = {task.id: task for task in tasks}
+    return {
+        "tasks": [
+            {
+                "key": task.key,
+                "agent_stats": task_stats[task.id].model_dump(mode="json"),
+                "active_execution": active_execution(project_id, task.key),
+            }
+            for task in tasks
+        ],
+        "tickets": [
+            {
+                "key": ticket.key,
+                "agent_stats": summarize_receipts(
+                    provisional_receipt(project_id, ticket.key, ticket.completion_evidence_json)
+                ).model_dump(mode="json"),
+                "active_execution": active_execution(
+                    project_id, task_by_id[ticket.task_id].key, ticket.key
+                ),
+            }
+            for ticket in tickets
+            if ticket.task_id in task_by_id
+        ],
+    }
 
 
 def stats_timezone(start_date: date | None, end_date: date | None, timezone: str) -> ZoneInfo:
@@ -284,6 +383,7 @@ def query_agent_stats(
             col(Project.name),
             col(Project.slug),
             col(TrackerTicket.id),
+            col(TrackerTicket.key),
             col(TrackerTicket.completion_evidence_json),
         )
         .select_from(TrackerTicket)
@@ -299,8 +399,8 @@ def query_agent_stats(
     occurrences = []
     by_day: dict[date, list[tuple[int, str, str, dict[str, Any]]]] = defaultdict(list)
     undated = []
-    for pid, name, slug, _ticket_id, evidence in session.execute(statement):
-        for receipt in invocation_receipts(evidence):
+    for pid, name, slug, _ticket_id, ticket_key, evidence in session.execute(statement):
+        for receipt in provisional_receipt(pid, ticket_key, evidence):
             if not _eligible(receipt):
                 continue
             day = _launch_day(receipt, zone)

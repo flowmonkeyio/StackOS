@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ProjectPageHeader } from '@/components/domain'
 import ProviderMark from '@/components/domain/ProviderMark.vue'
@@ -34,14 +34,18 @@ const { project, accounts, workflows, task, loading, errors } = overview
 const description = computed(() => project.value?.domain || 'Current project work')
 const tickets = useTicketCounts(projectId)
 const agents = useAgentStats(projectId)
+onMounted(() => { void agents.load() })
 const { summary: agentSummary, loading: agentsLoading, error: agentsError, filters: agentFilters } = agents
 const { summary, loading: countsLoading, error: countsError } = tickets
 const { running, refresh } = usePolling(
   async () => {
-    await Promise.all([overview.load(), tickets.load(), agents.load()])
+    await Promise.all([overview.load(), tickets.load()])
   },
   { intervalMs: 30_000 },
 )
+async function refreshAll(): Promise<void> {
+  await Promise.all([refresh(), agents.load()])
+}
 function inspectStatus(status: TrackerStatus): void {
   void router.push(ticketWorkUrl(projectId.value, status))
 }
@@ -60,7 +64,7 @@ function inspectStatus(status: TrackerStatus): void {
           size="sm"
           icon-left="refresh"
           :loading="running"
-          @click="refresh"
+          @click="refreshAll"
         >
           Refresh
         </UiButton>

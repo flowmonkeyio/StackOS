@@ -97,7 +97,7 @@ def test_real_operation_returns_while_scheduler_delivers(
     entered, release, finished = Event(), Event(), Event()
     calls = []
 
-    def run_agent(_host, _directory, _instructions, prompt, _schema, *, sandbox):
+    def run_agent(_host, _directory, _instructions, prompt, _schema, *, sandbox, on_session=None):
         packet = json.loads(prompt)
         delivery = packet["phase"] == "delivery"
         calls.append(

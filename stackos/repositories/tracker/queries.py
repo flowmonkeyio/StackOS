@@ -43,7 +43,7 @@ from stackos.repositories.base import (
     cursor_paginate,
 )
 from stackos.repositories.tracker.agent_stats import (
-    invocation_receipts,
+    provisional_receipt,
     query_agent_stats,
     query_task_agent_stats,
     summarize_receipts,
@@ -1065,7 +1065,9 @@ class TrackerQueryMixin:
         )
         return TrackerTicketOut(
             **base,
-            agent_stats=summarize_receipts(invocation_receipts(row.completion_evidence_json)),
+            agent_stats=summarize_receipts(
+                provisional_receipt(row.project_id, row.key, row.completion_evidence_json)
+            ),
             active_execution=_execution_out(row.project_id, task.key, row.key) if task else None,
             task_key=task.key if task is not None else "",
             parent_ticket_key=parent.key if parent is not None else None,
@@ -1152,7 +1154,7 @@ class TrackerQueryMixin:
                     if task
                     else None,
                     agent_stats=summarize_receipts(
-                        invocation_receipts(row.completion_evidence_json)
+                        provisional_receipt(row.project_id, row.key, row.completion_evidence_json)
                     ),
                     task_key=task.key if task is not None else "",
                     parent_ticket_key=parent.key if parent is not None else None,

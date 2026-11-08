@@ -66,6 +66,21 @@ async function render(url = '/projects/7/tasks', realDialogs = false) {
 const popup = () => new DOMWrapper(document.body)
 
 describe('Work board navigation', () => {
+  it('patches usage projections across Board, Graph and open details without another tracker load', async () => {
+    dataMock([taskA], [ticketA], true)
+    const { wrapper, board, dialog } = await render('/projects/7/tasks?view=graph&task=task-a&detail=task-a')
+    const graph = () => wrapper.findComponent({ name: 'TrackerGraphPanel' })
+    const requests = mocks.callOperation.mock.calls.length
+    const metrics = agentStatsFixture().totals
+    mocks.stream.mock.calls.at(-1)![0].onUsage({ tasks: [{ key: taskA.key, agent_stats: metrics, active_execution: null }], tickets: [{ key: ticketA.key, agent_stats: metrics, active_execution: null }] })
+    await flushPromises()
+    expect(board().props('rows')[0].task.agent_stats).toEqual(metrics)
+    expect(graph().props('flow').nodes[0].data.agentStats).toEqual(metrics)
+    expect(dialog().props('task').agent_stats).toEqual(metrics)
+    expect(dialog().props('tickets')[0].agent_stats).toEqual(metrics)
+    expect(mocks.callOperation).toHaveBeenCalledTimes(requests)
+    wrapper.unmount()
+  })
   it('refreshes actual invocation identity through the existing stream with unchanged ticket status', async () => {
     dataMock([taskA], [{ ...ticketA, status: 'in-progress' }], true)
     const { wrapper, board, dialog } = await render('/projects/7/tasks?view=graph&task=task-a')
@@ -73,7 +88,7 @@ describe('Work board navigation', () => {
     graph().vm.$emit('node-click', { event: { stopPropagation: vi.fn() }, node: graph().props('flow').nodes[0] })
     await flushPromises()
     for (const [index, agent, model] of [[1, 'Implementer', 'gpt-6.1-sol'], [2, 'Reviewer', 'gpt-6-astra'], [3, 'Implementer', 'gpt-6.1-sol'], [4, null, null]] as const) {
-      const execution = agent ? { invocation_id: `call-${index}`, agent, model, host_key: 'codex', started_at: `2026-11-08T01:0${index}:00Z`, ticket_key: ticketA.key } : null
+      const execution = agent ? { live_usage: null, invocation_id: `call-${index}`, agent, model, host_key: 'codex', started_at: `2026-11-08T01:0${index}:00Z`, ticket_key: ticketA.key } : null
       dataMock([{ ...taskA, active_execution: execution }], [{ ...ticketA, status: 'in-progress', active_execution: execution }], true)
       mocks.stream.mock.calls.at(-1)![0].onEvent({ id: 10000 + index, event_type: 'tracker.execution.changed', metadata_json: { task_key: taskA.key, ticket_key: ticketA.key } })
       await flushPromises()

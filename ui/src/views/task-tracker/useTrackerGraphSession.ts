@@ -15,6 +15,8 @@ import type {
 import type { GraphBlockFilter, TaskProgressRow } from './viewTypes'
 import { useTrackerGraphViewport } from './useTrackerGraphViewport'
 import { useTrackerLiveUpdates } from './useTrackerLiveUpdates'
+import { patchUsageSnapshot, patchUsageAfter, usageCheckpoint } from '@/lib/usageUpdates'
+import type { UsageProjection } from '@/lib/usageUpdates'
 import {
   buildFilteredTrackerSnapshot,
   countStatuses,
@@ -35,6 +37,7 @@ interface UseTrackerGraphSessionOptions {
   snapshot: Readonly<Ref<TrackerSnapshot | null>>
   routeError: Ref<string | null>
   reload: (options?: TrackerReloadOptions) => Promise<void>
+  refreshUsage?: (updates?: UsageProjection) => void
 }
 
 export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
@@ -57,6 +60,7 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
     projectId,
     activeTaskKey: options.liveTaskKey ?? activeTaskKey,
     reload: () => reload({ refocus: false, restartStream: false }),
+    refreshUsage: options.refreshUsage,
   })
 
   const focusedGraph = computed(() => {
@@ -261,6 +265,7 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
       return null
     }
     const currentRequest = ++requestSeq
+    const usageVersion = usageCheckpoint()
     loading.value = true
     try {
       const nextGraph = await callOperation<TrackerSnapshot>('tracker.get', {
@@ -269,6 +274,7 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
         include_graph: true,
       })
       if (currentRequest !== requestSeq) return null
+      patchUsageAfter(nextGraph, projectId.value, usageVersion)
       graphSnapshot.value = nextGraph
       if (loadOptions.refocus) requestRefocus()
       return nextGraph
@@ -358,6 +364,7 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
   }
 
   return {
+    patchUsage: (next: UsageProjection) => patchUsageSnapshot(graphSnapshot.value, next),
     graphSnapshot,
     loading,
     graphDataAvailable,
