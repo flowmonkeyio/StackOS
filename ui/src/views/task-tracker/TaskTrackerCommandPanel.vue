@@ -125,7 +125,7 @@ const viewOptions = [{ key: 'board', label: 'Board' }, { key: 'graph', label: 'G
           :metrics="taskAgentStats"
           compact
           aria-label="Lifetime task usage"
-          title="Lifetime task usage. Cache is included in Input."
+          title="Lifetime task usage"
         />
         <span class="tracker-command-panel__count tracker-command-panel__graph-count text-xs text-fg-muted">{{ graphSummary }}</span>
         <UiButton

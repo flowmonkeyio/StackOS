@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, onUpdated, ref, useId } from 'vue'
 import { BarController, BarElement, CategoryScale, Chart, LinearScale, Tooltip, type ChartOptions, type Plugin } from 'chart.js'
 import { UiButton, UiButtonGroup } from '@/components/ui'
-import { activitySeries, formatTokens, type ActivityView, type AgentStatsDay } from '@/lib/agentActivity'
+import { activitySeries, formatTokens, usageFields, usageValue, type ActivityView, type AgentStatsDay } from '@/lib/agentActivity'
 
 Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip)
 const props = defineProps<{ days: AgentStatsDay[]; timezone: string; global?: boolean }>()
@@ -17,8 +17,12 @@ let signature = ''
 const title = computed(() => view.value === 'tokens' ? 'Tokens per day' : 'Tokens by agent per day')
 const series = computed(() => activitySeries(props.days, view.value, props.global))
 const focused = computed(() => selectedDay.value == null ? null : props.days[selectedDay.value] ?? null)
-const dailyFields = computed(() => ['input', 'cache_read', 'output', 'total'].filter(key => props.days.some(day => day.launch_attempts > 0 && day.reported_usage[key as 'input'] != null)) as ('input' | 'cache_read' | 'output' | 'total')[])
-const dailyLabels = { input: 'Input', cache_read: 'Cache', output: 'Output', total: 'Total' }
+type DailyField = (typeof usageFields)[number]['key'] | 'total'
+const dailyFields = computed(() => [...usageFields.map(field => field.key), 'total' as const].filter(key => props.days.some(day => day.launch_attempts > 0 && dailyValue(day, key) != null)))
+const dailyLabels = Object.fromEntries([...usageFields.map(field => [field.key, field.label]), ['total', 'Total']])
+function dailyValue(day: AgentStatsDay, field: DailyField): number | null {
+  return field === 'total' ? day.reported_usage.total : usageValue(day, field)
+}
 function dayLabel(date: string): string {
   return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
 }
@@ -65,10 +69,11 @@ const totalsPlugin: Plugin<'bar'> = {
       const amount = value(index)
       if (amount != null && props.days.length <= 14)
         ctx.fillText(formatTokens(amount), scales.x!.getPixelForValue(index), Math.max(12, scales.y!.getPixelForValue(amount) - 8))
-      if (view.value === 'tokens' && series.value[0]?.key === 'cache_read') {
-        const bar = instance.getDatasetMeta(0).data[index] as BarElement | undefined
+      const cacheIndex = series.value.findIndex(item => item.key === 'cache_read')
+      if (view.value === 'tokens' && cacheIndex >= 0) {
+        const bar = instance.getDatasetMeta(cacheIndex).data[index] as BarElement | undefined
         const box = bar?.getProps(['x', 'y', 'base', 'width'], true)
-        const cached = series.value[0]?.values[index]
+        const cached = series.value[cacheIndex]?.values[index]
         if (box && box.x != null && box.y != null && cached != null && Math.abs(box.base - box.y) > 32 && box.width > 70) {
           ctx.fillStyle = getComputedStyle(instance.canvas).getPropertyValue('--color-fg-on-accent').trim()
           ctx.fillText(formatTokens(cached), box.x, (box.base + box.y) / 2 + 4)
@@ -284,11 +289,11 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy(); chart = null }
                 :key="field"
               >
                 <span
-                  v-if="day.reported_usage[field] != null"
+                  v-if="dailyValue(day, field) != null"
                   tabindex="0"
-                  :title="`${dailyLabels[field]}: ${formatTokens(day.reported_usage[field], false)} tokens`"
-                  :aria-label="`${dailyLabels[field]}: ${formatTokens(day.reported_usage[field], false)} tokens`"
-                >{{ formatTokens(day.reported_usage[field]) }}</span>
+                  :title="`${dailyLabels[field]}: ${formatTokens(dailyValue(day, field), false)} tokens`"
+                  :aria-label="`${dailyLabels[field]}: ${formatTokens(dailyValue(day, field), false)} tokens`"
+                >{{ formatTokens(dailyValue(day, field)) }}</span>
               </td>
             </tr>
           </tbody>

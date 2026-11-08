@@ -53,7 +53,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 |---|---|
 | `ProjectPageHeader` | project-aware title, breadcrumbs, utility action slot, and route chrome |
 | `ProviderMark` | canonical provider logo/initial mark backed by `provider-presentation.json`; shared by Connections and Plugins |
-| `AgentUsageSummary` | Shared available Input / Cache / Output renderer; accepts `metrics: AgentStatsMetrics \| null` and `compact?: boolean`. Default mode keeps the analytics headline scale; compact mode is a muted inline list of indivisible label/value pairs that can wrap together. Both modes omit unsupported fields and summaries without recorded attempts, and retain measured zero with exact focus/hover values. Partial-field coverage stays in accessible exact-value labels. Cache means cache read included in Input. No receipt parsing or subtotal calculation. |
+| `AgentUsageSummary` | Shared available Input / Cache / Output renderer; accepts `metrics: AgentStatsMetrics \| null` and `compact?: boolean`. Default mode keeps the analytics headline scale; compact mode is a muted inline list of indivisible label/value pairs that can wrap together. Both modes omit unsupported fields and summaries without recorded attempts, and retain measured zero with exact focus/hover values. Partial-field coverage stays in accessible exact-value labels. Input uses paired `remaining_input`, Cache uses `cache_read`, Output uses `output`; raw input stays inclusive. No receipt parsing or subtotal calculation. |
 
 ## Shipped — app-level primitives (`ui/src/components/`)
 
@@ -96,8 +96,8 @@ the browser's visibly identified IANA timezone. Global Active/Archived/All
 selection remains with the existing page owner.
 
 `AgentActivityChart.vue` uses Chart.js vertical daily stacks with exactly two
-views: Tokens and Agents. Tokens shows disjoint Cache, New input (including
-cache write) and Output using the backend's paired measurements. Agents uses
+views: Tokens and Agents. Tokens shows disjoint Input (including cache write),
+Cache and Output, in that order, using the backend's paired measurements. Agents uses
 the same reported Input + Output split by agent. Unsupported series are absent;
 missing cache never becomes an invented remainder or unknown-cache category.
 An incomplete stack uses ordinary available-measurement context, without
@@ -119,11 +119,15 @@ owns the chart; it adds no polling.
 `components/domain/AgentUsageSummary.vue` accepts the existing typed summary
 metrics shared by Home and Work; consumers pass the appropriate backend
 projection, with no client receipt aggregation. `lib/agentActivity.ts` owns its
-compact/exact formatting, accessible field coverage, cache-share eligibility,
+shared `usageValue` mapping (`input` display → `remaining_input`, Cache →
+`cache_read`, Output → `output`), compact/exact formatting, accessible field coverage, cache-share eligibility,
 unchanged agent identities and plain review counts. A measured zero stays zero;
 unsupported summary fields and wholly unsupported breakdown columns disappear,
-while missing individual cells stay empty. Missing cache does not erase valid
-Input/Output. Only supported cache-write/reasoning appear in token details;
+while missing individual cells stay empty. Input availability and coverage follow
+the paired cache measurement; missing cache omits the corresponding Input split,
+preserving supported Output. Table numeric data, daily rows, chart series and
+exact disclosures consume that same mapping. Cache share keeps the raw inclusive
+input denominator. Only supported cache-write/reasoning appear in token details;
 recorded review outcomes appear as compact, plainly labelled summary/row facts.
 Ordinary copy omits raw roles, classification and empty review
 sentences. Model versions remain exact. Existing Work layout remains owned by

@@ -69,12 +69,13 @@ describe('TrackerTaskDetailDialog', () => {
     const totals = agentStatsFixture().totals
     const own = structuredClone(totals)
     own.reported_usage.input = 12
-    own.reported_usage.cache_read = null
+    own.reported_usage.remaining_input = 12
+    own.reported_usage.cache_read = 0
     const source = { ...sourceTicket(), agent_stats: own }
     const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
     const automatic = { ...task(), agent_stats: totals, metadata_json: { delivery: { status: 'complete', job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent } } }
     const wrapper = mount(TrackerTaskDetailDialog, { props: { modelValue: true, task: automatic, tickets: [source] } })
-    expect(popup().get('[aria-label="Lifetime task usage"] [data-usage-field="input"] dd').text()).toBe('70')
+    expect(popup().get('[aria-label="Lifetime task usage"] [data-usage-field="input"] dd').text()).toBe('30')
     await wrapper.setProps({ ticketKey: source.key, ticket: source })
     await flushPromises()
     const usage = popup().get('[aria-label="Own ticket usage"]')
@@ -83,7 +84,7 @@ describe('TrackerTaskDetailDialog', () => {
     expect(popup().find('[aria-label="Own ticket usage"]').exists()).toBe(false)
     await wrapper.setProps({ ticketKey: '', ticket: null })
     expect(popup().find('[aria-label="Lifetime task usage"]').exists()).toBe(false)
-    expect(usage.find('[data-usage-field="cache_read"]').exists()).toBe(false)
+    expect(usage.get('[data-usage-field="cache_read"] dd').text()).toBe('0')
     expect(usage.get('[data-usage-field="output"] dd').text()).toBe('30')
     expect(usage.text()).not.toContain('Partial')
     wrapper.unmount()

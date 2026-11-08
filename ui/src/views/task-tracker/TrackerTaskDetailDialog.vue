@@ -338,7 +338,7 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
           :metrics="task.agent_stats"
           compact
           aria-label="Lifetime task usage"
-          title="Lifetime task usage. Cache is included in Input."
+          title="Lifetime task usage"
         />
         <section class="space-y-2 border-t border-subtle pt-4">
           <div class="flex items-center justify-between gap-3">

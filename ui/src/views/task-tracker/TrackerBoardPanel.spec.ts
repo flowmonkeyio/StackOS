@@ -55,12 +55,14 @@ describe('Work board presentation', () => {
     const rows = () => buildTaskProgressRows([{ ...record, agent_stats: structuredClone(metrics) }], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
     const wrapper = mount(TrackerBoardPanel, { props: { rows: rows() } })
     expect(wrapper.findAll('dt').map(label => label.text())).toEqual(['Input', 'Cache', 'Output'])
-    expect(wrapper.get('[data-usage-field="input"] dd').attributes('aria-label')).toContain('70 tokens')
+    expect(wrapper.get('[data-usage-field="input"] dd').attributes('aria-label')).toContain('30 tokens')
     metrics.reported_usage.input = 0
+    metrics.reported_usage.remaining_input = 0
     await wrapper.setProps({ rows: rows() })
     expect(wrapper.get('[data-usage-field="input"] dd').text()).toBe('0')
     metrics.coverage.usage_status = 'partial' as never
     metrics.reported_usage.cache_read = null
+    metrics.reported_usage.remaining_input = null
     await wrapper.setProps({ rows: rows() })
     expect(wrapper.find('[data-usage-field="cache_read"]').exists()).toBe(false)
     expect(wrapper.get('[data-usage-field="output"] dd').text()).toBe('30')
@@ -84,6 +86,7 @@ describe('Work board presentation', () => {
     await wrapper.setProps({ rows: rows() })
     expect(wrapper.get('.agent-usage-summary').classes()).toContain('agent-usage-summary--compact')
     record.agent_stats.reported_usage.input = null
+    record.agent_stats.reported_usage.remaining_input = null
     record.agent_stats.reported_usage.cache_read = null
     record.agent_stats.reported_usage.output = null
     await wrapper.setProps({ rows: rows() })

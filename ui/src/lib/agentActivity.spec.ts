@@ -1,8 +1,33 @@
 import { describe, expect, it } from 'vitest'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
-import { activitySeries, agentLabel, cacheShare, exactUsage, fieldCoverage, formatTokens, localActivityFilters, reviewFacts } from './agentActivity'
+import { activitySeries, agentLabel, cacheShare, exactUsage, fieldCoverage, formatTokens, localActivityFilters, reviewFacts, usageFields, usageValue } from './agentActivity'
 
 describe('Shared recorded token formatting', () => {
+  it('maps disjoint Input, Cache, Output without changing inclusive counters or totals', () => {
+    const metrics = agentStatsFixture().totals
+    metrics.reported_usage = { ...metrics.reported_usage, input: 11545485, remaining_input: 312717, cache_read: 11232768, output: 46397, total: 11591882 }
+    const before = structuredClone(metrics)
+    expect(usageFields.map(field => field.label)).toEqual(['Input', 'Cache', 'Output'])
+    expect(usageFields.map(field => usageValue(metrics, field.key))).toEqual([312717, 11232768, 46397])
+    expect(usageFields.reduce((sum, field) => sum + usageValue(metrics, field.key)!, 0)).toBe(11591882)
+    expect(exactUsage(metrics, 'input')).toBe('Input: 312,717 tokens.')
+    expect(metrics).toEqual(before)
+    metrics.reported_usage = { ...metrics.reported_usage, input: 11550000, cache_read: 11230000, remaining_input: 320000 }
+    expect(formatTokens(usageValue(metrics, 'input'))).toBe('320K')
+  })
+
+  it('uses paired coverage for Input and never invents an unknown-cache remainder', () => {
+    const metrics = agentStatsFixture().totals
+    metrics.reported_usage = { ...metrics.reported_usage, input: 150, cache_read: 80, remaining_input: 20, output: 8, total: 158, input_with_unknown_cache: 50 }
+    metrics.coverage.fields!.cache_read!.unavailable_attempts = 1
+    expect(usageValue(metrics, 'input')).toBe(20)
+    expect(fieldCoverage(metrics, 'input')).toBe('Input missing for 1 attempt')
+    metrics.reported_usage.remaining_input = null
+    expect(usageValue(metrics, 'input')).toBeNull()
+    expect(exactUsage(metrics, 'input')).toBe('Input: Not reported. Input not reported')
+    metrics.reported_usage.remaining_input = 0
+    expect(usageValue(metrics, 'input')).toBe(0)
+  })
   it('formats exact and compact values and discloses field-level missing counts independently', () => {
     const metrics = agentStatsFixture().totals
     expect(formatTokens(513050000)).toBe('513.05M')
@@ -11,18 +36,18 @@ describe('Shared recorded token formatting', () => {
     expect(formatTokens(null)).toBe('Not reported')
     metrics.coverage.fields!.cache_read!.unavailable_attempts = 1
     expect(fieldCoverage(metrics, 'cache_read')).toBe('Cache missing for 1 attempt')
-    expect(fieldCoverage(metrics, 'input')).toBe('')
+    expect(fieldCoverage(metrics, 'input')).toBe('Input missing for 1 attempt')
     expect(cacheShare(metrics)).toBeNull()
-    expect(exactUsage(metrics, 'input')).toContain('70 tokens')
+    expect(exactUsage(metrics, 'input')).toContain('30 tokens')
   })
 
   it('uses paired measured cache composition and the same Input + Output total by agent', () => {
     const days = agentStatsFixture().daily
-    expect(activitySeries(days, 'tokens').map(item => item.values)).toEqual([[40], [30], [30]])
+    expect(activitySeries(days, 'tokens').map(item => item.values)).toEqual([[30], [40], [30]])
     expect(activitySeries(days, 'agents')[0]!.values).toEqual([100])
     days[0]!.reported_usage = { ...days[0]!.reported_usage, input: 100, cache_read: 40, remaining_input: 30, input_with_unknown_cache: 30 }
-    // Unknown cache on another receipt must not inflate New input to 60.
-    expect(activitySeries(days, 'tokens').map(item => item.values)).toEqual([[40], [30], [30]])
+    // Unknown cache on another receipt must not inflate Input to 60.
+    expect(activitySeries(days, 'tokens').map(item => item.values)).toEqual([[30], [40], [30]])
     expect(activitySeries(days, 'agents', true)[0]!.label).toBe('same-name · Fixture project')
     days[0]!.reported_usage.cache_read = days[0]!.reported_usage.remaining_input = null
     expect(activitySeries(days, 'tokens').map(item => item.key)).toEqual(['output'])
@@ -49,6 +74,7 @@ describe('Shared recorded token formatting', () => {
   it('preserves measured zero, independent missing fields, empty and absent projection states', () => {
     const metrics = agentStatsFixture().totals
     metrics.reported_usage.input = 0
+    metrics.reported_usage.remaining_input = 0
     expect(exactUsage(metrics, 'input')).toContain('Input: 0 tokens')
     metrics.reported_usage.cache_read = null
     expect(fieldCoverage(metrics, 'cache_read')).toBe('Cache not reported')

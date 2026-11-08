@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import AgentActivitySection from './AgentActivitySection.vue'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
+import DataTable from '@/components/DataTable.vue'
 import { localActivityFilters, type ActivityGroup } from '@/lib/agentActivity'
 import { agentStatsFixture } from './agentStatsFixtures'
 
@@ -9,6 +10,19 @@ function render(summary = agentStatsFixture(), extra = {}) {
   return mount(AgentActivitySection, { props: { summary, loading: false, error: null, filters: localActivityFilters(), ...extra }, global: { stubs: { AgentActivityChart: true } } })
 }
 describe('Agent usage presentation', () => {
+  it.each(['agent', 'model', 'agent_model'] as const)('uses paired Input for %s row values and numeric table data', group => {
+    const fixture = agentStatsFixture()
+    fixture.group_by = group as ActivityGroup
+    fixture.rows[0]!.reported_usage = { ...fixture.rows[0]!.reported_usage, input: 150, remaining_input: 20, cache_read: 80, output: 8, total: 158 }
+    const wrapper = render(fixture)
+    const table = wrapper.getComponent(DataTable)
+    expect(table.props()).toMatchObject({ items: [{ input: 20, cache_read: 80, output: 8 }] })
+    expect(table.get('[aria-label^="Input:"]').text()).toBe('20')
+    expect(table.get('[aria-label^="Input:"]').attributes('title')).toContain('20 tokens')
+    expect(table.find('details').exists()).toBe(false)
+    expect(fixture.rows[0]!.reported_usage.input).toBe(150)
+    wrapper.unmount()
+  })
   it.each(['model', 'agent_model', 'agent'] as const)('uses a plain %s label when the row has no supported details', group => {
     const fixture = agentStatsFixture()
     fixture.rows[0]!.host_key = null
@@ -20,7 +34,7 @@ describe('Agent usage presentation', () => {
     expect(row.find('details').exists()).toBe(false)
     expect(row.find('summary').exists()).toBe(false)
     expect(row.text()).toContain(group === 'model' ? 'recorded-sol' : 'same-name')
-    expect(row.text()).toContain('70')
+    expect(row.get('[aria-label^="Input:"]').text()).toBe('30')
     wrapper.unmount()
   })
 
@@ -46,8 +60,8 @@ describe('Agent usage presentation', () => {
     const fixture = agentStatsFixture()
     const wrapper = render(fixture, { global: true })
     expect(wrapper.findComponent(AgentUsageSummary).props('metrics')).toEqual(fixture.totals)
-    expect(wrapper.findAll('.agent-usage-summary dd[tabindex]').map(item => item.text())).toEqual(['70', '40', '30'])
-    expect(wrapper.text()).toContain('Cache is included in Input')
+    expect(wrapper.findAll('.agent-usage-summary dd[tabindex]').map(item => item.text())).toEqual(['30', '40', '30'])
+    expect(wrapper.text()).not.toMatch(/Cache is included in Input|New input/)
     expect(wrapper.text()).toContain('57.1%')
     expect(wrapper.text()).toContain('America/')
     const table = wrapper.get('table[aria-label="Agent activity breakdown"]')
@@ -103,17 +117,18 @@ describe('Agent usage presentation', () => {
     fixture.totals.reported_usage.cache_read = null
     fixture.totals.reported_usage.remaining_input = null
     fixture.rows[0]!.reported_usage.cache_read = null
+    fixture.rows[0]!.reported_usage.remaining_input = null
     fixture.totals.reported_usage.cache_write = null
     fixture.totals.reported_usage.reasoning = null
     fixture.totals.review_outcomes = {}
     fixture.totals.coverage.fields!.cache_read!.unavailable_attempts = 4
     fixture.totals.reported_usage.output = 0
     const wrapper = render(fixture)
-    expect(wrapper.findAll('.agent-usage-summary dd[tabindex]').map(item => item.text())).toEqual(['70', '0'])
+    expect(wrapper.findAll('.agent-usage-summary dd[tabindex]').map(item => item.text())).toEqual(['0'])
     expect(wrapper.text()).not.toMatch(/Not reported|not reported|not available|Cache split/)
     expect(wrapper.find('[aria-label="Input details"]').exists()).toBe(false)
     expect(wrapper.findAll('button').some(item => item.text() === 'See token details')).toBe(false)
-    expect(wrapper.get('table').findAll('th').map(item => item.text())).toEqual(['Selected model', 'Attempts', 'Input', 'Output'])
+    expect(wrapper.get('table').findAll('th').map(item => item.text())).toEqual(['Selected model', 'Attempts', 'Output'])
     expect(wrapper.text()).not.toContain('57.1%')
     fixture.totals.reported_usage.cache_read = 10
     fixture.totals.coverage.fields!.cache_read!.unavailable_attempts = 2
@@ -147,7 +162,7 @@ describe('Agent usage presentation', () => {
     expect(wrapper.text()).not.toContain('Not reported')
     const compact = mount(AgentUsageSummary, { props: { metrics: fixture.totals, compact: true } })
     expect(compact.findAll('dt').map(item => item.text())).toEqual(['Input', 'Cache', 'Output'])
-    expect(compact.get('[data-usage-field="input"] dd[tabindex]').attributes('title')).toContain('70 tokens')
+    expect(compact.get('[data-usage-field="input"] dd[tabindex]').attributes('title')).toContain('30 tokens')
     await compact.setProps({ metrics: empty.totals })
     expect(compact.find('.agent-usage-summary').exists()).toBe(false)
     compact.unmount(); wrapper.unmount()

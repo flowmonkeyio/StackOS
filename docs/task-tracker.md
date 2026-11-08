@@ -312,10 +312,11 @@ additional invocations.
 
 The optional detail fields are `cache_read`, `cache_write`, and `reasoning` in
 both `snapshot` and `measured`. New snapshots always include these keys with
-nonnegative integers or `null`; older three-counter maps remain valid. Input
+nonnegative integers or `null`; older three-counter maps remain valid. Raw input
 already includes cache reads and writes; output already includes reasoning.
-Total remains input + output. Cache in analytics means cache read, a subset of
-Input; cache write is retained detail, not another headline or an extra total.
+Total remains raw input + output. Displayed Cache means cache read; displayed
+Input excludes it through the paired `remaining_input` projection. Cache write
+is retained detail, not another headline or an extra total.
 Known details satisfy cache_read + cache_write <= input and reasoning <= output.
 A malformed, negative, or out-of-bounds detail becomes null without discarding
 valid parent counters. If both cache values individually fit but their sum does
@@ -508,7 +509,8 @@ remainder. `input_with_unknown_cache` is measured Input on receipts whose
 cache-read split is unknown. These three internal accounting portions (known
 cache read, known remainder, Input with unreported split) reconcile to measured
 Input. The unknown-cache portion is not a displayed chart series. Tokens shows
-only available Cache, New input and Output; when the plotted stack differs from
+only available Input, Cache and Output, in that order; Input uses `remaining_input`.
+When the plotted stack differs from
 the reported Input + Output, concise available-measurement context distinguishes
 it from a complete total. Exact accessible values use **Available tokens**.
 When all cache reads are unknown, cache and remainder stay null; an all-empty
@@ -596,12 +598,20 @@ objects without an attached projection; it does not establish measured zero.
 Project Home and the main Overview share an **Agent usage** section backed by
 these operations. Available Input / Cache / Output appear alongside launch
 attempts, daily stacked bars and a complete Agent / Model / Agent+model table.
-Cache means cache read included in Input. Summary, table and chart use the same
+Displayed Input is the existing paired `remaining_input`, Cache is `cache_read`,
+and Output is `output`. Raw API `input` remains inclusive. Summary, table and chart use the same
 selected date range, defaulting to today plus the previous six local calendar
 days in the visibly identified browser IANA timezone. Exactly two chart views,
-**Tokens** and **Agents**, share this scope. Tokens stacks Cache, New input and
-Output; New input uses the repository's paired Input-minus-Cache projection,
+**Tokens** and **Agents**, share this scope. Tokens stacks Input, Cache and
+Output; Input uses the repository's paired Input-minus-Cache projection,
 never an aggregate subtraction that invents a remainder for missing cache.
+The shared UI mapping also owns summary values, numeric table data, exact hover
+and accessible values, and daily rows. Input availability and coverage follow
+paired cache measurements. For receipts 100/80/5 and 50/unknown/3, the known
+display is Input 20, Cache 80, Output 8; those 108 tokens are not the full raw
+total of 158. Complete 11,545,485/11,232,768/46,397 counters display Input 312,717,
+Cache 11,232,768, Output 46,397, preserving total 11,591,882. A measured zero
+remains zero; no second subtraction or historical counter mutation occurs.
 Agents splits the same reported Input + Output by agent. Incomplete composition
 uses available-measurement context rather than claiming a complete total. Both
 views retain the same plot, axis gutter, bounded legend and selection-caption

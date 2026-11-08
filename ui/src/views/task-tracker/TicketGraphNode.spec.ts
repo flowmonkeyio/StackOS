@@ -49,13 +49,14 @@ describe('TicketGraphNode', () => {
       props: { data: nodeData({ agentStats: metrics, taskAutomated: true }) }, global: { stubs: { Handle: true } },
     })
     expect(wrapper.get('.ticket-graph-node__usage').findAll('dt').map(label => label.text())).toEqual(['Input', 'Cache', 'Output'])
-    expect(wrapper.get('[data-usage-field="input"] dd').attributes('title')).toContain('70 tokens')
+    expect(wrapper.get('[data-usage-field="input"] dd').attributes('title')).toContain('30 tokens')
     const partial = structuredClone(metrics)
     partial.reported_usage.input = 0
     partial.reported_usage.cache_read = null
+    partial.reported_usage.remaining_input = null
     partial.coverage.usage_status = 'partial' as never
     await wrapper.setProps({ data: nodeData({ agentStats: partial, taskAutomated: true }) })
-    expect(wrapper.get('[data-usage-field="input"] dd').text()).toBe('0')
+    expect(wrapper.find('[data-usage-field="input"]').exists()).toBe(false)
     expect(wrapper.find('[data-usage-field="cache_read"]').exists()).toBe(false)
     expect(wrapper.get('[data-usage-field="output"] dd').text()).toBe('30')
     expect(wrapper.text()).not.toContain('Partial')

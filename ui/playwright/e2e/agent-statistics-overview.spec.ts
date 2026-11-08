@@ -36,10 +36,11 @@ async function seed(projectId: number, automatic: object) {
 
 async function metrics(region: Locator, stats: SchemaTrackerAgentStatsOut) {
   for (const field of ['input', 'cache_read', 'output'] as const) {
+    const source = field === 'input' ? 'remaining_input' : field
     const value = region.locator(`.agent-usage-summary [data-usage-field="${field}"] dd[tabindex]`)
-    if (stats.totals.reported_usage[field] == null) { await expect(value).toHaveCount(0); continue }
-    await expect(value).toHaveText(formatTokens(stats.totals.reported_usage[field]))
-    await expect(value).toHaveAttribute('aria-label', new RegExp(stats.totals.reported_usage[field] === null ? 'Not reported' : `${stats.totals.reported_usage[field]} tokens`))
+    if (stats.totals.reported_usage[source] == null) { await expect(value).toHaveCount(0); continue }
+    await expect(value).toHaveText(formatTokens(stats.totals.reported_usage[source]))
+    await expect(value).toHaveAttribute('aria-label', new RegExp(`${stats.totals.reported_usage[source]!.toLocaleString('en-US')} tokens`))
   }
   await expect(region).toContainText(`${stats.totals.launch_attempts} agent`)
 }
@@ -95,9 +96,10 @@ test('synthetic receipts reconcile through both actual Home views and existing p
   for (const row of projectStats.rows) {
     const rendered = table.locator('tbody tr').filter({ hasText: row.model ?? 'Model not recorded' })
     for (const field of ['input', 'cache_read', 'output'] as const) {
+      const source = field === 'input' ? 'remaining_input' : field
       const value = rendered.locator(`[aria-label^="${field === 'cache_read' ? 'Cache' : field === 'input' ? 'Input' : 'Output'}:"]`)
-      if (row.reported_usage[field] == null) await expect(value).toHaveCount(0)
-      else await expect(value).toHaveText(formatTokens(row.reported_usage[field]))
+      if (row.reported_usage[source] == null) await expect(value).toHaveCount(0)
+      else await expect(value).toHaveText(formatTokens(row.reported_usage[source]))
     }
   }
   await region.getByRole('button', { name: 'See token details' }).click()
@@ -196,15 +198,16 @@ test('synthetic receipts reconcile through both actual Home views and existing p
 })
 
 async function workMetrics(region: Locator, totals: AgentStatsMetrics) {
-  if (!totals.launch_attempts || !['input', 'cache_read', 'output'].some(field => totals.reported_usage[field as 'input' | 'cache_read' | 'output'] != null)) {
+  if (!totals.launch_attempts || !(['remaining_input', 'cache_read', 'output'] as const).some(field => totals.reported_usage[field] != null)) {
     await expect(region.locator('[data-usage-field]')).toHaveCount(0)
     return
   }
   for (const field of ['input', 'cache_read', 'output'] as const) {
+    const source = field === 'input' ? 'remaining_input' : field
     const value = region.locator(`[data-usage-field="${field}"] dd[tabindex]`)
-    if (totals.reported_usage[field] == null) { await expect(value).toHaveCount(0); continue }
-    await expect(value).toHaveText(formatTokens(totals.reported_usage[field]))
-    await expect(value).toHaveAttribute('title', new RegExp(totals.reported_usage[field] == null ? 'Not reported' : `${totals.reported_usage[field]!.toLocaleString('en-US')} tokens`))
+    if (totals.reported_usage[source] == null) { await expect(value).toHaveCount(0); continue }
+    await expect(value).toHaveText(formatTokens(totals.reported_usage[source]))
+    await expect(value).toHaveAttribute('title', new RegExp(`${totals.reported_usage[source]!.toLocaleString('en-US')} tokens`))
   }
   await expect(region).not.toContainText('Partial')
 }
@@ -330,7 +333,9 @@ test('Work uses shared Input Cache Output through filtering, details and refresh
   await resetProjects()
   const errors = trackConsoleErrors(page)
   const project = await createProject({ name: 'Work Usage Proof', slug: 'work-usage-proof', domain: 'work.test' })
-  await seed(project.id, { attempt: 1, delivery: receipt('delivery_agent', 'success', 100, 'recorded-sol') })
+  const exact = receipt('delivery_agent', 'success', 11545485, 'recorded-sol')
+  exact.usage.measured = { ...exact.usage.measured, input: 11545485, cache_read: 11232768, output: 46397, total: 11591882 }
+  await seed(project.id, { attempt: 1, delivery: exact })
   await operation('tracker.createTicket', { project_id: project.id, task_key: 'synthetic-stats', key: 'legacy', title: 'Legacy usage' })
   const unavailable = { attempt: 1, delivery: { agent: 'legacy', launch: { host_key: 'codex' } } }
   await operation('tracker.updateTicket', { project_id: project.id, ticket_key: 'legacy', patch_json: { completion_evidence_json: { automatic_delivery: unavailable } } })
@@ -364,15 +369,18 @@ test('Work uses shared Input Cache Output through filtering, details and refresh
   const index = await operation<TrackerSnapshot>('tracker.get', { project_id: project.id, task_index_only: true, include_graph: false })
   const focused = await operation<TrackerSnapshot>('tracker.get', { project_id: project.id, task_key: 'synthetic-stats', include_graph: true })
   const taskTotal = focused.tasks[0]!.agent_stats!
-  expect(taskTotal.reported_usage.total).toBe(100)
+  expect(taskTotal.reported_usage).toMatchObject({ input: 11545485, remaining_input: 312717, cache_read: 11232768, output: 46397, total: 11591882 })
   expect(taskTotal.coverage.usage_status).toBe('partial')
   expect(index.tasks.find(task => task.key === 'synthetic-stats')!.agent_stats).toEqual(taskTotal)
-  expect(focused.tickets.find(ticket => ticket.key === 'synthetic-receipts')!.agent_stats!.reported_usage.total).toBe(100)
+  expect(focused.tickets.find(ticket => ticket.key === 'synthetic-receipts')!.agent_stats!.reported_usage.total).toBe(11591882)
   const before = await operation('tracker.get', { project_id: project.id })
   await page.goto(`/projects/${project.id}/tasks`)
   const board = page.getByRole('region', { name: 'Task board', exact: true })
   const card = board.getByRole('button', { name: /Synthetic statistics proof/ })
   await workMetrics(card, taskTotal)
+  await expect(card.locator('dt')).toHaveText(['Input', 'Cache', 'Output'])
+  await expect(card.locator('[data-usage-field="input"] dd')).toHaveText('312.72K')
+  await expect(card.locator('[data-usage-field="input"] dd')).toHaveAttribute('title', 'Input: 312,717 tokens. Input missing for 1 attempt')
   await expect(card.locator('.tracker-board__identity').first()).toContainText('Automated')
   await expect(board.getByRole('button', { name: /Usage zero$/ })).toContainText('Automated')
   await expect(board.getByRole('button', { name: /Usage unknown$/ })).not.toContainText('Automated')

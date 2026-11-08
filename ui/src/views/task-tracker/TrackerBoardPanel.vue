@@ -74,7 +74,7 @@ function initials(owner: string): string {
             v-if="isAutomaticDeliveryTask(row.task)"
             :metrics="row.task.agent_stats"
             compact
-            title="Lifetime task usage. Cache is included in Input."
+            title="Lifetime task usage"
           />
           <span class="tracker-board__meta">
             <span class="tracker-board__identity">

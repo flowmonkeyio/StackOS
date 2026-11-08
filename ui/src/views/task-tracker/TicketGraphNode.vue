@@ -139,7 +139,7 @@ function humanize(value: string | null | undefined): string | null {
       class="ticket-graph-node__usage"
       :metrics="data.agentStats"
       compact
-      title="Own ticket usage. Cache is included in Input."
+      title="Own ticket usage"
     />
 
     <div class="ticket-graph-node__meta">

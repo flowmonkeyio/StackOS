@@ -6,7 +6,7 @@ import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
 import { UiButton, UiButtonGroup, UiCallout, UiFormField, UiInput, UiSkeleton } from '@/components/ui'
 import { formatAbsoluteDateTime } from '@/lib/stackos/time'
 import AgentActivityChart from './AgentActivityChart.vue'
-import { agentLabel, cacheShare, exactUsage, formatTokens, reviewFacts, usageFields, type AgentStats, type AgentStatsFilters, type ActivityGroup, type ActivityView } from '@/lib/agentActivity'
+import { agentLabel, cacheShare, exactUsage, formatTokens, reviewFacts, usageFields, usageValue, type AgentStats, type AgentStatsFilters, type ActivityGroup, type ActivityView } from '@/lib/agentActivity'
 
 const props = defineProps<{ summary: AgentStats | null; loading: boolean; error: string | null; filters: AgentStatsFilters; global?: boolean }>()
 const emit = defineEmits<{ filters: [value: Partial<AgentStatsFilters>] }>()
@@ -15,11 +15,11 @@ const chartView = ref<ActivityView>('tokens')
 const groups = [{ value: 'agent', label: 'Agent' }, { value: 'model', label: 'Model' }, { value: 'agent_model', label: 'Agent + model' }] as const
 const displayGroup = computed(() => props.summary?.group_by ?? props.filters.group_by)
 const rows = computed(() => props.summary?.rows.map(row => ({
-  ...row, id: row.group_key, input: row.reported_usage.input, cache_read: row.reported_usage.cache_read, output: row.reported_usage.output,
+  ...row, id: row.group_key, input: usageValue(row, 'input'), cache_read: usageValue(row, 'cache_read'), output: usageValue(row, 'output'),
   review_facts: reviewFacts(row),
 })) ?? [])
 type Row = (typeof rows.value)[number]
-const fields = computed(() => usageFields.filter(field => rows.value.some(row => row.reported_usage[field.key] != null)))
+const fields = computed(() => usageFields.filter(field => rows.value.some(row => usageValue(row, field.key) != null)))
 const columns = computed<DataTableColumn<Row>[]>(() => [
   { key: 'agent_name', label: displayGroup.value === 'model' ? 'Selected model' : displayGroup.value === 'agent' ? 'Agent' : 'Agent + model' },
   { key: 'launch_attempts', label: 'Attempts', cellClass: 'tabular-nums whitespace-nowrap' },
@@ -98,12 +98,6 @@ function setDate(field: 'start_date' | 'end_date', value: string | number | null
           >
             Usage missing for {{ summary.totals.coverage.usage_unavailable_attempts }} {{ summary.totals.coverage.usage_unavailable_attempts === 1 ? 'attempt' : 'attempts' }}
           </p>
-          <p
-            v-if="summary.totals.reported_usage.cache_read != null"
-            class="mt-1 text-xs text-fg-muted"
-          >
-            Cache is included in Input.
-          </p>
         </div>
       </div>
       <p
@@ -155,23 +149,24 @@ function setDate(field: 'start_date' | 'end_date', value: string | number | null
               v-if="share"
               class="mt-1 text-xs text-fg-muted"
             >
-              Input reused from cache.
+              Reused from cache.
             </p>
             <dl class="agent-activity__split">
-              <div v-if="summary.totals.reported_usage.cache_read != null">
-                <dt>Cache</dt><dd :title="exactUsage(summary.totals, 'cache_read')">
-                  {{ formatTokens(summary.totals.reported_usage.cache_read) }}
-                </dd>
-              </div>
-              <div v-if="summary.totals.reported_usage.remaining_input != null">
-                <dt>New input</dt><dd :title="formatTokens(summary.totals.reported_usage.remaining_input, false)">
-                  {{ formatTokens(summary.totals.reported_usage.remaining_input) }}
-                </dd>
-              </div>
+              <template
+                v-for="field in usageFields.filter(item => item.key !== 'output')"
+                :key="field.key"
+              >
+                <div v-if="usageValue(summary.totals, field.key) != null">
+                  <dt>{{ field.label }}</dt><dd
+                    :title="exactUsage(summary.totals, field.key)"
+                    :aria-label="exactUsage(summary.totals, field.key)"
+                    tabindex="0"
+                  >
+                    {{ formatTokens(usageValue(summary.totals, field.key)) }}
+                  </dd>
+                </div>
+              </template>
             </dl>
-            <p class="text-xs leading-5 text-fg-muted">
-              Cache is included in Input. Output is counted separately.
-            </p>
           </aside>
         </div>
         <div v-if="detailsAvailable">
@@ -250,12 +245,12 @@ function setDate(field: 'start_date' | 'end_date', value: string | number | null
             #[`cell:${field.key}`]="{ row }"
           >
             <span
-              v-if="row.reported_usage[field.key] != null"
+              v-if="usageValue(row, field.key) != null"
               tabindex="0"
               class="focus-ring tabular-nums"
               :title="exactUsage(row, field.key)"
               :aria-label="exactUsage(row, field.key)"
-            >{{ formatTokens(row.reported_usage[field.key]) }}</span>
+            >{{ formatTokens(usageValue(row, field.key)) }}</span>
           </template>
         </DataTable>
       </template>

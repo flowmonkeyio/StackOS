@@ -20,10 +20,24 @@ afterEach(() => { vi.clearAllMocks(); vi.restoreAllMocks(); delete document.docu
 function render() { return mount(AgentActivityChart, { props: { days: agentStatsFixture().daily, timezone: 'America/Los_Angeles' } }) }
 
 describe('Daily stacked usage chart', () => {
+  it('keeps exact labels and mixed paired values aligned in bars, hover, keyboard and daily rows', async () => {
+    const days = agentStatsFixture().daily
+    days[0]!.reported_usage = { ...days[0]!.reported_usage, input: 150, cache_read: 80, remaining_input: 20, output: 8, total: 158, input_with_unknown_cache: 50 }
+    const wrapper = mount(AgentActivityChart, { props: { days, timezone: 'UTC' } })
+    const config = mocks.created.mock.calls[0]![0]
+    expect(config.data.datasets.map((item: { label: string; data: number[] }) => [item.label, item.data])).toEqual([['Input', [20]], ['Cache', [80]], ['Output', [8]]])
+    expect(wrapper.get('[aria-label^="Input:"]').attributes('aria-label')).toBe('Input: 20 tokens')
+    await wrapper.get('canvas').trigger('focus')
+    expect(wrapper.get('[aria-live="polite"]').text()).toContain('Available tokens: 108 tokens')
+    expect(wrapper.get('[aria-live="polite"]').text()).toContain('Input: 20')
+    expect(wrapper.get('[aria-label^="Total:"]').text()).toBe('158')
+    wrapper.unmount()
+  })
   it('offers exactly two views with equal measured totals, exact values and a fixed daily table', async () => {
     const wrapper = render()
     const config = mocks.created.mock.calls[0]![0]
-    expect(config.data.datasets.map((item: { data: number[] }) => item.data)).toEqual([[40], [30], [30]])
+    expect(config.data.datasets.map((item: { data: number[] }) => item.data)).toEqual([[30], [40], [30]])
+    expect(config.data.datasets.map((item: { label: string }) => item.label)).toEqual(['Input', 'Cache', 'Output'])
     expect(config.options.scales.x.stacked).toBe(true)
     expect(config.options.scales.y.stacked).toBe(true)
     expect(wrapper.findAll('button').map(item => item.text())).toEqual(['Tokens', 'Agents'])
@@ -110,7 +124,7 @@ describe('Daily stacked usage chart', () => {
     expect(wrapper.get('.activity-chart__selection').text()).toContain('available measurements')
     expect(wrapper.get('.activity-chart__selection').text()).not.toMatch(/Shown|Reported total|Cache:/)
     expect(wrapper.text()).not.toMatch(/Not reported|Cache split|New input/)
-    expect(wrapper.findAll('th[scope="col"]').map(item => item.text())).toEqual(['Date', 'Input', 'Output', 'Total'])
+    expect(wrapper.findAll('th[scope="col"]').map(item => item.text())).toEqual(['Date', 'Output', 'Total'])
     document.documentElement.dataset.theme = 'dark'
     await vi.waitFor(() => expect(chart.data.datasets[0]!.backgroundColor).toBe('dark:--color-success-default'))
     wrapper.unmount()

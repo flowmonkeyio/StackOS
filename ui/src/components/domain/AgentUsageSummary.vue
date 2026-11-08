@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { usageFields, formatTokens, exactUsage, type AgentStatsMetrics } from '@/lib/agentActivity'
+import { usageFields, usageValue, formatTokens, exactUsage, type AgentStatsMetrics } from '@/lib/agentActivity'
 
 const props = withDefaults(defineProps<{ metrics?: AgentStatsMetrics | null; compact?: boolean }>(), { metrics: null, compact: false })
 const fields = computed(() => props.metrics?.launch_attempts
-  ? usageFields.filter(field => props.metrics?.reported_usage[field.key] != null)
+  ? usageFields.filter(field => usageValue(props.metrics, field.key) != null)
   : [])
 </script>
 
@@ -28,7 +28,7 @@ const fields = computed(() => props.metrics?.launch_attempts
         :aria-label="exactUsage(metrics, field.key)"
         tabindex="0"
       >
-        {{ formatTokens(metrics?.reported_usage[field.key]) }}
+        {{ formatTokens(usageValue(metrics, field.key)) }}
       </dd>
     </div>
   </dl>

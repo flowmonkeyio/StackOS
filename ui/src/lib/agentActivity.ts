@@ -15,10 +15,16 @@ export interface AgentStatsFilters {
 }
 
 export const usageFields = [
-  { key: 'input', label: 'Input' },
-  { key: 'cache_read', label: 'Cache' },
-  { key: 'output', label: 'Output' },
+  { key: 'input', source: 'remaining_input', label: 'Input', token: 'info-default' },
+  { key: 'cache_read', source: 'cache_read', label: 'Cache', token: 'accent-primary' },
+  { key: 'output', source: 'output', label: 'Output', token: 'success-default' },
 ] as const
+
+// The repository owns paired receipt arithmetic. Raw input remains inclusive.
+export function usageValue(metrics: Pick<AgentStatsMetrics, 'reported_usage'> | null | undefined, field: UsageField): number | null {
+  const source = usageFields.find(item => item.key === field)?.source ?? field
+  return metrics?.reported_usage[source] ?? null
+}
 
 export function formatTokens(value: number | null | undefined, compact = true): string {
   if (value == null) return 'Not reported'
@@ -29,29 +35,29 @@ export function formatTokens(value: number | null | undefined, compact = true): 
 
 export function fieldMissing(metrics: AgentStatsMetrics | null | undefined, field: UsageField): number | null {
   if (!metrics) return null
-  const coverage = metrics.coverage.fields?.[field]
+  const coverage = metrics.coverage.fields?.[field === 'input' ? 'cache_read' : field]
   if (coverage) return coverage.unavailable_attempts
-  if (field === 'input' || field === 'output') return metrics.coverage.usage_unavailable_attempts
-  return metrics.reported_usage[field] == null ? metrics.launch_attempts : null
+  if (field === 'output') return metrics.coverage.usage_unavailable_attempts
+  return usageValue(metrics, field) == null ? metrics.launch_attempts : null
 }
 
 export function fieldCoverage(metrics: AgentStatsMetrics | null | undefined, field: UsageField): string {
   if (metrics?.launch_attempts === 0) return 'No recorded usage'
   const label = field === 'cache_read' ? 'Cache' : field === 'cache_write' ? 'Cache write' : field === 'reasoning' ? 'Reasoning' : field === 'input' ? 'Input' : 'Output'
-  if (metrics?.reported_usage[field] == null) return `${label} not reported`
+  if (usageValue(metrics, field) == null) return `${label} not reported`
   const missing = fieldMissing(metrics, field)
   return missing ? `${label} missing for ${missing} ${missing === 1 ? 'attempt' : 'attempts'}` : ''
 }
 
 export function exactUsage(metrics: AgentStatsMetrics | null | undefined, field: UsageField): string {
   const label = usageFields.find(item => item.key === field)?.label ?? (field === 'cache_write' ? 'Cache write' : 'Reasoning')
-  const value = metrics?.reported_usage[field]
+  const value = usageValue(metrics, field)
   return `${label}: ${formatTokens(value, false)}${value == null ? '' : ' tokens'}. ${fieldCoverage(metrics, field)}`.trim()
 }
 
 export function cacheShare(metrics: AgentStatsMetrics): string | null {
   const { input, cache_read } = metrics.reported_usage
-  if (!input || cache_read == null || fieldMissing(metrics, 'input') !== 0 || fieldMissing(metrics, 'cache_read') !== 0) return null
+  if (!input || cache_read == null || (metrics.coverage.fields?.input?.unavailable_attempts ?? metrics.coverage.usage_unavailable_attempts) !== 0 || fieldMissing(metrics, 'cache_read') !== 0) return null
   return `${(cache_read / input * 100).toLocaleString('en-US', { maximumFractionDigits: 1 })}%`
 }
 
@@ -77,12 +83,8 @@ export function activitySeries(days: AgentStatsDay[], view: ActivityView, global
   if (view === 'tokens') {
     // The repository subtracts cache only for paired measurements. Subtracting
     // aggregate Cache from inclusive Input would invent a remainder for old receipts.
-    return [
-      { key: 'cache_read', label: 'Cache', token: 'accent-primary' },
-      { key: 'remaining_input', label: 'New input', token: 'info-default' },
-      { key: 'output', label: 'Output', token: 'success-default' },
-    ].filter(item => days.some(day => day.launch_attempts > 0 && day.reported_usage[item.key as 'cache_read' | 'remaining_input' | 'output'] != null))
-      .map(item => ({ ...item, values: days.map(day => day.reported_usage[item.key as 'cache_read' | 'remaining_input' | 'output']) }))
+    return usageFields.filter(item => days.some(day => day.launch_attempts > 0 && usageValue(day, item.key) != null))
+      .map(item => ({ ...item, values: days.map(day => usageValue(day, item.key)) }))
   }
   const identities = new Map<string, AgentStatsRow>()
   for (const day of days) for (const row of day.by_agent) if (row.reported_usage.total != null) identities.set(row.group_key, row)

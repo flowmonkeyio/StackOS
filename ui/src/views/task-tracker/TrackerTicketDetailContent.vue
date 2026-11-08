@@ -137,7 +137,7 @@ function relationSummary(ticket: TrackerTicket): string {
         :metrics="ticket.agent_stats"
         compact
         aria-label="Own ticket usage"
-        title="Own ticket usage. Cache is included in Input."
+        title="Own ticket usage"
       />
       <UiMetadataStrip
         :items="ticketFacts"
