@@ -151,6 +151,8 @@ def test_agent_reopen_rescans_dependencies_and_resumes_original_sessions(
                 assert "a denial stops this task" not in packet["assignment"]
                 assert "continue unaffected checks" in packet["assignment"]
                 assert "Missing required proof remains blocked" in packet["assignment"]
+                assert ".codex" not in packet["assignment"]
+                assert "commit" not in packet["assignment"]
             correcting = ticket["context_json"].get("correction") is not None
             if correcting:
                 assert ticket["context_json"] == {
@@ -327,8 +329,9 @@ def test_agent_reopen_rescans_dependencies_and_resumes_original_sessions(
 
 
 @pytest.mark.parametrize("role", ["delivery_agent", "review_agent"])
+@pytest.mark.parametrize("candidate_result", ["observe", "source", "omitted", "stale", "dirty"])
 def test_mirror_candidate_evidence_is_independent_of_selected_role(
-    session, project_id, tmp_path, monkeypatch, role
+    session, project_id, tmp_path, monkeypatch, role, candidate_result
 ):
     from stackos import task_delivery
 
@@ -362,10 +365,22 @@ def test_mirror_candidate_evidence_is_independent_of_selected_role(
     calls = []
 
     def launch(*args, **kwargs):
+        nonlocal head
         packet = json.loads(args[3])
         calls.append(packet)
+        assert "Do not edit source" not in packet["assignment"]
+        if candidate_result in {"source", "dirty"}:
+            head = commit(tmp_path, "assigned-source-change")
+        elif candidate_result == "stale":
+            commit(tmp_path, "new-current-head")
+        if candidate_result == "dirty":
+            (tmp_path / "unfinished").write_text("unfinished work")
         return AgentRunResult(
-            0, thread_id="mirror-observation", result=generic_result(outputs={"commit_sha": head})
+            0,
+            thread_id="mirror-observation",
+            result=generic_result(
+                outputs={} if candidate_result == "omitted" else {"commit_sha": head}
+            ),
         )
 
     monkeypatch.setattr(task_delivery, "run_agent", launch)
@@ -384,6 +399,14 @@ def test_mirror_candidate_evidence_is_independent_of_selected_role(
     assert len(calls) == 1
     assert calls[0]["phase"] == role.removesuffix("_agent")
     final = plans.get(plan.id)
+    if candidate_result in {"omitted", "stale", "dirty"}:
+        snapshot = TrackerRepository(session).get(
+            project_id=project_id, task_key=f"workflow-{plan.id}"
+        )
+        assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "stopped"
+        assert final.steps[0].status in {"failed", "blocked"}
+        assert final.steps[0].error
+        return
     assert final.status == "completed"
     assert final.steps[0].result_json == {"commit_sha": head}
     ticket = (
@@ -1378,6 +1401,10 @@ def submit(session: Session, project_id: int, tmp_path: Path, scheduler: QueuedS
         "untracked-change",
         "index-change",
         "session-change",
+        "ticket-change",
+        "base-change",
+        "empty-receipt",
+        "cleaned-work",
         "dirty-success",
     ],
 )
@@ -1446,8 +1473,23 @@ def test_dirty_delivery_requeue_requires_unchanged_owned_work_and_saved_session(
         (tmp_path / "other-file").write_text("someone else's work")
     elif requeue == "index-change":
         git(tmp_path, "add", "baseline")  # Same final bytes, different staged content.
-    elif requeue == "session-change":
-        evidence["sessions"]["delivery"]["thread_id"] = "different-session"
+    elif requeue == "cleaned-work":
+        git(tmp_path, "reset", "--hard", base)
+        (tmp_path / "new-file").unlink()
+    elif requeue == "empty-receipt":
+        evidence["owned_work"] = {}
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="first",
+            patch_json={"completion_evidence_json": {"automatic_delivery": evidence}},
+        )
+    elif requeue in {"session-change", "ticket-change", "base-change"}:
+        if requeue == "session-change":
+            evidence["sessions"]["delivery"]["thread_id"] = "different-session"
+        elif requeue == "ticket-change":
+            evidence["owned_work"]["ticket_key"] = "other-ticket"
+        else:
+            evidence["candidate"]["base_commit_sha"] = "0" * 40
         repo.update_ticket(
             project_id=project_id,
             ticket_key="first",
@@ -1464,8 +1506,10 @@ def test_dirty_delivery_requeue_requires_unchanged_owned_work_and_saved_session(
     session.expire_all()
     ticket = repo.brief(project_id=project_id, ticket_key="first").ticket
     final = ticket.completion_evidence_json["automatic_delivery"]
-    assert final["attempts"][0]["owned_work"] == receipt
-    assert final["attempts"][0]["candidate"]["base_commit_sha"] == base
+    assert final["attempts"][0]["owned_work"] == ({} if requeue == "empty-receipt" else receipt)
+    assert final["attempts"][0]["candidate"]["base_commit_sha"] == (
+        "0" * 40 if requeue == "base-change" else base
+    )
     if requeue == "same":
         assert calls == [("delivery", None), ("delivery", "first-delivery"), ("review", None)]
         assert ticket.status == "complete"
@@ -1478,23 +1522,127 @@ def test_dirty_delivery_requeue_requires_unchanged_owned_work_and_saved_session(
         assert "dirty" in ticket.outcome.lower()
 
 
-def test_fresh_dirty_delivery_never_launches_or_adopts_work(
+@pytest.mark.parametrize("outcome", ["success", "blocked", "native-error", "candidate"])
+def test_fresh_dirty_noncoding_delivery_preserves_unowned_work(
+    session, project_id, tmp_path, monkeypatch, outcome
+):
+    from stackos import task_delivery
+
+    prepared_task(session, project_id)
+    base = git(tmp_path, "rev-parse", "HEAD")
+    (tmp_path / "baseline").write_text("pre-existing staged edit")
+    git(tmp_path, "add", "baseline")
+    (tmp_path / "baseline").write_text("pre-existing unstaged edit")
+    (tmp_path / "unrelated").write_text("preserve this")
+    before = task_delivery._worktree_snapshot(str(tmp_path))
+    calls = []
+
+    def launch(*args, **kwargs):
+        packet = json.loads(args[3])
+        calls.append((packet["brief"]["ticket"]["key"], packet["phase"]))
+        assert packet["candidate"] == {"base_commit_sha": base}
+        if outcome == "native-error":
+            return AgentRunResult(1, thread_id=str(calls[-1]), error="Interrupted")
+        return AgentRunResult(
+            0,
+            thread_id=str(calls[-1]),
+            result=generic_result(
+                "blocked" if outcome == "blocked" else "success",
+                {"commit_sha": base} if outcome == "candidate" else {},
+            ),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    snapshot = TrackerRepository(session).get(project_id=project_id, task_key="deliver")
+    assert [ticket.status for ticket in snapshot.tickets] == (
+        ["complete", "complete"] if outcome == "success" else ["failed", "not-started"]
+    )
+    assert calls == (
+        [(key, phase) for key in ("first", "second") for phase in ("delivery", "review")]
+        if outcome == "success"
+        else [("first", "delivery")]
+    )
+    for ticket in snapshot.tickets:
+        evidence = (ticket.completion_evidence_json or {}).get("automatic_delivery", {})
+        assert "owned_work" not in evidence
+    if outcome == "candidate":
+        assert "dirty" in snapshot.tickets[0].outcome
+    assert task_delivery._worktree_snapshot(str(tmp_path)) == before
+    assert (tmp_path / "unrelated").read_text() == "preserve this"
+
+
+def test_noncoding_outputs_in_git_need_no_candidate_commit(
     session, project_id, tmp_path, monkeypatch
 ):
     from stackos import task_delivery
 
     prepared_task(session, project_id)
-    (tmp_path / "unrelated").write_text("preserve this")
-    monkeypatch.setattr(task_delivery, "run_agent", lambda *args, **kwargs: pytest.fail("launched"))
+    base = git(tmp_path, "rev-parse", "HEAD")
+    calls = []
+
+    def launch(*args, **kwargs):
+        packet = json.loads(args[3])
+        key, phase = packet["brief"]["ticket"]["key"], packet["phase"]
+        calls.append((key, phase))
+        report = tmp_path / f"{key}-report"
+        if phase == "delivery":
+            report.write_text("Observed business facts")
+        assert report.read_text() == "Observed business facts"
+        return AgentRunResult(0, thread_id=f"{key}-{phase}", result=generic_result())
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
     scheduler = QueuedScheduler()
     submit(session, project_id, tmp_path, scheduler)
     scheduler.run()
     session.expire_all()
-    ticket = TrackerRepository(session).brief(project_id=project_id, ticket_key="first").ticket
-    assert ticket.status == "failed"
-    assert "dirty" in ticket.outcome
-    assert "owned_work" not in ticket.completion_evidence_json["automatic_delivery"]
-    assert (tmp_path / "unrelated").read_text() == "preserve this"
+    snapshot = TrackerRepository(session).get(project_id=project_id, task_key="deliver")
+    assert [ticket.status for ticket in snapshot.tickets] == ["complete", "complete"]
+    assert len(calls) == 4
+    assert git(tmp_path, "rev-parse", "HEAD") == base
+    assert all(
+        "owned_work" not in ticket.completion_evidence_json["automatic_delivery"]
+        for ticket in snapshot.tickets
+    )
+
+
+@pytest.mark.parametrize("candidate_supplied", [False, True])
+def test_feedback_cannot_drop_an_explicit_candidate_contract(
+    session, project_id, tmp_path, monkeypatch, candidate_supplied
+):
+    from stackos import task_delivery
+
+    prepared_task(session, project_id)
+    calls = []
+
+    def launch(*args, **kwargs):
+        packet = json.loads(args[3])
+        key, phase = packet["brief"]["ticket"]["key"], packet["phase"]
+        calls.append((key, phase))
+        outputs = {}
+        if candidate_supplied and len(calls) == 1:
+            outputs["commit_sha"] = commit(tmp_path, "source-candidate")
+        elif candidate_supplied and len(calls) == 2:
+            outputs["commit_sha"] = packet["candidate"]["commit_sha"]
+        status = "repair" if len(calls) == 2 else "success"
+        return AgentRunResult(0, thread_id=f"{key}-{phase}", result=generic_result(status, outputs))
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    snapshot = TrackerRepository(session).get(project_id=project_id, task_key="deliver")
+    if candidate_supplied:
+        assert [ticket.status for ticket in snapshot.tickets] == ["failed", "not-started"]
+        assert len(calls) == 3
+        assert "real commit_sha" in snapshot.tickets[0].outcome
+    else:
+        assert [ticket.status for ticket in snapshot.tickets] == ["complete", "complete"]
+        assert len(calls) == 6
 
 
 def test_operator_adopts_legacy_dirty_work_without_replacing_original_baseline(tmp_path):
@@ -1508,7 +1656,10 @@ def test_operator_adopts_legacy_dirty_work_without_replacing_original_baseline(t
         "project_dir": str(tmp_path),
         "thread_id": "original-session",
     }
-    evidence = {"candidate": {"base_commit_sha": original_base}, "sessions": {"delivery": identity}}
+    evidence = {
+        "candidate": {"base_commit_sha": original_base, "commit_sha": new_head},
+        "sessions": {"delivery": identity},
+    }
     (tmp_path / "baseline").write_text("original unfinished work")
     with pytest.raises(ValidationError, match="dirty"):
         task_delivery._launch_baseline(str(tmp_path), "first", evidence, "delivery", identity)
@@ -1791,7 +1942,7 @@ def test_normal_review_receipts_and_same_task_failure(
             value = {"status": "complete", "commit_sha": commit(tmp_path, key)}
         else:
             assert sandbox == "normal" and selected_host == host
-            assert "Do not change files or commits" in packet["assignment"]
+            assert "Do not modify the reviewed outputs" in packet["assignment"]
             assert schema == task_delivery.RESULT_SCHEMA
             if failure == "native":
                 return scenario_result(1, error="Native review access denied")
@@ -1991,6 +2142,7 @@ def test_workflow_task_is_not_a_second_run_plan_controller(
         "review-sha",
         "review-mutation",
         "review-new-sha",
+        "not-descendant",
     ],
 )
 def test_commit_identity_failure_stops_same_task(
@@ -2019,6 +2171,10 @@ def test_commit_identity_failure_stops_same_task(
                 commit(tmp_path, "unexpected")
             elif failure == "dirty":
                 (tmp_path / "first").write_text("Uncommitted change")
+            elif failure == "not-descendant":
+                git(tmp_path, "checkout", "--orphan", "unrelated-history")
+                git(tmp_path, "commit", "-m", "Unrelated root")
+                result["commit_sha"] = git(tmp_path, "rev-parse", "HEAD")
         else:
             sha = git(tmp_path, "rev-parse", "HEAD")
             result = {

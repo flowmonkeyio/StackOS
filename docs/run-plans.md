@@ -55,6 +55,12 @@ status; only success accepts a gate. A supported persisted correction/reopen
 returns to dependency scanning after native validation; mirror repair without
 progress stops. Integration and final
 workflow gates still need actual proof, without observation-only commits.
+Git identity is optional evidence: a noncoding gate can run in a dirty Git folder
+without a fabricated commit. Supplied candidate SHAs retain current-HEAD,
+cleanliness and ancestry checks. Project, role and frozen workflow guidance owns
+the permitted work and source-commit method; the generic mirror launch does not
+prohibit source edits universally. Existing owned-work receipts retain strict
+ticket/session/base/snapshot matching and never adopt pre-existing dirt.
 An explicit rehandoff after a completed/stopped job may refresh that task's
 execution settings. It never rewrites frozen templates, grants, outputs or
 completed task snapshots, and preserves prior ticket receipts/sessions/repair

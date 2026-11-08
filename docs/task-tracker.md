@@ -685,18 +685,27 @@ commit SHA before dependencies are released. Git is optional. Non-Git tasks invo
 to clean current HEAD and descend from the observed base. Observation work may
 cite unchanged HEAD. Engineering guidance still requires separate source-change
 and repair commits; a supplied repair candidate must be a new descendant.
-Invalid/mismatched candidates, dirty Git state and review of a different SHA stop
-the task. Preserve unrelated dirty work and reconcile it before handoff. A returned
-delivery that leaves unfinished Git changes records an `owned_work` receipt in the
-ticket's `automatic_delivery` evidence: original base, current HEAD, exact native
+Git presence alone does not require a commit or clean worktree: noncoding work
+may execute in a dirty Git directory and return non-Git outputs. Baseline HEAD
+is an observation, not a source-candidate requirement. Invalid/mismatched supplied
+candidates, dirty source candidates and review of a different SHA stop the task.
+An ordinary ticket that supplied a candidate must retain that contract on repair
+or explicit requeue; omitting its SHA cannot bypass validation. Applicable project,
+role and workflow guidance owns source-edit and commit requirements, including
+for workflow mirrors; the generic launch packet supplies no universal source-edit
+ban. Preserve unrelated dirty work. A failed returned delivery that started clean
+and leaves unfinished Git changes records an `owned_work` receipt in the ticket's
+`automatic_delivery` evidence: original base, current HEAD, exact native
 session identity, affected paths and hashes of staged, unstaged and untracked work.
 Explicit requeue can resume that same ticket/session with those exact unchanged
 files; it retains the original base and archives the earlier attempt and receipt.
-Fresh dirty work, changed snapshots, other tickets and other role sessions still
-fail before launch. Legacy failures without a receipt need explicit operator
-review/adoption using the same snapshot helper, with actor and reason recorded;
-there is no general allow-dirty switch. A successful or repair result still requires
-clean Git before review or advancement, including when its outputs omit a SHA.
+Pre-existing dirt never becomes implicitly ticket-owned, even after native failure
+or an invalid candidate return. A supplied owned-work receipt with a changed
+snapshot, base, ticket or role session fails before launch. Legacy source failures
+without a receipt need explicit operator review/adoption using the same snapshot
+helper, with actor and reason recorded. Owned source work requires clean Git before
+review or advancement, including when its outputs omit a SHA. There is no general
+allow-dirty switch or domain-specific task configuration.
 Independent tasks retain the existing parent-task rollup. An active duplicate
 handoff for the same scope returns the current execution instead
 of scheduling another job. Inspect the full task metadata and ticket evidence

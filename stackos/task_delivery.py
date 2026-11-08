@@ -132,7 +132,7 @@ def _candidate_commit(project_dir: str, returned_sha: Any, base_sha: str | None)
 def _baseline(project_dir: str) -> dict[str, str]:
     directory = Path(project_dir)
     if any((parent / ".git").exists() for parent in (directory, *directory.parents)):
-        return {"base_commit_sha": _committed_head(project_dir)}
+        return {"base_commit_sha": _git(project_dir, "rev-parse", "--verify", "HEAD^{commit}")}
     return {}
 
 
@@ -176,9 +176,12 @@ def _owned_work_receipt(
     ticket_key: str,
     evidence: dict[str, Any],
     *,
+    baseline_clean: bool = False,
     operator_recovery: dict[str, str] | None = None,
 ) -> dict[str, Any] | None:
     """Capture a returned delivery, or an explicitly reviewed legacy recovery."""
+    if not (baseline_clean or evidence.get("owned_work") or operator_recovery):
+        return None  # Pre-existing dirt is never implicitly ticket-owned.
     base = evidence.get("candidate", {}).get("base_commit_sha")
     native_session = evidence.get("sessions", {}).get("delivery")
     if not base or not native_session or not native_session.get("thread_id"):
@@ -199,17 +202,21 @@ def _owned_work_receipt(
 
 def _launch_baseline(project_dir, ticket_key, evidence, phase, native_session):
     receipt = evidence.get("owned_work")
-    if (
-        phase == "delivery"
-        and native_session
-        and receipt
-        and receipt.get("ticket_key") == ticket_key
-        and receipt.get("session") == native_session
-        and receipt.get("base_commit_sha") == evidence.get("candidate", {}).get("base_commit_sha")
-        and receipt.get("snapshot") == _worktree_snapshot(project_dir)
-    ):
+    if receipt is not None:
+        if not (
+            phase == "delivery"
+            and native_session
+            and receipt.get("ticket_key") == ticket_key
+            and receipt.get("session") == native_session
+            and receipt.get("base_commit_sha")
+            == evidence.get("candidate", {}).get("base_commit_sha")
+            and receipt.get("snapshot") == _worktree_snapshot(project_dir)
+        ):
+            raise ValidationError("Owned dirty work identity or snapshot mismatch; cannot resume")
         return {"base_commit_sha": receipt["base_commit_sha"]}
-    # A fresh launch, changed work, another role or another session still needs clean Git.
+    candidate = evidence.get("candidate", {})
+    if candidate.get("commit_sha"):
+        _committed_head(project_dir)
     return _baseline(project_dir)
 
 
@@ -819,8 +826,17 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                 elif any(phase in attempt for attempt in evidence["attempts"]):
                     raise ValidationError(f"Cannot resume {phase}: missing native session ID")
                 if baseline_pending:
+                    candidate_required = bool(
+                        workflow_step is None and evidence.get("candidate", {}).get("commit_sha")
+                    )
                     evidence["candidate"] = _launch_baseline(
                         state["project_dir"], ticket_key, evidence, phase, native_session
+                    )
+                    baseline_clean = bool(
+                        evidence["candidate"].get("base_commit_sha")
+                        and not _git(
+                            state["project_dir"], "status", "--porcelain", "--untracked-files=all"
+                        )
                     )
                     baseline_pending = False
                 if (
@@ -898,31 +914,24 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                                 "assignment": (
                                     "Execute the remaining frozen workflow_step contract. "
                                     "Use accepted receipts and current operator inputs. "
-                                    "Return declared outputs and explicit disposition. "
-                                    "Do not edit source."
+                                    "Return declared outputs and explicit disposition."
                                 )
                                 if workflow_step is not None
                                 else (
-                                    "Execute only this ticket. Commit source changes/repairs when "
-                                    "required by project guidance; observation and non-Git work "
-                                    "need no fabricated commit. Return optional commit_sha "
-                                    "inside outputs. "
-                                    "Use normal approval review for authorized .git/.codex writes; "
+                                    "Execute only this ticket under applicable project guidance. "
+                                    "Use normal approval review for authorized writes; "
                                     "a denial stops that write and its dependent work. Never "
                                     "bypass the denial; continue unaffected checks and authorized "
                                     "alternatives. Missing required proof remains blocked. "
                                     "When review_result is present, repair only "
-                                    "its scoped findings, run "
-                                    "focused checks and create a new descendant commit."
+                                    "its scoped findings and run focused checks."
                                 )
                                 if phase == "delivery"
                                 else (
                                     "Independently review this exact candidate and ticket outputs. "
-                                    "Execute assigned specs and assess "
-                                    "relevant business regressions, "
-                                    "architecture, wiring and shared ownership. "
-                                    "Return supplied commit_sha in outputs unchanged. "
-                                    "Do not change files or commits. "
+                                    "Apply project guidance and assigned proof obligations. "
+                                    "Return any supplied commit_sha in outputs unchanged. "
+                                    "Do not modify the reviewed outputs. "
                                     "Reject only for scoped repairs; "
                                     "put unrelated findings in followups. "
                                     "Report scoped rejection as repair. "
@@ -1006,9 +1015,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                         outputs = json.loads(value["outputs"])
                         if not isinstance(outputs, dict):
                             raise ValidationError("outputs must encode a JSON object")
-                        if decision in {"success", "repair"} and evidence["candidate"].get(
-                            "base_commit_sha"
-                        ):
+                        if decision in {"success", "repair"} and evidence.get("owned_work"):
                             _committed_head(state["project_dir"])
                         returned_sha = outputs.get("commit_sha")
                         previous_candidate: dict[str, Any] = next(
@@ -1028,8 +1035,16 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                         )
                         if decision in {"success", "repair"} and (
                             "commit_sha" in outputs
+                            or candidate_required
                             or evidence["candidate"].get("commit_sha")
                             or changed_candidate
+                            or (
+                                workflow_step is None
+                                and any(
+                                    attempt.get("candidate", {}).get("commit_sha")
+                                    for attempt in evidence["attempts"]
+                                )
+                            )
                         ):
                             sha = _candidate_commit(
                                 state["project_dir"],
@@ -1058,14 +1073,19 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
 
                 if (
                     phase == "delivery"
+                    and not (valid and decision in {"success", "repair"})
                     and result.thread_id
                     and sessions.get("delivery") == {**identity, "thread_id": result.thread_id}
                 ):
-                    receipt = _owned_work_receipt(state["project_dir"], ticket_key, evidence)
+                    receipt = _owned_work_receipt(
+                        state["project_dir"], ticket_key, evidence, baseline_clean=baseline_clean
+                    )
                     if receipt:
                         evidence["owned_work"] = receipt
                     else:
                         evidence.pop("owned_work", None)
+                elif phase == "delivery" and valid and decision in {"success", "repair"}:
+                    evidence.pop("owned_work", None)
 
                 if workflow_step is None and valid:
                     evidence[phase]["validated_outcome"] = decision
