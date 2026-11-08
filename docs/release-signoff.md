@@ -55,6 +55,19 @@ addopts = ["-ra", "--strict-markers", "-n", "auto", "--maxprocesses=6", "--dist=
 ```
 
 Concurrency is a throughput setting, not a substitute for fixing repeated work.
+Run source tests through pytest so `tests/conftest.py` clears inherited
+`STACKOS_DATA_DIR`, `STACKOS_HOST`, `STACKOS_LOG_LEVEL`, `STACKOS_PACKAGED_CLI`,
+`STACKOS_PORT`, and `STACKOS_STATE_DIR` before each test's fixtures run:
+
+```bash
+env -u PYTHONHOME -u PYTHONPATH .venv/bin/python -m pytest tests/ -q
+```
+
+Tests that need non-default settings set them explicitly through fixtures,
+`monkeypatch`, or `Settings` arguments and use disposable data/state directories
+or a sandbox HOME. The reset applies only to source tests; production host
+subprocesses still inherit their service settings and CLI PATH context.
+
 The 2026-10-26 audit removed these costs while retaining distinct failure checks:
 
 | Bottleneck or redundancy | Change and retained proof |

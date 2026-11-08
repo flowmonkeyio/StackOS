@@ -11,8 +11,10 @@ import pytest
 import yaml
 
 import stackos.host_mcp.service as host_mcp_service
+from stackos.config import Settings
 from stackos.host_mcp.adapters import claude_desktop, codex, gemini_cli, hermes
 from stackos.host_mcp.bridge import resolve_bridge_command
+from stackos.host_mcp.discovery import subprocess_env_for_cli
 from stackos.host_mcp.restart_state import state_path
 from stackos.host_mcp.result import HostMcpResult
 from stackos.host_mcp.service import (
@@ -23,10 +25,28 @@ from stackos.host_mcp.service import (
 )
 
 
-@pytest.fixture(autouse=True)
-def _isolate_default_host_context(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("STACKOS_DATA_DIR", raising=False)
-    monkeypatch.delenv("STACKOS_STATE_DIR", raising=False)
+def test_host_subprocess_preserves_explicit_service_environment(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    overrides = {
+        "STACKOS_DATA_DIR": str(tmp_path / "data"),
+        "STACKOS_HOST": "localhost",
+        "STACKOS_LOG_LEVEL": "debug",
+        "STACKOS_PACKAGED_CLI": str(tmp_path / "bin" / "stackos"),
+        "STACKOS_PORT": "5199",
+        "STACKOS_STATE_DIR": str(tmp_path / "state"),
+    }
+    for key, value in overrides.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+
+    settings = Settings()
+    assert (settings.host, settings.port, settings.log_level) == ("localhost", 5199, "DEBUG")
+    assert settings.data_dir == tmp_path / "data"
+    assert settings.state_dir == tmp_path / "state"
+    env = subprocess_env_for_cli(overrides["STACKOS_PACKAGED_CLI"])
+    assert {key: env[key] for key in overrides} == overrides
+    assert env["PATH"] == f"{tmp_path / 'bin'}:/usr/bin:/bin"
 
 
 def _write_token(home: Path) -> None:

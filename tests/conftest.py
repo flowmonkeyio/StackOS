@@ -1,7 +1,7 @@
-"""Shared pytest fixtures.
+"""Shared pytest fixtures and isolation from inherited service settings.
 
-We isolate every test from the user's real `~/.local/state/stackos/`
-by pointing `Settings.data_dir` and `Settings.state_dir` at a tmp dir.
+App fixtures use disposable data/state dirs; tests of default paths provide
+their own sandbox HOME or explicit settings.
 """
 
 from __future__ import annotations
@@ -14,6 +14,20 @@ from fastapi.testclient import TestClient
 
 from stackos.config import Settings
 from stackos.server import create_app
+
+
+@pytest.fixture(autouse=True)
+def _isolate_service_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Clear installed settings before test fixtures apply explicit overrides."""
+    for key in (
+        "STACKOS_DATA_DIR",
+        "STACKOS_HOST",
+        "STACKOS_LOG_LEVEL",
+        "STACKOS_PACKAGED_CLI",
+        "STACKOS_PORT",
+        "STACKOS_STATE_DIR",
+    ):
+        monkeypatch.delenv(key, raising=False)
 
 
 @pytest.fixture
