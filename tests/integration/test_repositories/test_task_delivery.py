@@ -1124,7 +1124,10 @@ def test_non_git_task_and_unchanged_observation_candidate(
     ]
 
 
-def test_taskwide_nested_fork_join_and_frozen_mirrors(session, project_id, tmp_path, monkeypatch):
+@pytest.mark.parametrize("bound_only_join", [False, True])
+def test_taskwide_nested_fork_join_and_frozen_mirrors(
+    session, project_id, tmp_path, monkeypatch, bound_only_join
+):
     from stackos import task_delivery
 
     shutil.rmtree(tmp_path / ".git")
@@ -1193,7 +1196,7 @@ def test_taskwide_nested_fork_join_and_frozen_mirrors(session, project_id, tmp_p
             key=key,
             title=key,
             kind=kind,
-            parent_ticket_key=parent,
+            parent_ticket_key=None if key == "join" and bound_only_join else parent,
             dependency_keys=dependencies,
             run_plan_id=plan.id,
             run_plan_step_id=step_pk,
@@ -1206,6 +1209,26 @@ def test_taskwide_nested_fork_join_and_frozen_mirrors(session, project_id, tmp_p
         calls.append((key, packet["phase"], instructions))
         if packet.get("workflow_step"):
             assert packet["workflow_step"]["input_context_truncated"] is False
+            accepted = {item["key"]: item for item in packet["accepted_receipts"]}
+            if key in {root, f"workflow-{plan.id}-inspect", f"workflow-{plan.id}-publish-local"}:
+                assert {"left", "right", "join"} <= accepted.keys()
+                join = accepted["join"]
+                assert (
+                    join["completion_evidence_json"]["automatic_delivery"]["review"][
+                        "validated_outcome"
+                    ]
+                    == "success"
+                )
+                assert join["evidence_ref"] == {
+                    "tool_name": "tracker.brief",
+                    "arguments": {
+                        "project_id": project_id,
+                        "ticket_key": "join",
+                        "response_mode": "raw",
+                    },
+                }
+            if key == f"workflow-{plan.id}-side":
+                assert "join" not in accepted  # This completed branch is outside side's scope.
             if key == root:
                 assert packet["workflow_step"]["input_values_json"]["dataset"] == "x" * 6000
                 assert packet["workflow_step"]["step_context_json"]["source"] == "y" * 6000

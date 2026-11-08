@@ -459,11 +459,25 @@ def _relevant_receipts(packet: dict[str, Any]) -> list[dict[str, Any]]:
     if step is not None:
         containers = {ticket["key"]}
         while True:
+            # Dispatch owns both containment and step-bound work. Relevant prior
+            # mirrors retain that same scope even when a child has no parent link.
+            bound_step_ids = {step["id"]} | {
+                item["run_plan_step_id"]
+                for item in completed
+                if item["key"] in relevant
+                and item.get("source_kind") == "workflow"
+                and item.get("parent_ticket_key") is None
+                and item.get("run_plan_step_id") is not None
+                and isinstance(
+                    mirror_step_id := (item.get("source_json") or {}).get("step_id"), str
+                )
+                and item["key"] == workflow_step_ticket_key(item.get("run_plan_id"), mirror_step_id)
+            }
             expanded = relevant | {
                 item["key"]
                 for item in completed
                 if item.get("parent_ticket_key") in containers | relevant
-                or (step.get("id") is not None and item.get("run_plan_step_id") == step["id"])
+                or item.get("run_plan_step_id") in bound_step_ids
             }
             expanded |= {
                 key
