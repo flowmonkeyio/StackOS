@@ -868,11 +868,11 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     expected_versions = {
         "requirements-flow-definer": "0.6.1",
         "codebase-explorer": "0.6.1",
-        "planning": "0.7.4",
+        "planning": "0.7.5",
         "architecture": "0.6.1",
         "test-designer": "0.6.2",
-        "delivery": "0.7.2",
-        "delivery-reviewer": "0.6.2",
+        "delivery": "0.7.3",
+        "delivery-reviewer": "0.6.3",
     }
     presets = {
         key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset for key in expected_versions

@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.4
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.5
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Workflow: `engineering.tracked-delivery` v0.8.1 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -43,18 +43,23 @@ canonical owner and existing patterns. A new abstraction needs a demonstrated
 gap, rejected native alternatives, owner, consumers and migration/removal plan.
 Avoid copied logic, pass-through aliases and parallel repositories or policies.
 
-Plans, listed paths, design and proof are fallible evidence of the original
-operator outcome. Delivery traces actual owners and affected consumers and
-completes necessary omitted files, wiring, specs and docs without routine
-main-agent relay. Receipts record the discovered gap, necessity, proportionality,
-affected consumers and proof. Independent review judges completeness and
-proportionality and executes relevant specs, including necessary omitted checks.
-A missed caller after a producer refactor needs correction; unrelated naming,
-style or debt stays in nonblocking followups. Explicit exclusions, unavailable
-authority, actual ownership conflicts and materially different outcomes stop
-affected work for main reconciliation. Reject drift, speculative abstractions,
-duplicate owners and opportunistic cleanup; a missing planned path alone is
-not a reason to block or request permission.
+Own the assigned outcome; plans, paths, design and proof are fallible evidence.
+Investigate obstacles and take the smallest proportionate action within existing
+authority and role to restore progress, including necessary omitted consumers and
+routine setup, tooling or integration gaps. Let assigned agents do the same without
+routine main-agent relay; verify and record the discovered gap, change, necessity,
+proportionality, affected consumers and proof.
+Delivery may change in-scope implementation/proof while preserving criteria.
+Independent review judges completeness and proportionality, executes relevant
+specs including omitted checks, and may prepare or repair its verification
+environment; product fixes go back to delivery.
+Review must not edit product/acceptance tests or weaken criteria to get green.
+Explicit exclusions, new or unavailable authority, actual ownership conflicts,
+materially different outcomes or compromised review independence stop affected
+work for reconciliation; continue unaffected work. A missed caller needs
+correction; unrelated naming/style/debt remains nonblocking followup. Reject
+drift, speculative abstractions and duplicate owners; an unlisted path alone
+is not a reason to block or request permission.
 
 Record a concise calibration in existing run/ticket context: authoritative
 operator request/amendments, scope and non-goals, dirty baseline, changed

@@ -268,16 +268,18 @@ the specialist a bounded packet. Keep durable facts in existing run/ticket
 context and evidence, and reference them from schema-valid phase outputs.
 
 Plans, listed paths, design and proof are fallible evidence, not exhaustive
-boundaries. Delivery independently traces actual owners and affected consumers,
-completes necessary omitted files, wiring, specs and docs within the original
-operator outcome, and records the discovered gap, necessity, proportionality,
-consumers and proof. Review independently judges completeness and proportionality
-and executes relevant specs, including necessary omitted checks. A missed caller
-after a producer refactor is required work without routine main-agent relay;
-unrelated naming/style/debt stays in nonblocking followups. Review rejects drift,
-unnecessary abstractions and duplicate ownership, not justified unlisted changes.
-Explicit exclusions, unavailable authority, actual ownership conflicts and
-materially different outcomes stop affected work for main reconciliation.
+boundaries. Each agent owns its assigned outcome, investigates obstacles and
+takes the smallest proportionate action within existing authority and role to
+resolve necessary omissions or routine setup, tooling and integration gaps.
+Verify and record the change, necessity, affected consumers and proof. Delivery
+may change in-scope implementation/proof; independent review executes checks and
+may prepare or repair its verification environment, but sends product fixes back
+to delivery without editing product/acceptance tests or weakening criteria.
+Explicit exclusions, new or unavailable authority, actual ownership conflicts,
+materially different outcomes or compromised review independence stop affected
+work for reconciliation; continue unaffected work. Unrelated naming/style/debt
+stays in nonblocking followups; reject drift, unnecessary abstractions and
+duplicate ownership, not justified unlisted changes.
 
 Ticket-local acceptance must be distinct from integration-only obligations.
 An interface ticket can pass its contract checks before a consumer is built;
