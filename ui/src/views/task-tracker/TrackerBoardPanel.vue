@@ -3,11 +3,13 @@ import { computed } from 'vue'
 import { UiBadge, UiIcon } from '@/components/ui'
 import { trackerStatus } from '@/design/status'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
+import ActiveExecutionLine from '@/components/domain/ActiveExecutionLine.vue'
 import TaskDeliveryStop from '@/components/domain/TaskDeliveryStop.vue'
 import { resolveAgentOwnerLogo } from '@/lib/stackos/agentIdentity'
 import { formatAbsoluteDateTime, formatShortDate } from '@/lib/stackos/time'
 import type { TrackerStatus } from '@/lib/task-tracker/types'
 import { isAutomaticDeliveryTask, taskDeliveryState } from '@/lib/task-tracker/delivery'
+import { activeExecutionTitle } from '@/lib/task-tracker/execution'
 import type { TaskProgressRow } from './viewTypes'
 
 const props = defineProps<{ rows: TaskProgressRow[]; selectedTaskKey?: string }>()
@@ -52,11 +54,12 @@ function initials(owner: string): string {
           type="button"
           class="tracker-board__card focus-ring"
           :class="{ 'tracker-board__card--selected': selectedTaskKey === row.key }"
-          :aria-label="`Open task #${row.id}: ${row.task.title}`"
+          :aria-label="`Open task #${row.id}: ${row.task.title}${row.task.active_execution ? `; Active now: ${activeExecutionTitle(row.task.active_execution)}` : ''}`"
+          :title="row.task.active_execution ? activeExecutionTitle(row.task.active_execution) : undefined"
           @focus="($event.currentTarget as HTMLElement).scrollIntoView({ block: 'nearest', inline: 'nearest' })"
           @click="$emit('openTask', row.key)"
         >
-          <span class="tracker-board__identity">
+          <span class="tracker-board__identity tracker-board__identity--header">
             <span class="tracker-board__id">#{{ row.id }}</span>
             <UiBadge
               v-if="isAutomaticDeliveryTask(row.task)"
@@ -64,6 +67,17 @@ function initials(owner: string): string {
             >
               Automated
             </UiBadge>
+            <span
+              v-if="row.totalCount > 0"
+              class="tracker-board__progress"
+              :title="`${row.completedCount} of ${row.totalCount} tickets complete`"
+            >
+              <UiIcon
+                name="tasks"
+                class="h-3.5 w-3.5 shrink-0"
+              />
+              {{ row.completedCount }}/{{ row.totalCount }}
+            </span>
           </span>
           <span
             class="tracker-board__title"
@@ -77,25 +91,22 @@ function initials(owner: string): string {
             title="Lifetime task usage"
           />
           <span class="tracker-board__meta">
-            <span class="tracker-board__identity">
+            <ActiveExecutionLine
+              v-if="row.task.active_execution"
+              :execution="row.task.active_execution"
+              class="tracker-board__execution"
+            />
+            <span
+              v-if="!row.task.active_execution"
+              class="tracker-board__identity"
+            >
               <time
                 :datetime="row.task.created_at"
                 :title="`Created ${formatAbsoluteDateTime(row.task.created_at)}`"
               ><span class="sr-only">Created </span>{{ formatShortDate(row.task.created_at) }}</time>
             </span>
             <span
-              v-if="row.totalCount > 0"
-              class="tracker-board__progress"
-              :title="`${row.completedCount} of ${row.totalCount} tickets complete`"
-            >
-              <UiIcon
-                name="tasks"
-                class="h-3.5 w-3.5 shrink-0"
-              />
-              {{ row.completedCount }}/{{ row.totalCount }}
-            </span>
-            <span
-              v-if="row.task.owner"
+              v-if="row.task.owner && !row.task.active_execution"
               class="tracker-board__owner"
               :class="{ 'tracker-board__owner--agent': resolveAgentOwnerLogo(row.task.owner) }"
               :title="row.task.owner"
@@ -131,8 +142,11 @@ function initials(owner: string): string {
 .tracker-board__card--selected { border-color: var(--color-border-focus); }
 .tracker-board__title { min-width: 0; color: var(--color-fg-strong); font-size: 14px; font-weight: 500; line-height: 20px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .tracker-board__meta { display: flex; min-width: 0; min-height: 20px; align-items: center; gap: 12px; color: var(--color-fg-muted); font-size: 12px; line-height: 18px; }
+.tracker-board__execution { flex: 1 1 auto; }
 .tracker-board__identity { display: flex; min-width: 0; align-items: center; gap: 8px; margin-right: auto; white-space: nowrap; color: var(--color-fg-muted); font-size: 12px; }
 .tracker-board__identity time { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tracker-board__identity--header { margin-right: 0; }
+.tracker-board__identity--header .tracker-board__progress { margin-left: auto; }
 .tracker-board__id { flex: none; font-variant-numeric: tabular-nums; }
 .tracker-board__progress { display: inline-flex; flex: none; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
 .tracker-board__owner { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; flex: none; border-radius: var(--radius-full); background: var(--color-bg-surface-alt); color: var(--color-fg-muted); font-size: 9px; font-weight: 600; }

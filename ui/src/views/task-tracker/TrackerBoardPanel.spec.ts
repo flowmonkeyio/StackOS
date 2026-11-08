@@ -40,7 +40,7 @@ describe('Work board presentation', () => {
       await wrapper.setProps({ rows: rows() })
       const badge = wrapper.get('.ui-badge')
       expect(badge.text()).toBe('Automated')
-      expect(badge.element.parentElement?.className).toBe('tracker-board__identity')
+      expect(badge.element.parentElement?.classList.contains('tracker-board__identity')).toBe(true)
       expect(badge.classes()).toContain('text-info-fg')
       expect(badge.element.tagName).toBe('SPAN')
     }

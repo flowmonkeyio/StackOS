@@ -286,7 +286,7 @@ describe('buildTrackerFlowModel', () => {
     expect(model.nodes.find((node) => node.id === 'ticket:prepare')?.targetPosition).toBe('left')
     expect(model.nodes.find((node) => node.id === 'ticket:prepare')?.data).toMatchObject({
       owner: 'codex',
-      agent: 'codex',
+      activeExecution: null,
       sourceKind: 'workflow',
     })
     expect(TRACKER_TICKET_NODE_WIDTH).toBe(328)
@@ -382,7 +382,7 @@ describe('buildTrackerFlowModel', () => {
     const activeNode = model.nodes.find((node) => node.id === 'ticket:deliver')
     const recentNode = model.nodes.find((node) => node.id === 'ticket:prepare')
     expect(activeNode?.class).toContain('tracker-node-active')
-    expect(activeNode?.data?.active).toBe(true)
+    expect(activeNode?.data?.active).toBe(false)
     expect(activeNode?.zIndex).toBe(30)
     expect(recentNode?.class).toContain('tracker-node-recent')
     expect(recentNode?.data?.recentlyUpdated).toBe(true)

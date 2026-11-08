@@ -1271,6 +1271,10 @@ def test_role_host_model_provider_reach_launch_and_receipt(
     calls = []
 
     def run_agent(host, directory, instructions, prompt, schema, *, sandbox, **selection):
+        scope = selection.pop("execution_scope")
+        assert scope.project_id == project_id
+        assert scope.agent == ("builder" if instructions == "Build" else "reviewer")
+        assert callable(selection.pop("on_execution_change"))
         calls.append((host, selection))
         packet = json.loads(prompt)
         key = packet["brief"]["ticket"]["key"]
@@ -1415,6 +1419,8 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
     calls = []
 
     def run_agent(host, directory, instructions, prompt, schema, *, sandbox, **selection):
+        selection.pop("execution_scope")
+        selection.pop("on_execution_change")
         calls.append((host, instructions, sandbox, selection))
         packet = json.loads(prompt)
         key = packet["brief"]["ticket"]["key"]
@@ -1553,7 +1559,7 @@ def test_two_tickets_run_in_order_after_submission_returns(
     scheduler = QueuedScheduler()
     calls = []
 
-    def run_agent(host, project_dir, instructions, prompt, schema, *, sandbox):
+    def run_agent(host, project_dir, instructions, prompt, schema, *, sandbox, **selection):
         packet = json.loads(prompt)
         ticket_key = packet["brief"]["ticket"]["key"]
         phase = "delivery" if packet["phase"] == "delivery" else "review"

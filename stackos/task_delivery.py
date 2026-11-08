@@ -25,11 +25,18 @@ from stackos.db.models import (
     TrackerTicketKind,
 )
 from stackos.host_mcp.result import AgentSandbox, normalize_usage, validate_agent_result
-from stackos.host_mcp.service import agent_review_sandbox, agent_selection_error, run_agent
+from stackos.host_mcp.service import (
+    ActiveInvocation,
+    AgentExecutionScope,
+    agent_review_sandbox,
+    agent_selection_error,
+    run_agent,
+)
 from stackos.operations.tracker.schemas import TaskDeliveryAgent
 from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
+from stackos.repositories.tracker.events import record_execution_change
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
 
 RESULT_SCHEMA = {
@@ -527,6 +534,10 @@ def start_delivery(
 
 
 def run_delivery(*, session_factory: Callable[[], Session], project_id: int, task_key: str) -> None:
+    def execution_changed(call: ActiveInvocation, active: bool) -> None:
+        with session_factory() as session:
+            record_execution_change(session, call, active)
+
     ticket_key = None
     evidence: dict[str, Any] = {}
     try:
@@ -756,6 +767,13 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                     ),
                     schema,
                     sandbox=sandbox,
+                    execution_scope=AgentExecutionScope(
+                        project_id=project_id,
+                        task_key=task_key,
+                        ticket_key=ticket_key,
+                        agent=agent["name"],
+                    ),
+                    on_execution_change=execution_changed,
                     **selection,
                     **({"resume_thread_id": resume_thread_id} if resume_thread_id else {}),
                 )

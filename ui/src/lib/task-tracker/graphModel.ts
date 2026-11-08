@@ -3,6 +3,7 @@ import { MarkerType, Position, type Edge, type Node } from '@vue-flow/core'
 import type { AgentStatsMetrics } from '@/lib/agentActivity'
 
 import type {
+  ActiveExecution,
   TrackerGraphEdge,
   TrackerGraphNode,
   TrackerSelectedItem,
@@ -24,7 +25,7 @@ export interface TrackerVueNodeData {
   blockedBy?: string[]
   assignee?: string | null
   owner?: string | null
-  agent?: string | null
+  activeExecution?: ActiveExecution | null
   sourceKind?: string | null
   runPlanId?: number | null
   agentStats?: AgentStatsMetrics | null
@@ -643,37 +644,17 @@ function vueNodeData(
     blockedBy: ticket?.blocked_by,
     assignee: ticket?.assignee,
     owner: ticket?.assignee ?? task?.owner,
-    agent: trackerAgent(raw),
+    activeExecution: ticket?.active_execution ?? null,
     sourceKind: ticket?.source_kind ?? task?.source_kind ?? null,
     runPlanId: ticket?.run_plan_id,
     agentStats: ticket ? ticket.agent_stats : task?.agent_stats,
     taskAutomated: delivery !== null,
     deliveryStopped,
     deliveryStopReason: deliveryStopped ? delivery?.reason : null,
-    active: delivery?.status !== 'stopped' && options.activeNodeIds?.has(graphNode.id) === true,
+    active: Boolean(ticket?.active_execution),
     recentlyUpdated: options.recentNodeIds?.has(graphNode.id) === true,
     raw,
   }
-}
-
-function trackerAgent(value: TrackerTask | TrackerTicket | TrackerGraphNode): string | null {
-  if (!isTrackerTask(value) && !isTrackerTicket(value)) return null
-  const explicitAgent = firstString(
-    value.source_json?.agent,
-    value.source_json?.agent_key,
-    value.source_json?.agent_role,
-    value.metadata_json?.agent,
-    value.metadata_json?.agent_key,
-    value.metadata_json?.agent_role,
-  )
-  return explicitAgent ?? value.created_by
-}
-
-function firstString(...values: unknown[]): string | null {
-  for (const value of values) {
-    if (typeof value === 'string' && value.trim()) return value.trim()
-  }
-  return null
 }
 
 function vueEdge(edge: TrackerGraphEdge, options: BuildTrackerFlowOptions): Edge {

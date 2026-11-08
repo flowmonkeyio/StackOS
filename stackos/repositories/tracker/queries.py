@@ -35,6 +35,7 @@ from stackos.db.models import (
     TrackerTicketLink,
     TrackerTicketReference,
 )
+from stackos.host_mcp.service import active_execution
 from stackos.repositories.base import (
     NotFoundError,
     Page,
@@ -49,6 +50,7 @@ from stackos.repositories.tracker.agent_stats import (
 )
 from stackos.repositories.tracker.counts import query_ticket_counts
 from stackos.repositories.tracker.schema import (
+    ActiveExecutionOut,
     TrackerAgentStatsOut,
     TrackerBriefOut,
     TrackerChangedOut,
@@ -84,6 +86,13 @@ from stackos.repositories.tracker.workflow_graph_analysis import (
     is_workflow_gate_child,
     terminal_workflow_children,
 )
+
+
+def _execution_out(
+    project_id: int, task_key: str, ticket_key: str | None = None
+) -> ActiveExecutionOut | None:
+    execution = active_execution(project_id, task_key, ticket_key)
+    return ActiveExecutionOut.model_validate(execution) if execution else None
 
 
 class TrackerQueryMixin:
@@ -908,6 +917,7 @@ class TrackerQueryMixin:
                 update={
                     "ticket_summary": summaries.get(row.id),
                     "agent_stats": metrics.get(_required_id(row.id, "task")),
+                    "active_execution": _execution_out(row.project_id, row.key),
                 }
             )
             for row in rows
@@ -1050,11 +1060,13 @@ class TrackerQueryMixin:
                 "reference_count",
                 "link_count",
                 "agent_stats",
+                "active_execution",
             }
         )
         return TrackerTicketOut(
             **base,
             agent_stats=summarize_receipts(invocation_receipts(row.completion_evidence_json)),
+            active_execution=_execution_out(row.project_id, task.key, row.key) if task else None,
             task_key=task.key if task is not None else "",
             parent_ticket_key=parent.key if parent is not None else None,
             dependency_keys=dependency_keys,
@@ -1130,11 +1142,15 @@ class TrackerQueryMixin:
                     "reference_count",
                     "link_count",
                     "agent_stats",
+                    "active_execution",
                 }
             )
             output.append(
                 TrackerTicketOut(
                     **base,
+                    active_execution=_execution_out(row.project_id, task.key, row.key)
+                    if task
+                    else None,
                     agent_stats=summarize_receipts(
                         invocation_receipts(row.completion_evidence_json)
                     ),
@@ -1531,10 +1547,14 @@ class TrackerQueryMixin:
 
     def _task_snapshot(self, task: TrackerTask) -> dict[str, Any]:
         # Derived usage belongs to read projections, never persisted history.
-        return TrackerTaskOut.model_validate(task).model_dump(mode="json", exclude={"agent_stats"})
+        return TrackerTaskOut.model_validate(task).model_dump(
+            mode="json", exclude={"agent_stats", "active_execution"}
+        )
 
     def _ticket_snapshot(self, ticket: TrackerTicket) -> dict[str, Any]:
-        return self._ticket_out(ticket).model_dump(mode="json", exclude={"agent_stats"})
+        return self._ticket_out(ticket).model_dump(
+            mode="json", exclude={"agent_stats", "active_execution"}
+        )
 
     def _count_statuses(self, statuses: list[TrackerItemStatus]) -> dict[str, int]:
         counts = {status.value: 0 for status in TrackerItemStatus}

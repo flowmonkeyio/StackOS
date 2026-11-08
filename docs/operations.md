@@ -419,6 +419,12 @@ execution. Clear private search text and apply filters before analysis; read
 ## Automated delivery results and manual instruction adoption
 
 The generic `stackos.task_delivery` module owns task execution.
+Its host calls register actual agent/model/start lifetime at
+`stackos.host_mcp.service.run_agent`. Tracker task-index, ticket and detail reads
+expose the same nullable `active_execution` projection; persisted status never
+substitutes for an active call. Registration/cleanup publish
+`tracker.execution.changed` through the existing tracker SSE feed without changing
+ticket status. No native-session polling or usage collection is implied.
 `tracker.configureDelivery` is the narrow local-admin REST-only setup write for
 `TaskTracker.config_json.delivery`; it replaces that object while preserving
 unrelated tracker configuration. Send `arguments` with `project_id` and

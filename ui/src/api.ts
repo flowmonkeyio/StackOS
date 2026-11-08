@@ -2281,6 +2281,24 @@ export interface components {
             risk_level: string;
         };
         /**
+         * ActiveExecutionOut
+         * @description Actual host-call identity; absent when no call is registered in this daemon.
+         */
+        ActiveExecutionOut: {
+            /** Agent */
+            agent: string;
+            /** Host Key */
+            host_key: string;
+            /** Invocation Id */
+            invocation_id: string;
+            /** Model */
+            model: string | null;
+            /** Started At */
+            started_at: string;
+            /** Ticket Key */
+            ticket_key: string;
+        };
+        /**
          * AgentRequestAttentionStatus
          * @description Persists to ``agent_requests.attention_status`` for local inbox state.
          * @enum {string}
@@ -6775,6 +6793,8 @@ export interface components {
         };
         /** TrackerTaskOut */
         TrackerTaskOut: {
+            /** @default null */
+            active_execution: components["schemas"]["ActiveExecutionOut"] | null;
             /**
              * @description Whole-task receipt metrics, including all tickets regardless of visible filters.
              * @default null
@@ -6892,6 +6912,8 @@ export interface components {
         TrackerTicketKind: TrackerTicketKind;
         /** TrackerTicketOut */
         TrackerTicketOut: {
+            /** @default null */
+            active_execution: components["schemas"]["ActiveExecutionOut"] | null;
             /** Agent Request Id */
             agent_request_id: number | null;
             /**
@@ -7928,6 +7950,7 @@ export type SchemaActionContractSpec = components['schemas']['ActionContractSpec
 export type SchemaActionExposureNextActionOut = components['schemas']['ActionExposureNextActionOut'];
 export type SchemaActionExposureOut = components['schemas']['ActionExposureOut'];
 export type SchemaActionOut = components['schemas']['ActionOut'];
+export type SchemaActiveExecutionOut = components['schemas']['ActiveExecutionOut'];
 export type SchemaAgentRequestOut = components['schemas']['AgentRequestOut'];
 export type SchemaAgentStatsCoverageOut = components['schemas']['AgentStatsCoverageOut'];
 export type SchemaAgentStatsDayOut = components['schemas']['AgentStatsDayOut'];

@@ -12,6 +12,7 @@ from sqlmodel import col, select
 from stackos.db.models import ProjectEvent
 from stackos.repositories.base import Page, ValidationError
 from stackos.repositories.tracker.events import (
+    TRACKER_EXECUTION_CHANGED,
     TRACKER_TASK_STATUS_CHANGED,
     TRACKER_TICKET_STATUS_CHANGED,
 )
@@ -140,7 +141,11 @@ class ContextQueryMixin(ContextRepositorySupport):
         """Page tracker task/ticket status events for realtime UI streams."""
         self._require_project(project_id)
         n = _normalise_limit(limit)
-        event_types = [TRACKER_TASK_STATUS_CHANGED, TRACKER_TICKET_STATUS_CHANGED]
+        event_types = [
+            TRACKER_TASK_STATUS_CHANGED,
+            TRACKER_TICKET_STATUS_CHANGED,
+            TRACKER_EXECUTION_CHANGED,
+        ]
         filters: list[Any] = [
             col(ProjectEvent.project_id) == project_id,
             col(ProjectEvent.event_type).in_(event_types),
@@ -171,7 +176,11 @@ class ContextQueryMixin(ContextRepositorySupport):
         task_key: str | None = None,
     ) -> int | None:
         self._require_project(project_id)
-        event_types = [TRACKER_TASK_STATUS_CHANGED, TRACKER_TICKET_STATUS_CHANGED]
+        event_types = [
+            TRACKER_TASK_STATUS_CHANGED,
+            TRACKER_TICKET_STATUS_CHANGED,
+            TRACKER_EXECUTION_CHANGED,
+        ]
         filters: list[Any] = [
             col(ProjectEvent.project_id) == project_id,
             col(ProjectEvent.event_type).in_(event_types),

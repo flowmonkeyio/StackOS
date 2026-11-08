@@ -7,13 +7,22 @@ import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 import TicketGraphNode from './TicketGraphNode.vue'
 
 describe('TicketGraphNode', () => {
+  it('keeps selection, in-progress and first-open hints separate from live execution', () => {
+    const wrapper = mount(TicketGraphNode, {
+      props: { data: nodeData({ active: true, status: 'in-progress' }) },
+      global: { stubs: { Handle: true } },
+    })
+    expect(wrapper.text()).not.toContain('Active now')
+    expect(wrapper.find('[data-active-execution]').exists()).toBe(false)
+    expect(wrapper.classes()).not.toContain('ticket-graph-node--active')
+  })
   it('keeps full ticket context and identities discoverable when compact labels truncate', () => {
     const data = nodeData({
       label: 'A long ticket title with enough detail to exceed two lines in the compact graph card',
       itemKey: 'a-very-long-ticket-key-with-required-scope-and-provenance',
       subtitle: 'A longer description that remains available without expanding the graph card.',
       owner: 'A very long delivery owner name',
-      agent: 'A very long project agent name',
+      activeExecution: { ...execution, agent: 'A very long project agent name' },
     })
     const wrapper = mount(TicketGraphNode, {
       props: { data },
@@ -22,10 +31,9 @@ describe('TicketGraphNode', () => {
     expect(wrapper.get('.ticket-graph-node__title').attributes('title')).toBe(data.label)
     expect(wrapper.get('.ticket-graph-node__key').attributes('title')).toBe(data.itemKey)
     expect(wrapper.get('.ticket-graph-node__subtitle').attributes('title')).toBe(data.subtitle)
-    expect(wrapper.findAll('.ticket-graph-node__people dd').map(value => value.attributes('title'))).toEqual([
-      data.owner,
-      data.agent,
-    ])
+    expect(wrapper.get('[data-active-execution]').attributes('title')).toContain(data.activeExecution!.agent)
+    expect(wrapper.get('[data-active-execution]').attributes('tabindex')).toBe('0')
+    expect(wrapper.find('.ticket-graph-node__people').exists()).toBe(false)
   })
 
   it('shows the recorded stop instead of treating focus as a running agent', () => {
@@ -70,7 +78,7 @@ describe('TicketGraphNode', () => {
 
   it('renders status text plus active and recent state affordances', () => {
     const active = mount(TicketGraphNode, {
-      props: { data: nodeData({ active: true, status: 'in-progress' }) },
+      props: { data: nodeData({ activeExecution: execution, status: 'in-progress' }) },
       global: { stubs: { Handle: true } },
     })
     const recent = mount(TicketGraphNode, {
@@ -81,12 +89,9 @@ describe('TicketGraphNode', () => {
     expect(active.text()).toContain('Active now')
     expect(active.text()).not.toContain('In Progress')
     expect(active.text()).toContain('P1')
-    expect(active.text()).toContain('Owner')
-    expect(active.text()).toContain('Codex')
-    expect(active.text()).toContain('Agent')
-    expect(active.text()).toContain('Claude Code')
-    expect(active.text()).toContain('Workflow')
-    expect(active.text()).toContain('Run 142')
+    expect(active.text()).toContain('Delivery reviewer')
+    expect(active.text()).toContain('gpt-6-astra')
+    expect(active.text()).not.toContain('Owner')
     expect(active.classes()).toContain('ticket-graph-node--active')
     expect(recent.text()).toContain('Complete')
     expect(recent.text()).toContain('Updated')
@@ -106,7 +111,6 @@ function nodeData(overrides: Partial<TrackerVueNodeData> = {}): TrackerVueNodeDa
     blockedBy: [],
     assignee: 'codex',
     owner: 'codex',
-    agent: 'claude-code',
     sourceKind: 'workflow',
     runPlanId: 142,
     raw: {
@@ -122,3 +126,5 @@ function nodeData(overrides: Partial<TrackerVueNodeData> = {}): TrackerVueNodeDa
     ...overrides,
   }
 }
+
+const execution = { invocation_id: 'call-review', agent: 'Delivery reviewer', host_key: 'codex', model: 'gpt-6-astra', started_at: '2026-11-08T01:08:00Z', ticket_key: 'tracker-chart-live-client' }

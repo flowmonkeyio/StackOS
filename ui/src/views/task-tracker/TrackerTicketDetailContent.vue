@@ -10,6 +10,7 @@ import {
 } from '@/components/ui'
 import StatusBadge from '@/components/StatusBadge.vue'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
+import ActiveExecutionLine from '@/components/domain/ActiveExecutionLine.vue'
 import TaskDeliveryStop from '@/components/domain/TaskDeliveryStop.vue'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
@@ -139,6 +140,7 @@ function relationSummary(ticket: TrackerTicket): string {
         aria-label="Own ticket usage"
         title="Own ticket usage"
       />
+      <ActiveExecutionLine :execution="ticket.active_execution" detailed focusable />
       <UiMetadataStrip
         :items="ticketFacts"
         aria-label="Ticket core metadata"

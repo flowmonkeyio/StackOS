@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from threading import Event
 
 import pytest
 from apscheduler.events import EVENT_JOB_EXECUTED
 from fastapi.testclient import TestClient
+from sqlmodel import Session
 
 from stackos import task_delivery
+from stackos.context import ContextRepository
+from stackos.host_mcp import service
 from stackos.host_mcp.result import AgentRunResult
 from tests.integration.test_mcp.conftest import MCPClient
 from tests.integration.test_repositories.test_task_delivery import commit, generic_result, git
@@ -114,7 +118,15 @@ def test_real_operation_returns_while_scheduler_delivers(
         )
         return AgentRunResult(0, thread_id=f"{calls[-1][0]}-{delivery}", result=result)
 
-    monkeypatch.setattr(task_delivery, "run_agent", run_agent)
+    definition = service._definition_by_key("codex")
+    monkeypatch.setattr(
+        service,
+        "_definition_by_key",
+        lambda host: replace(
+            definition, run_agent=lambda *args, **kwargs: run_agent(host, *args, **kwargs)
+        ),
+    )
+    monkeypatch.setattr(task_delivery, "run_agent", service.run_agent)
     api.app.state.scheduler.add_listener(
         lambda event: finished.set() if event.job_id.startswith("task-delivery:") else None,
         EVENT_JOB_EXECUTED,
@@ -148,6 +160,10 @@ def test_real_operation_returns_while_scheduler_delivers(
         receipt = operation("tracker.startDelivery", **arguments)
         assert receipt["status"] == "queued"
         assert entered.wait(5) and not finished.is_set()
+        active = operation("tracker.get", task_key=task_key, response_mode="raw")
+        assert active["tasks"][0]["active_execution"]["agent"] == "builder"
+        first = next(ticket for ticket in active["tickets"] if ticket["key"] == "first")
+        assert first["active_execution"] == active["tasks"][0]["active_execution"]
         # This is an ordinary system-authorized MCP caller, not the test grant sentinel.
         mcp = MCPClient(api, api.headers["Authorization"].removeprefix("Bearer "))
         assert "tracker.startDelivery" in {tool["name"] for tool in mcp.list_tools()}
@@ -163,6 +179,18 @@ def test_real_operation_returns_while_scheduler_delivers(
         release.set()
     assert finished.wait(5), "Scheduled delivery did not finish"
     snapshot = operation("tracker.get", task_key=task_key, response_mode="raw")
+    assert snapshot["tasks"][0]["active_execution"] is None
+    assert all(ticket["active_execution"] is None for ticket in snapshot["tickets"])
+    with Session(api.app.state.engine) as reader:
+        events = (
+            ContextRepository(reader)
+            .tracker_status_timeline(project_id=project_id, task_key=task_key, limit=50)
+            .items
+        )
+    lifetime = [event for event in events if event.event_type == "tracker.execution.changed"]
+    assert [event.metadata_json["active"] for event in lifetime] == [True, False] * (
+        5 if workflow else 4
+    )
     assert snapshot["tasks"][0]["status"] == "complete"
     assert snapshot["tasks"][0]["metadata_json"]["delivery"]["status"] == "complete"
     assert snapshot["tasks"][0]["metadata_json"]["delivery"]["review_agent"] == {

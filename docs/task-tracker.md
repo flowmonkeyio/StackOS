@@ -1285,6 +1285,26 @@ blocked totals, assignees, and searchable ticket terms) while omitting ticket ro
 dependencies, links, and graph data. Ticket-scoped filters are intentionally
 rejected in this mode; load one focused task or a normal filtered snapshot when
 ticket detail is required.
+
+Task and ticket reads expose nullable `active_execution` from the host execution
+service's in-memory invocation registry. It contains the configured project-agent
+name, selected model (nullable when inherited), host, current call start, invocation
+identity and owning ticket key. Task-index and focused/detail reads use the same
+projection. Persisted `in-progress`, assignment, selection and workflow-parent
+state do not establish a live process. Every registered call is removed in
+`finally`, including native errors and cancellation; daemon restart begins empty.
+Start/finish events (`tracker.execution.changed`) travel over the existing tracker
+SSE connection even when lifecycle status stays unchanged. These are two lifetime
+notifications per call, not usage samples or ticket lifecycle writes.
+
+Board cards replace their quiet creation/owner metadata with a single active
+agent/model/local-start line; progress remains visible and card density is retained.
+Only the executing Graph ticket shows this footer and `Active now`; graph focus
+remains a separate visual affordance. Graph nodes stay 328×200. Full identity and
+local start date are available on hover/focus and in task/ticket details; historical
+owner/assignee and receipts remain in details. The approved compact reference is
+[`compact-live-activity.png`](assets/usage-785/compact-live-activity.png). Its token
+traces are a separate live-usage contract; identity alone creates no sampler.
 Bounded overview surfaces that do not need a complete selector may also pass
 `task_statuses` (for example, `not-started` and `in-progress`). This filters the
 top-level task rows while retaining aggregate summaries across each returned

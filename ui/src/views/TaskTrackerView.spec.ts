@@ -66,6 +66,26 @@ async function render(url = '/projects/7/tasks', realDialogs = false) {
 const popup = () => new DOMWrapper(document.body)
 
 describe('Work board navigation', () => {
+  it('refreshes actual invocation identity through the existing stream with unchanged ticket status', async () => {
+    dataMock([taskA], [{ ...ticketA, status: 'in-progress' }], true)
+    const { wrapper, board, dialog } = await render('/projects/7/tasks?view=graph&task=task-a')
+    const graph = () => wrapper.findComponent({ name: 'TrackerGraphPanel' })
+    graph().vm.$emit('node-click', { event: { stopPropagation: vi.fn() }, node: graph().props('flow').nodes[0] })
+    await flushPromises()
+    for (const [index, agent, model] of [[1, 'Implementer', 'gpt-6.1-sol'], [2, 'Reviewer', 'gpt-6-astra'], [3, 'Implementer', 'gpt-6.1-sol'], [4, null, null]] as const) {
+      const execution = agent ? { invocation_id: `call-${index}`, agent, model, host_key: 'codex', started_at: `2026-11-08T01:0${index}:00Z`, ticket_key: ticketA.key } : null
+      dataMock([{ ...taskA, active_execution: execution }], [{ ...ticketA, status: 'in-progress', active_execution: execution }], true)
+      mocks.stream.mock.calls.at(-1)![0].onEvent({ id: 10000 + index, event_type: 'tracker.execution.changed', metadata_json: { task_key: taskA.key, ticket_key: ticketA.key } })
+      await flushPromises()
+      expect(board().props('rows')[0].task.active_execution).toEqual(execution)
+      expect(graph().props('flow').nodes[0].data.activeExecution).toEqual(execution)
+      expect(wrapper.findComponent({ name: 'TrackerTicketDetailPanel' }).props('ticket').active_execution).toEqual(execution)
+      expect(graph().props('flow').nodes[0].data.active).toBe(Boolean(execution))
+      expect(graph().props('flow').nodes[0].data.status).toBe('in-progress')
+    }
+    expect(dialog().props('task')?.status ?? taskA.status).toBe(taskA.status)
+    wrapper.unmount()
+  })
   it('refreshes stopped delivery in the header, graph and inspector without changing task lifecycle', async () => {
     const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
     const delivery = { status: 'stopped', ticket_key: ticketA.key, reason: 'Browser access denied.', job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent }

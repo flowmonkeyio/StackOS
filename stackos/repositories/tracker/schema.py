@@ -110,7 +110,19 @@ class TrackerTaskTicketSummaryOut(BaseModel):
     search_text: str = ""
 
 
+class ActiveExecutionOut(BaseModel):
+    """Actual host-call identity; absent when no call is registered in this daemon."""
+
+    invocation_id: str
+    agent: str
+    host_key: str
+    model: str | None
+    started_at: str
+    ticket_key: str
+
+
 class TrackerTaskOut(BaseModel):
+    active_execution: ActiveExecutionOut | None = None
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -157,6 +169,7 @@ class TrackerDependencyOut(BaseModel):
 
 
 class TrackerTicketOut(BaseModel):
+    active_execution: ActiveExecutionOut | None = None
     model_config = ConfigDict(from_attributes=True)
 
     id: int

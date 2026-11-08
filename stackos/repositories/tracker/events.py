@@ -9,10 +9,34 @@ from sqlmodel import Session
 
 from stackos.db.models import ProjectEvent, TrackerItemStatus, TrackerTask, TrackerTicket
 from stackos.events import StackOSEvent, StackOSEventSource
+from stackos.host_mcp.service import ActiveInvocation
 from stackos.repositories.project_events import StackOSEventEmitter
 
 TRACKER_TASK_STATUS_CHANGED = "tracker.task.status_changed"
 TRACKER_TICKET_STATUS_CHANGED = "tracker.ticket.status_changed"
+TRACKER_EXECUTION_CHANGED = "tracker.execution.changed"
+
+
+def record_execution_change(session: Session, call: ActiveInvocation, active: bool) -> None:
+    """Wake the existing tracker stream even when persisted status is unchanged."""
+    StackOSEventEmitter(session).emit(
+        StackOSEvent(
+            project_id=call.scope.project_id,
+            source=StackOSEventSource(type="tracker_ticket"),
+            event_type=TRACKER_EXECUTION_CHANGED,
+            title="Agent call started" if active else "Agent call finished",
+            tags=["tracker", "execution"],
+            metadata={
+                "task_key": call.scope.task_key,
+                "ticket_key": call.scope.ticket_key,
+                "invocation_id": call.invocation_id,
+                "active": active,
+            },
+        )
+    )
+    # This notification owns its short transaction; there is no accompanying
+    # tracker status mutation to commit it for the independent SSE reader.
+    session.commit()
 
 
 def _status_value(status: TrackerItemStatus | str | None) -> str | None:

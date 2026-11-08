@@ -4,6 +4,7 @@ import { Handle, Position } from '@vue-flow/core'
 
 import { resolveStatus } from '@/design/status'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
+import ActiveExecutionLine from '@/components/domain/ActiveExecutionLine.vue'
 import type { TrackerVueNodeData } from '@/lib/task-tracker/graphModel'
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
 import type { TrackerStatus } from '@/lib/task-tracker/types'
@@ -21,34 +22,7 @@ const statusLabel = computed(
 )
 const displayedStateLabel = computed(() => props.data.deliveryStopped
   ? resolveStatus('delivery', 'stopped').label
-  : props.data.active ? 'Active now' : statusLabel.value)
-const ownerLabel = computed(() => identityLabel(props.data.owner) ?? 'Unassigned')
-const agentLabel = computed(() => identityLabel(props.data.agent) ?? 'Not recorded')
-const sourceLabel = computed(() => humanize(props.data.sourceKind) ?? 'Tracker')
-
-function identityLabel(value: string | null | undefined): string | null {
-  if (!value?.trim()) return null
-  const normalized = value.trim().toLowerCase()
-  const known: Record<string, string> = {
-    claude: 'Claude',
-    'claude-code': 'Claude Code',
-    codex: 'Codex',
-    cursor: 'Cursor',
-    gemini: 'Gemini',
-    'gemini-cli': 'Gemini CLI',
-  }
-  return known[normalized] ?? humanize(value)
-}
-
-function humanize(value: string | null | undefined): string | null {
-  if (!value?.trim()) return null
-  return value
-    .trim()
-    .split(/[-_]/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
-}
+  : props.data.activeExecution ? 'Active now' : statusLabel.value)
 </script>
 
 <template>
@@ -59,7 +33,7 @@ function humanize(value: string | null | undefined): string | null {
       priorityClass,
       {
         'ticket-graph-node--blocked': isBlocked,
-        'ticket-graph-node--active': data.active && !data.deliveryStopped,
+        'ticket-graph-node--active': !!data.activeExecution,
         'ticket-graph-node--recent': data.recentlyUpdated,
       },
     ]"
@@ -89,7 +63,7 @@ function humanize(value: string | null | undefined): string | null {
     >
       <span class="ticket-graph-node__dot" />
       <span>{{ displayedStateLabel }}</span>
-      <strong v-if="!data.active && data.recentlyUpdated">Updated</strong>
+      <strong v-if="!data.activeExecution && data.recentlyUpdated">Updated</strong>
     </div>
 
     <div class="ticket-graph-node__heading">
@@ -119,21 +93,6 @@ function humanize(value: string | null | undefined): string | null {
       No additional work context recorded.
     </p>
 
-    <dl class="ticket-graph-node__people">
-      <div>
-        <dt>Owner</dt>
-        <dd :title="ownerLabel">
-          {{ ownerLabel }}
-        </dd>
-      </div>
-      <div>
-        <dt>Agent</dt>
-        <dd :title="agentLabel">
-          {{ agentLabel }}
-        </dd>
-      </div>
-    </dl>
-
     <AgentUsageSummary
       v-if="data.taskAutomated"
       class="ticket-graph-node__usage"
@@ -142,11 +101,11 @@ function humanize(value: string | null | undefined): string | null {
       title="Own ticket usage"
     />
 
-    <div class="ticket-graph-node__meta">
-      <span :title="sourceLabel">{{ sourceLabel }}</span>
-      <span :title="humanize(data.laneKey) ?? undefined">{{ humanize(data.laneKey) }}</span>
-      <span v-if="data.runPlanId">Run {{ data.runPlanId }}</span>
-    </div>
+    <ActiveExecutionLine
+      :execution="data.activeExecution"
+      class="ticket-graph-node__execution"
+      focusable
+    />
 
     <p
       v-if="isBlocked"
@@ -165,7 +124,7 @@ function humanize(value: string | null | undefined): string | null {
   position: relative;
   box-sizing: border-box;
   width: var(--tracker-ticket-node-width, 328px);
-  min-height: var(--tracker-ticket-node-height, 200px);
+  height: var(--tracker-ticket-node-height, 200px);
   border: 1px solid var(--color-border-default);
   border-radius: var(--radius-md);
   background: var(--color-bg-surface);
@@ -337,38 +296,6 @@ function humanize(value: string | null | undefined): string | null {
   color: var(--color-fg-subtle);
 }
 
-.ticket-graph-node__people {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 8px;
-  border-top: 1px solid var(--color-border-subtle);
-  padding-top: 7px;
-}
-
-.ticket-graph-node__people div {
-  min-width: 0;
-}
-
-.ticket-graph-node__people dt {
-  color: var(--color-fg-subtle);
-  font-size: 9px;
-  font-weight: var(--fw-medium);
-  line-height: 1;
-}
-
-.ticket-graph-node__people dd {
-  overflow: hidden;
-  margin-top: 3px;
-  color: var(--color-fg-default);
-  font-size: 11px;
-  font-weight: var(--fw-medium);
-  line-height: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .ticket-graph-node__usage {
   position: relative;
   margin-top: 8px;
@@ -378,28 +305,11 @@ function humanize(value: string | null | undefined): string | null {
   font-variant-numeric: tabular-nums;
 }
 
-.ticket-graph-node__meta {
+.ticket-graph-node__execution {
   position: relative;
-  display: flex;
-  gap: 8px;
-  overflow: hidden;
   margin-top: 8px;
-  color: var(--color-fg-subtle);
-  font-size: 10px;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.ticket-graph-node__meta span {
-  overflow: hidden;
-  max-width: 92px;
-  text-overflow: ellipsis;
-}
-
-.ticket-graph-node__meta span + span::before {
-  margin-right: 8px;
-  color: var(--color-border-strong);
-  content: '·';
+  border-top: 1px solid var(--color-border-subtle);
+  padding-top: 7px;
 }
 
 .ticket-graph-node__blocked {

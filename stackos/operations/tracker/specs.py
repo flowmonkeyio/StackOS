@@ -398,6 +398,8 @@ def operation_specs() -> list[OperationSpec]:
                 "complete operator task selector before loading one focused graph. "
                 "Task agent_stats always cover all own ticket receipts; ticket agent_stats "
                 "cover only that ticket. "
+                "Nullable active_execution comes from actual host-call lifetime for "
+                "task-index, ticket and detail reads, never persisted status. "
                 "Compact responses preserve metrics and their usage/classification coverage."
             ),
             examples=(

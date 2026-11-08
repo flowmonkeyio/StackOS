@@ -1,4 +1,4 @@
-import type { SchemaAgentStatsMetricsOut } from '@/api'
+import type { SchemaActiveExecutionOut, SchemaAgentStatsMetricsOut } from '@/api'
 
 export type TrackerStatus =
   | 'not-started'
@@ -10,6 +10,8 @@ export type TrackerStatus =
   | 'skipped'
 export type TrackerNodeKind = 'task' | 'ticket' | 'group'
 export type TrackerEdgeKind = 'contains' | 'dependency' | 'link'
+
+export type ActiveExecution = SchemaActiveExecutionOut
 
 export interface DeliveryAgentDefaults {
   name?: string | null
@@ -54,6 +56,7 @@ export interface TrackerPriority {
 }
 
 export interface TrackerTask {
+  active_execution?: ActiveExecution | null
   id: number
   project_id: number
   tracker_id: number
@@ -95,6 +98,7 @@ export interface TrackerTaskTicketSummary {
 }
 
 export interface TrackerTicket {
+  active_execution?: ActiveExecution | null
   id: number
   project_id: number
   tracker_id: number

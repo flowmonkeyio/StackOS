@@ -1,12 +1,16 @@
-"""One-brain lifecycle service for host MCP registrations."""
+"""Shared host MCP registration and project-agent execution service."""
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, replace
+from datetime import UTC, datetime
 from pathlib import Path
+from threading import RLock
 from typing import Any, Literal, Protocol
+from uuid import uuid4
 
 from stackos.host_mcp.adapters import claude_code, claude_desktop, codex, gemini_cli, grok, hermes
 from stackos.host_mcp.bridge import MCP_SERVER_NAME, default_home, token_preflight
@@ -23,6 +27,69 @@ Action = Literal["inspect", "register", "repair", "remove"]
 AdapterFn = Callable[[Path], HostMcpResult]
 ForceAdapterFn = Callable[[Path, bool], HostMcpResult]
 ProfileAdapterFn = Callable[[Path, str | None], HostMcpResult]
+
+
+@dataclass(frozen=True)
+class AgentExecutionScope:
+    """Safe attribution supplied by the caller, never inferred from tracker status."""
+
+    project_id: int
+    task_key: str
+    ticket_key: str
+    agent: str
+
+
+@dataclass(frozen=True)
+class ActiveInvocation:
+    invocation_id: str
+    scope: AgentExecutionScope
+    host_key: str
+    model: str | None
+    started_at: str
+
+    def projection(self) -> dict[str, Any]:
+        return {
+            "invocation_id": self.invocation_id,
+            "agent": self.scope.agent,
+            "host_key": self.host_key,
+            "model": self.model,
+            "started_at": self.started_at,
+            "ticket_key": self.scope.ticket_key,
+        }
+
+
+# The host service owns actual invocation lifetime. No persisted status, prompt,
+# native transcript, session reader or timer belongs in this minimal registry.
+_active_invocations: dict[str, ActiveInvocation] = {}
+_active_invocations_lock = RLock()
+
+
+def active_execution(
+    project_id: int, task_key: str, ticket_key: str | None = None
+) -> dict[str, Any] | None:
+    """Return the latest actual call in this scope (automatic task calls are serial)."""
+    with _active_invocations_lock:
+        matches = [
+            call
+            for call in _active_invocations.values()
+            if call.scope.project_id == project_id
+            and call.scope.task_key == task_key
+            and (ticket_key is None or call.scope.ticket_key == ticket_key)
+        ]
+        return max(matches, key=lambda call: call.started_at).projection() if matches else None
+
+
+def _notify_execution(
+    callback: Callable[[ActiveInvocation, bool], None] | None,
+    call: ActiveInvocation,
+    active: bool,
+) -> None:
+    if callback is not None:
+        try:
+            callback(call, active)
+        except Exception:
+            # Observability must not change native execution/result semantics.
+            logging.getLogger(__name__).exception("Could not notify agent execution transition")
 
 
 class HostMcpAdapter(Protocol):
@@ -107,6 +174,8 @@ def run_agent(
     provider: str | None = None,
     profile: str | None = None,
     resume_thread_id: str | None = None,
+    execution_scope: AgentExecutionScope | None = None,
+    on_execution_change: Callable[[ActiveInvocation, bool], None] | None = None,
 ) -> AgentRunResult:
     """Run a project agent through the same host registry used by Overview."""
     if not instructions.strip():
@@ -131,23 +200,44 @@ def run_agent(
     definition = _definition_by_key(host_key)
     if definition is None or definition.run_agent is None:
         return AgentRunResult(None, error=f"Host {host_key!r} does not support agent execution.")
-    result = definition.run_agent(
-        Path(project_dir).expanduser().resolve(),
-        instructions,
-        prompt,
-        output_schema,
-        sandbox=sandbox,
-        **{
-            key: value
-            for key, value in {
-                "model": model,
-                "provider": provider,
-                "profile": profile,
-                "resume_thread_id": resume_thread_id,
-            }.items()
-            if value is not None
-        },
+    call = (
+        ActiveInvocation(
+            invocation_id=uuid4().hex,
+            scope=execution_scope,
+            host_key=host_key,
+            model=model,
+            started_at=datetime.now(UTC).isoformat(),
+        )
+        if execution_scope is not None
+        else None
     )
+    try:
+        if call is not None:
+            with _active_invocations_lock:
+                _active_invocations[call.invocation_id] = call
+            _notify_execution(on_execution_change, call, True)
+        result = definition.run_agent(
+            Path(project_dir).expanduser().resolve(),
+            instructions,
+            prompt,
+            output_schema,
+            sandbox=sandbox,
+            **{
+                key: value
+                for key, value in {
+                    "model": model,
+                    "provider": provider,
+                    "profile": profile,
+                    "resume_thread_id": resume_thread_id,
+                }.items()
+                if value is not None
+            },
+        )
+    finally:
+        if call is not None:
+            with _active_invocations_lock:
+                _active_invocations.pop(call.invocation_id, None)
+            _notify_execution(on_execution_change, call, False)
     if resume_thread_id is not None and result.thread_id != resume_thread_id:
         return AgentRunResult(
             result.exit_code,
