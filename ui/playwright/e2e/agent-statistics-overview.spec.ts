@@ -299,39 +299,55 @@ test('shared legends wrap only when token or six short identity labels need more
   const attempts = names.map((model, index) => ({ attempt: index + 1, delivery: receipt('delivery_agent', 'success', 100, model) }))
   await seed(project.id, { ...attempts.at(-1), attempts })
   const proof: object[] = []
+  const measureLegend = (legend: Locator) => legend.evaluate(node => {
+    const style = getComputedStyle(node)
+    const entries = [...node.querySelectorAll<HTMLElement>('li')].map(entry => {
+      const label = entry.querySelector<HTMLElement>('.activity-chart__legend-label')!
+      const text = document.createRange()
+      text.selectNodeContents(label)
+      return { label: label.textContent!.trim(), top: entry.offsetTop, intrinsic: text.getBoundingClientRect().width + 10 + 6, clipped: label.scrollWidth > label.clientWidth + 1 }
+    })
+    const body = node.closest('.activity-chart__body')!
+    // Titles may wrap above the body at constrained widths. Compare the shared frame.
+    const origin = body.getBoundingClientRect()
+    const plot = body.querySelector('.activity-chart__plot')!.getBoundingClientRect()
+    return { rows: new Set(entries.map(item => item.top)).size, entries, needed: entries.reduce((sum, item) => sum + item.intrinsic, 0) + parseFloat(style.columnGap) * (entries.length - 1), width: node.clientWidth, scrollWidth: node.scrollWidth, height: node.clientHeight, plot: [plot.x - origin.x, plot.y - origin.y, plot.width, plot.height] }
+  })
   for (const scope of ['project', 'global']) {
     await page.setViewportSize({ width: 1536, height: 800 })
     await page.goto(scope === 'project' ? `/projects/${project.id}` : '/')
     const region = page.getByRole('region', { name: 'Agent activity', exact: true })
     await expect(region.locator('[aria-label="Agent activity breakdown"] tbody tr')).toHaveCount(6)
-    for (const width of [1536, 480, 260]) {
+    for (const layout of ['wide', 'compact', 'constrained']) {
+      let width = layout === 'wide' ? 1536 : layout === 'compact' ? 480 : 260
       await page.setViewportSize({ width, height: 800 })
+      if (layout === 'constrained') {
+        await region.getByRole('group', { name: 'Chart view', exact: true }).getByRole('button', { name: 'Tokens', exact: true }).click()
+        await page.evaluate(() => document.fonts.ready)
+        // A viewport alone cannot establish wrapping: shell gutters and fonts affect
+        // the available width. Shrink from measured token fit, then assert the actual
+        // precondition for both views below. Fail if the bounded adjustments cannot fit it.
+        for (let adjustment = 0; adjustment < 3; adjustment++) {
+          const state = await measureLegend(region.getByRole('list', { name: 'Chart legend' }))
+          if (state.needed > state.width) break
+          width = Math.floor(width - (state.width - state.needed) - 20)
+          expect(width).toBeGreaterThan(0)
+          await page.setViewportSize({ width, height: 800 })
+        }
+      }
       let plot: number[] | null = null
       for (const view of ['Tokens', 'Agents']) {
         await region.getByRole('group', { name: 'Chart view', exact: true }).getByRole('button', { name: view, exact: true }).click()
         const legend = region.getByRole('list', { name: 'Chart legend' })
         await expect(legend.locator('.activity-chart__legend-label')).toHaveText(view === 'Tokens' ? ['Input', 'Cache', 'Output'] : names)
         await page.evaluate(() => document.fonts.ready)
-        const state = await legend.evaluate(node => {
-          const style = getComputedStyle(node)
-          const entries = [...node.querySelectorAll<HTMLElement>('li')].map(entry => {
-            const label = entry.querySelector<HTMLElement>('.activity-chart__legend-label')!
-            const text = document.createRange()
-            text.selectNodeContents(label)
-            return { label: label.textContent!.trim(), top: entry.offsetTop, intrinsic: text.getBoundingClientRect().width + 10 + 6, clipped: label.scrollWidth > label.clientWidth + 1 }
-          })
-          const body = node.closest('.activity-chart__body')!
-          // The artificial 260px viewport constrains only this legend contract;
-          // titles can wrap above the body. Compare the shared plot/legend frame.
-          const origin = body.getBoundingClientRect()
-          const plot = body.querySelector('.activity-chart__plot')!.getBoundingClientRect()
-          return { rows: new Set(entries.map(item => item.top)).size, entries, needed: entries.reduce((sum, item) => sum + item.intrinsic, 0) + parseFloat(style.columnGap) * (entries.length - 1), width: node.clientWidth, scrollWidth: node.scrollWidth, height: node.clientHeight, plot: [plot.x - origin.x, plot.y - origin.y, plot.width, plot.height] }
-        })
+        const state = await measureLegend(legend)
         expect(state.scrollWidth).toBeLessThanOrEqual(state.width)
         expect(state.entries.some(entry => entry.clipped)).toBe(false)
+        expect(Math.max(...state.entries.map(entry => entry.intrinsic))).toBeLessThanOrEqual(state.width)
         expect(state.height).toBe(56)
         expect(state.plot[3]).toBe(215)
-        if (width === 260) {
+        if (layout === 'constrained') {
           expect(state.needed).toBeGreaterThan(state.width)
           expect(state.rows).toBeGreaterThan(1)
         } else {
@@ -340,8 +356,13 @@ test('shared legends wrap only when token or six short identity labels need more
         }
         if (plot) expect(state.plot).toEqual(plot)
         else plot = state.plot
-        const last = legend.locator('.activity-chart__legend-label').last()
-        await last.focus()
+        const labels = legend.locator('.activity-chart__legend-label')
+        await labels.first().focus()
+        for (let index = 1; index < state.entries.length; index++) {
+          await page.keyboard.press('Tab')
+          await expect(labels.nth(index)).toBeFocused()
+        }
+        const last = labels.last()
         await expect(last).toBeFocused()
         const visible = await last.evaluate(label => {
           const box = label.getBoundingClientRect()
@@ -350,8 +371,8 @@ test('shared legends wrap only when token or six short identity labels need more
         })
         expect(visible).toBe(true)
         await expect(last).toHaveAttribute('title', view === 'Tokens' ? 'Output' : 'Foxtrot')
-        if (width !== 480) await region.locator('.activity-chart').screenshot({ path: testInfo.outputPath(`legend-${scope}-${width}-${view}.png`) })
-        proof.push({ scope, viewport_width: width, view, ...state })
+        if (layout !== 'compact') await region.locator('.activity-chart').screenshot({ path: testInfo.outputPath(`legend-${scope}-${layout}-${view}.png`) })
+        proof.push({ scope, layout, viewport_width: width, view, ...state })
       }
     }
   }
