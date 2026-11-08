@@ -946,6 +946,18 @@ tickets without main-agent relay. This is a bounded exception to specialist
 write restrictions; terminal-managed routing remains with main. It grants no
 self-acceptance, step claim/record, agent dispatch or replacement workflow.
 
+The launcher composes the selected project-agent instructions with one generic
+authority boundary and repeats that same boundary in the task packet. Only
+explicitly assigned operations within the current project/task scope are
+permitted, subject to normal native approval, including assigned tracker
+correction/requeue/reopen calls. Otherwise agents return results without lifecycle
+mutations. StackOS retains claim, acceptance, recording and dispatch. This
+boundary grants ordinary workers no general lifecycle authority and does not
+replace the correction method below or change grants, host/model/provider
+selection, saved instructions, sessions or repair limits. Captured launch argv
+and packet tests prove composition; actual native approval behavior requires a
+separate authorized native rehearsal.
+
 1. Read full source and target briefs, context and completion evidence. Choose
    the original owning ticket and earliest affected bound gate from actual
    provenance/dependencies. Stop affected work on exclusions, authority/ownership

@@ -39,6 +39,13 @@ from stackos.repositories.tracker import TrackerRepository
 from stackos.repositories.tracker.events import record_execution_change
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
 
+LAUNCH_AUTHORITY_BOUNDARY = (
+    "Use only explicitly assigned operations within the current project and task, "
+    "subject to normal native approval. Explicitly assigned scoped tracker "
+    "correction/requeue/reopen operations are permitted; otherwise return results "
+    "without lifecycle mutations. StackOS retains claim, acceptance, recording and dispatch."
+)
+
 RESULT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -740,7 +747,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                 result = run_agent(
                     host_key,
                     state["project_dir"],
-                    agent["instructions"],
+                    f"{agent['instructions']}\n\n{LAUNCH_AUTHORITY_BOUNDARY}",
                     json.dumps(
                         _work_prompt_copy(
                             {
@@ -748,9 +755,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                                     "Execute the remaining frozen workflow_step contract. "
                                     "Use accepted receipts and current operator inputs. "
                                     "Return declared outputs and explicit disposition. "
-                                    "Do not edit source. Use only explicitly assigned existing "
-                                    "tracker correction/reopen operations; StackOS owns "
-                                    "claim, record and dispatch."
+                                    "Do not edit source."
                                 )
                                 if workflow_step is not None
                                 else (
@@ -788,10 +793,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                                     "reopened dependency work stops this task."
                                 ),
                                 "phase": phase,
-                                "lifecycle": (
-                                    "Return results only. "
-                                    "StackOS owns ticket status and sequencing."
-                                ),
+                                "lifecycle": LAUNCH_AUTHORITY_BOUNDARY,
                                 "brief": brief,
                                 "delivery_result": evidence.get("delivery"),
                                 "review_result": prior_review,

@@ -133,6 +133,10 @@ def test_agent_reopen_rescans_dependencies_and_resumes_original_sessions(
 
     def launch(_host, _directory, _instructions, prompt, _schema, **kwargs):
         packet = json.loads(prompt)
+        assert packet["lifecycle"] in _instructions
+        assert "Explicitly assigned scoped tracker correction/requeue/reopen" in _instructions
+        assert "otherwise return results without lifecycle mutations" in _instructions
+        assert "Return results only" not in packet["lifecycle"]
         ticket = packet["brief"]["ticket"]
         key, phase = ticket["key"], packet["phase"]
         prior_calls = [c for c in calls if c == (key, phase)]
@@ -1010,7 +1014,11 @@ def test_taskwide_nested_fork_join_and_frozen_mirrors(session, project_id, tmp_p
         f"workflow-{plan.id}-side",
         f"workflow-{plan.id}-publish-local",
     ]
-    assert calls[-3][2] == calls[-1][2] == "Review the ticket."
+    assert (
+        calls[-3][2]
+        == calls[-1][2]
+        == f"Review the ticket.\n\n{task_delivery.LAUNCH_AUTHORITY_BOUNDARY}"
+    )
     final = plans.get(plan.id)
     assert final.status == "completed"
     assert all(s.claimed_by == task_delivery.ACTOR for s in final.steps[1:])
@@ -1271,14 +1279,18 @@ def test_role_host_model_provider_reach_launch_and_receipt(
     calls = []
 
     def run_agent(host, directory, instructions, prompt, schema, *, sandbox, **selection):
+        packet = json.loads(prompt)
+        delivery = packet["phase"] == "delivery"
         scope = selection.pop("execution_scope")
         assert scope.project_id == project_id
-        assert scope.agent == ("builder" if instructions == "Build" else "reviewer")
+        assert scope.agent == ("builder" if delivery else "reviewer")
+        assert instructions == ("Build" if delivery else "Review") + "\n\n" + packet["lifecycle"]
+        assert "subject to normal native approval" in packet["lifecycle"]
+        assert "within the current project and task" in packet["lifecycle"]
+        assert "StackOS retains claim, acceptance, recording and dispatch" in packet["lifecycle"]
         assert callable(selection.pop("on_execution_change"))
         calls.append((host, selection))
-        packet = json.loads(prompt)
         key = packet["brief"]["ticket"]["key"]
-        delivery = packet["phase"] == "delivery"
         sha = commit(tmp_path, key) if delivery else git(tmp_path, "rev-parse", "HEAD")
         value = {"status": "complete"} if delivery else {"decision": "approve", "followups": []}
         return scenario_result(
@@ -1441,10 +1453,15 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
     assert (
         calls
         == [
-            ("claude-code", "Saved build instructions", "workspace-write", {}),
+            (
+                "claude-code",
+                f"Saved build instructions\n\n{task_delivery.LAUNCH_AUTHORITY_BOUNDARY}",
+                "workspace-write",
+                {},
+            ),
             (
                 "gemini-cli",
-                "Saved review instructions",
+                f"Saved review instructions\n\n{task_delivery.LAUNCH_AUTHORITY_BOUNDARY}",
                 "normal",
                 {"model": "gemini-3.1-pro-preview"},
             ),

@@ -413,6 +413,8 @@ def project(tmp_path: Path) -> Path:
 def test_codex_runs_supplied_instructions_without_agent_files(
     project: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, resume_thread_id
 ) -> None:
+    from stackos.task_delivery import LAUNCH_AUTHORITY_BOUNDARY
+
     cli = tmp_path / "codex"
     receipt = tmp_path / "receipt.json"
     cli.write_text(
@@ -439,13 +441,19 @@ print('{{"type": "turn.completed"}}')
     cli.chmod(0o755)
     monkeypatch.setattr(codex, "resolve_codex_bins", lambda: [str(cli)])
 
-    instructions = 'Use the project contract. Quote: "yes"\nWork carefully.'
+    role_instructions = 'Use the project contract. Quote: "yes"\nWork carefully.'
+    instructions = f"{role_instructions}\n\n{LAUNCH_AUTHORITY_BOUNDARY}"
+    prompt = json.dumps(
+        {"assignment": "Check assigned work.", "lifecycle": LAUNCH_AUTHORITY_BOUNDARY}
+    )
     result = run_agent(
         "codex",
         project,
         instructions,
-        "Deliver this ticket.",
+        prompt,
         SCHEMA,
+        model="gpt-6.1-sol",
+        provider="openai",
         resume_thread_id=resume_thread_id,
     )
 
@@ -455,18 +463,19 @@ print('{{"type": "turn.completed"}}')
     assert result.result == {"summary": "delivered"}
     call = json.loads(receipt.read_text(encoding="utf-8"))
     assert call["cwd"] == str(project)
-    assert call["prompt"] == "Deliver this ticket."
+    assert call["prompt"] == prompt
     assert call["schema"] == SCHEMA
     assert call["path_first"] == str(cli.parent)
     args = call["args"]
-    assert args[:6] == [
+    assert args[:5] == [
         "exec",
         "--json",
         "--skip-git-repo-check",
         "--cd",
         str(project),
-        "--approve-for-me",
     ]
+    assert "--approve-for-me" in args
+    assert args[args.index("--model") + 1] == "gpt-6.1-sol"
     assert "--sandbox" not in args
     assert args[-1] == "-"
     if resume_thread_id:
@@ -475,9 +484,16 @@ print('{{"type": "turn.completed"}}')
         assert args.index("--approve-for-me") < args.index("resume")
     else:
         assert "resume" not in args
-    override = args[args.index("-c") + 1]
-    assert tomllib.loads(override) == {"developer_instructions": instructions}
-    assert args.count("-c") == 1
+    overrides = {
+        key: value
+        for index, arg in enumerate(args)
+        if arg == "-c"
+        for key, value in tomllib.loads(args[index + 1]).items()
+    }
+    assert overrides == {"developer_instructions": instructions, "model_provider": "openai"}
+    assert overrides["developer_instructions"].startswith(role_instructions + "\n\n")
+    assert json.loads(call["prompt"])["lifecycle"] in overrides["developer_instructions"]
+    assert args.count("-c") == 2
     assert not (project / ".codex").exists()
     assert not Path(args[args.index("-o") + 1]).exists()
 
