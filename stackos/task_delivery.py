@@ -132,6 +132,9 @@ def _candidate_commit(project_dir: str, returned_sha: Any, base_sha: str | None)
 def _baseline(project_dir: str) -> dict[str, str]:
     directory = Path(project_dir)
     if any((parent / ".git").exists() for parent in (directory, *directory.parents)):
+        status = _git(project_dir, "status", "--porcelain=v2", "--branch", "--untracked-files=no")
+        if "# branch.oid (initial)" in status.splitlines():
+            return {}  # A valid unborn branch has no optional commit identity yet.
         return {"base_commit_sha": _git(project_dir, "rev-parse", "--verify", "HEAD^{commit}")}
     return {}
 

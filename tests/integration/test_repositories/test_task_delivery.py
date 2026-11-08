@@ -1609,6 +1609,79 @@ def test_noncoding_outputs_in_git_need_no_candidate_commit(
     )
 
 
+@pytest.mark.parametrize("outcome", ["success", "candidate", "native-error"])
+def test_unborn_dirty_git_allows_noncoding_work_without_adopting_files(
+    session, project_id, tmp_path, monkeypatch, outcome
+):
+    from stackos import task_delivery
+
+    prepared_task(session, project_id)
+    directory = tmp_path / "unborn"
+    directory.mkdir()
+    git(directory, "init")
+    (directory / "notes").write_text("pre-existing staged notes")
+    git(directory, "add", "notes")
+    (directory / "notes").write_text("pre-existing unstaged notes")
+    (directory / "untracked").write_text("pre-existing untracked notes")
+
+    def contents():
+        return {
+            "status": git(directory, "status", "--porcelain=v2", "--branch"),
+            "staged": git(directory, "diff", "--cached", "--binary"),
+            "unstaged": git(directory, "diff", "--binary"),
+            "files": {name: (directory / name).read_bytes() for name in ("notes", "untracked")},
+        }
+
+    before = contents()
+    assert "# branch.oid (initial)" in before["status"]
+    calls = []
+
+    def launch(*args, **kwargs):
+        packet = json.loads(args[3])
+        assert packet["candidate"] == {}
+        calls.append((packet["brief"]["ticket"]["key"], packet["phase"]))
+        if outcome == "native-error":
+            return AgentRunResult(1, thread_id=str(calls[-1]), error="Interrupted")
+        return AgentRunResult(
+            0,
+            thread_id=str(calls[-1]),
+            result=generic_result(
+                outputs={"commit_sha": "0" * 40} if outcome == "candidate" else {}
+            ),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, directory, scheduler)
+    scheduler.run()
+    session.expire_all()
+    snapshot = TrackerRepository(session).get(project_id=project_id, task_key="deliver")
+    assert [ticket.status for ticket in snapshot.tickets] == (
+        ["complete", "complete"] if outcome == "success" else ["failed", "not-started"]
+    )
+    assert calls == (
+        [(key, phase) for key in ("first", "second") for phase in ("delivery", "review")]
+        if outcome == "success"
+        else [("first", "delivery")]
+    )
+    for ticket in snapshot.tickets:
+        evidence = (ticket.completion_evidence_json or {}).get("automatic_delivery", {})
+        assert "owned_work" not in evidence
+    if outcome == "candidate":
+        receipt = snapshot.tickets[0].completion_evidence_json["automatic_delivery"]["delivery"]
+        assert receipt["validation_error"].startswith("Git candidate check failed:")
+        assert receipt["validated_outcome"] is None
+    assert contents() == before  # Includes Git's still-unborn status and the exact index diff.
+
+
+def test_optional_git_baseline_does_not_hide_invalid_repository_errors(tmp_path):
+    from stackos import task_delivery
+
+    (tmp_path / ".git" / "HEAD").write_text("invalid HEAD\n")
+    with pytest.raises(ValidationError, match="Git candidate check failed"):
+        task_delivery._baseline(str(tmp_path))
+
+
 @pytest.mark.parametrize("candidate_supplied", [False, True])
 def test_feedback_cannot_drop_an_explicit_candidate_contract(
     session, project_id, tmp_path, monkeypatch, candidate_supplied

@@ -687,7 +687,9 @@ cite unchanged HEAD. Engineering guidance still requires separate source-change
 and repair commits; a supplied repair candidate must be a new descendant.
 Git presence alone does not require a commit or clean worktree: noncoding work
 may execute in a dirty Git directory and return non-Git outputs. Baseline HEAD
-is an observation, not a source-candidate requirement. Invalid/mismatched supplied
+is an observation, not a source-candidate requirement. A valid repository with no
+initial commit supplies no baseline SHA; noncoding work needs no initial commit.
+Other Git errors still stop execution. Invalid/mismatched supplied
 candidates, dirty source candidates and review of a different SHA stop the task.
 An ordinary ticket that supplied a candidate must retain that contract on repair
 or explicit requeue; omitting its SHA cannot bypass validation. Applicable project,
