@@ -1377,13 +1377,17 @@ query rather than potentially stale ORM ticket rows. SSE task/ticket projections
 share one request copy. These copies contain no native reader or recent samples,
 hold no registry lock during SQL, and live only for the projection call.
 
-Board and Graph keep whole-task/ticket numbers. Optional tiny discrete traces
-show only the active invocation's recent native measurements, with independent
-metric scales. Hover/focus text explains this scope distinction and the latest
-native measurement time. All traces hide together if they would make the row
+Board and Graph keep whole-task/ticket numbers. Three tiny chart slots remain
+present throughout an active automated call when they fit: a quiet empty mark
+for absent measurements, a dot for one measurement, and discrete steps for
+recent measured history, with independent metric scales. Missing metrics keep
+their empty slot without inventing a zero or bridging missing history.
+Hover/focus text explains this scope distinction and the latest native
+measurement time. All slots hide together if they would make the row
 wrap; card dimensions, readable values and information hierarchy take priority.
 Existing task/ticket details add one approximately 70px strip scoped to the
-current agent and start. Manual work has no usage furniture. Traces disappear
+current agent and start, using the same empty/dot/step renderer. Manual work has
+no usage furniture. Chart slots disappear
 on exit while finalized totals remain. No smoothing, synthetic zero prefix,
 speed estimate, animation or per-card chart instance is used.
 

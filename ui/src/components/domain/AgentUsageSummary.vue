@@ -2,7 +2,7 @@
 import { usageFields, usageValue, formatUsage, exactUsage, type AgentStatsMetrics } from '@/lib/agentActivity'
 import { computed, onBeforeUnmount, onMounted, onUpdated, ref } from 'vue'
 import type { ActiveExecution } from '@/lib/task-tracker/types'
-import { liveUsageTitle, stepTrace } from '@/lib/liveUsage'
+import { liveUsageTitle } from '@/lib/liveUsage'
 import UsageTrace from './UsageTrace.vue'
 
 const props = withDefaults(defineProps<{ metrics?: AgentStatsMetrics | null; compact?: boolean; execution?: ActiveExecution | null }>(), { metrics: null, compact: false, execution: null })
@@ -10,12 +10,12 @@ const fields = usageFields
 const root = ref<HTMLElement | null>(null)
 const fits = ref(false)
 const samples = computed(() => props.execution?.live_usage?.samples ?? [])
-const hasTraces = computed(() => props.compact && fields.some((field) => stepTrace(samples.value, field.key)))
+const hasCharts = computed(() => props.compact && props.execution != null)
 let observer: ResizeObserver | null = null
 function measure(): void {
   if (!root.value) return
   const metrics = [...root.value.querySelectorAll<HTMLElement>('.agent-usage-summary__metric')]
-  const width = metrics.reduce((total, metric, index) => total + ((metric.querySelector('dt') as HTMLElement)?.offsetWidth ?? 0) + ((metric.querySelector('dd') as HTMLElement)?.offsetWidth ?? 0) + 2 + (stepTrace(samples.value, fields[index]!.key) ? 22 : 0), 0) + 8
+  const width = metrics.reduce((total, metric) => total + ((metric.querySelector('dt') as HTMLElement)?.offsetWidth ?? 0) + ((metric.querySelector('dd') as HTMLElement)?.offsetWidth ?? 0) + 2 + (hasCharts.value ? 22 : 0), 0) + 8
   fits.value = width <= root.value.clientWidth
 }
 onMounted(() => { if (typeof ResizeObserver !== 'undefined' && root.value) { observer = new ResizeObserver(measure); observer.observe(root.value) }; measure() })
@@ -27,7 +27,7 @@ onBeforeUnmount(() => observer?.disconnect())
   <dl
     ref="root"
     class="agent-usage-summary"
-    :class="{ 'agent-usage-summary--compact': compact, 'agent-usage-summary--live': hasTraces }"
+    :class="{ 'agent-usage-summary--compact': compact, 'agent-usage-summary--live': hasCharts }"
     :style="compact ? undefined : { gridTemplateColumns: `repeat(${fields.length}, minmax(0, 1fr))` }"
     aria-label="Recorded token usage"
     :title="liveUsageTitle(execution) || undefined"
@@ -48,7 +48,7 @@ onBeforeUnmount(() => observer?.disconnect())
         {{ formatUsage(usageValue(metrics, field.key)) }}
       </dd>
       <UsageTrace
-        v-if="hasTraces && fits"
+        v-if="hasCharts && fits"
         :samples="samples"
         :metric="field.key"
       />

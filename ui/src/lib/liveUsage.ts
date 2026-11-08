@@ -25,7 +25,9 @@ export function stepTrace(samples: SchemaUsageSampleOut[], metric: LiveMetric): 
 }
 
 export function liveUsageTitle(execution?: ActiveExecution | null): string {
-  return execution?.live_usage
-    ? `Totals include all recorded calls. Traces show only ${execution.agent}, started ${new Date(execution.started_at).toLocaleString()}, recent measured history (up to 10 minutes). Updated ${new Date(execution.live_usage.measured_at).toLocaleString()}.`
-    : ''
+  if (!execution) return ''
+  const freshness = execution.live_usage
+    ? `Updated ${new Date(execution.live_usage.measured_at).toLocaleString()}.`
+    : 'No measured history yet.'
+  return `Totals include all recorded calls. Charts show only ${execution.agent}, started ${new Date(execution.started_at).toLocaleString()}, recent measured history (up to 10 minutes). ${freshness}`
 }
