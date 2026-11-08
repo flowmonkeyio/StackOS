@@ -777,12 +777,46 @@ def test_blocked_step_keeps_run_plan_recoverable(
     assert blocked_ticket.blocker_reason == "tracker-graph-warning"
     assert blocked_ticket.outcome == "blocked: tracker-graph-warning"
 
+    tracker = TrackerRepository(session)
+    evidence = {
+        "automatic_delivery": {
+            "sessions": {"delivery": {"thread_id": "original-session"}},
+            "attempts": [{"attempt": 1, "status": "blocked"}],
+            "repair_count": 1,
+        }
+    }
+    tracker.update_ticket(
+        project_id=project_id,
+        ticket_key=blocked_ticket.key,
+        patch_json={"completion_evidence_json": evidence},
+    )
+    history = tracker.history(project_id=project_id).items
+    assert tracker.delivery_ready(project_id=project_id, task_key=snapshot.tasks[0].key) == []
+
     reclaimed = repo.claim_step(
         run_plan_id=plan.id,
         run_id=started.run_id,
         step_id="graph-check",
         claimed_by="agent",
     ).data
+    resumed_ticket = tracker.brief(project_id=project_id, ticket_key=blocked_ticket.key).ticket
+    assert reclaimed.status == RunPlanStepStatus.RUNNING
+    assert resumed_ticket.blocker_reason is None
+    assert resumed_ticket.outcome == blocked_ticket.outcome
+    assert resumed_ticket.completion_evidence_json == evidence
+    assert reclaimed.result_json == blocked.steps[0].result_json
+    assert reclaimed.error == blocked.steps[0].error
+    assert [
+        ticket.key
+        for ticket in tracker.delivery_ready(project_id=project_id, task_key=snapshot.tasks[0].key)
+    ] == [blocked_ticket.key]
+    resumed_history = tracker.history(project_id=project_id).items
+    assert resumed_history[: len(history)] == history
+    claim = resumed_history[-1]
+    assert claim.change_kind == "workflow-step-claim"
+    assert claim.before_json["blocker_reason"] == "tracker-graph-warning"
+    assert claim.after_json["blocker_reason"] is None
+
     completed = repo.record_step(
         run_plan_id=plan.id,
         run_id=started.run_id,
@@ -791,7 +825,6 @@ def test_blocked_step_keeps_run_plan_recoverable(
         result_json={"summary": "graph repaired"},
     ).data
 
-    assert reclaimed.status == RunPlanStepStatus.RUNNING
     assert completed.status == RunPlanStatus.COMPLETED
 
 

@@ -1920,6 +1920,58 @@ def test_verification_entry_delivers_and_reviews_children_before_verifier(
     assert all(ticket.status == "complete" for ticket in snapshot.tickets)
 
 
+def test_reclaimed_blocked_mirror_is_selected_before_success(session, project_id):
+    from stackos import task_delivery
+
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "resume-blocked",
+            "title": "Resume blocked",
+            "steps": [
+                {"id": "inspect", "title": "Inspect"},
+                {"id": "finish", "title": "Finish", "depends_on": ["inspect"]},
+            ],
+        },
+    ).data
+    started = plans.start(plan.id, project_id=project_id)
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="inspect")
+    plans.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="inspect",
+        status=RunPlanStepStatus.BLOCKED,
+        result_json={"blocking_issue": "Required fixture unavailable"},
+    )
+    repo = TrackerRepository(session)
+    task_key = f"workflow-{plan.id}"
+    state = {"run_plan_id": plan.id, "controller_run_id": started.run_id}
+
+    # A real blocker and the unfinished dependent must both remain excluded.
+    assert repo.delivery_ready(project_id=project_id, task_key=task_key) == []
+    assert task_delivery._select_work(repo, plans, project_id, task_key, state) == (
+        None,
+        None,
+        False,
+    )
+
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="inspect")
+
+    # No success has been recorded: selection must use the newly running state.
+    assert [
+        ticket.key for ticket in repo.delivery_ready(project_id=project_id, task_key=task_key)
+    ] == [f"{task_key}-inspect"]
+    ticket, step, changed = task_delivery._select_work(repo, plans, project_id, task_key, state)
+    assert ticket.key == f"{task_key}-inspect"
+    assert step.step_id == "inspect"
+    assert step.status == RunPlanStepStatus.RUNNING
+    assert step.result_json == {"blocking_issue": "Required fixture unavailable"}
+    assert changed is False
+    assert plans.get(plan.id).steps[1].status == RunPlanStepStatus.PENDING
+
+
 def workflow_task(session, project_id, *, running=True):
     plans = RunPlanRepository(session)
     plan = plans.create(

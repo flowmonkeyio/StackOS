@@ -575,6 +575,7 @@ class TrackerMirrorMixin:
         ticket.started_at = ticket.started_at or now
         ticket.run_id = plan.run_id
         ticket.lane_key = "implementation"
+        ticket.blocker_reason = self._step_blocker_reason(step)
         ticket.updated_at = now
         self._s.add(ticket)
         task = self._s.get(TrackerTask, ticket.task_id)
