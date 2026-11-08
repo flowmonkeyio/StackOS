@@ -102,16 +102,26 @@ def run_agent(
             *(["resume", resume_thread_id] if resume_thread_id is not None else []),
             "-",
         ]
+        from stackos.host_mcp.progress import CodexStreamError, run_codex_process
+
+        process = None
+        thread_id = None
+        execution_error = None
+
+        def record_session(session_id: str) -> None:
+            nonlocal thread_id
+            thread_id = session_id
+            if on_session is not None:
+                on_session(session_id)
+
         try:
             if on_session is not None:
-                from stackos.host_mcp.progress import run_codex_process
-
                 process = run_codex_process(
                     command,
                     input=prompt,
                     cwd=project_dir,
                     env=subprocess_env_for_cli(codex_bin),
-                    on_session=on_session,
+                    on_session=record_session,
                 )
             else:
                 process = subprocess.run(
@@ -123,13 +133,18 @@ def run_agent(
                     text=True,
                     check=False,
                 )
-        except OSError as exc:
-            return AgentRunResult(None, error=f"Could not launch Codex: {exc}")
-        thread_id = None
+        except CodexStreamError as exc:
+            process = exc.process
+            execution_error = str(exc)
+        except (OSError, UnicodeError) as exc:
+            execution_error = f"Codex process failed ({type(exc).__name__}): {exc}"
+        exit_code = process.returncode if process is not None else None
+        stdout = process.stdout if process is not None else ""
+        stderr = process.stderr if process is not None else ""
         native_error = None
         terminal_error = None
         usage = None
-        for line in process.stdout.splitlines():
+        for line in stdout.splitlines():
             try:
                 event = json.loads(line)
             except ValueError:
@@ -162,11 +177,12 @@ def run_agent(
             if isinstance(event, dict) and event.get("type") == "turn.failed":
                 terminal_error = str(event.get("error") or event.get("message") or "Codex failed.")
         execution_error = (
-            terminal_error
+            execution_error
+            or terminal_error
             or native_error
             or (
-                process.stderr.strip() or process.stdout.strip() or "Codex exited unsuccessfully."
-                if process.returncode != 0
+                stderr.strip() or stdout.strip() or "Codex exited unsuccessfully."
+                if exit_code != 0
                 else None
             )
         )
@@ -178,16 +194,16 @@ def run_agent(
                 raise ValueError("expected a JSON object")
         except (OSError, ValueError) as exc:
             detail = f"Invalid Codex result: {exc}"
-            native_detail = execution_error or process.stderr.strip() or process.stdout.strip()
+            native_detail = execution_error or stderr.strip() or stdout.strip()
             return AgentRunResult(
-                process.returncode,
+                exit_code,
                 thread_id=thread_id,
                 usage=usage,
                 error=f"{native_detail}\n{detail}" if native_detail else detail,
             )
         return validate_agent_result(
             AgentRunResult(
-                process.returncode,
+                exit_code,
                 thread_id=thread_id,
                 result=result,
                 usage=usage,

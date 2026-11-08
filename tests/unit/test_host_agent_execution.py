@@ -750,6 +750,52 @@ def test_schema_validation_retains_execution_failure(exit_code, error, valid):
             assert error in result.error
 
 
+@pytest.mark.parametrize("resume_thread_id", [None, "original-session"])
+@pytest.mark.parametrize("error_kind", ["read", "decode"])
+@pytest.mark.parametrize("payload", ['{"summary":"available"}', "{}", "not JSON", None])
+def test_codex_stream_exception_collects_primary_final(
+    project, monkeypatch, resume_thread_id, error_kind, payload
+):
+    from stackos.host_mcp import progress
+
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fake/codex")
+    calls = []
+    identities = []
+
+    def stream(command, *, on_session, **kwargs):
+        calls.append(command)
+        if payload is not None:
+            Path(command[command.index("-o") + 1]).write_text(payload)
+        on_session("original-session")
+        if error_kind == "read":
+            raise OSError("native stdout read failed after final write")
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+    monkeypatch.setattr(progress, "run_codex_process", stream)
+    result = codex.run_agent(
+        project,
+        "Instructions",
+        "Work",
+        SCHEMA,
+        resume_thread_id=resume_thread_id,
+        on_session=identities.append,
+    )
+    assert not result.ok
+    assert result.result == (
+        {"summary": "available"} if payload == '{"summary":"available"}' else None
+    )
+    assert result.thread_id == "original-session"
+    assert result.exit_code is None and result.usage is None
+    assert ("OSError" if error_kind == "read" else "UnicodeDecodeError") in result.error
+    assert "Could not launch" not in result.error
+    if payload != '{"summary":"available"}':
+        assert "Invalid Codex result" in result.error
+    assert identities == ["original-session"]
+    assert len(calls) == 1
+    if resume_thread_id:
+        assert calls[0][-3:] == ["resume", resume_thread_id, "-"]
+
+
 @pytest.mark.parametrize(
     ("host", "selection", "reason"),
     [

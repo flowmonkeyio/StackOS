@@ -9,7 +9,7 @@ from uuid import UUID
 import pytest
 
 from stackos.host_mcp import service
-from stackos.host_mcp.progress import CodexCounterReader, run_codex_process
+from stackos.host_mcp.progress import CodexCounterReader, CodexStreamError, run_codex_process
 from stackos.host_mcp.result import AgentRunResult, normalize_usage, usage_snapshot
 from stackos.repositories.tracker.agent_stats import provisional_receipt, summarize_receipts
 
@@ -332,7 +332,7 @@ def test_stream_decoding_failure_is_not_a_successful_partial_native_result(tmp_p
     import os
     import sys
 
-    with pytest.raises(UnicodeDecodeError):
+    with pytest.raises(CodexStreamError) as caught:
         run_codex_process(
             [sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'\\xff')"],
             input="",
@@ -340,3 +340,6 @@ def test_stream_decoding_failure_is_not_a_successful_partial_native_result(tmp_p
             env=dict(os.environ),
             on_session=lambda _: None,
         )
+    assert isinstance(caught.value.__cause__, UnicodeDecodeError)
+    assert "UnicodeDecodeError" in str(caught.value)
+    assert isinstance(caught.value.process.returncode, int)

@@ -148,6 +148,14 @@ class CodexCounterReader:
         self.pending = b""
 
 
+class CodexStreamError(Exception):
+    """Post-launch stream failure with the reaped process's available output."""
+
+    def __init__(self, process: subprocess.CompletedProcess[str], cause: Exception) -> None:
+        self.process = process
+        super().__init__(f"Codex stream failed ({type(cause).__name__}): {cause}")
+
+
 def run_codex_process(
     command: list[str],
     *,
@@ -155,7 +163,7 @@ def run_codex_process(
     cwd: Path,
     env: dict[str, str],
     on_session: Callable[[str], None],
-) -> subprocess.CompletedProcess:
+) -> subprocess.CompletedProcess[str]:
     """Preserve native stdout/stderr/result behavior while exposing thread.started early."""
     process = subprocess.Popen(
         command,
@@ -214,6 +222,8 @@ def run_codex_process(
             with suppress(BrokenPipeError):
                 process.stdin.close()
         process.wait()
+    except (OSError, UnicodeError) as exc:
+        read_failures.append(exc)
     finally:
         if process.poll() is None:
             process.terminate()
@@ -224,8 +234,9 @@ def run_codex_process(
             process.stdout.close()
         if process.stderr:
             process.stderr.close()
-    if read_failures:
-        raise read_failures[0]
-    return subprocess.CompletedProcess(
+    completed = subprocess.CompletedProcess(
         command, process.returncode, "".join(output), "".join(errors)
     )
+    if read_failures:
+        raise CodexStreamError(completed, read_failures[0]) from read_failures[0]
+    return completed

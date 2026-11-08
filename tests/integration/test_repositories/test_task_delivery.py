@@ -6,6 +6,7 @@ import asyncio
 import json
 import shutil
 import subprocess
+import sys
 from itertools import pairwise
 from pathlib import Path
 from typing import Any
@@ -2853,3 +2854,73 @@ def test_native_collector_failure_persists_session_and_available_usage(
     assert ticket.agent_stats.launch_attempts == 1
     assert ticket.agent_stats.reported_usage.total == receipt["usage"]["measured"]["total"]
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("fault", ["read", "decode"])
+@pytest.mark.parametrize("final_status", [None, "blocked", "success"])
+def test_native_stream_exception_persists_primary_final_without_replay(
+    session, project_id, tmp_path, tmp_path_factory, monkeypatch, fault, final_status
+):
+    """The real stream decoder and an injected read failure reach the same receipt gate."""
+    from stackos.host_mcp import progress
+    from stackos.host_mcp.adapters import codex
+
+    prepared_task(session, project_id)
+    final = (
+        generic_result(final_status, summary="Available structured final")
+        if final_status is not None
+        else {}
+    )
+    cli = tmp_path_factory.mktemp("stream-cli") / "codex"
+    cli.write_text(
+        f"#!{sys.executable}\n"
+        "import json, sys\n"
+        "from pathlib import Path\n"
+        f"Path(sys.argv[sys.argv.index('-o') + 1]).write_text({json.dumps(final)!r})\n"
+        "print(json.dumps({'type':'thread.started','thread_id':'original-session'}), flush=True)\n"
+        "print(json.dumps({'type':'turn.completed','usage':"
+        "{'input_tokens':100,'output_tokens':50}}), flush=True)\n"
+        "sys.stderr.buffer.write(b'\\xff')\n"
+    )
+    cli.chmod(0o755)
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: str(cli))
+    real_stream = progress.run_codex_process
+    calls = []
+
+    def stream(command, *, on_session, **kwargs):
+        calls.append(command)
+        if fault == "read":
+            Path(command[command.index("-o") + 1]).write_text(json.dumps(final))
+            on_session("original-session")
+            raise OSError("native stdout read failed after final write")
+        return real_stream(command, on_session=on_session, **kwargs)
+
+    monkeypatch.setattr(progress, "run_codex_process", stream)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    snapshot = TrackerRepository(session).get(project_id=project_id, task_key="deliver")
+    assert [ticket.status for ticket in snapshot.tickets] == ["failed", "not-started"]
+    assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "stopped"
+    ticket = snapshot.tickets[0]
+    evidence = ticket.completion_evidence_json["automatic_delivery"]
+    receipt = evidence["delivery"]
+    assert receipt["result"] == (final if final_status is not None else None)
+    assert receipt["thread_id"] == "original-session"
+    assert ("OSError" if fault == "read" else "UnicodeDecodeError") in receipt["error"]
+    assert "Could not launch" not in receipt["error"]
+    if final_status is None:
+        assert "Invalid Codex result" in receipt["error"]
+    assert receipt["validated_outcome"] is None
+    assert evidence["sessions"]["delivery"]["thread_id"] == "original-session"
+    assert evidence["attempts"] == [] and evidence["repair_count"] == 0
+    assert "review" not in evidence
+    assert len(calls) == ticket.agent_stats.launch_attempts == 1
+    if fault == "decode":
+        assert isinstance(receipt["exit_code"], int)
+        assert receipt["usage"]["measured"]["total"] == 150
+        assert ticket.agent_stats.reported_usage.total == 150
+    else:
+        assert receipt["exit_code"] is None
+        assert receipt["usage"]["measured"] is None
