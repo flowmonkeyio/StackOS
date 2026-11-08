@@ -171,12 +171,34 @@ the same `activates` semantics as workflow parents.
 Mirrors claim their bound step through `RunPlanRepository`, wait for accepted
 descendant/bound-child work, then launch their remaining frozen contract once.
 Zero-child mirrors launch directly. The packet contains the full frozen
-`RunPlanStepOut`, inputs, context, dependency results, tracker brief, accepted
-receipts and current operator inputs. It is not reconstructed from latest YAML.
+`RunPlanStepOut`, inputs, context, dependency results, projected tracker brief,
+relevant accepted outcomes and current operator inputs. It is not reconstructed
+from latest YAML.
 Only the run-plan owner validates frozen output schemas and writes terminal
 mirror/plan/run lifecycle, preserving approval, dependency and pending-action
 checks. Controller binding stays in the daemon; raw controller tokens never
 enter prompts or task metadata. Worker agents return only their own evidence.
+
+Fresh and resumed launches project only the context added by StackOS; native
+session history stays with the host. The current ticket retains its requirements,
+constraints, context, contract revision, operator amendments and authority, plus
+the occurrence's attempt, candidate and latest scoped feedback. Earlier approvals
+remain historical when current context requests a correction. Statistics, live
+usage, saved execution settings and nested old attempt receipts are omitted.
+Ordinary assignments receive compact outcomes for direct completed prerequisites.
+Mirrors receive completed outcomes within their dependency scope, including
+descendant/bound work and prior dependency containers, rather than every completed
+ticket in the task. Each outcome carries its candidate, available acceptance
+status and a `tracker.brief` call with `response_mode=raw` to retrieve full evidence.
+Related tickets in the brief retain navigation refs instead of duplicate receipts.
+
+This projection neither truncates arbitrary strings nor rewrites stored evidence.
+Frozen step contracts, domain inputs/outputs and their fields named `followups`
+retain their values; compact accepted outcomes refer to their full stored outputs.
+The runner separately keeps every completed ticket key for correction progress
+detection and dependency rescans, including tickets omitted from the prompt.
+Packet-size comparisons measure serialized characters and UTF-8 bytes; they do
+not measure model tokens or establish answer-quality improvements.
 
 Optional task-level `agent_assignments` maps canonical ticket keys to the existing
 `delivery_agent` or `review_agent`. Frozen step extensions

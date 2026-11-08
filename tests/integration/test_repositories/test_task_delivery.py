@@ -398,6 +398,246 @@ def test_mirror_candidate_evidence_is_independent_of_selected_role(
     assert git(tmp_path, "rev-parse", "HEAD") == head
 
 
+@pytest.mark.parametrize("integration", [False, True])
+def test_workflow_prompt_projects_history_by_assignment_scope(integration):
+    from copy import deepcopy
+
+    from stackos import task_delivery
+
+    def ticket(key, **fields):
+        return {
+            "id": len(key),
+            "project_id": 7,
+            "task_id": 9,
+            "task_key": "work",
+            "key": key,
+            "title": key,
+            "status": "complete",
+            "dependency_keys": [],
+            "completion_evidence_json": {
+                "automatic_delivery": {
+                    "attempt": 4,
+                    "repair_count": 3,
+                    "candidate": {"commit_sha": "a" * 40},
+                    "attempts": [{"delivery": {"result": {"summary": "OLD_HISTORY" * 40}}}],
+                    "review": {
+                        "validated_outcome": "success",
+                        "result": generic_result(summary=f"Accepted {key}"),
+                    },
+                }
+            },
+            "agent_stats": {"launch_attempts": 8, "detail": "STATISTICS" * 40},
+            "active_execution": {"live_usage": {"samples": [1, 2, 3]}},
+            **fields,
+        }
+
+    prerequisite = ticket("prerequisite", dependency_keys=["older"])
+    external = ticket("external", task_id=10, task_key="another-task")
+    older = ticket(
+        "older", completion_evidence_json={}, outcome='Domain report contains {"followups": []}'
+    )
+    child = ticket("child", parent_ticket_key="current")
+    bound = ticket("bound", run_plan_step_id=31)
+    unrelated = ticket("unrelated", outcome="UNRELATED_HISTORY" * 40)
+    current = ticket(
+        "current",
+        status="in-progress",
+        dependency_keys=["prerequisite", "external"],
+        definition_of_done_json=["Current acceptance"],
+        constraints_json=["Current authority"],
+        context_json={"contract_revision": 6, "correction": {"required_outcome": "NEW_FIX"}},
+    )
+    domain = {"followups": ["Declared domain value"]}
+    value = {
+        "assignment": "Current assignment",
+        "phase": "delivery",
+        "lifecycle": "Scoped authority",
+        "candidate": {"base_commit_sha": "b" * 40},
+        "brief": {
+            "ticket": current,
+            "task": {
+                "project_id": 7,
+                "key": "work",
+                "context_json": {
+                    "operator_amendments": ["Current amendment"],
+                    "operator_inputs": domain,
+                    "followups": ["DEFERRED_NOTE"],
+                },
+                "metadata_json": {"delivery": {"instructions": "OLD_SNAPSHOT" * 40}},
+                "agent_stats": {"detail": "STATISTICS" * 40},
+            },
+            "dependencies": [prerequisite, external],
+            "dependents": [ticket("later", context_json={"history": "LATER_HISTORY" * 40})],
+        },
+        "accepted_receipts": [prerequisite, older, child, bound, unrelated],
+        "delivery_result": {"result": generic_result(outputs=domain), "usage": {"input": 90}},
+        "review_result": {"result": generic_result("repair", {"finding": "NEW_FIX"})},
+        "workflow_step": {"id": 31, "expected_outputs_json": domain} if integration else None,
+    }
+    original = deepcopy(value)
+    packet = task_delivery._work_prompt_copy(value)
+    serialized = json.dumps(packet)
+    assert {r["key"] for r in packet["accepted_receipts"]} == (
+        {"prerequisite", "external", "older", "child", "bound"}
+        if integration
+        else {"prerequisite", "external"}
+    )
+    for marker in (
+        "OLD_HISTORY",
+        "UNRELATED_HISTORY",
+        "STATISTICS",
+        "OLD_SNAPSHOT",
+        "LATER_HISTORY",
+        "DEFERRED_NOTE",
+    ):
+        assert marker not in serialized
+    assert packet["brief"]["ticket"]["context_json"] == current["context_json"]
+    assert packet["brief"]["ticket"]["definition_of_done_json"] == ["Current acceptance"]
+    assert packet["brief"]["ticket"]["constraints_json"] == ["Current authority"]
+    assert packet["brief"]["task"]["context_json"]["operator_amendments"] == ["Current amendment"]
+    assert packet["brief"]["task"]["context_json"]["operator_inputs"] == domain
+    assert packet["candidate"] == value["candidate"]
+    assert packet["review_result"]["result"] == {
+        key: item for key, item in value["review_result"]["result"].items() if key != "followups"
+    }
+    assert json.loads(packet["delivery_result"]["result"]["outputs"]) == domain
+    assert packet["workflow_step"] == value["workflow_step"]
+    assert packet["accepted_receipts"][0]["outcome"] == "Accepted prerequisite"
+    if integration:
+        assert (
+            next(item for item in packet["accepted_receipts"] if item["key"] == "older")["outcome"]
+            == older["outcome"]
+        )
+    recovery = packet["accepted_receipts"][0]["evidence_ref"]
+    assert recovery == {
+        "tool_name": "tracker.brief",
+        "arguments": {"project_id": 7, "ticket_key": "prerequisite", "response_mode": "raw"},
+    }
+    assert packet["brief"]["ticket"]["completion_evidence_json"]["automatic_delivery"] == {
+        "attempt": 4,
+        "repair_count": 3,
+        "candidate": {"commit_sha": "a" * 40},
+    }
+    assert len(serialized) < len(json.dumps(original))
+    assert len(serialized.encode("utf-8")) < len(json.dumps(original).encode("utf-8"))
+    assert value == original  # Projection never rewrites canonical receipts or input.
+
+
+def test_workflow_prompt_compaction_keeps_private_completed_keys_for_reopen(
+    session, project_id, tmp_path, monkeypatch
+):
+    from stackos import task_delivery
+
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "private-progress",
+            "title": "Private progress",
+            "steps": [{"id": "before", "title": "Before"}, {"id": "check", "title": "Check"}],
+        },
+    ).data
+    started = plans.start(plan.id, project_id=project_id)
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="before")
+    plans.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="before",
+        status=RunPlanStepStatus.SUCCESS,
+    )
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="check")
+    repo = TrackerRepository(session)
+    task_key = f"workflow-{plan.id}"
+    mirror = f"{task_key}-check"
+    repo.create_ticket(
+        project_id=project_id,
+        task_key=task_key,
+        key="outside",
+        title="Outside",
+        run_plan_id=plan.id,
+        run_plan_step_id=plans.get_step(plan.id, "before").id,
+        parent_ticket_key=f"{task_key}-before",
+    )
+    historical = {"result": generic_result(summary="OLD_HISTORY")}
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="outside",
+        patch_json={"status": "in-progress"},
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="outside",
+        patch_json={"status": "complete", "completion_evidence_json": {"prior_review": historical}},
+    )
+    calls = []
+
+    def launch(*args, **kwargs):
+        packet = json.loads(args[3])
+        key = packet["brief"]["ticket"]["key"]
+        calls.append((key, packet["phase"]))
+        if len(calls) == 1:
+            assert packet["accepted_receipts"] == []
+            # Full evidence remains available through the advertised canonical owner.
+            with Session(session.get_bind()) as active:
+                owner = TrackerRepository(active)
+                assert owner.brief(
+                    project_id=project_id, ticket_key="outside"
+                ).ticket.completion_evidence_json == {"prior_review": historical}
+                owner.update_ticket(
+                    project_id=project_id,
+                    ticket_key="outside",
+                    patch_json={"status": "in-progress"},
+                )
+                owner.update_ticket(
+                    project_id=project_id,
+                    ticket_key="outside",
+                    patch_json={"status": "not-started"},
+                )
+                owner.update_ticket(
+                    project_id=project_id,
+                    ticket_key=mirror,
+                    patch_json={"add_dependency_keys": ["outside"]},
+                )
+                RunPlanRepository(active).reopen(
+                    run_plan_id=plan.id,
+                    project_id=project_id,
+                    step_id="before",
+                    reason="Recheck prerequisite",
+                )
+            return AgentRunResult(0, thread_id="check-session", result=generic_result("repair"))
+        if key == mirror:
+            assert kwargs["resume_thread_id"] == "check-session"
+            assert {r["key"] for r in packet["accepted_receipts"]} == {"outside"}
+        return AgentRunResult(
+            0,
+            thread_id="check-session" if key == mirror else f"outside-{packet['phase']}",
+            result=generic_result(),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=task_key,
+        run_plan_id=plan.id,
+        step_id="check",
+    )
+    scheduler.run()
+    session.expire_all()
+    assert calls == [
+        (mirror, "delivery"),
+        ("outside", "delivery"),
+        ("outside", "review"),
+        (f"{task_key}-before", "delivery"),
+        (mirror, "delivery"),
+    ]
+    assert plans.get(plan.id).status == "completed"
+
+
 def test_workflow_prompt_preserves_domain_followups_and_excludes_receipt_notes(
     session, project_id, tmp_path, monkeypatch
 ):
@@ -505,11 +745,14 @@ def test_workflow_prompt_preserves_domain_followups_and_excludes_receipt_notes(
     assert "DEFERRED_RECEIPT_NOTE" not in json.dumps(packet)
     assert packet["accepted_receipts"][0]["outcome"] == summary
     accepted = packet["accepted_receipts"][0]["completion_evidence_json"]
-    assert accepted["domain_evidence"] == domain
-    presented = accepted["automatic_delivery"]["delivery"]["result"]
-    assert json.loads(presented["outputs"]) == domain
-    assert presented["summary"] == summary
-    assert "followups" not in presented
+    assert accepted["automatic_delivery"]["delivery"]["result"] == {"status": "success"}
+    ref = packet["accepted_receipts"][0]["evidence_ref"]
+    recovered = repo.brief(**{key: ref["arguments"][key] for key in ("project_id", "ticket_key")})
+    assert recovered.ticket.completion_evidence_json["domain_evidence"] == domain
+    assert (
+        recovered.ticket.completion_evidence_json["automatic_delivery"]["delivery"]["result"]
+        == receipt
+    )
     assert receipt == generic_result(
         outputs=domain, summary=summary, followups=[{"text": "DEFERRED_RECEIPT_NOTE"}]
     )

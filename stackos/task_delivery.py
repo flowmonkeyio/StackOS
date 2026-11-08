@@ -352,36 +352,168 @@ def _prompt_copy(value: Any) -> Any:
     return value
 
 
+def _ticket_evidence_ref(ticket: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "tool_name": "tracker.brief",
+        "arguments": {
+            "project_id": ticket["project_id"],
+            "ticket_key": ticket["key"],
+            "response_mode": "raw",
+        },
+    }
+
+
+def _ticket_prompt_copy(ticket: dict[str, Any], *, current: bool = False) -> dict[str, Any]:
+    """Keep the current contract; related tickets supply outcomes and exact recovery refs."""
+    evidence = ticket.get("completion_evidence_json") or {}
+    automatic = evidence.get("automatic_delivery") or {}
+    identity = {
+        "id",
+        "project_id",
+        "task_id",
+        "task_key",
+        "key",
+        "title",
+        "kind",
+        "status",
+        "parent_ticket_key",
+        "run_plan_id",
+        "run_plan_step_id",
+        "run_id",
+        "dependency_keys",
+        "blocked_by",
+    }
+    result = {
+        key: deepcopy(item)
+        for key, item in ticket.items()
+        if key not in {"agent_stats", "active_execution", "completion_evidence_json", "outcome"}
+        and (current or key in identity)
+    }
+    result["evidence_ref"] = _ticket_evidence_ref(ticket)
+    projected = {
+        key: deepcopy(automatic[key])
+        for key in ("attempt", "repair_count", "repair_pass_used", "candidate")
+        if key in automatic
+    }
+    if current:
+        for key in ("sessions", "owned_work"):
+            if key in automatic:
+                projected[key] = deepcopy(automatic[key])
+        # Latest delivery/rejection is supplied once at packet level. Older approvals,
+        # attempts and diagnostics remain at the canonical owner, not in the contract.
+        result["completion_evidence_json"] = {
+            key: deepcopy(item)
+            for key, item in evidence.items()
+            if key not in {"automatic_delivery", "prior_review"}
+        }
+    else:
+        context = ticket.get("context_json") or {}
+        if "contract_revision" in context:
+            result["contract_revision"] = deepcopy(context["contract_revision"])
+        outcome = ticket.get("outcome")
+        if outcome and any(
+            outcome == (attempt.get(role) or {}).get(key)
+            for attempt in [automatic, *automatic.get("attempts", [])]
+            for role in ("delivery", "review")
+            for key in ("error", "validation_error")
+        ):
+            outcome = _prompt_copy(outcome)
+        for role in ("delivery", "review"):
+            receipt = automatic.get(role) or {}
+            final = receipt.get("result") or {}
+            if final.get("summary"):
+                outcome = final["summary"]
+            if receipt:
+                projected[role] = {
+                    key: deepcopy(receipt[key])
+                    for key in ("thread_id", "validated_outcome", "superseded")
+                    if key in receipt
+                }
+                if final.get("status"):
+                    projected[role]["result"] = {"status": final["status"]}
+        if outcome is not None:
+            result["outcome"] = deepcopy(outcome)
+        result["completion_evidence_json"] = {}
+    if automatic:
+        result["completion_evidence_json"]["automatic_delivery"] = projected
+    return result
+
+
+def _relevant_receipts(packet: dict[str, Any]) -> list[dict[str, Any]]:
+    """Ordinary work needs direct prerequisites; mirrors need their dependency scope."""
+    ticket = packet["brief"]["ticket"]
+    # A direct prerequisite can belong to another task in this project. The
+    # task snapshot excludes it, but the canonical brief already supplies it.
+    completed = list(
+        {
+            item["key"]: item
+            for item in [
+                *packet.get("accepted_receipts", []),
+                *packet["brief"].get("dependencies", []),
+            ]
+            if item.get("status") == "complete"
+        }.values()
+    )
+    relevant = set(ticket.get("dependency_keys", []))
+    step = packet.get("workflow_step")
+    if step is not None:
+        containers = {ticket["key"]}
+        while True:
+            expanded = relevant | {
+                item["key"]
+                for item in completed
+                if item.get("parent_ticket_key") in containers | relevant
+                or (step.get("id") is not None and item.get("run_plan_step_id") == step["id"])
+            }
+            expanded |= {
+                key
+                for item in completed
+                if item["key"] in expanded
+                for key in item.get("dependency_keys", [])
+            }
+            if expanded == relevant:
+                break
+            relevant = expanded
+    return [item for item in completed if item["key"] in relevant and item["key"] != ticket["key"]]
+
+
 def _work_prompt_copy(value: dict[str, Any]) -> dict[str, Any]:
-    """Filter owned note locations while preserving frozen contracts and domain data."""
+    """Project only StackOS-added context; never truncate domain or frozen step data."""
     packet = deepcopy(value)
     for key in ("delivery_result", "review_result"):
-        packet[key] = _prompt_copy(packet.get(key))
-    brief = packet.get("brief", {})
-    context = (brief.get("task") or {}).get("context_json")
+        receipt = _prompt_copy(packet.get(key))
+        if isinstance(receipt, dict):
+            receipt.pop("usage", None)
+        packet[key] = receipt
+    brief = packet["brief"]
+    task = brief.get("task") or {}
+    for key in ("agent_stats", "active_execution", "completion_evidence_json"):
+        task.pop(key, None)
+    if isinstance(task.get("metadata_json"), dict):
+        task["metadata_json"].pop("delivery", None)
+    context = task.get("context_json")
     if isinstance(context, dict):
         context.pop("followups", None)
-    tickets = [
-        brief.get("ticket"),
-        *brief.get("dependencies", []),
-        *brief.get("dependents", []),
-        *packet.get("accepted_receipts", []),
-    ]
-    for ticket in tickets:
-        if not isinstance(ticket, dict):
-            continue
-        evidence = ticket.get("completion_evidence_json") or {}
-        automatic = evidence.get("automatic_delivery") or {}
-        diagnostics: list[str | None] = []
-        for attempt in [automatic, *automatic.get("attempts", [])]:
-            for role in ("delivery", "review"):
-                receipt = attempt.get(role) or {}
-                diagnostics.extend(receipt.get(key) for key in ("error", "validation_error"))
-        for key in ("automatic_delivery", "prior_review"):
-            if key in evidence:
-                evidence[key] = _prompt_copy(evidence[key])
-        if ticket.get("outcome") and ticket["outcome"] in diagnostics:
-            ticket["outcome"] = _prompt_copy(ticket["outcome"])
+    packet["accepted_receipts"] = [_ticket_prompt_copy(item) for item in _relevant_receipts(packet)]
+    brief["ticket"] = _ticket_prompt_copy(brief["ticket"], current=True)
+    for relation in ("dependencies", "dependents"):
+        # Outcomes are supplied once in accepted_receipts. The brief retains navigation.
+        brief[relation] = [
+            {
+                key: item[key]
+                for key in (
+                    "id",
+                    "key",
+                    "title",
+                    "status",
+                    "dependency_keys",
+                    "blocked_by",
+                    "evidence_ref",
+                )
+                if key in item
+            }
+            for item in (_ticket_prompt_copy(item) for item in brief.get(relation, []))
+        ]
     return packet
 
 
@@ -712,18 +844,16 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                     brief = repo.brief(project_id=project_id, ticket_key=ticket_key).model_dump(
                         mode="json"
                     )
-                    brief["task"]["metadata_json"] = {
-                        key: value
-                        for key, value in (brief["task"]["metadata_json"] or {}).items()
-                        if key != "delivery"
-                    }
-                    accepted_receipts = [
+                    completed_tickets = [
                         t.model_dump(mode="json")
                         for t in repo.get(
                             project_id=project_id, task_key=task_key, include_graph=False
                         ).tickets
                         if t.status == TrackerItemStatus.COMPLETE
                     ]
+                    # Progress detection must retain the full set even when a ticket
+                    # is outside the model's current prerequisite/integration scope.
+                    completed_ticket_keys = {ticket["key"] for ticket in completed_tickets}
                 prior_review = next(
                     (
                         attempt["review"]
@@ -801,7 +931,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                                 "workflow_step": workflow_step.model_dump(mode="json")
                                 if workflow_step
                                 else None,
-                                "accepted_receipts": accepted_receipts,
+                                "accepted_receipts": completed_tickets,
                             }
                         )
                     ),
@@ -990,7 +1120,6 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                             # of the newly pending occurrence (even for success).
                             evidence[phase]["superseded"] = True
                             _save_evidence(repo, project_id, ticket_key, evidence)
-                            previously_accepted = {t["key"] for t in accepted_receipts}
                             # Requeued children may still await activation by their
                             # pending parent. Detect persisted progress here; the next
                             # selection applies dependency readiness and claims it.
@@ -999,7 +1128,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                                 and decision in {"success", "repair"}
                                 and current_step.status == RunPlanStepStatus.PENDING
                                 and any(
-                                    t.key in previously_accepted
+                                    t.key in completed_ticket_keys
                                     and t.status == TrackerItemStatus.NOT_STARTED
                                     for t in repo.get(
                                         project_id=project_id,
