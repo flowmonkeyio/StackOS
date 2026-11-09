@@ -208,6 +208,35 @@ run plan first, then mirroring the tracker task and unfinished tickets to
 
 ## Grants
 
+### Explicit run abort
+
+`runPlan.abort` uses the existing plan/run/tracker lifecycle owner and coordinates
+automatic delivery at its launch and result-acceptance boundaries. It cancels the
+matching queued job and stops only the exact invocation registered by StackOS for
+that project and task, using its private native process handle. On POSIX, the
+invocation owns a new process group; termination uses bounded TERM then KILL waits.
+It never finds processes by name, model, PID search or native session identifier.
+External sessions, including the operator's main agent, remain open.
+
+The response's `cancellation.status` distinguishes `managed_stopped` (owned work
+exited and observation retired, or launch was prevented) from `state_only` (no
+managed invocation). An unconfirmed stop returns a structured conflict with
+`status=aborted` and `cancellation.status=stop_unconfirmed`: the durable abort has
+already happened, but native termination is not claimed. A saved unfinished
+managed launch without a live handle also reports this uncertainty. Retrying can
+check a still-owned invocation; it never reconstructs ownership after restart.
+
+Late success, errors and exceptions may retain their session, receipt and actual
+available usage, but cannot accept work, mark it failed, requeue, launch review or
+advance an aborted plan. Completed work, previous receipts and schedules remain;
+aborting one occurrence does not disable later future ticks or undo external effects.
+The linked audit-run abort and workflow rejection adapters use the same coordinator;
+tracker rejection retains its separate rejection semantics.
+
+Runs row menus, Board task menus and the Graph task header use one shared Abort run
+confirmation. Only real run-plan links receive the action. Pending requests disable
+repeat submission, while a stop error remains visible with an explicit retry.
+
 Run-plan grants are frozen in `run_plans.grant_snapshot_json`.
 
 The daemon dispatcher requires:

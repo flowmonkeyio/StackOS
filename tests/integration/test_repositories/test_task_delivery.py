@@ -1388,6 +1388,16 @@ class QueuedScheduler:
         function, options = self.jobs.pop(0)
         function(**options["kwargs"])
 
+    def remove_job(self, job_id, *, jobstore):
+        from apscheduler.jobstores.base import JobLookupError
+
+        assert jobstore == "memory"
+        for index, (_, options) in enumerate(self.jobs):
+            if options["id"] == job_id:
+                self.jobs.pop(index)
+                return
+        raise JobLookupError(job_id)
+
 
 def prepared_task(session: Session, project_id: int) -> None:
     repo = TrackerRepository(session)
@@ -2348,6 +2358,7 @@ def test_role_host_model_provider_reach_launch_and_receipt(
         assert "named disposable, isolated test fixtures" in packet["lifecycle"]
         assert "no control over the current task, production state" in packet["lifecycle"]
         assert callable(selection.pop("on_execution_change"))
+        assert selection.pop("launch_allowed")()
         calls.append((host, selection))
         key = packet["brief"]["ticket"]["key"]
         sha = commit(tmp_path, key) if delivery else git(tmp_path, "rev-parse", "HEAD")
@@ -2492,6 +2503,7 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
     def run_agent(host, directory, instructions, prompt, schema, *, sandbox, **selection):
         selection.pop("execution_scope")
         selection.pop("on_execution_change")
+        assert selection.pop("launch_allowed")()
         calls.append((host, instructions, sandbox, selection))
         packet = json.loads(prompt)
         key = packet["brief"]["ticket"]["key"]
@@ -3073,6 +3085,208 @@ def workflow_task(session, project_id, *, running=True):
             run_plan_step_id=context["run_plan_step_id"],
         )
     return plan.id
+
+
+@pytest.mark.parametrize("phase", ["delivery", "review"])
+@pytest.mark.parametrize("late", ["success", "error", "exception"])
+def test_abort_fences_late_ordinary_results_and_preserves_completed_evidence(
+    session, project_id, tmp_path, monkeypatch, phase, late
+):
+    from stackos import task_delivery
+    from stackos.repositories.base import ConflictError
+
+    plan_id = workflow_task(session, project_id)
+    key = f"workflow-{plan_id}"
+    repo = TrackerRepository(session)
+    bound = repo.workflow_step_ticket_context(
+        project_id=project_id, run_plan_id=plan_id, step_id="deliver"
+    )
+    repo.create_ticket(
+        project_id=project_id,
+        task_key=key,
+        key="prior",
+        title="Prior",
+        parent_ticket_key=bound["parent_ticket_key"],
+        run_plan_id=plan_id,
+        run_plan_step_id=bound["run_plan_step_id"],
+        status="complete",
+        completion_evidence_json={"keep": "accepted"},
+    )
+    scheduler = QueuedScheduler()
+    calls = []
+
+    def launch(*args, **kwargs):
+        packet = json.loads(args[3])
+        calls.append(packet["phase"])
+        if packet["phase"] == phase:
+            with (
+                Session(session.get_bind()) as abort_session,
+                pytest.raises(ConflictError, match="could not be confirmed"),
+            ):
+                task_delivery.abort_run_plan(
+                    abort_session,
+                    run_plan_id=plan_id,
+                    project_id=project_id,
+                    reason="operator abort",
+                    scheduler=scheduler,
+                )
+            if late == "exception":
+                raise RuntimeError("late parser exception")
+            if late == "error":
+                return AgentRunResult(1, thread_id="late-session", error="late native error")
+        return AgentRunResult(0, thread_id=f"{packet['phase']}-session", result=generic_result())
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=key,
+        run_plan_id=plan_id,
+        step_id="deliver",
+    )
+    scheduler.run()
+    session.expire_all()
+    snapshot = repo.get(project_id=project_id, task_key=key)
+    assert snapshot.tasks[0].status == "aborted"
+    assert snapshot.tasks[0].metadata_json["delivery"]["reason"] == "operator abort"
+    tickets = {ticket.key: ticket for ticket in snapshot.tickets}
+    assert tickets["prior"].status == "complete"
+    assert tickets["prior"].completion_evidence_json == {"keep": "accepted"}
+    assert tickets["selected"].status == "aborted"
+    assert tickets["other-step"].status == "aborted"
+    evidence = tickets["selected"].completion_evidence_json["automatic_delivery"]
+    assert evidence.get("cancellation") or evidence[phase]["cancelled"]
+    assert calls == (["delivery"] if phase == "delivery" else ["delivery", "review"])
+    assert RunPlanRepository(session).get(plan_id).status == "aborted"
+    assert all(step.status == "skipped" for step in RunPlanRepository(session).get(plan_id).steps)
+
+
+def test_abort_queued_callback_scope_terminal_and_external_state_only(
+    session, project_id, tmp_path, monkeypatch
+):
+    from stackos import task_delivery
+    from stackos.repositories.base import ConflictError, NotFoundError
+
+    plan_id = workflow_task(session, project_id)
+    key = f"workflow-{plan_id}"
+    scheduler = QueuedScheduler()
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=key,
+        run_plan_id=plan_id,
+        step_id="deliver",
+    )
+    function, options = scheduler.jobs[0]
+    with pytest.raises((NotFoundError, ValidationError)):
+        task_delivery.abort_run_plan(session, run_plan_id=plan_id, project_id=project_id + 999)
+    assert RunPlanRepository(session).get(plan_id).status == "started"
+    env, cancellation = task_delivery.abort_run_plan(
+        session, run_plan_id=plan_id, project_id=project_id, scheduler=scheduler
+    )
+    assert env.data.status == "aborted"
+    assert cancellation["status"] == "state_only"
+    assert not scheduler.jobs
+    monkeypatch.setattr(task_delivery, "run_agent", lambda *a, **kw: pytest.fail("late launch"))
+    function(**options["kwargs"])
+    assert task_delivery.abort_run_plan(session, run_plan_id=plan_id)[1]["status"] == "state_only"
+    completed = (
+        RunPlanRepository(session)
+        .create(
+            project_id=project_id,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "already-done",
+                "title": "Done",
+                "steps": [{"id": "one", "title": "One"}],
+            },
+        )
+        .data
+    )
+    started = RunPlanRepository(session).start(completed.id, project_id=project_id)
+    RunPlanRepository(session).claim_step(run_plan_id=completed.id, run_id=started.run_id)
+    RunPlanRepository(session).record_step(
+        run_plan_id=completed.id,
+        run_id=started.run_id,
+        step_id="one",
+        status=RunPlanStepStatus.SUCCESS,
+    )
+    with pytest.raises(ConflictError, match="terminal"):
+        task_delivery.abort_run_plan(session, run_plan_id=completed.id)
+
+
+def test_abort_real_managed_invocation_through_lifecycle_coordinator(
+    delivery_engine, project_id, tmp_path, monkeypatch, request
+):
+    from dataclasses import replace
+
+    from stackos import task_delivery
+    from stackos.host_mcp import service
+
+    session = Session(delivery_engine)
+    request.addfinalizer(session.close)
+    plan_id = workflow_task(session, project_id)
+    scheduler = QueuedScheduler()
+    ready = Event()
+    definition = service._definition_by_key("codex")
+    native = []
+
+    def execute(*args, process_control, **kwargs):
+        process = process_control.spawn([sys.executable, "-c", "import time; time.sleep(30)"])
+        native.append(process)
+        ready.set()
+        process.wait(timeout=10)
+        return AgentRunResult(process.returncode, thread_id="retained-managed-session")
+
+    monkeypatch.setattr(
+        service, "_definition_by_key", lambda _: replace(definition, run_agent=execute)
+    )
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=f"workflow-{plan_id}",
+        run_plan_id=plan_id,
+        step_id="deliver",
+    )
+    with ThreadPoolExecutor() as worker:
+        running = worker.submit(scheduler.run)
+        assert ready.wait(3), (
+            TrackerRepository(session)
+            .get(project_id=project_id, task_key=f"workflow-{plan_id}")
+            .tasks[0]
+            .metadata_json
+        )
+        assert native[0].poll() is None
+        assert service.usage_executions(project_id)
+        try:
+            env, cancellation = task_delivery.abort_run_plan(
+                session, run_plan_id=plan_id, project_id=project_id, scheduler=scheduler
+            )
+        except Exception as error:
+            pytest.fail(str(getattr(error, "data", error)))
+        assert env.data.status == "aborted"
+        assert cancellation == {
+            "status": "managed_stopped",
+            "invocation_count": 1,
+            "stopped_count": 1,
+            "prevented_count": 0,
+            "external_sessions_terminated": False,
+        }
+        running.result(timeout=3)
+    session.expire_all()
+    ticket = TrackerRepository(session).brief(project_id=project_id, ticket_key="selected").ticket
+    assert ticket.status == "aborted" and native[0].poll() is not None
+    evidence = ticket.completion_evidence_json["automatic_delivery"]
+    assert evidence["delivery"]["thread_id"] == "retained-managed-session"
+    assert evidence["delivery"]["cancelled"]
+    assert evidence["delivery"]["usage"]["status"] != "measured"
+    assert not service.usage_executions(project_id)
 
 
 def test_workflow_advances_beyond_entry_children_through_lifecycle(
@@ -3899,6 +4113,28 @@ def test_native_collector_failure_persists_session_and_available_usage(
         return subprocess.CompletedProcess(command, int(native_failure), stdout, "")
 
     monkeypatch.setattr(subprocess, "run", execute)
+
+    real_popen = subprocess.Popen
+
+    class NativeProcess:
+        def __init__(self, command, **kwargs):
+            self.command = command
+            self.returncode = None
+
+        def communicate(self, prompt):
+            completed = execute(self.command, input=prompt)
+            self.returncode = completed.returncode
+            return completed.stdout, completed.stderr
+
+    monkeypatch.setattr(
+        subprocess,
+        "Popen",
+        lambda command, **kwargs: (
+            NativeProcess(command, **kwargs)
+            if command[0] == "/fake/grok"
+            else real_popen(command, **kwargs)
+        ),
+    )
 
     def stream(command, *, on_session, **kwargs):
         on_session("native-session")

@@ -1115,6 +1115,8 @@ def _compact_run_plan_steps(steps: list[Any]) -> list[dict[str, Any]]:
 
 def _compact_run_plan(data: dict[str, Any]) -> dict[str, Any]:
     out = _compact_mapping(data)
+    if "cancellation" in data:
+        out["cancellation"] = data["cancellation"]
     if data.get("id") is not None and data.get("key") is not None:
         out["run_plan_id"] = data.get("id")
         out["run_plan_key"] = data.get("key")

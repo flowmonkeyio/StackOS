@@ -321,6 +321,14 @@ agent/MCP path.
 
 ## Design-system showcase
 
+`RunAbortAction` provides the shared run menu trigger on Scheduled Runs, Board and
+the Graph task header. `RunAbortDialog` stays at the page composition root so a
+task moving to the Aborted column cannot dismiss a stop error or its retry.
+`useRunAbort` owns the single pending request/confirmation and calls `runPlan.abort`
+with the recorded project/run-plan link. Page callbacks refresh existing projections;
+there is no abort poller. Board menus are siblings of card buttons, preserving
+the fixed 224px card and keyboard access.
+
 The `/__design-system` route was removed from the shipped app. Keep any future
 component demos outside the production router, and do not ship action-demo
 components into `ui/src/components/domain`.

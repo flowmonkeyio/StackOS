@@ -4,6 +4,8 @@ import { storeToRefs } from 'pinia'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
+import RunAbortAction from '@/components/domain/RunAbortAction.vue'
+import RunAbortDialog from '@/components/domain/RunAbortDialog.vue'
 import { UiCallout, UiIcon, UiIconButton, UiInput } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import { formatAbsoluteDateTime, formatRelativeDateTime, formatDurationBetween, formatDurationMinutes } from '@/lib/stackos/time'
@@ -37,6 +39,7 @@ const columns: DataTableColumn<Row>[] = [
     aria-labelledby="cs-tab-runs"
     class="space-y-4"
   >
+    <RunAbortDialog />
     <div class="flex min-h-8 items-center justify-between gap-4">
       <p class="text-sm text-fg-muted">
         Runs only while StackOS is open. Missed runs are skipped.
@@ -119,22 +122,28 @@ const columns: DataTableColumn<Row>[] = [
         />
       </template>
       <template #cell:task_key="{ row }">
-        <RouterLink
-          v-if="row.task_key"
-          :to="{ path: `/projects/${projectId}/tasks`, query: { view: 'graph', task: row.task_key } }"
-          class="focus-ring inline-flex items-center gap-1 whitespace-nowrap rounded-sm text-xs font-medium text-accent-fg"
-          :aria-label="`View ${row.schedule_name} in Work`"
-        >
-          View in Work
-          <UiIcon
-            name="arrow-right"
-            class="h-3 w-3"
+        <div class="flex items-center justify-end gap-2">
+          <RouterLink
+            v-if="row.task_key"
+            :to="{ path: `/projects/${projectId}/tasks`, query: { view: 'graph', task: row.task_key } }"
+            class="focus-ring inline-flex items-center gap-1 whitespace-nowrap rounded-sm text-xs font-medium text-accent-fg"
+            :aria-label="`View ${row.schedule_name} in Work`"
+          >
+            View in Work
+            <UiIcon
+              name="arrow-right"
+              class="h-3 w-3"
+            />
+          </RouterLink>
+          <span
+            v-else
+            class="text-xs text-fg-muted"
+          >Work unavailable</span>
+          <RunAbortAction
+            :target="{ projectId, runPlanId: row.run_plan_id, title: row.schedule_name, status: row.status, automated: true }"
+            @refresh="$emit('refresh')"
           />
-        </RouterLink>
-        <span
-          v-else
-          class="text-xs text-fg-muted"
-        >Work unavailable</span>
+        </div>
       </template>
     </DataTable>
   </div>

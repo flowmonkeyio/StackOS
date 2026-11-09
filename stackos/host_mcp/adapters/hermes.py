@@ -12,7 +12,12 @@ from typing import Any
 
 import yaml
 
-from stackos.host_mcp.agent_execution import execute_json_agent, json_object, structured_prompt
+from stackos.host_mcp.agent_execution import (
+    ManagedProcessControl,
+    execute_json_agent,
+    json_object,
+    structured_prompt,
+)
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
     daemon_preflight,
@@ -47,6 +52,7 @@ def run_agent(
     provider: str | None = None,
     profile: str | None = None,
     resume_thread_id: str | None = None,
+    process_control: ManagedProcessControl | None = None,
 ) -> AgentRunResult:
     if sandbox == "read-only":
         return AgentRunResult(None, error="Hermes does not support strict read-only review.")
@@ -81,6 +87,7 @@ def run_agent(
         output_schema,
         "Hermes",
         _agent_result,
+        **({"process_control": process_control} if process_control else {}),
     )
 
 

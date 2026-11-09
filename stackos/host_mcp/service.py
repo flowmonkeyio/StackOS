@@ -16,6 +16,10 @@ from typing import Any, Literal, Protocol
 from uuid import uuid4
 
 from stackos.host_mcp.adapters import claude_code, claude_desktop, codex, gemini_cli, grok, hermes
+from stackos.host_mcp.agent_execution import (
+    ManagedProcessControl,
+    managed_launch_lock,
+)
 from stackos.host_mcp.bridge import MCP_SERVER_NAME, default_home, token_preflight
 from stackos.host_mcp.progress import CodexCounterReader
 from stackos.host_mcp.result import (
@@ -61,6 +65,8 @@ class ActiveInvocation:
     samples: deque = field(default_factory=lambda: deque(maxlen=120))
     measured_at: str | None = None
     finished: bool = False
+    process_control: ManagedProcessControl = field(default_factory=ManagedProcessControl)
+    retired: Event = field(default_factory=Event)
 
     def projection(self) -> dict[str, Any]:
         return {
@@ -90,6 +96,21 @@ _active_invocations: dict[str, ActiveInvocation] = {}
 _active_invocations_lock = RLock()
 _collector: Thread | None = None
 _collector_wake = Event()
+
+
+def cancel_task_invocations(project_id: int, task_key: str) -> list[ActiveInvocation]:
+    """Fence exact registered calls while the caller holds the launch boundary."""
+    with managed_launch_lock, _active_invocations_lock:
+        calls = [
+            call
+            for call in _active_invocations.values()
+            if call.scope.project_id == project_id
+            and call.scope.task_key == task_key
+            and not call.finished
+        ]
+        for call in calls:
+            call.process_control.cancelled.set()
+        return calls
 
 
 def _sample_invocations(now: datetime | None = None) -> None:
@@ -162,6 +183,7 @@ def _unregister(call: ActiveInvocation) -> None:
         call.session_id = None
         if not _active_invocations:
             _collector_wake.set()
+        call.retired.set()
 
 
 def _finish(
@@ -358,6 +380,7 @@ def run_agent(
     on_execution_change: Callable[[ActiveInvocation, bool], None] | None = None,
     previous_usage: Any = None,
     mcp_config_ref: dict[str, str] | None = None,
+    launch_allowed: Callable[[], bool] | None = None,
 ) -> AgentRunResult:
     """Run a project agent through the same host registry used by Overview."""
     if not instructions.strip():
@@ -393,6 +416,7 @@ def run_agent(
             started_at=datetime.now(UTC).isoformat(),
             previous_usage=deepcopy(previous_usage),
             resumed=resume_thread_id is not None,
+            process_control=ManagedProcessControl(launch_allowed),
         )
         if execution_scope is not None
         else None
@@ -401,14 +425,21 @@ def run_agent(
     if mcp_config_ref is not None:
         progress_kwargs["mcp_config_ref"] = mcp_config_ref
     result: AgentRunResult | None = None
+    registered = False
     if call is not None and host_key == "codex":
         progress_kwargs["on_session"] = lambda session_id: _attach_session(
             call, session_id, Path(project_dir), resume_thread_id
         )
+    if call is not None:
+        progress_kwargs["process_control"] = call.process_control
     try:
         if call is not None:
-            _register(call)
-            _notify_execution(on_execution_change, call, True)
+            with managed_launch_lock:
+                if launch_allowed is not None and not launch_allowed():
+                    return AgentRunResult(None, error="Invocation cancelled before registration")
+                _register(call)
+                registered = True
+                _notify_execution(on_execution_change, call, True)
         result = definition.run_agent(
             Path(project_dir).expanduser().resolve(),
             instructions,
@@ -428,9 +459,10 @@ def run_agent(
             },
         )
     finally:
-        if call is not None:
-            _finish(call, result, resume_thread_id)
+        if call is not None and registered:
             try:
+                _sample_invocations()
+                _finish(call, result, resume_thread_id)
                 # The caller may persist usage after native exit. During that
                 # short handoff reads still have the snapshot, never a live
                 # identity/reader. Cleanup also runs if the callback fails.

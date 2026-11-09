@@ -15,7 +15,12 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from stackos.host_mcp.agent_execution import execute_json_agent, json_object, structured_prompt
+from stackos.host_mcp.agent_execution import (
+    ManagedProcessControl,
+    execute_json_agent,
+    json_object,
+    structured_prompt,
+)
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
     is_stackos_bridge_command,
@@ -56,6 +61,7 @@ def run_agent(
     provider: str | None = None,
     profile: str | None = None,
     resume_thread_id: str | None = None,
+    process_control: ManagedProcessControl | None = None,
 ) -> AgentRunResult:
     cli = resolve_grok_bin(Path.home())
     if cli is None:
@@ -80,7 +86,15 @@ def run_agent(
         command += ["--model", model]
     if resume_thread_id is not None:
         command += ["--resume", resume_thread_id]
-    return execute_json_agent(command, project_dir, "", output_schema, "Grok", _agent_result)
+    return execute_json_agent(
+        command,
+        project_dir,
+        "",
+        output_schema,
+        "Grok",
+        _agent_result,
+        **({"process_control": process_control} if process_control else {}),
+    )
 
 
 def _agent_result(stdout: str) -> AgentRunResult:

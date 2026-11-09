@@ -14,6 +14,7 @@ from threading import Thread
 from typing import Any, BinaryIO
 from uuid import UUID
 
+from stackos.host_mcp.agent_execution import ManagedProcessControl
 from stackos.host_mcp.result import usage_snapshot
 
 
@@ -163,9 +164,10 @@ def run_codex_process(
     cwd: Path,
     env: dict[str, str],
     on_session: Callable[[str], None],
+    process_control: ManagedProcessControl | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Preserve native stdout/stderr/result behavior while exposing thread.started early."""
-    process = subprocess.Popen(
+    process = (process_control.spawn if process_control else subprocess.Popen)(
         command,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -205,8 +207,11 @@ def run_codex_process(
             # Preserve native decoding/I/O failures rather than accepting a
             # partial transcript, and do not leave a writer blocked on the pipe.
             if process.poll() is None:
-                with suppress(OSError):
-                    process.terminate()
+                if process_control is not None:
+                    process_control.stop()
+                else:
+                    with suppress(OSError):
+                        process.terminate()
 
     stdout = Thread(target=lambda: read_safely(read_output), daemon=True)
     stderr = Thread(target=lambda: read_safely(read_errors), daemon=True)
@@ -226,8 +231,11 @@ def run_codex_process(
         read_failures.append(exc)
     finally:
         if process.poll() is None:
-            process.terminate()
-            process.wait()
+            if process_control is not None:
+                process_control.stop()
+            else:
+                process.terminate()
+                process.wait()
         stdout.join()
         stderr.join()
         if process.stdout:

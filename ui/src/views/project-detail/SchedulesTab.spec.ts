@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import SchedulesTab from './SchedulesTab.vue'
 import ScheduleEditor from './ScheduleEditor.vue'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
+import RunAbortAction from '@/components/domain/RunAbortAction.vue'
 import { useSchedulesStore } from '@/stores/schedules'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 import { openTrackerStatusStream } from '@/lib/task-tracker/liveEvents'
@@ -36,6 +37,15 @@ function mockFetch(jobs: unknown[] = []) {
 describe('Automations and Runs', () => {
   beforeEach(() => { setActivePinia(createPinia()); vi.mocked(openTrackerStatusStream).mockClear(); mockFetch() })
   afterEach(() => { wrapper?.unmount(); wrapper = null; globalThis.fetch = ORIG_FETCH; vi.restoreAllMocks() })
+
+  it('passes the recorded run-plan identity to the same shared run action', async () => {
+    const w = await mountTab()
+    useSchedulesStore().runs = [{ project_id: 1, request_id: 77, run_plan_id: 456,
+      schedule_name: 'Actual scheduled run', status: 'in-progress', task_key: 'workflow-456' } as never]
+    await w.get('#cs-tab-runs').trigger('click')
+    expect(w.getComponent(RunAbortAction).props('target')).toEqual({ projectId: 1, runPlanId: 456,
+      title: 'Actual scheduled run', status: 'in-progress', automated: true })
+  })
 
   it('has exactly two standard tabs, explicit empty states and keyboard activation', async () => {
     const w = await mountTab()

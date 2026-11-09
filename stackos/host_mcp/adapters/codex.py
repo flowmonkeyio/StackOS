@@ -10,6 +10,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
+from stackos.host_mcp.agent_execution import InvocationCancelled, ManagedProcessControl
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
     command_from_output_row,
@@ -69,6 +70,7 @@ def run_agent(
     resume_thread_id: str | None = None,
     on_session: Callable[[str], None] | None = None,
     mcp_config_ref: dict[str, str] | None = None,
+    process_control: ManagedProcessControl | None = None,
 ) -> AgentRunResult:
     """Run supplied instructions in a new or explicitly selected native thread."""
     if not instructions.strip():
@@ -126,13 +128,14 @@ def run_agent(
                 on_session(session_id)
 
         try:
-            if on_session is not None:
+            if on_session is not None or process_control is not None:
                 process = run_codex_process(
                     command,
                     input=prompt,
                     cwd=project_dir,
                     env=subprocess_env_for_cli(codex_bin),
                     on_session=record_session,
+                    **({"process_control": process_control} if process_control else {}),
                 )
             else:
                 process = subprocess.run(
@@ -147,7 +150,7 @@ def run_agent(
         except CodexStreamError as exc:
             process = exc.process
             execution_error = str(exc)
-        except (OSError, UnicodeError) as exc:
+        except (OSError, UnicodeError, InvocationCancelled) as exc:
             execution_error = f"Codex process failed ({type(exc).__name__}): {exc}"
         exit_code = process.returncode if process is not None else None
         stdout = process.stdout if process is not None else ""

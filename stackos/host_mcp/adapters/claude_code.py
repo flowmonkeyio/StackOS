@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from stackos import claude_mcp
-from stackos.host_mcp.agent_execution import execute_json_agent, json_object
+from stackos.host_mcp.agent_execution import ManagedProcessControl, execute_json_agent, json_object
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
     is_stackos_bridge_command,
@@ -39,6 +39,7 @@ def run_agent(
     provider: str | None = None,
     profile: str | None = None,
     resume_thread_id: str | None = None,
+    process_control: ManagedProcessControl | None = None,
 ) -> AgentRunResult:
     cli = claude_mcp.resolve_claude_bin()
     if cli is None:
@@ -68,6 +69,7 @@ def run_agent(
         output_schema,
         "Claude Code",
         lambda stdout: _agent_result(stdout, native_version=_native_version(cli, project_dir)),
+        **({"process_control": process_control} if process_control else {}),
     )
 
 

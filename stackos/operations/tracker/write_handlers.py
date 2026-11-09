@@ -381,13 +381,16 @@ async def tracker_reject_task(
     if workflow_run_plan_id is not None:
         plan = ctx.session.get(RunPlan, workflow_run_plan_id)
         if plan is not None and plan.project_id == inp.project_id:
-            if plan.status in {RunPlanStatus.DRAFT, RunPlanStatus.STARTED}:
-                RunPlanRepository(ctx.session).abort(
+            if plan.status in {RunPlanStatus.DRAFT, RunPlanStatus.STARTED, RunPlanStatus.ABORTED}:
+                from stackos.task_delivery import abort_run_plan
+
+                abort_run_plan(
+                    ctx.session,
                     project_id=inp.project_id,
                     run_plan_id=workflow_run_plan_id,
                     reason=reason,
                     actor=inp.actor,
-                    commit=False,
+                    scheduler=ctx.extras.get("scheduler"),
                 )
             elif plan.status in {RunPlanStatus.COMPLETED, RunPlanStatus.FAILED}:
                 raise ConflictError(
@@ -400,10 +403,6 @@ async def tracker_reject_task(
                         "next_operations": ["runPlan.get", "runPlan.checkConsistency"],
                     },
                 )
-            else:
-                # Already-aborted workflow plans can receive a rejection note in tracker
-                # without changing canonical run-plan state.
-                pass
         else:
             raise ValidationError(
                 "workflow task run plan not found in project",

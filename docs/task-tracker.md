@@ -52,6 +52,15 @@ replacement for "moved elsewhere."
 
 ## Automated Task Delivery
 
+Explicit workflow abort uses `runPlan.abort` and the shared delivery/native launch
+boundary described in [run plans](./run-plans.md#explicit-run-abort). Canonical
+aborted task state fences queued callbacks, spawn registration and late
+success/error/exception acceptance. Only registry-owned invocations can be stopped;
+external sessions receive state changes only. The existing execution/usage handoff
+finishes readers and retains measured counters without inventing final-only usage.
+Runs, Board and Graph share the same confirmation and refresh their current
+transport-backed projections. A plain task has no inferred run-plan abort action.
+
 The planner chooses this optional path by calling `tracker.startDelivery` after
 preparing a task's self-contained tickets and dependencies. The existing
 terminal-managed path continues to use the normal tracker operations.

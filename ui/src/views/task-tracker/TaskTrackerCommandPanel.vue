@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { UiBadge, UiButton, UiIcon, UiInput, UiSegmentedControl, UiSelect, UiToolbar } from '@/components/ui'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
+import RunAbortAction from '@/components/domain/RunAbortAction.vue'
+import type { RunAbortTarget } from '@/composables/useRunAbort'
 import { computed } from 'vue'
 import { executionStatus } from '@/lib/task-tracker/execution'
 import type { ActiveExecution } from '@/lib/task-tracker/types'
@@ -29,6 +31,7 @@ const props = defineProps<{
   taskAgentStats?: AgentStatsMetrics | null
   taskAutomated?: boolean
   taskDelivery?: TaskDeliveryState | null
+  abortTarget?: RunAbortTarget | null
 }>()
 defineEmits<{
   (e: 'taskSelect', value: string | number | null): void
@@ -38,6 +41,7 @@ defineEmits<{
   (e: 'update:assigneeFilter', value: string): void
   (e: 'openTaskDetail'): void
   (e: 'clear'): void
+  (e: 'refresh'): void
 }>()
 const viewOptions = [{ key: 'board', label: 'Board' }, { key: 'graph', label: 'Graph' }]
 const state = computed(() => executionStatus(props.taskStatus ?? 'not-started', props.activeExecution, props.taskDelivery))
@@ -153,15 +157,21 @@ const state = computed(() => executionStatus(props.taskStatus ?? 'not-started', 
         aria-label="Lifetime task usage"
         title="Lifetime task usage"
       />
-      <UiButton
-        variant="secondary"
-        size="sm"
-        icon-left="file-text"
-        :disabled="!taskAvailable"
-        @click="$emit('openTaskDetail')"
-      >
-        Task details
-      </UiButton>
+      <div class="flex items-center gap-1">
+        <UiButton
+          variant="secondary"
+          size="sm"
+          icon-left="file-text"
+          :disabled="!taskAvailable"
+          @click="$emit('openTaskDetail')"
+        >
+          Task details
+        </UiButton>
+        <RunAbortAction
+          :target="abortTarget ?? null"
+          @refresh="$emit('refresh')"
+        />
+      </div>
     </div>
   </UiToolbar>
 </template>

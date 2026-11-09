@@ -6,6 +6,7 @@ import json
 import re
 import subprocess
 from collections.abc import Callable, Mapping
+from contextlib import suppress
 from copy import deepcopy
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -13,12 +14,14 @@ from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
+from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.base import BaseScheduler
 from pydantic import ValidationError as SchemaValidationError
 from sqlalchemy import func
 from sqlmodel import Session, select
 
 from stackos.db.models import (
+    RunPlan,
     RunPlanStatus,
     RunPlanStepStatus,
     TrackerItemStatus,
@@ -26,16 +29,18 @@ from stackos.db.models import (
     TrackerTask,
     TrackerTicketKind,
 )
+from stackos.host_mcp.agent_execution import managed_launch_lock
 from stackos.host_mcp.result import AgentSandbox, normalize_usage, validate_agent_result
 from stackos.host_mcp.service import (
     ActiveInvocation,
     AgentExecutionScope,
     agent_review_sandbox,
     agent_selection_error,
+    cancel_task_invocations,
     run_agent,
 )
 from stackos.operations.tracker.schemas import TaskDeliveryAgent
-from stackos.repositories.base import NotFoundError, ValidationError
+from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
 from stackos.repositories.tracker.events import record_execution_change
@@ -83,6 +88,117 @@ RESULT_SCHEMA = {
 }
 ACTOR = "tracker.task-delivery"
 MAX_REPAIR_PASSES = 3
+
+
+def abort_run_plan(
+    session, *, run_plan_id, project_id=None, reason=None, actor=None, scheduler=None
+):
+    """Coordinate the existing lifecycle owner and exact registered native launches."""
+    with managed_launch_lock:
+        plans = RunPlanRepository(session)
+        plan = plans.get(run_plan_id, project_id=project_id)
+        project_id = plan.project_id
+        repo = TrackerRepository(session)
+        task = session.exec(
+            select(TrackerTask).where(
+                TrackerTask.project_id == project_id, TrackerTask.key == f"workflow-{run_plan_id}"
+            )
+        ).first()
+        state = (task.metadata_json or {}).get("delivery", {}) if task else {}
+        if task and (task.source_json or {}).get("run_plan_id") != run_plan_id:
+            raise ValidationError("Workflow task does not match its stored run-plan link")
+        if state and (state.get("run_plan_id"), state.get("controller_run_id")) != (
+            run_plan_id,
+            plan.run_id,
+        ):
+            raise ValidationError("Automatic delivery controller does not match the run plan")
+        expected = False
+        if task and state:
+            snapshot = repo.get(project_id=project_id, task_key=task.key, include_graph=False)
+            expected = any(
+                isinstance(receipt, dict)
+                and receipt.get("launch")
+                and "exit_code" not in receipt
+                and "result" not in receipt
+                for ticket in snapshot.tickets
+                for phase in ("delivery", "review")
+                for receipt in [
+                    (ticket.completion_evidence_json or {}).get("automatic_delivery", {}).get(phase)
+                ]
+            )
+        env = plans.abort(
+            run_plan_id=run_plan_id, project_id=project_id, reason=reason, actor=actor
+        )
+        calls = cancel_task_invocations(project_id, task.key) if task else []
+        if state:
+            _update_delivery(
+                repo, project_id, task.key, status="stopped", reason=reason or "Run aborted."
+            )
+            if scheduler is not None and state.get("job_ref"):
+                with suppress(JobLookupError):
+                    scheduler.remove_job(state["job_ref"], jobstore="memory")
+    outcomes = [call.process_control.stop() for call in calls]
+    retired = all(
+        outcome == "prevented" or call.retired.wait(2)
+        for call, outcome in zip(calls, outcomes, strict=True)
+    )
+    unconfirmed = "unconfirmed" in outcomes or not retired or (expected and not calls)
+    cancellation = {
+        "status": "stop_unconfirmed"
+        if unconfirmed
+        else "managed_stopped"
+        if calls
+        else "state_only",
+        "invocation_count": len(calls),
+        "stopped_count": outcomes.count("stopped"),
+        "prevented_count": outcomes.count("prevented"),
+        "external_sessions_terminated": False,
+    }
+    if unconfirmed:
+        raise ConflictError(
+            "Run aborted, but managed process termination could not be confirmed. "
+            "External sessions were not terminated.",
+            data={
+                "run_plan_id": run_plan_id,
+                "status": "aborted",
+                "cancellation": cancellation,
+                "next_operations": ["runPlan.get", "runPlan.abort"],
+            },
+        )
+    return env, cancellation
+
+
+def abort_audit_run(session, run_id, *, cascade=False, project_id=None, scheduler=None):
+    """Keep legacy explicit audit abort adapters on the same workflow stop boundary."""
+    from stackos.repositories.runs import RunRepository
+
+    runs = RunRepository(session)
+    root = runs.get(run_id)
+    if project_id is not None and root.project_id != project_id:
+        raise ValidationError("Run does not belong to the project")
+    targets = [root]
+    if cascade:
+        for target in targets:
+            targets.extend(runs.children(target.id))
+    for target in targets:
+        plan = session.exec(select(RunPlan).where(RunPlan.run_id == target.id)).first()
+        if plan and plan.status in {
+            RunPlanStatus.DRAFT,
+            RunPlanStatus.STARTED,
+            RunPlanStatus.ABORTED,
+        }:
+            abort_run_plan(
+                session,
+                run_plan_id=plan.id,
+                project_id=root.project_id,
+                reason="run-aborted",
+                scheduler=scheduler,
+            )
+    return runs.abort(run_id, cascade=cascade, project_id=project_id)
+
+
+def _delivery_aborted(repo, project_id, task_key):
+    return _task(repo, project_id, task_key).status == TrackerItemStatus.ABORTED
 
 
 def _workflow_scope(repo, project_id, task, run_plan_id, step_id, *, starting=False):
@@ -885,6 +1001,11 @@ def _record_execution_transition(
 
 
 def run_delivery(*, session_factory: Callable[[], Session], project_id: int, task_key: str) -> None:
+    def launch_allowed() -> bool:
+        with session_factory() as session:
+            repo = TrackerRepository(session)
+            return not _delivery_aborted(repo, project_id, task_key)
+
     def execution_changed(call: ActiveInvocation, active: bool) -> None:
         if (
             call.scope.phase is not None
@@ -902,9 +1023,11 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
     evidence: dict[str, Any] = {}
     try:
         while True:
-            with session_factory() as session:
+            with managed_launch_lock, session_factory() as session:
                 repo = TrackerRepository(session)
                 task = _task(repo, project_id, task_key)
+                if task.status == TrackerItemStatus.ABORTED:
+                    return
                 state = (task.metadata_json or {})["delivery"]
                 snapshot = repo.get(project_id=project_id, task_key=task_key, include_graph=False)
                 if snapshot.tickets and all(
@@ -1051,9 +1174,11 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                     "selected_role": selected_role,
                     "launch": launch,
                 }
-                with session_factory() as session:
+                with managed_launch_lock, session_factory() as session:
                     repo = TrackerRepository(session)
                     task = _task(repo, project_id, task_key)
+                    if task.status == TrackerItemStatus.ABORTED:
+                        return
                     _workflow_scope(
                         repo, project_id, task, state.get("run_plan_id"), state.get("step_id")
                     )
@@ -1156,6 +1281,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                         phase=phase,
                     ),
                     on_execution_change=execution_changed,
+                    launch_allowed=launch_allowed,
                     **(
                         {"mcp_config_ref": state["mcp_config_ref"]}
                         if state.get("mcp_config_ref") is not None
@@ -1296,9 +1422,14 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                     and evidence["repair_count"] < MAX_REPAIR_PASSES
                 )
                 accepted = valid and decision == "success"
-                with session_factory() as session:
+                with managed_launch_lock, session_factory() as session:
                     repo = TrackerRepository(session)
                     task = _task(repo, project_id, task_key)
+                    if task.status == TrackerItemStatus.ABORTED:
+                        evidence[phase]["validated_outcome"] = None
+                        evidence[phase]["cancelled"] = True
+                        _save_evidence(repo, project_id, ticket_key, evidence)
+                        return
                     _workflow_scope(
                         repo, project_id, task, state.get("run_plan_id"), state.get("step_id")
                     )
@@ -1429,8 +1560,13 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                     break
             ticket_key = None
     except Exception as error:
-        with session_factory() as session:
+        with managed_launch_lock, session_factory() as session:
             repo = TrackerRepository(session)
+            if _delivery_aborted(repo, project_id, task_key):
+                if ticket_key is not None:
+                    evidence["cancellation"] = {"status": "aborted", "error": str(error)}
+                    _save_evidence(repo, project_id, ticket_key, evidence)
+                return
             if ticket_key is not None:
                 plans = RunPlanRepository(session)
                 ticket = repo.brief(project_id=project_id, ticket_key=ticket_key).ticket

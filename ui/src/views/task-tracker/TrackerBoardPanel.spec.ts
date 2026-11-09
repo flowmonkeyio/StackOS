@@ -7,11 +7,21 @@ import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 import { buildTaskProgressRows } from './viewModel'
 import TrackerBoardPanel from './TrackerBoardPanel.vue'
 import TaskTrackerCommandPanel from './TaskTrackerCommandPanel.vue'
+import RunAbortAction from '@/components/domain/RunAbortAction.vue'
 
 const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
 const automaticMetadata = { delivery: { status: 'running', job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent } }
 
 describe('Work board presentation', () => {
+  it('uses the shared abort action only for recorded workflow links, beside the card button', () => {
+    const record = { ...task('in-progress'), source_kind: 'workflow', source_json: { run_plan_id: 123 } }
+    const rows = buildTaskProgressRows([record], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
+    const wrapper = mount(TrackerBoardPanel, { props: { rows } })
+    expect(wrapper.getComponent(RunAbortAction).props('target')).toMatchObject({ projectId: record.project_id, runPlanId: 123, title: record.title })
+    expect(wrapper.find('button button').exists()).toBe(false)
+    expect(wrapper.get('button.tracker-board__card').attributes('type')).toBe('button')
+    wrapper.unmount()
+  })
   it('retains last actual execution and suppresses task-level blocking while a sibling executes', async () => {
     const metrics = agentStatsFixture().totals
     const execution = { invocation_id: 'actual-call', ticket_key: 'child', agent: 'sdlc_delivery_reviewer', host_key: 'claude-code', model: 'recorded-model', started_at: '2026-11-08T01:00:00Z', live_usage: null }

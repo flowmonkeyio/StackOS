@@ -47,6 +47,31 @@ def test_provider_side_effect_operations_are_raw_only() -> None:
     assert exc.value.data["allowed_modes"] == ["raw"]
 
 
+@pytest.mark.parametrize("status", ["managed_stopped", "state_only"])
+def test_run_abort_compact_keeps_truthful_safe_cancellation_summary(status) -> None:
+    cancellation = {
+        "status": status,
+        "invocation_count": int(status == "managed_stopped"),
+        "stopped_count": int(status == "managed_stopped"),
+        "prevented_count": 0,
+        "external_sessions_terminated": False,
+    }
+    payload = {
+        "project_id": 7,
+        "run_id": 11,
+        "data": {
+            "id": 42,
+            "project_id": 7,
+            "key": "bounded-abort",
+            "status": "aborted",
+            "cancellation": cancellation,
+        },
+    }
+    shaped = shape_operation_response(_spec("runPlan.abort"), payload, response_mode="compact")
+    assert shaped["data"]["cancellation"] == cancellation
+    assert shaped["data"]["run_plan_id"] == 42
+
+
 def test_schedule_compact_keeps_state_snapshots_and_canonical_metrics() -> None:
     row = {
         "project_id": 7,

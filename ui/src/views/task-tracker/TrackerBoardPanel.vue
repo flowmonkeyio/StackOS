@@ -4,13 +4,15 @@ import { UiBadge, UiIcon } from '@/components/ui'
 import { trackerStatus } from '@/design/status'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
 import ActiveExecutionLine from '@/components/domain/ActiveExecutionLine.vue'
+import RunAbortAction from '@/components/domain/RunAbortAction.vue'
+import { taskRunAbortTarget } from '@/composables/useRunAbort'
 import type { TrackerStatus } from '@/lib/task-tracker/types'
 import { isAutomaticDeliveryTask, taskDeliveryState } from '@/lib/task-tracker/delivery'
 import { activeExecutionTitle, executionStatus } from '@/lib/task-tracker/execution'
 import type { TaskProgressRow } from './viewTypes'
 
 const props = defineProps<{ rows: TaskProgressRow[]; selectedTaskKey?: string }>()
-defineEmits<{ (e: 'openTask', key: string): void }>()
+defineEmits<{ (e: 'openTask', key: string): void; (e: 'refresh'): void }>()
 const columns = computed(() => (Object.keys(trackerStatus) as TrackerStatus[]).map((status) => ({
   status,
   rows: props.rows.filter((row) => row.task.status === status),
@@ -50,71 +52,81 @@ function blocker(row: TaskProgressRow): string | null {
         <span class="text-xs tabular-nums text-fg-muted">{{ column.rows.length }}</span>
       </header>
       <div class="tracker-board__cards">
-        <button
+        <div
           v-for="row in column.rows"
           :key="row.key"
-          type="button"
-          class="tracker-board__card focus-ring"
-          :class="{ 'tracker-board__card--selected': selectedTaskKey === row.key, 'tracker-board__card--blocked': blocker(row) }"
-          :aria-label="`Open task #${row.id}: ${row.task.title}${row.task.active_execution ? `; Active now: ${activeExecutionTitle(row.task.active_execution)}` : ''}`"
-          :title="row.task.active_execution ? activeExecutionTitle(row.task.active_execution) : undefined"
-          @focus="($event.currentTarget as HTMLElement).scrollIntoView({ block: 'nearest', inline: 'nearest' })"
-          @click="$emit('openTask', row.key)"
+          class="tracker-board__card-wrap"
         >
-          <span class="tracker-board__identity tracker-board__identity--header">
-            <span class="tracker-board__id">#{{ row.id }}</span>
-            <UiBadge
-              v-if="isAutomaticDeliveryTask(row.task)"
-              tone="info"
-            >
-              Automated
-            </UiBadge>
-            <span
-              v-if="row.totalCount > 0"
-              class="tracker-board__progress"
-              :title="`${row.completedCount} of ${row.totalCount} tickets complete`"
-            >
-              <UiIcon
-                name="tasks"
-                class="h-3.5 w-3.5 shrink-0"
-              />
-              {{ row.completedCount }}/{{ row.totalCount }}
+          <button
+            type="button"
+            class="tracker-board__card focus-ring"
+            :class="{ 'tracker-board__card--selected': selectedTaskKey === row.key, 'tracker-board__card--blocked': blocker(row) }"
+            :aria-label="`Open task #${row.id}: ${row.task.title}${row.task.active_execution ? `; Active now: ${activeExecutionTitle(row.task.active_execution)}` : ''}`"
+            :title="row.task.active_execution ? activeExecutionTitle(row.task.active_execution) : undefined"
+            @focus="($event.currentTarget as HTMLElement).scrollIntoView({ block: 'nearest', inline: 'nearest' })"
+            @click="$emit('openTask', row.key)"
+          >
+            <span class="tracker-board__identity tracker-board__identity--header">
+              <span class="tracker-board__id">#{{ row.id }}</span>
+              <UiBadge
+                v-if="isAutomaticDeliveryTask(row.task)"
+                tone="info"
+              >
+                Automated
+              </UiBadge>
+              <span
+                v-if="row.totalCount > 0"
+                class="tracker-board__progress"
+                :title="`${row.completedCount} of ${row.totalCount} tickets complete`"
+              >
+                <UiIcon
+                  name="tasks"
+                  class="h-3.5 w-3.5 shrink-0"
+                />
+                {{ row.completedCount }}/{{ row.totalCount }}
+              </span>
+              <UiBadge
+                class="tracker-board__state"
+                :tone="state(row).tone"
+                :dot="true"
+                variant="outline"
+              >{{ state(row).label }}</UiBadge>
             </span>
-            <UiBadge
-              class="tracker-board__state"
-              :tone="state(row).tone"
-              :dot="true"
-              variant="outline"
-            >{{ state(row).label }}</UiBadge>
-          </span>
-          <span
-            class="tracker-board__title"
-            :title="row.task.title"
-          >{{ row.task.title }}</span>
-          <span
-            class="tracker-board__subtitle"
-            :title="taskDeliveryState(row.task)?.reason ?? row.task.goal"
-          >{{ taskDeliveryState(row.task)?.reason ?? row.task.goal }}</span>
-          <AgentUsageSummary
-            v-if="isAutomaticDeliveryTask(row.task)"
-            :metrics="row.task.agent_stats"
-            compact
-            title="Lifetime task usage"
-          />
-          <span class="tracker-board__meta">
-            <ActiveExecutionLine
-              :execution="row.task.active_execution"
-              :last-execution="isAutomaticDeliveryTask(row.task) ? row.task.agent_stats?.last_execution : null"
-              :owner="row.task.owner"
-              class="tracker-board__execution"
+            <span
+              class="tracker-board__title"
+              :title="row.task.title"
+            >{{ row.task.title }}</span>
+            <span
+              class="tracker-board__subtitle"
+              :title="taskDeliveryState(row.task)?.reason ?? row.task.goal"
+            >{{ taskDeliveryState(row.task)?.reason ?? row.task.goal }}</span>
+            <AgentUsageSummary
+              v-if="isAutomaticDeliveryTask(row.task)"
+              :metrics="row.task.agent_stats"
+              compact
+              title="Lifetime task usage"
             />
-          </span>
-          <span
-            v-if="blocker(row)"
-            class="tracker-board__blocked"
-            :title="blocker(row)!"
-          >{{ blocker(row) }}</span>
-        </button>
+            <span class="tracker-board__meta">
+              <ActiveExecutionLine
+                :execution="row.task.active_execution"
+                :last-execution="isAutomaticDeliveryTask(row.task) ? row.task.agent_stats?.last_execution : null"
+                :owner="row.task.owner"
+                class="tracker-board__execution"
+              />
+            </span>
+            <span
+              v-if="blocker(row)"
+              class="tracker-board__blocked"
+              :title="blocker(row)!"
+            >{{ blocker(row) }}</span>
+          </button>
+          <div class="tracker-board__actions">
+            <RunAbortAction
+              :target="taskRunAbortTarget(row.task)"
+              @refresh="$emit('refresh')"
+            />
+          </div>
+        </div>
         <p
           v-if="!column.rows.length"
           class="tracker-board__empty"
@@ -127,6 +139,9 @@ function blocker(row: TaskProgressRow): string | null {
 </template>
 
 <style scoped>
+.tracker-board__card-wrap { position: relative; min-width: 0; }
+.tracker-board__actions { position: absolute; top: 8px; right: 8px; }
+.tracker-board__card-wrap:has(.ui-dropdown) .tracker-board__identity--header { padding-right: 24px; }
 .tracker-board { display: grid; grid-template-columns: repeat(7, minmax(300px, 1fr)); column-gap: 12px; flex: 1 1 auto; min-width: 0; min-height: 360px; overflow: auto; overscroll-behavior: contain; }
 .tracker-board__column { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .tracker-board__heading { display: flex; flex: none; align-items: center; gap: 8px; padding: 12px 8px; }

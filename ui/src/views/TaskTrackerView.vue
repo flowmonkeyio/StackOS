@@ -13,6 +13,8 @@ import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import TaskTrackerCommandPanel from './task-tracker/TaskTrackerCommandPanel.vue'
 import TrackerBoardPanel from './task-tracker/TrackerBoardPanel.vue'
+import RunAbortDialog from '@/components/domain/RunAbortDialog.vue'
+import { taskRunAbortTarget } from '@/composables/useRunAbort'
 import TrackerGraphPanel from './task-tracker/TrackerGraphPanel.vue'
 import TrackerTaskDetailDialog from './task-tracker/TrackerTaskDetailDialog.vue'
 import TrackerTicketDetailPanel from './task-tracker/TrackerTicketDetailPanel.vue'
@@ -297,6 +299,7 @@ useProjectScopedLoader({
 
 <template>
   <UiPageShell class="tracker-page-shell">
+    <RunAbortDialog />
     <ProjectPageHeader
       :project-id="projectId"
       title="Work"
@@ -348,6 +351,8 @@ useProjectScopedLoader({
       :task-agent-stats="activeTaskRow?.task.agent_stats"
       :task-automated="isAutomaticDeliveryTask(activeTaskRow?.task)"
       :task-delivery="taskDeliveryState(activeTaskRow?.task)"
+      :abort-target="taskRunAbortTarget(activeTaskRow?.task)"
+      @refresh="load()"
       @task-select="selectMapTask"
       @update:view-mode="setViewMode"
       @update:search="navigate({ search: $event }, true)"
@@ -397,6 +402,7 @@ useProjectScopedLoader({
         :rows="taskRows"
         :selected-task-key="detailTaskKey"
         @open-task="openTaskDetail"
+        @refresh="load()"
       />
     </div>
     <template v-if="viewMode === 'graph' && snapshot">

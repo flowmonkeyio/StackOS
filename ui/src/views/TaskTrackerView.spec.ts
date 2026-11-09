@@ -51,7 +51,7 @@ async function render(url = '/projects/7/tasks', realDialogs = false) {
     attachTo: realDialogs ? document.body : undefined,
     global: { plugins: [router, createPinia()], stubs: {
       ProjectPageHeader: { template: '<header><slot name="actions" /></header>' },
-      TaskTrackerCommandPanel: { name: 'TaskTrackerCommandPanel', props: ['viewMode','activeTaskKey','taskOptions','search','filtersActive','taskAgentStats','taskAutomated','taskDelivery'], template: '<nav />' },
+      TaskTrackerCommandPanel: { name: 'TaskTrackerCommandPanel', props: ['viewMode','activeTaskKey','taskOptions','search','filtersActive','taskAgentStats','taskAutomated','taskDelivery','abortTarget'], template: '<nav />' },
       TrackerBoardPanel: { name: 'TrackerBoardPanel', props: ['rows'], template: '<section data-test="board" />' },
       TrackerGraphPanel: { name: 'TrackerGraphPanel', props: ['loading','activeTaskTitle','selectedTicket','selectionVisible','selectionLabel','flow'], template: '<section data-test="graph" />' },
       TrackerWarningSummary: true,
@@ -66,6 +66,16 @@ async function render(url = '/projects/7/tasks', realDialogs = false) {
 const popup = () => new DOMWrapper(document.body)
 
 describe('Work board navigation', () => {
+  it('passes the actual selected workflow link to the Graph header abort action and refreshes the existing projection', async () => {
+    dataMock([{ ...taskA, source_kind: 'workflow', source_json: { run_plan_id: 321 } }], [ticketA])
+    const { wrapper, controls } = await render('/projects/7/tasks?view=graph&task=task-a')
+    expect(controls().props('abortTarget')).toMatchObject({ projectId: 7, runPlanId: 321, title: 'Alpha task', automated: false })
+    const before = mocks.callOperation.mock.calls.length
+    controls().vm.$emit('refresh')
+    await flushPromises()
+    expect(mocks.callOperation.mock.calls.length).toBeGreaterThan(before)
+    wrapper.unmount()
+  })
   it('patches usage projections across Board, Graph and open details without another tracker load', async () => {
     dataMock([taskA], [ticketA], true)
     const { wrapper, board, dialog } = await render('/projects/7/tasks?view=graph&task=task-a&detail=task-a')
