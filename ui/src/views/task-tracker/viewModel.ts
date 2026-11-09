@@ -76,6 +76,7 @@ export function buildTaskProgressRows(
   ticketsByTask: Map<string, TrackerTicket[]>,
   filters: TrackerControlFilters,
 ): TaskProgressRow[] {
+  const ticketTitles = new Map([...ticketsByTask.values()].flat().map(ticket => [ticket.key, ticket.title]))
   return tasks
     .map((task) => {
       const taskTickets = ticketsByTask.get(task.key) ?? []
@@ -91,6 +92,11 @@ export function buildTaskProgressRows(
       const inProgressCount = summaryCount(summary, taskTickets, 'in-progress')
       const blockedCount = summary?.blocked_count ?? taskTickets.filter(isGraphBlockedTicket).length
       const totalCount = summary?.total_count ?? taskTickets.length
+      const openTickets = taskTickets.filter(isOpenTicket)
+      const blockedByTitles = summary?.blocked_by_titles ?? (
+        !isTerminalTrackerStatus(task.status) && openTickets.length && openTickets.every(ticket => ticket.blocked_by.length)
+          ? [...new Set(openTickets.flatMap(ticket => ticket.blocked_by_titles ?? ticket.blocked_by.map(key => ticketTitles.get(key) ?? key)))] : []
+      )
       return {
         id: task.id,
         key: task.key,
@@ -105,6 +111,7 @@ export function buildTaskProgressRows(
         totalCount,
         inProgressCount,
         blockedCount,
+        blockedByTitles,
         percent: totalCount > 0 ? Math.round((terminalCount / totalCount) * 100) : 0,
         workflowLabel: taskWorkflowLabel(task),
         currentDetail: taskCurrentDetail(task, totalCount, {

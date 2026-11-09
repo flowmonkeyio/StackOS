@@ -950,12 +950,14 @@ class TrackerQueryMixin:
             )
         )
         status_by_ticket_id = {row.id: row.status for row in rows if row.id is not None}
+        title_by_ticket_id = {row.id: row.title for row in rows if row.id is not None}
         open_ticket_ids = {
             row.id
             for row in rows
             if row.id is not None and row.status not in TERMINAL_TRACKER_STATUSES
         }
         incomplete_dependency_ticket_ids: set[int] = set()
+        prerequisite_titles: dict[int, set[str]] = {}
         if open_ticket_ids:
             dependencies = list(
                 self._s.exec(
@@ -970,13 +972,18 @@ class TrackerQueryMixin:
                 if dependency.depends_on_ticket_id not in status_by_ticket_id
             }
             if missing_dependency_ids:
-                dependency_status_rows = self._s.exec(
-                    select(TrackerTicket.id, TrackerTicket.status).where(
-                        col(TrackerTicket.id).in_(missing_dependency_ids)
+                dependency_status_rows = list(
+                    self._s.exec(
+                        select(TrackerTicket.id, TrackerTicket.status, TrackerTicket.title).where(
+                            col(TrackerTicket.id).in_(missing_dependency_ids)
+                        )
                     )
                 )
                 status_by_ticket_id.update(
                     {row.id: row.status for row in dependency_status_rows if row.id is not None}
+                )
+                title_by_ticket_id.update(
+                    {row.id: row.title for row in dependency_status_rows if row.id is not None}
                 )
             incomplete_dependency_ticket_ids = {
                 dependency.ticket_id
@@ -989,6 +996,14 @@ class TrackerQueryMixin:
                     )
                 )
             }
+            for dependency in dependencies:
+                prerequisite_id = dependency.depends_on_ticket_id
+                if prerequisite_id in status_by_ticket_id and not _is_dependency_satisfied(
+                    dependency.dependency_type, status_by_ticket_id[prerequisite_id]
+                ):
+                    prerequisite_titles.setdefault(dependency.ticket_id, set()).add(
+                        title_by_ticket_id[prerequisite_id]
+                    )
 
         rows_by_task: dict[int, list[Any]] = {task_id: [] for task_id in task_ids}
         for row in rows:
@@ -1003,6 +1018,22 @@ class TrackerQueryMixin:
             )
             task_status = task_status_by_id.get(task_id)
             task_is_terminal = task_status is not None and _is_terminal_tracker_status(task_status)
+            open_tickets = [
+                row for row in task_tickets if row.status not in TERMINAL_TRACKER_STATUSES
+            ]
+            waiting_titles = (
+                sorted(
+                    {
+                        title
+                        for row in open_tickets
+                        for title in prerequisite_titles.get(row.id, set())
+                    }
+                )
+                if not task_is_terminal
+                and open_tickets
+                and all(row.id in incomplete_dependency_ticket_ids for row in open_tickets)
+                else []
+            )
             blocked_count = sum(
                 1
                 for row in task_tickets
@@ -1025,6 +1056,7 @@ class TrackerQueryMixin:
                 terminal_count=terminal_count,
                 in_progress_count=status_counts.get(TrackerItemStatus.IN_PROGRESS.value, 0),
                 blocked_count=blocked_count,
+                blocked_by_titles=waiting_titles,
                 status_counts=status_counts,
                 assignees=assignees,
                 search_text=search_text,
@@ -1043,6 +1075,7 @@ class TrackerQueryMixin:
             if item is not None
         ]
         blocked_by = []
+        blocked_by_titles = []
         for dependency in dependencies:
             item = self._s.get(TrackerTicket, dependency.depends_on_ticket_id)
             if item is not None and not _is_dependency_satisfied(
@@ -1050,12 +1083,14 @@ class TrackerQueryMixin:
                 item.status,
             ):
                 blocked_by.append(item.key)
+                blocked_by_titles.append(item.title)
         base = TrackerTicketOut.model_validate(row).model_dump(
             exclude={
                 "task_key",
                 "parent_ticket_key",
                 "dependency_keys",
                 "blocked_by",
+                "blocked_by_titles",
                 "reference_count",
                 "link_count",
                 "agent_stats",
@@ -1072,6 +1107,7 @@ class TrackerQueryMixin:
             parent_ticket_key=parent.key if parent is not None else None,
             dependency_keys=dependency_keys,
             blocked_by=blocked_by,
+            blocked_by_titles=blocked_by_titles,
             reference_count=len(self._reference_rows_for_ticket(row.id)),
             link_count=len(self._link_rows_for_ticket(row.id)),
         )
@@ -1141,6 +1177,7 @@ class TrackerQueryMixin:
                     "parent_ticket_key",
                     "dependency_keys",
                     "blocked_by",
+                    "blocked_by_titles",
                     "reference_count",
                     "link_count",
                     "agent_stats",
@@ -1171,6 +1208,14 @@ class TrackerQueryMixin:
                             dependency.dependency_type,
                             ticket.status,
                         )
+                    ],
+                    blocked_by_titles=[
+                        ticket.title
+                        for dependency, ticket in zip(
+                            row_dependencies, dependency_tickets, strict=True
+                        )
+                        if ticket is not None
+                        and not _is_dependency_satisfied(dependency.dependency_type, ticket.status)
                     ],
                     reference_count=reference_counts.get(row.id or 0, 0),
                     link_count=link_counts.get(row.id or 0, 0),

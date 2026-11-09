@@ -92,6 +92,7 @@ export interface TrackerTaskTicketSummary {
   terminal_count: number
   in_progress_count: number
   blocked_count: number
+  blocked_by_titles?: string[]
   status_counts: Record<string, number>
   assignees: string[]
   search_text: string
@@ -139,6 +140,7 @@ export interface TrackerTicket {
   completed_at: string | null
   dependency_keys: string[]
   blocked_by: string[]
+  blocked_by_titles?: string[]
   reference_count: number
   link_count: number
   agent_stats?: SchemaAgentStatsMetricsOut | null

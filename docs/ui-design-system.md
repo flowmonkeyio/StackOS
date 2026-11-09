@@ -108,6 +108,19 @@ header. Selection column: 32px. Long ledgers and catalog registries should use
 `DataTable`'s `max-height` so rows scroll inside the table region, and
 master/detail pages should pass `selected-id` to keep the active row visible.
 
+**Work cards and task header.** Concept 3 keeps title/status primary, then
+quiet Input / Cache / Output slots and a fixed 56px execution footer. Graph
+tickets are 328 × 224px; Board cards are 224px tall at the existing column
+width. Manual work reserves the same card geometry and omits usage. Current
+execution uses the canonical host mark, readable recorded role, exact model
+and start time; retained execution is explicitly `Last:`. Ordinary assignment
+never invents an occurrence. Genuine prerequisites use actual ticket titles
+in a bounded bottom-edge badge with full text available on inspection. Board
+has no Graph handles. The contextual task header groups identity/Automated,
+status and completion, inline task-lifetime usage, then Task details. At narrow
+desktop container widths it uses two fixed rows; changing values never selects
+the layout. Redundant ticket/dependency counts and an extra agent row are absent.
+
 **StackOS renderers.** `TemplateRenderer`, `RunPlanRenderer`,
 `ResourceViewRenderer`, `ArtifactRenderer`, `ContextQueryRenderer`,
 `ActionSchemaRenderer`, and `PluginNavRenderer` render server-sanitized payloads

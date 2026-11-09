@@ -7,6 +7,16 @@ import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 import TicketGraphNode from './TicketGraphNode.vue'
 
 describe('TicketGraphNode', () => {
+  it('anchors actual prerequisite titles and retains measured Last identity after execution', () => {
+    const metrics = agentStatsFixture().totals
+    metrics.last_execution = execution
+    const wrapper = mount(TicketGraphNode, { props: { data: nodeData({ taskAutomated: true, agentStats: metrics, blockedBy: ['Actual prerequisite title', 'Another long prerequisite title'] }) }, global: { stubs: { Handle: true } } })
+    expect(wrapper.get('.ticket-graph-node__blocked').attributes('title')).toBe('Blocked by: Actual prerequisite title, Another long prerequisite title')
+    expect(wrapper.get('.ticket-graph-node__blocked').attributes('tabindex')).toBe('0')
+    expect(wrapper.get('[data-last-execution]').text()).toContain('Last: Delivery reviewer')
+    expect(wrapper.find('[data-active-execution]').exists()).toBe(false)
+    expect(wrapper.findAll('canvas')).toHaveLength(3)
+  })
   it('keeps selection, in-progress and first-open hints separate from live execution', () => {
     const wrapper = mount(TicketGraphNode, {
       props: { data: nodeData({ active: true, status: 'in-progress' }) },
@@ -41,7 +51,7 @@ describe('TicketGraphNode', () => {
       props: { data: nodeData({ active: true, status: 'failed', deliveryStopped: true, deliveryStopReason: 'Browser access denied.' }) },
       global: { stubs: { Handle: true } },
     })
-    expect(wrapper.text()).toContain('Delivery stopped')
+    expect(wrapper.text()).toContain('Stopped')
     expect(wrapper.text()).not.toContain('Active now')
     expect(wrapper.classes()).not.toContain('ticket-graph-node--active')
     expect(wrapper.get('.ticket-graph-node__floating-state').attributes('title')).toBe('Browser access denied.')
@@ -86,7 +96,7 @@ describe('TicketGraphNode', () => {
       global: { stubs: { Handle: true } },
     })
 
-    expect(active.text()).toContain('Active now')
+    expect(active.text()).toContain('Starting')
     expect(active.text()).not.toContain('In Progress')
     expect(active.text()).toContain('P1')
     expect(active.text()).toContain('Delivery reviewer')
@@ -94,7 +104,7 @@ describe('TicketGraphNode', () => {
     expect(active.text()).not.toContain('Owner')
     expect(active.classes()).toContain('ticket-graph-node--active')
     expect(recent.text()).toContain('Complete')
-    expect(recent.text()).toContain('Updated')
+    expect(recent.get('.ticket-graph-node__floating-state').attributes('title')).toBe('Updated')
     expect(recent.classes()).toContain('ticket-graph-node--recent')
   })
 })

@@ -1,41 +1,26 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
-
-import { resolveStatus } from '@/design/status'
+import { UiBadge } from '@/components/ui'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
 import ActiveExecutionLine from '@/components/domain/ActiveExecutionLine.vue'
+import { executionStatus } from '@/lib/task-tracker/execution'
 import type { TrackerVueNodeData } from '@/lib/task-tracker/graphModel'
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
-import type { TrackerStatus } from '@/lib/task-tracker/types'
 
-const props = defineProps<{
-  data: TrackerVueNodeData
-}>()
-
-const isOpen = computed(() => !isTerminalTrackerStatus(props.data.status))
-const isBlocked = computed(() => isOpen.value && (props.data.blockedBy?.length ?? 0) > 0)
-const statusClass = computed(() => `ticket-graph-node--status-${props.data.status}`)
-const priorityClass = computed(() => `ticket-graph-node--priority-${props.data.priorityKey}`)
-const statusLabel = computed(
-  () => resolveStatus('tracker', props.data.status as TrackerStatus).label,
-)
-const displayedStateLabel = computed(() => props.data.deliveryStopped
-  ? resolveStatus('delivery', 'stopped').label
-  : props.data.activeExecution ? 'Active now' : statusLabel.value)
+const props = defineProps<{ data: TrackerVueNodeData }>()
+const isBlocked = computed(() => !isTerminalTrackerStatus(props.data.status) && (props.data.blockedBy?.length ?? 0) > 0)
+const state = computed(() => executionStatus(props.data.status, props.data.activeExecution, props.data.deliveryStopped
+  ? { status: 'stopped', ticketKey: props.data.itemKey, reason: props.data.deliveryStopReason ?? null } : null))
+const blocker = computed(() => `Blocked by: ${props.data.blockedBy?.join(', ')}`)
 </script>
 
 <template>
   <div
     class="ticket-graph-node"
     :class="[
-      statusClass,
-      priorityClass,
-      {
-        'ticket-graph-node--blocked': isBlocked,
-        'ticket-graph-node--active': !!data.activeExecution,
-        'ticket-graph-node--recent': data.recentlyUpdated,
-      },
+      `ticket-graph-node--status-${data.status}`,
+      { 'ticket-graph-node--blocked': isBlocked, 'ticket-graph-node--active': !!data.activeExecution, 'ticket-graph-node--recent': data.recentlyUpdated },
     ]"
   >
     <Handle
@@ -43,56 +28,48 @@ const displayedStateLabel = computed(() => props.data.deliveryStopped
       type="target"
       :position="Position.Left"
       :connectable="false"
-      class="ticket-graph-node__handle ticket-graph-node__handle--target"
+      class="ticket-graph-node__handle"
     />
     <Handle
       id="out"
       type="source"
       :position="Position.Right"
       :connectable="false"
-      class="ticket-graph-node__handle ticket-graph-node__handle--source"
+      class="ticket-graph-node__handle"
     />
-
-    <span class="ticket-graph-node__priority">
-      {{ data.priorityKey.toUpperCase() }}
-    </span>
-    <div
-      class="ticket-graph-node__floating-state"
-      :title="data.deliveryStopped ? data.deliveryStopReason ?? undefined : undefined"
-      :style="data.deliveryStopped ? { color: `var(--color-${resolveStatus('delivery', 'stopped').tone}-fg)` } : undefined"
-    >
-      <span class="ticket-graph-node__dot" />
-      <span>{{ displayedStateLabel }}</span>
-      <strong v-if="!data.activeExecution && data.recentlyUpdated">Updated</strong>
-    </div>
-
-    <div class="ticket-graph-node__heading">
-      <p
-        class="ticket-graph-node__title"
-        :title="data.label"
-      >
-        {{ data.label }}
-      </p>
+    <div class="ticket-graph-node__top">
       <span
         class="ticket-graph-node__key"
         :title="data.itemKey"
-      >{{ data.itemKey }}</span>
+      >{{ typeof data.raw.id === 'number' ? `#${data.raw.id}` : data.itemKey }}</span>
+      <UiBadge
+        tone="info"
+        variant="outline"
+      >
+        {{ data.priorityKey.toUpperCase() }}
+      </UiBadge>
+      <UiBadge
+        class="ticket-graph-node__floating-state"
+        :tone="state.tone"
+        :dot="true"
+        variant="outline"
+        :title="data.deliveryStopped ? data.deliveryStopReason ?? undefined : data.recentlyUpdated ? 'Updated' : undefined"
+      >
+        {{ state.label }}
+      </UiBadge>
     </div>
-
     <p
-      v-if="data.subtitle"
+      class="ticket-graph-node__title"
+      :title="data.label"
+    >
+      {{ data.label }}
+    </p>
+    <p
       class="ticket-graph-node__subtitle"
-      :title="data.subtitle"
+      :title="data.deliveryStopped ? data.deliveryStopReason ?? undefined : data.subtitle"
     >
-      {{ data.subtitle }}
+      {{ data.deliveryStopped ? data.deliveryStopReason : data.subtitle }}
     </p>
-    <p
-      v-else
-      class="ticket-graph-node__subtitle ticket-graph-node__subtitle--empty"
-    >
-      No additional work context recorded.
-    </p>
-
     <AgentUsageSummary
       v-if="data.taskAutomated"
       class="ticket-graph-node__usage"
@@ -100,265 +77,41 @@ const displayedStateLabel = computed(() => props.data.deliveryStopped
       compact
       title="Own ticket usage"
     />
-
-    <ActiveExecutionLine
-      :execution="data.activeExecution"
-      class="ticket-graph-node__execution"
-      focusable
-    />
-
+    <div class="ticket-graph-node__footer">
+      <ActiveExecutionLine
+        :execution="data.activeExecution"
+        :last-execution="data.taskAutomated ? data.agentStats?.last_execution : null"
+        :owner="data.owner"
+        class="ticket-graph-node__execution"
+        focusable
+      />
+    </div>
     <p
       v-if="isBlocked"
       class="ticket-graph-node__blocked"
+      :title="blocker"
+      tabindex="0"
     >
-      Blocked by {{ data.blockedBy?.join(', ') }}
+      {{ blocker }}
     </p>
   </div>
 </template>
 
 <style scoped>
-.ticket-graph-node {
-  --ticket-node-status: var(--color-neutral-default);
-  --ticket-node-priority: var(--color-neutral-fg);
-
-  position: relative;
-  box-sizing: border-box;
-  width: var(--tracker-ticket-node-width, 328px);
-  height: var(--tracker-ticket-node-height, 200px);
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-md);
-  background: var(--color-bg-surface);
-  box-shadow: var(--shadow-xs);
-  padding: 20px 14px 12px 16px;
-}
-
-.ticket-graph-node::before {
-  position: absolute;
-  inset: 0;
-  border-radius: calc(var(--radius-md) - 1px) 0 0 calc(var(--radius-md) - 1px);
-  background: linear-gradient(to right, var(--ticket-node-status) 4px, transparent 4px);
-  content: '';
-}
-
-.ticket-graph-node:hover {
-  box-shadow: var(--shadow-sm);
-}
-
-.ticket-graph-node--status-complete {
-  --ticket-node-status: var(--color-success-default);
-}
-
-.ticket-graph-node--status-in-progress {
-  --ticket-node-status: var(--color-info-default);
-}
-
-.ticket-graph-node--status-deferred {
-  --ticket-node-status: var(--color-warning-default);
-}
-
-.ticket-graph-node--status-aborted,
-.ticket-graph-node--status-failed {
-  --ticket-node-status: var(--color-danger-default);
-}
-
-.ticket-graph-node--priority-p0,
-.ticket-graph-node--priority-p1 {
-  --ticket-node-priority: var(--color-warning-fg);
-}
-
-.ticket-graph-node--priority-p2 {
-  --ticket-node-priority: var(--color-info-fg);
-}
-
-.ticket-graph-node--blocked {
-  border-color: color-mix(in srgb, var(--color-danger-default) 45%, var(--color-border-default));
-}
-
-.ticket-graph-node--active {
-  border-color: var(--color-accent-primary);
-}
-
-.ticket-graph-node--active .ticket-graph-node__dot {
-  background: var(--color-accent-primary);
-}
-
-.ticket-graph-node--recent {
-  border-color: color-mix(in srgb, var(--ticket-node-status) 62%, var(--color-border-default));
-}
-
-.ticket-graph-node__priority,
-.ticket-graph-node__floating-state {
-  position: absolute;
-  top: -10px;
-  z-index: 2;
-  display: inline-flex;
-  height: 20px;
-  align-items: center;
-  border: 1px solid var(--color-border-default);
-  border-radius: var(--radius-full);
-  background: var(--color-bg-surface);
-  box-shadow: var(--shadow-xs);
-  font-size: 10px;
-  line-height: 1;
-}
-
-.ticket-graph-node__priority {
-  left: 14px;
-  padding: 0 7px;
-  color: var(--ticket-node-priority);
-  font-family: var(--font-mono);
-  font-weight: var(--fw-semibold);
-}
-
-.ticket-graph-node__floating-state {
-  right: 12px;
-  max-width: 158px;
-  gap: 5px;
-  padding: 0 7px;
-  color: var(--color-fg-muted);
-}
-
-.ticket-graph-node__floating-state > span:not(.ticket-graph-node__dot) {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ticket-graph-node__floating-state strong {
-  color: var(--color-accent-primary);
-  font-weight: var(--fw-semibold);
-}
-
-.ticket-graph-node__dot {
-  width: 7px;
-  height: 7px;
-  flex: none;
-  border-radius: var(--radius-full);
-  background: var(--ticket-node-status);
-}
-
-.ticket-graph-node__handle {
-  width: 9px;
-  height: 9px;
-  border: 1px solid var(--color-border-strong);
-  background: var(--color-bg-surface);
-}
-
-.ticket-graph-node__handle--target {
-  left: -1px;
-}
-
-.ticket-graph-node__handle--source {
-  right: -1px;
-}
-
-.ticket-graph-node__heading {
-  position: relative;
-  display: grid;
-  gap: 3px;
-}
-
-.ticket-graph-node__title {
-  display: -webkit-box;
-  overflow: hidden;
-  min-width: 0;
-  color: var(--color-fg-strong);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  line-height: 1.35;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.ticket-graph-node__key {
-  overflow: hidden;
-  color: var(--color-fg-subtle);
-  font-family: var(--font-mono);
-  font-size: 9px;
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ticket-graph-node__subtitle {
-  display: -webkit-box;
-  overflow: hidden;
-  min-height: 27px;
-  margin-top: 7px;
-  color: var(--color-fg-muted);
-  font-size: 10px;
-  line-height: 1.35;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.ticket-graph-node__subtitle--empty {
-  color: var(--color-fg-subtle);
-}
-
-.ticket-graph-node__usage {
-  position: relative;
-  margin-top: 8px;
-  color: var(--color-fg-muted);
-  font-size: 10px;
-  line-height: 16px;
-  font-variant-numeric: tabular-nums;
-}
-
-.ticket-graph-node__execution {
-  position: relative;
-  margin-top: 8px;
-  border-top: 1px solid var(--color-border-subtle);
-  padding-top: 7px;
-}
-
-.ticket-graph-node__blocked {
-  position: absolute;
-  right: 12px;
-  bottom: -10px;
-  z-index: 4;
-  overflow: hidden;
-  max-width: calc(100% - 24px);
-  border: 1px solid color-mix(in srgb, var(--color-danger-default) 58%, var(--color-bg-surface));
-  border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--color-danger-default) 22%, var(--color-bg-surface));
-  box-shadow:
-    0 0 0 2px var(--color-bg-surface-alt),
-    var(--shadow-sm);
-  padding: 4px 8px;
-  color: var(--color-danger-fg);
-  font-size: 9px;
-  line-height: 1;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-:global(.tracker-node-active) .ticket-graph-node {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-accent-primary) 14%, transparent);
-}
-
-:global(.tracker-node-recent) .ticket-graph-node {
-  animation: tracker-recent-node 1.35s ease-out 1;
-}
-
-@keyframes tracker-recent-node {
-  0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ticket-node-status) 0%, transparent);
-  }
-
-  34% {
-    box-shadow: 0 0 0 5px color-mix(in srgb, var(--ticket-node-status) 20%, transparent);
-  }
-
-  100% {
-    box-shadow: var(--shadow-xs);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  :global(.tracker-node-active) .ticket-graph-node,
-  :global(.tracker-node-recent) .ticket-graph-node {
-    animation: none;
-  }
-}
+.ticket-graph-node { position: relative; box-sizing: border-box; width: var(--tracker-ticket-node-width, 328px); height: var(--tracker-ticket-node-height, 224px); padding: 12px 14px 54px; border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); background: var(--color-bg-surface); box-shadow: var(--shadow-xs); }
+.ticket-graph-node:hover { box-shadow: var(--shadow-sm); }
+.ticket-graph-node--active { border-color: var(--color-border-focus); }
+.ticket-graph-node--blocked { box-shadow: inset 3px 0 var(--color-warning-default), var(--shadow-xs); }
+.ticket-graph-node__top { display: flex; height: 20px; min-width: 0; align-items: center; gap: 6px; }
+.ticket-graph-node__key { min-width: 0; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-fg-muted); font-size: 10px; }
+.ticket-graph-node__floating-state { flex: none; margin-left: auto; }
+.ticket-graph-node__handle { width: 9px; height: 9px; border: 1px solid var(--color-border-strong); background: var(--color-bg-surface); }
+.ticket-graph-node__title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; height: 40px; margin-top: 6px; color: var(--color-fg-strong); font-size: 14px; font-weight: var(--fw-semibold); line-height: 20px; }
+.ticket-graph-node__subtitle { height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-fg-muted); font-size: 11px; line-height: 16px; }
+.ticket-graph-node__usage { margin-top: 8px; }
+.ticket-graph-node__footer { position: absolute; inset: auto 0 0; height: 56px; display: flex; align-items: center; border-top: 1px solid var(--color-border-default); padding: 0 14px 12px; }
+.ticket-graph-node__execution { width: 100%; }
+.ticket-graph-node__blocked { position: absolute; bottom: -10px; left: 20px; right: 20px; z-index: 4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: fit-content; max-width: calc(100% - 40px); margin: 0 auto; padding: 3px 8px; border: 1px solid var(--color-warning-default); border-radius: var(--radius-full); background: var(--color-warning-subtle); color: var(--color-warning-fg); font-size: 10px; line-height: 14px; }
+.ticket-graph-node__blocked:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 2px; }
+:global(.tracker-node-active) .ticket-graph-node { box-shadow: 0 0 0 2px var(--color-accent-subtle); }
 </style>

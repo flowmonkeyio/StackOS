@@ -218,6 +218,15 @@ const snapshot: TrackerSnapshot = {
 }
 
 describe('buildTrackerFlowModel', () => {
+  it('resolves prerequisite keys to actual titles at the dependency projection owner', () => {
+    const fixture = structuredClone(snapshot)
+    fixture.tickets[1]!.blocked_by = [fixture.tickets[0]!.key]
+    const data = buildTrackerFlowModel(fixture).nodes.find(node => node.id === 'ticket:deliver')!.data!
+    expect(data.blockedBy).toEqual([fixture.tickets[0]!.title])
+    fixture.tickets[1]!.blocked_by_titles = ['Actual prerequisite in another task']
+    fixture.tickets = [fixture.tickets[1]!]
+    expect(buildTrackerFlowModel(fixture).nodes.find(node => node.id === 'ticket:deliver')!.data!.blockedBy).toEqual(['Actual prerequisite in another task'])
+  })
   it('propagates the persisted parent task method rather than inferring automation from receipts or workflow', () => {
     const fixture = structuredClone(snapshot)
     fixture.tickets[0]!.agent_stats = agentStatsFixture().totals
@@ -290,7 +299,7 @@ describe('buildTrackerFlowModel', () => {
       sourceKind: 'workflow',
     })
     expect(TRACKER_TICKET_NODE_WIDTH).toBe(328)
-    expect(TRACKER_TICKET_NODE_HEIGHT).toBe(200)
+    expect(TRACKER_TICKET_NODE_HEIGHT).toBe(224)
     expect(model.edges).toEqual([
       expect.objectContaining({
         id: 'dependency:prepare:deliver',

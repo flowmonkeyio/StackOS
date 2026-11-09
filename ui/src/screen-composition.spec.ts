@@ -64,10 +64,10 @@ describe('desktop screen composition contract', () => {
     expect(board).toContain('row.task.status === status')
     expect(board).toContain("@click=\"$emit('openTask', row.key)\"")
     expect(board).not.toMatch(/draggable|@drop|@dragstart/)
-    const boardControls = commands.split('<template v-if="viewMode === \'board\'">')[1]!.split('<template v-else>')[0]!
+    const boardControls = commands.split('<template v-if="viewMode === \'board\'">')[1]!.split(/<div\s+v-else\s+class="tracker-command-panel__context"\s*>/)[0]!
     expect(boardControls).toContain('aria-label="Search tasks"')
     expect(boardControls).not.toContain('aria-label="Selected task"')
-    expect(commands).toMatch(/<template v-else>[\s\S]*aria-label="Selected task"/)
+    expect(commands).toMatch(/<div\s+v-else\s+class="tracker-command-panel__context"\s*>[\s\S]*aria-label="Selected task"/)
     expect(taskDialog).toContain('<UiDialog')
     expect(taskDialog.match(/<UiDialog\b/g)).toHaveLength(1)
     expect(taskDialog).toContain('layout="detail"')

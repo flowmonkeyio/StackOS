@@ -13,6 +13,15 @@ import {
 } from './viewModel'
 
 describe('task tracker view model', () => {
+  it('uses actual dependency titles in full snapshots without turning ready sibling work into a blocked task', () => {
+    const task = makeTask({ key: 'delivery' })
+    const waiting = makeTicket({ key: 'waiting', task_key: 'delivery', blocked_by: ['upstream'] })
+    const upstream = makeTicket({ key: 'upstream', task_key: 'other-task', title: 'Actual upstream title' })
+    const project = (tickets: TrackerTicket[]) => buildTaskProgressRows([task], groupTicketsByTask(tickets), emptyFilters())[0]!
+    expect(project([waiting, upstream]).blockedByTitles).toEqual(['Actual upstream title'])
+    expect(project([waiting, upstream, makeTicket({ key: 'ready', task_key: 'delivery' })]).blockedByTitles).toEqual([])
+    expect(buildTaskProgressRows([{ ...task, status: 'complete' }], groupTicketsByTask([waiting, upstream]), emptyFilters())[0]!.blockedByTitles).toEqual([])
+  })
   it('filters board task status independently from child ticket status', () => {
     const task = makeTask({ status: 'in-progress' })
     const ticket = makeTicket({ status: 'complete' })

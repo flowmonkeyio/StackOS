@@ -4,12 +4,9 @@ import { UiBadge, UiIcon } from '@/components/ui'
 import { trackerStatus } from '@/design/status'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
 import ActiveExecutionLine from '@/components/domain/ActiveExecutionLine.vue'
-import TaskDeliveryStop from '@/components/domain/TaskDeliveryStop.vue'
-import { resolveAgentOwnerLogo } from '@/lib/stackos/agentIdentity'
-import { formatAbsoluteDateTime, formatShortDate } from '@/lib/stackos/time'
 import type { TrackerStatus } from '@/lib/task-tracker/types'
 import { isAutomaticDeliveryTask, taskDeliveryState } from '@/lib/task-tracker/delivery'
-import { activeExecutionTitle } from '@/lib/task-tracker/execution'
+import { activeExecutionTitle, executionStatus } from '@/lib/task-tracker/execution'
 import type { TaskProgressRow } from './viewTypes'
 
 const props = defineProps<{ rows: TaskProgressRow[]; selectedTaskKey?: string }>()
@@ -19,8 +16,13 @@ const columns = computed(() => (Object.keys(trackerStatus) as TrackerStatus[]).m
   rows: props.rows.filter((row) => row.task.status === status),
 })))
 
-function initials(owner: string): string {
-  return owner.split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase()
+function state(row: TaskProgressRow) {
+  return executionStatus(row.task.status, row.task.active_execution, taskDeliveryState(row.task))
+}
+function blocker(row: TaskProgressRow): string | null {
+  if (row.task.active_execution) return null
+  const titles = row.blockedByTitles
+  return titles.length ? `Blocked by: ${titles.join(', ')}` : null
 }
 </script>
 
@@ -53,7 +55,7 @@ function initials(owner: string): string {
           :key="row.key"
           type="button"
           class="tracker-board__card focus-ring"
-          :class="{ 'tracker-board__card--selected': selectedTaskKey === row.key }"
+          :class="{ 'tracker-board__card--selected': selectedTaskKey === row.key, 'tracker-board__card--blocked': blocker(row) }"
           :aria-label="`Open task #${row.id}: ${row.task.title}${row.task.active_execution ? `; Active now: ${activeExecutionTitle(row.task.active_execution)}` : ''}`"
           :title="row.task.active_execution ? activeExecutionTitle(row.task.active_execution) : undefined"
           @focus="($event.currentTarget as HTMLElement).scrollIntoView({ block: 'nearest', inline: 'nearest' })"
@@ -78,12 +80,21 @@ function initials(owner: string): string {
               />
               {{ row.completedCount }}/{{ row.totalCount }}
             </span>
+            <UiBadge
+              class="tracker-board__state"
+              :tone="state(row).tone"
+              :dot="true"
+              variant="outline"
+            >{{ state(row).label }}</UiBadge>
           </span>
           <span
             class="tracker-board__title"
             :title="row.task.title"
           >{{ row.task.title }}</span>
-          <TaskDeliveryStop :delivery="taskDeliveryState(row.task)" />
+          <span
+            class="tracker-board__subtitle"
+            :title="taskDeliveryState(row.task)?.reason ?? row.task.goal"
+          >{{ taskDeliveryState(row.task)?.reason ?? row.task.goal }}</span>
           <AgentUsageSummary
             v-if="isAutomaticDeliveryTask(row.task)"
             :metrics="row.task.agent_stats"
@@ -92,34 +103,17 @@ function initials(owner: string): string {
           />
           <span class="tracker-board__meta">
             <ActiveExecutionLine
-              v-if="row.task.active_execution"
               :execution="row.task.active_execution"
+              :last-execution="isAutomaticDeliveryTask(row.task) ? row.task.agent_stats?.last_execution : null"
+              :owner="row.task.owner"
               class="tracker-board__execution"
             />
-            <span
-              v-if="!row.task.active_execution"
-              class="tracker-board__identity"
-            >
-              <time
-                :datetime="row.task.created_at"
-                :title="`Created ${formatAbsoluteDateTime(row.task.created_at)}`"
-              ><span class="sr-only">Created </span>{{ formatShortDate(row.task.created_at) }}</time>
-            </span>
-            <span
-              v-if="row.task.owner && !row.task.active_execution"
-              class="tracker-board__owner"
-              :class="{ 'tracker-board__owner--agent': resolveAgentOwnerLogo(row.task.owner) }"
-              :title="row.task.owner"
-            >
-              <img
-                v-if="resolveAgentOwnerLogo(row.task.owner)"
-                :src="resolveAgentOwnerLogo(row.task.owner)!"
-                :alt="row.task.owner"
-                class="tracker-board__owner-logo"
-              >
-              <template v-else>{{ initials(row.task.owner) }}</template>
-            </span>
           </span>
+          <span
+            v-if="blocker(row)"
+            class="tracker-board__blocked"
+            :title="blocker(row)!"
+          >{{ blocker(row) }}</span>
         </button>
         <p
           v-if="!column.rows.length"
@@ -136,21 +130,23 @@ function initials(owner: string): string {
 .tracker-board { display: grid; grid-template-columns: repeat(7, minmax(300px, 1fr)); column-gap: 12px; flex: 1 1 auto; min-width: 0; min-height: 360px; overflow: auto; overscroll-behavior: contain; }
 .tracker-board__column { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .tracker-board__heading { display: flex; flex: none; align-items: center; gap: 8px; padding: 12px 8px; }
-.tracker-board__cards { display: grid; flex: 1 1 auto; align-content: start; gap: 8px; padding: 4px 4px 12px; overflow-y: auto; min-height: 0; scrollbar-width: thin; }
-.tracker-board__card { position: relative; display: grid; gap: 12px; width: 100%; padding: 12px; border: 1px solid transparent; border-radius: var(--radius-lg); background: var(--color-bg-surface); text-align: left; scroll-margin: 4px; }
+.tracker-board__cards { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1 1 auto; align-content: start; gap: 24px; padding: 4px 4px 16px; overflow-y: auto; min-height: 0; scrollbar-width: thin; scrollbar-gutter: stable; }
+.tracker-board__card { position: relative; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; box-sizing: border-box; height: 224px; width: 100%; padding: 12px 12px 54px; border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); background: var(--color-bg-surface); text-align: left; scroll-margin: 4px; }
 .tracker-board__card:hover { border-color: var(--color-border-default); background: var(--color-bg-surface-alt); }
 .tracker-board__card--selected { border-color: var(--color-border-focus); }
-.tracker-board__title { min-width: 0; color: var(--color-fg-strong); font-size: 14px; font-weight: 500; line-height: 20px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.tracker-board__meta { display: flex; min-width: 0; min-height: 20px; align-items: center; gap: 12px; color: var(--color-fg-muted); font-size: 12px; line-height: 18px; }
+.tracker-board__title { height: 40px; margin-top: 6px; min-width: 0; color: var(--color-fg-strong); font-size: 14px; font-weight: var(--fw-semibold); line-height: 20px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tracker-board__subtitle { display: block; height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-fg-muted); font-size: 11px; line-height: 16px; }
+.tracker-board__card :deep(.agent-usage-summary) { margin-top: 8px; }
+.tracker-board__meta { position: absolute; inset: auto 0 0; height: 56px; display: flex; min-width: 0; align-items: center; padding: 0 12px 12px; border-top: 1px solid var(--color-border-default); }
 .tracker-board__execution { flex: 1 1 auto; }
-.tracker-board__identity { display: flex; min-width: 0; align-items: center; gap: 8px; margin-right: auto; white-space: nowrap; color: var(--color-fg-muted); font-size: 12px; }
+.tracker-board__identity { display: flex; height: 20px; min-width: 0; align-items: center; gap: 5px; white-space: nowrap; color: var(--color-fg-muted); font-size: 10px; }
 .tracker-board__identity time { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tracker-board__identity--header { margin-right: 0; }
-.tracker-board__identity--header .tracker-board__progress { margin-left: auto; }
+.tracker-board__state { margin-left: auto; flex: none; }
+.tracker-board__identity :deep(.ui-badge) { font-size: 10px; padding-left: 5px; padding-right: 5px; }
 .tracker-board__id { flex: none; font-variant-numeric: tabular-nums; }
 .tracker-board__progress { display: inline-flex; flex: none; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
-.tracker-board__owner { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; flex: none; border-radius: var(--radius-full); background: var(--color-bg-surface-alt); color: var(--color-fg-muted); font-size: 9px; font-weight: 600; }
-.tracker-board__owner--agent { border-radius: var(--radius-xs); background: transparent; }
-.tracker-board__owner-logo { width: 100%; height: 100%; border-radius: inherit; object-fit: contain; }
+.tracker-board__card--blocked { box-shadow: inset 3px 0 var(--color-warning-default); }
+.tracker-board__blocked { position: absolute; bottom: -10px; left: 20px; right: 20px; margin: 0 auto; width: fit-content; max-width: calc(100% - 40px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 8px; border: 1px solid var(--color-warning-default); border-radius: var(--radius-full); background: var(--color-warning-subtle); color: var(--color-warning-fg); font-size: 10px; line-height: 14px; }
 .tracker-board__empty { padding: 16px 4px; color: var(--color-fg-subtle); font-size: 12px; text-align: center; }
 </style>

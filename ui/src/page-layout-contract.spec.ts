@@ -61,7 +61,7 @@ describe('desktop page layout contract', () => {
     expect(wrapper).toContain('<RouterView />')
   })
 
-  it('keeps Board and Graph controls inline in one shared Work toolbar', () => {
+  it('keeps one shared Work toolbar with Board filters and the approved contextual Graph header', () => {
     const work = source('views/TaskTrackerView.vue')
     const commands = source('views/task-tracker/TaskTrackerCommandPanel.vue')
     const board = source('views/task-tracker/TrackerBoardPanel.vue')
@@ -71,7 +71,8 @@ describe('desktop page layout contract', () => {
     expect(work.indexOf('<TaskTrackerCommandPanel')).toBeLessThan(work.indexOf('<TrackerBoardPanel'))
     expect(work.indexOf('<TaskTrackerCommandPanel')).toBeLessThan(work.indexOf('<TrackerGraphPanel'))
     expect(commands.match(/<UiToolbar\b/g)).toHaveLength(1)
-    expect(commands).toMatch(/<UiToolbar[\s\S]*<UiSegmentedControl[\s\S]*<template v-if="viewMode === 'board'">[\s\S]*<template v-else>[\s\S]*<\/UiToolbar>/)
+    expect(commands).toMatch(/<UiToolbar[\s\S]*<UiSegmentedControl[\s\S]*<template v-if="viewMode === 'board'">[\s\S]*<div\s+v-else\s+class="tracker-command-panel__context"\s*>[\s\S]*<\/UiToolbar>/)
+    expect(commands).toMatch(/tracker-command-panel__identity[\s\S]*tracker-command-panel__progress[\s\S]*<AgentUsageSummary[\s\S]*Task details/)
     expect(commands).toMatch(/\.tracker-command-panel\s*\{[^}]*flex-wrap:\s*nowrap/)
     expect(commands).toContain("{ key: 'board', label: 'Board' }")
     expect(commands).toContain("{ key: 'graph', label: 'Graph' }")

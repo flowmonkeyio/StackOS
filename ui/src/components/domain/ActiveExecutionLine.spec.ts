@@ -5,6 +5,20 @@ import ActiveExecutionLine from './ActiveExecutionLine.vue'
 const execution = { live_usage: null, invocation_id: 'call-1', agent: 'Project_delivery_agent_with_a_long_name', host_key: 'codex', model: 'gpt-6.1-sol', started_at: '2026-11-08T01:08:00Z', ticket_key: 'child' }
 
 describe('ActiveExecutionLine', () => {
+  it('renders actual host identity, explicitly retains Last and never invents an occurrence for assignment', async () => {
+    const wrapper = mount(ActiveExecutionLine, { props: { execution, owner: 'Codex' } })
+    expect(wrapper.get('img').attributes('src')).toBe('/images/openai.webp')
+    await wrapper.setProps({ execution: null, lastExecution: { ...execution, agent: 'sdlc_delivery_reviewer', host_key: 'claude-code' } })
+    expect(wrapper.get('img').attributes('src')).toBe('/images/claude-code.webp')
+    expect(wrapper.get('[data-last-execution]').text()).toContain('Last: Delivery reviewer')
+    expect(wrapper.find('[data-active-execution]').exists()).toBe(false)
+    expect(wrapper.find('time').exists()).toBe(false)
+    expect(wrapper.attributes('title')).toContain(`Started ${new Date(execution.started_at).toLocaleString()}`)
+    await wrapper.setProps({ lastExecution: null })
+    expect(wrapper.text()).toBe('Assigned: Codex')
+    expect(wrapper.text()).not.toContain('gpt-6.1-sol')
+    expect(wrapper.find('time').exists()).toBe(false)
+  })
   it('switches identity and current-call start across delivery/review/repair and removes inactive calls', async () => {
     const wrapper = mount(ActiveExecutionLine, { props: { execution, focusable: true } })
     expect(wrapper.get('time').text()).toContain(new Date(execution.started_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }))

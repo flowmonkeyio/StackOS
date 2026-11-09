@@ -1420,7 +1420,7 @@ should prefer `tracker.status`, `tracker.next`, `tracker.brief`,
 Operator task selectors may call `tracker.get` with `task_index_only=true`,
 `include_graph=false`, and `response_mode=raw`. That projection returns all
 matching tasks with `ticket_summary` rollups (status counts, terminal/in-progress/
-blocked totals, assignees, and searchable ticket terms) while omitting ticket rows,
+blocked totals, actual `blocked_by_titles`, assignees, and searchable ticket terms) while omitting ticket rows,
 dependencies, links, and graph data. Ticket-scoped filters are intentionally
 rejected in this mode; load one focused task or a normal filtered snapshot when
 ticket detail is required.
@@ -1436,15 +1436,22 @@ Start/finish events (`tracker.execution.changed`) travel over the existing track
 SSE connection even when lifecycle status stays unchanged. These are two lifetime
 notifications per call, not usage samples or ticket lifecycle writes.
 
-Board cards replace their quiet creation/owner metadata with a single active
-agent/model/local-start line; progress remains visible and card density is retained.
-Only the executing Graph ticket shows this footer and `Active now`; graph focus
-remains a separate visual affordance. Graph nodes stay 328×200. Full identity and
-local start date are available on hover/focus and in task/ticket details; historical
-owner/assignee and receipts remain in details. The approved compact reference is
-[`compact-live-activity.png`](assets/usage-785/compact-live-activity.png). Its token
-traces follow the live-usage contract below; status or selection alone never
-registers a native call or starts collection.
+Board and Graph cards use the approved Concept 3 anchored execution footer, with
+a fixed 56px track to keep two identity lines clear of the bottom-edge badge.
+Graph nodes are 328×224; Board cards remain 224px tall at the current column width.
+Actual current host/role/model/start replaces ordinary assignment. A retained
+`agent_stats.last_execution` is explicitly Last, with no live indicator or current
+start label. Full recorded provenance remains available on hover/focus and in
+details. Manual work omits usage; automated work preserves fixed mini-canvases
+before, during and after execution. Board and task header use whole-task lifetime
+values/trends; Graph tickets use their own receipts. The task header retains
+status/completion and Task details while removing redundant ticket/dependency counts.
+The lightweight rollup supplies actual prerequisite titles only when all open
+work waits on real dependencies; an active occurrence suppresses the Board badge.
+Ticket reads also expose `blocked_by_titles` from the same dependency owner, so
+a focused Graph read retains titles for prerequisites belonging to other tasks.
+Stop/approval/proof reasons stay separate from prerequisites. Focus, selection
+and persisted status alone never register a native call or start collection.
 Bounded overview surfaces that do not need a complete selector may also pass
 `task_statuses` (for example, `not-started` and `in-progress`). This filters the
 top-level task rows while retaining aggregate summaries across each returned

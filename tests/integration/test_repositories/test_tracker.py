@@ -148,6 +148,63 @@ def test_tracker_task_index_is_complete_and_snapshot_queries_are_bounded(
         repo.get(project_id=project_id, task_index_only=True)
 
 
+def test_task_index_exposes_actual_prerequisite_titles_only_when_work_is_waiting(
+    session: Session,
+    project_id: int,
+) -> None:
+    repo = TrackerRepository(session)
+    for key in ("waiting-task", "upstream-task"):
+        repo.create_task(project_id=project_id, key=key, title=key, created_by="codex")
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="upstream-task",
+        key="upstream",
+        title="Actual prerequisite title",
+        created_by="codex",
+    )
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="waiting-task",
+        key="waiting",
+        title="Waiting work",
+        dependency_keys=["upstream"],
+        created_by="codex",
+    )
+
+    def titles() -> list[str]:
+        index = repo.get(project_id=project_id, task_index_only=True, include_graph=False)
+        summary = next(task for task in index.tasks if task.key == "waiting-task").ticket_summary
+        assert summary is not None
+        return summary.blocked_by_titles
+
+    assert titles() == ["Actual prerequisite title"]
+    focused = repo.get(project_id=project_id, task_key="waiting-task", include_graph=False)
+    assert [ticket.key for ticket in focused.tickets] == ["waiting"]
+    assert focused.tickets[0].blocked_by_titles == ["Actual prerequisite title"]
+    assert repo.brief(project_id=project_id, ticket_key="waiting").ticket.blocked_by_titles == [
+        "Actual prerequisite title"
+    ]
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="waiting-task",
+        key="ready",
+        title="Independent ready work",
+        created_by="codex",
+    )
+    assert titles() == []
+    repo.update_ticket(
+        project_id=project_id, ticket_key="ready", patch_json={"status": "complete"}, actor="codex"
+    )
+    assert titles() == ["Actual prerequisite title"]
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="upstream",
+        patch_json={"status": "complete"},
+        actor="codex",
+    )
+    assert titles() == []
+
+
 def test_task_status_update_records_timeline_event(
     session: Session,
     project_id: int,

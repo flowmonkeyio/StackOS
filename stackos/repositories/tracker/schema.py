@@ -105,6 +105,7 @@ class TrackerTaskTicketSummaryOut(BaseModel):
     terminal_count: int = 0
     in_progress_count: int = 0
     blocked_count: int = 0
+    blocked_by_titles: list[str] = Field(default_factory=list)
     status_counts: dict[str, int] = Field(default_factory=dict)
     assignees: list[str] = Field(default_factory=list)
     search_text: str = ""
@@ -244,6 +245,7 @@ class TrackerTicketOut(BaseModel):
     completed_at: datetime | None
     dependency_keys: list[str] = Field(default_factory=list)
     blocked_by: list[str] = Field(default_factory=list)
+    blocked_by_titles: list[str] = Field(default_factory=list)
     reference_count: int = 0
     link_count: int = 0
     agent_stats: AgentStatsMetricsOut | None = Field(

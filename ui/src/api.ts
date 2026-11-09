@@ -6953,6 +6953,8 @@ export interface components {
         TrackerTaskTicketSummaryOut: {
             /** Assignees */
             assignees?: string[];
+            /** Blocked By Titles */
+            blocked_by_titles?: string[];
             /**
              * Blocked Count
              * @default 0
@@ -7006,6 +7008,8 @@ export interface components {
             assignee: string | null;
             /** Blocked By */
             blocked_by?: string[];
+            /** Blocked By Titles */
+            blocked_by_titles?: string[];
             /** Blocker Reason */
             blocker_reason: string | null;
             /** Claimed At */

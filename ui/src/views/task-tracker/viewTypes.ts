@@ -19,6 +19,7 @@ export interface TaskProgressRow {
   totalCount: number
   inProgressCount: number
   blockedCount: number
+  blockedByTitles: string[]
   percent: number
   workflowLabel: string
   currentDetail: string

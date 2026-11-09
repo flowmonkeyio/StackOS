@@ -62,7 +62,7 @@ export interface TrackerFlowModel {
 type EdgeFocusTone = 'default' | 'muted' | 'upstream' | 'downstream' | 'active' | 'highlighted'
 
 export const TRACKER_TICKET_NODE_WIDTH = 328
-export const TRACKER_TICKET_NODE_HEIGHT = 200
+export const TRACKER_TICKET_NODE_HEIGHT = 224
 
 const TASK_WIDTH = 392
 const TICKET_WIDTH = TRACKER_TICKET_NODE_WIDTH
@@ -641,7 +641,7 @@ function vueNodeData(
       ticket?.goal ||
       ticket?.source_kind ||
       linkSubtitle(graphNode),
-    blockedBy: ticket?.blocked_by,
+    blockedBy: ticket?.blocked_by_titles ?? ticket?.blocked_by.map(key => snapshot.tickets.find(candidate => candidate.key === key)?.title ?? key),
     assignee: ticket?.assignee,
     owner: ticket?.assignee ?? task?.owner,
     activeExecution: ticket?.active_execution ?? null,

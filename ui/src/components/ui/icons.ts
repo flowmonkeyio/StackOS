@@ -71,6 +71,7 @@ import {
   SunIcon,
   TrashIcon,
   UserGroupIcon,
+  UserIcon,
   WrenchScrewdriverIcon,
   XCircleIcon,
   XMarkIcon,
@@ -171,6 +172,7 @@ export const UI_ICONS: Record<string, Component> = {
   tasks: ClipboardDocumentCheckIcon,
   terminal: CommandLineIcon,
   users: UserGroupIcon,
+  user: UserIcon,
   wrench: WrenchScrewdriverIcon,
 
   // Theme

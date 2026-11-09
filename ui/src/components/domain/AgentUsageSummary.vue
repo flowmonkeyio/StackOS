@@ -3,7 +3,7 @@ import { usageFields, usageValue, formatUsage, exactUsage, type AgentStatsMetric
 import { computed } from 'vue'
 import UsageTrace from './UsageTrace.vue'
 
-const props = withDefaults(defineProps<{ metrics?: AgentStatsMetrics | null; compact?: boolean }>(), { metrics: null, compact: false })
+const props = withDefaults(defineProps<{ metrics?: AgentStatsMetrics | null; compact?: boolean; inline?: boolean }>(), { metrics: null, compact: false, inline: false })
 const fields = computed(() => usageFields.map(field => ({
   ...field,
   value: usageValue(props.metrics, field.key),
@@ -17,7 +17,7 @@ const scopeTitle = 'Recorded totals and measured charts cover the same task or t
 <template>
   <dl
     class="agent-usage-summary"
-    :class="{ 'agent-usage-summary--compact': compact }"
+    :class="{ 'agent-usage-summary--compact': compact, 'agent-usage-summary--inline': compact && inline }"
     :style="compact ? undefined : { gridTemplateColumns: `repeat(${fields.length}, minmax(0, 1fr))` }"
     aria-label="Recorded token usage"
     :title="compact ? scopeTitle : undefined"
@@ -61,4 +61,7 @@ dd.agent-usage-summary__unavailable { color: var(--color-fg-muted); font-size: 1
 .agent-usage-summary--compact dt { color: var(--color-fg-muted); font-size: 11px; line-height: 16px; margin: 0; }
 .agent-usage-summary--compact dd { width: 100%; overflow: hidden; text-overflow: ellipsis; color: var(--color-fg-default); font-size: 13px; line-height: 20px; font-weight: 500; letter-spacing: 0; }
 .agent-usage-summary--compact dd.agent-usage-summary__unavailable { color: var(--color-fg-muted); }
+.agent-usage-summary--inline .agent-usage-summary__metric { grid-template-columns: 62px minmax(0, 1fr); grid-template-rows: 16px 20px; column-gap: 4px; }
+.agent-usage-summary--inline dt { grid-column: 1 / -1; }
+.agent-usage-summary--inline :deep(.usage-trace) { grid-column: 2; grid-row: 2; }
 </style>

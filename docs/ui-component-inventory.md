@@ -55,6 +55,12 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `ProviderMark` | canonical provider logo/initial mark backed by `provider-presentation.json`; shared by Connections and Plugins |
 | `AgentUsageSummary` | Shared fixed Input / Cache / Output renderer; accepts `metrics: AgentStatsMetrics \| null` and `compact?: boolean`. Default mode keeps the analytics headline scale. Compact mode reserves three equal columns with fixed label, number and mini-canvas rows; values never wrap or toggle charts. Retained `metrics.samples` and numbers share the backend lifetime scope, independent of active execution. Missing measurements use muted N/A; measured zero stays 0. Exact focus/hover values retain partial-field coverage and remain available when an unusually long compact number is elided. Input uses paired `remaining_input`, Cache uses `cache_read`, Output uses `output`; raw input stays inclusive. No receipt parsing, subtotal calculation or polling. Work callers enforce automatic parent-task eligibility. |
 | `UsageTrace` | Shared measured mini-canvas for lifetime summaries and current-call detail strips. `lib/liveUsage.ts` owns time/value geometry and the paired counter mapping. No samples draw an empty dash, one draws a dot, and further measurements draw discrete steps; missing counters break the trace. CSS dimensions stay fixed as data changes. Resize, theme and device pixel ratio changes redraw the backing store; unmount releases observers and listeners. No SVG or visibility decision based on text width, sample count or execution state. |
+| `ActiveExecutionLine` | Shared actual current / explicitly Last execution identity using canonical `agentIdentity.ts` host marks and readable recorded roles. Active calls expose actual start time; Last retains full recorded provenance in its accessible title. `owner` is ordinary assignment when no occurrence exists. Card footers reserve 56px with bottom-edge badge clearance; detail callers retain their detailed presentation. |
+
+`AgentUsageSummary` also accepts `inline` with `compact` for the contextual task
+header: labels stay above fixed number/canvas columns in the same shared renderer.
+This changes arrangement only; normalization, lifetime scope and chart ownership
+remain unchanged.
 
 ## Shipped — app-level primitives (`ui/src/components/`)
 
@@ -175,19 +181,18 @@ empty/unavailable days or absent agents stay null rather than measured zero.
 `Automated` sits with task identity/status and uses the unchanged persisted
 delivery predicate, including stopped and complete executions, with the existing
 subtle info badge tone on Board, Graph toolbar and task details. Ticket geometry
-is centrally defined as 328 × 200px in `lib/task-tracker/graphModel.ts`, including
+is centrally defined as 328 × 224px in `lib/task-tracker/graphModel.ts`, including
 layout, CSS variables and minimap consumers. Titles and status lead the compact
 card; owner/agent labels and a quiet provenance footer organize its metadata.
 Clamped titles, context and identities retain their full values on hover.
 Usage remains secondary within it.
 
-`TaskDeliveryStop` renders the shared `taskDeliveryState` projection separately
-from canonical tracker/workflow status: Board and Graph show a compact
-“Delivery stopped” notice with the recorded ticket; task and owning-ticket
-details also expose its reason. Loaded ticket titles are preferred, with the
-recorded key as fallback. Resuming clears the stop notice and stale reason.
-Graph focus remains available while a stopped task never presents a node as
-“Active now”; only the recorded stopped ticket gets the stop marker.
+`TaskDeliveryStop` renders the shared `taskDeliveryState` projection in task and
+owning-ticket details, separately from canonical tracker/workflow status. Compact
+cards/header use `executionStatus` from the existing execution presentation owner:
+Stopped is a state badge, with the actual reason in card context/header inspection.
+It never becomes a fictional prerequisite. Resuming clears the stopped presentation.
+Graph focus remains available; only the recorded stopped ticket gets its marker.
 
 Route views are composition roots, not feature implementations. Use the
 following ownership split for new work and when a touched view has accumulated
@@ -276,7 +281,7 @@ test for cross-feature wiring, loading, and error-state truthfulness.
 | `views/accounts/TelegramProxySetupSection.vue` | Conditional disclosure of Telegram's manifest-backed proxy fields. | Keep proxy validation and normalization in the daemon's Account proxy contract. |
 | `views/ConnectionsView.vue` | Route/query synchronization, Account attachment, section composition, and project-bound communication/ingress dispatch remain. | Keep Account secret lifecycle in the reusable Accounts panel; do not fold it back into the project page. |
 | `views/connections/useConnectionCredentials.ts` | Lists attached Accounts, filters reusable unattached Accounts, and owns attach/detach confirmation state. | Keep global Account mutation and project communication topology out. |
-| `views/TaskTrackerView.vue` | Owns Board/map route history, independent map-task and popup identities, task-index loading and focused detail dispatch. `TrackerBoardPanel` renders seven fixed status columns and API-projected whole-task tokens; `TaskTrackerCommandPanel` keeps the view switch inline with view-specific controls and the selected whole-task token total. `TicketGraphNode` renders its own projected ticket usage; `graphModel.ts` owns its 296 × 208 geometry. `TrackerTaskDetailDialog` owns one persistent `UiDialog layout="detail"` for task/ticket inspection and a six-row scrolling ticket list. `TrackerTicketDetailContent` is shared with the map's `TrackerTicketDetailPanel` side inspector. `useTrackerExecutionContexts` owns context/artifact pagination; `useTrackerGraphSession` composes focused graph loading, viewport and the existing project/task event stream. Pure projections and filters remain in `task-tracker/viewModel.ts`. | Keep Board filters independent from map selection. Task state and ticket-status containment filters have separate meanings. Graph visibility never changes the whole-task total. Use shared token formatting; no receipt summing or per-card requests. Preserve task drafts, disclosure state and scroll during ticket inspection. No standalone Stories or Tickets modes. |
+| `views/TaskTrackerView.vue` | Owns Board/map route history, independent map-task and popup identities, task-index loading and focused detail dispatch. `TrackerBoardPanel` renders seven fixed status columns, 224px anchored-footer cards and API-projected whole-task usage; `TaskTrackerCommandPanel` groups task identity/Automated, status/completion, inline shared usage and Task details below the view switch. `TicketGraphNode` renders its own projected ticket usage; `graphModel.ts` owns its 328 × 224 geometry and prerequisite-title resolution. `TrackerTaskDetailDialog` owns one persistent `UiDialog layout="detail"` for task/ticket inspection and a six-row scrolling ticket list. `TrackerTicketDetailContent` is shared with the map's `TrackerTicketDetailPanel` side inspector. `useTrackerExecutionContexts` owns context/artifact pagination; `useTrackerGraphSession` composes focused graph loading, viewport and the existing project/task event stream. Pure projections and filters remain in `task-tracker/viewModel.ts`. | Keep Board filters independent from map selection. Task state and ticket-status containment filters have separate meanings. Graph visibility never changes whole-task values/trends. The task-index rollup supplies actual prerequisite titles only when all open work waits on dependencies; active execution suppresses the Board badge. No per-card requests or receipt summing. Shared current/Last identity stays independent of lifecycle status. Preserve task drafts, disclosure state and scroll during ticket inspection. No standalone Stories or Tickets modes. |
 | `views/connections/credentialPresentation.ts` | Provider/auth grouping, labels, connection status, and account presentation. | Keep provider catalog knowledge here; do not mix in communication topology facets. |
 | `views/connections/formatters.ts` | Communication profile, route, surface, Slack, ingress, and shared Account presentation exports. | Split another provider-specific facet only when it gains a distinct contract or test lifecycle. |
 | `views/AgentRequestsView.vue` | One cohesive queue/master-detail flow. | Extract the request detail region only if it gains independent mutation/loading state. |
