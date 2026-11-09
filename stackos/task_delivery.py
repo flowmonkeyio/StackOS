@@ -1048,7 +1048,13 @@ def start_delivery(
     controller_run_id: int | None = None,
     mcp_config_ref: dict[str, str] | None = None,
     agents: Mapping[str, dict[str, Any]] | None = None,
+    _resolved_settings: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Freeze handoff settings; schedules may retain their internal preflight snapshot.
+
+    _resolved_settings is daemon-internal and absent from operation input schemas.
+    It carries source settings already validated for this project and directory.
+    """
     repo = TrackerRepository(session)
     task = _task(repo, project_id, task_key)
     _workflow_scope(repo, project_id, task, run_plan_id, step_id)
@@ -1144,17 +1150,30 @@ def start_delivery(
                     )
                 else:
                     selected_roles.add("delivery_agent")
-    settings = resolve_delivery_settings(
-        session,
-        project_id=project_id,
-        project_dir=str(directory),
-        host_key=host_key,
-        delivery_agent=delivery_agent,
-        review_agent=review_agent,
-        agents=agents,
-        role_keys=selected_roles,
-        mcp_config_ref=mcp_config_ref,
-    )
+    if _resolved_settings is None:
+        settings = resolve_delivery_settings(
+            session,
+            project_id=project_id,
+            project_dir=str(directory),
+            host_key=host_key,
+            delivery_agent=delivery_agent,
+            review_agent=review_agent,
+            agents=agents,
+            role_keys=selected_roles,
+            mcp_config_ref=mcp_config_ref,
+        )
+    else:
+        if _resolved_settings.get("project_id") != project_id or _resolved_settings.get(
+            "project_dir"
+        ) != str(directory):
+            raise ValidationError("Preflight settings must match the handoff project and directory")
+        settings = deepcopy(_resolved_settings)
+        if selected_roles is not None:
+            if selected_roles - settings["agents"].keys():
+                raise ValidationError("Preflight settings have no selected workflow role binding")
+            settings["agents"] = {
+                role: agent for role, agent in settings["agents"].items() if role in selected_roles
+            }
     host_key = settings["host_key"]
     mcp_config_ref = settings.get("mcp_config_ref")
     resolved = settings["agents"]

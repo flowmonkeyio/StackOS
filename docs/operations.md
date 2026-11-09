@@ -66,7 +66,9 @@ supplied cron, timezone and execution shape must still be valid. Enabling
 strictly validates effective workflow inputs/defaults with the existing
 read-only run-plan validator and resolves current host/role settings through
 the handoff preflight. Saving supplied source refs also revalidates their current
-identity/settings; complete declared selections validate step and role mappings
+identity/settings, including supplied roles not assigned to any step, regardless
+of enabled state. Unrelated unselected project defaults are not resolved.
+Complete declared selections validate step and role mappings
 even while disabled. Missing/renamed/malformed sources fail without fallback.
 This creates no request, run plan, run or tracker task,
 and grants no external action approval. Legacy metadata rows migrate to
@@ -99,12 +101,14 @@ request whose preparation failed; it is never prepared or started again.
 Later due times skip with `overlap` while the last linked canonical plan or
 task is unfinished, including stopped/approval-blocked work. Request lease
 expiry is not workflow completion. No skipped tick creates queued work.
-Admission repeats strict read-only configuration/host preflight, checks the
-current availability guard, and calls `agentRequest.prepareRunPlan` once.
+Admission repeats strict read-only configuration/host preflight, retains its
+validated source/settings snapshot in memory, checks the current availability
+guard, and calls `agentRequest.prepareRunPlan` once.
 Its existing strict builder freezes the effective template, inputs, grants
 and approvals together. Existing plan start/claim selects the first
 dependency-ready step without a named phase, then `startDelivery` freezes
-current role settings on that task and traverses its dependencies. A non-Git
+the preflight role settings on that task without rereading mutable definitions,
+and traverses its dependencies. A non-Git
 workspace is valid. Each new occurrence reads current source digests/settings;
 queued, running and historical occurrences retain their accepted snapshots.
 The schedule records `started`, `overlap`, `unavailable`

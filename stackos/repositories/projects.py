@@ -715,16 +715,23 @@ class ScheduledJobRepository:
             else {}
         )
         explicit = execution.pop("step_agent_assignments", None)
-        if not config.get("enabled"):
+        sources = {
+            **(execution.get("agents") or {}),
+            **{
+                role: execution[role]
+                for role in ("delivery_agent", "review_agent")
+                if execution.get(role)
+            },
+        }
+        missing = [
+            key
+            for key in ("name", "timezone", "template_key", "execution_json")
+            if not config.get(key)
+        ]
+        if not config.get("enabled") and (
+            missing or (not execution.get("agents") and explicit is None)
+        ):
             # Incomplete drafts stay inert, but supplied source identities must be current.
-            sources = {
-                **(execution.get("agents") or {}),
-                **{
-                    role: execution[role]
-                    for role in ("delivery_agent", "review_agent")
-                    if execution.get(role)
-                },
-            }
             source_roles = {
                 role
                 for role, choice in sources.items()
@@ -734,16 +741,8 @@ class ScheduledJobRepository:
                 resolve_delivery_settings(
                     self._s, project_id=project_id, role_keys=source_roles, **execution
                 )
-            if not execution.get("agents") and explicit is None:
-                return None
-        missing = [
-            key
-            for key in ("name", "timezone", "template_key", "execution_json")
-            if not config.get(key)
-        ]
+            return None
         if missing:
-            if not config.get("enabled"):
-                return None
             raise ValidationError(
                 "Schedule needs setup: " + ", ".join(missing), data={"missing_fields": missing}
             )
@@ -792,11 +791,22 @@ class ScheduledJobRepository:
         )
         if declared and set(assignments.values()) - declared - {"delivery_agent", "review_agent"}:
             raise ValidationError("Selected agents must bind declared workflow roles")
-        resolve_delivery_settings(
-            self._s, project_id=project_id, role_keys=set(assignments.values()), **execution
+        # Validate every supplied choice before persistence, even an unassigned role.
+        # Unrelated project defaults remain outside this selection.
+        resolved = resolve_delivery_settings(
+            self._s,
+            project_id=project_id,
+            role_keys=set(assignments.values()) | sources.keys(),
+            **execution,
         )
         return (
-            {**execution, "step_agent_assignments": assignments} if config.get("enabled") else None
+            {
+                **execution,
+                "step_agent_assignments": assignments,
+                "_resolved_settings": {"project_id": project_id, **resolved},
+            }
+            if config.get("enabled")
+            else None
         )
 
     def _out(self, row: ScheduledJob) -> ScheduledJobOut:

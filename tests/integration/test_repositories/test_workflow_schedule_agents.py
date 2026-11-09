@@ -166,6 +166,134 @@ async def test_changed_source_blocks_tick_and_enable_before_creating_work(
     assert not session.get(ScheduledJob, saved.id).enabled
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mutation", ["delete", "malformed", "edit"])
+async def test_preflight_snapshot_survives_source_change_until_handoff(
+    session, project_id, tmp_path, monkeypatch, mutation
+):
+    config = configuration(session, project_id, tmp_path)
+    repo = ScheduledJobRepository(session)
+    saved = repo.set(project_id=project_id, enabled=True, **config).data
+    accepted = task_delivery.resolve_delivery_settings(
+        session, project_id=project_id, **config["execution_json"]
+    )["agents"]["role0"]
+    path = tmp_path / accepted["source_ref"]["source_path"]
+    original = path.read_text()
+    scheduler = AdmissionScheduler()
+    runtime = WorkflowScheduleRuntime(scheduler, lambda: Session(session.get_bind()))
+    due = datetime(2030, 1, 1, tzinfo=UTC)
+
+    def final_guard():
+        if mutation == "delete":
+            path.unlink()
+        elif mutation == "malformed":
+            path.write_text("invalid TOML")
+        else:
+            path.write_text(original.replace('"role0"\nmodel', '"Changed"\nmodel'))
+        return True
+
+    await runtime._launch(session.get(ScheduledJob, saved.id), due, final_guard)
+    session.expire_all()
+    assert session.get(ScheduledJob, saved.id).last_run_status == "started"
+    first = session.exec(select(TrackerTask)).one()
+    assert first.metadata_json["delivery"]["agents"] == {"role0": accepted}
+    assert len(scheduler.jobs) == 1
+    # Existing overlap still protects runnable work; it is not an orphaned admission.
+    await runtime._launch(
+        session.get(ScheduledJob, saved.id), due + timedelta(minutes=1), lambda: True
+    )
+    session.expire_all()
+    assert session.get(ScheduledJob, saved.id).last_run_status == "overlap"
+    assert len(session.exec(select(AgentRequest)).all()) == 1
+    calls = []
+
+    def launch(_host, _dir, instructions, _prompt, _schema, **kwargs):
+        calls.append(instructions.split("\n\n", 1)[0])
+        return AgentRunResult(0, thread_id="frozen-preflight", result=generic_result())
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler.run()
+    assert calls == ["role0"]
+    session.expire_all()
+    assert session.exec(select(RunPlan)).one().status == "completed"
+    assert session.get(TrackerTask, first.id).status == "complete"
+    if mutation != "edit":
+        await runtime._launch(
+            session.get(ScheduledJob, saved.id), due + timedelta(minutes=2), lambda: True
+        )
+        session.expire_all()
+        assert session.get(ScheduledJob, saved.id).last_run_status == "unavailable"
+        assert len(session.exec(select(AgentRequest)).all()) == 1
+    path.write_text(original.replace('"role0"\nmodel', '"Changed"\nmodel'))
+    await runtime._launch(
+        session.get(ScheduledJob, saved.id), due + timedelta(minutes=3), lambda: True
+    )
+    session.expire_all()
+    assert session.get(ScheduledJob, saved.id).last_run_status == "started"
+    latest = session.exec(select(TrackerTask).order_by(TrackerTask.id.desc())).first()
+    fresh = latest.metadata_json["delivery"]["agents"]["role0"]
+    assert fresh["instructions"] == "Changed"
+    assert fresh["source_digest"] != accepted["source_digest"]
+    assert session.get(TrackerTask, first.id).metadata_json["delivery"]["agents"] == {
+        "role0": accepted
+    }
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("selection", ["missing_source", "copied_codex"])
+def test_save_validates_explicit_unassigned_roles(
+    session, project_id, tmp_path, enabled, selection
+):
+    config = configuration(session, project_id, tmp_path, count=2, ambiguous=True)
+    config["execution_json"]["step_agent_assignments"] = {"step0": "role0"}
+    ref = config["execution_json"]["agents"]["role1"]["source_ref"]
+    (tmp_path / ref["source_path"]).unlink()
+    if selection == "copied_codex":
+        config["execution_json"]["agents"]["role1"] = {
+            "name": "copied",
+            "instructions": "Duplicate Codex prompt",
+        }
+    with pytest.raises(ValidationError):
+        ScheduledJobRepository(session).set(project_id=project_id, enabled=enabled, **config)
+    assert session.exec(select(ScheduledJob)).all() == []
+    assert_no_admission(session)
+
+
+@pytest.mark.asyncio
+async def test_supplied_non_codex_role_and_unrelated_project_defaults(
+    session, project_id, tmp_path
+):
+    config = configuration(session, project_id, tmp_path, count=2, ambiguous=True)
+    config["execution_json"]["step_agent_assignments"] = {"step0": "role0"}
+    config["execution_json"]["agents"]["role1"] = {
+        "host_key": "claude-code",
+        "name": "research",
+        "instructions": "Prepared research",
+    }
+    TrackerRepository(session).configure_delivery(
+        project_id=project_id,
+        delivery={
+            "agents": {
+                "unrelated": {
+                    "source_ref": {
+                        "host_key": "codex",
+                        "native_name": "missing",
+                        "source_path": ".codex/agents/missing.toml",
+                    }
+                }
+            }
+        },
+    )
+    saved = ScheduledJobRepository(session).set(project_id=project_id, enabled=True, **config).data
+    assert session.get(ScheduledJob, saved.id).execution_json == config["execution_json"]
+    runtime = WorkflowScheduleRuntime(AdmissionScheduler(), lambda: Session(session.get_bind()))
+    await runtime._launch(session.get(ScheduledJob, saved.id), datetime.now(UTC), lambda: True)
+    session.expire_all()
+    assert set(session.exec(select(TrackerTask)).one().metadata_json["delivery"]["agents"]) == {
+        "role0"
+    }
+
+
 @pytest.mark.parametrize("enabled", [False, True])
 @pytest.mark.parametrize(
     "bad_selection", ["ambiguous", "step", "role", "undeclared", "missing", "copied"]

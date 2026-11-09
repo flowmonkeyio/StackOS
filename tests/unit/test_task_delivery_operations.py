@@ -72,6 +72,23 @@ def test_assignment_map_accepts_arbitrary_safe_role_keys():
         )
 
 
+@pytest.mark.parametrize("operation", ["tracker.startDelivery", "schedule.set"])
+def test_resolved_preflight_settings_are_not_an_operation_input(operation):
+    spec = build_operation_registry().get(operation)
+    arguments = (
+        {"project_id": 1, "task_key": "prepared", "project_dir": "/tmp", "_resolved_settings": {}}
+        if operation == "tracker.startDelivery"
+        else {
+            "project_id": 1,
+            "kind": "prepared",
+            "cron_expr": "* * * * *",
+            "execution_json": {"project_dir": "/tmp", "_resolved_settings": {}},
+        }
+    )
+    with pytest.raises(ValueError, match="Extra inputs"):
+        spec.input_model.model_validate(arguments)
+
+
 def test_native_route_is_a_bounded_task_only_reference():
     registry = build_operation_registry()
     start = registry.get("tracker.startDelivery").input_model

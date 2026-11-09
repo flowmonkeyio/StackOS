@@ -189,6 +189,9 @@ class WorkflowScheduleRuntime:
                 )
                 assert settings is not None
                 step_assignments = settings.pop("step_agent_assignments")
+                # Keep the validated source bytes through the final presence guard
+                # and plan creation; handoff must not reread mutable source files.
+                resolved_settings = settings.pop("_resolved_settings")
                 # Setup/host checks may outlive presence, configuration or jitter allowance.
                 if not admit():
                     return
@@ -240,6 +243,7 @@ class WorkflowScheduleRuntime:
                         workflow_step_ticket_key(plan.id, key): role
                         for key, role in step_assignments.items()
                     },
+                    _resolved_settings=resolved_settings,
                     **settings,
                 )
                 self._result(session, current, due, "started")
