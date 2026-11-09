@@ -1423,7 +1423,7 @@ def test_task_mcp_route_frozen_through_rehandoff_and_role_resume(
     monkeypatch.setattr(
         codex,
         "_run_codex",
-        lambda *a: subprocess.CompletedProcess(
+        lambda *a, **kw: subprocess.CompletedProcess(
             [],
             0,
             json.dumps([{"name": "serena", "transport": {"type": "stdio", "command": "python3"}}]),

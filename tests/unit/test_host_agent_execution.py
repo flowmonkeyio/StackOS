@@ -34,8 +34,8 @@ def test_codex_task_routes_preserve_commands_and_fresh_resume_overrides(
     monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/native/codex")
     queries = []
 
-    def native_read(binary, args):
-        queries.append((binary, args))
+    def native_read(binary, args, *, cwd):
+        queries.append((binary, args, cwd))
         return subprocess.CompletedProcess(
             [],
             0,
@@ -60,6 +60,7 @@ def test_codex_task_routes_preserve_commands_and_fresh_resume_overrides(
 
     def execute(command, **kwargs):
         calls.append(command)
+        assert kwargs["cwd"] == project
         assert kwargs["input"] == "bounded-prompt"
         Path(command[command.index("-o") + 1]).write_text('{"summary":"checked"}')
         return subprocess.CompletedProcess(
@@ -81,7 +82,7 @@ def test_codex_task_routes_preserve_commands_and_fresh_resume_overrides(
     )
     assert result.ok is not native_failure
     assert "distinct-tree" not in (result.error or "")
-    assert queries == [("/native/codex", ["--cd", str(project), "mcp", "list", "--json"])]
+    assert queries == [("/native/codex", ["--cd", str(project), "mcp", "list", "--json"], project)]
     command = calls[0]
     overrides = [command[i + 1] for i, arg in enumerate(command) if arg == "-c"]
     route_overrides = [item for item in overrides if item.startswith("mcp_servers.")]
@@ -114,13 +115,59 @@ def test_codex_task_routes_reject_new_or_http_servers(tmp_path, monkeypatch):
         monkeypatch.setattr(
             codex,
             "_run_codex",
-            lambda *a, rows=rows: subprocess.CompletedProcess([], 0, json.dumps(rows), ""),
+            lambda *a, rows=rows, **kw: subprocess.CompletedProcess([], 0, json.dumps(rows), ""),
         )
         with pytest.raises(ValueError, match="existing native stdio"):
             codex.task_mcp_overrides(tmp_path, reference)
     assert not run_agent(
         "claude-code", tmp_path, "role", "prompt", SCHEMA, mcp_config_ref=reference
     ).ok
+
+
+def test_task_mcp_discovery_uses_selected_process_cwd(tmp_path, monkeypatch):
+    """Native 0.167.0 mcp list uses process cwd even when --cd is supplied."""
+    import hashlib
+
+    daemon = tmp_path / "daemon"
+    selected = tmp_path / "selected"
+    daemon.mkdir()
+    selected.mkdir()
+    cli = tmp_path / "cwd-native"
+    cli.write_text(
+        f"#!{sys.executable}\n"
+        "from pathlib import Path\n"
+        "print(Path('.native-servers.json').read_text())\n"
+    )
+    cli.chmod(0o755)
+
+    def servers(name):
+        return json.dumps(
+            [
+                {
+                    "name": name,
+                    "transport": {"type": "stdio", "command": "canonical"},
+                }
+            ]
+        )
+
+    (daemon / ".native-servers.json").write_text(servers("daemon_only"))
+    (selected / ".native-servers.json").write_text(servers("selected_only"))
+    monkeypatch.chdir(daemon)
+    fragment = tmp_path / "routes.toml"
+
+    def reference(name):
+        fragment.write_text(f"[mcp_servers.{name}]\nargs = []\n")
+        return {"path": str(fragment), "sha256": hashlib.sha256(fragment.read_bytes()).hexdigest()}
+
+    # A daemon-directory server must never be borrowed for the assigned tree.
+    with pytest.raises(ValueError, match="existing native stdio"):
+        codex.task_mcp_overrides(selected, reference("daemon_only"), codex_bin=str(cli))
+    _, overrides = codex.task_mcp_overrides(
+        selected, reference("selected_only"), codex_bin=str(cli)
+    )
+    assert overrides == ["-c", "mcp_servers.selected_only.args=[]"]
+    # Other inspection callers retain the existing inherited-cwd contract.
+    assert "daemon_only" in codex._run_codex(str(cli), ["mcp", "list"]).stdout
 
 
 SCHEMA = {

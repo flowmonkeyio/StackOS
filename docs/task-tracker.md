@@ -245,7 +245,10 @@ sandbox and instruction settings reject. Runtime/search-path environment
 overrides also reject. Keep credentials and auth references in their existing
 native/daemon owners; never copy them into the fragment.
 
-The Codex adapter reads effective servers through native `mcp list --json`,
+The Codex adapter reads effective servers through native `mcp list --json`
+with the assigned directory as the subprocess cwd. Native 0.167.0 discovery
+uses process cwd even when `--cd` is supplied; preflight and fresh/resumed
+execution must use the same directory. It
 preserves their executables, and serializes allowlisted route leaves as native
 `-c` overrides for both fresh and exact-session resume. Individual env leaves
 preserve unrelated existing environment/auth settings. Validation hashes and
@@ -263,6 +266,16 @@ Serena wrapper with unique per-tree project/name/port/state; do not fork a
 deprecated shim or edit global configuration. Supply each StackOS bridge's
 actual tree through `--workspace-root` and the intended daemon context.
 `--cd` only routes the harness and cannot prove MCP targeting.
+
+Project-local MCP definitions also require native project trust. Confirm the
+original servers are visible from each actual tree before applying route
+overrides. A clone with a different repository root does not inherit the source
+repository's trust. For an explicitly approved fixture, Git worktrees attached
+to the already trusted repository can preserve that existing trust while keeping
+distinct working directories and fixture-only branches. Record the actual Git
+common directory and verify native visibility; never infer trust from a path or
+silently trust new roots. Keep any worktree registration/integration/cleanup
+within its authorized ownership. The route fragment cannot grant trust.
 
 Before handoff, connect each actual tree through its own native bridge:
 `workspace.startSession(auto_bootstrap=false)`, then

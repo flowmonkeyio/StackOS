@@ -244,7 +244,9 @@ def task_mcp_overrides(
     binary = codex_bin or _select_codex_bin()
     if binary is None:
         raise ValueError("No usable Codex CLI was found by host discovery.")
-    result = _run_codex(binary, ["--cd", str(project_dir), "mcp", "list", "--json"])
+    result = _run_codex(
+        binary, ["--cd", str(project_dir), "mcp", "list", "--json"], cwd=project_dir
+    )
     try:
         rows = json.loads(result.stdout)
         if result.returncode or not isinstance(rows, list):
@@ -541,10 +543,13 @@ def _select_codex_bin() -> str | None:
     return None
 
 
-def _run_codex(codex_bin: str, args: Sequence[str]) -> subprocess.CompletedProcess[str]:
+def _run_codex(
+    codex_bin: str, args: Sequence[str], *, cwd: Path | None = None
+) -> subprocess.CompletedProcess[str]:
     try:
         return subprocess.run(
             [codex_bin, *args],
+            cwd=cwd,
             capture_output=True,
             text=True,
             check=False,
