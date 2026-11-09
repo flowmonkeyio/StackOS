@@ -53,7 +53,8 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 |---|---|
 | `ProjectPageHeader` | project-aware title, breadcrumbs, utility action slot, and route chrome |
 | `ProviderMark` | canonical provider logo/initial mark backed by `provider-presentation.json`; shared by Connections and Plugins |
-| `AgentUsageSummary` | Shared fixed Input / Cache / Output renderer; accepts `metrics: AgentStatsMetrics \| null` and `compact?: boolean`. Default mode keeps the analytics headline scale; compact mode is a muted inline list of indivisible label/value pairs that can wrap together. Missing measurements, including empty additive zeros, use compact muted N/A; measured zero stays 0. Exact focus/hover values share measurement availability. Partial-field coverage stays in accessible exact-value labels. Input uses paired `remaining_input`, Cache uses `cache_read`, Output uses `output`; raw input stays inclusive. No receipt parsing or subtotal calculation. Work callers enforce automatic parent-task eligibility. |
+| `AgentUsageSummary` | Shared fixed Input / Cache / Output renderer; accepts `metrics: AgentStatsMetrics \| null` and `compact?: boolean`. Default mode keeps the analytics headline scale. Compact mode reserves three equal columns with fixed label, number and mini-canvas rows; values never wrap or toggle charts. Retained `metrics.samples` and numbers share the backend lifetime scope, independent of active execution. Missing measurements use muted N/A; measured zero stays 0. Exact focus/hover values retain partial-field coverage and remain available when an unusually long compact number is elided. Input uses paired `remaining_input`, Cache uses `cache_read`, Output uses `output`; raw input stays inclusive. No receipt parsing, subtotal calculation or polling. Work callers enforce automatic parent-task eligibility. |
+| `UsageTrace` | Shared measured mini-canvas for lifetime summaries and current-call detail strips. `lib/liveUsage.ts` owns time/value geometry and the paired counter mapping. No samples draw an empty dash, one draws a dot, and further measurements draw discrete steps; missing counters break the trace. CSS dimensions stay fixed as data changes. Resize, theme and device pixel ratio changes redraw the backing store; unmount releases observers and listeners. No SVG or visibility decision based on text width, sample count or execution state. |
 
 ## Shipped — app-level primitives (`ui/src/components/`)
 
@@ -163,10 +164,13 @@ The existing `isAutomaticDeliveryTask` predicate owns eligibility; graph data
 propagates its parent-task result, and both ticket inspectors receive the parent
 task. No workflow-name, defaults or token-value inference is used. Missing
 parent identity hides ticket usage. Compact summaries have no metric panels,
-dividers, missing-field prose or reserved empty space. Automated tasks and their
+dividers or missing-field prose. Their three number/canvas slots stay reserved. Automated tasks and their
 tickets retain all three slots even with no launches, main-thread planning or a
 pending native receipt; N/A describes availability without attributing the work.
-Manual tasks and tickets never acquire a token or N/A row. Chart samples for
+Manual tasks and tickets never acquire a token or N/A row. Compact charts read
+the retained lifetime samples from the same metrics as their numbers; stopping
+or reloading does not remove their canvases. Current-call detail strips retain
+their separate active-call scope through the same canvas renderer. Chart samples for
 empty/unavailable days or absent agents stay null rather than measured zero.
 `Automated` sits with task identity/status and uses the unchanged persisted
 delivery predicate, including stopped and complete executions, with the existing
