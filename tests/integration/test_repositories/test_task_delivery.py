@@ -15,10 +15,10 @@ from typing import Any
 
 import pytest
 from pydantic import ValidationError as SchemaValidationError
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from stackos.db.connection import make_engine
-from stackos.db.models import RunPlanStepStatus
+from stackos.db.models import RunPlanStepStatus, TrackerRevision
 from stackos.host_mcp.result import AgentRunResult, usage_snapshot
 from stackos.mcp.context import MCPContext
 from stackos.operations.tracker.schemas import (
@@ -1494,6 +1494,79 @@ def test_concurrent_handoffs_admit_one_directory_writer(
         assert sum(isinstance(result, ValidationError) for result in results) == 1
 
 
+@pytest.mark.parametrize("entity", ["ticket", "task"])
+def test_parallel_mutations_allocate_distinct_tracker_revisions(
+    delivery_engine, project_id, entity
+):
+    with Session(delivery_engine) as session:
+        prepared_task(session, project_id)
+        initial = TrackerRepository(session).ensure_tracker(project_id=project_id).rev
+    ready = Barrier(2)
+    keys = ["first", "other"] if entity == "ticket" else ["deliver", "unrelated"]
+
+    def mutate(key):
+        with Session(delivery_engine) as session:
+            repo = TrackerRepository(session)
+            # Both writers must hold the same old ORM revision before either
+            # mutation. A once-through task overlap alone cannot force this race.
+            tracker = repo.ensure_tracker(project_id=project_id)
+            assert tracker.rev == initial
+            ready.wait(timeout=10)
+            if entity == "ticket":
+                repo.update_ticket(
+                    project_id=project_id, ticket_key=key, patch_json={"title": f"Updated {key}"}
+                )
+            else:
+                repo.update_task(
+                    project_id=project_id, task_key=key, patch_json={"title": f"Updated {key}"}
+                )
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        list(workers.map(mutate, keys))
+    with Session(delivery_engine) as session:
+        repo = TrackerRepository(session)
+        assert repo.ensure_tracker(project_id=project_id).rev == initial + 2
+        revisions = session.exec(
+            select(TrackerRevision)
+            .where(TrackerRevision.project_id == project_id, TrackerRevision.rev > initial)
+            .order_by(TrackerRevision.rev)
+        ).all()
+        assert [revision.rev for revision in revisions] == [initial + 1, initial + 2]
+        assert {revision.entity_key for revision in revisions} == set(keys)
+        assert all(revision.entity_kind == entity for revision in revisions)
+        snapshot = repo.get(project_id=project_id)
+        rows = snapshot.tickets if entity == "ticket" else snapshot.tasks
+        assert {row.key: row.title for row in rows if row.key in keys} == {
+            key: f"Updated {key}" for key in keys
+        }
+
+
+def test_revision_allocation_rolls_back_with_ticket_change(session, project_id):
+    prepared_task(session, project_id)
+    repo = TrackerRepository(session)
+    initial = repo.ensure_tracker(project_id=project_id).rev
+    repo.update_ticket(
+        project_id=project_id, ticket_key="first", patch_json={"title": "Uncommitted"}, commit=False
+    )
+    assert repo.ensure_tracker(project_id=project_id).rev == initial + 1
+    session.rollback()
+    assert repo.ensure_tracker(project_id=project_id).rev == initial
+    assert repo.brief(project_id=project_id, ticket_key="first").ticket.title == "First"
+    assert (
+        session.exec(
+            select(TrackerRevision).where(
+                TrackerRevision.project_id == project_id, TrackerRevision.rev > initial
+            )
+        ).all()
+        == []
+    )
+    result = repo.update_ticket(
+        project_id=project_id, ticket_key="first", patch_json={"title": "Committed"}
+    )
+    assert result.data.rev == initial + 1
+    assert result.data.ticket.title == "Committed"
+
+
 def test_scheduling_failure_releases_only_its_directory(session, project_id, tmp_path):
     prepared_task(session, project_id)
 
@@ -1529,6 +1602,18 @@ def test_parallel_task_jobs_stop_and_resume_independently(
 ):
     from stackos import task_delivery
 
+    if not git_worktrees:
+        # The autouse fixture initializes tmp_path as a repository. Merely using
+        # child directories would still make them Git working directories.
+        if (tmp_path / ".git").exists():
+            shutil.rmtree(tmp_path / ".git")
+        assert not any((parent / ".git").exists() for parent in (tmp_path, *tmp_path.parents))
+
+        def forbidden_git(*args, **kwargs):
+            pytest.fail("Non-Git task execution must not invoke Git")
+
+        monkeypatch.setattr(task_delivery, "_git", forbidden_git)
+        assert task_delivery._baseline(str(tmp_path)) == {}
     paths = {key: tmp_path / key for key in ("deliver", "unrelated")}
     for key, directory in paths.items():
         if git_worktrees:

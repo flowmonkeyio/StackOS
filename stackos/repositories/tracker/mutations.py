@@ -10,6 +10,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pydantic import ValidationError as PydanticValidationError
+from sqlalchemy import update
+from sqlalchemy.orm.attributes import set_committed_value
 from sqlmodel import col, select
 
 from stackos.artifacts import redact_secrets
@@ -1756,9 +1758,20 @@ class TrackerMutationMixin:
         commit: bool = False,
     ) -> None:
         now = _utcnow()
-        tracker.rev += 1
-        tracker.updated_at = now
-        self._s.add(tracker)
+        # Parallel task jobs can hold the same old ORM revision. Allocate from
+        # the database row, in the entity mutation's transaction, rather than
+        # incrementing either session's stale value. Flush other tracker fields
+        # first and mark the returned fields clean so a later flush cannot undo it.
+        self._s.flush()
+        revision = self._s.execute(
+            update(TaskTracker)
+            .where(col(TaskTracker.id) == _required_id(tracker.id, "tracker"))
+            .values(rev=col(TaskTracker.rev) + 1, updated_at=now)
+            .returning(col(TaskTracker.rev))
+            .execution_options(synchronize_session=False)
+        ).scalar_one()
+        set_committed_value(tracker, "rev", revision)
+        set_committed_value(tracker, "updated_at", now)
         self._s.add(
             TrackerRevision(
                 tracker_id=_required_id(tracker.id, "tracker"),

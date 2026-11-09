@@ -236,6 +236,9 @@ Stopping or completing a task releases only its own directory reservation;
 scheduling failure also releases the failed task's reservation. Other task jobs,
 sessions and receipts continue independently. Reservation state is the existing
 task delivery snapshot, not a second lease service or an execution-wide lock.
+The shared tracker mutation owner allocates each revision atomically from the
+stored counter in the entity change's transaction, so concurrent task jobs keep
+distinct audit revisions without serializing their host calls.
 
 All launches use `RESULT_SCHEMA` in
 [`task_delivery.py`](../stackos/task_delivery.py): `status`
