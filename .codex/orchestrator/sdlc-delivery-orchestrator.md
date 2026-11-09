@@ -1,8 +1,8 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.9
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.10
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
-Workflow: `engineering.tracked-delivery` v0.8.1 source contract
+Workflow: `engineering.tracked-delivery` v0.8.2 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
 
 This is the StackOS repository adaptation, not a subagent. The main agent owns
@@ -21,7 +21,9 @@ evidence and recommendations.
   `workflowTemplate.describe` and `agentPreset.resolveForWorkflow`. The latter
   includes main-agent skill presets; request a separate skill packet only when
   needed. Read complete applicable contracts: compact navigation can truncate
-  guidance, so use targeted `response_mode=raw` descriptions/resolution.
+  guidance, so use targeted `response_mode=raw` descriptions/resolution. Retrieve
+  bounded current sections once; expand for missing contracts, contradictions
+  or changed evidence without skipping required guidance.
 - Load this guide and the applicable `.codex/agents/sdlc-*.toml` contracts.
   Inspect `.codex/config.toml` for registration and actual host capabilities.
   `stackos:stackos` remains the managed host skill for MCP mechanics.
@@ -97,8 +99,12 @@ operator decision. Keep each amendment, owning ticket and superseded requirement
 concise in existing context. Necessary omitted consumers remain in scope;
 materially different outcomes require main reconciliation.
 
-Trace actual producers, consumers and applicable project guards before selecting
-proof. For non-micro work, retain before/change/now/why flow context. Expected
+Trace the real caller, owning producer, affected consumer and actual authorization
+boundary before selecting proof. Name mocks/substitutions and their limits; a
+green mocked caller test cannot establish real wiring. Choose relevant asynchronous
+lifetime risks, including late outcomes after cancellation where applicable;
+do not impose a fixed state matrix on every change. For non-micro work, retain
+before/change/now/why flow context. Expected
 data must have an independent source of truth; use a relevant excluded case,
 ordering or real interaction where the changed boundary needs it. For UI, retain
 the selected hierarchy, exact copy and actual consumer width. In this project,
@@ -138,6 +144,13 @@ navigation omits needed fields. Send applicable context, not the entire thread
 or a demand to rediscover everything. The planner returns proposed packets;
 the main agent validates and writes the durable ticket graph. File/check lists
 are discovery anchors, not permission barriers or a complete coverage claim.
+
+Validate the exact final mutation payload and submit that same semantic payload; any
+semantic edit requires revalidation. After an uncertain failed write inspect
+authoritative state before retrying, then read back the intended result. Consume
+applicable known-issue safeguards from existing followups/resolutions. For deferred
+recurring issues retain a concrete temporary safeguard, owner and resume condition;
+unrelated followups remain nonactionable.
 
 Before handoff, self-review outcome coverage, current amendments, proof owners,
 satisfiable dependencies, authority, tool capability and shared-resource use.
@@ -200,7 +213,10 @@ delivery session. Each pass requires a separate new descendant repair commit and
 the same independent review session on that exact SHA. Validate clean unchanged
 HEAD for reject and approve. Preserve native sessions, attempt history and
 `repair_count` across explicit requeue; never reset the count. When repair_count
-is absent, historical repair_pass_used=true counts as one pass. Blocked required
+is absent, historical repair_pass_used=true counts as one pass. Integration-origin
+correction after child approval preserves the ordinary-rejection count and may requeue
+at repair_count=3; a subsequent ordinary rejection there permits no fourth ordinary
+repair. Blocked required
 verification, failure of the assigned agent's own launch/access/model/resume, candidate mismatch
 or rejection after the third repair stops the same task without fresh-session,
 host or model fallback.
@@ -361,8 +377,9 @@ bound gate and resuming original delivery/review/verifier sessions.
 
 Fresh persisted correction outranks old approved review, which remains history.
 Corrected source requires a separate descendant commit and independent exact-SHA
-review. Preserve repair_count; never reopen to reset the count or evade rejection
-after the third repair. Unsupported/no-progress correction and failures of the assigned agent's own invocation or
+review. Preserve repair_count across integration-origin correction, including at
+three consumed ordinary repairs; a subsequent ordinary rejection permits no fourth
+ordinary repair. Never reopen to reset that count. Unsupported/no-progress correction and failures of the assigned agent's own invocation or
 returned-result/schema/candidate integrity stop without fallback. Followups stay
 nonblocking; exclusions, authority/ownership conflicts and materially different
 outcomes require main reconciliation. Source edits do not activate this method on
@@ -412,8 +429,14 @@ retain blockers/resume conditions, reclaim the step and rebuild assignments.
 Re-evaluate authority and approval freshness. Late receipts from superseded
 attempts remain historical and cannot satisfy the current acceptance gate.
 
-Integrated verification/review reuses valid ticket proof and tests remaining
-cross-ticket behavior and mandatory project gates. A single unchanged ticket's
+Integrated verification/review reuses ticket proof with an explicit covered-scope,
+candidate, accepted-prerequisite and environment basis. Distinguish valid unchanged
+evidence, invalidated changed-consumer proof and required never-executed checks.
+Execute affected, remaining cross-ticket and mandatory signoff checks at their
+existing gates. Keep dependency-mutating setup exclusive against checks consuming that
+environment; run readiness checks after the relevant transition. Agents choose and
+execute concrete project commands
+from local guidance; core supplies no command policy. A single unchanged ticket's
 review can cover final review only with an explicit disposition for every final
 obligation. For non-micro work cover canonical ownership, cleanup/dead-code
 risk, architecture/contracts and user/data/system/business flow regressions.

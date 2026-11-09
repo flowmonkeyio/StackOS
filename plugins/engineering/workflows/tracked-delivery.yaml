@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: engineering.tracked-delivery
 name: Engineering Tracked Delivery
-version: 0.8.1
+version: 0.8.2
 description: Reusable SDLC workflow for requirements, project-native design and proof planning, executable ticket breakdown, delegated delivery with immediate independent review, integrated verification, and truthful release closeout.
 domain: engineering
 owner:
@@ -227,7 +227,7 @@ policies:
     description: New behavior should have one canonical owner and reuse existing operations/adapters instead of duplicating logic.
   - key: evidence_over_assertion
     kind: verification
-    description: Requirements, tests, live/manual checks, and reviewed diffs are stronger than author claims or tracker status alone.
+    description: Requirements, tests, live/manual checks, and reviewed diffs outweigh author claims or tracker status. Proof traces real callers, producers, affected consumers and actual authorization boundaries, states mock limits and relevant asynchronous lifetime gaps, and comes from project-selected agent-executed checks rather than core command policy.
   - key: truthful_tracker_state
     kind: delivery
     description: Tracker tasks and tickets must reflect actual progress, blockers, dependencies, deferred scope, and evidence.
@@ -257,10 +257,10 @@ policies:
     description: Main owns scope admission and final claims. Terminal-managed delivery keeps workflow/tracker writes and acceptance with main. Explicit tracker.startDelivery handoff delegates all remaining dependency-ready task work to StackOS, including integration and frozen workflow gates through assigned agents. Ordinary tickets require independent review; RunPlanRepository alone records mirror/plan/run lifecycle. Specialists return evidence and never complete their own tickets.
   - key: delegated_ticket_acceptance
     kind: delivery
-    description: Terminal-managed delivery allows up to three active ticket lifecycles within host capacity. Source changes and each repair create separate scoped commits before independent exact-commit review; observation work may cite unchanged HEAD and needs no fabricated commit. Every executable child needs independent review. Explicit automatic delivery advances serially and permits up to three automatic repair passes per ticket after valid scoped rejections (initial delivery plus three repairs) in the same native delivery/review sessions. Persist repair_count across explicit requeue; never reset it. When repair_count is absent, historical repair_pass_used=true counts as one pass. Blocked verification, native agent launch/access/model/resume failure, candidate mismatch or rejection after the third repair stops the task. Generated mirrors execute the frozen contract once through an existing selected role, without a duplicate ordinary review loop; child approval alone never satisfies integration or final signoff.
+    description: Terminal-managed delivery allows up to three active ticket lifecycles within host capacity. Source changes and each repair create separate scoped commits before independent exact-commit review; observation work may cite unchanged HEAD and needs no fabricated commit. Every executable child needs independent review. Explicit automatic delivery advances serially and permits up to three automatic repair passes per ticket after valid scoped ordinary rejections (initial delivery plus three repairs) in the same native delivery/review sessions. Persist repair_count across explicit requeue; never reset it. When repair_count is absent, historical repair_pass_used=true counts as one pass. Integration-origin correction after child approval preserves the ordinary-rejection count and may requeue at repair_count=3; a subsequent ordinary rejection there permits no fourth ordinary repair. This is not a total-all-origin cap. Blocked verification, native agent launch/access/model/resume failure, candidate mismatch or rejection after the third repair stops the task. Generated mirrors execute the frozen contract once through an existing selected role, without a duplicate ordinary review loop; child approval alone never satisfies integration or final signoff.
   - key: ticket_and_integration_proof
     kind: verification
-    description: Ticket acceptance proves the assigned local obligations against accepted prerequisite state; combined business requirements remain explicit integration obligations. A ticket cannot pass by relying on an unaccepted sibling candidate. Integrate its reviewed result and validate any relevant integration changes before completion releases dependents. Reuse current ticket evidence at later gates and execute the remaining combined proof.
+    description: Ticket acceptance proves assigned local obligations against accepted prerequisite state; combined requirements stay with integration. A ticket cannot rely on unaccepted sibling changes. Reuse evidence only with a covered-scope, candidate, prerequisite and environment basis; rerun invalidated changed-consumer proof and execute required never-executed and remaining combined checks. Dependency-mutating setup is exclusive against its consuming checks; readiness follows the relevant transition. Agents select concrete commands from project guidance.
   - key: recovery_reconciliation
     kind: recovery
     description: >-

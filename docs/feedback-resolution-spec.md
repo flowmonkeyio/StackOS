@@ -59,6 +59,13 @@ authorized. Full-read/merge their fields and retain the original observation and
 source attempt/candidate. Resolution records describe disposition; they do not
 activate followups as work or grant lifecycle writes. Assigned delivery agents
 return the linkage in their receipt for the existing state owner to retain.
+For a deferred recurring issue, retain a concrete temporary safeguard, its owner,
+applicability and resume condition in those same records. The next relevant caller
+consumes that safeguard before acting; unrelated followups stay nonactionable.
+For uncertain writes, inspect authoritative state before retrying. Validate the
+exact final payload again after any semantic edit; a prior preview cannot cover
+changed content. These safeguards neither waive a current required defect nor
+authorize a repair or new work.
 Connect the admitted change and exact independently reviewed revision to its
 applicability, adoption owner/readback and later-use status. A proposed lesson,
 accepted source, saved default, native consumption and installed activation are

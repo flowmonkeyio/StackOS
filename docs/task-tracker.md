@@ -406,6 +406,11 @@ reviewer rechecks that exact SHA. The runner increments the durable count before
 launching a repair; explicit requeue preserves it and cannot bypass the limit.
 Legacy evidence with `repair_pass_used=true` and no count means one consumed
 repair, not a fresh allowance. Rejection after the third repair stops the task.
+This counts ordinary review rejections. An integration-origin correction after
+child approval preserves that count and may requeue at `repair_count=3`.
+Its corrected descendant still needs independent review; a subsequent ordinary
+rejection at three permits no fourth ordinary repair. This is not a total cap
+on corrections from all origins and does not reset sessions or history.
 Blocked required verification, native/access/model/resume/schema failure or a
 dirty/mismatched candidate also stops the same task with history;
 there is no fresh-session, host or model fallback. Current independent approval
@@ -1268,6 +1273,12 @@ parallel tracker endpoints for list behavior.
    `dependency_ticket_key` when the review needs existing tracker state.
 3. Create the same list by calling `tracker.createTicket` again with
    `dry_run=false` or without `dry_run`.
+   Validate the exact final semantic payload; any semantic edit after preview
+   requires revalidation. Only dry-run and reviewed idempotency/response controls
+   may differ on apply. After an uncertain failure inspect authoritative tickets,
+   relations and revision before retrying; read back the intended graph after
+   success. Source atomicity tests do not establish the behavior of an older
+   installed daemon.
    Dry-run and apply share reference validation, including the required `ref`
    in every `references_json` entry. Errors identify the ticket index/key and
    reference field. Creation is atomic: a failed single or list create leaves

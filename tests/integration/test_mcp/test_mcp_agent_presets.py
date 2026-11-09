@@ -239,10 +239,10 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     expected = {item["preset"]["summary"]["key"]: item for item in raw["required_agents"]}
     actual = {item["preset"]["key"]: item for item in compact["required_agents"]}
     expected_versions = {
-        "stackos.sdlc.requirements-flow-definer": "0.6.2",
-        "stackos.sdlc.planning": "0.7.8",
-        "stackos.sdlc.delivery": "0.7.8",
-        "stackos.sdlc.delivery-reviewer": "0.6.7",
+        "stackos.sdlc.requirements-flow-definer": "0.6.3",
+        "stackos.sdlc.planning": "0.7.9",
+        "stackos.sdlc.delivery": "0.7.9",
+        "stackos.sdlc.delivery-reviewer": "0.6.8",
     }
     assert set(actual) == set(expected) == set(expected_versions)
     for key, item in actual.items():
@@ -334,7 +334,7 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     assert "new descendant commit" in " ".join(delivery["must_do"])
     compact_skill = compact["required_skill_presets"][0]["preset"]
     full_skill = raw["required_skill_presets"][0]["preset"]
-    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.9"
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.10"
     full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
     # Skill lists are bounded navigation; raw retains the full contract.
     assert len(compact_skill["must_do"]) == 25
@@ -345,6 +345,14 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     assert "three automatic repair passes per ticket" in " ".join(compact_skill["must_do"])
     assert "repair_count" in " ".join(compact_skill["must_do"])
     assert "rejection after the third repair" in " ".join(compact_skill["must_do"])
+    # Preserve the safe action in the real bounded packet; raw remains authoritative.
+    for instruction in (
+        "exact final mutation payload",
+        "temporary safeguard, owner and resume condition",
+        "repair_count=3",
+        "no fourth ordinary repair",
+    ):
+        assert instruction in " ".join(compact_skill["must_do"])
     assert "Give concise ticket start/end" in " ".join(full_instructions)
     assert "followup_resolutions" in " ".join(full_instructions)
     assert "No comparable opportunity means unproven" in " ".join(full_instructions)

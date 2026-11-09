@@ -51,6 +51,15 @@ activation need their own evidence. Pending later use stays pending; one fixture
 cannot establish production prevention. Final integrated signoff remains required
 even when ticket-local guidance checks pass.
 
+At each gate, identify evidence executed on the current candidate, unchanged
+proof reused with covered-scope/prerequisite/environment justification, stale
+changed-consumer proof needing rerun and required never-executed checks. Reuse
+does not waive mandatory final signoff. Keep dependency-mutating setup exclusive
+against checks consuming that environment; run readiness checks after the relevant
+transition. Select concrete commands here and in affected local docs, not core
+runtime policy. A bounded guidance exercise records explicit source consumption
+and observed actions; phrase checks or hashes alone do not establish behavior.
+
 ## Test Runtime And Maintenance
 
 The complete automated signoff should stay below ten minutes on a prepared

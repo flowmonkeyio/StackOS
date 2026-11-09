@@ -71,7 +71,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     contract = loaded.preset.operating_contract
     action = loaded.preset.project_adaptation.required_agent_action.lower()
 
-    assert loaded.preset.version == "0.8.9"
+    assert loaded.preset.version == "0.8.10"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "canonical owner" in action
@@ -281,6 +281,11 @@ def test_sdlc_orchestrator_manual_adoption_and_bounded_repair() -> None:
             "subsequent",
             "synchronizer",
             "watcher",
+            "exact final mutation payload",
+            "temporary safeguard, owner and resume condition",
+            "dependency-mutating setup",
+            "required never-executed checks",
+            "no fourth ordinary repair",
         ):
             assert requirement.lower() in text.lower(), requirement
     assert "models stay in StackOS settings" in source

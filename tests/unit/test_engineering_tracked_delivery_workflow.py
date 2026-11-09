@@ -70,13 +70,13 @@ def _impact_map() -> dict:
     }
 
 
-def test_tracked_delivery_v081_keeps_one_key_and_eleven_steps() -> None:
+def test_tracked_delivery_v082_keeps_one_key_and_eleven_steps() -> None:
     workflow = _workflow()
     validation = validate_workflow_template_obj(workflow)
 
     assert validation.valid is True, validation.errors
     assert workflow["key"] == "engineering.tracked-delivery"
-    assert workflow["version"] == "0.8.1"
+    assert workflow["version"] == "0.8.2"
     assert [step["id"] for step in workflow["steps"]] == [
         "scope-work",
         "define-requirements",

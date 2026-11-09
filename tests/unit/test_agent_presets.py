@@ -797,7 +797,7 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
     delivery = loader.describe_preset(key="stackos.sdlc.delivery").preset
     reviewer = loader.describe_preset(key="stackos.sdlc.delivery-reviewer").preset
 
-    assert architecture.version == "0.6.2"
+    assert architecture.version == "0.6.3"
     architecture_text = " ".join(
         [
             *architecture.prompt_contract.responsibilities,
@@ -866,13 +866,13 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
 def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -> None:
     loader = AgentPresetLoader()
     expected_versions = {
-        "requirements-flow-definer": "0.6.2",
-        "codebase-explorer": "0.6.2",
-        "planning": "0.7.8",
-        "architecture": "0.6.2",
-        "test-designer": "0.6.3",
-        "delivery": "0.7.8",
-        "delivery-reviewer": "0.6.7",
+        "requirements-flow-definer": "0.6.3",
+        "codebase-explorer": "0.6.3",
+        "planning": "0.7.9",
+        "architecture": "0.6.3",
+        "test-designer": "0.6.4",
+        "delivery": "0.7.9",
+        "delivery-reviewer": "0.6.8",
     }
     presets = {
         key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset for key in expected_versions
@@ -1057,6 +1057,9 @@ def test_sdlc_source_and_local_verification_repair_contracts() -> None:
                 "repair_count",
                 "rejection after the third repair",
                 "active/historical snapshots",
+                "Integration-origin correction after child approval",
+                "may requeue at repair_count=3",
+                "no fourth ordinary repair",
             ):
                 assert requirement in text, (role, requirement)
     reviewer = loader.describe_preset(key="stackos.sdlc.delivery-reviewer").preset
@@ -1069,7 +1072,7 @@ def test_sdlc_source_and_local_verification_repair_contracts() -> None:
 
 
 def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
-    # Availability/assembly checks only; the native-adoption rehearsal owns behavior proof.
+    # Availability/assembly only; the assigned independent G1 exercise owns behavior proof.
     loader = AgentPresetLoader()
     prefixes = {
         "delivery": (
@@ -1078,12 +1081,14 @@ def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
             "Before handoff,",
             "For visual changes,",
             "Explicitly assigned proof may authorize",
+            "Prove the changed boundary through the real caller,",
         ),
         "delivery-reviewer": (
             "Own the assigned review outcome.",
             "Re-verification resumes",
             "For visual changes,",
             "Explicitly assigned proof may authorize",
+            "Keep dependency-mutating setup exclusive",
         ),
     }
     texts = {}
@@ -1125,6 +1130,20 @@ def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
             "source and installed observations distinct",
         ):
             assert obligation in text
+
+    for role in ("planning", "test-designer", "delivery", "delivery-reviewer"):
+        preset = loader.describe_preset(key=f"stackos.sdlc.{role}").preset
+        local = tomllib.loads((REPO_ROOT / f".codex/agents/sdlc-{role}.toml").read_text())
+        for text in (" ".join(preset.prompt_contract.must_do), local["developer_instructions"]):
+            assert "dependency-mutating setup" in text
+            assert "relevant transition" in text
+        if role in {"test-designer", "delivery", "delivery-reviewer"}:
+            for text in (" ".join(preset.prompt_contract.must_do), local["developer_instructions"]):
+                assert "real caller" in text
+                assert "mocks/substitutions" in text
+                assert (
+                    "late outcomes after cancellation" in text or "late completion/callback" in text
+                )
 
 
 def test_customer_support_thread_preset_requires_route_and_media_fidelity() -> None:

@@ -297,6 +297,17 @@ existing receipt. Intentional maintained assets and regressions receive their
 applicable checks. Failed or unavailable required proof prevents candidate-ready;
 self-signoff does not replace independent acceptance.
 
+Test design traces the real caller through the owning producer, affected consumer
+and actual authorization boundary, with expected results independent of the
+implementation. Delivery declares mocks/substitutions and their limits; review
+challenges any missing real wiring. Asynchronous changes select relevant lifetime
+risks, including late outcomes after cancellation where applicable, rather than
+requiring a fixed state matrix for every change. Planning assigns delivery,
+review, integration and release checks to their existing owners. Keep dependency
+mutation exclusive against checks consuming that environment, and check readiness
+after the relevant transition. Retrieve bounded current source sections once and
+expand for missing contracts or contradictions without skipping required guidance.
+
 Source implementation and repairs produce separate scoped commits after self-checks.
 A separate reviewer checks that exact commit against the assigned
 requirements and actual evidence, returning the full `commit_sha`. The main
@@ -311,8 +322,12 @@ rejection is persisted before each of up to three automatic repair passes in the
 same native delivery session, with a separate new descendant repair commit and
 re-verification in the same independent review session. The consumed count survives explicit
 requeue; blocked required verification, native/access/model/resume failure,
-candidate mismatch or rejection after the third repair stops that task. Main retains scope
-admission and final claims. In automatic delivery, assigned agents execute
+candidate mismatch or rejection after the third repair stops that task.
+This count covers ordinary review rejections. Integration-origin correction after
+prior child approval preserves the count and may requeue at `repair_count=3`;
+its independent ordinary review may approve, but a rejection there permits no
+fourth ordinary repair. This is not a total cap on corrections from all origins.
+Main retains scope admission and final claims. In automatic delivery, assigned agents execute
 integration and workflow phase gates; main observes without lifecycle writes.
 Defaults use `TaskTracker.config_json.delivery`
 via local-admin REST-only `tracker.configureDelivery`, merged with task overrides by role once; local
@@ -360,7 +375,7 @@ Only the runner resumes original sessions and records workflow lifecycle.
 Fresh persisted correction outranks historical approval; corrected source needs
 a separate descendant commit and independent exact-SHA review. This exception
 does not permit self-acceptance, claim/record, dispatch, new work from followups,
-or bypass of actual execution errors or the three-pass repair limit.
+or bypass of actual execution errors or the ordinary three-pass repair limit.
 Terminal-managed specialists still return evidence for main to route.
 
 Review must identify its candidate, assignment attempt, contract revision and
@@ -405,6 +420,17 @@ and source/local contract checks prove instruction availability; the assigned
 native rehearsal must demonstrate omitted-check discovery, final tests/lint,
 truthful self-signoff, independent review and restraint on unrelated cleanup.
 No source-only check proves saved adoption or current native/installed consumption.
+
+The focused source revision reviewed the supplied official guidance on 2026-11-09:
+[issue-to-tested-PR](https://learn.chatgpt.com/use-cases/issue-to-tested-pr#how-to-use)
+informs repository-specific baseline, regression and final-diff proof;
+[Codex review rules](https://learn.chatgpt.com/docs/agent-configuration/agents-md#add-code-review-rules)
+informs concise applicable instructions with a violation and safe alternative.
+These are instruction-design inputs. A bounded exercise after explicit consumption
+must demonstrate actual-caller/lifetime gap discovery, exact-payload revalidation,
+readback before uncertain retry, justified proof reuse, exclusive setup and restraint
+on unrelated cleanup. Retain consumed candidate/hashes and observed actions outside
+Git. Phrase assertions alone establish availability, not effectiveness or adoption.
 
 The bounded automated planning permission was reviewed on 2026-11-09 against
 [Codex instruction discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md)
