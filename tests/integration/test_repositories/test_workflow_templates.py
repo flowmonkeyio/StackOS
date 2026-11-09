@@ -671,7 +671,7 @@ def test_engineering_readiness_and_acceptance_contract_survives_plan_derivation(
         "audit-tracker",
         "release-closeout",
     ]
-    assert spec.version == "0.8.1"
+    assert spec.version == "0.8.2"
     assert [step.id for step in spec.steps] == expected_order
     assert spec.metadata_json["step_ids"] == expected_order
     assert spec.skill_preset_requirements[0].applies_to_steps == expected_order
@@ -696,7 +696,7 @@ def test_engineering_readiness_and_acceptance_contract_survives_plan_derivation(
     policy_text = {item.key: item.description for item in spec.policies}
     assert "every independent first executable child" in policy_text["workflow_dependency_spine"]
     assert "all terminal children" in policy_text["workflow_dependency_spine"]
-    assert "unaccepted sibling candidate" in policy_text["ticket_and_integration_proof"]
+    assert "unaccepted sibling changes" in policy_text["ticket_and_integration_proof"]
     assert "does not reopen its completed children" in policy_text["recovery_reconciliation"]
 
     expected_outputs = {
@@ -722,7 +722,7 @@ def test_engineering_readiness_and_acceptance_contract_survives_plan_derivation(
     validation = validate_run_plan_obj(plan.model_dump(mode="json"))
     assert validation.valid, validation.errors
     assert validation.warnings == []
-    assert plan.template_version == "0.8.1"
+    assert plan.template_version == "0.8.2"
     assert [step.id for step in plan.steps] == expected_order
     assert {step.id: step.depends_on for step in plan.steps} == expected_dependencies
     derived_verify = next(step for step in plan.steps if step.id == "verify-delivery")
