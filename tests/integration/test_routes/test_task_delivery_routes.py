@@ -44,7 +44,10 @@ def test_project_defaults_setup_rejects_lossy_responses(api, project_id, respons
     assert snapshot.json()["tracker"] == saved.json()["data"]
 
 
-def test_source_adoption_preview_and_write_use_registered_local_setup(api, project_id, tmp_path):
+@pytest.mark.parametrize("cleared", [False, True])
+def test_source_adoption_preview_and_write_use_registered_local_setup(
+    api, project_id, tmp_path, cleared
+):
     from tests.integration.test_routes.test_project_agent_operations import bind, call
 
     scope = bind(api, project_id, tmp_path / "adoption")
@@ -65,7 +68,14 @@ def test_source_adoption_preview_and_write_use_registered_local_setup(api, proje
     source = created.json()["data"]
     endpoint = "/api/v1/operations/tracker.configureDelivery/call"
     original = {
-        "delivery_agent": {"name": "builder", "instructions": "Legacy copy", "provider": None}
+        "delivery_agent": None
+        if cleared
+        else {
+            "name": "builder",
+            "instructions": "Legacy copy",
+            "provider": None,
+        },
+        "review_agent": None,
     }
     saved = api.post(endpoint, json={"arguments": {"project_id": project_id, "delivery": original}})
     assert saved.status_code == 200, saved.text
@@ -82,7 +92,7 @@ def test_source_adoption_preview_and_write_use_registered_local_setup(api, proje
     preview = api.post(endpoint, json={"arguments": {**arguments, "preview": True}})
     assert preview.status_code == 200, preview.text
     assert preview.json()["data"]["adoption"]["differences"]["delivery_agent"]["instructions"] == {
-        "saved": "Legacy copy",
+        "saved": None if cleared else "Legacy copy",
         "source": "Native source",
     }
 
@@ -105,8 +115,13 @@ def test_source_adoption_preview_and_write_use_registered_local_setup(api, proje
     readback = defaults()
     assert readback["config_json"]["delivery"] == adopted.json()["data"]["config_json"]["delivery"]
     selected = readback["config_json"]["delivery"]["agents"]["delivery_agent"]
-    assert selected["provider"] is None and "instructions" not in selected
+    if cleared:
+        assert "provider" not in selected
+    else:
+        assert selected["provider"] is None
+    assert "instructions" not in selected
     assert selected["source_ref"] == source["source_ref"]
+    assert readback["config_json"]["delivery"]["review_agent"] is None
 
 
 @pytest.mark.parametrize("workflow", [False, True])

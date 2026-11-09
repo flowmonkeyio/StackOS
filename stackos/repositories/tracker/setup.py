@@ -28,6 +28,18 @@ from stackos.repositories.tracker.utils import (
 )
 
 
+def _delivery_role_defaults(defaults: dict[str, Any], role: str) -> dict[str, Any]:
+    """Merge saved role fields across legacy and source-mapped configuration."""
+    mapped = defaults.get("agents")
+    if mapped is not None and not isinstance(mapped, dict):
+        raise ValidationError("Task delivery agents must be an object")
+    legacy = defaults.get(role) if role in {"delivery_agent", "review_agent"} else None
+    selected = (mapped or {}).get(role)
+    if any(value is not None and not isinstance(value, dict) for value in (legacy, selected)):
+        raise ValidationError(f"Task delivery {role} must be an object")
+    return {**(legacy or {}), **(selected or {})}
+
+
 class TrackerSetupMixin:
     """Tracker setup and default catalogue helpers."""
 
@@ -61,7 +73,7 @@ class TrackerSetupMixin:
                 )
             if source.fields is None:
                 raise ValidationError("Project agent unsupported_setting")
-            before = {**proposed.get(role, {}), **roles.get(role, {})}
+            before = _delivery_role_defaults(current, role)
             differences[role] = {
                 key: {"saved": before.get(key), "source": value}
                 for key, value in {
@@ -82,6 +94,7 @@ class TrackerSetupMixin:
             project_id=project_id,
             project_dir=project_dir,
             agents={role: roles[role] for role in sources},
+            role_keys=set(sources),
         )
         adoption = {
             "preview": preview,

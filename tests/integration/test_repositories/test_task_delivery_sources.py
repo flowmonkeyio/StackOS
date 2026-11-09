@@ -52,6 +52,225 @@ def test_fresh_codex_inline_requires_explicit_adoption(session, project_id, tmp_
         )
 
 
+@pytest.mark.parametrize("argument_form", ["legacy", "map"])
+@pytest.mark.parametrize("partially_mapped", [False, True])
+@pytest.mark.parametrize("task_choice", ["inherit", "set", "clear"])
+def test_selected_source_preserves_role_fallbacks_across_argument_forms(
+    session, project_id, tmp_path, argument_form, partially_mapped, task_choice
+):
+    ref = source(session, project_id, tmp_path, "builder")
+    repo = TrackerRepository(session)
+    review = {
+        "host_key": "claude-code",
+        "name": "independent",
+        "instructions": "Review",
+        "model": "claude-sonnet-5-5",
+    }
+    saved = {
+        "delivery_agent": {
+            "name": "builder",
+            "instructions": "Legacy instructions",
+            "model": "gpt-6-astra",
+            "provider": "custom-provider",
+            "model_reasoning_effort": "high",
+        },
+        "review_agent": review,
+    }
+    if partially_mapped:
+        saved["agents"] = {"delivery_agent": {"source_ref": ref, "model": "gpt-6.1-sol"}}
+    repo.configure_delivery(project_id=project_id, delivery=saved)
+    selection = {} if partially_mapped else {"source_ref": ref}
+    expected = ("gpt-6.1-sol" if partially_mapped else "gpt-6-astra", "custom-provider", "high")
+    expected_origin = "project"
+    if task_choice == "set":
+        selection.update(model="gpt-6.1-sol", model_reasoning_effort="medium")
+        expected = ("gpt-6.1-sol", "custom-provider", "medium")
+        expected_origin = "task"
+    elif task_choice == "clear":
+        selection.update(model=None, provider=None, model_reasoning_effort=None)
+        expected = (None, None, None)
+        expected_origin = "host"
+    arguments = (
+        {"delivery_agent": selection}
+        if argument_form == "legacy"
+        else {"agents": {"delivery_agent": selection}}
+    )
+    resolved = task_delivery.resolve_delivery_settings(
+        session,
+        project_id=project_id,
+        project_dir=str(tmp_path),
+        role_keys={"delivery_agent", "review_agent"},
+        **arguments,
+    )["agents"]
+    actual = resolved["delivery_agent"]
+    assert (
+        actual.get("model"),
+        actual.get("provider"),
+        actual["native_settings"].get("model_reasoning_effort"),
+    ) == expected
+    assert actual["instructions"] == "builder"
+    assert actual["setting_sources"] == {
+        "model": expected_origin,
+        "model_reasoning_effort": expected_origin,
+    }
+    assert resolved["review_agent"] == review
+    assert repo.delivery_defaults(project_id=project_id) == saved
+
+
+def test_source_values_still_win_over_explicit_null_fallbacks(session, project_id, tmp_path):
+    ref = source(
+        session,
+        project_id,
+        tmp_path,
+        "builder",
+        settings='model="gpt-6.1-sol"\nmodel_reasoning_effort="high"\n',
+    )
+    repo = TrackerRepository(session)
+    repo.configure_delivery(
+        project_id=project_id,
+        delivery={
+            "delivery_agent": {"model": "gpt-6-astra", "model_reasoning_effort": "low"},
+        },
+    )
+    actual = task_delivery.resolve_delivery_settings(
+        session,
+        project_id=project_id,
+        project_dir=str(tmp_path),
+        agents={
+            "delivery_agent": {"source_ref": ref, "model": None, "model_reasoning_effort": None}
+        },
+        role_keys={"delivery_agent"},
+    )["agents"]["delivery_agent"]
+    assert actual["model"] == "gpt-6.1-sol"
+    assert actual["native_settings"]["model_reasoning_effort"] == "high"
+    assert actual["setting_sources"] == {"model": "source", "model_reasoning_effort": "source"}
+
+
+def test_new_map_handoff_retains_saved_mixed_host_reviewer(session, project_id, tmp_path):
+    ref = source(session, project_id, tmp_path, "builder")
+    repo = TrackerRepository(session)
+    review = {"name": "reviewer", "host_key": "claude-code", "instructions": "Review"}
+    repo.configure_delivery(
+        project_id=project_id,
+        delivery={
+            "delivery_agent": {
+                "instructions": "Old",
+                "model": "gpt-6-astra",
+                "provider": "custom-provider",
+                "model_reasoning_effort": "high",
+            },
+            "review_agent": review,
+        },
+    )
+    repo.create_task(project_id=project_id, key="mixed", title="Mixed")
+    repo.create_ticket(project_id=project_id, task_key="mixed", key="work", title="Work")
+    scheduler = QueuedScheduler()
+    start(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key="mixed",
+        agents={"delivery_agent": {"source_ref": ref}},
+    )
+    agents = (
+        repo.get(project_id=project_id, task_key="mixed")
+        .tasks[0]
+        .metadata_json["delivery"]["agents"]
+    )
+    assert agents["review_agent"] == review
+    assert agents["delivery_agent"]["model"] == "gpt-6-astra"
+    assert agents["delivery_agent"]["provider"] == "custom-provider"
+    assert agents["delivery_agent"]["native_settings"] == {"model_reasoning_effort": "high"}
+    assert len(scheduler.jobs) == 1
+
+
+def test_partial_adoption_preserves_unrelated_unavailable_sources(session, project_id, tmp_path):
+    ref = source(session, project_id, tmp_path, "builder")
+    selected = {
+        "delivery_agent": {
+            "source_ref": ref,
+            "expected_digest": ProjectAgentService(tmp_path).get(ref).digest,
+        }
+    }
+    missing = {
+        "host_key": "codex",
+        "native_name": "elsewhere",
+        "source_path": ".codex/agents/elsewhere.toml",
+    }
+    unrelated = {"source_ref": missing, "provider": None}
+    original = {
+        "agents": {"unrelated": unrelated},
+        "review_agent": None,
+        "delivery_agent": {"name": "builder", "instructions": "Old", "model": None},
+    }
+    repo = TrackerRepository(session)
+    repo.configure_delivery(project_id=project_id, delivery=original)
+    preview = repo.adopt_delivery_sources(
+        project_id=project_id, project_dir=str(tmp_path), sources=selected, preview=True
+    )
+    assert set(preview["adoption"]["agents"]) == {"delivery_agent"}
+    assert repo.delivery_defaults(project_id=project_id) == original
+    result = repo.adopt_delivery_sources(
+        project_id=project_id, project_dir=str(tmp_path), sources=selected, preview=False
+    )
+    saved = repo.delivery_defaults(project_id=project_id)
+    assert saved == preview["adoption"]["delivery"] == result["config_json"]["delivery"]
+    assert saved["agents"]["unrelated"] == unrelated
+    assert saved["review_agent"] is None
+
+
+@pytest.mark.parametrize("problem", ["missing", "ambiguous", "stale"])
+def test_selected_adoption_source_failure_preserves_all_defaults(
+    session, project_id, tmp_path, problem
+):
+    from stackos.repositories.base import ConflictError
+
+    ref = source(session, project_id, tmp_path, "builder")
+    digest = ProjectAgentService(tmp_path).get(ref).digest
+    path = tmp_path / ref["source_path"]
+    if problem == "missing":
+        path.unlink()
+    elif problem == "ambiguous":
+        (path.parent / "duplicate.toml").write_bytes(path.read_bytes())
+    else:
+        path.write_text(path.read_text() + "\n# changed\n")
+    original = {"delivery_agent": None, "review_agent": None}
+    repo = TrackerRepository(session)
+    repo.configure_delivery(project_id=project_id, delivery=original)
+    with pytest.raises((ValidationError, ConflictError)):
+        repo.adopt_delivery_sources(
+            project_id=project_id,
+            project_dir=str(tmp_path),
+            preview=False,
+            sources={"delivery_agent": {"source_ref": ref, "expected_digest": digest}},
+        )
+    assert repo.delivery_defaults(project_id=project_id) == original
+
+
+@pytest.mark.parametrize("role_value", [42, "invalid"])
+def test_invalid_saved_role_adoption_is_a_structured_error(
+    session, project_id, tmp_path, role_value
+):
+    ref = source(session, project_id, tmp_path, "builder")
+    repo = TrackerRepository(session)
+    original = {"delivery_agent": role_value}
+    repo.configure_delivery(project_id=project_id, delivery=original)
+    with pytest.raises(ValidationError, match="must be an object"):
+        repo.adopt_delivery_sources(
+            project_id=project_id,
+            project_dir=str(tmp_path),
+            preview=True,
+            sources={
+                "delivery_agent": {
+                    "source_ref": ref,
+                    "expected_digest": ProjectAgentService(tmp_path).get(ref).digest,
+                }
+            },
+        )
+    assert repo.delivery_defaults(project_id=project_id) == original
+
+
 def test_source_settings_win_and_omissions_inherit(session, project_id, tmp_path):
     ref = source(
         session,

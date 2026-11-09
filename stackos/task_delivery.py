@@ -46,6 +46,7 @@ from stackos.repositories.base import ConflictError, NotFoundError, ValidationEr
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
 from stackos.repositories.tracker.events import record_execution_change
+from stackos.repositories.tracker.setup import _delivery_role_defaults
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
 
 LAUNCH_AUTHORITY_BOUNDARY = (
@@ -864,23 +865,17 @@ def resolve_delivery_settings(
     for role, override in (("delivery_agent", delivery_agent), ("review_agent", review_agent)):
         if override is not None:
             overrides[role] = override
-            default_roles = {
-                **default_roles,
-                role: {**(defaults.get(role) or {}), **(default_roles.get(role) or {})},
-            }
     resolved = {}
     for role in sorted(
         role_keys if role_keys is not None else default_roles.keys() | overrides.keys()
     ):
         if not isinstance(role, str) or not re.fullmatch(r"[a-zA-Z0-9_][a-zA-Z0-9_-]{0,159}", role):
             raise ValidationError("Invalid selected agent role")
-        default_agent = default_roles.get(role, {})
+        default_agent = _delivery_role_defaults(defaults, role)
         override = overrides.get(role, {})
-        if not isinstance(default_agent, dict):
-            raise ValidationError(f"Task delivery {role} must be an object")
         values = {**default_agent, **override}
-        if override.get("source_ref") is not None:
-            # An explicit source replaces the legacy instruction owner, never its settings.
+        if values.get("source_ref") is not None and "instructions" not in override:
+            # Selected sources replace inherited instructions, never execution fallbacks.
             values.pop("instructions", None)
         try:
             choice = TaskDeliveryAgentOverride.model_validate(values).model_dump(exclude_none=True)
@@ -939,11 +934,11 @@ def resolve_delivery_settings(
                 "setting_sources": {
                     key: "source"
                     if key in source.native_settings
-                    else "task"
-                    if override.get(key) is not None
-                    else "project"
-                    if default_agent.get(key) is not None
                     else "host"
+                    if choice.get(key) is None
+                    else "task"
+                    if key in override
+                    else "project"
                     for key in ("model", "model_reasoning_effort")
                 },
                 **(
@@ -1070,12 +1065,27 @@ def start_delivery(
     assignments = dict(agent_assignments or {})
     declared = (plan.template_snapshot_json or {}).get("agent_requirements", []) if plan else []
     selected_roles = None
+    defaults = repo.delivery_defaults(project_id=project_id)
+    if (
+        ordinary
+        and agents is not None
+        and review_agent is None
+        and "review_agent" not in agents
+        and (
+            defaults.get("review_agent") is not None
+            or (
+                isinstance(defaults.get("agents"), dict)
+                and defaults["agents"].get("review_agent") is not None
+            )
+        )
+    ):
+        # Select the required saved reviewer without turning project fields into task overrides.
+        review_agent = {}
     if declared:
         assert plan is not None
         declared_roles = {requirement["role"] for requirement in declared}
         if agents and set(agents) - declared_roles - {"delivery_agent", "review_agent"}:
             raise ValidationError("Selected agents must bind declared workflow roles")
-        defaults = repo.delivery_defaults(project_id=project_id)
         available_roles = set(defaults.get("agents") or {}) | set(agents or {})
         selected_roles = set(assignments.values())
         for step in plan.steps:
