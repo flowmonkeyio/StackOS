@@ -442,3 +442,60 @@ def test_scheduled_run_pagination_and_nullable_run_link(session: Session, projec
     assert second.next_cursor is None
     with pytest.raises(ValidationError):
         repo.runs(project_id=project_id, limit=201)
+
+
+def test_removed_schedule_id_cannot_alias_replacement_or_its_history(
+    session: Session, project_id: int
+) -> None:
+    from stackos.db.models import AgentRequest
+    from stackos.repositories.agent_requests import AgentRequestRepository
+    from stackos.repositories.run_plans import RunPlanRepository
+
+    schedules = ScheduledJobRepository(session)
+    old = schedules.set(
+        project_id=project_id, kind="removed", name="Removed", cron_expr="0 9 * * mon"
+    ).data
+    plan = (
+        RunPlanRepository(session)
+        .create(
+            project_id=project_id,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "removed.history",
+                "title": "Retained history",
+                "steps": [{"id": "work", "title": "Work"}],
+            },
+        )
+        .data
+    )
+    request = (
+        AgentRequestRepository(session)
+        .create(
+            project_id=project_id,
+            request_key=f"schedule:{old.id}:old-due",
+            title=old.name,
+            source_kind="schedule",
+            metadata_json={"schedule_id": old.id, "schedule_name": old.name},
+        )
+        .data
+    )
+    row = session.get(AgentRequest, request.id)
+    row.run_plan_id = plan.id
+    session.add(row)
+    session.commit()
+    schedules.remove(old.id, project_id=project_id)
+    replacement = schedules.set(
+        project_id=project_id, kind="replacement", name="Replacement", cron_expr="0 10 * * mon"
+    ).data
+    assert replacement.id > old.id
+    assert schedules.runs(project_id=project_id, schedule_id=replacement.id).items == []
+    assert [
+        item.request_id for item in schedules.runs(project_id=project_id, schedule_id=old.id).items
+    ] == [request.id]
+    for mutate in (
+        lambda: schedules.toggle(old.id, project_id=project_id, enabled=False),
+        lambda: schedules.remove(old.id, project_id=project_id),
+    ):
+        with pytest.raises(NotFoundError):
+            mutate()
+    assert schedules.list(project_id) == [replacement]

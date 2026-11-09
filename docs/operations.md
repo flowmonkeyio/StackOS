@@ -62,6 +62,9 @@ disabled, retain their IDs/key/cron/history and show a needs-setup issue.
 `schedule.remove` actually deletes configuration and reconciles its timer;
 it returns `{project_id, job_id, removed}` in the write envelope. It never
 cancels existing work or deletes its request, plan, run or task.
+Schedule IDs are never reassigned after removal. Migration `0037_schedule_id_nonreuse`
+preserves existing IDs and advances allocation beyond retained schedule history,
+so a new automation cannot inherit a removed automation's runs or stale references.
 The daemon installs `operation_services.schedule_reconcile(project_id, job_id)`
 for affected timer reconciliation; every mutation reaches that seam after
 commit, and queued admission must re-read current configuration.

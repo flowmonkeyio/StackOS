@@ -319,7 +319,10 @@ class ScheduledJob(SQLModel, table=True):
     """Per-project schedules (PLAN.md L379)."""
 
     __tablename__ = "scheduled_jobs"
-    __table_args__ = (Index("ix_scheduled_jobs_project", "project_id"),)
+    __table_args__ = (
+        Index("ix_scheduled_jobs_project", "project_id"),
+        {"sqlite_autoincrement": True},
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     project_id: int = Field(

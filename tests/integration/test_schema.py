@@ -677,7 +677,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0036_workflow_schedules",
+            "0037_schedule_id_nonreuse",
         )
     finally:
         conn.close()
@@ -2041,6 +2041,161 @@ def test_workflow_schedule_migration_failure_rolls_back_and_can_retry(
     _run_alembic(["upgrade", "head"])
     with sqlite3.connect(isolated_alembic) as conn:
         assert conn.execute("SELECT enabled FROM scheduled_jobs").fetchone()[0] == 0
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+@pytest.mark.parametrize("keep_live_schedule", [False, True])
+def test_schedule_id_upgrade_retains_removed_history_and_sequence(
+    isolated_alembic: Path, keep_live_schedule: bool
+) -> None:
+    from sqlmodel import Session
+
+    from stackos.db.models import AgentRequest, ScheduledJob
+    from stackos.repositories.agent_requests import AgentRequestRepository
+    from stackos.repositories.base import NotFoundError
+    from stackos.repositories.projects import ScheduledJobRepository
+    from stackos.repositories.run_plans import RunPlanRepository
+
+    _run_alembic(["upgrade", "0036_workflow_schedules"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        _insert_legacy_project(conn, project_id=1, now="2026-11-05")
+    engine = make_engine(isolated_alembic)
+    with Session(engine) as session:
+        schedules = ScheduledJobRepository(session)
+        live = schedules.set(project_id=1, kind="kept", name="Kept", cron_expr="0 9 * * mon").data
+        session.add(
+            ScheduledJob(
+                id=71, project_id=1, kind="removed", name="Removed", cron_expr="0 9 * * mon"
+            )
+        )
+        session.commit()
+        plan = (
+            RunPlanRepository(session)
+            .create(
+                project_id=1,
+                run_plan_json={
+                    "schema_version": "stackos.run-plan.v1",
+                    "key": "removed.history",
+                    "title": "Retained history",
+                    "steps": [{"id": "work", "title": "Work"}],
+                },
+            )
+            .data
+        )
+        request = (
+            AgentRequestRepository(session)
+            .create(
+                project_id=1,
+                request_key="schedule:71:old-due",
+                title="Removed",
+                source_kind="schedule",
+                metadata_json={"schedule_id": 71, "schedule_name": "Removed"},
+            )
+            .data
+        )
+        row = session.get(AgentRequest, request.id)
+        row.run_plan_id = plan.id
+        session.add(row)
+        session.commit()
+        schedules.remove(71, project_id=1)
+        if not keep_live_schedule:
+            schedules.remove(live.id, project_id=1)
+    engine.dispose()
+    _run_alembic(["upgrade", "head"])
+    _run_alembic(["upgrade", "head"])
+    engine = make_engine(isolated_alembic)
+    with Session(engine) as session:
+        schedules = ScheduledJobRepository(session)
+        assert schedules.list(1) == ([live] if keep_live_schedule else [])
+        replacement = schedules.set(
+            project_id=1, kind="replacement", name="Replacement", cron_expr="0 10 * * mon"
+        ).data
+        assert replacement.id > 71
+        assert schedules.runs(project_id=1, schedule_id=replacement.id).items == []
+        assert [item.request_id for item in schedules.runs(project_id=1, schedule_id=71).items] == [
+            request.id
+        ]
+        with pytest.raises(NotFoundError):
+            schedules.toggle(71, project_id=1, enabled=False)
+        with pytest.raises(NotFoundError):
+            schedules.remove(71, project_id=1)
+        schedules.remove(replacement.id, project_id=1)
+    engine.dispose()
+    # Simulate a lost version stamp after an allocated/deleted post-upgrade ID.
+    with sqlite3.connect(isolated_alembic) as conn:
+        saved_sequence = conn.execute(
+            "SELECT seq FROM sqlite_sequence WHERE name='scheduled_jobs'"
+        ).fetchone()[0]
+        conn.execute("UPDATE alembic_version SET version_num='0036_workflow_schedules'")
+    _run_alembic(["upgrade", "head"])
+    engine = make_engine(isolated_alembic)
+    with Session(engine) as session:
+        next_schedule = (
+            ScheduledJobRepository(session)
+            .set(project_id=1, kind="after-replay", cron_expr="0 11 * * mon")
+            .data
+        )
+        assert next_schedule.id > replacement.id
+    engine.dispose()
+    with sqlite3.connect(isolated_alembic) as conn:
+        assert (
+            conn.execute("SELECT seq FROM sqlite_sequence WHERE name='scheduled_jobs'").fetchone()[
+                0
+            ]
+            > saved_sequence
+        )
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+@pytest.mark.parametrize("failure_phase", ["rebuild", "sequence"])
+def test_schedule_id_upgrade_failure_rolls_back_and_retries(
+    isolated_alembic: Path, failure_phase: str
+) -> None:
+    _run_alembic(["upgrade", "0036_workflow_schedules"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        _insert_legacy_project(conn, project_id=1, now="2026-11-05")
+        conn.execute(
+            "INSERT INTO scheduled_jobs (id, project_id, kind, cron_expr, enabled) "
+            "VALUES (9, 1, 'kept', '0 9 * * mon', 1)"
+        )
+    migration = importlib.import_module("stackos.db.migrations.versions.0037_schedule_id_nonreuse")
+    engine = make_engine(isolated_alembic)
+    with engine.connect() as conn:
+
+        def fail_after_write(_conn, _cursor, statement, _parameters, _context, _many):
+            sql = statement.strip().upper()
+            if (failure_phase == "rebuild" and sql == "DROP TABLE SCHEDULED_JOBS") or (
+                failure_phase == "sequence" and sql.startswith("UPDATE SQLITE_SEQUENCE")
+            ):
+                raise RuntimeError("injected schedule identity failure")
+
+        sa.event.listen(conn, "after_cursor_execute", fail_after_write)
+        context = MigrationContext.configure(conn, opts={"transaction_per_migration": True})
+        with (
+            pytest.raises(RuntimeError, match="injected schedule identity failure"),
+            context.begin_transaction(_per_migration=True),
+            Operations.context(context),
+        ):
+            migration.upgrade()
+        sa.event.remove(conn, "after_cursor_execute", fail_after_write)
+        conn.rollback()
+        assert (
+            "AUTOINCREMENT"
+            not in conn.exec_driver_sql("SELECT sql FROM sqlite_master WHERE name='scheduled_jobs'")
+            .scalar_one()
+            .upper()
+        )
+        assert conn.exec_driver_sql("SELECT id, enabled FROM scheduled_jobs").one() == (9, 1)
+        assert (
+            conn.exec_driver_sql(
+                "SELECT name FROM sqlite_master WHERE name='_alembic_tmp_scheduled_jobs'"
+            ).first()
+            is None
+        )
+    engine.dispose()
+    _run_alembic(["upgrade", "head"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        assert conn.execute("SELECT id, enabled FROM scheduled_jobs").fetchone() == (9, 1)
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
