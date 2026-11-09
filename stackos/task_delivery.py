@@ -14,6 +14,7 @@ from hashlib import sha256
 from pathlib import Path
 from threading import Event
 from typing import Any
+from uuid import uuid4
 
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.base import BaseScheduler
@@ -198,8 +199,13 @@ def abort_audit_run(session, run_id, *, cascade=False, project_id=None, schedule
     return runs.abort(run_id, cascade=cascade, project_id=project_id)
 
 
-def _delivery_aborted(repo, project_id, task_key):
-    return _task(repo, project_id, task_key).status == TrackerItemStatus.ABORTED
+def _delivery_active(task, handoff_id):
+    state = (task.metadata_json or {}).get("delivery", {})
+    return (
+        task.status != TrackerItemStatus.ABORTED
+        and state.get("handoff_id") == handoff_id
+        and state.get("status") in {"queued", "running"}
+    )
 
 
 def _workflow_scope(repo, project_id, task, run_plan_id, step_id, *, starting=False):
@@ -523,7 +529,7 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
                 "The working directory is already owned by an active task",
                 data={"project_dir": str(directory), "next_operations": ["tracker.get"]},
             )
-        return _update_delivery(repo, project_id, task_key, **changes), True
+        return _update_delivery(repo, project_id, task_key, **changes, handoff_id=uuid4().hex), True
     except Exception:
         session.rollback()
         raise
@@ -960,6 +966,7 @@ def start_delivery(
                 "session_factory": session_factory,
                 "project_id": project_id,
                 "task_key": task_key,
+                "handoff_id": state["handoff_id"],
             },
         )
     except Exception as error:
@@ -1001,7 +1008,13 @@ def _record_execution_transition(
         record_execution_change(session, call, active)
 
 
-def run_delivery(*, session_factory: Callable[[], Session], project_id: int, task_key: str) -> None:
+def run_delivery(
+    *,
+    session_factory: Callable[[], Session],
+    project_id: int,
+    task_key: str,
+    handoff_id: str,
+) -> None:
     cancellation: Event | None = None
 
     def invocation_cancelled() -> bool:
@@ -1010,7 +1023,9 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
     def launch_allowed() -> bool:
         with session_factory() as session:
             repo = TrackerRepository(session)
-            return not invocation_cancelled() and not _delivery_aborted(repo, project_id, task_key)
+            return not invocation_cancelled() and _delivery_active(
+                _task(repo, project_id, task_key), handoff_id
+            )
 
     def execution_changed(call: ActiveInvocation, active: bool) -> None:
         nonlocal cancellation
@@ -1036,7 +1051,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
             with managed_launch_lock, session_factory() as session:
                 repo = TrackerRepository(session)
                 task = _task(repo, project_id, task_key)
-                if invocation_cancelled() or task.status == TrackerItemStatus.ABORTED:
+                if invocation_cancelled() or not _delivery_active(task, handoff_id):
                     return
                 state = (task.metadata_json or {})["delivery"]
                 snapshot = repo.get(project_id=project_id, task_key=task_key, include_graph=False)
@@ -1187,7 +1202,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                 with managed_launch_lock, session_factory() as session:
                     repo = TrackerRepository(session)
                     task = _task(repo, project_id, task_key)
-                    if invocation_cancelled() or task.status == TrackerItemStatus.ABORTED:
+                    if invocation_cancelled() or not _delivery_active(task, handoff_id):
                         return
                     _workflow_scope(
                         repo, project_id, task, state.get("run_plan_id"), state.get("step_id")
@@ -1435,10 +1450,15 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                 with managed_launch_lock, session_factory() as session:
                     repo = TrackerRepository(session)
                     task = _task(repo, project_id, task_key)
-                    if invocation_cancelled() or task.status == TrackerItemStatus.ABORTED:
+                    if invocation_cancelled() or not _delivery_active(task, handoff_id):
                         evidence[phase]["validated_outcome"] = None
                         evidence[phase]["cancelled"] = True
-                        _save_evidence(repo, project_id, ticket_key, evidence)
+                        # A fresh handoff owns current evidence. Retired returns
+                        # may retain observations only in their original handoff.
+                        if (task.metadata_json or {}).get("delivery", {}).get(
+                            "handoff_id"
+                        ) == handoff_id:
+                            _save_evidence(repo, project_id, ticket_key, evidence)
                         return
                     _workflow_scope(
                         repo, project_id, task, state.get("run_plan_id"), state.get("step_id")
@@ -1572,8 +1592,13 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
     except Exception as error:
         with managed_launch_lock, session_factory() as session:
             repo = TrackerRepository(session)
-            if invocation_cancelled() or _delivery_aborted(repo, project_id, task_key):
-                if ticket_key is not None:
+            task = _task(repo, project_id, task_key)
+            if invocation_cancelled() or not _delivery_active(task, handoff_id):
+                if (
+                    ticket_key is not None
+                    and (task.metadata_json or {}).get("delivery", {}).get("handoff_id")
+                    == handoff_id
+                ):
                     evidence["cancellation"] = {"status": "aborted", "error": str(error)}
                     _save_evidence(repo, project_id, ticket_key, evidence)
                 return

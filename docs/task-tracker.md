@@ -54,8 +54,13 @@ replacement for "moved elsewhere."
 
 Explicit workflow abort uses `runPlan.abort` and the shared delivery/native launch
 boundary described in [run plans](./run-plans.md#explicit-run-abort). Canonical
-aborted task state fences queued callbacks, spawn registration and late
-success/error/exception acceptance. Only registry-owned invocations can be stopped;
+aborted task state and the stopped delivery handoff fence queued callbacks, spawn
+registration and late success/error/exception acceptance. Each accepted
+`tracker.startDelivery` handoff has its own identity in the existing delivery
+snapshot and scheduled callback. Reopening a run does not revive its stopped
+handoff, even after the native invocation retires. A fresh explicit handoff gets a
+new identity; old callbacks and buffered returns cannot claim its steps, launch
+agents or overwrite its evidence. Only registry-owned invocations can be stopped;
 external sessions receive state changes only. The existing execution/usage handoff
 finishes readers and retains measured counters without inventing final-only usage.
 Runs, Board and Graph share the same confirmation and refresh their current

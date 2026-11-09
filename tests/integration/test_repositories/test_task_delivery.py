@@ -3194,6 +3194,19 @@ def test_abort_queued_callback_scope_terminal_and_external_state_only(
     monkeypatch.setattr(task_delivery, "run_agent", lambda *a, **kw: pytest.fail("late launch"))
     function(**options["kwargs"])
     assert task_delivery.abort_run_plan(session, run_plan_id=plan_id)[1]["status"] == "state_only"
+    plans = RunPlanRepository(session)
+    plans.reopen(
+        run_plan_id=plan_id,
+        project_id=project_id,
+        step_id="deliver",
+        reason="Isolated queued callback reopen without a fresh delivery handoff",
+    )
+    before_plan = plans.get(plan_id).model_dump(mode="json")
+    before_task = TrackerRepository(session).get(project_id=project_id, task_key=key)
+    function(**options["kwargs"])
+    session.expire_all()
+    assert plans.get(plan_id).model_dump(mode="json") == before_plan
+    assert TrackerRepository(session).get(project_id=project_id, task_key=key) == before_task
     completed = (
         RunPlanRepository(session)
         .create(
@@ -3217,6 +3230,35 @@ def test_abort_queued_callback_scope_terminal_and_external_state_only(
     )
     with pytest.raises(ConflictError, match="terminal"):
         task_delivery.abort_run_plan(session, run_plan_id=completed.id)
+
+
+def test_dequeued_callback_cannot_use_a_new_delivery_handoff(
+    session, project_id, tmp_path, monkeypatch
+):
+    from stackos import task_delivery
+
+    prepared_task(session, project_id)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    function, old = scheduler.jobs.pop()
+    repo = TrackerRepository(session)
+    task_delivery._update_delivery(repo, project_id, "deliver", status="stopped")
+    submit(session, project_id, tmp_path, scheduler)
+    current = repo.get(project_id=project_id, task_key="deliver")
+    calls = []
+
+    def launch(*args, **kwargs):
+        packet = json.loads(args[3])
+        calls.append(packet["phase"])
+        return AgentRunResult(0, thread_id=f"fresh-{len(calls)}", result=generic_result("blocked"))
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    function(**old["kwargs"])
+    session.expire_all()
+    assert repo.get(project_id=project_id, task_key="deliver") == current
+    assert not calls
+    scheduler.run()
+    assert calls == ["delivery"]
 
 
 def test_abort_real_managed_invocation_through_lifecycle_coordinator(
@@ -3291,13 +3333,16 @@ def test_abort_real_managed_invocation_through_lifecycle_coordinator(
 
 @pytest.mark.parametrize("late", ["success", "error", "exception"])
 @pytest.mark.parametrize("phase", ["delivery", "review"])
-def test_confirmed_abort_stays_cancelled_after_reopen_and_native_retirement(
-    delivery_engine, project_id, tmp_path, monkeypatch, late, phase
+@pytest.mark.parametrize("retired", [False, True])
+@pytest.mark.parametrize("rehandoff", [False, True])
+def test_abort_stays_cancelled_after_reopen_and_native_retirement(
+    delivery_engine, project_id, tmp_path, monkeypatch, late, phase, retired, rehandoff
 ):
     from dataclasses import replace
 
     from stackos import task_delivery
     from stackos.host_mcp import service
+    from stackos.repositories.base import ConflictError
 
     ready, validating, release = Event(), Event(), Event()
     definition = service._definition_by_key("codex")
@@ -3313,7 +3358,12 @@ def test_confirmed_abort_stays_cancelled_after_reopen_and_native_retirement(
         calls.append(packet["phase"])
         if packet["phase"] == phase:
             process = process_control.spawn(
-                [sys.executable, "-c", "import time; print('ready', flush=True); time.sleep(30)"],
+                [
+                    sys.executable,
+                    "-c",
+                    "import time; print('ready', flush=True); "
+                    + ("pass" if retired else "time.sleep(30)"),
+                ],
                 stdout=subprocess.PIPE,
                 text=True,
             )
@@ -3359,28 +3409,53 @@ def test_confirmed_abort_stays_cancelled_after_reopen_and_native_retirement(
                 running = workers.submit(scheduler.run)
                 assert ready.wait(5)
                 try:
+                    if retired:
+                        assert validating.wait(3)
+                        assert native[0].poll() == 0
+                        assert not service.usage_executions(project_id)
                     try:
                         _, cancellation = task_delivery.abort_run_plan(
                             session, run_plan_id=plan_id, project_id=project_id, scheduler=scheduler
                         )
                     except Exception as error:
-                        raise AssertionError(
-                            {
-                                "abort": getattr(error, "data", str(error)),
-                                "stop_errors": [control.stop_error for control in controls],
-                            }
-                        ) from error
-                    assert cancellation["status"] == "managed_stopped"
-                    assert cancellation["stopped_count"] == 1
-                    assert native[0].poll() == -15
+                        if not retired or not isinstance(error, ConflictError):
+                            raise AssertionError(
+                                {
+                                    "abort": getattr(error, "data", str(error)),
+                                    "stop_errors": [control.stop_error for control in controls],
+                                }
+                            ) from error
+                        assert error.data["status"] == "aborted"
+                        cancellation = error.data["cancellation"]
+                    assert cancellation["status"] == (
+                        "stop_unconfirmed" if retired else "managed_stopped"
+                    )
+                    assert cancellation["stopped_count"] == (0 if retired else 1)
+                    assert native[0].poll() == (0 if retired else -15)
                     assert not service.usage_executions(project_id)
                     assert validating.wait(3)
                     plans.reopen(
                         run_plan_id=plan_id,
                         project_id=project_id,
                         step_id="deliver",
-                        reason="Explicit isolated fixture reopen after confirmed stop",
+                        reason="Explicit isolated fixture reopen after abort",
                     )
+                    if rehandoff:
+                        plans.claim_step(
+                            run_plan_id=plan_id,
+                            project_id=project_id,
+                            run_id=plans.get(plan_id).run_id,
+                            step_id="deliver",
+                        )
+                        submit(
+                            session,
+                            project_id,
+                            tmp_path,
+                            scheduler,
+                            task_key=task_key,
+                            run_plan_id=plan_id,
+                            step_id="deliver",
+                        )
                     assert not launch_guards[-1]()
                     before = TrackerRepository(session).get(
                         project_id=project_id, task_key=task_key
@@ -3401,11 +3476,16 @@ def test_confirmed_abort_stays_cancelled_after_reopen_and_native_retirement(
                 after.tasks[0].model_dump(exclude={"agent_stats", "active_execution"}) == task_state
             )
             assert plans.get(plan_id).status == "started"
-            assert plans.get_step(plan_id, "deliver").status == RunPlanStepStatus.PENDING
+            assert plans.get_step(plan_id, "deliver").status == (
+                RunPlanStepStatus.RUNNING if rehandoff else RunPlanStepStatus.PENDING
+            )
             evidence = next(
                 ticket for ticket in after.tickets if ticket.key == "selected"
             ).completion_evidence_json["automatic_delivery"]
-            assert evidence.get("cancellation") or evidence[phase]["cancelled"]
+            if rehandoff:
+                assert after.tickets == before.tickets
+            else:
+                assert evidence.get("cancellation") or evidence[phase]["cancelled"]
             assert evidence[phase].get("validated_outcome") is None
     finally:
         release.set()
