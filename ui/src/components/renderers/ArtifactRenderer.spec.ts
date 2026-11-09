@@ -43,6 +43,13 @@ describe('ArtifactRenderer reference capabilities', () => {
   it.each([
     'ftp://review-user:review-password@example.invalid/file',
     's3://review-user:review-password@example.invalid/file',
+    ' https://review-user:review-password@example.invalid/file',
+    '//review-user:review-password@example.invalid/file',
+    '\tftp://review-user:review-password@example.invalid/file\r\n',
+    'ht\ttps://review-user:review-password@example.invalid/file',
+    '\\\\review-user:review-password@example.invalid/file',
+    ' ftp://review-user:review-password@',
+    '///review-user:review-password@example.invalid/file',
     'https://example.invalid/image.png?sig=review-signature&sp=r&se=2099-01-01',
     'https://example.invalid/image.png?SIG=review-signature',
     'https://example.invalid/image.png?path=?&s%69g=review-signature',
@@ -59,7 +66,7 @@ describe('ArtifactRenderer reference capabilities', () => {
     expect(row.uri).toBe(uri)
   })
 
-  it.each(['ftp://example.invalid/file', 's3://example.invalid/file', 'file:///private/example.png'])('preserves harmless unsupported reference metadata: %s', (uri) => {
+  it.each(['ftp://example.invalid/file', 's3://example.invalid/file', 'file:///private/example.png', '//example.invalid/file', ' https://example.invalid/file'])('preserves harmless unsupported reference metadata: %s', (uri) => {
     const w = mount(ArtifactRenderer, { props: { artifact: artifact(uri) } })
     expect(w.find('a').exists()).toBe(false)
     expect(w.get('details').text()).toContain(uri)

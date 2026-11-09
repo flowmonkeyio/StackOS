@@ -89,23 +89,22 @@ export function artifactReference(artifact: SchemaArtifactOut): { href: string |
   if (artifact.plugin_slug === 'finance') return { href: null, preview: false, reason: 'Finance files remain available through Finance.', display_uri: '[private reference]' }
   const uri = artifact.uri
   const sanitized = String(sanitizeForDisplay(uri))
+  let url: URL | null = null
+  try { url = new URL(uri) } catch { /* Unparseable references have no action capability. */ }
   // Classify display safety for every scheme, including malformed authorities.
   const queryStart = uri.indexOf('?')
   const query = new URLSearchParams(queryStart < 0 ? '' : uri.slice(queryStart + 1).split('#')[0])
   const hasCredentialQuery = [...query.keys()].some((key) =>
     /^sig$/i.test(key) || /token|secret|password|signature|credential|api.?key|access.?key|authorization/i.test(key))
-  const hasUserinfo = /^[a-z][a-z\d+.-]*:\/\/[^/?#]*@/i.test(uri)
+  const authority = uri.trim().replace(/[\t\r\n]/g, '')
+  const hasUserinfo = /^(?:[a-z][a-z\d+.-]*:)?[/\\]{2,}[^/\\?#]*@/i.test(authority) || Boolean(url?.username || url?.password)
   const sensitive = sanitized !== uri || hasUserinfo || hasCredentialQuery
   const unavailable = {
     href: null, preview: false, reason: 'Reference unavailable for opening or preview.',
     display_uri: sensitive ? '[redacted reference]' : sanitized,
   }
   if (sensitive) return unavailable
-  try {
-    if (!uri || [...uri].some((char) => char.charCodeAt(0) < 33) || /\s/.test(uri)) return unavailable
-    const url = new URL(uri)
-    if (url.username || url.password) return { ...unavailable, display_uri: '[redacted reference]' }
-    if (!['https:', 'http:'].includes(url.protocol)) return unavailable
-    return { href: url.href, preview: ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'].includes(artifact.mime_type ?? ''), reason: 'External reference; availability has not been checked.', display_uri: sanitized }
-  } catch { return unavailable }
+  if (!url || !uri || [...uri].some((char) => char.charCodeAt(0) < 33) || /\s/.test(uri)) return unavailable
+  if (!['https:', 'http:'].includes(url.protocol)) return unavailable
+  return { href: url.href, preview: ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'].includes(artifact.mime_type ?? ''), reason: 'External reference; availability has not been checked.', display_uri: sanitized }
 }
