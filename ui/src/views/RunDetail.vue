@@ -19,6 +19,7 @@ import {
 } from '@/components/ui'
 import type { DLItem } from '@/components/ui/UiDescriptionList.vue'
 import { useRunsStore, type Run } from '@/stores/runs'
+import { useStackOsResourcesStore } from '@/stores/stackosResources'
 import { apiFetch, formatApiError } from '@/lib/client'
 import { resolveStatus } from '@/design/status'
 import { sanitizeForDisplay } from '@/lib/stackos/json'
@@ -30,14 +31,12 @@ import {
 } from '@/lib/stackos/time'
 import type {
   SchemaActionCallAuditOut,
-  SchemaArtifactOut,
   SchemaContextSnapshotOut,
   SchemaDecisionOut,
   SchemaExperimentObservationOut,
   SchemaExperimentOut,
   SchemaLearningOut,
   SchemaPageResponseActionCallAuditOut,
-  SchemaPageResponseArtifactOut,
   SchemaPageResponseContextSnapshotOut,
   SchemaPageResponseDecisionOut,
   SchemaPageResponseExperimentObservationOut,
@@ -53,6 +52,7 @@ const props = defineProps<{
 }>()
 
 const runsStore = useRunsStore()
+const resourcesStore = useStackOsResourcesStore()
 
 const run = ref<Run | null>(null)
 const children = ref<Run[]>([])
@@ -63,7 +63,6 @@ const observations = ref<SchemaExperimentObservationOut[]>([])
 const decisions = ref<SchemaDecisionOut[]>([])
 const learnings = ref<SchemaLearningOut[]>([])
 const experiments = ref<SchemaExperimentOut[]>([])
-const artifacts = ref<SchemaArtifactOut[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
 
@@ -81,7 +80,6 @@ async function load(): Promise<void> {
       decisionPage,
       learningPage,
       experimentPage,
-      artifactPage,
     ] = await Promise.all([
       runsStore.children(props.runId, props.projectId),
       fetchRunPlans(),
@@ -103,9 +101,7 @@ async function load(): Promise<void> {
       apiFetch<SchemaPageResponseExperimentOut>(
         `/api/v1/projects/${props.projectId}/experiments?limit=50`,
       ),
-      apiFetch<SchemaPageResponseArtifactOut>(
-        `/api/v1/projects/${props.projectId}/artifacts?limit=50`,
-      ),
+      resourcesStore.refreshArtifacts(props.projectId),
     ])
     // The API returns rows ascending — show the latest first in every section.
     children.value = newestFirst(kids, (row) => row.started_at)
@@ -119,7 +115,7 @@ async function load(): Promise<void> {
     decisions.value = newestFirst(decisionPage.items, (row) => row.created_at)
     learnings.value = newestFirst(learningPage.items, (row) => row.created_at)
     experiments.value = newestFirst(experimentPage.items, (row) => row.created_at)
-    artifacts.value = newestFirst(artifactPage.items, (row) => row.created_at)
+    if (resourcesStore.artifactPage.error) throw new Error(resourcesStore.artifactPage.error)
   } catch (err) {
     error.value = formatApiError(err)
   } finally {
@@ -183,11 +179,13 @@ const linkedExperiments = computed(() =>
 )
 
 const linkedArtifacts = computed(() =>
-  artifacts.value.filter(
+  newestFirst((resourcesStore.currentProjectId === props.projectId ? resourcesStore.artifacts : []).filter(
     (artifact) =>
-      valueLinksRun(artifact.metadata_json, props.runId) ||
-      valueLinksRun(artifact.provenance_json, props.runId),
-  ),
+      artifact.project_id === props.projectId && (
+        artifact.metadata_json?.run_id === props.runId ||
+        artifact.provenance_json?.run_id === props.runId
+      ),
+  ), (row) => row.created_at),
 )
 
 async function fetchRunPlans(): Promise<SchemaRunPlanOut[]> {

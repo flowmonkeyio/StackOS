@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import { formatAbsoluteDateTime } from '@/lib/stackos/time'
 import RunDetail from './RunDetail.vue'
+import { useStackOsResourcesStore } from '@/stores/stackosResources'
 
 const ORIG_FETCH = globalThis.fetch
 
@@ -28,7 +29,7 @@ function page(items: unknown[] = []) {
   return { items, next_cursor: null, total_estimate: items.length }
 }
 
-async function mountRun(overrides: { heartbeat_at?: string | null; status?: string } = {}) {
+async function mountRun(overrides: { heartbeat_at?: string | null; status?: string } = {}, artifactRows: unknown[] = []) {
   globalThis.fetch = vi.fn(async (input) => {
     const url = String(input)
     if (url.includes('/api/v1/runs/7/children')) {
@@ -37,6 +38,7 @@ async function mountRun(overrides: { heartbeat_at?: string | null; status?: stri
     if (url.includes('/api/v1/runs/7')) {
       return json({ ...run, ...overrides })
     }
+    if (url.includes('/artifacts?')) return json(page(artifactRows))
     return json(page())
   }) as typeof fetch
 
@@ -71,6 +73,32 @@ describe('RunDetail', () => {
     expect(w.text()).toContain('[redacted]')
     expect(w.text()).toContain('cred_123')
     expect(w.text()).not.toContain('metadata-secret')
+    w.unmount()
+  })
+
+  it('uses the canonical artifact reader instead of owning another artifact inventory', async () => {
+    const w = await mountRun()
+    const resources = useStackOsResourcesStore()
+    expect(resources.currentProjectId).toBe(1)
+    expect(resources.artifactPage.loaded).toBe(true)
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/projects/1/artifacts?include_inactive=true&limit=50'),
+      expect.anything(),
+    )
+    w.unmount()
+  })
+
+  it('links artifacts only through explicit same-project run fields', async () => {
+    const base = { id: 1, project_id: 1, plugin_slug: 'engineering', kind: 'document',
+      name: 'Recorded link', uri: 's3://example/ref', status: 'archived', mime_type: null,
+      metadata_json: null, provenance_json: { run_id: 7 }, created_at: '2026-01-01', updated_at: '2026-01-01' }
+    const w = await mountRun({}, [base,
+      { ...base, id: 2, name: 'Unrelated numeric metadata', provenance_json: { size: 7 } },
+      { ...base, id: 3, name: 'Other project reference', project_id: 2 },
+    ])
+    expect(w.text()).toContain('Recorded link')
+    expect(w.text()).not.toContain('Unrelated numeric metadata')
+    expect(w.text()).not.toContain('Other project reference')
     w.unmount()
   })
 
