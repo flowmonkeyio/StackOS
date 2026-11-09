@@ -5,7 +5,7 @@ import { UiAdvancedJsonPanel, UiFactGroups } from '@/components/ui'
 import { artifactReference, sourceFactGroups, type LibrarySource } from '@/lib/librarySources'
 import { sanitizeForDisplay } from '@/lib/stackos/json'
 
-const props = defineProps<{ source: LibrarySource; resource?: SchemaResourceOut | null }>()
+const props = defineProps<{ source: LibrarySource; resource?: SchemaResourceOut | null; reading?: boolean }>()
 const groups = computed(() => sourceFactGroups(props.source, props.resource))
 const details = computed(() => {
   const { payload, ...identity } = props.source
@@ -34,6 +34,7 @@ const details = computed(() => {
     <UiFactGroups
       v-if="groups.length"
       :groups="groups"
+      :plain="reading"
       aria-label="Saved content"
     />
     <p
@@ -42,6 +43,7 @@ const details = computed(() => {
     >
       No readable field hints are declared. Inspect the saved source in Details.
     </p>
+    <slot name="facts" />
     <UiAdvancedJsonPanel
       title="Details"
       summary="Source and data"

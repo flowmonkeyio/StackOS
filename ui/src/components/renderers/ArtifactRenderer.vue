@@ -2,13 +2,14 @@
 import { computed, ref, watch } from 'vue'
 
 import type { SchemaArtifactOut } from '@/api'
-import { UiBadge, UiButton, UiCard } from '@/components/ui'
-import { sanitizeForDisplay } from '@/lib/stackos/json'
+import { UiBadge, UiButton, UiCard, UiDescriptionList } from '@/components/ui'
+import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import { artifactReference, toLibrarySource } from '@/lib/librarySources'
 import SourceDetailRenderer from './SourceDetailRenderer.vue'
 
 const props = defineProps<{
   artifact: SchemaArtifactOut
+  embedded?: boolean
 }>()
 
 const pluginSlug = computed(() => props.artifact.plugin_slug)
@@ -26,43 +27,50 @@ watch(() => [props.artifact.id, props.artifact.project_id, props.artifact.uri], 
 <template>
   <UiCard
     section
+    :variant="embedded ? 'plain' : 'default'"
+    :padded="!embedded"
     :aria-label="`${artifact.kind} artifact`"
   >
     <template #header>
-      <div class="min-w-0 w-full space-y-2">
-        <div class="min-w-0">
-          <h3
-            class="t-h3 break-words text-fg-strong"
-            :title="title"
-          >
-            {{ title }}
-          </h3>
-          <p
-            v-if="artifact.mime_type"
-            class="mt-0.5 font-mono text-2xs text-fg-subtle"
-          >
-            {{ artifact.mime_type }}
-          </p>
+      <div class="flex min-w-0 w-full items-start gap-3">
+        <div class="min-w-0 flex-1 space-y-2">
+          <div class="min-w-0">
+            <h3
+              class="break-words text-fg-strong"
+              :class="embedded ? 'line-clamp-3 text-xl font-semibold leading-snug' : 't-h3'"
+              :title="title"
+            >
+              {{ title }}
+            </h3>
+            <p
+              v-if="artifact.mime_type"
+              class="mt-0.5 font-mono text-2xs text-fg-subtle"
+            >
+              {{ artifact.mime_type }}
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-1.5">
+            <UiBadge
+              v-if="pluginSlug"
+              tone="accent"
+            >
+              {{ pluginSlug }}
+            </UiBadge>
+            <UiBadge>{{ artifact.kind }}</UiBadge>
+          </div>
         </div>
-        <div class="flex flex-wrap items-center gap-1.5">
-          <UiBadge
-            v-if="pluginSlug"
-            tone="accent"
-          >
-            {{ pluginSlug }}
-          </UiBadge>
-          <UiBadge>{{ artifact.kind }}</UiBadge>
-        </div>
+        <slot name="actions" />
       </div>
     </template>
 
-    <div class="space-y-3">
+    <div :class="embedded ? 'flex flex-col gap-3' : 'space-y-3'">
       <p class="text-xs text-fg-muted">
         {{ reference.reason }}
       </p>
       <div
         v-if="reference.href"
         class="flex flex-wrap items-center gap-3"
+        :class="embedded && 'order-2'"
       >
         <a
           :href="reference.href"
@@ -83,15 +91,28 @@ watch(() => [props.artifact.id, props.artifact.project_id, props.artifact.uri], 
         :alt="title"
         referrerpolicy="no-referrer"
         class="max-h-80 max-w-full rounded-lg object-contain"
+        :class="embedded && 'order-1'"
         @error="previewFailed = true"
       >
       <p
         v-if="previewFailed"
         class="text-sm text-fg-muted"
+        :class="embedded && 'order-1'"
       >
         Preview unavailable. The saved reference is retained in Details.
       </p>
-      <SourceDetailRenderer :source="source" />
+      <SourceDetailRenderer
+        :source="source"
+        :reading="embedded"
+        :class="embedded && 'order-3'"
+      >
+        <template
+          v-if="embedded"
+          #facts
+        >
+          <UiDescriptionList :items="[{ label: 'Source', value: pluginSlug ?? 'Project' }, { label: 'Added', value: formatDateTime(artifact.created_at) }]" />
+        </template>
+      </SourceDetailRenderer>
     </div>
   </UiCard>
 </template>

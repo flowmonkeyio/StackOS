@@ -14,7 +14,7 @@ withDefaults(defineProps<{
   /** Compact density — tighter padding. */
   density?: 'compact' | 'comfortable';
   /** Polite — quieter background, no shadow. */
-  variant?: 'default' | 'subtle';
+  variant?: 'default' | 'subtle' | 'plain';
   /** Render as <section> with aria-labelledby pointing at slot[header]. */
   section?: boolean;
   ariaLabel?: string;
@@ -33,16 +33,17 @@ withDefaults(defineProps<{
     :is="section ? 'section' : 'div'"
     :aria-label="ariaLabel"
     :class="[
-      'ui-card rounded-lg border bg-bg-surface',
-      variant === 'subtle' ? 'border-subtle bg-bg-surface-alt' : 'border-default',
-      elevated && 'shadow-xs',
+      'ui-card',
+      variant !== 'plain' && 'rounded-lg border bg-bg-surface',
+      variant === 'subtle' ? 'border-subtle bg-bg-surface-alt' : variant !== 'plain' && 'border-default',
+      elevated && variant !== 'plain' && 'shadow-xs',
     ]"
   >
     <header
       v-if="$slots.header"
       :class="[
-        'ui-card__header flex items-center justify-between gap-3 border-b border-subtle',
-        density === 'comfortable' ? 'px-5 py-4' : 'px-4 py-3',
+        'ui-card__header flex items-center justify-between gap-3',
+        variant === 'plain' ? 'mb-4' : ['border-b border-subtle', density === 'comfortable' ? 'px-5 py-4' : 'px-4 py-3'],
       ]"
     >
       <slot name="header" />
