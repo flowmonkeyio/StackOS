@@ -117,6 +117,76 @@ def test_selected_source_preserves_role_fallbacks_across_argument_forms(
     assert repo.delivery_defaults(project_id=project_id) == saved
 
 
+def test_ordinary_assignments_select_each_delivery_role_and_reviewer_only(
+    session, project_id, tmp_path, monkeypatch
+):
+    selected = {
+        role: {"source_ref": source(session, project_id, tmp_path, role)}
+        for role in ("writer", "tester", "review_agent")
+    }
+    repo = TrackerRepository(session)
+    repo.configure_delivery(
+        project_id=project_id,
+        delivery={
+            "agents": {
+                **selected,
+                "unrelated": {
+                    "source_ref": {
+                        "host_key": "codex",
+                        "native_name": "missing",
+                        "source_path": ".codex/agents/missing.toml",
+                    }
+                },
+            },
+        },
+    )
+    repo.create_task(project_id=project_id, key="assigned", title="Assigned")
+    repo.create_ticket(project_id=project_id, task_key="assigned", key="first", title="First")
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="assigned",
+        key="second",
+        title="Second",
+        dependency_keys=["first"],
+    )
+    calls = []
+
+    def launch(_host, _dir, instructions, prompt, _schema, **kwargs):
+        packet = json.loads(prompt)
+        key, phase = packet["brief"]["ticket"]["key"], packet["phase"]
+        calls.append((key, instructions.split("\n\n", 1)[0]))
+        return AgentRunResult(0, thread_id=f"{key}-{phase}", result=generic_result())
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    start(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key="assigned",
+        agent_assignments={"first": "writer", "second": "tester"},
+    )
+    admitted = (
+        repo.get(project_id=project_id, task_key="assigned").tasks[0].metadata_json["delivery"]
+    )
+    assert set(admitted["agents"]) == set(selected)
+    scheduler.run()
+    assert calls == [
+        ("first", "writer"),
+        ("first", "review_agent"),
+        ("second", "tester"),
+        ("second", "review_agent"),
+    ]
+    session.expire_all()
+    assert (
+        repo.get(project_id=project_id, task_key="assigned")
+        .tasks[0]
+        .metadata_json["delivery"]["status"]
+        == "complete"
+    )
+
+
 def test_source_values_still_win_over_explicit_null_fallbacks(session, project_id, tmp_path):
     ref = source(
         session,

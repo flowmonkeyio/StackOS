@@ -1066,47 +1066,50 @@ def start_delivery(
     declared = (plan.template_snapshot_json or {}).get("agent_requirements", []) if plan else []
     selected_roles = None
     defaults = repo.delivery_defaults(project_id=project_id)
-    if (
-        ordinary
-        and agents is not None
-        and review_agent is None
-        and "review_agent" not in agents
-        and (
-            defaults.get("review_agent") is not None
-            or (
-                isinstance(defaults.get("agents"), dict)
-                and defaults["agents"].get("review_agent") is not None
-            )
-        )
-    ):
-        # Select the required saved reviewer without turning project fields into task overrides.
-        review_agent = {}
     if declared:
         assert plan is not None
         declared_roles = {requirement["role"] for requirement in declared}
         if agents and set(agents) - declared_roles - {"delivery_agent", "review_agent"}:
             raise ValidationError("Selected agents must bind declared workflow roles")
-        available_roles = set(defaults.get("agents") or {}) | set(agents or {})
+    if ordinary or declared:
+        # Resolve the roles admitted work needs, independent of selection argument form.
         selected_roles = set(assignments.values())
-        for step in plan.steps:
-            if step.status in {RunPlanStepStatus.SUCCESS, RunPlanStepStatus.SKIPPED}:
-                continue
-            key = workflow_step_ticket_key(plan.id, step.step_id)
-            explicit = assignments.get(key) or (step.metadata_json or {}).get("agent_assignment")
-            if explicit:
-                selected_roles.add(explicit)
-            else:
-                selected_roles.update(
-                    req["role"]
-                    for req in declared
-                    if (req.get("requirement") == "required" or req["role"] in available_roles)
-                    and (not req.get("applies_to_steps") or step.step_id in req["applies_to_steps"])
-                )
         if ordinary:
-            selected_roles.add("review_agent")
+            if any(
+                (
+                    _delivery_role_defaults(defaults, "review_agent"),
+                    review_agent,
+                    (agents or {}).get("review_agent"),
+                )
+            ):
+                selected_roles.add("review_agent")
+            # Missing reviewer bindings still reject at the independent-review guard below.
             selected_roles.update(
                 assignments.get(ticket.key, "delivery_agent") for ticket in ordinary
             )
+        if plan:
+            available_roles = set(defaults.get("agents") or {}) | set(agents or {})
+            for step in plan.steps:
+                if step.status in {RunPlanStepStatus.SUCCESS, RunPlanStepStatus.SKIPPED}:
+                    continue
+                key = workflow_step_ticket_key(plan.id, step.step_id)
+                explicit = assignments.get(key) or (step.metadata_json or {}).get(
+                    "agent_assignment"
+                )
+                if explicit:
+                    selected_roles.add(explicit)
+                elif declared:
+                    selected_roles.update(
+                        req["role"]
+                        for req in declared
+                        if (req.get("requirement") == "required" or req["role"] in available_roles)
+                        and (
+                            not req.get("applies_to_steps")
+                            or step.step_id in req["applies_to_steps"]
+                        )
+                    )
+                else:
+                    selected_roles.add("delivery_agent")
     settings = resolve_delivery_settings(
         session,
         project_id=project_id,

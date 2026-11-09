@@ -124,6 +124,183 @@ def test_source_adoption_preview_and_write_use_registered_local_setup(
     assert readback["config_json"]["delivery"]["review_agent"] is None
 
 
+@pytest.mark.parametrize("argument_form", ["legacy", "map"])
+@pytest.mark.parametrize("selected_role", ["delivery_agent", "review_agent"])
+@pytest.mark.parametrize("layout", ["legacy", "mapped", "partial"])
+@pytest.mark.parametrize("unrelated_missing", [False, True])
+def test_registered_partial_handoff_resolves_only_required_roles(
+    api, project_id, tmp_path, monkeypatch, argument_form, selected_role, layout, unrelated_missing
+):
+    from tests.integration.test_routes.test_project_agent_operations import bind, call
+
+    scope = bind(api, project_id, tmp_path / "admission")
+    native_name = "builder" if selected_role == "delivery_agent" else "reviewer"
+    created = call(
+        api,
+        "create",
+        {
+            **scope,
+            "fields": {
+                "name": native_name,
+                "description": "Fixture",
+                "developer_instructions": "Selected source",
+            },
+        },
+    )
+    assert created.status_code == 200, created.text
+    ref = created.json()["data"]["source_ref"]
+    other_role = "review_agent" if selected_role == "delivery_agent" else "delivery_agent"
+    other = {"name": "saved-other", "host_key": "claude-code", "instructions": "Saved role"}
+    fallback = {"model": "gpt-6-astra", "model_reasoning_effort": "high", "provider": None}
+    if layout == "mapped":
+        saved = {"agents": {selected_role: fallback, other_role: other}}
+    else:
+        saved = {selected_role: fallback, other_role: other}
+        if layout == "partial":
+            saved["agents"] = {selected_role: {"model_reasoning_effort": "medium"}}
+    if unrelated_missing:
+        saved.setdefault("agents", {})["unrelated"] = {
+            "source_ref": {
+                "host_key": "codex",
+                "native_name": "missing",
+                "source_path": ".codex/agents/missing.toml",
+            }
+        }
+
+    def operation(name, **arguments):
+        response = api.post(
+            f"/api/v1/operations/{name}/call",
+            json={
+                "arguments": {
+                    "project_id": project_id,
+                    **arguments,
+                }
+            },
+        )
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        return payload.get("data", payload)
+
+    operation("tracker.configureDelivery", delivery=saved)
+    operation("tracker.createTask", key="partial", title="Partial")
+    operation("tracker.createTicket", task_key="partial", key="work", title="Work")
+    finished = Event()
+    api.app.state.scheduler.add_listener(
+        lambda event: finished.set() if event.job_id.startswith("task-delivery:") else None,
+        EVENT_JOB_EXECUTED,
+    )
+    monkeypatch.setattr(
+        task_delivery,
+        "run_agent",
+        lambda *a, **k: AgentRunResult(
+            0,
+            thread_id="fixture-delivery",
+            result=generic_result("blocked"),
+        ),
+    )
+    choice = {"source_ref": ref}
+    selection = (
+        {selected_role: choice}
+        if argument_form == "legacy"
+        else {"agents": {selected_role: choice}}
+    )
+    admitted = operation(
+        "tracker.startDelivery", task_key="partial", project_dir=scope["project_dir"], **selection
+    )
+    assert admitted["status"] == "queued"
+    assert finished.wait(5), "Disposable delivery did not retire"
+    snapshot = operation("tracker.get", task_key="partial", response_mode="raw")
+    agents = snapshot["tasks"][0]["metadata_json"]["delivery"]["agents"]
+    assert set(agents) == {"delivery_agent", "review_agent"}
+    assert agents[other_role] == other
+    assert agents[selected_role]["source_ref"] == ref
+    assert agents[selected_role]["model"] == "gpt-6-astra"
+    assert agents[selected_role]["native_settings"] == {
+        "model_reasoning_effort": "medium" if layout == "partial" else "high",
+    }
+    assert agents[selected_role]["setting_sources"] == {
+        "model": "project",
+        "model_reasoning_effort": "project",
+    }
+    assert snapshot["tracker"]["config_json"]["delivery"] == saved
+
+
+@pytest.mark.parametrize("problem", ["missing_delivery", "missing_review", "same_source"])
+def test_registered_handoff_keeps_selected_source_and_independence_failures(
+    api, project_id, tmp_path, monkeypatch, problem
+):
+    from tests.integration.test_routes.test_project_agent_operations import bind, call
+
+    scope = bind(api, project_id, tmp_path / "required")
+    refs = {}
+    for role in ("delivery", "review"):
+        response = call(
+            api,
+            "create",
+            {
+                **scope,
+                "fields": {
+                    "name": role,
+                    "description": "Fixture",
+                    "developer_instructions": role,
+                },
+            },
+        )
+        assert response.status_code == 200, response.text
+        refs[role] = response.json()["data"]["source_ref"]
+    if problem == "same_source":
+        refs["review"] = refs["delivery"]
+    else:
+        (
+            Path(scope["project_dir"]) / refs[problem.removeprefix("missing_")]["source_path"]
+        ).unlink()
+    for name, arguments in [
+        ("tracker.createTask", {"key": "required", "title": "Required"}),
+        ("tracker.createTicket", {"task_key": "required", "key": "work", "title": "Work"}),
+    ]:
+        response = api.post(
+            f"/api/v1/operations/{name}/call",
+            json={
+                "arguments": {
+                    "project_id": project_id,
+                    **arguments,
+                }
+            },
+        )
+        assert response.status_code == 200, response.text
+    calls = []
+    monkeypatch.setattr(task_delivery, "run_agent", lambda *a, **k: calls.append(a))
+    response = api.post(
+        "/api/v1/operations/tracker.startDelivery/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "task_key": "required",
+                "project_dir": scope["project_dir"],
+                "agents": {f"{role}_agent": {"source_ref": ref} for role, ref in refs.items()},
+            }
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert (
+        "independent" in response.text
+        if problem == "same_source"
+        else "unavailable" in response.text
+    )
+    snapshot = api.post(
+        "/api/v1/operations/tracker.get/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "task_key": "required",
+                "response_mode": "raw",
+            }
+        },
+    ).json()
+    assert not calls
+    assert "delivery" not in (snapshot["tasks"][0]["metadata_json"] or {})
+
+
 @pytest.mark.parametrize("workflow", [False, True])
 @pytest.mark.parametrize("defaults", [False, True])
 def test_real_operation_returns_while_scheduler_delivers(

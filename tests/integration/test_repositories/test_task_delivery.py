@@ -2631,7 +2631,7 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
         (
             {"delivery_agent": {"name": "builder", "instructions": "Build"}},
             None,
-            "adoption_required",
+            "independent review_agent binding",
         ),
         (
             {"delivery_agent": {"name": "builder", "instructions": "Build", "model": "unknown"}},
