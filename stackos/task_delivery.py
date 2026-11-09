@@ -12,6 +12,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
+from threading import Event
 from typing import Any
 
 from apscheduler.jobstores.base import JobLookupError
@@ -1001,12 +1002,21 @@ def _record_execution_transition(
 
 
 def run_delivery(*, session_factory: Callable[[], Session], project_id: int, task_key: str) -> None:
+    cancellation: Event | None = None
+
+    def invocation_cancelled() -> bool:
+        return cancellation is not None and cancellation.is_set()
+
     def launch_allowed() -> bool:
         with session_factory() as session:
             repo = TrackerRepository(session)
-            return not _delivery_aborted(repo, project_id, task_key)
+            return not invocation_cancelled() and not _delivery_aborted(repo, project_id, task_key)
 
     def execution_changed(call: ActiveInvocation, active: bool) -> None:
+        nonlocal cancellation
+        # Keep the original native fence after its registry/readers retire. A
+        # canonical reopen authorizes new work, never this cancelled return.
+        cancellation = call.cancelled
         if (
             call.scope.phase is not None
             and call.scope.ticket_key == ticket_key
@@ -1026,7 +1036,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
             with managed_launch_lock, session_factory() as session:
                 repo = TrackerRepository(session)
                 task = _task(repo, project_id, task_key)
-                if task.status == TrackerItemStatus.ABORTED:
+                if invocation_cancelled() or task.status == TrackerItemStatus.ABORTED:
                     return
                 state = (task.metadata_json or {})["delivery"]
                 snapshot = repo.get(project_id=project_id, task_key=task_key, include_graph=False)
@@ -1177,7 +1187,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                 with managed_launch_lock, session_factory() as session:
                     repo = TrackerRepository(session)
                     task = _task(repo, project_id, task_key)
-                    if task.status == TrackerItemStatus.ABORTED:
+                    if invocation_cancelled() or task.status == TrackerItemStatus.ABORTED:
                         return
                     _workflow_scope(
                         repo, project_id, task, state.get("run_plan_id"), state.get("step_id")
@@ -1425,7 +1435,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                 with managed_launch_lock, session_factory() as session:
                     repo = TrackerRepository(session)
                     task = _task(repo, project_id, task_key)
-                    if task.status == TrackerItemStatus.ABORTED:
+                    if invocation_cancelled() or task.status == TrackerItemStatus.ABORTED:
                         evidence[phase]["validated_outcome"] = None
                         evidence[phase]["cancelled"] = True
                         _save_evidence(repo, project_id, ticket_key, evidence)
@@ -1562,7 +1572,7 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
     except Exception as error:
         with managed_launch_lock, session_factory() as session:
             repo = TrackerRepository(session)
-            if _delivery_aborted(repo, project_id, task_key):
+            if invocation_cancelled() or _delivery_aborted(repo, project_id, task_key):
                 if ticket_key is not None:
                     evidence["cancellation"] = {"status": "aborted", "error": str(error)}
                     _save_evidence(repo, project_id, ticket_key, evidence)

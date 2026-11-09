@@ -66,6 +66,8 @@ class ActiveInvocation:
     measured_at: str | None = None
     finished: bool = False
     process_control: ManagedProcessControl = field(default_factory=ManagedProcessControl)
+    # Explicit invocation cancellation is separate from native I/O cleanup stops.
+    cancelled: Event = field(default_factory=Event)
     retired: Event = field(default_factory=Event)
 
     def projection(self) -> dict[str, Any]:
@@ -109,6 +111,7 @@ def cancel_task_invocations(project_id: int, task_key: str) -> list[ActiveInvoca
             and not call.finished
         ]
         for call in calls:
+            call.cancelled.set()
             call.process_control.cancelled.set()
         return calls
 

@@ -228,7 +228,11 @@ check a still-owned invocation; it never reconstructs ownership after restart.
 
 Late success, errors and exceptions may retain their session, receipt and actual
 available usage, but cannot accept work, mark it failed, requeue, launch review or
-advance an aborted plan. Completed work, previous receipts and schedules remain;
+advance an aborted plan. The runner retains the original invocation's cancellation
+signal through result validation and exception handling after native registry
+retirement. Reopening the plan cannot revive that cancelled result or launch its
+reviewer; fresh work requires its own explicit delivery handoff.
+Completed work, previous receipts and schedules remain;
 aborting one occurrence does not disable later future ticks or undo external effects.
 The linked audit-run abort and workflow rejection adapters use the same coordinator;
 tracker rejection retains its separate rejection semantics.

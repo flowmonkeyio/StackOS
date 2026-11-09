@@ -3289,6 +3289,133 @@ def test_abort_real_managed_invocation_through_lifecycle_coordinator(
     assert not service.usage_executions(project_id)
 
 
+@pytest.mark.parametrize("late", ["success", "error", "exception"])
+@pytest.mark.parametrize("phase", ["delivery", "review"])
+def test_confirmed_abort_stays_cancelled_after_reopen_and_native_retirement(
+    delivery_engine, project_id, tmp_path, monkeypatch, late, phase
+):
+    from dataclasses import replace
+
+    from stackos import task_delivery
+    from stackos.host_mcp import service
+
+    ready, validating, release = Event(), Event(), Event()
+    definition = service._definition_by_key("codex")
+    original_validate = task_delivery.validate_agent_result
+    calls, native, launch_guards, controls = [], [], [], []
+
+    def launch(*args, **kwargs):
+        launch_guards.append(kwargs["launch_allowed"])
+        return service.run_agent(*args, **kwargs)
+
+    def execute(*args, process_control, **kwargs):
+        packet = json.loads(args[2])
+        calls.append(packet["phase"])
+        if packet["phase"] == phase:
+            process = process_control.spawn(
+                [sys.executable, "-c", "import time; print('ready', flush=True); time.sleep(30)"],
+                stdout=subprocess.PIPE,
+                text=True,
+            )
+            native.append(process)
+            controls.append(process_control)
+            assert process.stdout.readline().strip() == "ready"
+            process.stdout.close()
+            ready.set()
+            process.wait(timeout=10)
+            if late == "error":
+                return AgentRunResult(-15, thread_id=f"retained-{phase}", error="late native error")
+        return AgentRunResult(0, thread_id=f"retained-{packet['phase']}", result=generic_result())
+
+    def validate(result, *args, **kwargs):
+        if result.thread_id == f"retained-{phase}":
+            validating.set()
+            assert release.wait(10)
+            if late == "exception":
+                raise RuntimeError("late validation exception after reopen")
+        return original_validate(result, *args, **kwargs)
+
+    monkeypatch.setattr(
+        service, "_definition_by_key", lambda _: replace(definition, run_agent=execute)
+    )
+    monkeypatch.setattr(task_delivery, "validate_agent_result", validate)
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    try:
+        with Session(delivery_engine) as session:
+            plans = RunPlanRepository(session)
+            plan_id = workflow_task(session, project_id)
+            task_key = f"workflow-{plan_id}"
+            scheduler = QueuedScheduler()
+            submit(
+                session,
+                project_id,
+                tmp_path,
+                scheduler,
+                task_key=task_key,
+                run_plan_id=plan_id,
+                step_id="deliver",
+            )
+            with ThreadPoolExecutor() as workers:
+                running = workers.submit(scheduler.run)
+                assert ready.wait(5)
+                try:
+                    try:
+                        _, cancellation = task_delivery.abort_run_plan(
+                            session, run_plan_id=plan_id, project_id=project_id, scheduler=scheduler
+                        )
+                    except Exception as error:
+                        raise AssertionError(
+                            {
+                                "abort": getattr(error, "data", str(error)),
+                                "stop_errors": [control.stop_error for control in controls],
+                            }
+                        ) from error
+                    assert cancellation["status"] == "managed_stopped"
+                    assert cancellation["stopped_count"] == 1
+                    assert native[0].poll() == -15
+                    assert not service.usage_executions(project_id)
+                    assert validating.wait(3)
+                    plans.reopen(
+                        run_plan_id=plan_id,
+                        project_id=project_id,
+                        step_id="deliver",
+                        reason="Explicit isolated fixture reopen after confirmed stop",
+                    )
+                    assert not launch_guards[-1]()
+                    before = TrackerRepository(session).get(
+                        project_id=project_id, task_key=task_key
+                    )
+                    statuses = {ticket.key: ticket.status for ticket in before.tickets}
+                    task_state = before.tasks[0].model_dump(
+                        exclude={"agent_stats", "active_execution"}
+                    )
+                    release.set()
+                    running.result(timeout=5)
+                finally:
+                    release.set()
+            session.expire_all()
+            after = TrackerRepository(session).get(project_id=project_id, task_key=task_key)
+            assert calls == (["delivery"] if phase == "delivery" else ["delivery", "review"])
+            assert {ticket.key: ticket.status for ticket in after.tickets} == statuses
+            assert (
+                after.tasks[0].model_dump(exclude={"agent_stats", "active_execution"}) == task_state
+            )
+            assert plans.get(plan_id).status == "started"
+            assert plans.get_step(plan_id, "deliver").status == RunPlanStepStatus.PENDING
+            evidence = next(
+                ticket for ticket in after.tickets if ticket.key == "selected"
+            ).completion_evidence_json["automatic_delivery"]
+            assert evidence.get("cancellation") or evidence[phase]["cancelled"]
+            assert evidence[phase].get("validated_outcome") is None
+    finally:
+        release.set()
+        for process in native:
+            if process.poll() is None:
+                process.terminate()
+                process.wait(timeout=3)
+        service.shutdown_usage()
+
+
 def test_workflow_advances_beyond_entry_children_through_lifecycle(
     session, project_id, tmp_path, monkeypatch
 ):
