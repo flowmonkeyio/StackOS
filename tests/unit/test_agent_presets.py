@@ -871,8 +871,8 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
         "planning": "0.7.6",
         "architecture": "0.6.2",
         "test-designer": "0.6.3",
-        "delivery": "0.7.4",
-        "delivery-reviewer": "0.6.4",
+        "delivery": "0.7.5",
+        "delivery-reviewer": "0.6.5",
     }
     presets = {
         key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset for key in expected_versions
@@ -1071,11 +1071,17 @@ def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
     # Availability/assembly checks only; the native-adoption rehearsal owns behavior proof.
     loader = AgentPresetLoader()
     prefixes = {
-        "delivery": ("After final edits,", "Before handoff,", "For visual changes,"),
+        "delivery": (
+            "After final edits,",
+            "Before handoff,",
+            "For visual changes,",
+            "Explicitly assigned proof may authorize",
+        ),
         "delivery-reviewer": (
             "Own the assigned review outcome.",
             "Re-verification resumes",
             "For visual changes,",
+            "Explicitly assigned proof may authorize",
         ),
     }
     texts = {}

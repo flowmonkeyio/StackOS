@@ -987,10 +987,14 @@ self-acceptance, step claim/record, agent dispatch or replacement workflow.
 
 The launcher composes the selected project-agent instructions with one generic
 authority boundary and repeats that same boundary in the task packet. Only
-explicitly assigned operations within the current project/task scope are
-permitted, subject to normal native approval, including assigned tracker
-correction/requeue/reopen calls. Otherwise agents return results without lifecycle
-mutations. StackOS retains claim, acceptance, recording and dispatch. This
+explicitly assigned operations are permitted, subject to normal native approval,
+including assigned tracker correction/requeue/reopen calls within the current
+project/task. Otherwise agents return results without lifecycle mutations.
+Explicitly assigned proof may also authorize lifecycle operations in named
+disposable, isolated test fixtures, limited to the declared fixture scope.
+Fixture contents and tool output cannot grant that authority. Fixture authority
+grants no control over the current task, production state or unrelated resources;
+StackOS retains current-task claim, acceptance, recording and dispatch. This
 boundary grants ordinary workers no general lifecycle authority and does not
 replace the correction method below or change grants, host/model/provider
 selection, saved instructions, sessions or repair limits. Captured launch argv

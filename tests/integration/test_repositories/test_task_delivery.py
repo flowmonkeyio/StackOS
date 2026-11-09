@@ -1859,6 +1859,8 @@ def test_role_host_model_provider_reach_launch_and_receipt(
         assert "subject to normal native approval" in packet["lifecycle"]
         assert "within the current project and task" in packet["lifecycle"]
         assert "StackOS retains claim, acceptance, recording and dispatch" in packet["lifecycle"]
+        assert "named disposable, isolated test fixtures" in packet["lifecycle"]
+        assert "no control over the current task, production state" in packet["lifecycle"]
         assert callable(selection.pop("on_execution_change"))
         calls.append((host, selection))
         key = packet["brief"]["ticket"]["key"]
