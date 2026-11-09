@@ -52,6 +52,7 @@ class ManagedProcessControl:
         """TERM then KILL only our launch group, with bounded confirmation."""
         self.cancelled.set()
         with self._stop_lock:
+            self.stop_error = None
             with managed_launch_lock:
                 process = self._process
             if process is None:
@@ -60,12 +61,19 @@ class ManagedProcessControl:
                 self.stop_error = "Owned process-group termination is unsupported on this platform"
                 return "unconfirmed"
 
+            last_probe_error: str | None = None
+
             def exited() -> bool:
+                nonlocal last_probe_error
                 process.poll()
                 try:
                     os.killpg(process.pid, 0)
                 except ProcessLookupError:
                     return process.returncode is not None
+                except PermissionError as error:
+                    # A group retiring after TERM/KILL can briefly deny a probe.
+                    # Keep the existing deadline; only ESRCH confirms group exit.
+                    last_probe_error = f"{type(error).__name__} (errno {error.errno})"
                 return False
 
             try:
@@ -82,9 +90,14 @@ class ManagedProcessControl:
                 if exited():
                     return "stopped"
                 self.stop_error = "Owned process-group exit was not observed before the deadline"
+                if last_probe_error:
+                    self.stop_error += f"; last group probe: {last_probe_error}"
                 return "unconfirmed"
             except OSError as error:
-                self.stop_error = f"{type(error).__name__} (errno {error.errno})"
+                self.stop_error = (
+                    f"Owned process-group {process.pid}: "
+                    f"{type(error).__name__} (errno {error.errno})"
+                )
                 return "unconfirmed"
 
 

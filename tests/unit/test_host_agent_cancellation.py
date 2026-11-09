@@ -2,16 +2,18 @@
 
 import json
 import os
+import signal
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime
 from threading import Event
+from types import SimpleNamespace
 
 import pytest
 
-from stackos.host_mcp import service
+from stackos.host_mcp import agent_execution, service
 from stackos.host_mcp.adapters import claude_code, codex, gemini_cli, grok, hermes
 from stackos.host_mcp.agent_execution import InvocationCancelled, ManagedProcessControl
 from stackos.host_mcp.result import AgentRunResult, usage_snapshot
@@ -21,6 +23,125 @@ from stackos.host_mcp.result import AgentRunResult, usage_snapshot
 def clean_registry():
     yield
     service.shutdown_usage()
+
+
+@pytest.fixture
+def process_stop_boundary(monkeypatch):
+    """Script syscall outcomes and elapsed time without signaling real PIDs."""
+    control = ManagedProcessControl()
+    process = SimpleNamespace(pid=12345, returncode=None)
+    process.poll = lambda: process.returncode
+    control._process = process
+    clock = SimpleNamespace(now=0.0)
+    monkeypatch.setattr(agent_execution, "monotonic", lambda: clock.now)
+    monkeypatch.setattr(
+        agent_execution, "sleep", lambda delay: setattr(clock, "now", clock.now + delay)
+    )
+    return control, process, clock
+
+
+@pytest.mark.parametrize("retiring_signal", [signal.SIGTERM, signal.SIGKILL])
+def test_stop_confirms_group_after_transient_probe_denial(
+    process_stop_boundary, monkeypatch, retiring_signal
+):
+    control, process, clock = process_stop_boundary
+    signals = []
+    probes_after_signal = []
+
+    def killpg(group, sig):
+        assert group == process.pid
+        if sig:
+            signals.append(sig)
+            if sig == retiring_signal:
+                process.returncode = -sig
+        elif retiring_signal in signals:
+            probes_after_signal.append(sig)
+            if len(probes_after_signal) == 1:
+                raise PermissionError(1, "group still retiring")
+            raise ProcessLookupError(3, "whole group gone")
+
+    monkeypatch.setattr(os, "killpg", killpg)
+    assert control.stop(timeout=0.1) == "stopped", control.stop_error
+    assert probes_after_signal == [0, 0]
+    assert signals == (
+        [signal.SIGTERM] if retiring_signal == signal.SIGTERM else [signal.SIGTERM, signal.SIGKILL]
+    )
+    assert control.cancelled.is_set() and control.stop_error is None
+    assert clock.now <= 0.22
+
+
+def test_stop_persistent_probe_denial_never_confirms_from_root_exit(
+    process_stop_boundary, monkeypatch
+):
+    control, process, clock = process_stop_boundary
+    process.returncode = 0
+    signals = []
+    denied = True
+
+    def killpg(group, sig):
+        assert group == process.pid
+        if sig:
+            signals.append(sig)
+        elif denied:
+            raise PermissionError(1, "confirmation denied")
+        else:
+            raise ProcessLookupError(3, "whole group gone")
+
+    monkeypatch.setattr(os, "killpg", killpg)
+    assert control.stop(timeout=0.1) == "unconfirmed"
+    assert signals == [signal.SIGTERM, signal.SIGKILL]
+    assert 0.2 <= clock.now <= 0.24
+    assert "PermissionError (errno 1)" in control.stop_error
+    assert "deadline" in control.stop_error
+    # A later explicit stop can confirm exit, without retaining a stale failure.
+    denied = False
+    assert control.stop(timeout=0.1) == "stopped"
+    assert control.stop_error is None
+
+
+@pytest.mark.parametrize("survives_kill", [False, True])
+def test_stop_root_exit_does_not_confirm_surviving_descendants(
+    process_stop_boundary, monkeypatch, survives_kill
+):
+    control, process, clock = process_stop_boundary
+    process.returncode = 0
+    signals = []
+
+    def killpg(group, sig):
+        assert group == process.pid
+        if sig:
+            signals.append(sig)
+        elif signal.SIGKILL in signals and not survives_kill:
+            raise ProcessLookupError(3, "whole group gone")
+
+    monkeypatch.setattr(os, "killpg", killpg)
+    assert control.stop(timeout=0.1) == ("unconfirmed" if survives_kill else "stopped")
+    assert signals == [signal.SIGTERM, signal.SIGKILL]
+    assert clock.now <= 0.24
+    if survives_kill:
+        assert "deadline" in control.stop_error
+
+
+@pytest.mark.parametrize(
+    "failure", [PermissionError(1, "signal denied"), OSError(5, "probe failed")]
+)
+def test_stop_signal_denial_or_unavailable_confirmation_stays_unconfirmed(
+    process_stop_boundary, monkeypatch, failure
+):
+    control, process, _ = process_stop_boundary
+    signals = []
+
+    def killpg(group, sig):
+        assert group == process.pid
+        if sig:
+            signals.append(sig)
+        if sig or not isinstance(failure, PermissionError):
+            raise failure
+
+    monkeypatch.setattr(os, "killpg", killpg)
+    assert control.stop(timeout=0.1) == "unconfirmed"
+    assert f"{type(failure).__name__} (errno {failure.errno})" in control.stop_error
+    assert signals == ([signal.SIGTERM] if isinstance(failure, PermissionError) else [])
 
 
 @pytest.mark.parametrize("force", [False, True])
