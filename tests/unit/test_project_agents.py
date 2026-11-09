@@ -40,6 +40,74 @@ def test_standalone_registered_dedup_and_legacy_metadata(tmp_path):
     assert service.get(old.source_ref).fields.developer_instructions == "Legacy full instructions"
 
 
+@pytest.mark.parametrize("legacy", [False, True])
+def test_same_file_registration_alias_deduplicates_before_parsing_and_updates(tmp_path, legacy):
+    path = definition(tmp_path)
+    if legacy:
+        path.write_text('# legacy provenance\ndeveloper_instructions="Full instructions"\n')
+    alternate = path.with_name("RESEARCH.toml")
+    if not alternate.exists() or not alternate.samefile(path):
+        pytest.skip("Requires case-insensitive source aliases on the current filesystem")
+    config = tmp_path / ".codex/config.toml"
+    config.write_text(
+        '[agents.research]\nconfig_file="agents/RESEARCH.toml"\ndescription="Research"\n'
+    )
+    registration_bytes = config.read_bytes()
+    service = ProjectAgentService(tmp_path)
+    listing = service.list()
+    assert len(listing.items) == 1 and listing.diagnostics == []
+    row = listing.items[0]
+    assert row.source_ref.source_path == ".codex/agents/research.toml"
+    assert row.source_ref.native_name == "research" and row.diagnostics == []
+    assert row.registration_keys == ["research"]
+    assert service.get(row.source_ref) == row
+    before = path.read_bytes()
+    saved = service.update(row.source_ref, row.digest, {"description": "Edited"})
+    assert saved.source_ref == row.source_ref and saved.digest != row.digest
+    assert service.get(saved.source_ref) == saved
+    assert alternate.read_bytes() == path.read_bytes() != before
+    assert saved.fields.developer_instructions == row.fields.developer_instructions
+    assert config.read_bytes() == registration_bytes
+
+
+def test_same_file_aliases_keep_conflicting_registration_names_ambiguous(tmp_path):
+    path = definition(tmp_path)
+    alternate = path.with_name("RESEARCH.toml")
+    if not alternate.exists() or not alternate.samefile(path):
+        pytest.skip("Requires case-insensitive source aliases on the current filesystem")
+    (tmp_path / ".codex/config.toml").write_text(
+        '[agents.research]\nconfig_file="agents/research.toml"\n'
+        '[agents.other]\nconfig_file="agents/RESEARCH.toml"\n'
+    )
+    service = ProjectAgentService(tmp_path)
+    rows = service.list().items
+    assert len(rows) == 1
+    assert rows[0].registration_keys == ["other", "research"]
+    assert rows[0].diagnostics[0]["code"] == "ambiguous_identity"
+    with pytest.raises(ProjectAgentError, match="ambiguous_identity"):
+        service.get(rows[0].source_ref)
+
+
+def test_overlong_registration_is_diagnostic_and_healthy_source_stays_editable(tmp_path):
+    path = definition(tmp_path)
+    service = ProjectAgentService(tmp_path)
+    healthy = service.list().items[0]
+    overlong = "sub/" * 250 + "bad.toml"
+    (tmp_path / ".codex/config.toml").write_text(f'[agents.bad]\nconfig_file="{overlong}"\n')
+    listing = service.list()
+    assert len(listing.items) == 1
+    assert len(listing.diagnostics) == 1
+    diagnostic = listing.diagnostics[0]
+    assert diagnostic["code"] == "invalid_definition"
+    assert diagnostic["reason"] == "source_path_too_long"
+    assert diagnostic["registration_key"] == "bad" and diagnostic["repair"]
+    assert overlong not in str(listing.model_dump())
+    assert service.get(healthy.source_ref).digest == healthy.digest
+    saved = service.update(healthy.source_ref, healthy.digest, {"description": "Healthy edit"})
+    assert saved.fields.description == "Healthy edit" and saved.digest != healthy.digest
+    assert 'description = "Healthy edit"' in path.read_text()
+
+
 def test_preserving_update_conflict_and_optional_inheritance(tmp_path):
     path = definition(
         tmp_path,

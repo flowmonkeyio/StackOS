@@ -31,13 +31,14 @@ from stackos.host_mcp.adapters.codex_definition import (
 
 MAX_SOURCE_BYTES = 1024 * 1024
 MAX_SOURCES = 1000
+MAX_SOURCE_PATH_LENGTH = 1000
 
 
 class AgentSourceRef(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     host_key: Literal["codex"] = "codex"
     native_name: str = Field(min_length=1, max_length=160)
-    source_path: str = Field(min_length=1, max_length=1000)
+    source_path: str = Field(min_length=1, max_length=MAX_SOURCE_PATH_LENGTH)
 
 
 class AgentDefinition(BaseModel):
@@ -95,6 +96,8 @@ def _identity(info: os.stat_result) -> tuple[int, int, int, int]:
 
 
 def _relative(value: str) -> str:
+    if len(value) > MAX_SOURCE_PATH_LENGTH:
+        raise ProjectAgentError("invalid_definition", reason="source_path_too_long")
     path = PurePosixPath(value)
     if (
         not value
@@ -210,11 +213,14 @@ class ProjectAgentService:
     def list(self) -> AgentList:
         refs, registration_digest, diagnostics = self._registrations()
         sources = set(refs)
+        standalone_sources = set()
         try:
             with self._directory(".codex/agents") as directory, os.scandir(directory) as entries:
                 for entry in entries:
                     if entry.name.endswith(".toml"):
-                        sources.add(f".codex/agents/{entry.name}")
+                        source = f".codex/agents/{entry.name}"
+                        sources.add(source)
+                        standalone_sources.add(source)
                         if len(sources) > MAX_SOURCES:
                             raise ProjectAgentError("invalid_definition", reason="too_many_sources")
         except FileNotFoundError:
@@ -223,10 +229,28 @@ class ProjectAgentService:
             diagnostics.append(_diagnostic(exc, location=".codex/agents"))
         if len(sources) > MAX_SOURCES:
             raise ProjectAgentError("invalid_definition", reason="too_many_sources")
+        # Alias spelling is filesystem-specific. Group only safely read regular
+        # files by physical identity, retaining registrations before native parsing.
+        # Prefer the discovered standalone spelling so its public ref stays stable.
+        grouped: dict[str, list[dict[str, Any]]] = {}
+        identities: dict[tuple[int, int], str] = {}
+        snapshots: dict[str, tuple[int, int, int, int]] = {}
+        source_failures: dict[str, dict[str, Any]] = {}
+        for source in sorted(sources, key=lambda path: (path not in standalone_sources, path)):
+            try:
+                _, info = self._read(source)
+                version = _identity(info)
+                canonical = identities.setdefault(version[:2], source)
+                grouped.setdefault(canonical, []).extend(refs.get(source, []))
+                if canonical in snapshots and snapshots[canonical] != version:
+                    source_failures[canonical] = ProjectAgentError("stale_source").data
+                snapshots[canonical] = version
+            except (OSError, UnicodeError, TOMLKitError, ValueError, ProjectAgentError) as exc:
+                grouped[source] = refs.get(source, [])
+                source_failures[source] = _diagnostic(exc)
         items = []
-        for source in sorted(sources):
-            registrations = refs.get(source, [])
-            keys = sorted(r["key"] for r in registrations)
+        for source, registrations in sorted(grouped.items()):
+            keys = sorted({r["key"] for r in registrations})
             name = keys[0] if keys else PurePosixPath(source).stem
             row = AgentDefinition(
                 project_dir=str(self.root),
@@ -234,8 +258,14 @@ class ProjectAgentService:
                 registration_keys=keys,
                 registration_digest=registration_digest,
             )
+            if source in source_failures:
+                row.diagnostics.append(source_failures[source])
+                items.append(row)
+                continue
             try:
                 content, info = self._read(source)
+                if _identity(info) != snapshots[source]:
+                    raise ProjectAgentError("stale_source")
                 document, fields, unsupported = parse_definition(
                     content,
                     legacy_name=name if keys else None,

@@ -82,6 +82,50 @@ def test_local_ui_add_get_edit_exact_readback(api, project_id, tmp_path, setting
     assert fields["developer_instructions"] not in listing.text
 
 
+def test_overlong_registered_path_returns_diagnostic_and_preserves_healthy_get_update(
+    api, project_id, tmp_path
+):
+    root = tmp_path / "long-reference"
+    scope = bind(api, project_id, root)
+    created = call(
+        api,
+        "create",
+        {
+            **scope,
+            "fields": {"name": "research", "description": "d", "developer_instructions": "i"},
+        },
+    )
+    assert created.status_code == 200, created.text
+    healthy = created.json()["data"]
+    overlong = "sub/" * 250 + "bad.toml"
+    (root / ".codex/config.toml").write_text(f'[agents.bad]\nconfig_file="{overlong}"\n')
+    for mode in ("raw", "compact"):
+        response = call(api, "list", {**scope, "response_mode": mode})
+        assert response.status_code == 200, response.text
+        listing = response.json() if mode == "raw" else response.json()["data"]
+        assert len(listing["items"]) == 1
+        assert listing["diagnostics"][0]["code"] == "invalid_definition"
+        assert listing["diagnostics"][0]["registration_key"] == "bad"
+        assert overlong not in response.text
+    current = call(
+        api, "get", {**scope, "source_ref": healthy["source_ref"], "response_mode": "raw"}
+    )
+    assert current.status_code == 200, current.text
+    assert current.json()["digest"] == healthy["digest"]
+    saved = call(
+        api,
+        "update",
+        {
+            **scope,
+            "source_ref": healthy["source_ref"],
+            "expected_digest": healthy["digest"],
+            "patch": {"description": "Healthy edit"},
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["data"]["fields"]["description"] == "Healthy edit"
+
+
 def test_permissions_surfaces_and_project_scope(api, project_id, tmp_path):
     scope = bind(api, project_id, tmp_path / "bound")
     for name in ("list", "get", "create", "update"):
