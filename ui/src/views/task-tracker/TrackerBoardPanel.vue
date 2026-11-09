@@ -103,6 +103,7 @@ function blocker(row: TaskProgressRow): string | null {
             <AgentUsageSummary
               v-if="isAutomaticDeliveryTask(row.task)"
               :metrics="row.task.agent_stats"
+              :active="!!row.task.active_execution"
               compact
               title="Lifetime task usage"
             />
@@ -152,7 +153,7 @@ function blocker(row: TaskProgressRow): string | null {
 .tracker-board__title { height: 40px; margin-top: 6px; min-width: 0; color: var(--color-fg-strong); font-size: 14px; font-weight: var(--fw-semibold); line-height: 20px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .tracker-board__subtitle { display: block; height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-fg-muted); font-size: 11px; line-height: 16px; }
 .tracker-board__card :deep(.agent-usage-summary) { margin-top: 8px; }
-.tracker-board__meta { position: absolute; inset: auto 0 0; height: 56px; display: flex; min-width: 0; align-items: center; padding: 0 12px 12px; border-top: 1px solid var(--color-border-default); }
+.tracker-board__meta { position: absolute; inset: auto 0 0; height: 56px; display: flex; min-width: 0; align-items: center; padding: 0 12px; border-top: 1px solid var(--color-border-default); }
 .tracker-board__execution { flex: 1 1 auto; }
 .tracker-board__identity { display: flex; height: 20px; min-width: 0; align-items: center; gap: 5px; white-space: nowrap; color: var(--color-fg-muted); font-size: 10px; }
 .tracker-board__identity time { min-width: 0; overflow: hidden; text-overflow: ellipsis; }

@@ -18,6 +18,7 @@ describe('shared agent identity marks', () => {
 
   it.each([
     [' Codex ', '/images/openai.webp'],
+    ['Codex Main', '/images/openai.webp'],
     ['ChatGPT', '/images/openai.webp'],
     ['ChatGPT / Codex', '/images/openai.webp'],
     ['codex-main', '/images/openai.webp'],

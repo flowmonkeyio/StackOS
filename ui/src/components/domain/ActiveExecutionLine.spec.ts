@@ -1,10 +1,30 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import { ref } from 'vue'
+import { usageFeedKey } from '@/composables/useUsageFeed'
+import type { UsageFeedState } from '@/lib/usageUpdates'
 import ActiveExecutionLine from './ActiveExecutionLine.vue'
 
 const execution = { live_usage: null, invocation_id: 'call-1', agent: 'Project_delivery_agent_with_a_long_name', host_key: 'codex', model: 'gpt-6.1-sol', started_at: '2026-11-08T01:08:00Z', ticket_key: 'child' }
 
 describe('ActiveExecutionLine', () => {
+  it('shows recording only with a fresh feed and a real running execution', async () => {
+    const feed = ref<UsageFeedState>({ status: 'connecting', receivedAt: null })
+    const wrapper = mount(ActiveExecutionLine, { props: { execution }, global: { provide: { [usageFeedKey as symbol]: feed } } })
+    expect(wrapper.get('.usage-live-indicator').text()).toBe('Connecting')
+    feed.value = { status: 'live', receivedAt: Date.now() }
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('.usage-live-indicator--live').text()).toBe('Live')
+    feed.value = { ...feed.value, status: 'reconnecting' }
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('.usage-live-indicator').text()).toBe('Reconnecting')
+    expect(wrapper.find('.usage-live-indicator--live').exists()).toBe(false)
+    await wrapper.setProps({ execution: null, lastExecution: execution })
+    expect(wrapper.find('.usage-live-indicator').exists()).toBe(false)
+    await wrapper.setProps({ lastExecution: null, owner: 'Codex Main' })
+    expect(wrapper.find('.usage-live-indicator').exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('renders actual host identity, explicitly retains Last and never invents an occurrence for assignment', async () => {
     const wrapper = mount(ActiveExecutionLine, { props: { execution, owner: 'Codex' } })
     expect(wrapper.get('img').attributes('src')).toBe('/images/openai.webp')

@@ -53,6 +53,7 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
   let requestSeq = 0
   const {
     liveError,
+    feedState,
     recentNodeIds,
     restart: restartStatusStream,
     stop: stopStatusStream,
@@ -377,6 +378,7 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
     selectedNodeFocusId,
     detailPanelOpen,
     liveError,
+    feedState,
     tickets,
     statusRows,
     blockRows,

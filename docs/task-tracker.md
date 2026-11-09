@@ -1595,21 +1595,27 @@ and measured samples; Graph ticket cards use only their own ticket lifetime.
 Each Input / Cache / Output metric reserves fixed number and mini-canvas slots
 before the first measurement, during execution, between calls and after terminal
 states or reload. Slots do not hide according to activity, sample count or text
-fit, and values do not wrap or resize the card. A quiet empty mark represents
-absent measurements, a dot represents one measurement, and discrete steps show
-further measured history with independent metric scales. Missing metrics keep
-their empty slot without inventing a zero or bridging missing history. Numbers
-and traces cover the same lifetime scope; exact values and measured-field
-coverage remain available on keyboard focus and hover. Retaining those
-observations does not keep native sampling or per-card polling active.
+fit, and values do not wrap or resize the card. Numbers remain lifetime totals;
+bars show newly reported increments within the same task or ticket scope. Each
+bar covers one minute, with its delta assigned to the later observation's minute,
+not an inferred consumption time. `DEFAULT_USAGE_BAR_COUNT` sets the shared
+default of 20 intervals; `UsageTrace.barCount` supports 5–60. Bars stay at most
+2 CSS pixels wide as the chart uses the available metric-column width.
+Every chart keeps the same baseline. The first observation supplies a neutral
+baseline tick, never an invented increment from zero. Missing values, absent
+observations and negative corrections leave gaps; observed unchanged values
+remain measured zero. Each metric uses its own zero-based scale. Exact totals,
+coverage and chart interval values remain accessible. Active charts advance
+from the shared feed clock; inactive charts freeze at their last observation.
+Retaining history does not keep native sampling or per-card polling active.
 
-Task/ticket details separately add an approximately 70px `LiveUsageStrip` only
-while an actual `active_execution` exists. It is scoped to the current agent and
-start, displays the latest native measurement time when available, and uses the
-same empty/dot/step renderer for current-call samples. That strip disappears on
-call exit; the compact lifetime summaries retain their measured totals and
-traces. Manual work has no usage furniture. Neither presentation adds smoothing,
-a synthetic zero prefix, a speed estimate, animation or per-card polling.
+Task details show task totals, and ticket details show only that ticket's totals,
+through the same compact summary and retained mini-canvases. The current agent
+and start time appear separately as identity, without another token summary for
+the current call. Totals and traces continue to update through the shared usage
+subscription and remain after the call ends. Manual work has no usage furniture.
+Neither presentation adds smoothing, a synthetic zero prefix, a speed estimate,
+animation or per-card polling.
 
 Home, Overview and Work share the existing SSE transport through
 `usageUpdates`; `useAgentStats` retains date/group/scope and stale-response
@@ -1623,6 +1629,13 @@ protects newer measurements from an older pending Board/Graph/detail response;
 it holds no invocation history and is released with the last scoped subscriber.
 Project-keyed route mounting owns subscription lifetime; explicit statistics
 loads reconcile a changed project ref and release the previous subscription.
+Work provides this existing subscription's health to its descendant components.
+A red `Live` mark requires an actual active execution and a fresh replacement
+snapshot on the current connection. Heartbeats keep a quiet agent live even
+when token counts do not change. Disconnects and EOF show `Reconnecting`;
+45 seconds without frames retires and reopens the existing stream. One deadline
+per shared channel is cleared on hide or final unsubscribe. This reports feed
+health, not proof that the native reader produced a new token measurement.
 `UsageTrace` redraws its canvas backing store on data updates, container resizes,
 theme changes and device pixel ratio changes. Its observers and listeners are
 released on unmount. The compact summary adds no fit-based visibility gate or

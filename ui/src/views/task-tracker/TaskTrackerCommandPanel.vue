@@ -3,6 +3,7 @@ import { UiBadge, UiButton, UiIcon, UiInput, UiSegmentedControl, UiSelect, UiToo
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
 import RunAbortAction from '@/components/domain/RunAbortAction.vue'
 import type { RunAbortTarget } from '@/composables/useRunAbort'
+import UsageLiveIndicator from '@/components/domain/UsageLiveIndicator.vue'
 import { computed } from 'vue'
 import { executionStatus } from '@/lib/task-tracker/execution'
 import type { ActiveExecution } from '@/lib/task-tracker/types'
@@ -132,6 +133,20 @@ const state = computed(() => executionStatus(props.taskStatus ?? 'not-started', 
           <template #selected="{ label }">
             <span :title="label">{{ label.replace(/^#\d+\s/, '') }}</span>
           </template>
+          <template #option="{ option }">
+            <span
+              class="tracker-command-panel__option"
+              :title="`${option.rightLabel}: ${option.label}`"
+            >
+              <UiBadge
+                class="tracker-command-panel__option-status"
+                :tone="option.rightTone ?? 'neutral'"
+                :dot="true"
+                variant="outline"
+              >{{ option.rightLabel }}</UiBadge>
+              <span class="tracker-command-panel__option-label">{{ option.label }}</span>
+            </span>
+          </template>
         </UiSelect>
       </div>
       <div
@@ -139,19 +154,23 @@ const state = computed(() => executionStatus(props.taskStatus ?? 'not-started', 
         class="tracker-command-panel__progress"
         :title="taskDelivery?.reason ?? undefined"
       >
-        <UiBadge
-          :tone="state.tone"
-          :dot="true"
-          variant="outline"
-        >
-          {{ state.label }}
-        </UiBadge>
+        <span class="tracker-command-panel__state">
+          <UiBadge
+            :tone="state.tone"
+            :dot="true"
+            variant="outline"
+          >
+            {{ state.label }}
+          </UiBadge>
+          <UsageLiveIndicator :active="!!activeExecution" />
+        </span>
         <span>{{ completedCount ?? 0 }}/{{ totalCount ?? 0 }} complete</span>
       </div>
       <AgentUsageSummary
         v-if="taskAvailable && taskAutomated"
         class="tracker-command-panel__usage"
         :metrics="taskAgentStats"
+        :active="!!activeExecution"
         compact
         inline
         aria-label="Lifetime task usage"
@@ -183,18 +202,22 @@ const state = computed(() => executionStatus(props.taskStatus ?? 'not-started', 
 .tracker-command-panel__search { flex: 0 1 280px; min-width: 120px; }
 .tracker-command-panel__filter { flex: 0 1 180px; min-width: 110px; }
 .tracker-command-panel__assignee { flex-basis: 160px; }
-.tracker-command-panel__context { display: grid; grid-template-columns: minmax(140px, 1fr) 120px 354px max-content; align-items: center; gap: 16px; width: 100%; min-width: 0; padding: 10px 14px; border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); background: var(--color-bg-surface); }
-.tracker-command-panel__task { flex: 1 1 240px; min-width: 140px; }
+.tracker-command-panel__context { display: grid; grid-template-columns: minmax(140px, 1fr) 160px 354px max-content; align-items: center; gap: 16px; width: 100%; min-width: 0; padding: 10px 14px; border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); background: var(--color-bg-surface); }
+.tracker-command-panel__task { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; flex: 1 1 240px; min-width: 140px; }
 .tracker-command-panel__identity { display: flex; align-items: center; gap: 8px; height: 20px; color: var(--color-fg-muted); font-size: 11px; }
-.tracker-command-panel__task :deep(.ui-select__button) { border: 0; box-shadow: none; padding-left: 0; font-weight: var(--fw-semibold); }
+.tracker-command-panel__task :deep(.ui-select__button) { font-weight: var(--fw-semibold); }
 .tracker-command-panel__task :deep(.ui-select__right-chip), .tracker-command-panel__task :deep(.ui-select__right-meta) { display: none; }
+.tracker-command-panel__option { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tracker-command-panel__option-status { flex: 0 0 82px; justify-content: flex-start; border: 0; padding: 0; font-size: 10px; }
+.tracker-command-panel__option-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tracker-command-panel__progress { display: grid; flex: 0 0 120px; gap: 4px; padding-left: 16px; border-left: 1px solid var(--color-border-default); color: var(--color-fg-muted); font-size: 11px; white-space: nowrap; }
 .tracker-command-panel__progress :deep(.ui-badge) { border: 0; padding: 0; justify-self: start; background: transparent; }
+.tracker-command-panel__state { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .tracker-command-panel__count { margin-left: auto; flex: none; white-space: nowrap; }
 .tracker-command-panel__usage { flex: 0 0 354px; min-width: 0; padding-left: 16px; border-left: 1px solid var(--color-border-default); }
 .tracker-command-panel__context > :last-child { grid-column: 4; margin-left: auto; }
 @container (max-width: 850px) {
-  .tracker-command-panel__context { display: grid; grid-template-columns: minmax(0, 1fr) 120px; grid-template-rows: 52px 36px; gap: 12px; }
+  .tracker-command-panel__context { display: grid; grid-template-columns: minmax(0, 1fr) 160px; grid-template-rows: 56px minmax(36px, auto); gap: 12px; }
   .tracker-command-panel__task { grid-column: 1; grid-row: 1; }
   .tracker-command-panel__progress { grid-column: 2; grid-row: 1; padding-left: 12px; }
   .tracker-command-panel__usage { grid-column: 1; grid-row: 2; width: min(354px, 100%); padding-left: 0; border-left: 0; }

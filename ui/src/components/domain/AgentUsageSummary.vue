@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import { usageFields, usageValue, formatUsage, exactUsage, type AgentStatsMetrics } from '@/lib/agentActivity'
 import { computed } from 'vue'
+import { useUsageFeed } from '@/composables/useUsageFeed'
 import UsageTrace from './UsageTrace.vue'
 
-const props = withDefaults(defineProps<{ metrics?: AgentStatsMetrics | null; compact?: boolean; inline?: boolean }>(), { metrics: null, compact: false, inline: false })
+const props = withDefaults(defineProps<{ metrics?: AgentStatsMetrics | null; compact?: boolean; inline?: boolean; active?: boolean }>(), { metrics: null, compact: false, inline: false, active: false })
+const feed = useUsageFeed()
+const endAt = computed(() => props.active ? feed?.value.receivedAt ?? undefined : undefined)
 const fields = computed(() => usageFields.map(field => ({
   ...field,
   value: usageValue(props.metrics, field.key),
@@ -11,7 +14,7 @@ const fields = computed(() => usageFields.map(field => ({
   exact: exactUsage(props.metrics, field.key),
 })))
 const samples = computed(() => props.metrics?.samples ?? [])
-const scopeTitle = 'Recorded totals and measured charts cover the same task or ticket lifetime, including delivery and review. No intermediate history is inferred.'
+const scopeTitle = 'Numbers are task or ticket totals, including delivery and review. Bars show newly reported tokens in one-minute intervals, with a separate zero-based scale for each metric. Missing history stays empty.'
 </script>
 
 <template>
@@ -41,6 +44,7 @@ const scopeTitle = 'Recorded totals and measured charts cover the same task or t
         v-if="compact"
         :samples="samples"
         :metric="field.key"
+        :end-at="endAt"
       />
     </div>
   </dl>
@@ -61,7 +65,13 @@ dd.agent-usage-summary__unavailable { color: var(--color-fg-muted); font-size: 1
 .agent-usage-summary--compact dt { color: var(--color-fg-muted); font-size: 11px; line-height: 16px; margin: 0; }
 .agent-usage-summary--compact dd { width: 100%; overflow: hidden; text-overflow: ellipsis; color: var(--color-fg-default); font-size: 13px; line-height: 20px; font-weight: 500; letter-spacing: 0; }
 .agent-usage-summary--compact dd.agent-usage-summary__unavailable { color: var(--color-fg-muted); }
-.agent-usage-summary--inline .agent-usage-summary__metric { grid-template-columns: 62px minmax(0, 1fr); grid-template-rows: 16px 20px; column-gap: 4px; }
+.agent-usage-summary--compact :deep(.usage-trace) { width: 100%; }
+.agent-usage-summary--inline { container-type: inline-size; }
+.agent-usage-summary--inline .agent-usage-summary__metric { grid-template-columns: 56px minmax(0, 1fr); grid-template-rows: 16px 20px; column-gap: 4px; }
 .agent-usage-summary--inline dt { grid-column: 1 / -1; }
 .agent-usage-summary--inline :deep(.usage-trace) { grid-column: 2; grid-row: 2; }
+@container (max-width: 330px) {
+  .agent-usage-summary--inline .agent-usage-summary__metric { grid-template-columns: minmax(0, 1fr); grid-template-rows: 16px 20px 18px; }
+  .agent-usage-summary--inline :deep(.usage-trace) { grid-column: 1; grid-row: 3; }
+}
 </style>

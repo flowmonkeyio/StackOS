@@ -29,6 +29,8 @@ export interface TrackerStatusStreamOptions {
   onEvent: (event: ProjectTimelineEvent) => void
   onError?: (error: unknown) => void
   onUsage?: (updates?: UsageProjection) => void
+  onFrame?: (receivedAt: number) => void
+  onDisconnect?: () => void
 }
 
 export interface TrackerStatusStream {
@@ -75,6 +77,7 @@ export function openTrackerStatusStream(options: TrackerStatusStreamOptions): Tr
   let closed = false
   let lastEventId = options.afterId ?? null
   let retryTimer: number | null = null
+  let resumeRetry: (() => void) | null = null
 
   async function run(): Promise<void> {
     let retryMs = INITIAL_RETRY_MS
@@ -87,6 +90,7 @@ export function openTrackerStatusStream(options: TrackerStatusStreamOptions): Tr
         options.onError?.(error)
       }
       if (!closed) {
+        options.onDisconnect?.()
         await waitForRetry(retryMs)
         retryMs = Math.min(MAX_RETRY_MS, Math.round(retryMs * 1.7))
       }
@@ -102,20 +106,25 @@ export function openTrackerStatusStream(options: TrackerStatusStreamOptions): Tr
 
     const decoder = new TextDecoder()
     const parser = new SseMessageParser()
-    while (!closed) {
-      const { done, value } = await reader.read()
-      if (done) break
-      const chunk = decoder.decode(value, { stream: true })
-      for (const message of parser.push(chunk)) {
-        if (message.event === 'tracker-usage') {
-          try { options.onUsage?.(JSON.parse(message.data).updates ?? undefined) } catch { /* Ignore malformed optional telemetry. */ }
-          continue
+    try {
+      while (!closed) {
+        const { done, value } = await reader.read()
+        if (done || closed) break
+        const chunk = decoder.decode(value, { stream: true })
+        for (const message of parser.push(chunk)) {
+          options.onFrame?.(Date.now())
+          if (message.event === 'tracker-usage') {
+            try { options.onUsage?.(JSON.parse(message.data).updates ?? undefined) } catch { /* Ignore malformed optional telemetry. */ }
+            continue
+          }
+          const event = projectTimelineEventFromMessage(message)
+          if (!event) continue
+          lastEventId = event.id
+          options.onEvent(event)
         }
-        const event = projectTimelineEventFromMessage(message)
-        if (!event) continue
-        lastEventId = event.id
-        options.onEvent(event)
       }
+    } finally {
+      reader.releaseLock()
     }
   }
 
@@ -128,14 +137,18 @@ export function openTrackerStatusStream(options: TrackerStatusStreamOptions): Tr
         window.clearTimeout(retryTimer)
         retryTimer = null
       }
+      resumeRetry?.()
+      resumeRetry = null
       controller.abort()
     },
   }
 
   function waitForRetry(ms: number): Promise<void> {
     return new Promise((resolve) => {
+      resumeRetry = resolve
       retryTimer = window.setTimeout(() => {
         retryTimer = null
+        resumeRetry = null
         resolve()
       }, ms)
     })

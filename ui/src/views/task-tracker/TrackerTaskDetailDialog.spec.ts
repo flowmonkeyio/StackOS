@@ -5,7 +5,7 @@ import { ApiError } from '@/lib/client'
 import { formatDateTime } from '@/lib/stackos/json'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 
-import type { TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
+import type { ActiveExecution, TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
 
 import TrackerTaskDetailDialog from './TrackerTaskDetailDialog.vue'
 
@@ -71,19 +71,27 @@ describe('TrackerTaskDetailDialog', () => {
     own.reported_usage.input = 12
     own.reported_usage.remaining_input = 12
     own.reported_usage.cache_read = 0
-    const source = { ...sourceTicket(), agent_stats: own }
+    const execution: ActiveExecution = {
+      invocation_id: 'active-call', agent: 'Delivery', host_key: 'codex', model: 'gpt-6.1-sol',
+      ticket_key: sourceTicket().key, started_at: '2026-11-08T01:00:00Z', live_usage: null,
+    }
+    const source = { ...sourceTicket(), agent_stats: own, active_execution: execution }
     const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
-    const automatic = { ...task(), agent_stats: totals, metadata_json: { delivery: { status: 'complete', job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent } } }
+    const automatic = { ...task(), agent_stats: totals, active_execution: execution, metadata_json: { delivery: { status: 'running', job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent } } }
     const wrapper = mount(TrackerTaskDetailDialog, { props: { modelValue: true, task: automatic, tickets: [source] } })
-    expect(popup().get('[aria-label="Lifetime task usage"] [data-usage-field="input"] dd').text()).toBe('30')
+    expect(popup().get('[aria-label="Task total usage"] [data-usage-field="input"] dd').text()).toBe('30')
+    expect(popup().findAll('[data-usage-field="input"]')).toHaveLength(1)
+    expect(popup().find('.active-execution-line').exists()).toBe(true)
+    expect(popup().text()).not.toContain('Current call')
     await wrapper.setProps({ ticketKey: source.key, ticket: source })
     await flushPromises()
-    const usage = popup().get('[aria-label="Own ticket usage"]')
+    const usage = popup().get('[aria-label="Ticket total usage"]')
     expect(usage.get('[data-usage-field="input"] dd').text()).toBe('12')
+    expect(popup().text()).not.toContain('Current call')
     await wrapper.setProps({ task: { ...automatic, metadata_json: null } })
-    expect(popup().find('[aria-label="Own ticket usage"]').exists()).toBe(false)
+    expect(popup().find('[aria-label="Ticket total usage"]').exists()).toBe(false)
     await wrapper.setProps({ ticketKey: '', ticket: null })
-    expect(popup().find('[aria-label="Lifetime task usage"]').exists()).toBe(false)
+    expect(popup().find('[aria-label="Task total usage"]').exists()).toBe(false)
     expect(usage.get('[data-usage-field="cache_read"] dd').text()).toBe('0')
     expect(usage.get('[data-usage-field="output"] dd').text()).toBe('30')
     expect(usage.text()).not.toContain('Partial')

@@ -11,7 +11,6 @@ import {
 import StatusBadge from '@/components/StatusBadge.vue'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
 import ActiveExecutionLine from '@/components/domain/ActiveExecutionLine.vue'
-import LiveUsageStrip from '@/components/domain/LiveUsageStrip.vue'
 import TaskDeliveryStop from '@/components/domain/TaskDeliveryStop.vue'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
@@ -137,14 +136,15 @@ function relationSummary(ticket: TrackerTicket): string {
       <AgentUsageSummary
         v-if="parentTask?.key === ticket.task_key && isAutomaticDeliveryTask(parentTask)"
         :metrics="ticket.agent_stats"
+        :active="!!ticket.active_execution"
         compact
-        aria-label="Own ticket usage"
-        title="Own ticket usage"
+        aria-label="Ticket total usage"
+        title="Ticket total usage"
       />
-      <ActiveExecutionLine :execution="ticket.active_execution" detailed focusable />
-      <LiveUsageStrip
-        v-if="parentTask && isAutomaticDeliveryTask(parentTask)"
+      <ActiveExecutionLine
         :execution="ticket.active_execution"
+        detailed
+        focusable
       />
       <UiMetadataStrip
         :items="ticketFacts"

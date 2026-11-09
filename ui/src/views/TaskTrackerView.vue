@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, provide, ref } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter, type LocationQueryRaw } from 'vue-router'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import { UiBadge, UiButton, UiCallout, UiEmptyState, UiLoadingState, UiPageShell } from '@/components/ui'
@@ -10,6 +10,7 @@ import { resolveStatus, trackerStatus } from '@/design/status'
 import type { TrackerSnapshot, TrackerStatus, TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
 import { isAutomaticDeliveryTask, taskDeliveryState } from '@/lib/task-tracker/delivery'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
+import { usageFeedKey } from '@/composables/useUsageFeed'
 import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import TaskTrackerCommandPanel from './task-tracker/TaskTrackerCommandPanel.vue'
 import TrackerBoardPanel from './task-tracker/TrackerBoardPanel.vue'
@@ -73,6 +74,7 @@ const graph = useTrackerGraphSession({
   reload: (options) => load(options),
   refreshUsage,
 })
+provide(usageFeedKey, graph.feedState)
 const {
   loading: graphLoading, graphDataAvailable, statusFilters: graphStatusFilters, blockFilters: graphBlockFilters,
   viewport: graphViewport, refocusKey: graphRefocusKey, liveError, statusRows: graphStatusRows, blockRows: graphBlockRows,

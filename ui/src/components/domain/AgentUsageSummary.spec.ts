@@ -1,22 +1,19 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import { ref } from 'vue'
+import { usageFeedKey } from '@/composables/useUsageFeed'
+import type { UsageFeedState } from '@/lib/usageUpdates'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 import type { SchemaUsageSampleOut } from '@/api'
-import type { ActiveExecution } from '@/lib/task-tracker/types'
 import AgentUsageSummary from './AgentUsageSummary.vue'
-import LiveUsageStrip from './LiveUsageStrip.vue'
 
 const sample = (seconds: number, cache: number | null = 80): SchemaUsageSampleOut => ({
   at: `2026-11-08T01:00:0${seconds}Z`, input: 100 + seconds * 2, cache_read: cache,
   output: 5 + seconds, total: 105 + seconds * 3, cache_write: null, reasoning: null, remaining_input: null,
 })
-const execution: ActiveExecution = {
-  invocation_id: 'current', agent: 'Worker', host_key: 'codex', model: 'selected',
-  ticket_key: 'child', started_at: sample(0).at, live_usage: null,
-}
 
 describe('fixed compact lifetime usage', () => {
-  it('keeps the same three canvases through empty, first point, line, stop and persisted reload', async () => {
+  it('keeps the same three canvases through empty, baseline, bars, stop and persisted reload', async () => {
     const metrics = agentStatsFixture().totals
     const wrapper = mount(AgentUsageSummary, { props: { metrics, compact: true } })
     const canvases = wrapper.findAll('canvas').map(item => item.element)
@@ -25,9 +22,9 @@ describe('fixed compact lifetime usage', () => {
     for (const [samples, states] of [
       [[], ['empty', 'empty', 'empty']],
       [[sample(0)], ['point', 'point', 'point']],
-      [[sample(0), sample(2)], ['trace', 'trace', 'trace']],
-      [[sample(3, null), sample(4, null)], ['empty', 'empty', 'trace']],
-      [[sample(3, null), sample(4, null), sample(5)], ['point', 'point', 'trace']],
+      [[sample(0), sample(2)], ['bars', 'bars', 'bars']],
+      [[sample(3, null), sample(4, null)], ['empty', 'empty', 'bars']],
+      [[sample(3, null), sample(4, null), sample(5)], ['point', 'point', 'bars']],
     ] as [SchemaUsageSampleOut[], string[]][]) {
       await wrapper.setProps({ metrics: { ...metrics, samples } })
       expect(wrapper.findAll('canvas').map(item => item.attributes('data-state'))).toEqual(states)
@@ -35,11 +32,12 @@ describe('fixed compact lifetime usage', () => {
     }
     const terminal = { ...metrics, samples: [sample(0), sample(2)] }
     await wrapper.setProps({ metrics: terminal })
-    expect(wrapper.findAll('canvas').map(item => item.attributes('data-state'))).toEqual(['trace', 'trace', 'trace'])
-    expect(wrapper.attributes('title')).toContain('same task or ticket lifetime')
+    expect(wrapper.findAll('canvas').map(item => item.attributes('data-state'))).toEqual(['bars', 'bars', 'bars'])
+    expect(wrapper.attributes('title')).toContain('Numbers are task or ticket totals')
+    expect(wrapper.attributes('title')).toContain('newly reported tokens')
     expect(wrapper.attributes('title')).not.toContain('Worker')
     const reload = mount(AgentUsageSummary, { props: { metrics: JSON.parse(JSON.stringify(terminal)), compact: true } })
-    expect(reload.findAll('canvas').map(item => item.attributes('data-state'))).toEqual(['trace', 'trace', 'trace'])
+    expect(reload.findAll('canvas').map(item => item.attributes('data-state'))).toEqual(['bars', 'bars', 'bars'])
     expect(wrapper.find('svg').exists()).toBe(false)
     reload.unmount(); wrapper.unmount()
   })
@@ -65,17 +63,32 @@ describe('fixed compact lifetime usage', () => {
     wrapper.unmount()
   })
 
-  it('keeps current-call details separately scoped and default analytics free of mini-canvases', async () => {
+  it('keeps default analytics free of mini-canvases', async () => {
     const metrics = { ...agentStatsFixture().totals, samples: [sample(0), sample(2)] }
     const summary = mount(AgentUsageSummary, { props: { metrics, compact: true } })
-    expect(summary.findAll('canvas').map(item => item.attributes('data-state'))).toEqual(['trace', 'trace', 'trace'])
-    const strip = mount(LiveUsageStrip, { props: { execution } })
-    expect(strip.findAll('canvas').map(item => item.attributes('data-state'))).toEqual(['empty', 'empty', 'empty'])
-    await strip.setProps({ execution: null })
-    expect(strip.find('section').exists()).toBe(false)
+    expect(summary.findAll('canvas').map(item => item.attributes('data-state'))).toEqual(['bars', 'bars', 'bars'])
     await summary.setProps({ compact: false })
     expect(summary.find('canvas').exists()).toBe(false)
     expect(summary.findAll('dd').map(item => item.text())).toEqual(['30', '40', '30'])
-    strip.unmount(); summary.unmount()
+    summary.unmount()
+  })
+
+  it('advances active history from the shared feed clock and retains completed history', async () => {
+    const feed = ref<UsageFeedState>({ status: 'live', receivedAt: Date.parse('2026-11-08T01:00:15Z') })
+    const wrapper = mount(AgentUsageSummary, {
+      props: { compact: true, active: true, metrics: { ...agentStatsFixture().totals, samples: [sample(0), sample(2)] } },
+      global: { provide: { [usageFeedKey as symbol]: feed } },
+    })
+    const canvases = wrapper.findAll('canvas').map(item => item.element)
+    const total = wrapper.get('dd').text()
+    expect(wrapper.get('canvas').attributes('data-state')).toBe('bars')
+    feed.value = { status: 'live', receivedAt: Date.parse('2026-11-08T02:00:00Z') }
+    await wrapper.vm.$nextTick()
+    expect(wrapper.get('canvas').attributes('data-state')).toBe('empty')
+    expect(wrapper.get('dd').text()).toBe(total)
+    await wrapper.setProps({ active: false })
+    expect(wrapper.get('canvas').attributes('data-state')).toBe('bars')
+    expect(wrapper.findAll('canvas').map(item => item.element)).toEqual(canvases)
+    wrapper.unmount()
   })
 })

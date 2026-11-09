@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, onUpdated, ref } from 'vue'
 import type { SchemaUsageSampleOut } from '@/api'
-import { usageTrace, type LiveMetric } from '@/lib/liveUsage'
+import { usageTrace, usageTraceDescription, type LiveMetric } from '@/lib/liveUsage'
 
-const props = defineProps<{ samples: SchemaUsageSampleOut[]; metric: LiveMetric }>()
-const geometry = computed(() => usageTrace(props.samples, props.metric))
+const props = defineProps<{ samples: SchemaUsageSampleOut[]; metric: LiveMetric; endAt?: number; barCount?: number }>()
+const geometry = computed(() => usageTrace(props.samples, props.metric, props.endAt, props.barCount))
+const description = computed(() => usageTraceDescription(geometry.value, props.metric))
 const canvas = ref<HTMLCanvasElement | null>(null)
 let sizeObserver: ResizeObserver | undefined
 let themeObserver: MutationObserver | undefined
@@ -23,34 +24,33 @@ function draw(): void {
   if (element.height !== pixelHeight) element.height = pixelHeight
   context.setTransform(pixelWidth / width, 0, 0, pixelHeight / height, 0, 0)
   context.clearRect(0, 0, width, height)
-  const color = getComputedStyle(element).color
-  context.strokeStyle = color
-  context.fillStyle = color
-  context.lineWidth = 1.3
-  context.lineJoin = 'round'
-  context.lineCap = 'round'
+  const style = getComputedStyle(element)
+  const muted = style.getPropertyValue('--color-fg-muted').trim() || style.color
+  const baseline = height - 1.5
+  const left = 1, trackWidth = width - 2
+  context.strokeStyle = muted
+  context.fillStyle = style.color
+  context.lineWidth = 1
   context.setLineDash([])
+  context.globalAlpha = 0.35
   context.beginPath()
-  const { state, points } = geometry.value
-  if (state === 'empty') {
-    context.lineWidth = 1
-    context.setLineDash([2, 3])
-    context.moveTo(2, height / 2)
-    context.lineTo(width - 2, height / 2)
-    context.stroke()
-  } else if (state === 'point') {
-    context.arc(width / 2, height / 2, 1.7, 0, Math.PI * 2)
-    context.fill()
-  } else {
-    points.forEach((point, i) => {
-      const x = point.x / 28 * width, y = point.y / 12 * height
-      if (!i) context.moveTo(x, y)
-      else {
-        context.lineTo(x, points[i - 1]!.y / 12 * height)
-        context.lineTo(x, y)
-      }
+  context.moveTo(left, baseline)
+  context.lineTo(width - left, baseline)
+  context.stroke()
+  context.globalAlpha = 1
+  const { state, buckets, maximum, baselineAt, startAt } = geometry.value
+  const slotWidth = trackWidth / buckets.length
+  const barWidth = Math.min(2, slotWidth * 0.65)
+  if (state === 'point' && baselineAt != null && startAt != null) {
+    const index = Math.floor((baselineAt - startAt) / 60_000)
+    context.fillStyle = muted
+    context.fillRect(left + (index + 0.5) * slotWidth - barWidth / 2, baseline - 3, barWidth, 3)
+  } else if (state === 'bars' && maximum > 0) {
+    buckets.forEach((bucket, index) => {
+      if (bucket.value == null || bucket.value === 0) return
+      const barHeight = Math.max(1, bucket.value / maximum * (height - 4))
+      context.fillRect(left + (index + 0.5) * slotWidth - barWidth / 2, baseline - barHeight, barWidth, barHeight)
     })
-    context.stroke()
   }
 }
 
@@ -87,13 +87,14 @@ onBeforeUnmount(() => {
     class="usage-trace"
     :data-metric="metric"
     :data-state="geometry.state"
-    aria-hidden="true"
+    role="img"
+    :aria-label="description"
+    :title="description"
   />
 </template>
 
 <style scoped>
-.usage-trace { display: block; width: 64px; max-width: 100%; height: 16px; flex: none; color: var(--color-info-fg); }
+.usage-trace { display: block; width: 32px; max-width: 100%; height: 16px; flex: none; color: var(--color-info-fg); }
 .usage-trace[data-metric='cache_read'] { color: var(--color-accent-primary); }
 .usage-trace[data-metric='output'] { color: var(--color-success-fg); }
-.usage-trace[data-state='empty'] { color: var(--color-fg-muted); opacity: 0.5; }
 </style>

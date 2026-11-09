@@ -18,6 +18,7 @@ const blocker = computed(() => `Blocked by: ${props.data.blockedBy?.join(', ')}`
 <template>
   <div
     class="ticket-graph-node"
+    :style="{ '--ticket-status-color': `var(--color-${isBlocked ? 'warning' : state.tone}-default)` }"
     :class="[
       `ticket-graph-node--status-${data.status}`,
       { 'ticket-graph-node--blocked': isBlocked, 'ticket-graph-node--active': !!data.activeExecution, 'ticket-graph-node--recent': data.recentlyUpdated },
@@ -74,6 +75,7 @@ const blocker = computed(() => `Blocked by: ${props.data.blockedBy?.join(', ')}`
       v-if="data.taskAutomated"
       class="ticket-graph-node__usage"
       :metrics="data.agentStats"
+      :active="!!data.activeExecution"
       compact
       title="Own ticket usage"
     />
@@ -99,17 +101,19 @@ const blocker = computed(() => `Blocked by: ${props.data.blockedBy?.join(', ')}`
 
 <style scoped>
 .ticket-graph-node { position: relative; box-sizing: border-box; width: var(--tracker-ticket-node-width, 328px); height: var(--tracker-ticket-node-height, 224px); padding: 12px 14px 54px; border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); background: var(--color-bg-surface); box-shadow: var(--shadow-xs); }
+.ticket-graph-node::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 3px; border-radius: var(--radius-lg) 0 0 var(--radius-lg); background: var(--ticket-status-color); pointer-events: none; }
+.ticket-graph-node::after { content: ''; position: absolute; inset: -1px; z-index: 1; border: 1px solid var(--color-border-default); border-radius: inherit; pointer-events: none; }
+.ticket-graph-node--active::after { border-color: var(--color-border-focus); }
 .ticket-graph-node:hover { box-shadow: var(--shadow-sm); }
 .ticket-graph-node--active { border-color: var(--color-border-focus); }
-.ticket-graph-node--blocked { box-shadow: inset 3px 0 var(--color-warning-default), var(--shadow-xs); }
 .ticket-graph-node__top { display: flex; height: 20px; min-width: 0; align-items: center; gap: 6px; }
 .ticket-graph-node__key { min-width: 0; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-fg-muted); font-size: 10px; }
 .ticket-graph-node__floating-state { flex: none; margin-left: auto; }
-.ticket-graph-node__handle { width: 9px; height: 9px; border: 1px solid var(--color-border-strong); background: var(--color-bg-surface); }
+.ticket-graph-node__handle { z-index: 2; width: 9px; height: 9px; border: 1px solid var(--color-border-strong); background: var(--color-bg-surface); }
 .ticket-graph-node__title { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; overflow-wrap: anywhere; height: 40px; margin-top: 6px; color: var(--color-fg-strong); font-size: 14px; font-weight: var(--fw-semibold); line-height: 20px; }
 .ticket-graph-node__subtitle { height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-fg-muted); font-size: 11px; line-height: 16px; }
 .ticket-graph-node__usage { margin-top: 8px; }
-.ticket-graph-node__footer { position: absolute; inset: auto 0 0; height: 56px; display: flex; align-items: center; border-top: 1px solid var(--color-border-default); padding: 0 14px 12px; }
+.ticket-graph-node__footer { position: absolute; inset: auto 0 0; height: 56px; display: flex; align-items: center; border-top: 1px solid var(--color-border-default); padding: 0 14px; }
 .ticket-graph-node__execution { width: 100%; }
 .ticket-graph-node__blocked { position: absolute; bottom: -10px; left: 20px; right: 20px; z-index: 4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: fit-content; max-width: calc(100% - 40px); margin: 0 auto; padding: 3px 8px; border: 1px solid var(--color-warning-default); border-radius: var(--radius-full); background: var(--color-warning-subtle); color: var(--color-warning-fg); font-size: 10px; line-height: 14px; }
 .ticket-graph-node__blocked:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 2px; }

@@ -10,6 +10,7 @@ const AGENT_HOST_LOGOS = new Map([
 
 const OWNER_HOST_KEYS = new Map([
   ['codex', 'codex'],
+  ['codex main', 'codex'],
   ['chatgpt', 'codex'],
   ['chatgpt / codex', 'codex'],
   ['claude', 'claude-desktop'],

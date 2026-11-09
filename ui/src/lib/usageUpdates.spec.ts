@@ -1,10 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { subscribeUsageUpdates, usageCheckpoint, patchUsageAfter } from './usageUpdates'
 import type { TrackerSnapshot } from '@/lib/task-tracker/types'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 import { openTrackerStatusStream } from '@/lib/task-tracker/liveEvents'
 vi.mock('@/lib/task-tracker/liveEvents', () => ({ openTrackerStatusStream: vi.fn(() => ({ close: vi.fn() })) }))
-beforeEach(() => vi.mocked(openTrackerStatusStream).mockClear())
+beforeEach(() => {
+  vi.mocked(openTrackerStatusStream).mockClear()
+  Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-11-09T08:00:00Z'))
+})
+afterEach(() => vi.useRealTimers())
 describe('one shared usage transport', () => {
   it('preserves later usage across pending page reads, isolates scopes and replaces reconnect state', () => {
     const stop = subscribeUsageUpdates(7, { usage: vi.fn() })
@@ -56,5 +62,84 @@ describe('one shared usage transport', () => {
     two(); global()
     document.dispatchEvent(new Event('visibilitychange'))
     expect(openTrackerStatusStream).toHaveBeenCalledTimes(4)
+  })
+
+  it('stays live through heartbeats without new token measurements and shares one freshness deadline', () => {
+    const connection = vi.fn(), other = vi.fn(), usage = vi.fn()
+    const stop = subscribeUsageUpdates(3, { usage, connection })
+    const stream = vi.mocked(openTrackerStatusStream).mock.calls[0]![0]
+    expect(connection).toHaveBeenLastCalledWith({ status: 'connecting', receivedAt: null })
+    stream.onFrame?.(Date.now())
+    expect(connection.mock.lastCall?.[0].status).toBe('connecting')
+    stream.onUsage?.({ tasks: [], tickets: [], replace: true })
+    expect(connection).toHaveBeenLastCalledWith({ status: 'live', receivedAt: Date.now() })
+    const stopOther = subscribeUsageUpdates(3, { usage: vi.fn(), connection: other })
+    expect(other).toHaveBeenLastCalledWith({ status: 'live', receivedAt: Date.now() })
+    expect(openTrackerStatusStream).toHaveBeenCalledTimes(1)
+    expect(vi.getTimerCount()).toBe(1)
+    for (let i = 0; i < 5; i += 1) {
+      vi.advanceTimersByTime(15_000)
+      stream.onFrame?.(Date.now())
+      expect(connection).toHaveBeenLastCalledWith({ status: 'live', receivedAt: Date.now() })
+      expect(vi.getTimerCount()).toBe(1)
+    }
+    expect(usage).toHaveBeenCalledTimes(1)
+    stop(); expect(vi.getTimerCount()).toBe(1)
+    stopOther(); expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('reconnects a silent stream and requires a fresh replacement snapshot before becoming live again', () => {
+    const connection = vi.fn(), error = vi.fn()
+    const stop = subscribeUsageUpdates(4, { usage: vi.fn(), connection, error })
+    const original = vi.mocked(openTrackerStatusStream).mock.calls[0]![0]
+    original.onUsage?.({ tasks: [], tickets: [], replace: true })
+    const oldClose = vi.mocked(openTrackerStatusStream).mock.results[0]!.value.close
+    vi.advanceTimersByTime(45_000)
+    expect(oldClose).toHaveBeenCalledTimes(1)
+    expect(openTrackerStatusStream).toHaveBeenCalledTimes(2)
+    expect(connection.mock.lastCall?.[0].status).toBe('reconnecting')
+    const current = vi.mocked(openTrackerStatusStream).mock.calls[1]![0]
+    original.onUsage?.({ tasks: [], tickets: [], replace: true })
+    current.onFrame?.(Date.now())
+    current.onUsage?.({ tasks: [], tickets: [] })
+    expect(connection.mock.lastCall?.[0].status).toBe('reconnecting')
+    current.onUsage?.({ tasks: [], tickets: [], replace: true })
+    expect(connection.mock.lastCall?.[0].status).toBe('live')
+    current.onError?.(new Error('offline'))
+    expect(error).toHaveBeenCalledTimes(1)
+    expect(connection.mock.lastCall?.[0].status).toBe('reconnecting')
+    current.onFrame?.(Date.now())
+    expect(connection.mock.lastCall?.[0].status).toBe('reconnecting')
+    current.onUsage?.({ tasks: [], tickets: [], replace: true })
+    expect(connection.mock.lastCall?.[0].status).toBe('live')
+    current.onDisconnect?.()
+    expect(connection.mock.lastCall?.[0].status).toBe('reconnecting')
+    stop()
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('pauses hidden feeds and ignores retired callbacks after resume or unmount', () => {
+    const connection = vi.fn(), usage = vi.fn(), resume = vi.fn()
+    const stop = subscribeUsageUpdates(5, { usage, connection, resume })
+    const original = vi.mocked(openTrackerStatusStream).mock.calls[0]![0]
+    original.onUsage?.({ tasks: [], tickets: [], replace: true })
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(connection.mock.lastCall?.[0].status).toBe('paused')
+    expect(vi.getTimerCount()).toBe(0)
+    original.onFrame?.(Date.now())
+    original.onUsage?.({ tasks: [], tickets: [], replace: true })
+    expect(usage).toHaveBeenCalledTimes(1)
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+    document.dispatchEvent(new Event('visibilitychange'))
+    expect(connection.mock.lastCall?.[0].status).toBe('reconnecting')
+    expect(resume).toHaveBeenCalledTimes(1)
+    const current = vi.mocked(openTrackerStatusStream).mock.calls[1]![0]
+    stop()
+    const calls = connection.mock.calls.length
+    current.onFrame?.(Date.now())
+    current.onUsage?.({ tasks: [], tickets: [], replace: true })
+    expect(connection).toHaveBeenCalledTimes(calls)
+    expect(vi.getTimerCount()).toBe(0)
   })
 })

@@ -19,7 +19,6 @@ import MarkdownView from '@/components/MarkdownView.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
 import ActiveExecutionLine from '@/components/domain/ActiveExecutionLine.vue'
-import LiveUsageStrip from '@/components/domain/LiveUsageStrip.vue'
 import TaskDeliveryStop from '@/components/domain/TaskDeliveryStop.vue'
 import { formatDateTime, sanitizeForDisplay } from '@/lib/stackos/json'
 import type { TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
@@ -338,14 +337,15 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
         <AgentUsageSummary
           v-if="isAutomaticDeliveryTask(task)"
           :metrics="task.agent_stats"
+          :active="!!task.active_execution"
           compact
-          aria-label="Lifetime task usage"
-          title="Lifetime task usage"
+          aria-label="Task total usage"
+          title="Task total usage"
         />
-        <ActiveExecutionLine :execution="task.active_execution" detailed focusable />
-        <LiveUsageStrip
-          v-if="isAutomaticDeliveryTask(task)"
+        <ActiveExecutionLine
           :execution="task.active_execution"
+          detailed
+          focusable
         />
         <section class="space-y-2 border-t border-subtle pt-4">
           <div class="flex items-center justify-between gap-3">
