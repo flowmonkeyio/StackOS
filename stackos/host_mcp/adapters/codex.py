@@ -28,6 +28,7 @@ from stackos.host_mcp.result import (
     usage_snapshot,
     validate_agent_result,
 )
+from stackos.host_mcp.toml_config import read_mcp_config_ref
 
 HOST_KEY = "codex"
 SURFACE = "shared-config"
@@ -67,6 +68,7 @@ def run_agent(
     profile: str | None = None,
     resume_thread_id: str | None = None,
     on_session: Callable[[str], None] | None = None,
+    mcp_config_ref: dict[str, str] | None = None,
 ) -> AgentRunResult:
     """Run supplied instructions in a new or explicitly selected native thread."""
     if not instructions.strip():
@@ -75,6 +77,14 @@ def run_agent(
     codex_bin = _select_codex_bin()
     if codex_bin is None:
         return AgentRunResult(None, error="No usable Codex CLI was found by host discovery.")
+    try:
+        overrides = (
+            task_mcp_overrides(project_dir, mcp_config_ref, codex_bin=codex_bin)[1]
+            if mcp_config_ref is not None
+            else []
+        )
+    except ValueError as error:
+        return AgentRunResult(None, error=str(error))
     with TemporaryDirectory(prefix="stackos-agent-") as temporary:
         schema_path = Path(temporary) / "schema.json"
         result_path = Path(temporary) / "result.json"
@@ -86,6 +96,7 @@ def run_agent(
             "--skip-git-repo-check",
             "--cd",
             str(project_dir),
+            *overrides,
             *(["--model", model] if model is not None else []),
             *(["-c", f"model_provider={json.dumps(provider)}"] if provider is not None else []),
             *(
@@ -186,6 +197,8 @@ def run_agent(
                 else None
             )
         )
+        if execution_error and mcp_config_ref is not None:
+            execution_error = "Codex task-routed execution failed; inspect native host diagnostics."
         # The primary final can still contain useful facts after native failure.
         # Retaining it never overrides the process/transport success boundary.
         try:
@@ -193,6 +206,13 @@ def run_agent(
             if not isinstance(result, dict):
                 raise ValueError("expected a JSON object")
         except (OSError, ValueError) as exc:
+            if mcp_config_ref is not None:
+                return AgentRunResult(
+                    exit_code,
+                    thread_id=thread_id,
+                    usage=usage,
+                    error="Invalid Codex task-routed result; inspect native host diagnostics.",
+                )
             detail = f"Invalid Codex result: {exc}"
             native_detail = execution_error or stderr.strip() or stdout.strip()
             return AgentRunResult(
@@ -212,6 +232,45 @@ def run_agent(
             output_schema,
             "Codex",
         )
+
+
+def task_mcp_overrides(
+    project_dir: Path, reference: dict[str, str], *, codex_bin: str | None = None
+) -> tuple[dict[str, str], list[str]]:
+    """Serialize only route leaves over the selected host's effective servers."""
+    import tomlkit
+
+    identity, routes = read_mcp_config_ref(reference)
+    binary = codex_bin or _select_codex_bin()
+    if binary is None:
+        raise ValueError("No usable Codex CLI was found by host discovery.")
+    result = _run_codex(binary, ["--cd", str(project_dir), "mcp", "list", "--json"])
+    try:
+        rows = json.loads(result.stdout)
+        if result.returncode or not isinstance(rows, list):
+            raise ValueError
+        existing = {row["name"]: row["transport"] for row in rows}
+        if any(
+            name not in existing
+            or existing[name].get("type") != "stdio"
+            or not existing[name].get("command")
+            for name in routes
+        ):
+            raise ValueError
+    except (ValueError, TypeError, KeyError, AttributeError):
+        raise ValueError("Task MCP routes require existing native stdio servers") from None
+    overrides = []
+    for name, route in sorted(routes.items()):
+        for field, value in sorted(route.items()):
+            leaves = value.items() if field == "env" else [(None, value)]
+            for key, leaf in leaves:
+                # Native -c splits the key on dots; quotes become literal key
+                # characters. Names/env keys were validated as bare identifiers.
+                suffix = f".{key}" if key is not None else ""
+                overrides.extend(
+                    ["-c", f"mcp_servers.{name}.{field}{suffix}={tomlkit.item(leaf).as_string()}"]
+                )
+    return identity, overrides
 
 
 def inspect(home: Path, *, server_name: str = MCP_SERVER_NAME) -> HostMcpResult:

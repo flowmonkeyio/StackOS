@@ -69,6 +69,28 @@ def test_assignment_map_accepts_only_existing_two_roles():
         )
 
 
+def test_native_route_is_a_bounded_task_only_reference():
+    registry = build_operation_registry()
+    start = registry.get("tracker.startDelivery").input_model
+    arguments = {"project_id": 1, "task_key": "task", "project_dir": "/tmp"}
+    ref = {"path": "/tmp/routes.toml", "sha256": "a" * 64}
+    assert (
+        start.model_validate({**arguments, "mcp_config_ref": ref}).mcp_config_ref.model_dump()
+        == ref
+    )
+    for invalid in [
+        {**ref, "settings": {"approval_policy": "never"}},
+        {**ref, "sha256": "wrong"},
+        {**ref, "path": 1},
+    ]:
+        with pytest.raises(ValueError):
+            start.model_validate({**arguments, "mcp_config_ref": invalid})
+    with pytest.raises(ValueError):
+        registry.get("tracker.configureDelivery").input_model.model_validate(
+            {"project_id": 1, "delivery": {"mcp_config_ref": ref}}
+        )
+
+
 def test_partial_role_choices_and_local_admin_defaults_contract():
     registry = build_operation_registry()
     spec = registry.get("tracker.startDelivery")

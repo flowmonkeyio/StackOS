@@ -232,6 +232,66 @@ and filesystem aliases conflict. Separate Git worktrees sharing repository
 metadata remain distinct; Git is optional. No worktree creation or branch merge
 is performed by the runner.
 
+### Task-local native tool routing
+
+For a Codex task in a separate working tree, pass optional task-only
+`mcp_config_ref: {"path": "/absolute/outside-git/routes.toml", "sha256": "<64 lowercase hex>"}`
+to `tracker.startDelivery`. This is separate from project delivery defaults.
+The fragment contains only `[mcp_servers.<existing-name>]` tables with
+`args` (strings), `cwd` (existing absolute directory), and `env` (non-secret
+strings). Commands, new servers, HTTP/auth fields, `env_vars`, model, approval,
+sandbox and instruction settings reject. Runtime/search-path environment
+overrides also reject. Keep credentials and auth references in their existing
+native/daemon owners; never copy them into the fragment.
+
+The Codex adapter reads effective servers through native `mcp list --json`,
+preserves their executables, and serializes allowlisted route leaves as native
+`-c` overrides for both fresh and exact-session resume. Individual env leaves
+preserve unrelated existing environment/auth settings. Validation hashes and
+parses one in-memory byte buffer. Missing, malformed or changed fragments stop
+before native execution. Other selected hosts reject this reference before
+queueing. Only canonical path/digest identity enters snapshots, session
+receipts and prompts; fragment contents do not. Omission on explicit rehandoff
+retains the reference; a different path/digest rejects, including adding a
+route to a task that already started without one. Queued/running snapshots stay
+frozen. Prepare a new task when a different native routing identity is needed.
+
+Engineering preparation owns clean trees, disjoint changes, accepted bases,
+tool-target checks and explicit integration. Use the project's canonical
+Serena wrapper with unique per-tree project/name/port/state; do not fork a
+deprecated shim or edit global configuration. Supply each StackOS bridge's
+actual tree through `--workspace-root` and the intended daemon context.
+`--cd` only routes the harness and cannot prove MCP targeting.
+
+Before handoff, connect each actual tree through its own native bridge:
+`workspace.startSession(auto_bootstrap=false)`, then
+`workspace.connect(project_id=P, rebind_existing=false)`, then
+`workspace.resolve` and repeat `workspace.startSession(auto_bootstrap=false)`.
+P must already be explicitly approved. Let the bridge inject the observed
+root/fingerprint; omit invented cwd/fingerprint, aliases, bootstrap and global
+mode. Stop on any existing mismatched binding. Require distinct binding IDs
+and path fingerprints, the same P, and each exact tree root on readback.
+Never use the already-bound main bridge for another tree's setup.
+
+For parallel proof, the assigned verifier prepares only its authorized
+disposable daemon/project and two clean trees, with different sentinel files.
+Record exact source SHA, branches, reference hashes, bindings, native executable
+identity, ports and ownership in the existing evidence receipt. Read sentinels
+through native Serena and check native StackOS scope in fresh delivery and
+independent review sessions and after controlled stop/resume. Observe overlap
+and independent receipts/commits before explicitly cherry-picking the reviewed
+branch commits into the fixture integration branch and running combined specs.
+Resolve conflicts through the named integration owner; the runner never merges.
+Tear down only owned fixture jobs, daemon, wrapper processes and trees.
+
+Configuration sources checked 2026-11-09:
+[official precedence](https://learn.chatgpt.com/docs/config-file/config-basic#configuration-precedence),
+[native TOML overrides](https://learn.chatgpt.com/docs/config-file/config-advanced#one-off-overrides-from-the-cli),
+and [stdio fields](https://learn.chatgpt.com/docs/extend/mcp?surface=cli).
+CLI overrides take priority over project/profile/user defaults, subject to
+enforced requirements. The selected native executable must still pass
+configuration-read probes; source parsing alone does not prove live targeting.
+
 Stopping or completing a task releases only its own directory reservation;
 scheduling failure also releases the failed task's reservation. Other task jobs,
 sessions and receipts continue independently. Reservation state is the existing

@@ -348,6 +348,11 @@ def _retain_directory(state: dict[str, Any], directory: Path) -> None:
         raise ValidationError("Task delivery must retain its accepted working directory")
 
 
+def _retain_mcp_config(state: dict[str, Any], reference: dict[str, str] | None) -> None:
+    if state.get("project_dir") and state.get("mcp_config_ref") != reference:
+        raise ValidationError("Task delivery must retain its accepted MCP configuration identity")
+
+
 def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_key, **changes):
     """Reserve a directory in the existing snapshot before scheduling its task job."""
     if session.new or session.dirty or session.deleted:
@@ -361,6 +366,7 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
         previous = (task.metadata_json or {}).get("delivery", {})
         directory = Path(changes["project_dir"])
         _retain_directory(previous, directory)
+        _retain_mcp_config(previous, changes.get("mcp_config_ref"))
         if previous.get("status") in {"queued", "running"}:
             if (previous.get("run_plan_id"), previous.get("step_id")) != (
                 changes.get("run_plan_id"),
@@ -411,6 +417,7 @@ def _receipt(task_key: str, state: dict[str, Any]) -> dict[str, Any]:
         "job_ref": state["job_ref"],
         "run_plan_id": state.get("run_plan_id"),
         "step_id": state.get("step_id"),
+        **({"mcp_config_ref": state["mcp_config_ref"]} if state.get("mcp_config_ref") else {}),
         "recommended_tool": "tracker.get",
         "message": "Inspect this task with tracker.get, task_key and response_mode=raw.",
     }
@@ -665,6 +672,7 @@ def start_delivery(
     step_id: str | None = None,
     agent_assignments: Mapping[str, str] | None = None,
     controller_run_id: int | None = None,
+    mcp_config_ref: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     repo = TrackerRepository(session)
     task = _task(repo, project_id, task_key)
@@ -683,6 +691,16 @@ def start_delivery(
         raise ValidationError("project_dir must be an existing working directory")
     previous = (task.metadata_json or {}).get("delivery", {})
     _retain_directory(previous, directory)
+    # Omission on rehandoff preserves the frozen route, including its digest.
+    mcp_config_ref = mcp_config_ref or previous.get("mcp_config_ref")
+    if mcp_config_ref is not None:
+        from stackos.host_mcp.toml_config import mcp_config_identity
+
+        try:
+            mcp_config_ref = mcp_config_identity(mcp_config_ref)
+        except ValueError as route_error:
+            raise ValidationError(str(route_error)) from None
+    _retain_mcp_config(previous, mcp_config_ref)
     if previous.get("project_dir"):
         directory = Path(previous["project_dir"])
     if previous.get("status") in {"queued", "running"}:
@@ -723,6 +741,15 @@ def start_delivery(
         if error:
             raise ValidationError(error)
         resolved[role] = agent
+    if mcp_config_ref is not None:
+        if any(agent["host_key"] != "codex" for agent in resolved.values()):
+            raise ValidationError("Task MCP configuration is unsupported by this host")
+        from stackos.host_mcp.adapters.codex import task_mcp_overrides
+
+        try:
+            mcp_config_ref, _ = task_mcp_overrides(directory, mcp_config_ref)
+        except ValueError as route_error:
+            raise ValidationError(str(route_error)) from None
     assignments = {}
     if plan:
         for step in plan.steps:
@@ -744,6 +771,7 @@ def start_delivery(
         ticket_key=None,
         reason=None,
         project_dir=str(directory),
+        **({"mcp_config_ref": mcp_config_ref} if mcp_config_ref is not None else {}),
         host_key=host_key,
         delivery_agent=resolved["delivery_agent"],
         review_agent=resolved["review_agent"],
@@ -892,6 +920,11 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                     "host_key": host_key,
                     "project_dir": state["project_dir"],
                     **selection,
+                    **(
+                        {"mcp_config_ref": state["mcp_config_ref"]}
+                        if state.get("mcp_config_ref") is not None
+                        else {}
+                    ),
                 }
                 sessions = evidence.setdefault("sessions", {})
                 native_session = sessions.get(phase)
@@ -1062,6 +1095,11 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                         phase=phase,
                     ),
                     on_execution_change=execution_changed,
+                    **(
+                        {"mcp_config_ref": state["mcp_config_ref"]}
+                        if state.get("mcp_config_ref") is not None
+                        else {}
+                    ),
                     **({"previous_usage": previous} if previous is not None else {}),
                     **selection,
                     **({"resume_thread_id": resume_thread_id} if resume_thread_id else {}),

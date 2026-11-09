@@ -196,6 +196,13 @@ def operation_specs() -> list[OperationSpec]:
                 "the existing host capacity, including worktrees sharing Git metadata. "
                 "Git is optional; supplied candidate evidence requires clean matching HEAD. "
                 "Source-change and repair commit obligations come from project guidance.",
+                "Optional task-only mcp_config_ref supplies an absolute outside-Git TOML path "
+                "and SHA256. Selected Codex validates the same bytes and applies only existing "
+                "stdio server args/cwd/non-secret env leaves through native -c overrides; "
+                "Executables and auth stay unchanged. Other hosts reject before queueing. "
+                "Only the canonical reference/digest is saved; omission on rehandoff retains it "
+                "and changed identity rejects. Missing/changed fragments stop before launch. "
+                "Prepare and verify actual per-tree tool bindings; --cd alone is insufficient.",
                 "For a workflow task, supply run_plan_id and step_id for its running step; "
                 "this is entry context, not a traversal limit. The daemon retains the bound "
                 "controller run internally and claims/records mirrors through RunPlanRepository.",

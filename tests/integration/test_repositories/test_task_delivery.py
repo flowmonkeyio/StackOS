@@ -1372,6 +1372,106 @@ def prepared_task(session: Session, project_id: int) -> None:
     )
 
 
+def test_task_mcp_route_frozen_through_rehandoff_and_role_resume(
+    session, project_id, tmp_path, monkeypatch
+):
+    import hashlib
+
+    from stackos import task_delivery
+    from stackos.host_mcp.adapters import codex
+
+    prepared_task(session, project_id)
+    fragment = tmp_path.parent / f"{tmp_path.name}-route.toml"
+    fragment.write_text('[mcp_servers.serena]\nenv = {SERENA_PROJECT_NAME = "private-route-value"}')
+    ref = {"path": str(fragment), "sha256": hashlib.sha256(fragment.read_bytes()).hexdigest()}
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/native/codex")
+    monkeypatch.setattr(
+        codex,
+        "_run_codex",
+        lambda *a: subprocess.CompletedProcess(
+            [],
+            0,
+            json.dumps([{"name": "serena", "transport": {"type": "stdio", "command": "python3"}}]),
+            "",
+        ),
+    )
+    calls = []
+
+    def launch(host, directory, instructions, prompt, schema, **kwargs):
+        assert kwargs["mcp_config_ref"] == ref
+        assert "private-route-value" not in prompt
+        assert "private-route-value" not in instructions
+        packet = json.loads(prompt)
+        key, phase = packet["brief"]["ticket"]["key"], packet["phase"]
+        calls.append((key, phase, kwargs.get("resume_thread_id")))
+        return AgentRunResult(
+            0,
+            thread_id=f"{key}-{phase}",
+            result=generic_result(status="blocked" if len(calls) == 1 else "success"),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler, mcp_config_ref=ref)
+    scheduler.run()
+    session.expire_all()
+    for status in ("in-progress", "not-started"):
+        TrackerRepository(session).update_ticket(
+            project_id=project_id, ticket_key="first", patch_json={"status": status}
+        )
+    # Omission keeps the route and resumes the exact delivery session.
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    state = (
+        TrackerRepository(session)
+        .get(project_id=project_id, task_key="deliver")
+        .tasks[0]
+        .metadata_json["delivery"]
+    )
+    assert state["status"] == "complete", state
+    assert calls[:3] == [
+        ("first", "delivery", None),
+        ("first", "delivery", "first-delivery"),
+        ("first", "review", None),
+    ]
+    state = (
+        TrackerRepository(session)
+        .get(project_id=project_id, task_key="deliver")
+        .tasks[0]
+        .metadata_json["delivery"]
+    )
+    assert state["mcp_config_ref"] == ref
+    assert "private-route-value" not in json.dumps(state)
+    # Requeue an open stopped task to check identity before any scheduler mutation.
+    task_delivery._update_delivery(
+        TrackerRepository(session), project_id, "deliver", status="stopped"
+    )
+    changed = {**ref, "sha256": "0" * 64}
+    with pytest.raises(ValidationError, match=r"retain.*MCP"):
+        submit(session, project_id, tmp_path, scheduler, mcp_config_ref=changed)
+
+
+def test_task_mcp_route_rejects_unsupported_role_before_queue(session, project_id, tmp_path):
+    import hashlib
+
+    prepared_task(session, project_id)
+    fragment = tmp_path.parent / f"{tmp_path.name}-route.toml"
+    fragment.write_text("[mcp_servers.serena]\nargs = []")
+    ref = {"path": str(fragment), "sha256": hashlib.sha256(fragment.read_bytes()).hexdigest()}
+    scheduler = QueuedScheduler()
+    with pytest.raises(ValidationError, match="unsupported"):
+        submit(
+            session,
+            project_id,
+            tmp_path,
+            scheduler,
+            mcp_config_ref=ref,
+            review_agent={"name": "review", "instructions": "review", "host_key": "claude-code"},
+        )
+    assert scheduler.jobs == []
+
+
 def submit(session: Session, project_id: int, tmp_path: Path, scheduler: QueuedScheduler, **scope):
     task_key = scope.pop("task_key", "deliver")
     arguments = TrackerStartDeliveryInput(

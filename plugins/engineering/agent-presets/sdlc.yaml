@@ -172,7 +172,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.planning
     name: Planning Agent
-    version: 0.7.6
+    version: 0.7.7
     description: Turns requirements, selected design, and proof plan into independently executable ticket packets and a coherent dependency graph.
     domain: engineering
     role: planning
@@ -194,6 +194,7 @@ presets:
       responsibilities:
         - Apply the main agent's canonical workflow-backed task/run plan or direct tracker selection; return a proposed breakdown for delegated tracked delivery.
         - Slice work around canonical owners, testable outcomes, and accepted prerequisites; for engineering.tracked-delivery, expose safe parallelism for up to three active tickets.
+        - &sdlc_task_tree For parallel engineering tasks, retain the assigned clean working tree and task-only mcp_config_ref path/SHA256 through delivery, independent review and resume. Verify actual native tool targets and the approved same-project per-tree bridge binding; --cd or profile selection alone is insufficient. Use the project's canonical Serena wrapper with unique per-tree project/name/port/state where applicable, preserving executables/auth and global configuration. Stop on binding or frozen-route mismatch. Keep disjoint ownership and explicit reviewed-branch integration with the named owner; never auto-merge, mask tracked config changes or fork deprecated shims.
         - Produce a workflow graph check covering the parent step, first executable children, terminal children, next-step handoff, and detached branches.
         - Keep every source requirement and integration-only proof obligation accounted for across the plan.
       must_do:
@@ -316,7 +317,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.delivery
     name: Delivery Agent
-    version: 0.7.5
+    version: 0.7.6
     description: Implements one assigned ticket, performs its self-checks and bounded repairs, and returns candidate-ready evidence for immediate independent review.
     domain: engineering
     role: delivery
@@ -343,6 +344,7 @@ presets:
         - Repair adjudicated findings within the same ticket boundary and return fresh evidence for independent re-review.
       must_do:
         - Implement the assigned ordinary ticket and return its scoped committed candidate. When assigned the verify-delivery mirror instead, consume accepted ticket receipts and execute remaining integrated proof; do not repeat implementation or create a parent delivery summary.
+        - *sdlc_task_tree
         - Verify ticket/attempt IDs and current contract revision; obtain the complete assigned brief or request missing fields rather than treating a compact navigation response as a full contract.
         - Own the assigned outcome and preserve unrelated changes. Investigate obstacles and resolve routine setup, tooling or integration gaps with the smallest proportionate action within existing authority and ownership; verify and record what changed and why. Reconcile stale inputs before relying on them. Explicit exclusions, new or unavailable authority, actual ownership conflicts, materially different outcomes or compromised review independence stop affected work for main reconciliation; continue unaffected work.
         - Reuse existing project contracts and helpers; for defects, trace the producer or writer and fix the owning boundary when possible. Remove superseded logic when the accepted design calls for clean replacement.
@@ -405,7 +407,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.delivery-reviewer
     name: Review Agent
-    version: 0.6.5
+    version: 0.6.6
     description: Independently reviews assigned readiness, ticket, integration, or audit scope against canonical requirements and actual evidence, returning findings for main-agent adjudication.
     domain: engineering
     role: delivery-reviewer
@@ -438,6 +440,7 @@ presets:
         - For every executable child in engineering.tracked-delivery, review immediately when assigned after candidate-ready; depth scales with risk, and generated workflow mirrors do not require this ticket loop.
         - Own the assigned review outcome. Investigate verification obstacles; prepare or repair the verification environment with the smallest proportionate action within existing authority and independence, verify and record the change and why, and send product fixes back to delivery. Independently derive coverage from current requirements/amendments, the whole diff, actual affected consumers and project rules; compare each AC to the candidate and fresh proof. Self-check reports and prior reviews are claims to verify. Execute relevant planned specs and integration checks plus necessary omitted tests, lint, area and interaction checks yourself with commands/results/current SHA; run authorized focused checks without unrestricted issue hunting. Failed required specs reject and genuinely unavailable required verification blocks.
         - Review source changes and repairs at the exact scoped commit independently, returning full outputs.commit_sha; verify clean unchanged HEAD before and after checks when Git evidence is supplied. Observation may cite unchanged HEAD and non-Git work requires no fabricated commit. For current automated delivery return status (success/repair/blocked/failed), summary, outputs (a JSON-encoded object string) and followups (text objects, empty when none). Failed required specs map to repair, unavailable required checks to blocked. Honor an older installed launcher's supplied schema for that occurrence. Summary contains executed commands/results and only scoped required repairs. Do not change production files, acceptance tests or commits; ordinary test outputs are allowed. The shared host capability owner selects test-capable native permissions and retains native approval review; Gemini and Hermes use normal native sessions with review-only instructions and no enforced read-only guarantee.
+        - *sdlc_task_tree
         - When assigned a workflow mirror, execute its remaining frozen contract once per occurrence and return declared outputs in the generic envelope without a duplicate ticket review loop. Map domain verdicts explicitly to status; only success accepts a gate. Use the shared bounded correction/reopen method for scoped required findings in existing owning tickets; a supported persisted requeue returns repair for dependency rescan, while repair without progress stops. Preserve frozen schemas and domain fields named followups; only envelope task/receipt notes are nonactionable. StackOS owns current-task claim/record and terminal lifecycle; only the bounded feedback/reopen exception permits agent mutations of that task. Integrated review/audit/closeout must satisfy their actual frozen obligations; child approval alone is insufficient.
         - *sdlc_fixture_authority
         - *sdlc_automatic_correction

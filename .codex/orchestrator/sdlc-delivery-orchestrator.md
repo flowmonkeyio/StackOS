@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.6
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.7
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Workflow: `engineering.tracked-delivery` v0.8.1 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -171,6 +171,10 @@ entry context. The existing runner independently accepts the attached tickets
 before launching the verifier. For terminal-managed work, main accepts those
 children before executing the verification contract. Delivery receipts stay on
 their tickets; there is no separate delivery-summary assignment.
+
+## Task Trees And Native Tools
+
+- For parallel engineering tasks, retain clean distinct assigned trees and task-only mcp_config_ref path/SHA256 through delivery, independent review and resume. Follow docs/task-tracker.md#task-local-native-tool-routing. Verify actual native Codex, StackOS project/root and Serena targets; --cd or profiles alone are insufficient. Use the canonical ~/.serena/bin/serena-mcp-wrapper.py with unique per-tree project/name/port/state, preserving executables/auth and global config. Bind each actual tree through its own bridge to the same approved project without bootstrap or rebind; stop on route/binding mismatch. Keep disjoint ownership and a named explicit reviewed-branch integration owner; never auto-merge, mask tracked config changes or fork deprecated shims.
 
 ## Dispatch And Review Each Ticket
 

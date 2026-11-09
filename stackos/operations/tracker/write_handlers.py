@@ -74,6 +74,7 @@ async def tracker_start_delivery(
         project_id=inp.project_id,
         task_key=inp.task_key,
         project_dir=inp.project_dir,
+        mcp_config_ref=inp.mcp_config_ref.model_dump() if inp.mcp_config_ref else None,
         host_key=inp.host_key,
         delivery_agent=inp.delivery_agent.model_dump(exclude_unset=True)
         if inp.delivery_agent is not None

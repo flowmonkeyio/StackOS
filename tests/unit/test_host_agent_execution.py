@@ -13,6 +13,116 @@ from stackos.host_mcp import AgentRunResult, run_agent, service
 from stackos.host_mcp.adapters import claude_code, codex, gemini_cli, grok, hermes
 from stackos.host_mcp.result import validate_agent_result
 
+
+@pytest.mark.parametrize("resume", [None, "exact-thread"])
+@pytest.mark.parametrize("native_failure", [False, True])
+def test_codex_task_routes_preserve_commands_and_fresh_resume_overrides(
+    tmp_path, monkeypatch, resume, native_failure
+):
+    import hashlib
+    import tomllib
+
+    project = tmp_path / "tree"
+    project.mkdir()
+    fragment = tmp_path / "route.toml"
+    fragment.write_text(
+        f'[mcp_servers.serena]\nargs = ["canonical-wrapper.py"]\ncwd = "{project}"\n'
+        'env = {SERENA_PROJECT_NAME = "distinct-tree"}\n'
+        '[mcp_servers.stackos]\nargs = ["mcp-bridge", "--workspace-root", "tree-target"]\n'
+    )
+    reference = {"path": str(fragment), "sha256": hashlib.sha256(fragment.read_bytes()).hexdigest()}
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/native/codex")
+    queries = []
+
+    def native_read(binary, args):
+        queries.append((binary, args))
+        return subprocess.CompletedProcess(
+            [],
+            0,
+            json.dumps(
+                [
+                    {
+                        "name": name,
+                        "transport": {
+                            "type": "stdio",
+                            "command": command,
+                            "env": {"EXISTING_AUTH_REF": "opaque-ref"},
+                        },
+                    }
+                    for name, command in [("serena", "python3"), ("stackos", "stackos")]
+                ]
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(codex, "_run_codex", native_read)
+    calls = []
+
+    def execute(command, **kwargs):
+        calls.append(command)
+        assert kwargs["input"] == "bounded-prompt"
+        Path(command[command.index("-o") + 1]).write_text('{"summary":"checked"}')
+        return subprocess.CompletedProcess(
+            command,
+            1 if native_failure else 0,
+            '{"type":"thread.started","thread_id":"exact-thread"}',
+            "failed at distinct-tree" if native_failure else "",
+        )
+
+    monkeypatch.setattr(codex.subprocess, "run", execute)
+    result = run_agent(
+        "codex",
+        project,
+        "role instructions",
+        "bounded-prompt",
+        SCHEMA,
+        mcp_config_ref=reference,
+        resume_thread_id=resume,
+    )
+    assert result.ok is not native_failure
+    assert "distinct-tree" not in (result.error or "")
+    assert queries == [("/native/codex", ["--cd", str(project), "mcp", "list", "--json"])]
+    command = calls[0]
+    overrides = [command[i + 1] for i, arg in enumerate(command) if arg == "-c"]
+    route_overrides = [item for item in overrides if item.startswith("mcp_servers.")]
+    assert len(route_overrides) == 4
+    assert any(
+        item.startswith("mcp_servers.serena.env.SERENA_PROJECT_NAME=") for item in route_overrides
+    )
+    parsed = [tomllib.loads(item) for item in route_overrides]
+    assert any(
+        p["mcp_servers"].get("serena", {}).get("env") == {"SERENA_PROJECT_NAME": "distinct-tree"}
+        for p in parsed
+    )
+    assert not any("command=" in item or "EXISTING_AUTH_REF" in item for item in route_overrides)
+    assert ("resume" in command) == (resume is not None)
+    fragment.write_text("changed")
+    assert not run_agent(
+        "codex", project, "role", "bounded-prompt", SCHEMA, mcp_config_ref=reference
+    ).ok
+    assert len(calls) == 1  # No native launch after a digest failure.
+
+
+def test_codex_task_routes_reject_new_or_http_servers(tmp_path, monkeypatch):
+    import hashlib
+
+    path = tmp_path / "route.toml"
+    path.write_text("[mcp_servers.new_server]\nargs = []")
+    reference = {"path": str(path), "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/native/codex")
+    for rows in [[], [{"name": "new_server", "transport": {"type": "streamable_http"}}]]:
+        monkeypatch.setattr(
+            codex,
+            "_run_codex",
+            lambda *a, rows=rows: subprocess.CompletedProcess([], 0, json.dumps(rows), ""),
+        )
+        with pytest.raises(ValueError, match="existing native stdio"):
+            codex.task_mcp_overrides(tmp_path, reference)
+    assert not run_agent(
+        "claude-code", tmp_path, "role", "prompt", SCHEMA, mcp_config_ref=reference
+    ).ok
+
+
 SCHEMA = {
     "type": "object",
     "properties": {"summary": {"type": "string"}},

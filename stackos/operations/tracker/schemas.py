@@ -64,11 +64,27 @@ class TrackerConfigureDeliveryInput(MCPInput):
     response_mode: TrackerResponseMode = "raw"
 
 
+class TaskMcpConfigRef(BaseModel):
+    """Task-only native route identity; never a project/default setting."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    path: str = Field(min_length=1)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class TrackerStartDeliveryInput(MCPInput):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     project_id: int
     task_key: str = Field(min_length=1)
     project_dir: str = Field(min_length=1)
+    mcp_config_ref: TaskMcpConfigRef | None = Field(
+        default=None,
+        description=(
+            "Task-only absolute native TOML path and SHA256. Existing Codex stdio server "
+            "args/cwd/non-secret env only; immutable across role sessions and rehandoff. "
+            "Keep the fragment outside Git. Other hosts reject this reference."
+        ),
+    )
     host_key: str | None = Field(default=None, min_length=1)
     delivery_agent: TaskDeliveryAgentOverride | None = None
     review_agent: TaskDeliveryAgentOverride | None = None

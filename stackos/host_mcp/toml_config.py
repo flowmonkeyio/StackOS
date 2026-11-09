@@ -2,16 +2,100 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
+import re
 import stat
 import tempfile
+import tomllib
 from contextlib import suppress
 from pathlib import Path
+from typing import Any
 
 import tomlkit
 from tomlkit.container import Container
 from tomlkit.exceptions import TOMLKitError
 from tomlkit.items import Comment, Null, Table, Whitespace
+
+from stackos.artifacts import redact_secret_text
+from stackos.host_mcp.result import looks_secretish
+
+
+def mcp_config_identity(reference: dict[str, str]) -> dict[str, str]:
+    """Canonicalize only the safe task reference without loading its contents."""
+    if (
+        not isinstance(reference, dict)
+        or set(reference) != {"path", "sha256"}
+        or not isinstance(reference.get("path"), str)
+        or not Path(reference["path"]).is_absolute()
+        or not isinstance(reference.get("sha256"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", reference["sha256"])
+        or looks_secretish(reference["path"])
+    ):
+        raise ValueError("Invalid task MCP configuration reference")
+    try:
+        path = Path(reference["path"]).resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise ValueError("Task MCP configuration is unavailable") from None
+    if looks_secretish(str(path)):
+        raise ValueError("Invalid task MCP configuration reference")
+    return {"path": str(path), "sha256": reference["sha256"]}
+
+
+def read_mcp_config_ref(
+    reference: dict[str, str],
+) -> tuple[dict[str, str], dict[str, dict[str, Any]]]:
+    """Read a bounded task route once; errors never include fragment contents."""
+    identity = mcp_config_identity(reference)
+    path = Path(identity["path"])
+    try:
+        if not path.is_file() or path.stat().st_size > 65536:
+            raise ValueError("Task MCP configuration must be a bounded regular file")
+        data = path.read_bytes()
+    except (OSError, RuntimeError):
+        raise ValueError("Task MCP configuration is unavailable") from None
+    if len(data) > 65536 or hashlib.sha256(data).hexdigest() != reference["sha256"]:
+        raise ValueError("Task MCP configuration digest mismatch")
+    try:
+        parsed = tomllib.loads(data.decode("utf-8"))
+    except (UnicodeError, ValueError):
+        raise ValueError("Malformed task MCP configuration") from None
+    servers = parsed.get("mcp_servers")
+    if set(parsed) != {"mcp_servers"} or not isinstance(servers, dict) or not servers:
+        raise ValueError("Task MCP configuration must contain only existing server routes")
+    for name, route in servers.items():
+        if (
+            not re.fullmatch(r"[A-Za-z0-9_-]+", name)
+            or not isinstance(route, dict)
+            or not route
+            or not set(route) <= {"args", "cwd", "env"}
+            or looks_secretish(route)
+            or redact_secret_text(str(route)) != str(route)
+        ):
+            raise ValueError("Unsupported task MCP route fields")
+        if "args" in route and (
+            not isinstance(route["args"], list)
+            or not all(isinstance(arg, str) and "\x00" not in arg for arg in route["args"])
+        ):
+            raise ValueError("Task MCP route args must be strings")
+        if "cwd" in route and (
+            not isinstance(route["cwd"], str)
+            or not Path(route["cwd"]).is_absolute()
+            or not Path(route["cwd"]).is_dir()
+        ):
+            raise ValueError("Task MCP route cwd must be an existing absolute directory")
+        if "env" in route:
+            env = route["env"]
+            if not isinstance(env, dict) or not all(
+                re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key)
+                and isinstance(value, str)
+                and "\x00" not in value
+                and key.upper() not in {"PATH", "PYTHONPATH", "PYTHONHOME", "NODE_OPTIONS"}
+                and not key.upper().startswith(("LD_", "DYLD_"))
+                for key, value in env.items()
+            ):
+                raise ValueError("Task MCP route env must contain non-secret route strings")
+    return identity, servers
 
 
 def remove_mcp_server(

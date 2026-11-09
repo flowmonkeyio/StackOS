@@ -367,6 +367,13 @@ Review must identify its candidate, assignment attempt, contract revision and
 relevant environment. Disjoint file ownership does not prove independence: a
 check may import another ticket's unaccepted helper or use a shared fixture.
 Wait for the actual dependency or isolate and rerun against an accepted base.
+Parallel engineering assignments follow
+[task-local native routing](task-tracker.md#task-local-native-tool-routing):
+clean distinct trees, a frozen task-only route reference, canonical per-tree
+tools and same-project bindings, independent native review, and explicit
+integration by the named owner. A working-directory flag alone cannot establish
+MCP targeting. Source/local guidance changes do not update saved instructions
+or running snapshots; adoption and installed proof remain separately owned.
 Final verification/review covers assembled behavior and remaining obligations,
 reusing valid ticket receipts instead of automatically repeating them.
 
