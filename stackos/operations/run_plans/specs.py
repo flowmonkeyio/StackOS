@@ -438,7 +438,7 @@ def operation_specs() -> list[OperationSpec]:
             input_model=RunPlanAbortInput,
             output_model=WriteEnvelope[RunPlanAbortOut],
             handler=run_plan_abort,
-            surfaces=_surfaces("runPlan.abort", "run-plans abort"),
+            surfaces=_surfaces("runPlan.abort", "run-plans abort", browser_safe=True),
             purpose=(
                 "Use this when a run plan is obsolete, superseded, or intentionally stopped. "
                 "The operation closes the run-plan lifecycle, skips unfinished steps, "

@@ -245,12 +245,17 @@ project (`account.start`, secret storage and edits, sanitized auth tests, and
 revoke). Provider-auth route definitions own method validity inside that
 namespace. Mutating operation calls are allowed only when the operation's REST
 surface declares `browser_safe=True` for explicit local setup, the bounded
-human finance console contract described below, or the task-content contract.
+human finance console contract described below, the task-content contract, or
+the bounded run abort control.
 The explicit project automation setup operations `schedule.set`,
 `schedule.toggle` and `schedule.remove` are browser-safe. They validate the
 selected project and saved setup without granting workflow action approvals;
-delivery-default administration and run lifecycle mutation retain their
-existing separate authority.
+delivery-default administration and other run lifecycle mutations retain their
+existing separate authority. `runPlan.abort` is the sole browser-safe run-plan
+mutation. It validates the selected project and run, preserves completed
+evidence, and terminates only registered StackOS-owned automated invocations;
+external agent sessions receive a status change only. This permission does not
+grant workflow action approvals or enable starting, reopening, or advancing runs.
 `tracker.updateTaskContent` is MCP-disabled and uses the exact-path
 `local-admin-console-write` boundary. It permits only description correction
 and appended operator input on an existing project task. Server-owned actor,
@@ -366,9 +371,12 @@ calls, `POST /api/v1/projects`, narrow no-secret setup operations such as
 `communicationProfile.upsert` and `ingressEndpoint.*`, and the
 global Account routes under `/api/v1/auth/accounts/*` plus explicit project
 Connection attach/detach routes. It can also
-call local setup operations and the bounded task-content operation whose REST
-surface is explicitly marked browser-safe; it cannot access `/mcp` and cannot mutate existing projects,
-tracker lifecycle, resources, runs, action execution, templates, or project data.
+call local setup operations, bounded task-content updates, and `runPlan.abort`
+whose REST surfaces are explicitly marked browser-safe. Abort changes only the
+selected run and its linked workflow task/tickets, and stops only its owned
+automated invocations. The token cannot access `/mcp`, make other run lifecycle
+changes, or mutate existing projects, tracker lifecycle directly, resources,
+action execution, templates, or project data.
 Previously, only a process that could read `auth.token` (mode 0600, owned by
 the daemon's user) could obtain any bearer token. On a single-user macOS or
 Linux box that's a near-zero delta (same-user processes already had file

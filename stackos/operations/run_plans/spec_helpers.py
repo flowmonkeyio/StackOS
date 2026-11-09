@@ -8,11 +8,13 @@ from stackos.operations.spec import (
 )
 
 
-def _surfaces(name: str, command: str | None = None) -> OperationSurfaces:
+def _surfaces(
+    name: str, command: str | None = None, *, browser_safe: bool = False
+) -> OperationSurfaces:
     rest_path = f"/api/v1/operations/{name}/call"
     return OperationSurfaces(
         mcp=OperationSurface(enabled=True),
-        rest=OperationSurface(enabled=True, path=rest_path),
+        rest=OperationSurface(enabled=True, path=rest_path, browser_safe=browser_safe),
         cli=OperationSurface(enabled=True, command=command or f"ops call {name}"),
     )
 

@@ -97,7 +97,18 @@ def test_real_operation_returns_while_scheduler_delivers(
     entered, release, finished = Event(), Event(), Event()
     calls = []
 
-    def run_agent(_host, _directory, _instructions, prompt, _schema, *, sandbox, on_session=None):
+    def run_agent(
+        _host,
+        _directory,
+        _instructions,
+        prompt,
+        _schema,
+        *,
+        sandbox,
+        on_session=None,
+        process_control=None,
+    ):
+        assert process_control is not None, "Managed delivery must retain invocation control"
         packet = json.loads(prompt)
         delivery = packet["phase"] == "delivery"
         calls.append(
