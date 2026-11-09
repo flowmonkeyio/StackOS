@@ -172,7 +172,6 @@ const state = computed(() => executionStatus(props.taskStatus ?? 'not-started', 
         :metrics="taskAgentStats"
         :active="!!activeExecution"
         compact
-        inline
         aria-label="Lifetime task usage"
         title="Lifetime task usage"
       />
