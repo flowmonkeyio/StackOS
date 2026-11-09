@@ -1561,19 +1561,26 @@ inside `agent_stats`; `usageUpdates` preserves them with the rest of that object
 Fresh/resumed delivery, reviewer and mirror prompts omit this telemetry through
 the existing prompt projection while retaining canonical evidence refs.
 
-Board and Graph keep whole-task/ticket numbers. Three tiny chart slots remain
-present throughout an active automated call when they fit: a quiet empty mark
-for absent measurements, a dot for one measurement, and discrete steps for
-recent measured history, with independent metric scales. Missing metrics keep
-their empty slot without inventing a zero or bridging missing history.
-Hover/focus text explains this scope distinction and the latest native
-measurement time. All slots hide together if they would make the row
-wrap; card dimensions, readable values and information hierarchy take priority.
-Existing task/ticket details add one approximately 70px strip scoped to the
-current agent and start, using the same empty/dot/step renderer. Manual work has
-no usage furniture. Chart slots disappear
-on exit while finalized totals remain. No smoothing, synthetic zero prefix,
-speed estimate, animation or per-card chart instance is used.
+Automated Board cards and the Graph task header use whole-task lifetime numbers
+and measured samples; Graph ticket cards use only their own ticket lifetime.
+Each Input / Cache / Output metric reserves fixed number and mini-canvas slots
+before the first measurement, during execution, between calls and after terminal
+states or reload. Slots do not hide according to activity, sample count or text
+fit, and values do not wrap or resize the card. A quiet empty mark represents
+absent measurements, a dot represents one measurement, and discrete steps show
+further measured history with independent metric scales. Missing metrics keep
+their empty slot without inventing a zero or bridging missing history. Numbers
+and traces cover the same lifetime scope; exact values and measured-field
+coverage remain available on keyboard focus and hover. Retaining those
+observations does not keep native sampling or per-card polling active.
+
+Task/ticket details separately add an approximately 70px `LiveUsageStrip` only
+while an actual `active_execution` exists. It is scoped to the current agent and
+start, displays the latest native measurement time when available, and uses the
+same empty/dot/step renderer for current-call samples. That strip disappears on
+call exit; the compact lifetime summaries retain their measured totals and
+traces. Manual work has no usage furniture. Neither presentation adds smoothing,
+a synthetic zero prefix, a speed estimate, animation or per-card polling.
 
 Home, Overview and Work share the existing SSE transport through
 `usageUpdates`; `useAgentStats` retains date/group/scope and stale-response
@@ -1587,8 +1594,10 @@ protects newer measurements from an older pending Board/Graph/detail response;
 it holds no invocation history and is released with the last scoped subscriber.
 Project-keyed route mounting owns subscription lifetime; explicit statistics
 loads reconcile a changed project ref and release the previous subscription.
-The compact summary remeasures trace fit after component updates and container
-resizes, without Vue watchers or its own refresh timer.
+`UsageTrace` redraws its canvas backing store on data updates, container resizes,
+theme changes and device pixel ratio changes. Its observers and listeners are
+released on unmount. The compact summary adds no fit-based visibility gate or
+refresh timer.
 
 ## UI
 
@@ -1597,15 +1606,22 @@ The Work UI provides two views, Board and Graph. It renders:
 - Board by default, with seven fixed columns for the current task statuses:
   `not-started`, `in-progress`, `complete`, `deferred`, `aborted`, `failed`,
   and `skipped`. Cards cannot be dragged between columns or change status.
-- an inline Board / Graph switch in the same desktop toolbar as the
+- a Board / Graph switch in the same shared desktop toolbar as the
   current view's controls. There are no separate Stories or Tickets views.
-- project-wide task cards with a leading title and a compact footer for task
-  ID, creation date, completed ticket count, and owner. Recognized agent owners
-  use the same logos as Overview; other owners use neutral initials. Workflow
-  source and ticket dependency/blocker details remain in inspection rather than
-  appearing as task labels. An unmet child dependency does not label the whole
-  task blocked. Only `complete` tickets count as complete; other terminal
-  statuses do not. Search, workflow and assignee filters narrow the Board.
+- project-wide task cards with leading identity, title, status and completion
+  progress, followed by quiet usage for automated work and an anchored execution
+  footer. A current occurrence shows its actual host logo, readable role, exact
+  recorded model and actual start time. A retained occurrence is explicitly
+  `Last:`; otherwise the footer shows ordinary assignment without inventing a
+  model or start time. Host and recognized owner marks use the same canonical
+  logos as Overview, with a neutral user icon for other assignments. Genuine
+  prerequisite titles appear in a bounded bottom-edge `Blocked by:` badge with
+  full titles available for inspection. A task with active execution or ready
+  work is not labelled wholly blocked because one child waits. Stop, approval
+  and proof reasons remain separate from prerequisite badges; full workflow and
+  dependency context remains in inspection. Only `complete` tickets count as
+  complete; other terminal statuses do not. Search, workflow and assignee filters
+  narrow the Board.
   Task-status filters apply to tasks; `ticket_status` links explicitly filter
   tasks containing tickets with that status.
 - a small semantic info `Automated` badge on Board cards, the Graph toolbar,
@@ -1614,7 +1630,7 @@ The Work UI provides two views, Board and Graph. It renders:
   lifecycle status in both themes.
   Queued, running, stopped and completed executions retain the badge: it names
   the delivery method. Project agent defaults alone do not add the indication.
-- compact muted inline Input / Cache / Output metadata only for those automated
+- compact muted Input / Cache / Output metadata only for those automated
   tasks and their tickets, using `isAutomaticDeliveryTask` as the eligibility
   owner. Parent task identity reaches graph nodes and both ticket inspectors;
   workflow names, defaults and nonzero measurements never imply automation.
@@ -1622,11 +1638,14 @@ The Work UI provides two views, Board and Graph. It renders:
   retains fixed slots with compact muted N/A until measurements exist, including
   no launches, main-thread planning and pending native receipts; N/A does not
   attribute work to a particular thread. Measured zero remains visible as 0.
-  Each label/value pair wraps together, keeping K/M/B suffixes intact.
+  Each compact metric keeps fixed number and mini-canvas slots. K/M/B value
+  changes do not wrap the row, change its geometry or hide a chart; unusually
+  long compact values may elide while their full exact values remain available.
   Exact values, N/A and measured-field coverage agree on keyboard focus and hover.
-  Board, toolbar and task details use lifetime task projections; nodes and
-  ticket details use their own ticket projection. Graph filtering changes
-  visibility without recomputing usage. Title, status and progress remain primary.
+  Board, the contextual Graph task header and task details use lifetime task
+  projections; ticket nodes and ticket details use their own ticket projection.
+  Graph filtering changes visibility without recomputing usage. Title, status
+  and progress remain primary.
 - a task selector only in Graph, independent of Board filters and
   including terminal tasks. After the project index loads, an explicit URL
   selection takes precedence over the last valid selection remembered for
