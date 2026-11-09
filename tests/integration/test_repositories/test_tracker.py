@@ -130,6 +130,57 @@ def test_ticket_create_commit_false_leaves_success_under_caller_control(
     assert _ticket_create_state(session.get_bind(), project_id) == baseline
 
 
+def test_ticket_create_rollback_restores_retained_revision_before_caller_commit(
+    session: Session, project_id: int
+) -> None:
+    _seed_ticket_create_state(session, project_id)
+    repo = TrackerRepository(session)
+    tracker = session.exec(select(TaskTracker).where(TaskTracker.project_id == project_id)).one()
+    baseline = _ticket_create_state(session.get_bind(), project_id)
+    baseline_rev, baseline_updated_at = tracker.rev, tracker.updated_at
+    # Retain the identity-map objects and pending caller-owned edits across rejection.
+    tracker.description = "Caller-owned tracker description"
+    task = session.exec(select(TrackerTask).where(TrackerTask.key == "atomic")).one()
+    task.title = "Caller-owned task title"
+    session.add_all([tracker, task])
+    with pytest.raises(ConflictError, match="cycle"):
+        repo.create_ticket_list(
+            project_id=project_id,
+            ticket_list_json={
+                "task_key": "atomic",
+                "tickets": [
+                    {"key": "cycle-a", "dependency_keys": ["cycle-b"]},
+                    {"key": "cycle-b", "dependency_keys": ["cycle-a"]},
+                ],
+            },
+        )
+    # Inspect the same session before commit/rollback can hide stale cached values.
+    preview = repo.validate_ticket_list(
+        project_id=project_id,
+        ticket_list_json={
+            "task_key": "atomic",
+            "tickets": [{"key": "invalid", "references_json": [{"path": "missing-ref"}]}],
+        },
+    )
+    database_rev, database_updated_at = session.exec(
+        select(TaskTracker.rev, TaskTracker.updated_at).where(TaskTracker.id == tracker.id)
+    ).one()
+    assert preview.valid is False
+    assert tracker.rev == preview.rev == preview.tracker.rev == database_rev == baseline_rev
+    assert (
+        tracker.updated_at
+        == preview.tracker.updated_at
+        == database_updated_at
+        == baseline_updated_at
+    )
+    assert tracker.description == "Caller-owned tracker description"
+    assert task.title == "Caller-owned task title"
+    session.commit()
+    baseline["TaskTracker"][0]["description"] = "Caller-owned tracker description"
+    baseline["TrackerTask"][0]["title"] = "Caller-owned task title"
+    assert _ticket_create_state(session.get_bind(), project_id) == baseline
+
+
 def test_tracker_reads_do_not_create_default_tracker(session: Session, project_id: int) -> None:
     repo = TrackerRepository(session)
 
