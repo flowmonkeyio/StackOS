@@ -71,7 +71,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     contract = loaded.preset.operating_contract
     action = loaded.preset.project_adaptation.required_agent_action.lower()
 
-    assert loaded.preset.version == "0.8.7"
+    assert loaded.preset.version == "0.8.8"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "canonical owner" in action
@@ -242,7 +242,8 @@ def test_sdlc_orchestrator_manual_adoption_and_bounded_repair() -> None:
             "continue unaffected checks",
             "Required proof still unavailable must return blocked",
             "never report unexecuted or failed checks as passed",
-            "Native agent launch/access/model/resume failures retain the task-stop contract",
+            "Failures of the assigned agent's own launch/access/model/resume "
+            "retain the task-stop contract",
             "fallible evidence",
             "original outcome",
             "necessary omitted",

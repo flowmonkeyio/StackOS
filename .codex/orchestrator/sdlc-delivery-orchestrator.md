@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.7
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.8
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Workflow: `engineering.tracked-delivery` v0.8.1 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -201,7 +201,7 @@ the same independent review session on that exact SHA. Validate clean unchanged
 HEAD for reject and approve. Preserve native sessions, attempt history and
 `repair_count` across explicit requeue; never reset the count. When repair_count
 is absent, historical repair_pass_used=true counts as one pass. Blocked required
-verification, native agent launch/access/model/resume failure, candidate mismatch
+verification, failure of the assigned agent's own launch/access/model/resume, candidate mismatch
 or rejection after the third repair stops the same task without fresh-session,
 host or model fallback.
 Observation may cite unchanged HEAD; non-Git work needs no fabricated commit.
@@ -307,7 +307,7 @@ denial or repeat the denied action through another tool; use an authorized
 alternative and continue unaffected checks. Protected `.git`/`.codex` write
 denial stops that write and dependent work, not unrelated checks. Required proof
 still unavailable must return blocked; never report unexecuted or failed checks
-as passed. Native agent launch/access/model/resume failures retain the task-stop contract.
+as passed. Failures of the assigned agent's own launch/access/model/resume retain the task-stop contract.
 
 The main agent adjudicates reviewer claims against the operator contract and
 actual code/evidence: required fix, already covered, unsupported, out of scope,
@@ -326,6 +326,8 @@ than deep-merge. Quality determines proof depth; reuse current evidence and
 stop repeating checks once they answer the relevant risk.
 
 ## Agent-Owned Automatic Corrections
+
+Classify the cause before returning blocked. A reproducible in-scope defect in delivered code, tests or supplied proof setup is repair work, including failures observed during launch or tool checks. Repair authorized verification setup within your role; route product/test fixes through the owning ticket and bounded correction method. Persist and requeue independent repairable findings even when another prerequisite remains blocked; retain that blocker for subsequent verification. Return blocked when required work has no authorized path forward or repair allowance is exhausted. This grants no permission to bypass denials, change global trust or replace the assigned host/model/session. Failures preventing the assigned agent itself from executing remain runtime stops.
 
 For a supporting runtime/assignment after explicit automatic handoff, the assigned
 verifier/reviewer routes scoped required corrections to existing owning tickets
@@ -352,8 +354,8 @@ bound gate and resuming original delivery/review/verifier sessions.
 Fresh persisted correction outranks old approved review, which remains history.
 Corrected source requires a separate descendant commit and independent exact-SHA
 review. Preserve repair_count; never reopen to reset the count or evade rejection
-after the third repair. Unsupported/no-progress correction and actual execution/access/
-model/resume/schema/candidate errors stop without fallback. Followups stay
+after the third repair. Unsupported/no-progress correction and failures of the assigned agent's own invocation or
+returned-result/schema/candidate integrity stop without fallback. Followups stay
 nonblocking; exclusions, authority/ownership conflicts and materially different
 outcomes require main reconciliation. Source edits do not activate this method on
 unsupported frozen/live jobs; manual reviewed adoption remains separate.

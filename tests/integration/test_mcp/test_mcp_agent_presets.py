@@ -240,9 +240,9 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     actual = {item["preset"]["key"]: item for item in compact["required_agents"]}
     expected_versions = {
         "stackos.sdlc.requirements-flow-definer": "0.6.2",
-        "stackos.sdlc.planning": "0.7.6",
-        "stackos.sdlc.delivery": "0.7.5",
-        "stackos.sdlc.delivery-reviewer": "0.6.5",
+        "stackos.sdlc.planning": "0.7.7",
+        "stackos.sdlc.delivery": "0.7.7",
+        "stackos.sdlc.delivery-reviewer": "0.6.7",
     }
     assert set(actual) == set(expected) == set(expected_versions)
     for key, item in actual.items():
@@ -334,7 +334,7 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     assert "new descendant commit" in " ".join(delivery["must_do"])
     compact_skill = compact["required_skill_presets"][0]["preset"]
     full_skill = raw["required_skill_presets"][0]["preset"]
-    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.6"
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.8"
     full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
     # Skill lists are bounded navigation; raw retains the full contract.
     assert len(compact_skill["must_do"]) == 25

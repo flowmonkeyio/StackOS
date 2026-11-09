@@ -871,8 +871,8 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
         "planning": "0.7.7",
         "architecture": "0.6.2",
         "test-designer": "0.6.3",
-        "delivery": "0.7.6",
-        "delivery-reviewer": "0.6.6",
+        "delivery": "0.7.7",
+        "delivery-reviewer": "0.6.7",
     }
     presets = {
         key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset for key in expected_versions
@@ -1024,7 +1024,8 @@ def test_sdlc_source_and_local_verification_repair_contracts() -> None:
                 "write denial stops that write and dependent work, not unrelated checks",
                 "Required proof still unavailable must return blocked",
                 "never report unexecuted or failed checks as passed",
-                "Native agent launch/access/model/resume failures retain the task-stop contract",
+                "Failures of the assigned agent's own launch/access/model/resume "
+                "retain the task-stop contract",
             ):
                 assert requirement in text, (role, requirement)
     for role in ("planning", "test-designer", "delivery-reviewer"):
