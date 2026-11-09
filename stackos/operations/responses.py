@@ -509,6 +509,10 @@ def _base_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any
 
 def _compact_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any]:
     data = _data(payload)
+    if spec.name in {"projectAgent.list", "projectAgent.get"}:
+        out = _base_payload(spec, payload)
+        out["data"] = _compact_data(spec.name, data)
+        return out
     if "data" not in payload and "items" in payload:
         if spec.name == "tracker.history":
             out = _compact_page(spec, payload)
@@ -740,6 +744,15 @@ def _compact_operation_summary(item: dict[str, Any]) -> dict[str, Any]:
 def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
     if not isinstance(data, dict):
         return {"value": data}
+    if operation_name in {"projectAgent.list", "projectAgent.get"}:
+        out = copy.deepcopy(data)
+        rows = out.get("items", [out])
+        for row in rows:
+            fields = row.get("fields")
+            if isinstance(fields, dict):
+                instructions = fields.pop("developer_instructions", None)
+                row["instructions_available"] = instructions is not None
+        return out
     if operation_name == "schedule.remove":
         return {key: data[key] for key in ("project_id", "job_id", "removed") if key in data}
     if operation_name in {"schedule.list", "schedule.set", "schedule.toggle", "schedule.runs"}:
