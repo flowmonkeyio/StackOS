@@ -568,8 +568,18 @@ engineering plugin defaults once and preserves existing generic values.
 
 `tracker.startDelivery` freezes project defaults, task overrides and optional
 `agent_assignments` into one execution snapshot. The map identifies canonical
-ticket keys and existing `delivery_agent`/`review_agent` roles; frozen step
+ticket keys and selected arbitrary role keys in `agents`; frozen step
 extension `agent_assignment` supplies mirror defaults and explicit entries win.
+Otherwise admission uses the unique applicable selected declared workflow role;
+ambiguity rejects. Ordinary tickets retain a separate independent reviewer.
+Fresh Codex admission reads exact project source refs through the bounded source
+owner and freezes instructions/digest/supported native options. Source model and
+effort override execution fallbacks; no source field grants permissions, provider
+or MCP changes. Legacy inline Codex configuration needs explicit adoption.
+`tracker.configureDelivery` also accepts `project_dir`, `adopt_sources` with exact
+refs/digests, and `preview` in place of `delivery`. Preview compares without writes;
+explicit adoption preserves unrelated settings and verifies saved readback. See
+[source adoption](task-tracker.md#automated-task-delivery).
 For workflows the running `step_id` is entry context. The existing job traverses
 all dependency-ready work, activates nested groups without launching them,
 claims mirrors through the run-plan owner, runs accepted descendants and then

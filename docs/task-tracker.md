@@ -83,8 +83,10 @@ operation accepts `arguments` containing `project_id` and `delivery`:
     "project_id": 1,
     "delivery": {
       "host_key": "codex",
-      "delivery_agent": {"name": "builder", "instructions": "Implement, check and commit the assigned ticket."},
-      "review_agent": {"name": "reviewer", "instructions": "Independently review the exact commit; do not change files or commits."}
+      "agents": {
+        "delivery_agent": {"source_ref": {"host_key": "codex", "native_name": "builder", "source_path": ".codex/agents/builder.toml"}},
+        "review_agent": {"source_ref": {"host_key": "codex", "native_name": "reviewer", "source_path": ".codex/agents/reviewer.toml"}}
+      }
     }
   }
 }
@@ -122,17 +124,17 @@ is removed. Task snapshots, run snapshots and ticket evidence remain unchanged.
 Runtime reads only tracker defaults; enabling the engineering plugin is no
 longer a prerequisite for task automation.
 
-Source/local instruction adoption is a reviewed, explicit current-project setup
-action. Copy the full saved delivery object and replace only selected role
-instructions through `tracker.configureDelivery`; preserve names, hosts, models,
-provider/profile and all other fields. Read back exact preserved settings and
-instructions with canonical whitespace normalization, retaining absent/null fields.
-After independent source/local approval, explicitly authorized instruction-only
-saved-default adoption may occur during a running task. Queued/running snapshots
-stay frozen; explicit rehandoff after complete/stopped execution consumes current
-defaults while preserving receipts, sessions and repair allowance. Source edits
-alone never update saved settings. Installed activation is separately authorized
-and main-owned after task closure; no synchronizer or cross-project rollout is implied.
+Codex adoption is explicit current-project setup through the same REST operation.
+Send `project_dir`, `adopt_sources: {role: {source_ref, expected_digest}}` and
+`preview: true`, omitting `delivery`. The read-only preview returns instruction,
+identity and native-setting differences plus the proposed defaults and effective
+agents. Review those differences, then repeat with `preview: false`. Stale source
+digests reject before saving. Adoption preserves unrelated roles, all execution
+fallback choices (including absent/null fields) and other tracker settings; it
+replaces only selected editable instruction owners with `agents` references and
+checks the saved readback. No source file is rewritten. Queued/running task state,
+run/template snapshots, receipts and history remain unchanged. No database upgrade,
+watcher, preset lookup or same-name file inference performs adoption.
 
 The handoff is task-level; role objects and their fields can be omitted when
 project defaults supply them:
@@ -149,20 +151,26 @@ project defaults supply them:
     "model": "claude-sonnet-5-5"
   },
   "review_agent": {
-    "name": "project-review",
-    "instructions": "The project's adapted independent review instructions.",
+    "source_ref": {"host_key": "codex", "native_name": "project-review", "source_path": ".codex/agents/project-review.toml"},
     "model": "gpt-6.1-sol"
   }
 }
 ```
 
 The workspace bridge supplies `project_id`; REST and CLI callers supply it
-explicitly. Agent identity and instructions come from project defaults or the
-planner's task adaptation. Task overrides merge field by field within each role;
+explicitly. Fresh Codex admission requires an exact project `source_ref`; legacy
+inline Codex choices return `adoption_required`. Other hosts retain intentional
+inline contracts. `agents` maps arbitrary safe role keys to selected definitions
+and execution fallback choices. Task overrides merge field by field within each role;
 an explicit null clears an optional role selection (model/provider/profile/host),
 while a resolved name or instructions cannot be missing, null or empty.
-Projects need no `.codex` folder, and StackOS does not substitute generic presets
-for those instructions. Harness and role choices are frozen under the task's `metadata_json.delivery`,
+Source-native model/effort and supported reduction-only feature/skill settings win.
+Omitted values inherit task choices, project choices, then the native host. Source
+fields cannot replace provider/profile, permissions, sandbox or MCP routes;
+unsupported settings reject with repair context. The existing native launcher uses
+supported `--model`/`-c` options, never an invented `--agent` option. Harness and role
+choices, source ref/digest, instructions and native settings are frozen under the
+task's `metadata_json.delivery.agents`,
 with other task metadata preserved. Queued/running launches keep that snapshot.
 An explicit handoff after an execution completes or stops resolves a new current
 snapshot from current defaults and overrides. Prior ticket receipts, native
@@ -220,12 +228,24 @@ detection and dependency rescans, including tickets omitted from the prompt.
 Packet-size comparisons measure serialized characters and UTF-8 bytes; they do
 not measure model tokens or establish answer-quality improvements.
 
-Optional task-level `agent_assignments` maps canonical ticket keys to the existing
-`delivery_agent` or `review_agent`. Frozen step extensions
+Optional task-level `agent_assignments` maps canonical ticket keys to selected
+role keys. Frozen step extensions
 `{"agent_assignment":"review_agent"}` provide mirror defaults; explicit map
 entries win. The resolved map is frozen with each execution snapshot.
-An unassigned mirror uses `delivery_agent`. Models and instructions remain
-project/task settings. No workflow or step name selects behavior.
+Otherwise a mirror selects the unique applicable selected declared role from its
+frozen template `agent_requirements/applies_to_steps`; ambiguity requires an explicit
+assignment. Legacy plans without declared roles retain their explicit execution
+bindings. One-role workflows need no engineering pair. Ordinary tickets require a
+separate `review_agent` binding and distinct native identities/sessions. Resumed
+source sessions retain their frozen agent snapshot; new untouched work uses the
+new admission snapshot. External skill bytes and the host installation are not
+frozen. No workflow or step name selects behavior.
+
+The Codex mapping follows the supported definition fields in
+[OpenAI's custom-agent contract](https://learn.chatgpt.com/docs/agent-configuration/subagents)
+(checked 2026-11-09). Tests exercise native argument/config mapping, rejected
+authority increases, source precedence and unrelated execution settings. Actual
+installed-host consumption is a separate integration proof.
 
 An already-automated frozen planning contract may explicitly authorize
 `tracker.createTicket` and dependency updates for contract-declared children

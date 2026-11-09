@@ -70,6 +70,7 @@ def run_agent(
     resume_thread_id: str | None = None,
     on_session: Callable[[str], None] | None = None,
     mcp_config_ref: dict[str, str] | None = None,
+    native_settings: dict[str, Any] | None = None,
     process_control: ManagedProcessControl | None = None,
 ) -> AgentRunResult:
     """Run supplied instructions in a new or explicitly selected native thread."""
@@ -85,6 +86,7 @@ def run_agent(
             if mcp_config_ref is not None
             else []
         )
+        overrides += native_agent_overrides(native_settings or {})
     except ValueError as error:
         return AgentRunResult(None, error=str(error))
     with TemporaryDirectory(prefix="stackos-agent-") as temporary:
@@ -235,6 +237,62 @@ def run_agent(
             output_schema,
             "Codex",
         )
+
+
+def native_agent_overrides(settings: dict[str, Any]) -> list[str]:
+    """Map only the supported definition options; authority stays with the host."""
+    import tomlkit
+
+    from stackos.host_mcp.adapters.codex_definition import AgentFields, unsupported_settings
+
+    try:
+        fields = AgentFields.model_validate(
+            {
+                "name": "selection",
+                "description": "selection",
+                "developer_instructions": "selection",
+                **settings,
+            }
+        )
+        unsupported = unsupported_settings(fields, settings)
+        allowed = {
+            "model_reasoning_effort",
+            "model_reasoning_summary",
+            "model_verbosity",
+            "features",
+            "skills",
+        }
+        if set(settings) - allowed or unsupported:
+            raise ValueError("unsupported native project settings")
+    except (ValueError, TypeError):
+        raise ValueError(
+            "Unsupported native project settings; use supported reduction-only options"
+        ) from None
+
+    overrides = []
+
+    def literal(value):
+        if isinstance(value, dict):
+            table = tomlkit.inline_table()
+            for key, item in value.items():
+                table[key] = item
+            return table.as_string()
+        if isinstance(value, list):
+            return "[" + ", ".join(literal(item) for item in value) + "]"
+        return tomlkit.item(value).as_string()
+
+    def append(key, value):
+        if isinstance(value, dict):
+            for child, item in value.items():
+                append(f"{key}.{child}", item)
+        else:
+            overrides.extend(["-c", f"{key}={literal(value)}"])
+
+    for key, value in settings.items():
+        if value is None:
+            raise ValueError("Native project settings cannot contain explicit null")
+        append(key, value)
+    return overrides
 
 
 def task_mcp_overrides(

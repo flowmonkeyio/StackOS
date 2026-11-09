@@ -284,10 +284,12 @@ def test_sdlc_orchestrator_manual_adoption_and_bounded_repair() -> None:
         ):
             assert requirement.lower() in text.lower(), requirement
     assert "models stay in StackOS settings" in source
-    assert "source edits alone" in source.lower()
-    assert "delivery.delivery_agent.instructions" in local
-    assert "delivery.review_agent.instructions" in local
-    assert "preserving names, hosts, models" in source
+    assert "source edits affect future" in source.lower()
+    assert "expected digests" in source.lower()
+    assert ".codex/agents/sdlc-delivery.toml" in local
+    assert ".codex/agents/sdlc-delivery-reviewer.toml" in local
+    assert "adopt_sources" in source and "adopt_sources" in local
+    assert "preserve unrelated names, hosts, fallback models" in source.lower()
     assert "without a main-agent message relay" in " ".join(
         preset.operating_contract.responsibilities
     )

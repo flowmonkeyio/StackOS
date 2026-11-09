@@ -10,7 +10,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from itertools import pairwise
 from pathlib import Path
-from threading import Barrier, Event
+from threading import Barrier, Event, RLock
 from typing import Any
 
 import pytest
@@ -1375,6 +1375,75 @@ def git_project(tmp_path: Path) -> None:
     commit(tmp_path, "baseline")
 
 
+@pytest.fixture(autouse=True)
+def native_source_fixtures(monkeypatch):
+    """Existing lifecycle scenarios now admit real disposable native definitions.
+
+    Remove only these owned fixture files after admission. Launch must consume the
+    frozen snapshot, so source bytes cannot accidentally satisfy a later read.
+    """
+    from stackos import task_delivery
+    from stackos.repositories.workspaces import WorkspaceRepository
+
+    original = task_delivery.start_delivery
+    file_lock = RLock()
+    users = {}
+
+    def admit(**kwargs):
+        session, project_id = kwargs["session"], kwargs["project_id"]
+        root = Path(kwargs["project_dir"])
+        defaults = TrackerRepository(session).delivery_defaults(project_id=project_id)
+        owned = []
+        for role in ("delivery_agent", "review_agent"):
+            selected = {**defaults.get(role, {}), **(kwargs.get(role) or {})}
+            if selected.get(
+                "host_key", kwargs.get("host_key") or defaults.get("host_key") or "codex"
+            ) != "codex" or selected.get("source_ref"):
+                continue
+            if not selected.get("name") or not selected.get("instructions"):
+                continue
+            folder = root / ".codex" / "agents"
+            if not root.is_dir():
+                continue
+            folder.mkdir(parents=True, exist_ok=True)
+            path = folder / f"{role}.toml"
+            content = (
+                f'name={json.dumps(selected["name"])}\ndescription="Fixture"\n'
+                f"developer_instructions={json.dumps(selected['instructions'])}\n"
+            )
+            with file_lock:
+                if path in users:
+                    assert path.read_text() == content
+                else:
+                    assert not path.exists()
+                    path.write_text(content)
+                users[path] = users.get(path, 0) + 1
+                owned.append(path)
+                WorkspaceRepository(session).connect(
+                    project_id=project_id,
+                    last_known_root=str(root),
+                    repo_fingerprint=f"fixture:{root}",
+                )
+            selected.pop("instructions")
+            selected["source_ref"] = {
+                "host_key": "codex",
+                "native_name": selected["name"],
+                "source_path": str(path.relative_to(root)),
+            }
+            kwargs[role] = selected
+        try:
+            return original(**kwargs)
+        finally:
+            for path in owned:
+                with file_lock:
+                    users[path] -= 1
+                    if not users[path]:
+                        path.unlink()
+                        del users[path]
+
+    monkeypatch.setattr(task_delivery, "start_delivery", admit)
+
+
 class QueuedScheduler:
     def __init__(self) -> None:
         self.jobs: list[tuple[Any, dict[str, Any]]] = []
@@ -1568,7 +1637,14 @@ def test_active_delivery_rejects_same_directory(
         directory = tmp_path.parent / f"{tmp_path.name}-alias"
         directory.symlink_to(tmp_path, target_is_directory=True)
     with pytest.raises(ValidationError, match=r"working directory.*active task"):
-        submit(session, project_id, directory, scheduler, task_key="unrelated")
+        submit(
+            session,
+            project_id,
+            directory,
+            scheduler,
+            task_key="unrelated",
+            **({"host_key": "claude-code"} if different_project else {}),
+        )
     assert len(scheduler.jobs) == 1
     assert "delivery" not in (
         TrackerRepository(session)
@@ -2551,11 +2627,11 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
 @pytest.mark.parametrize(
     "defaults,override,reason",
     [
-        ({}, None, "Resolved delivery_agent is invalid"),
+        ({}, None, "adoption_required"),
         (
             {"delivery_agent": {"name": "builder", "instructions": "Build"}},
             None,
-            "Resolved review_agent is invalid",
+            "adoption_required",
         ),
         (
             {"delivery_agent": {"name": "builder", "instructions": "Build", "model": "unknown"}},
@@ -2565,7 +2641,7 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
         (
             {"delivery_agent": {"name": "builder", "instructions": "Build"}},
             {"instructions": None},
-            "Resolved delivery_agent is invalid",
+            "adoption_required",
         ),
     ],
 )

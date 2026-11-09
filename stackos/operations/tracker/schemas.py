@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from typing import (
+    Annotated,
     Any,
     Literal,
 )
@@ -23,10 +24,12 @@ from stackos.db.models import (
     TrackerSourceKind,
     TrackerTicketKind,
 )
+from stackos.host_mcp.project_agents import AgentSourceRef
 from stackos.mcp.contract import MCPInput
 from stackos.repositories.tracker.agent_stats import stats_timezone
 
 TrackerResponseMode = Literal["compact", "raw", "standard", "verbose"]
+AgentRole = Annotated[str, Field(pattern=r"^[a-zA-Z0-9_][a-zA-Z0-9_-]{0,159}$", strict=True)]
 
 
 class TaskDeliveryAgentOverride(BaseModel):
@@ -39,6 +42,14 @@ class TaskDeliveryAgentOverride(BaseModel):
     model: str | None = Field(default=None, min_length=1)
     provider: str | None = Field(default=None, min_length=1)
     profile: str | None = Field(default=None, min_length=1)
+    source_ref: AgentSourceRef | None = None
+    model_reasoning_effort: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def one_instruction_owner(self):
+        if self.source_ref is not None and self.instructions is not None:
+            raise ValueError("source_ref owns instructions; remove the editable copy")
+        return self
 
 
 class TaskDeliveryAgent(TaskDeliveryAgentOverride):
@@ -55,12 +66,32 @@ class TaskDeliveryDefaults(BaseModel):
     host_key: str | None = Field(default=None, min_length=1)
     delivery_agent: TaskDeliveryAgentOverride | None = None
     review_agent: TaskDeliveryAgentOverride | None = None
+    agents: dict[AgentRole, TaskDeliveryAgentOverride] | None = None
+
+
+class AgentSourceAdoption(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source_ref: AgentSourceRef
+    expected_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class TrackerConfigureDeliveryInput(MCPInput):
     model_config = ConfigDict(extra="forbid")
     project_id: int = Field(ge=1)
-    delivery: TaskDeliveryDefaults
+    delivery: TaskDeliveryDefaults | None = None
+    project_dir: str | None = None
+    adopt_sources: dict[AgentRole, AgentSourceAdoption] | None = None
+    preview: bool = False
+
+    @model_validator(mode="after")
+    def explicit_setup_mode(self):
+        if self.adopt_sources is not None:
+            if not self.adopt_sources or not self.project_dir or self.delivery is not None:
+                raise ValueError("adopt_sources requires project_dir and preserves saved delivery")
+        elif self.delivery is None or self.preview:
+            raise ValueError("Provide delivery, or an explicit source adoption preview/write")
+        return self
+
     response_mode: TrackerResponseMode = "raw"
 
 
@@ -88,7 +119,8 @@ class TrackerStartDeliveryInput(MCPInput):
     host_key: str | None = Field(default=None, min_length=1)
     delivery_agent: TaskDeliveryAgentOverride | None = None
     review_agent: TaskDeliveryAgentOverride | None = None
-    agent_assignments: dict[str, Literal["delivery_agent", "review_agent"]] | None = None
+    agents: dict[AgentRole, TaskDeliveryAgentOverride] | None = None
+    agent_assignments: dict[str, AgentRole] | None = None
     run_plan_id: int | None = Field(default=None, ge=1)
     step_id: str | None = Field(default=None, min_length=1)
     response_mode: TrackerResponseMode = "compact"

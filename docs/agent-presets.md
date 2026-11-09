@@ -378,8 +378,11 @@ candidate mismatch or rejection after the third repair stops that task. Main ret
 admission and final claims. In automatic delivery, assigned agents execute
 integration and workflow phase gates; main observes without lifecycle writes.
 Defaults use `TaskTracker.config_json.delivery`
-via local-admin REST-only `tracker.configureDelivery`, merged with task overrides by role once; local
-agent files are optional sources. Reusable roles never pin models. The shared
+via local-admin REST-only `tracker.configureDelivery`, merged with task overrides by role once.
+Fresh Codex handoff selects actual project sources; non-Codex hosts retain inline
+contracts. Explicit native model/effort wins, omitted values inherit task, project
+then host choices. Supported source restrictions can only reduce capabilities.
+Reusable presets recommend no fixed models. The shared
 host capability owner selects test-capable native permissions and approval review and uses
 normal native sessions for Gemini and Hermes reviewers with review-only
 instructions, truthfully reporting no enforced read-only isolation. Until acceptance,

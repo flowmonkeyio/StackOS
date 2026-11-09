@@ -51,7 +51,7 @@ def test_delivery_operation_has_one_contract_and_no_ack():
         )
 
 
-def test_assignment_map_accepts_only_existing_two_roles():
+def test_assignment_map_accepts_arbitrary_safe_role_keys():
     spec = build_operation_registry().get("tracker.startDelivery")
     arguments = {
         "project_id": 1,
@@ -63,9 +63,12 @@ def test_assignment_map_accepts_only_existing_two_roles():
         spec.input_model.model_validate(arguments).agent_assignments
         == arguments["agent_assignments"]
     )
+    assert spec.input_model.model_validate(
+        {**arguments, "agent_assignments": {"workflow-42-check": "new_phase_role"}}
+    ).agent_assignments == {"workflow-42-check": "new_phase_role"}
     with pytest.raises(ValueError):
         spec.input_model.model_validate(
-            {**arguments, "agent_assignments": {"workflow-42-check": "new_phase_role"}}
+            {**arguments, "agent_assignments": {"workflow-42-check": "../../unsafe"}}
         )
 
 

@@ -14,6 +14,69 @@ from stackos.host_mcp.adapters import claude_code, codex, gemini_cli, grok, herm
 from stackos.host_mcp.result import validate_agent_result
 
 
+@pytest.mark.parametrize("resume", [None, "frozen-thread"])
+def test_native_definition_settings_reach_supported_codex_config(tmp_path, monkeypatch, resume):
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/native/codex")
+    calls = []
+
+    def execute(command, **kwargs):
+        calls.append(command)
+        Path(command[command.index("-o") + 1]).write_text('{"summary":"checked"}')
+        return subprocess.CompletedProcess(
+            command, 0, '{"type":"thread.started","thread_id":"frozen-thread"}', ""
+        )
+
+    monkeypatch.setattr(codex.subprocess, "run", execute)
+    settings = {
+        "model_reasoning_effort": "high",
+        "model_verbosity": "low",
+        "features": {"apps": False, "request_permissions_tool": False},
+        "skills": {
+            "config": [{"path": "/fixture/skill", "enabled": False}],
+            "bundled": {"enabled": False},
+        },
+    }
+    result = run_agent(
+        "codex",
+        tmp_path,
+        "exact source instructions",
+        "bounded",
+        SCHEMA,
+        model="gpt-6.1-sol",
+        native_settings=settings,
+        resume_thread_id=resume,
+    )
+    assert result.ok
+    command = calls[0]
+    assert command[command.index("--model") + 1] == "gpt-6.1-sol"
+    config = [tomllib.loads(command[i + 1]) for i, arg in enumerate(command) if arg == "-c"]
+    assert {"model_reasoning_effort": "high"} in config
+    assert {"features": {"apps": False}} in config
+    assert {"skills": {"config": [{"path": "/fixture/skill", "enabled": False}]}} in config
+    assert {"developer_instructions": "exact source instructions"} in config
+    assert "--approve-for-me" in command and "--agent" not in command
+    assert not any(set(c) & {"model_provider", "sandbox_mode", "mcp_servers"} for c in config)
+
+
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"approval_policy": "never"},
+        {"features": {"apps": True}},
+        {"skills": {"config": [{"path": "skill", "enabled": True}]}},
+        {"model_reasoning_effort": None},
+        {"name": "override"},
+    ],
+)
+def test_native_options_never_grant_authority(tmp_path, monkeypatch, settings):
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/native/codex")
+    monkeypatch.setattr(
+        codex.subprocess, "run", lambda *a, **k: pytest.fail("unsafe native launch")
+    )
+    assert not run_agent("codex", tmp_path, "source", "prompt", SCHEMA, native_settings=settings).ok
+    assert not run_agent("claude-code", tmp_path, "source", "prompt", SCHEMA, native_settings={}).ok
+
+
 @pytest.mark.parametrize("resume", [None, "exact-thread"])
 @pytest.mark.parametrize("native_failure", [False, True])
 def test_codex_task_routes_preserve_commands_and_fresh_resume_overrides(

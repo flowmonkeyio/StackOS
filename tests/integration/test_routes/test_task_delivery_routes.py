@@ -17,7 +17,12 @@ from stackos.context import ContextRepository
 from stackos.host_mcp import service
 from stackos.host_mcp.result import AgentRunResult
 from tests.integration.test_mcp.conftest import MCPClient
-from tests.integration.test_repositories.test_task_delivery import commit, generic_result, git
+from tests.integration.test_repositories.test_task_delivery import (
+    commit,
+    generic_result,
+    git,
+    native_source_fixtures,  # noqa: F401 -- applies real native admission fixtures to route scenarios
+)
 
 
 @pytest.mark.parametrize("response_mode", ["compact", "ack"])
@@ -37,6 +42,71 @@ def test_project_defaults_setup_rejects_lossy_responses(api, project_id, respons
     )
     assert snapshot.status_code == 200, snapshot.text
     assert snapshot.json()["tracker"] == saved.json()["data"]
+
+
+def test_source_adoption_preview_and_write_use_registered_local_setup(api, project_id, tmp_path):
+    from tests.integration.test_routes.test_project_agent_operations import bind, call
+
+    scope = bind(api, project_id, tmp_path / "adoption")
+    created = call(
+        api,
+        "create",
+        {
+            **scope,
+            "fields": {
+                "name": "builder",
+                "description": "Fixture",
+                "developer_instructions": "Native source",
+                "model_reasoning_effort": "high",
+            },
+        },
+    )
+    assert created.status_code == 200, created.text
+    source = created.json()["data"]
+    endpoint = "/api/v1/operations/tracker.configureDelivery/call"
+    original = {
+        "delivery_agent": {"name": "builder", "instructions": "Legacy copy", "provider": None}
+    }
+    saved = api.post(endpoint, json={"arguments": {"project_id": project_id, "delivery": original}})
+    assert saved.status_code == 200, saved.text
+    arguments = {
+        "project_id": project_id,
+        "project_dir": scope["project_dir"],
+        "adopt_sources": {
+            "delivery_agent": {
+                "source_ref": source["source_ref"],
+                "expected_digest": source["digest"],
+            },
+        },
+    }
+    preview = api.post(endpoint, json={"arguments": {**arguments, "preview": True}})
+    assert preview.status_code == 200, preview.text
+    assert preview.json()["data"]["adoption"]["differences"]["delivery_agent"]["instructions"] == {
+        "saved": "Legacy copy",
+        "source": "Native source",
+    }
+
+    def defaults():
+        response = api.post(
+            "/api/v1/operations/tracker.get/call",
+            json={
+                "arguments": {
+                    "project_id": project_id,
+                    "response_mode": "raw",
+                }
+            },
+        )
+        assert response.status_code == 200, response.text
+        return response.json()["tracker"]
+
+    assert defaults() == saved.json()["data"]
+    adopted = api.post(endpoint, json={"arguments": arguments})
+    assert adopted.status_code == 200, adopted.text
+    readback = defaults()
+    assert readback["config_json"]["delivery"] == adopted.json()["data"]["config_json"]["delivery"]
+    selected = readback["config_json"]["delivery"]["agents"]["delivery_agent"]
+    assert selected["provider"] is None and "instructions" not in selected
+    assert selected["source_ref"] == source["source_ref"]
 
 
 @pytest.mark.parametrize("workflow", [False, True])
@@ -107,6 +177,7 @@ def test_real_operation_returns_while_scheduler_delivers(
         sandbox,
         on_session=None,
         process_control=None,
+        native_settings=None,
     ):
         assert process_control is not None, "Managed delivery must retain invocation control"
         packet = json.loads(prompt)
@@ -204,11 +275,14 @@ def test_real_operation_returns_while_scheduler_delivers(
     )
     assert snapshot["tasks"][0]["status"] == "complete"
     assert snapshot["tasks"][0]["metadata_json"]["delivery"]["status"] == "complete"
-    assert snapshot["tasks"][0]["metadata_json"]["delivery"]["review_agent"] == {
+    reviewer = snapshot["tasks"][0]["metadata_json"]["delivery"]["agents"]["review_agent"]
+    assert {key: reviewer[key] for key in ("name", "instructions", "host_key")} == {
         "name": "reviewer",
         "instructions": "Review the project ticket.",
         "host_key": "codex",
     }
+    assert reviewer["source_ref"]["native_name"] == "reviewer"
+    assert len(reviewer["source_digest"]) == 64 and reviewer["native_settings"] == {}
     assert [
         ticket["status"] for ticket in snapshot["tickets"] if ticket["key"] in {"first", "second"}
     ] == ["complete", "complete"]

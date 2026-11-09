@@ -260,7 +260,8 @@ def summarize_receipts(
         # Explicit null records failed producer validation; absence is legacy/unfinished.
         outcome = receipt.get("validated_outcome")
         if (
-            role in ("delivery_agent", "review_agent")
+            isinstance(role, str)
+            and bool(role)
             and "validated_outcome" in receipt
             and outcome in (None, "success", "repair", "blocked", "failed")
         ):
@@ -512,9 +513,7 @@ def _group_rows(
         projects = sorted({(pid, name, slug) for pid, name, slug, _ in members})
         receipts = [receipt for _, _, _, receipt in members]
         roles = {
-            r.get("selected_role")
-            if r.get("selected_role") in ("delivery_agent", "review_agent")
-            else None
+            r.get("selected_role") if isinstance(r.get("selected_role"), str) else None
             for r in receipts
         }
         hosts = {_text(r["launch"].get("host_key")) for r in receipts}
