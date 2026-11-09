@@ -10,7 +10,7 @@ import type { SchemaUsageSampleOut } from '@/api'
 function execution(): ActiveExecution {
   return {
     invocation_id: 'current', agent: 'Worker', host_key: 'codex', model: 'selected', ticket_key: 'child', started_at: '2026-11-08T01:00:00Z',
-    live_usage: { usage: { status: 'measured', unit: 'tokens', measured: agentStatsFixture().totals.reported_usage }, measured_at: '2026-11-08T01:00:05Z', samples: [0, 5].map((seconds) => ({ at: `2026-11-08T01:00:0${seconds}Z`, input: 100 + seconds, cache_read: 80 + seconds, output: 5 + seconds, total: 105 + seconds * 2, cache_write: null, reasoning: null })) },
+    live_usage: { usage: { status: 'measured', unit: 'tokens', measured: agentStatsFixture().totals.reported_usage }, measured_at: '2026-11-08T01:00:05Z', samples: [0, 5].map((seconds) => ({ at: `2026-11-08T01:00:0${seconds}Z`, input: 100 + seconds, cache_read: 80 + seconds, output: 5 + seconds, total: 105 + seconds * 2, cache_write: null, reasoning: null, remaining_input: null })) },
   }
 }
 
@@ -25,7 +25,7 @@ describe('compact measured usage fitting', () => {
     const summary = mount(AgentUsageSummary, { props: { metrics, compact: true, execution: { ...active, live_usage: null } } })
     const strip = mount(LiveUsageStrip, { props: { execution: { ...active, live_usage: null } } })
     const footer = mount(ActiveExecutionLine, { props: { execution: active } })
-    const sample = (second: number, cache: number | null = 80 + second): SchemaUsageSampleOut => ({ at: `2026-11-08T01:00:0${second}Z`, input: 100 + second * 2, cache_read: cache, output: 5 + second, total: 105 + second * 3, cache_write: null, reasoning: null })
+    const sample = (second: number, cache: number | null = 80 + second): SchemaUsageSampleOut => ({ at: `2026-11-08T01:00:0${second}Z`, input: 100 + second * 2, cache_read: cache, output: 5 + second, total: 105 + second * 3, cache_write: null, reasoning: null, remaining_input: null })
     const states: [SchemaUsageSampleOut[], string[]][] = [
       [[], ['empty', 'empty', 'empty']],
       [[sample(0)], ['point', 'point', 'point']],

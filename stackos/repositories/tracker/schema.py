@@ -118,6 +118,9 @@ class UsageSampleOut(BaseModel):
     cache_read: int | None = None
     cache_write: int | None = None
     reasoning: int | None = None
+    remaining_input: int | None = Field(
+        default=None, description="Cumulative non-cache Input from paired measurements only."
+    )
 
 
 class LiveUsageSnapshotOut(BaseModel):
@@ -132,15 +135,21 @@ class LiveUsageOut(BaseModel):
     samples: list[UsageSampleOut] = Field(default_factory=list, max_length=120)
 
 
-class ActiveExecutionOut(BaseModel):
-    """Actual host-call identity; absent when no call is registered in this daemon."""
+class ExecutionIdentityOut(BaseModel):
+    """Recorded actual execution, without prompts, native paths or live state."""
 
-    invocation_id: str
+    invocation_id: str | None = None
     agent: str
     host_key: str
     model: str | None
     started_at: str
     ticket_key: str
+
+
+class ActiveExecutionOut(ExecutionIdentityOut):
+    """Actual host-call identity; absent when no call is registered in this daemon."""
+
+    invocation_id: str
     live_usage: LiveUsageOut | None = None
 
 
@@ -320,6 +329,8 @@ class AgentStatsCoverageOut(BaseModel):
 
 
 class AgentStatsMetricsOut(BaseModel):
+    samples: list[UsageSampleOut] = Field(default_factory=list, max_length=120)
+    last_execution: ExecutionIdentityOut | None = None
     launch_attempts: int
     recorded_reviewer_rejects: int
     review_outcomes: dict[str, int] = Field(

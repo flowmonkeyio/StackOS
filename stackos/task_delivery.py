@@ -475,7 +475,14 @@ def _ticket_prompt_copy(ticket: dict[str, Any], *, current: bool = False) -> dic
     result = {
         key: deepcopy(item)
         for key, item in ticket.items()
-        if key not in {"agent_stats", "active_execution", "completion_evidence_json", "outcome"}
+        if key
+        not in {
+            "agent_stats",
+            "active_execution",
+            "last_execution",
+            "completion_evidence_json",
+            "outcome",
+        }
         and (current or key in identity)
     }
     result["evidence_ref"] = _ticket_evidence_ref(ticket)
@@ -587,10 +594,12 @@ def _work_prompt_copy(value: dict[str, Any]) -> dict[str, Any]:
         receipt = _prompt_copy(packet.get(key))
         if isinstance(receipt, dict):
             receipt.pop("usage", None)
+            receipt.pop("execution", None)
+            receipt.pop("last_execution", None)
         packet[key] = receipt
     brief = packet["brief"]
     task = brief.get("task") or {}
-    for key in ("agent_stats", "active_execution", "completion_evidence_json"):
+    for key in ("agent_stats", "active_execution", "last_execution", "completion_evidence_json"):
         task.pop(key, None)
     if isinstance(task.get("metadata_json"), dict):
         task["metadata_json"].pop("delivery", None)
@@ -806,7 +815,7 @@ def _record_execution_transition(
     session_factory: Callable[[], Session], call: ActiveInvocation, active: bool
 ) -> None:
     with session_factory() as session:
-        if not active and call.usage is not None:
+        if call.scope.phase is not None:
             repo = TrackerRepository(session)
             ticket = repo.brief(
                 project_id=call.scope.project_id, ticket_key=call.scope.ticket_key
@@ -820,9 +829,11 @@ def _record_execution_transition(
                 and "exit_code" not in receipt
                 and "result" not in receipt
             ):
-                # Persist only measured usage, not an outcome/session acceptance.
+                # Persist actual identity and bounded observations, never an outcome.
                 # Native result and candidate validation continue below unchanged.
-                receipt["usage"] = deepcopy(call.usage)
+                receipt["execution"] = call.projection()
+                if call.usage is not None:
+                    receipt["usage"] = deepcopy(call.usage)
                 repo.update_ticket(
                     project_id=call.scope.project_id,
                     ticket_key=call.scope.ticket_key,
@@ -835,6 +846,16 @@ def _record_execution_transition(
 
 def run_delivery(*, session_factory: Callable[[], Session], project_id: int, task_key: str) -> None:
     def execution_changed(call: ActiveInvocation, active: bool) -> None:
+        if (
+            call.scope.phase is not None
+            and call.scope.ticket_key == ticket_key
+            and call.scope.attempt == evidence.get("attempt")
+        ):
+            receipt = evidence.get(call.scope.phase)
+            if isinstance(receipt, dict):
+                receipt["execution"] = call.projection()
+                if call.usage is not None:
+                    receipt["usage"] = deepcopy(call.usage)
         _record_execution_transition(session_factory, call, active)
 
     ticket_key = None
@@ -1106,17 +1127,25 @@ def run_delivery(*, session_factory: Callable[[], Session], project_id: int, tas
                 )
                 # The shared schema owner also protects controlled/injected harnesses.
                 result = validate_agent_result(result, schema, host_key)
+                observed = evidence[phase]
+                final_usage = normalize_usage(
+                    result.usage,
+                    session_id=result.thread_id,
+                    resumed=resume_thread_id is not None,
+                    previous=previous,
+                )
+                if (
+                    final_usage["status"] != "measured"
+                    and observed.get("usage", {}).get("status") == "measured"
+                ):
+                    final_usage = observed["usage"]
                 evidence[phase] = {
                     "agent": agent["name"],
                     "selected_role": selected_role,
                     "launch": launch,
                     **asdict(result),
-                    "usage": normalize_usage(
-                        result.usage,
-                        session_id=result.thread_id,
-                        resumed=resume_thread_id is not None,
-                        previous=previous,
-                    ),
+                    **({"execution": observed["execution"]} if "execution" in observed else {}),
+                    "usage": final_usage,
                     "validated_outcome": None,
                 }
                 value = result.result or {}

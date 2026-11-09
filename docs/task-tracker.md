@@ -187,7 +187,8 @@ session history stays with the host. The current ticket retains its requirements
 constraints, context, contract revision, operator amendments and authority, plus
 the occurrence's attempt, candidate and latest scoped feedback. Earlier approvals
 remain historical when current context requests a correction. Statistics, live
-usage, saved execution settings and nested old attempt receipts are omitted.
+usage (including retained samples and last execution), saved execution settings
+and nested old attempt receipts are omitted.
 Ordinary assignments receive compact outcomes for direct completed prerequisites.
 Mirrors receive completed outcomes within their dependency scope, including
 descendant/bound work and prior dependency containers, rather than every completed
@@ -1479,16 +1480,18 @@ unchanged. Missing or unsupported telemetry is N/A; final collection still runs
 for every supported host. Claude/Grok full-scope live subagent/cache accounting
 has not been established, so their live adapters remain disabled.
 
-The rolling ten-minute history bounds charts only; collection and final totals
-cover the entire invocation. Readers, callbacks and recent samples are released
-on exit, failure, cancellation or shutdown. No sample table or per-tick tracker
-write exists. Native-session reads are independent of UI visibility and view count.
+The rolling ten-minute history bounds active-call samples only; collection and
+final totals cover the entire invocation. Native-session reads are independent
+of UI visibility and view count. No sample table or per-tick tracker write exists.
 
-At native exit the registry immediately removes the live identity, closes its
-reader and discards recent samples. It holds only the measured counter snapshot
-during the synchronous receipt handoff. Automatic delivery commits that usage
-to the existing unfinished invocation receipt before releasing the snapshot;
-result, session and candidate validation still determine the outcome afterwards.
+At native exit the registry immediately removes the live identity and closes its
+reader. Its bounded samples and counters survive only the synchronous receipt
+handoff, then unregister releases them on success, error or cancellation. A
+supported final native counter supplies a real final observation even when no
+live checkpoint was collected. Automatic delivery commits the safe `execution`
+identity and up to 120 measured samples to the existing invocation receipt;
+the later final save preserves those observations, including failed results.
+Result, session and candidate validation still determine the outcome afterwards.
 Thus delayed final-receipt validation does not make recorded totals temporarily
 regress. The handoff uses final native counters and the same fixed resume baseline,
 and never adds a second receipt. The snapshot is released even if notification
@@ -1509,11 +1512,34 @@ transient usage frames never advance the durable status-event cursor.
 Each statistics projection copies provisional counters before selecting fresh
 receipt evidence. If a call disappears before that copy, its handoff has already
 committed; if it disappears afterwards, the request keeps its own counter copy.
-Recorded measured usage wins over an older copy, including the early exit
+Recorded measured usage and samples win over an older copy, including the early exit
 handoff before result validation. Ticket metrics use a batched scalar evidence
 query rather than potentially stale ORM ticket rows. SSE task/ticket projections
-share one request copy. These copies contain no native reader or recent samples,
+share one request copy. These bounded copies contain no native reader,
 hold no registry lock during SQL, and live only for the projection call.
+
+Work task/ticket `agent_stats.samples` replay those deduplicated observations as
+at most 120 cumulative lifetime points. Each checkpoint replaces its invocation's
+contribution; it is never added to the preceding checkpoint. Delivery and review,
+including measured rejected, failed, blocked, cancelled and repaired attempts,
+all contribute regardless of acceptance. Task projections include all their own
+tickets, independent of visible filters; ticket projections include only their
+own receipts. Equal timestamps combine into one point. Input uses the sample's
+paired `remaining_input`, Cache uses known cache reads, and Output remains
+independently available. Unknown metrics are null; measured zero remains zero.
+An old final total with a recorded observation time can supply one real point.
+If a measured legacy receipt has no observation time, the cumulative timeline is
+unavailable rather than showing a narrower scope or inventing timestamps.
+Existing analytics projections keep their date/group semantics and do not replay
+Work history.
+
+`agent_stats.last_execution` is a safe identity from the latest actual recorded
+call by start time, including between calls and after reload. It carries no live
+state, samples, private native paths or prompts. `active_execution` remains
+current-only. The existing filtered SSE usage projection carries these fields
+inside `agent_stats`; `usageUpdates` preserves them with the rest of that object.
+Fresh/resumed delivery, reviewer and mirror prompts omit this telemetry through
+the existing prompt projection while retaining canonical evidence refs.
 
 Board and Graph keep whole-task/ticket numbers. Three tiny chart slots remain
 present throughout an active automated call when they fit: a quiet empty mark

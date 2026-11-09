@@ -833,7 +833,7 @@ def test_native_exit_hands_usage_to_receipt_before_return_without_active_resourc
     observe("final-receipt")
     assert [row[1] for row in observations] == [[313] * 7] * 5
     assert [row[2] for row in observations] == [True, False, False, False, False]
-    assert transition_resources == [(True, False, False)]
+    assert transition_resources == [(True, True, False)]
     assert not service._active_invocations
 
 

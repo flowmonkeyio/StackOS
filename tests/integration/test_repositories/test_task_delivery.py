@@ -426,7 +426,9 @@ def test_mirror_candidate_evidence_is_independent_of_selected_role(
 
 
 @pytest.mark.parametrize("integration", [False, True])
-def test_workflow_prompt_projects_history_by_assignment_scope(integration):
+@pytest.mark.parametrize("phase", ["delivery", "review"])
+@pytest.mark.parametrize("resumed", [False, True])
+def test_workflow_prompt_projects_history_by_assignment_scope(integration, phase, resumed):
     from copy import deepcopy
 
     from stackos import task_delivery
@@ -477,7 +479,7 @@ def test_workflow_prompt_projects_history_by_assignment_scope(integration):
     domain = {"followups": ["Declared domain value"]}
     value = {
         "assignment": "Current assignment",
-        "phase": "delivery",
+        "phase": phase,
         "lifecycle": "Scoped authority",
         "candidate": {"base_commit_sha": "b" * 40},
         "brief": {
@@ -548,6 +550,39 @@ def test_workflow_prompt_projects_history_by_assignment_scope(integration):
     assert len(serialized) < len(json.dumps(original))
     assert len(serialized.encode("utf-8")) < len(json.dumps(original).encode("utf-8"))
     assert value == original  # Projection never rewrites canonical receipts or input.
+
+    # Full retained telemetry is UI evidence, never added to any launch path.
+    points = [
+        {"at": f"MEASUREMENT-{i}", "input": i, "output": i, "total": i * 2} for i in range(120)
+    ]
+    for item in [
+        current,
+        prerequisite,
+        external,
+        older,
+        child,
+        bound,
+        unrelated,
+        value["brief"]["task"],
+    ]:
+        item["last_execution"] = {"agent": "LAST-IDENTITY"}
+        item["agent_stats"] = {"samples": points, "last_execution": {"agent": "LAST-IDENTITY"}}
+    for role in ("delivery_result", "review_result"):
+        value[role]["execution"] = {"live_usage": {"samples": points}}
+        value[role]["last_execution"] = {"agent": "LAST-IDENTITY"}
+    if resumed:
+        # Native session selectors remain, independently of telemetry size.
+        value["delivery_result"]["launch"] = {"resume_thread_id": "EXACT-SESSION"}
+        packet = task_delivery._work_prompt_copy(
+            {
+                **original,
+                "delivery_result": {
+                    **original["delivery_result"],
+                    "launch": {"resume_thread_id": "EXACT-SESSION"},
+                },
+            }
+        )
+    assert task_delivery._work_prompt_copy(value) == packet
 
 
 def test_workflow_prompt_compaction_keeps_private_completed_keys_for_reopen(
@@ -3796,14 +3831,25 @@ def test_cumulative_receipt_requeue_retains_unknown_and_redaction_boundary(
 @pytest.mark.parametrize(
     "host,fault",
     [(host, fault) for host in ("codex", "grok") for fault in ("text", "schema", "native")]
-    + [("codex", "native-success"), ("codex", "native-blocked")],
+    + [("codex", "native-success"), ("codex", "native-blocked"), ("codex", "handoff")],
 )
 def test_native_collector_failure_persists_session_and_available_usage(
     session, project_id, tmp_path, monkeypatch, host, fault
 ):
     """Actual native adapter -> normalizer -> tracker receipt on failed output."""
+    from stackos import task_delivery
     from stackos.host_mcp import progress
     from stackos.host_mcp.adapters import codex, grok
+
+    if fault == "handoff":
+        transition = task_delivery._record_execution_transition
+
+        def fail_notification(session_factory, call, active):
+            if not active:
+                raise RuntimeError("optional transition notification failed")
+            transition(session_factory, call, active)
+
+        monkeypatch.setattr(task_delivery, "_record_execution_transition", fail_notification)
 
     prepared_task(session, project_id)
     monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fake/codex")
@@ -3881,6 +3927,13 @@ def test_native_collector_failure_persists_session_and_available_usage(
     assert evidence["attempts"] == []
     assert ticket.agent_stats.launch_attempts == 1
     assert ticket.agent_stats.reported_usage.total == receipt["usage"]["measured"]["total"]
+    assert (
+        receipt["execution"]["live_usage"]["samples"][-1]["total"]
+        == receipt["usage"]["measured"]["total"]
+    )
+    assert ticket.agent_stats.samples[-1].total == receipt["usage"]["measured"]["total"]
+    assert ticket.agent_stats.last_execution.agent == receipt["agent"]
+    assert ticket.active_execution is None
     assert len(calls) == 1
 
 

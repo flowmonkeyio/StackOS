@@ -3,7 +3,7 @@ import type { SchemaUsageSampleOut } from '@/api'
 
 export type LiveMetric = 'input' | 'cache_read' | 'output'
 export function sampleValue(sample: SchemaUsageSampleOut, metric: LiveMetric): number | null {
-  if (metric === 'input') return sample.cache_read == null ? null : sample.input - sample.cache_read
+  if (metric === 'input') return sample.remaining_input ?? (sample.cache_read == null ? null : sample.input - sample.cache_read)
   return sample[metric] ?? null
 }
 

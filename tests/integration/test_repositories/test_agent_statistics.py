@@ -168,12 +168,15 @@ def test_dated_groups_daily_and_lifetime_reconcile(session: Session, project_id:
     assert lifetime.totals.reported_usage.total == 428
     assert lifetime.daily == []
     assert lifetime.undated == project.undated
-    assert (
+    work = (
         repo.get(project_id=project_id, task_index_only=True, include_graph=False)
         .tasks[0]
         .agent_stats
-        == lifetime.totals
     )
+    assert work.model_dump(exclude={"samples", "last_execution"}) == lifetime.totals.model_dump(
+        exclude={"samples", "last_execution"}
+    )
+    assert lifetime.totals.samples == [] and lifetime.totals.last_execution is None
     assert (
         repo.brief(
             project_id=project_id, ticket_key="unknown-cache"

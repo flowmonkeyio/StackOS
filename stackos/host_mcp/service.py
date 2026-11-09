@@ -77,7 +77,7 @@ class ActiveInvocation:
                     "measured": deepcopy(self.usage["measured"]),
                 },
                 "measured_at": self.measured_at,
-                "samples": list(self.samples),
+                "samples": deepcopy(list(self.samples)),
             }
             if self.usage is not None
             else None,
@@ -179,12 +179,20 @@ def _finish(
                 previous=call.previous_usage,
             )
             if final["status"] == "measured":
+                if (
+                    not call.samples
+                    or call.usage is None
+                    or final["measured"] != call.usage["measured"]
+                ):
+                    call.measured_at = datetime.now(UTC).isoformat()
+                    call.samples.append({"at": call.measured_at, **final["measured"]})
                 call.usage = final
         call.finished = True
         if call.reader:
             call.reader.close()
             call.reader = None
-        call.samples.clear()
+        # Keep only the bounded observation through the synchronous receipt
+        # handoff. _unregister releases it even if notification fails.
         call.previous_usage = None
         call.session_id = None
         if not any(not other.finished for other in _active_invocations.values()):
@@ -218,7 +226,7 @@ type ProvisionalUsage = dict[tuple[int, str], list[tuple[int | None, str | None,
 
 
 def provisional_usage(project_id: int | None = None) -> ProvisionalUsage:
-    """Copy counters before the caller loads receipts; no reader or sample lifetime."""
+    """Copy bounded telemetry before SQL; never retain native readers."""
     with _active_invocations_lock:
         snapshot: ProvisionalUsage = {}
         for call in _active_invocations.values():
@@ -226,7 +234,11 @@ def provisional_usage(project_id: int | None = None) -> ProvisionalUsage:
                 project_id is None or call.scope.project_id == project_id
             ):
                 snapshot.setdefault((call.scope.project_id, call.scope.ticket_key), []).append(
-                    (call.scope.attempt, call.scope.phase, deepcopy(call.usage))
+                    (
+                        call.scope.attempt,
+                        call.scope.phase,
+                        {**deepcopy(call.usage), "execution": call.projection()},
+                    )
                 )
         return snapshot
 
@@ -421,7 +433,7 @@ def run_agent(
             try:
                 # The caller may persist usage after native exit. During that
                 # short handoff reads still have the snapshot, never a live
-                # identity/reader/trace. Cleanup also runs if the callback fails.
+                # identity/reader. Cleanup also runs if the callback fails.
                 _notify_execution(on_execution_change, call, False)
             finally:
                 _unregister(call)

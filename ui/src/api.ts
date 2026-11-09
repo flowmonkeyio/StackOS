@@ -2424,6 +2424,8 @@ export interface components {
              * Format: date
              */
             date: string;
+            /** @default null */
+            last_execution: components["schemas"]["ExecutionIdentityOut"] | null;
             /** Launch Attempts */
             launch_attempts: number;
             /** Recorded Reviewer Rejects */
@@ -2436,6 +2438,8 @@ export interface components {
             review_outcomes?: {
                 [key: string]: number;
             };
+            /** Samples */
+            samples?: components["schemas"]["UsageSampleOut"][];
         };
         /** AgentStatsFieldCoverageOut */
         AgentStatsFieldCoverageOut: {
@@ -2452,6 +2456,8 @@ export interface components {
         /** AgentStatsMetricsOut */
         AgentStatsMetricsOut: {
             coverage: components["schemas"]["AgentStatsCoverageOut"];
+            /** @default null */
+            last_execution: components["schemas"]["ExecutionIdentityOut"] | null;
             /** Launch Attempts */
             launch_attempts: number;
             /** Recorded Reviewer Rejects */
@@ -2464,6 +2470,8 @@ export interface components {
             review_outcomes?: {
                 [key: string]: number;
             };
+            /** Samples */
+            samples?: components["schemas"]["UsageSampleOut"][];
         };
         /** AgentStatsRowOut */
         AgentStatsRowOut: {
@@ -2474,6 +2482,8 @@ export interface components {
             group_key: string;
             /** Host Key */
             host_key: string | null;
+            /** @default null */
+            last_execution: components["schemas"]["ExecutionIdentityOut"] | null;
             /** Launch Attempts */
             launch_attempts: number;
             /** Model */
@@ -2496,6 +2506,8 @@ export interface components {
             review_outcomes?: {
                 [key: string]: number;
             };
+            /** Samples */
+            samples?: components["schemas"]["UsageSampleOut"][];
             /** Selected Role */
             selected_role: AgentStatsRowOutSelected_roleAnyOf0 | null;
         };
@@ -3566,6 +3578,27 @@ export interface components {
             runs_kind: string[];
             /** Runs Status */
             runs_status: string[];
+        };
+        /**
+         * ExecutionIdentityOut
+         * @description Recorded actual execution, without prompts, native paths or live state.
+         */
+        ExecutionIdentityOut: {
+            /** Agent */
+            agent: string;
+            /** Host Key */
+            host_key: string;
+            /**
+             * Invocation Id
+             * @default null
+             */
+            invocation_id: string | null;
+            /** Model */
+            model: string | null;
+            /** Started At */
+            started_at: string;
+            /** Ticket Key */
+            ticket_key: string;
         };
         /** ExperimentCreateRequest */
         ExperimentCreateRequest: {
@@ -7147,6 +7180,12 @@ export interface components {
              * @default null
              */
             reasoning: number | null;
+            /**
+             * Remaining Input
+             * @description Cumulative non-cache Input from paired measurements only.
+             * @default null
+             */
+            remaining_input: number | null;
             /** Total */
             total: number;
         };
@@ -8064,6 +8103,7 @@ export type SchemaDecisionRecordRequest = components['schemas']['DecisionRecordR
 export type SchemaDurableActionItemOut = components['schemas']['DurableActionItemOut'];
 export type SchemaDurableActionJobOut = components['schemas']['DurableActionJobOut'];
 export type SchemaEnumLookupResponse = components['schemas']['EnumLookupResponse'];
+export type SchemaExecutionIdentityOut = components['schemas']['ExecutionIdentityOut'];
 export type SchemaExperimentCreateRequest = components['schemas']['ExperimentCreateRequest'];
 export type SchemaExperimentDecisionRequest = components['schemas']['ExperimentDecisionRequest'];
 export type SchemaExperimentObservationOut = components['schemas']['ExperimentObservationOut'];

@@ -410,6 +410,9 @@ def operation_specs() -> list[OperationSpec]:
                 "cover only that ticket. "
                 "Nullable active_execution comes from actual host-call lifetime for "
                 "task-index, ticket and detail reads, never persisted status. "
+                "Work agent_stats.samples retain up to 120 cumulative measured points; "
+                "agent_stats.last_execution is the latest recorded actual identity, "
+                "independent of current activity. "
                 "Compact responses preserve metrics and their usage/classification coverage."
             ),
             examples=(

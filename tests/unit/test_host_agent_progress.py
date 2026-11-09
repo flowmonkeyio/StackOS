@@ -215,7 +215,7 @@ def test_exit_handoff_uses_final_native_counters_and_always_releases_snapshot(
         resume_thread_id="native" if resumed else None,
         on_execution_change=changed,
     )
-    assert result.ok and observed == [(110 if resumed else 220, True, False, None, None)]
+    assert result.ok and observed == [(110 if resumed else 220, True, True, None, None)]
     assert not service._active_invocations and not service.provisional_usage(1)
 
 
@@ -224,10 +224,17 @@ def test_lifetime_cleanup_success_error_cancel_and_no_idle_collector(
     monkeypatch, tmp_path, failure
 ):
     invocation_reader = Reader()
+    retained = []
 
     def runner(*args, on_session, **kwargs):
         on_session("native")
         assert len(service.usage_executions()) == 1
+        invocation = next(iter(service._active_invocations.values()))
+        invocation.usage = normalize_usage(
+            usage_snapshot("fixture", "invocation", 20, 2), session_id="native", resumed=False
+        )
+        invocation.measured_at = datetime.now(UTC).isoformat()
+        invocation.samples.append({"at": invocation.measured_at, **invocation.usage["measured"]})
         if failure == "cancel":
             raise KeyboardInterrupt()
         if failure:
@@ -237,12 +244,21 @@ def test_lifetime_cleanup_success_error_cancel_and_no_idle_collector(
     monkeypatch.setattr(service, "agent_selection_error", lambda *a, **kw: None)
     monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
     monkeypatch.setattr(service, "CodexCounterReader", lambda *args, **kwargs: invocation_reader)
-    kwargs = dict(execution_scope=service.AgentExecutionScope(1, "task", "child", "worker"))
+
+    def observe(invocation, active):
+        if not active:
+            retained.append(invocation.projection())
+
+    kwargs = dict(
+        execution_scope=service.AgentExecutionScope(1, "task", "child", "worker"),
+        on_execution_change=observe,
+    )
     if failure:
         with pytest.raises(KeyboardInterrupt if failure == "cancel" else RuntimeError):
             service.run_agent("codex", tmp_path, "instructions", "prompt", {}, **kwargs)
     else:
         assert service.run_agent("codex", tmp_path, "instructions", "prompt", {}, **kwargs).ok
+    assert retained[0]["live_usage"]["samples"][0]["total"] == 22
     assert invocation_reader.closed
     thread = service._collector
     if thread:

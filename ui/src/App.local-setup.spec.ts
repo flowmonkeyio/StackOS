@@ -97,6 +97,7 @@ it.each([null, 7])(
           status: AgentStatsFieldCoverageOutStatus.empty,
         }
         const emptyMetrics = {
+          last_execution: null,
           launch_attempts: 0,
           recorded_reviewer_rejects: 0,
           review_outcomes: {},

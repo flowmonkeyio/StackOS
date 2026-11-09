@@ -3,6 +3,7 @@ import type { ActivityGroup, AgentStats, AgentStatsMetrics, AgentStatsRow } from
 
 export function agentStatsFixture(overrides: Partial<AgentStats> = {}): AgentStats {
   const metrics: AgentStatsMetrics = {
+    last_execution: null,
     launch_attempts: 4,
     recorded_reviewer_rejects: 1,
     reported_usage: { unit: 'tokens', input: 70, output: 30, total: 100, cache_read: 40, cache_write: 10, reasoning: 5, remaining_input: 30, input_with_unknown_cache: 0 },

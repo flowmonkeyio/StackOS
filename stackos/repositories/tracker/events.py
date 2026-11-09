@@ -59,8 +59,10 @@ class TrackerEventMixin:
     def _record_tracker_usage_event(
         self, ticket: TrackerTicket, task: TrackerTask, before_evidence: Any
     ) -> None:
-        before = summarize_receipts(invocation_receipts(before_evidence))
-        after = summarize_receipts(invocation_receipts(ticket.completion_evidence_json))
+        before = summarize_receipts(invocation_receipts(before_evidence), include_history=True)
+        after = summarize_receipts(
+            invocation_receipts(ticket.completion_evidence_json), include_history=True
+        )
         if before == after:
             return
         StackOSEventEmitter(self._s).emit(

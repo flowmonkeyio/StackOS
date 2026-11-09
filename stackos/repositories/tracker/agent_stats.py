@@ -20,7 +20,9 @@ from stackos.repositories.tracker.schema import (
     AgentStatsMetricsOut,
     AgentStatsRowOut,
     AgentStatsUsageOut,
+    ExecutionIdentityOut,
     TrackerAgentStatsOut,
+    UsageSampleOut,
 )
 from stackos.repositories.tracker.utils import DEFAULT_TRACKER_KEY
 
@@ -72,7 +74,13 @@ def provisional_receipt(
         ):
             continue
         receipts = [receipt for receipt in receipts if receipt is not current]
-        receipts.append({**current, "usage": usage})
+        receipts.append(
+            {
+                **current,
+                "usage": {key: value for key, value in usage.items() if key != "execution"},
+                **({"execution": usage["execution"]} if "execution" in usage else {}),
+            }
+        )
     return receipts
 
 
@@ -125,8 +133,105 @@ def _measured(receipt: dict[str, Any]) -> dict[str, Any] | None:
     return normalized["snapshot"] if normalized else None
 
 
-def summarize_receipts(receipts: Iterable[dict[str, Any]]) -> AgentStatsMetricsOut:
+def _instant(value: Any) -> datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        stamp = datetime.fromisoformat(value)
+        return stamp.astimezone(UTC) if stamp.utcoffset() is not None else None
+    except ValueError:
+        return None
+
+
+def _last_execution(receipts: list[dict[str, Any]]) -> ExecutionIdentityOut | None:
+    candidates = []
+    for receipt in receipts:
+        if not receipt.get("execution") and not any(
+            key in receipt for key in ("exit_code", "thread_id", "result")
+        ):
+            continue
+        execution = receipt.get("execution") or receipt.get("launch") or {}
+        stamp = _instant(execution.get("started_at"))
+        fields = {
+            key: execution.get(key)
+            for key in ("agent", "host_key", "model", "started_at", "invocation_id")
+        }
+        fields["ticket_key"] = execution.get("ticket_key") or receipt.get("ticket_key")
+        if stamp is not None and all(
+            isinstance(fields[key], str) and fields[key]
+            for key in ("agent", "host_key", "ticket_key")
+        ):
+            candidates.append((stamp, ExecutionIdentityOut.model_validate(fields)))
+    return max(candidates, key=lambda pair: pair[0])[1] if candidates else None
+
+
+def _history(receipts: list[dict[str, Any]]) -> list[UsageSampleOut]:
+    """Replay observations once per receipt, replacing its cumulative contribution.
+
+    A receipt's first retained checkpoint includes its earlier usage. Missing
+    checkpoints create no zero prefix. Equal timestamps are one observation of
+    the combined scope, independent of receipt/finalization order.
+    """
+    events: dict[datetime, dict[int, dict[str, Any]]] = defaultdict(dict)
+    for index, receipt in enumerate(receipts):
+        if not _eligible(receipt):
+            continue
+        final = _measured(receipt)
+        if final is None:
+            continue
+        live = (receipt.get("execution") or {}).get("live_usage") or {}
+        final_at = _instant(receipt.get("finished_at")) or _instant(live.get("measured_at"))
+        points = live.get("samples")
+        dated = {}
+        for point in points[-120:] if isinstance(points, list) else []:
+            if not isinstance(point, dict):
+                continue
+            at = _instant(point.get("at"))
+            measured = _measured(
+                {"usage": {"unit": "tokens", "status": "measured", "measured": point}}
+            )
+            if (
+                at is not None
+                and (final_at is None or at <= final_at)
+                and measured is not None
+                and measured["input"] <= final["input"]
+                and measured["output"] <= final["output"]
+            ):
+                dated[at] = measured
+        if final is not None and final_at is not None:
+            dated[final_at] = final
+        if final is not None and not dated:
+            # A legacy total without an observation time cannot be placed on a
+            # lifetime timeline. Keep the numbers; do not draw a narrower scope.
+            return []
+        for at, measured in dated.items():
+            events[at][index] = measured
+    current: dict[int, dict[str, Any]] = {}
+    samples = []
+    ordered = sorted(events.items())
+    for position, (at, updates) in enumerate(ordered):
+        current.update(updates)
+        if position < len(ordered) - 120:
+            continue
+        totals = summarize_receipts(
+            [
+                {"usage": {"unit": "tokens", "status": "measured", "measured": measured}}
+                for measured in current.values()
+            ]
+        ).reported_usage
+        samples.append(
+            UsageSampleOut(
+                at=at.isoformat(), **totals.model_dump(exclude={"unit", "input_with_unknown_cache"})
+            )
+        )
+    return samples[-120:]
+
+
+def summarize_receipts(
+    receipts: Iterable[dict[str, Any]], *, include_history: bool = False
+) -> AgentStatsMetricsOut:
     """Summarize deduplicated ticket receipts for every statistics projection."""
+    receipts = list(receipts)
     total = measured_count = classified = rejects = 0
     fields = ("input", "output", "total", "cache_read", "cache_write", "reasoning")
     usage = dict.fromkeys(fields, 0)
@@ -161,6 +266,8 @@ def summarize_receipts(receipts: Iterable[dict[str, Any]]) -> AgentStatsMetricsO
             if role == "review_agent":
                 review_outcomes[outcome or "validation_failed"] += 1
     return AgentStatsMetricsOut(
+        samples=_history(receipts) if include_history else [],
+        last_execution=_last_execution(receipts) if include_history else None,
         launch_attempts=total,
         recorded_reviewer_rejects=rejects,
         review_outcomes=dict(review_outcomes),
@@ -217,9 +324,13 @@ def query_task_agent_stats(
     for task_id, project_id, ticket_key, evidence in session.execute(statement):
         # Deduplication is ticket-local; never add parent/group subtotals.
         receipts_by_task[task_id].extend(
-            provisional_receipt(project_id, ticket_key, evidence, provisional)
+            {**receipt, "ticket_key": ticket_key}
+            for receipt in provisional_receipt(project_id, ticket_key, evidence, provisional)
         )
-    return {task_id: summarize_receipts(receipts_by_task[task_id]) for task_id in task_ids}
+    return {
+        task_id: summarize_receipts(receipts_by_task[task_id], include_history=True)
+        for task_id in task_ids
+    }
 
 
 def query_ticket_agent_stats(
@@ -240,7 +351,13 @@ def query_ticket_agent_stats(
         col(TrackerTicket.completion_evidence_json),
     ).where(col(TrackerTicket.id).in_(ticket_ids))
     return {
-        ticket_id: summarize_receipts(provisional_receipt(project_id, key, evidence, provisional))
+        ticket_id: summarize_receipts(
+            [
+                {**receipt, "ticket_key": key}
+                for receipt in provisional_receipt(project_id, key, evidence, provisional)
+            ],
+            include_history=True,
+        )
         for ticket_id, project_id, key, evidence in session.execute(statement)
     }
 
