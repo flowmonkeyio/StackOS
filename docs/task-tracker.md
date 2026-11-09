@@ -210,14 +210,32 @@ entries win. The resolved map is frozen with each execution snapshot.
 An unassigned mirror uses `delivery_agent`. Models and instructions remain
 project/task settings. No workflow or step name selects behavior.
 
-The call returns task/job/status refs immediately. The existing memory scheduler
-executes serially until all task work completes or execution stops:
+The call returns task/job/status refs immediately. Each task has its own memory
+scheduler job (`task-delivery:<project_id>:<task_id>`). Distinct canonical working
+directories can execute concurrently, within the existing long executor's two
+workers shared with other long jobs. Tickets and delivery/review calls within
+one task remain serial until all task work completes or execution stops:
 
 ```text
 ordinary: ready -> delivery -> independent review -> success -> complete
                          -> scoped repair -> same delivery/review sessions (once)
 mirror: claim step -> accepted descendants -> frozen contract -> record outputs
 ```
+
+The accepted `project_dir` stays with the task through delivery, review, repair
+and explicit rehandoff after a stop. A rehandoff that selects another directory
+rejects before queueing; directory aliases still refer to the accepted directory.
+Queued and running task snapshots reserve their writable directories. Admission
+checks and saves that reservation atomically, preventing two tasks (even in
+different projects on this daemon) from acquiring the same directory. Symlink
+and filesystem aliases conflict. Separate Git worktrees sharing repository
+metadata remain distinct; Git is optional. No worktree creation or branch merge
+is performed by the runner.
+
+Stopping or completing a task releases only its own directory reservation;
+scheduling failure also releases the failed task's reservation. Other task jobs,
+sessions and receipts continue independently. Reservation state is the existing
+task delivery snapshot, not a second lease service or an execution-wide lock.
 
 All launches use `RESULT_SCHEMA` in
 [`task_delivery.py`](../stackos/task_delivery.py): `status`

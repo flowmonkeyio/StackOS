@@ -15,13 +15,15 @@ from typing import Any
 
 from apscheduler.schedulers.base import BaseScheduler
 from pydantic import ValidationError as SchemaValidationError
-from sqlmodel import Session
+from sqlalchemy import func
+from sqlmodel import Session, select
 
 from stackos.db.models import (
     RunPlanStatus,
     RunPlanStepStatus,
     TrackerItemStatus,
     TrackerSourceKind,
+    TrackerTask,
     TrackerTicketKind,
 )
 from stackos.host_mcp.result import AgentSandbox, normalize_usage, validate_agent_result
@@ -336,6 +338,71 @@ def _update_delivery(repo, project_id, task_key, **changes) -> dict[str, Any]:
     return state
 
 
+def _same_directory(left: Path, right: Path) -> bool:
+    return left == right or (left.exists() and right.exists() and left.samefile(right))
+
+
+def _retain_directory(state: dict[str, Any], directory: Path) -> None:
+    previous = state.get("project_dir")
+    if previous and not _same_directory(Path(previous).expanduser().resolve(), directory):
+        raise ValidationError("Task delivery must retain its accepted working directory")
+
+
+def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_key, **changes):
+    """Reserve a directory in the existing snapshot before scheduling its task job."""
+    if session.new or session.dirty or session.deleted:
+        raise ValidationError("Task delivery handoff requires a clean repository transaction")
+    try:
+        # Serialize only admission, never execution. Reading and saving the queued
+        # snapshot in one SQLite writer transaction also protects concurrent calls.
+        session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+        session.expire_all()
+        task = _task(repo, project_id, task_key)
+        previous = (task.metadata_json or {}).get("delivery", {})
+        directory = Path(changes["project_dir"])
+        _retain_directory(previous, directory)
+        if previous.get("status") in {"queued", "running"}:
+            if (previous.get("run_plan_id"), previous.get("step_id")) != (
+                changes.get("run_plan_id"),
+                changes.get("step_id"),
+            ):
+                raise ValidationError("Task already has automatic delivery for a different scope")
+            session.rollback()
+            return previous, False
+        _workflow_scope(
+            repo,
+            project_id,
+            task,
+            changes.get("run_plan_id"),
+            changes.get("step_id"),
+            starting=True,
+        )
+        if task.status not in {TrackerItemStatus.NOT_STARTED, TrackerItemStatus.IN_PROGRESS}:
+            raise ValidationError("Task must be open before starting delivery")
+        # Directory ownership spans this daemon's task jobs. Git metadata is
+        # deliberately absent from this identity; non-Git directories work too.
+        active_directories = session.exec(
+            select(func.json_extract(TrackerTask.metadata_json, "$.delivery.project_dir")).where(
+                TrackerTask.id != task.id,
+                func.json_extract(TrackerTask.metadata_json, "$.delivery.status").in_(
+                    ("queued", "running")
+                ),
+            )
+        ).all()
+        if any(
+            path and _same_directory(directory, Path(path).expanduser().resolve())
+            for path in active_directories
+        ):
+            raise ValidationError(
+                "The working directory is already owned by an active task",
+                data={"project_dir": str(directory), "next_operations": ["tracker.get"]},
+            )
+        return _update_delivery(repo, project_id, task_key, **changes), True
+    except Exception:
+        session.rollback()
+        raise
+
+
 def _receipt(task_key: str, state: dict[str, Any]) -> dict[str, Any]:
     return {
         "task_key": task_key,
@@ -611,7 +678,13 @@ def start_delivery(
         RunPlanRepository(session).validate_delivery_controller(
             run_plan_id=plan.id, project_id=project_id, run_id=plan.run_id
         )
+    directory = Path(project_dir).expanduser().resolve()
+    if not directory.is_dir():
+        raise ValidationError("project_dir must be an existing working directory")
     previous = (task.metadata_json or {}).get("delivery", {})
+    _retain_directory(previous, directory)
+    if previous.get("project_dir"):
+        directory = Path(previous["project_dir"])
     if previous.get("status") in {"queued", "running"}:
         if (previous.get("run_plan_id"), previous.get("step_id")) != (run_plan_id, step_id):
             raise ValidationError("Task already has automatic delivery for a different scope")
@@ -619,9 +692,6 @@ def start_delivery(
     _workflow_scope(repo, project_id, task, run_plan_id, step_id, starting=True)
     if task.status not in {TrackerItemStatus.NOT_STARTED, TrackerItemStatus.IN_PROGRESS}:
         raise ValidationError("Task must be open before starting delivery")
-    directory = Path(project_dir).expanduser().resolve()
-    if not directory.is_dir():
-        raise ValidationError("project_dir must be an existing working directory")
     defaults = repo.delivery_defaults(project_id=project_id)
     if not isinstance(defaults, dict):
         raise ValidationError("Task delivery defaults must be an object")
@@ -665,7 +735,8 @@ def start_delivery(
     }
     if any(key not in keys or role not in resolved for key, role in assignments.items()):
         raise ValidationError("agent_assignments must map task ticket keys to existing roles")
-    state = _update_delivery(
+    state, queued = _queue_delivery(
+        session,
         repo,
         project_id,
         task_key,
@@ -682,6 +753,8 @@ def start_delivery(
         controller_run_id=plan.run_id if plan else None,
         job_ref=f"task-delivery:{project_id}:{task.id}",
     )
+    if not queued:
+        return _receipt(task_key, state)
     try:
         scheduler.add_job(
             run_delivery,

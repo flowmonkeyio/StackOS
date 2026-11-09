@@ -191,6 +191,9 @@ def operation_specs() -> list[OperationSpec]:
             ),
             prerequisites=(
                 "Prepare self-contained tickets and dependencies in an existing working directory. "
+                "The canonical directory is retained through rehandoff; queued/running task "
+                "writers cannot share it. Distinct directories may execute concurrently within "
+                "the existing host capacity, including worktrees sharing Git metadata. "
                 "Git is optional; supplied candidate evidence requires clean matching HEAD. "
                 "Source-change and repair commit obligations come from project guidance.",
                 "For a workflow task, supply run_plan_id and step_id for its running step; "

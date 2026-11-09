@@ -7,14 +7,17 @@ import json
 import shutil
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from itertools import pairwise
 from pathlib import Path
+from threading import Barrier, Event
 from typing import Any
 
 import pytest
 from pydantic import ValidationError as SchemaValidationError
 from sqlmodel import Session
 
+from stackos.db.connection import make_engine
 from stackos.db.models import RunPlanStepStatus
 from stackos.host_mcp.result import AgentRunResult, usage_snapshot
 from stackos.mcp.context import MCPContext
@@ -31,6 +34,7 @@ from stackos.operations.tracker.write_handlers import (
 from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
+from tests.helpers.sqlite_schema import capture_database_snapshot, restore_database_snapshot
 
 
 def scenario_result(*args, result=None, **kwargs):
@@ -1390,6 +1394,268 @@ def submit(session: Session, project_id: int, tmp_path: Path, scheduler: QueuedS
         extras={"session_factory": lambda: Session(session.get_bind()), "scheduler": scheduler},
     )
     return asyncio.run(tracker_start_delivery(arguments, context, None)).data
+
+
+@pytest.mark.parametrize("alias", [False, True])
+@pytest.mark.parametrize("different_project", [False, True])
+def test_active_delivery_rejects_same_directory(
+    session, project_id, tmp_path, alias, different_project
+):
+    prepared_task(session, project_id)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    if different_project:
+        from stackos.repositories.projects import ProjectRepository
+
+        project_id = (
+            ProjectRepository(session)
+            .create(slug="second", name="Second", domain="example.test", locale="en-US")
+            .data.id
+        )
+        TrackerRepository(session).create_task(
+            project_id=project_id, key="unrelated", title="Other"
+        )
+        TrackerRepository(session).create_ticket(
+            project_id=project_id, task_key="unrelated", key="other", title="Other"
+        )
+    directory = tmp_path
+    if alias:
+        directory = tmp_path.parent / f"{tmp_path.name}-alias"
+        directory.symlink_to(tmp_path, target_is_directory=True)
+    with pytest.raises(ValidationError, match=r"working directory.*active task"):
+        submit(session, project_id, directory, scheduler, task_key="unrelated")
+    assert len(scheduler.jobs) == 1
+    assert "delivery" not in (
+        TrackerRepository(session)
+        .get(project_id=project_id, task_key="unrelated")
+        .tasks[0]
+        .metadata_json
+        or {}
+    )
+
+
+@pytest.mark.parametrize("status", ["queued", "stopped"])
+def test_delivery_directory_is_retained_on_rehandoff(session, project_id, tmp_path, status):
+    from stackos import task_delivery
+
+    prepared_task(session, project_id)
+    scheduler = QueuedScheduler()
+    first = submit(session, project_id, tmp_path, scheduler)
+    task_delivery._update_delivery(TrackerRepository(session), project_id, "deliver", status=status)
+    other = tmp_path / "other-directory"
+    other.mkdir()
+    with pytest.raises(ValidationError, match=r"retain.*working directory"):
+        submit(session, project_id, other, scheduler)
+    state = (
+        TrackerRepository(session)
+        .get(project_id=project_id, task_key="deliver")
+        .tasks[0]
+        .metadata_json["delivery"]
+    )
+    assert state["project_dir"] == str(tmp_path.resolve())
+    assert state["job_ref"] == first["job_ref"]
+    assert len(scheduler.jobs) == 1
+
+
+@pytest.fixture
+def delivery_engine(session, project_id, tmp_path):
+    """Independent connections are required for actual concurrent task writers."""
+    engine = make_engine(tmp_path / "fixture-state" / "parallel.sqlite")
+    restore_database_snapshot(engine, capture_database_snapshot(session.get_bind()))
+    try:
+        yield engine
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("same_task", [False, True])
+def test_concurrent_handoffs_admit_one_directory_writer(
+    delivery_engine, project_id, tmp_path, same_task
+):
+    with Session(delivery_engine) as session:
+        prepared_task(session, project_id)
+    scheduler = QueuedScheduler()
+    ready = Barrier(2)
+
+    def handoff(key):
+        with Session(delivery_engine) as session:
+            ready.wait(timeout=10)
+            try:
+                return submit(session, project_id, tmp_path, scheduler, task_key=key)
+            except ValidationError as error:
+                return error
+
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        results = list(workers.map(handoff, ["deliver", "deliver" if same_task else "unrelated"]))
+    assert len(scheduler.jobs) == 1
+    if same_task:
+        assert results[0] == results[1]
+    else:
+        assert sum(isinstance(result, ValidationError) for result in results) == 1
+
+
+def test_scheduling_failure_releases_only_its_directory(session, project_id, tmp_path):
+    prepared_task(session, project_id)
+
+    class UnavailableScheduler:
+        def add_job(self, *args, **kwargs):
+            raise RuntimeError("Fixture scheduling failure")
+
+    with pytest.raises(RuntimeError, match="Fixture scheduling failure"):
+        submit(session, project_id, tmp_path, UnavailableScheduler())
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler, task_key="unrelated")
+    with pytest.raises(ValidationError, match=r"working directory.*active task"):
+        submit(session, project_id, tmp_path, scheduler)
+    assert len(scheduler.jobs) == 1
+    repo = TrackerRepository(session)
+    assert (
+        repo.get(project_id=project_id, task_key="deliver")
+        .tasks[0]
+        .metadata_json["delivery"]["status"]
+        == "stopped"
+    )
+    assert (
+        repo.get(project_id=project_id, task_key="unrelated")
+        .tasks[0]
+        .metadata_json["delivery"]["status"]
+        == "queued"
+    )
+
+
+@pytest.mark.parametrize("git_worktrees", [False, True])
+def test_parallel_task_jobs_stop_and_resume_independently(
+    delivery_engine, project_id, tmp_path, monkeypatch, git_worktrees
+):
+    from stackos import task_delivery
+
+    paths = {key: tmp_path / key for key in ("deliver", "unrelated")}
+    for key, directory in paths.items():
+        if git_worktrees:
+            git(tmp_path, "worktree", "add", "-b", key, str(directory))
+        else:
+            directory.mkdir()
+    if git_worktrees:
+        assert git(paths["deliver"], "rev-parse", "--git-common-dir") == git(
+            paths["unrelated"], "rev-parse", "--git-common-dir"
+        )
+    with Session(delivery_engine) as session:
+        prepared_task(session, project_id)
+        scheduler = QueuedScheduler()
+        receipts = {
+            key: submit(session, project_id, path, scheduler, task_key=key)
+            for key, path in paths.items()
+        }
+    assert receipts["deliver"]["job_ref"] != receipts["unrelated"]["job_ref"]
+    entered = {key: Event() for key in paths}
+    finish_b = Event()
+    calls = {key: [] for key in paths}
+
+    def host_call(*args, **kwargs):
+        packet = json.loads(args[3])
+        scope = kwargs["execution_scope"]
+        key = scope.task_key
+        phase = packet["phase"]
+        ticket = packet["brief"]["ticket"]["key"]
+        assert scope.project_id == project_id and scope.ticket_key == ticket
+        assert Path(args[1]) == paths[key].resolve()
+        identity = f"{key}-{ticket}-{phase}"
+        resumed = bool(calls[key]) and (ticket, phase) == ("first", "delivery")
+        assert kwargs.get("resume_thread_id") == (identity if resumed else None)
+        calls[key].append((ticket, phase))
+        if len(calls[key]) == 1:
+            entered[key].set()
+            assert entered["unrelated" if key == "deliver" else "deliver"].wait(10)
+            if key == "deliver":
+                return scenario_result(0, thread_id=identity, result=generic_result("blocked"))
+            assert finish_b.wait(10)
+        outputs = {"commit_sha": git(paths[key], "rev-parse", "HEAD")} if git_worktrees else {}
+        return scenario_result(0, thread_id=identity, result=generic_result(outputs=outputs))
+
+    monkeypatch.setattr(task_delivery, "run_agent", host_call)
+    with ThreadPoolExecutor(max_workers=2) as workers:
+        futures = [workers.submit(fn, **options["kwargs"]) for fn, options in scheduler.jobs]
+        try:
+            futures[0].result(timeout=15)
+            assert entered["deliver"].is_set() and entered["unrelated"].is_set()
+            assert not futures[1].done()
+            with Session(delivery_engine) as session:
+                repo = TrackerRepository(session)
+                assert (
+                    repo.get(project_id=project_id, task_key="deliver")
+                    .tasks[0]
+                    .metadata_json["delivery"]["status"]
+                    == "stopped"
+                )
+                assert (
+                    repo.get(project_id=project_id, task_key="unrelated")
+                    .tasks[0]
+                    .metadata_json["delivery"]["status"]
+                    == "running"
+                )
+                repo.create_task(project_id=project_id, key="contender", title="Contender")
+                repo.create_ticket(
+                    project_id=project_id,
+                    task_key="contender",
+                    key="contender-ticket",
+                    title="Contender",
+                )
+                with pytest.raises(ValidationError, match=r"working directory.*active task"):
+                    submit(
+                        session,
+                        project_id,
+                        paths["unrelated"],
+                        QueuedScheduler(),
+                        task_key="contender",
+                    )
+                # A's stopped reservation is available while B still runs.
+                repo.create_task(project_id=project_id, key="probe", title="Probe")
+                repo.create_ticket(
+                    project_id=project_id, task_key="probe", key="probe-ticket", title="Probe"
+                )
+                probe = QueuedScheduler()
+                submit(session, project_id, paths["deliver"], probe, task_key="probe")
+                assert len(probe.jobs) == 1
+                task_delivery._update_delivery(repo, project_id, "probe", status="stopped")
+        finally:
+            finish_b.set()
+        futures[1].result(timeout=15)
+    with Session(delivery_engine) as session:
+        repo = TrackerRepository(session)
+        original = repo.brief(
+            project_id=project_id, ticket_key="first"
+        ).ticket.completion_evidence_json["automatic_delivery"]
+        for status in ("in-progress", "not-started"):
+            repo.update_ticket(
+                project_id=project_id, ticket_key="first", patch_json={"status": status}
+            )
+        resumed = QueuedScheduler()
+        receipt = submit(session, project_id, paths["deliver"], resumed)
+        assert receipt["job_ref"] == receipts["deliver"]["job_ref"]
+        resumed.run()
+        session.expire_all()
+        for key in paths:
+            task = repo.get(project_id=project_id, task_key=key).tasks[0]
+            assert task.metadata_json["delivery"]["status"] == "complete"
+            assert task.metadata_json["delivery"]["project_dir"] == str(paths[key].resolve())
+        final = repo.brief(
+            project_id=project_id, ticket_key="first"
+        ).ticket.completion_evidence_json["automatic_delivery"]
+        assert final["sessions"]["delivery"] == original["sessions"]["delivery"]
+        assert final["attempts"][0]["delivery"] == original["delivery"]
+        assert final["repair_count"] == original["repair_count"] == 0
+        # Completed tasks also release their directory reservation.
+        repo.create_task(project_id=project_id, key="next", title="Next")
+        repo.create_ticket(project_id=project_id, task_key="next", key="next-ticket", title="Next")
+        submit(session, project_id, paths["deliver"], QueuedScheduler(), task_key="next")
+    assert calls["deliver"] == [
+        ("first", "delivery"),
+        ("first", "delivery"),
+        ("first", "review"),
+        ("second", "delivery"),
+        ("second", "review"),
+    ]
+    assert calls["unrelated"] == [("other", "delivery"), ("other", "review")]
 
 
 @pytest.mark.parametrize("failure", ["native", "native-candidate", "candidate", "blocked"])
