@@ -417,13 +417,19 @@ primitive.
   `tracker.configureDelivery` owns setup, independently of any domain plugin.
   Resolve existing delivery/review roles and task assignments once. StackOS
   traverses all remaining dependency-ready task work, including frozen mirrors
-  through the run-plan owner. Workers return their own outputs without lifecycle
-  calls. After handoff observe rather than competing with claim/record writes.
+  through the run-plan owner. Workers return their own outputs. An explicitly
+  assigned verifier/reviewer on a supporting occurrence may persist scoped
+  corrections, requeue existing tickets and call `tracker.reopen` as its final
+  mutation before returning repair. StackOS alone claims and records workflow
+  steps, records accepted results and dispatches agents. After handoff observe
+  without competing lifecycle writes.
   Current results use status/summary/outputs/followups, with outputs a JSON-encoded
   object string; honor the actual launcher's occurrence schema. Only success
-  advances. Preserve scoped same-session review/one repair, nonactionable
-  followups and frozen snapshots; source guidance requires explicit reviewed
-  per-project adoption and never silently refreshes active jobs.
+  accepts work; supported persisted corrections return to dependency scanning.
+  Ordinary ticket review permits up to three scoped repair passes in the original
+  delivery/review sessions; explicit requeue preserves the consumed allowance.
+  Keep followups nonactionable and snapshots frozen; source guidance requires
+  explicit reviewed per-project adoption and never silently refreshes active jobs.
 - Execute one direct action: describe the action when useful, call
   `toolbox.call` for `readiness.check` when setup is uncertain, resolve an
   `executionContext.*` ref when the provider scope will be reused, and prepare
