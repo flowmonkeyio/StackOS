@@ -146,8 +146,11 @@ def _instant(value: Any) -> datetime | None:
 def _last_execution(receipts: list[dict[str, Any]]) -> ExecutionIdentityOut | None:
     candidates = []
     for receipt in receipts:
-        if not receipt.get("execution") and not any(
-            key in receipt for key in ("exit_code", "thread_id", "result")
+        native_session = receipt.get("thread_id")
+        if not receipt.get("execution") and not (
+            type(receipt.get("exit_code")) is int
+            or (isinstance(native_session, str) and bool(native_session.strip()))
+            or isinstance(receipt.get("result"), dict)
         ):
             continue
         execution = receipt.get("execution") or receipt.get("launch") or {}

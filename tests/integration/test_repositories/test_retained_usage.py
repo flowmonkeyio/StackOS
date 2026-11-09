@@ -1,8 +1,10 @@
 """Receipt oracles for bounded lifetime trends, independent of acceptance."""
 
 from copy import deepcopy
+from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlmodel import Session
 
 from stackos.host_mcp import service
@@ -232,3 +234,79 @@ def test_legacy_missing_time_never_fabricates_history_or_active_identity():
     result = summarize_receipts([value], include_history=True)
     assert result.reported_usage.total == 0
     assert result.samples == [] and result.last_execution is None
+
+
+@pytest.mark.parametrize("prior_call", [False, True])
+def test_preflight_rejection_cannot_invent_or_replace_last_execution_after_reload(
+    session, project_id, tmp_path, prior_call
+):
+    result = service.run_agent("unsupported-identity-fixture", tmp_path, "fixture", "fixture", {})
+    assert result.error and result.exit_code is result.thread_id is result.result is None
+    rejected = {
+        "launch": {
+            "agent": "Never started",
+            "host_key": "unsupported-identity-fixture",
+            "model": "configured-only",
+            "started_at": "2026-11-08T12:00:00+00:00",
+        },
+        **asdict(result),
+    }
+    previous = receipt(1, (10, 1, 8), ticket="identity-child")
+    automatic = {
+        "attempt": 2,
+        "attempts": [{"attempt": 1, "delivery": previous}] if prior_call else [],
+        "delivery": rejected,
+    }
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="identity", title="Identity")
+    repo.create_ticket(
+        project_id=project_id, task_key="identity", key="identity-child", title="Child"
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="identity-child",
+        patch_json={"completion_evidence_json": {"automatic_delivery": automatic}},
+    )
+    with Session(session.get_bind()) as reopened:
+        brief = TrackerRepository(reopened).brief(
+            project_id=project_id, ticket_key="identity-child"
+        )
+        for metrics in (brief.ticket.agent_stats, brief.task.agent_stats):
+            assert metrics.launch_attempts == 1 + int(prior_call)
+            identity = metrics.last_execution
+            if prior_call:
+                assert identity.invocation_id == "call-1"
+                assert identity.agent == "agent-1" and identity.model == "model-1"
+            else:
+                assert identity is None
+        assert brief.ticket.active_execution is brief.task.active_execution is None
+        updates = usage_refresh(reopened, project_id, None, task_key="identity")
+        for projection in (updates["tasks"][0], updates["tickets"][0]):
+            assert projection["agent_stats"]["last_execution"] == (
+                brief.ticket.agent_stats.last_execution.model_dump() if prior_call else None
+            )
+
+
+@pytest.mark.parametrize(
+    "evidence,executed",
+    [
+        ({"exit_code": None, "thread_id": None, "result": None}, False),
+        ({"exit_code": False}, False),
+        ({"error": "preflight rejected"}, False),
+        ({"thread_id": "  "}, False),
+        ({"exit_code": 0}, True),
+        ({"exit_code": 1}, True),
+        ({"exit_code": -9}, True),
+        ({"thread_id": "native-session"}, True),
+        ({"result": {}}, True),
+    ],
+)
+def test_legacy_last_identity_requires_positive_execution_evidence(evidence, executed):
+    legacy = receipt(1, (10, 1, 8))
+    legacy.pop("execution")
+    legacy.pop("exit_code")
+    legacy["ticket_key"] = "one"
+    legacy.update(evidence)
+    metrics = summarize_receipts([legacy], include_history=True)
+    assert metrics.launch_attempts == 1
+    assert (metrics.last_execution is not None) is executed

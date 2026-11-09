@@ -437,14 +437,17 @@ the same local-admin transport for Overview's global scope. Reconnect sends the
 current transient state; durable tracker events retain their existing cursor.
 UI subscribers share the transport and refresh owner; usage-only Work updates
 patch metrics and execution in place without rebuilding the page or graph.
-Native exit releases readers, samples and live identity before the synchronous
-usage-to-receipt handoff completes. Its one measured snapshot remains readable
-until automatic delivery commits usage to the existing receipt; native result and
-candidate acceptance are still validated afterwards. Receipt-statistics changes
-publish `tracker.usage.changed` atomically with that write, including evidence-only
+Native exit immediately closes readers and removes live identity. Bounded measured
+samples and counters remain readable through the synchronous usage-to-receipt
+handoff, which persists them with the actual execution identity in the existing
+invocation receipt. Subsequent registry cleanup releases that in-memory snapshot,
+including when notification fails; durable receipt history remains available for
+task/ticket projections. Native result and candidate acceptance are still validated
+afterwards. Receipt-statistics changes publish `tracker.usage.changed` atomically
+with that write, including evidence-only
 updates. The stream includes affected task/ticket projections after persistence;
 the UI does not treat that usage event as another page-reload request. There is
-no per-sample event write, retained finished-call history or retry policy.
+no per-sample event write, separate history collector or new retry policy.
 Statistics readers copy provisional counters before loading fresh receipt
 evidence, so a request overlapping the handoff cannot lose both contributions.
 Recorded usage wins over an older request copy; the existing SSE refresh shares
