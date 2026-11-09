@@ -34,6 +34,7 @@ from stackos.repositories.tracker.schema import (
     TrackerLinkOut,
     TrackerOwnerItemOut,
 )
+from stackos.repositories.tracker.ticket_list_specs import ticket_reference_ref
 from stackos.repositories.tracker.utils import (
     ACTIVATES_DEPENDENCY_TYPE,
     BLOCKS_DEPENDENCY_TYPE,
@@ -303,9 +304,7 @@ class TrackerRelationsMixin:
         reference: dict[str, Any],
     ) -> None:
         ref_type = str(reference.get("ref_type") or reference.get("type") or "note")
-        ref = str(reference.get("ref") or "")
-        if not ref:
-            raise ValidationError("ticket reference ref is required")
+        ref = ticket_reference_ref(reference)
         self._s.add(
             TrackerTicketReference(
                 tracker_id=_required_id(tracker.id, "tracker"),

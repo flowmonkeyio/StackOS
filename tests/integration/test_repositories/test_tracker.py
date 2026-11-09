@@ -10,11 +10,14 @@ from stackos.db.models import (
     RunPlanStepStatus,
     TaskTracker,
     TrackerItemStatus,
+    TrackerRevision,
     TrackerSourceKind,
     TrackerTask,
     TrackerTicket,
     TrackerTicketDependency,
     TrackerTicketKind,
+    TrackerTicketLink,
+    TrackerTicketReference,
 )
 from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
@@ -24,6 +27,107 @@ from stackos.repositories.tracker.events import (
     TRACKER_TICKET_STATUS_CHANGED,
 )
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
+
+
+def _ticket_create_state(engine, project_id: int) -> dict:
+    """Read every create-owned row from a fresh session, including revision/rollup fields."""
+    with Session(engine) as reader:
+        return {
+            model.__name__: [
+                row.model_dump(mode="json")
+                for row in reader.exec(
+                    select(model).where(model.project_id == project_id).order_by(model.id)
+                ).all()
+            ]
+            for model in (
+                TaskTracker,
+                TrackerTask,
+                TrackerTicket,
+                TrackerTicketDependency,
+                TrackerTicketReference,
+                TrackerTicketLink,
+                TrackerRevision,
+            )
+        }
+
+
+def _seed_ticket_create_state(session: Session, project_id: int) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="atomic", title="Client research")
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="atomic",
+        key="existing",
+        title="Existing research",
+        references_json=[{"ref": "existing-source", "title": "Keep this"}],
+    )
+
+
+@pytest.mark.parametrize("single", [False, True])
+def test_ticket_create_failure_preserves_outer_work_after_caller_commit(
+    session: Session, project_id: int, single: bool
+) -> None:
+    _seed_ticket_create_state(session, project_id)
+    baseline = _ticket_create_state(session.get_bind(), project_id)
+    # Unflushed caller-owned work must survive the nested rollback.
+    unrelated = session.exec(select(TrackerTask).where(TrackerTask.key == "atomic")).one()
+    unrelated.title = "Caller-owned work"
+    session.add(unrelated)
+    repo = TrackerRepository(session)
+    with pytest.raises(ValidationError if single else ConflictError):
+        if single:
+            repo.create_ticket(
+                project_id=project_id,
+                task_key="atomic",
+                key="new-single",
+                title="Single",
+                parent_ticket_key="existing",
+                dependency_keys=["existing"],
+                references_json=[{"ref": "valid-first"}, {"path": "missing-ref"}],
+                commit=False,
+            )
+        else:
+            repo.create_ticket_list(
+                project_id=project_id,
+                ticket_list_json={
+                    "task_key": "atomic",
+                    "tickets": [
+                        {
+                            "key": "cycle-a",
+                            "dependency_keys": ["cycle-b"],
+                            "references_json": [{"ref": "valid"}],
+                        },
+                        {"key": "cycle-b", "dependency_keys": ["cycle-a"]},
+                    ],
+                },
+            )
+    session.commit()
+    actual = _ticket_create_state(session.get_bind(), project_id)
+    baseline["TrackerTask"][0]["title"] = "Caller-owned work"
+    assert actual == baseline
+
+
+@pytest.mark.parametrize("outer_write", [False, True])
+def test_ticket_create_commit_false_leaves_success_under_caller_control(
+    session: Session, project_id: int, outer_write: bool
+) -> None:
+    _seed_ticket_create_state(session, project_id)
+    baseline = _ticket_create_state(session.get_bind(), project_id)
+    if outer_write:
+        task = session.exec(select(TrackerTask).where(TrackerTask.key == "atomic")).one()
+        task.title = "Pending caller change"
+        session.add(task)
+    result = TrackerRepository(session).create_ticket(
+        project_id=project_id,
+        task_key="atomic",
+        key="pending",
+        title="Pending",
+        references_json=[{"ref": 123, "type": "source", "metadata_json": {"keep": True}}],
+        commit=False,
+    )
+    assert result.data.ticket.key == "pending"
+    session.rollback()
+    assert _ticket_create_state(session.get_bind(), project_id) == baseline
 
 
 def test_tracker_reads_do_not_create_default_tracker(session: Session, project_id: int) -> None:

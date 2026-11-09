@@ -1268,9 +1268,19 @@ parallel tracker endpoints for list behavior.
    `dependency_ticket_key` when the review needs existing tracker state.
 3. Create the same list by calling `tracker.createTicket` again with
    `dry_run=false` or without `dry_run`.
+   Dry-run and apply share reference validation, including the required `ref`
+   in every `references_json` entry. Errors identify the ticket index/key and
+   reference field. Creation is atomic: a failed single or list create leaves
+   no new tickets, relations, revisions, or task rollup changes, including a
+   late dependency-cycle failure. Repository `create_ticket(commit=False)`
+   keeps successful writes under the caller's transaction control and preserves
+   unrelated caller work when creation fails. Validation failures retain their
+   structured errors in raw, compact, and ack requests; successful ack stays minimal.
 4. Patch many tickets by calling `tracker.updateTicket` with `updates_json`.
    Each entry identifies one ticket by `ticket_key` or `ticket_id` and supplies
-   a `patch_json`. Updates are patch-only: omitted fields are preserved.
+   a `patch_json`. List updates retain per-item success/error behavior; creation's
+   all-or-none boundary does not change them. Updates are patch-only: omitted
+   fields are preserved.
    Dependency edits can use `add_dependency_keys` and `remove_dependency_keys`
    for small atomic edge changes. Use `dependency_keys` only when intentionally
    replacing the full dependency list; it cannot be combined with add/remove

@@ -303,6 +303,13 @@ returned payload.
 Errors are never compacted. Validation failures, grant denials, auth/setup
 diagnostics, and provider partial failures keep structured repair context so an
 agent can decide whether to retry, claim a step, reconnect a provider, or stop.
+Structured validation results with `valid=false` retain their full repair context
+even when compact or ack is requested. Successful safe internal writes still
+use the minimal ack envelope. For example, `tracker.createTicket` shares complete
+reference validation between list dry-run and apply, and protects single/list
+creation with a repository savepoint: late relation failures cannot leave partial
+tickets, relations, revisions, or task rollup changes for error cleanup to commit.
+List updates keep their existing per-item outcomes.
 
 External provider actions through `action.run` and `action.execute` are
 compact file-backed by default for MCP/REST and raw-by-default for CLI, with

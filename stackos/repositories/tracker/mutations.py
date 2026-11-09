@@ -271,62 +271,72 @@ class TrackerMutationMixin:
         created_by: str | None = None,
         commit: bool = True,
     ) -> Envelope[TrackerMutationOut]:
-        tracker = self.ensure_tracker(project_id=project_id)
-        task = self._task_by_key(tracker.id, task_key)
-        key = _slug(key, fallback="ticket", max_length=180)
-        if self._ticket_by_key(tracker.id, key, missing_ok=True) is not None:
-            raise ConflictError("tracker ticket key already exists", data={"ticket_key": key})
-        parent_id: int | None = None
-        if parent_ticket_key:
-            parent = self._ticket_by_key(tracker.id, parent_ticket_key)
-            parent_id = parent.id
-        now = _utcnow()
-        ticket = self._create_ticket_row(
-            tracker=tracker,
-            task=task,
-            key=key,
-            title=title,
-            goal=goal,
-            status=status,
-            kind=kind,
-            assignee=assignee,
-            priority_key=priority_key,
-            lane_key=lane_key,
-            parent_ticket_id=parent_id,
-            blocker_reason=blocker_reason,
-            outcome=outcome,
-            effort=effort,
-            source_kind=source_kind,
-            source_json=source_json,
-            definition_of_done_json=definition_of_done_json,
-            constraints_json=constraints_json,
-            expected_changes_json=expected_changes_json,
-            allowed_paths_json=allowed_paths_json,
-            completion_evidence_json=completion_evidence_json,
-            context_json=context_json,
-            metadata_json=metadata_json,
-            run_plan_id=run_plan_id,
-            run_plan_step_id=run_plan_step_id,
-            created_by=created_by,
-            now=now,
-        )
-        for dependency_key in dependency_keys or []:
-            dependency = self._ticket_by_key(tracker.id, dependency_key)
-            self._add_dependency(tracker, ticket, dependency)
-        for reference in references_json or []:
-            self._add_reference(tracker, ticket, reference)
-        self._sync_task_status(task, now=now)
-        self._record_revision(
-            tracker,
-            actor=created_by,
-            change_kind="create",
-            entity_kind="ticket",
-            entity_id=ticket.id,
-            entity_key=ticket.key,
-            summary=f"Created ticket {ticket.key}.",
-            after_json=self._ticket_snapshot(ticket),
-            commit=False,
-        )
+        if not commit:
+            # SQLite legacy transaction control does not BEGIN for SAVEPOINT.
+            # Without an outer transaction, RELEASE would commit this caller's work.
+            connection = self._s.connection()
+            if (
+                connection.dialect.name == "sqlite"
+                and not connection.connection.driver_connection.in_transaction
+            ):
+                connection.exec_driver_sql("BEGIN")
+        with self._s.begin_nested():
+            tracker = self.ensure_tracker(project_id=project_id)
+            task = self._task_by_key(tracker.id, task_key)
+            key = _slug(key, fallback="ticket", max_length=180)
+            if self._ticket_by_key(tracker.id, key, missing_ok=True) is not None:
+                raise ConflictError("tracker ticket key already exists", data={"ticket_key": key})
+            parent_id: int | None = None
+            if parent_ticket_key:
+                parent = self._ticket_by_key(tracker.id, parent_ticket_key)
+                parent_id = parent.id
+            now = _utcnow()
+            ticket = self._create_ticket_row(
+                tracker=tracker,
+                task=task,
+                key=key,
+                title=title,
+                goal=goal,
+                status=status,
+                kind=kind,
+                assignee=assignee,
+                priority_key=priority_key,
+                lane_key=lane_key,
+                parent_ticket_id=parent_id,
+                blocker_reason=blocker_reason,
+                outcome=outcome,
+                effort=effort,
+                source_kind=source_kind,
+                source_json=source_json,
+                definition_of_done_json=definition_of_done_json,
+                constraints_json=constraints_json,
+                expected_changes_json=expected_changes_json,
+                allowed_paths_json=allowed_paths_json,
+                completion_evidence_json=completion_evidence_json,
+                context_json=context_json,
+                metadata_json=metadata_json,
+                run_plan_id=run_plan_id,
+                run_plan_step_id=run_plan_step_id,
+                created_by=created_by,
+                now=now,
+            )
+            for dependency_key in dependency_keys or []:
+                dependency = self._ticket_by_key(tracker.id, dependency_key)
+                self._add_dependency(tracker, ticket, dependency)
+            for reference in references_json or []:
+                self._add_reference(tracker, ticket, reference)
+            self._sync_task_status(task, now=now)
+            self._record_revision(
+                tracker,
+                actor=created_by,
+                change_kind="create",
+                entity_kind="ticket",
+                entity_id=ticket.id,
+                entity_key=ticket.key,
+                summary=f"Created ticket {ticket.key}.",
+                after_json=self._ticket_snapshot(ticket),
+                commit=False,
+            )
         if commit:
             self._s.commit()
             self._s.refresh(ticket)

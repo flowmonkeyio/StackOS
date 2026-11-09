@@ -119,67 +119,69 @@ class TrackerBulkMixin:
         now = _utcnow()
         created: list[TrackerTicket] = []
         created_by_key: dict[str, TrackerTicket] = {}
-        for spec in specs:
-            ticket = self._create_ticket_row(
-                tracker=tracker,
-                task=task,
-                key=spec["key"],
-                title=spec["title"],
-                goal=spec["goal"],
-                status=spec["status"],
-                kind=spec["kind"],
-                assignee=spec["assignee"],
-                priority_key=spec["priority_key"],
-                lane_key=spec["lane_key"],
-                blocker_reason=spec["blocker_reason"],
-                outcome=spec["outcome"],
-                effort=spec["effort"],
-                source_kind=spec["source_kind"],
-                source_json=spec["source_json"],
-                definition_of_done_json=spec["definition_of_done_json"],
-                constraints_json=spec["constraints_json"],
-                expected_changes_json=spec["expected_changes_json"],
-                allowed_paths_json=spec["allowed_paths_json"],
-                completion_evidence_json=spec["completion_evidence_json"],
-                context_json=spec["context_json"],
-                metadata_json=spec["metadata_json"],
-                run_plan_id=spec["run_plan_id"],
-                run_plan_step_id=spec["run_plan_step_id"],
-                created_by=spec["created_by"] or actor,
-                now=now,
-            )
-            created.append(ticket)
-            created_by_key[ticket.key] = ticket
-
-        for spec in specs:
-            ticket = created_by_key[spec["key"]]
-            parent_key = spec["parent_ticket_key"]
-            if parent_key:
-                parent = created_by_key.get(parent_key) or self._ticket_by_key(
-                    tracker.id, parent_key
+        # One savepoint owns all skeletons, relations, revisions and task rollup.
+        with self._s.begin_nested():
+            for spec in specs:
+                ticket = self._create_ticket_row(
+                    tracker=tracker,
+                    task=task,
+                    key=spec["key"],
+                    title=spec["title"],
+                    goal=spec["goal"],
+                    status=spec["status"],
+                    kind=spec["kind"],
+                    assignee=spec["assignee"],
+                    priority_key=spec["priority_key"],
+                    lane_key=spec["lane_key"],
+                    blocker_reason=spec["blocker_reason"],
+                    outcome=spec["outcome"],
+                    effort=spec["effort"],
+                    source_kind=spec["source_kind"],
+                    source_json=spec["source_json"],
+                    definition_of_done_json=spec["definition_of_done_json"],
+                    constraints_json=spec["constraints_json"],
+                    expected_changes_json=spec["expected_changes_json"],
+                    allowed_paths_json=spec["allowed_paths_json"],
+                    completion_evidence_json=spec["completion_evidence_json"],
+                    context_json=spec["context_json"],
+                    metadata_json=spec["metadata_json"],
+                    run_plan_id=spec["run_plan_id"],
+                    run_plan_step_id=spec["run_plan_step_id"],
+                    created_by=spec["created_by"] or actor,
+                    now=now,
                 )
-                ticket.parent_ticket_id = parent.id
-                self._s.add(ticket)
-            for dependency_key in spec["dependency_keys"]:
-                dependency = created_by_key.get(dependency_key) or self._ticket_by_key(
-                    tracker.id, dependency_key
-                )
-                self._add_dependency(tracker, ticket, dependency)
-            for reference in spec["references_json"]:
-                self._add_reference(tracker, ticket, reference)
-            self._record_revision(
-                tracker,
-                actor=actor or spec["created_by"],
-                change_kind="list-create",
-                entity_kind="ticket",
-                entity_id=ticket.id,
-                entity_key=ticket.key,
-                summary=f"Created ticket {ticket.key} from list.",
-                after_json=self._ticket_snapshot(ticket),
-                commit=False,
-            )
+                created.append(ticket)
+                created_by_key[ticket.key] = ticket
 
-        self._sync_task_status(task, now=now)
+            for spec in specs:
+                ticket = created_by_key[spec["key"]]
+                parent_key = spec["parent_ticket_key"]
+                if parent_key:
+                    parent = created_by_key.get(parent_key) or self._ticket_by_key(
+                        tracker.id, parent_key
+                    )
+                    ticket.parent_ticket_id = parent.id
+                    self._s.add(ticket)
+                for dependency_key in spec["dependency_keys"]:
+                    dependency = created_by_key.get(dependency_key) or self._ticket_by_key(
+                        tracker.id, dependency_key
+                    )
+                    self._add_dependency(tracker, ticket, dependency)
+                for reference in spec["references_json"]:
+                    self._add_reference(tracker, ticket, reference)
+                self._record_revision(
+                    tracker,
+                    actor=actor or spec["created_by"],
+                    change_kind="list-create",
+                    entity_kind="ticket",
+                    entity_id=ticket.id,
+                    entity_key=ticket.key,
+                    summary=f"Created ticket {ticket.key} from list.",
+                    after_json=self._ticket_snapshot(ticket),
+                    commit=False,
+                )
+
+            self._sync_task_status(task, now=now)
         self._s.commit()
         for ticket in created:
             self._s.refresh(ticket)

@@ -10,11 +10,47 @@ from tests.integration.test_repositories.test_agent_statistics import (
     _store,
     seed_dated_statistics,
 )
+from tests.integration.test_repositories.test_tracker import (
+    _seed_ticket_create_state,
+    _ticket_create_state,
+)
 
 
 def _operation_data(response):
     body = response.json()
     return body.get("data", body)
+
+
+def test_ticket_create_rest_invalid_ack_keeps_errors_and_state(api: TestClient, project_id: int):
+    engine = api.app.state.engine
+    with Session(engine) as session:
+        _seed_ticket_create_state(session, project_id)
+    baseline = _ticket_create_state(engine, project_id)
+    response = api.post(
+        "/api/v1/operations/tracker.createTicket/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "task_key": "atomic",
+                "idempotency_key": "rest-invalid",
+                "response_mode": "ack",
+                "tickets_json": [
+                    {"key": "new-a", "references_json": [{"ref": "valid"}]},
+                    {
+                        "key": "new-b",
+                        "dependency_keys": ["new-a"],
+                        "references_json": [{"path": "missing-ref"}],
+                    },
+                ],
+            }
+        },
+    )
+    assert response.status_code == 200, response.text
+    data = _operation_data(response)
+    assert data["valid"] is False
+    assert data["errors"][0]["field"] == "references_json[0].ref"
+    assert data["errors"][0]["key"] == "new-b"
+    assert _ticket_create_state(engine, project_id) == baseline
 
 
 def test_tracker_metrics_survive_raw_and_compact_browser_projections(

@@ -17,6 +17,28 @@ async def _handler(*_args: object, **_kwargs: object) -> dict[str, object]:
     return {}
 
 
+@pytest.mark.parametrize("mode", ["raw", "compact", "ack"])
+def test_invalid_validation_response_retains_complete_repair_context(mode) -> None:
+    payload = {
+        "project_id": 7,
+        "data": {
+            "valid": False,
+            "rev": 3,
+            "errors": [
+                {
+                    "index": 1,
+                    "key": "bad",
+                    "field": "references_json[0].ref",
+                    "message": "ticket reference ref is required",
+                }
+            ],
+            "results": [{"index": 1, "key": "bad", "action": "error"}],
+        },
+    }
+    shaped = shape_operation_response(_spec("tracker.createTicket"), payload, response_mode=mode)
+    assert shaped["data"] == payload["data"]
+
+
 def _spec(name: str, *, mutating: bool = True) -> OperationSpec:
     return OperationSpec(
         name=name,

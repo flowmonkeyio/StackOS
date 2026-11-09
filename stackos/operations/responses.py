@@ -483,7 +483,9 @@ def shape_operation_response(
     idempotency_replay: bool = False,
 ) -> dict[str, Any]:
     """Return the caller-facing response shape without mutating canonical payload."""
-    if response_mode == "raw":
+    # Validation results are repair instructions, even when ACK was requested.
+    # Retain their full structured context just as for raised operation errors.
+    if response_mode == "raw" or _data(payload).get("valid") is False:
         return _with_replay(copy.deepcopy(payload), idempotency_replay)
     if response_mode == "ack":
         return _with_replay(_ack_payload(spec, payload), idempotency_replay)

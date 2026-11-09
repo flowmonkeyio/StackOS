@@ -9,8 +9,17 @@ from stackos.db.models import (
     TrackerSourceKind,
     TrackerTicketKind,
 )
+from stackos.repositories.base import ValidationError
 from stackos.repositories.tracker.schema import TrackerListIssueOut
 from stackos.repositories.tracker.utils import _clean_text, _slug
+
+
+def ticket_reference_ref(reference: dict[str, Any]) -> str:
+    """Apply the existing reference coercion and required-ref rule."""
+    ref = str(reference.get("ref") or "")
+    if not ref:
+        raise ValidationError("ticket reference ref is required")
+    return ref
 
 
 def normalize_ticket_key(
@@ -126,6 +135,19 @@ def normalize_ticket_spec(
             )
         )
         references_json = []
+    else:
+        for reference_index, reference in enumerate(references_json):
+            try:
+                ticket_reference_ref(reference)
+            except ValidationError as exc:
+                issues.append(
+                    TrackerListIssueOut(
+                        index=index,
+                        key=key,
+                        field=f"references_json[{reference_index}].ref",
+                        message=str(exc),
+                    )
+                )
     completion_evidence_json = raw.get("completion_evidence_json")
     if completion_evidence_json is not None and not isinstance(completion_evidence_json, dict):
         issues.append(
@@ -326,4 +348,5 @@ __all__ = [
     "normalize_ticket_key",
     "normalize_ticket_spec",
     "self_dependency_issue",
+    "ticket_reference_ref",
 ]
