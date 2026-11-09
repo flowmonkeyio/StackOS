@@ -997,6 +997,40 @@ def resolve_delivery_settings(
     }
 
 
+def workflow_agent_assignments(
+    *,
+    requirements: list[dict[str, Any]],
+    steps: Mapping[str, str | None],
+    selected_roles: set[str],
+    assignments: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Resolve explicit/frozen/declared workflow roles for preflight and handoff."""
+    explicit = dict(assignments or {})
+    if explicit.keys() - steps.keys():
+        raise ValidationError("Agent assignments must reference existing workflow steps")
+    result = {}
+    for key, frozen_role in steps.items():
+        role = explicit.get(key) or frozen_role
+        if role is None and requirements:
+            applicable = {
+                req["role"]
+                for req in requirements
+                if not req.get("applies_to_steps") or key in req["applies_to_steps"]
+            }
+            if any(
+                req.get("requirement") == "required" and req["role"] not in selected_roles
+                for req in requirements
+                if req["role"] in applicable
+            ):
+                raise ValidationError("Required declared workflow role has no selected agent")
+            applicable &= selected_roles
+            if len(applicable) != 1:
+                raise ValidationError("Ambiguous workflow roles require explicit agent_assignments")
+            role = applicable.pop()
+        result[key] = role or "delivery_agent"
+    return result
+
+
 def start_delivery(
     *,
     session: Session,
@@ -1137,38 +1171,24 @@ def start_delivery(
         declared_roles = {requirement["role"] for requirement in declared}
         if declared_roles and set(resolved) - declared_roles - {"delivery_agent", "review_agent"}:
             raise ValidationError("Selected agents must bind declared workflow roles")
-        for step in plan.steps:
-            if step.status in {RunPlanStepStatus.SUCCESS, RunPlanStepStatus.SKIPPED}:
-                continue
-            key = workflow_step_ticket_key(plan.id, step.step_id)
-            if key in assignments:
-                continue
-            role = (step.metadata_json or {}).get("agent_assignment")
-            if role is not None:
-                if role not in resolved:
-                    raise ValidationError("Frozen step agent_assignment has no selected binding")
-            elif declared:
-                if any(
-                    req.get("requirement") == "required"
-                    and req["role"] not in resolved
-                    and (not req.get("applies_to_steps") or step.step_id in req["applies_to_steps"])
-                    for req in declared
-                ):
-                    raise ValidationError("Required declared workflow role has no selected agent")
-                applicable = {
-                    req["role"]
-                    for req in declared
-                    if req["role"] in resolved
-                    and (not req.get("applies_to_steps") or step.step_id in req["applies_to_steps"])
-                }
-                if len(applicable) != 1:
-                    raise ValidationError(
-                        "Ambiguous workflow roles require explicit agent_assignments"
-                    )
-                role = applicable.pop()
-            else:
-                role = "delivery_agent"
-            assignments[key] = role
+        pending_steps = {
+            step.step_id: (step.metadata_json or {}).get("agent_assignment")
+            for step in plan.steps
+            if step.status not in {RunPlanStepStatus.SUCCESS, RunPlanStepStatus.SKIPPED}
+        }
+        selected_steps = workflow_agent_assignments(
+            requirements=declared,
+            steps=pending_steps,
+            selected_roles=set(resolved),
+            assignments={
+                step: assignments[key]
+                for step in pending_steps
+                if (key := workflow_step_ticket_key(plan.id, step)) in assignments
+            },
+        )
+        assignments.update(
+            (workflow_step_ticket_key(plan.id, step), role) for step, role in selected_steps.items()
+        )
     for ticket in ordinary:
         assignments.setdefault(ticket.key, "delivery_agent")
         if assignments[ticket.key] == "review_agent":

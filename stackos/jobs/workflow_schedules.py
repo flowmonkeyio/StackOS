@@ -28,6 +28,7 @@ from stackos.repositories.projects import ScheduleConfiguration, ScheduledJobRep
 from stackos.repositories.run_plan_state import TERMINAL_PLAN_STATUSES
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker.utils import TERMINAL_TRACKER_STATUSES
+from stackos.repositories.tracker.workflow import workflow_step_ticket_key
 from stackos.task_delivery import start_delivery
 
 WORKFLOW_JOB_PREFIX = "workflow-schedule-"
@@ -187,6 +188,7 @@ class WorkflowScheduleRuntime:
                     row.project_id, self._config(current)
                 )
                 assert settings is not None
+                step_assignments = settings.pop("step_agent_assignments")
                 # Setup/host checks may outlive presence, configuration or jitter allowance.
                 if not admit():
                     return
@@ -234,6 +236,10 @@ class WorkflowScheduleRuntime:
                     task_key=f"workflow-{plan.id}",
                     run_plan_id=plan.id,
                     step_id=step.step_id,
+                    agent_assignments={
+                        workflow_step_ticket_key(plan.id, key): role
+                        for key, role in step_assignments.items()
+                    },
                     **settings,
                 )
                 self._result(session, current, due, "started")

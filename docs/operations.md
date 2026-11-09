@@ -41,11 +41,21 @@ job is reported missing before any effect.
 It accepts a display `name`, five-field `cron_expr`, IANA `timezone`, existing
 `template_key`, concrete `inputs_json`, and `execution_json`. Execution settings
 reuse `tracker.startDelivery`: required `project_dir`, optional `host_key`,
-`delivery_agent`/`review_agent` overrides and `mcp_config_ref`. Task keys,
-ticket assignments, run-plan IDs and step IDs belong to occurrences and are
-rejected here. Roles must carry explicitly prepared workflow instructions in
-project defaults or these overrides; validation does not judge their semantic
-suitability. Credentials remain daemon-held; raw secret fields are rejected,
+`agents` (declared role key to selection), legacy `delivery_agent`/`review_agent`
+overrides and `mcp_config_ref`. Codex selections use exact project `source_ref`
+values (`host_key`, `native_name`, project-relative `source_path`), with optional
+execution fallbacks; source instructions are never copied into schedule storage.
+Other hosts retain their existing inline contracts. No engineering pair is
+required for a workflow with one declared role. Ordinary tickets still require
+independent review through the handoff owner.
+
+Optional `step_agent_assignments` maps existing template step IDs to selected
+role keys. Explicit selections take precedence over frozen step metadata, then
+a uniquely applicable declared role; ambiguous roles require an explicit choice.
+The scheduler translates step IDs to the occurrence's canonical ticket keys.
+Task keys, ticket assignments and run-plan IDs remain occurrence-only inputs.
+Validation does not judge the semantic suitability of the selected instructions.
+Credentials remain daemon-held; raw secret fields are rejected,
 including in disabled drafts. Opaque secret markers keep their existing rules.
 Cron parsing uses the existing APScheduler `CronTrigger.from_crontab` contract:
 numeric weekdays run from Monday (`0`) to Sunday (`6`); named weekdays such as
@@ -55,7 +65,10 @@ Schedules default to disabled. Incomplete disabled drafts are permitted;
 supplied cron, timezone and execution shape must still be valid. Enabling
 strictly validates effective workflow inputs/defaults with the existing
 read-only run-plan validator and resolves current host/role settings through
-the handoff preflight. This creates no request, run plan, run or tracker task,
+the handoff preflight. Saving supplied source refs also revalidates their current
+identity/settings; complete declared selections validate step and role mappings
+even while disabled. Missing/renamed/malformed sources fail without fallback.
+This creates no request, run plan, run or tracker task,
 and grants no external action approval. Legacy metadata rows migrate to
 disabled, retain their IDs/key/cron/history and show a needs-setup issue.
 
@@ -92,7 +105,9 @@ Its existing strict builder freezes the effective template, inputs, grants
 and approvals together. Existing plan start/claim selects the first
 dependency-ready step without a named phase, then `startDelivery` freezes
 current role settings on that task and traverses its dependencies. A non-Git
-workspace is valid. The schedule records `started`, `overlap`, `unavailable`
+workspace is valid. Each new occurrence reads current source digests/settings;
+queued, running and historical occurrences retain their accepted snapshots.
+The schedule records `started`, `overlap`, `unavailable`
 or `blocked`; admitted failures retain safe request diagnostics and canonical
 plan/approval state for explicit inspection/repair, with no automatic retry.
 Role override omission inherits defaults; explicit optional nulls clear them.
