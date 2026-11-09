@@ -20,15 +20,16 @@ export const useProjectDataStore = defineStore('projectData', () => {
   }
   const resources = useStackOsResourcesStore()
   const currentProjectId = ref<number | null>(null)
-  const artifacts = computed(() => resources.currentProjectId === currentProjectId.value ? resources.artifacts : [])
+  const artifactScopeCurrent = computed(() => resources.currentProjectId === currentProjectId.value)
+  const artifacts = computed(() => artifactScopeCurrent.value ? resources.artifacts : [])
   const pages = reactive({
     timeline: sources.timeline.page, snapshots: sources.snapshots.page,
     learnings: sources.learnings.page, experiments: sources.experiments.page,
     observations: sources.observations.page, decisions: sources.decisions.page,
     metrics: sources.metrics.page,
   })
-  const loading = computed(() => Object.values(pages).some((page) => page.loading) || resources.artifactPage.loading)
-  const error = computed(() => Object.values(pages).find((page) => page.error)?.error || resources.artifactPage.error)
+  const loading = computed(() => Object.values(pages).some((page) => page.loading) || artifactScopeCurrent.value && resources.artifactPage.loading)
+  const error = computed(() => Object.values(pages).find((page) => page.error)?.error || (artifactScopeCurrent.value ? resources.artifactPage.error : null))
 
   function ensureScope(projectId: number) {
     if (currentProjectId.value === projectId) return

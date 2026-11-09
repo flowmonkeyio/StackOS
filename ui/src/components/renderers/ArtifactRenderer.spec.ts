@@ -39,4 +39,29 @@ describe('ArtifactRenderer reference capabilities', () => {
     expect(w.text()).not.toContain('https://example.com/original.png')
     expect(w.text()).toContain('Finance')
   })
+
+  it.each([
+    'ftp://review-user:review-password@example.invalid/file',
+    's3://review-user:review-password@example.invalid/file',
+    'https://example.invalid/image.png?sig=review-signature&sp=r&se=2099-01-01',
+    'https://example.invalid/image.png?SIG=review-signature',
+    'https://example.invalid/image.png?path=?&s%69g=review-signature',
+    's3://example.invalid/file?X-Amz-Signature=review-signature',
+  ])('withholds credentials and signed capabilities in actions and Details: %s', (uri) => {
+    const row = artifact(uri)
+    const w = mount(ArtifactRenderer, { props: { artifact: row } })
+    expect(w.find('a').exists()).toBe(false)
+    expect(w.findAll('button').some((button) => button.text().includes('Preview'))).toBe(false)
+    expect(w.find('img').exists()).toBe(false)
+    expect(w.get('details').text()).not.toContain('review-password')
+    expect(w.get('details').text()).not.toContain('review-signature')
+    expect(w.get('details').text()).toContain('[redacted reference]')
+    expect(row.uri).toBe(uri)
+  })
+
+  it.each(['ftp://example.invalid/file', 's3://example.invalid/file', 'file:///private/example.png'])('preserves harmless unsupported reference metadata: %s', (uri) => {
+    const w = mount(ArtifactRenderer, { props: { artifact: artifact(uri) } })
+    expect(w.find('a').exists()).toBe(false)
+    expect(w.get('details').text()).toContain(uri)
+  })
 })

@@ -44,4 +44,24 @@ describe('shared source details', () => {
     expect(w.text()).toContain('No readable field hints')
     expect(w.get('details').text()).toContain('Historical content without schema hints')
   })
+
+  it('treats absent prototype-named schema fields as missing while retaining real own fields', () => {
+    const source = toLibrarySource('resource_record', {
+      id: 3, project_id: 2, resource_id: 8, resource_key: 'old-record', plugin_slug: 'engineering',
+      data_json: { summary: 'Recorded content' },
+    } as never)
+    const resource = { id: 8, key: 'old-record', plugin_slug: 'engineering',
+      ui_schema_json: { summary_fields: ['summary'], table_columns: ['constructor', 'toString', 'missing'] } } as never
+    const w = mount(SourceDetailRenderer, { props: { source, resource } })
+    const facts = w.get('[aria-label="Saved content"]')
+    expect(facts.text()).toContain('Recorded content')
+    expect(facts.text()).not.toContain('function')
+    expect(facts.findAll('dd').slice(1).map((field) => field.text())).toEqual(['-', '-', '-'])
+    const ownSource = toLibrarySource('resource_record', {
+      ...source.payload, data_json: { constructor: 'Recorded constructor value' },
+    })
+    const own = mount(SourceDetailRenderer, { props: { source: ownSource, resource } })
+    expect(own.get('[aria-label="Saved content"]').text()).toContain('Recorded constructor value')
+    expect(w.get('details').text()).toContain('Recorded content')
+  })
 })

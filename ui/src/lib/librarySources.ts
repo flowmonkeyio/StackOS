@@ -49,8 +49,10 @@ function fields(value: unknown): string[] {
 function label(key: string) { return key.replaceAll('_', ' ').replace(/^./, (c) => c.toUpperCase()) }
 function factGroup(title: string, data: Record<string, unknown>, keys: string[], wide = false): UiFactGroup {
   return { title, items: keys.map((key) => {
-    const value = shortValue(data[key])
-    return { label: label(key), value, wide: wide || ['decision', 'rationale', 'statement', 'hypothesis'].includes(key) || value.length > 80 || typeof data[key] === 'object' && data[key] !== null }
+    const field = Object.prototype.hasOwnProperty.call(data, key) ? data[key] : undefined
+    const formatted = shortValue(field)
+    const value = typeof formatted === 'string' ? formatted : '-'
+    return { label: label(key), value, wide: wide || ['decision', 'rationale', 'statement', 'hypothesis'].includes(key) || value.length > 80 || typeof field === 'object' && field !== null }
   }) }
 }
 
@@ -83,16 +85,27 @@ export function sourceFactGroups(source: LibrarySource, resource?: SchemaResourc
   return [factGroup('Saved content', data, keys[source.source_kind])]
 }
 
-export function artifactReference(artifact: SchemaArtifactOut): { href: string | null; preview: boolean; reason: string } {
-  if (artifact.plugin_slug === 'finance') return { href: null, preview: false, reason: 'Finance files remain available through Finance.' }
-  const unavailable = { href: null, preview: false, reason: 'Reference unavailable for opening or preview.' }
+export function artifactReference(artifact: SchemaArtifactOut): { href: string | null; preview: boolean; reason: string; display_uri: string } {
+  if (artifact.plugin_slug === 'finance') return { href: null, preview: false, reason: 'Finance files remain available through Finance.', display_uri: '[private reference]' }
+  const uri = artifact.uri
+  const sanitized = String(sanitizeForDisplay(uri))
+  // Classify display safety for every scheme, including malformed authorities.
+  const queryStart = uri.indexOf('?')
+  const query = new URLSearchParams(queryStart < 0 ? '' : uri.slice(queryStart + 1).split('#')[0])
+  const hasCredentialQuery = [...query.keys()].some((key) =>
+    /^sig$/i.test(key) || /token|secret|password|signature|credential|api.?key|access.?key|authorization/i.test(key))
+  const hasUserinfo = /^[a-z][a-z\d+.-]*:\/\/[^/?#]*@/i.test(uri)
+  const sensitive = sanitized !== uri || hasUserinfo || hasCredentialQuery
+  const unavailable = {
+    href: null, preview: false, reason: 'Reference unavailable for opening or preview.',
+    display_uri: sensitive ? '[redacted reference]' : sanitized,
+  }
+  if (sensitive) return unavailable
   try {
-    const uri = artifact.uri
-    if (!uri || [...uri].some((char) => char.charCodeAt(0) < 33) || /\s/.test(uri) || sanitizeForDisplay(uri) !== uri) return unavailable
+    if (!uri || [...uri].some((char) => char.charCodeAt(0) < 33) || /\s/.test(uri)) return unavailable
     const url = new URL(uri)
-    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) return unavailable
-    // Never turn credential-bearing/presigned references into browser capabilities.
-    if ([...url.searchParams.keys()].some((key) => /token|secret|password|signature|credential|api.?key/i.test(key))) return unavailable
-    return { href: url.href, preview: ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'].includes(artifact.mime_type ?? ''), reason: 'External reference; availability has not been checked.' }
+    if (url.username || url.password) return { ...unavailable, display_uri: '[redacted reference]' }
+    if (!['https:', 'http:'].includes(url.protocol)) return unavailable
+    return { href: url.href, preview: ['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif'].includes(artifact.mime_type ?? ''), reason: 'External reference; availability has not been checked.', display_uri: sanitized }
   } catch { return unavailable }
 }

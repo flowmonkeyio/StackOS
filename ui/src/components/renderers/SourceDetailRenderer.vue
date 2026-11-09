@@ -22,10 +22,8 @@ const details = computed(() => {
         reference: 'Inspect through Finance',
       } })
     }
-    // URI credentials are not safe display metadata, even when no action is offered.
-    if (!artifactReference(artifact).href && /https?:/i.test(artifact.uri)) {
-      return sanitizeForDisplay({ ...identity, payload: { ...artifact, uri: '[redacted reference]' } })
-    }
+    // The same classification owns action capability and safe URI display.
+    return sanitizeForDisplay({ ...identity, payload: { ...artifact, uri: artifactReference(artifact).display_uri } })
   }
   return sanitizeForDisplay({ ...identity, payload })
 })
