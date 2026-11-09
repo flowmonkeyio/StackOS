@@ -175,6 +175,51 @@ def test_schedule_http_save_validates_unassigned_selections(
         assert_no_admission(session)
 
 
+@pytest.mark.parametrize("surface", ["legacy", "operation"])
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("role", ["delivery_agent", "review_agent"])
+@pytest.mark.parametrize("invalid", ["copied_codex", "missing_source"])
+def test_schedule_http_save_validates_shadowed_map_selections(
+    api, project_id, tmp_path, surface, enabled, role, invalid
+):
+    from sqlmodel import Session, select
+
+    from stackos.db.models import ScheduledJob
+    from tests.integration.test_repositories.test_workflow_schedule_agents import (
+        assert_no_admission,
+        configuration,
+    )
+
+    with Session(api.app.state.engine) as session:
+        config = configuration(session, project_id, tmp_path)
+    config["enabled"] = enabled
+    execution = config["execution_json"]
+    ref = execution["agents"]["role0"]["source_ref"]
+    execution[role] = {"source_ref": ref}
+    execution["agents"][role] = (
+        {"name": "copied", "instructions": "Duplicate Codex prompt"}
+        if invalid == "copied_codex"
+        else {
+            "source_ref": {
+                **ref,
+                "native_name": "missing",
+                "source_path": ".codex/agents/missing.toml",
+            }
+        }
+    )
+    if surface == "legacy":
+        response = api.post(f"/api/v1/projects/{project_id}/schedules", json=config)
+    else:
+        response = api.post(
+            "/api/v1/operations/schedule.set/call",
+            json={"arguments": {"project_id": project_id, **config}},
+        )
+    assert response.status_code == 422, response.text
+    with Session(api.app.state.engine) as session:
+        assert session.exec(select(ScheduledJob)).all() == []
+        assert_no_admission(session)
+
+
 def test_schedule_mutations_reject_wrong_project(api: TestClient, project_id: int) -> None:
     created = api.post(
         f"/api/v1/projects/{project_id}/schedules",

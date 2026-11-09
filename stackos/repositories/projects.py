@@ -728,9 +728,28 @@ class ScheduledJobRepository:
             for key in ("name", "timezone", "template_key", "execution_json")
             if not config.get(key)
         ]
-        if not config.get("enabled") and (
+        incomplete_draft = not config.get("enabled") and (
             missing or (not execution.get("agents") and explicit is None)
-        ):
+        )
+        # Legacy role arguments replace matching mapped choices at execution, but
+        # both forms remain stored. Validate the shadowed choices before merging.
+        shadowed = {
+            role: choice
+            for role, choice in (execution.get("agents") or {}).items()
+            if role in {"delivery_agent", "review_agent"}
+            and execution.get(role) is not None
+            and (not incomplete_draft or choice.get("source_ref") or choice.get("instructions"))
+        }
+        if shadowed:
+            resolve_delivery_settings(
+                self._s,
+                project_id=project_id,
+                project_dir=execution["project_dir"],
+                host_key=execution.get("host_key"),
+                agents=shadowed,
+                role_keys=set(shadowed),
+            )
+        if incomplete_draft:
             # Incomplete drafts stay inert, but supplied source identities must be current.
             source_roles = {
                 role

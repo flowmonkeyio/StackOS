@@ -295,6 +295,116 @@ async def test_supplied_non_codex_role_and_unrelated_project_defaults(
 
 
 @pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("role", ["delivery_agent", "review_agent"])
+@pytest.mark.parametrize("invalid", ["copied_codex", "missing_source"])
+@pytest.mark.parametrize("invalid_form", ["mapped", "legacy"])
+def test_save_validates_both_overlapping_role_forms(
+    session, project_id, tmp_path, enabled, role, invalid, invalid_form
+):
+    config = configuration(session, project_id, tmp_path)
+    execution = config["execution_json"]
+    ref = execution["agents"]["role0"]["source_ref"]
+    bad = (
+        {"name": "copied", "instructions": "Duplicate Codex prompt"}
+        if invalid == "copied_codex"
+        else {
+            "source_ref": {
+                **ref,
+                "native_name": "missing",
+                "source_path": ".codex/agents/missing.toml",
+            }
+        }
+    )
+    execution["agents"][role] = bad if invalid_form == "mapped" else {"source_ref": ref}
+    execution[role] = {"source_ref": ref} if invalid_form == "mapped" else bad
+    with pytest.raises(ValidationError):
+        ScheduledJobRepository(session).set(project_id=project_id, enabled=enabled, **config)
+    assert session.exec(select(ScheduledJob)).all() == []
+    assert_no_admission(session)
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("role", ["delivery_agent", "review_agent"])
+@pytest.mark.parametrize("mapped_host", ["codex", "claude-code"])
+def test_valid_overlapping_roles_keep_legacy_precedence(
+    session, project_id, tmp_path, enabled, role, mapped_host
+):
+    config = configuration(session, project_id, tmp_path)
+    execution = config["execution_json"]
+    ref = execution["agents"]["role0"]["source_ref"]
+    execution["agents"][role] = (
+        {"source_ref": source(session, project_id, tmp_path, f"mapped-{role}")}
+        if mapped_host == "codex"
+        else {"host_key": "claude-code", "name": "mapped", "instructions": "Prepared mapped role"}
+    )
+    execution[role] = {"source_ref": ref}
+    repo = ScheduledJobRepository(session)
+    saved = repo.set(project_id=project_id, enabled=enabled, **config).data
+    assert session.get(ScheduledJob, saved.id).execution_json == execution
+    settings = repo.validate_configuration(project_id, {**config, "enabled": True})
+    resolved = settings["_resolved_settings"]["agents"][role]
+    assert resolved["source_ref"] == ref
+    assert resolved["instructions"] == "role0"
+    assert_no_admission(session)
+
+
+@pytest.mark.parametrize("role", ["delivery_agent", "review_agent"])
+def test_incomplete_overlapping_role_draft_preserves_partial_choices(
+    session, project_id, tmp_path, role
+):
+    config = configuration(session, project_id, tmp_path)
+    config.pop("name")
+    execution = config["execution_json"]
+    execution[role] = execution["agents"]["role0"]
+    execution["agents"][role] = {"model": None}
+    saved = ScheduledJobRepository(session).set(project_id=project_id, **config).data
+    assert session.get(ScheduledJob, saved.id).execution_json == execution
+    assert not saved.enabled
+    assert_no_admission(session)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("role", ["delivery_agent", "review_agent"])
+@pytest.mark.parametrize("invalid", ["copied_codex", "missing_source"])
+async def test_existing_shadowed_invalid_selection_blocks_enable_and_admission(
+    session, project_id, tmp_path, role, invalid
+):
+    config = configuration(session, project_id, tmp_path)
+    repo = ScheduledJobRepository(session)
+    saved = repo.set(project_id=project_id, enabled=True, **config).data
+    execution = config["execution_json"]
+    ref = execution["agents"]["role0"]["source_ref"]
+    execution[role] = {"source_ref": ref}
+    execution["agents"][role] = (
+        {"name": "copied", "instructions": "Duplicate Codex prompt"}
+        if invalid == "copied_codex"
+        else {
+            "source_ref": {
+                **ref,
+                "native_name": "missing",
+                "source_path": ".codex/agents/missing.toml",
+            }
+        }
+    )
+    row = session.get(ScheduledJob, saved.id)
+    row.execution_json = execution  # Disposable state written by the old save behavior.
+    session.add(row)
+    session.commit()
+    scheduler = AdmissionScheduler()
+    runtime = WorkflowScheduleRuntime(scheduler, lambda: Session(session.get_bind()))
+    await runtime._launch(row, datetime.now(UTC), lambda: True)
+    session.expire_all()
+    assert session.get(ScheduledJob, saved.id).last_run_status == "unavailable"
+    assert repo.list(project_id)[0].setup_issue
+    assert scheduler.jobs == []
+    repo.toggle(saved.id, project_id=project_id, enabled=False)
+    with pytest.raises(ValidationError):
+        repo.toggle(saved.id, project_id=project_id, enabled=True)
+    assert not session.get(ScheduledJob, saved.id).enabled
+    assert_no_admission(session)
+
+
+@pytest.mark.parametrize("enabled", [False, True])
 @pytest.mark.parametrize(
     "bad_selection", ["ambiguous", "step", "role", "undeclared", "missing", "copied"]
 )

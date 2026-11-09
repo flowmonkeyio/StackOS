@@ -68,6 +68,8 @@ read-only run-plan validator and resolves current host/role settings through
 the handoff preflight. Saving supplied source refs also revalidates their current
 identity/settings, including supplied roles not assigned to any step, regardless
 of enabled state. Unrelated unselected project defaults are not resolved.
+When both forms supply `delivery_agent` or `review_agent`, each retained choice
+is validated separately; the legacy argument keeps its existing execution precedence.
 Complete declared selections validate step and role mappings
 even while disabled. Missing/renamed/malformed sources fail without fallback.
 This creates no request, run plan, run or tracker task,
