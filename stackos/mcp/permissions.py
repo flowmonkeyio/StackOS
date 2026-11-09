@@ -240,6 +240,7 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "resource.get",
         "resource.query",
         "schedule.list",
+        "schedule.runs",
         "schedule.remove",
         "schedule.set",
         "schedule.toggle",

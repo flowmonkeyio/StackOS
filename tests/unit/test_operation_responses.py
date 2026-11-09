@@ -47,6 +47,40 @@ def test_provider_side_effect_operations_are_raw_only() -> None:
     assert exc.value.data["allowed_modes"] == ["raw"]
 
 
+def test_schedule_compact_keeps_state_snapshots_and_canonical_metrics() -> None:
+    row = {
+        "project_id": 7,
+        "request_id": 11,
+        "schedule_id": 3,
+        "schedule_name": "Original automation",
+        "timezone": "Europe/London",
+        "cron_expr": "0 9 * * 1",
+        "setup_issue": "Schedule needs setup: execution_json",
+        "enabled": False,
+        "status": "in-progress",
+        "duration_seconds": 25,
+        "task_key": "workflow-8",
+        "agent_stats": {"reported_usage": {"input": 0, "output": None}},
+        "active_execution": {"invocation_id": "owned-call"},
+    }
+    page = shape_operation_response(
+        _spec("schedule.runs", mutating=False),
+        {
+            "items": [row],
+            "next_cursor": 11,
+            "total_estimate": 2,
+        },
+        response_mode="compact",
+    )
+    assert page["items"] == [row]
+    assert page["next_cursor"] == 11 and page["total_estimate"] == 2
+    removed = {"data": {"project_id": 7, "job_id": 3, "removed": True}, "project_id": 7}
+    assert (
+        shape_operation_response(_spec("schedule.remove"), removed, response_mode="compact")["data"]
+        == removed["data"]
+    )
+
+
 @pytest.mark.parametrize("operation", ["runPlan.get", "runPlan.getStep", "runPlan.claimStep"])
 def test_run_plan_compact_retains_workflow_contract_drift(operation: str) -> None:
     diagnostic = {

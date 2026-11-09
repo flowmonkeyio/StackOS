@@ -16,8 +16,11 @@ from stackos.repositories.projects import (
     IntegrationBudgetRepository,
     ProjectOut,
     ProjectRepository,
+    ScheduleConfiguration,
     ScheduledJobOut,
     ScheduledJobRepository,
+    ScheduledRunOut,
+    ScheduleRemovalOut,
 )
 
 
@@ -136,7 +139,7 @@ class ScheduleListInput(MCPInput):
     project_id: int
 
 
-class ScheduleSetInput(MCPInput):
+class ScheduleSetInput(MCPInput, ScheduleConfiguration):
     model_config = ConfigDict(
         extra="forbid",
         json_schema_extra={
@@ -145,9 +148,6 @@ class ScheduleSetInput(MCPInput):
     )
 
     project_id: int
-    kind: str
-    cron_expr: str
-    enabled: bool = True
 
 
 class ScheduleToggleInput(MCPInput):
@@ -157,7 +157,7 @@ class ScheduleToggleInput(MCPInput):
     )
 
     job_id: int
-    project_id: int | None = None
+    project_id: int
     enabled: bool
 
 
@@ -168,7 +168,16 @@ class ScheduleRemoveInput(MCPInput):
     )
 
     job_id: int
-    project_id: int | None = None
+    project_id: int
+
+
+class ScheduleRunsInput(MCPInput):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: int
+    schedule_id: int | None = Field(default=None, ge=1)
+    limit: int = Field(default=50, ge=1, le=200)
+    after_id: int | None = Field(default=None, ge=1)
 
 
 async def _project_list(
@@ -263,6 +272,13 @@ async def _schedule_set(
         kind=inp.kind,
         cron_expr=inp.cron_expr,
         enabled=inp.enabled,
+        name=inp.name,
+        timezone=inp.timezone,
+        template_key=inp.template_key,
+        inputs_json=inp.inputs_json,
+        execution_json=inp.execution_json.model_dump(exclude_none=True)
+        if inp.execution_json
+        else None,
     )
     return WriteEnvelope[ScheduledJobOut](
         data=env.data, run_id=ctx.run_id, project_id=env.project_id
@@ -284,14 +300,24 @@ async def _schedule_toggle(
 
 async def _schedule_remove(
     inp: ScheduleRemoveInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> WriteEnvelope[ScheduledJobOut]:
-    env = ScheduledJobRepository(ctx.session).toggle(
+) -> WriteEnvelope[ScheduleRemovalOut]:
+    env = ScheduledJobRepository(ctx.session).remove(
         inp.job_id,
-        enabled=False,
         project_id=inp.project_id,
     )
-    return WriteEnvelope[ScheduledJobOut](
+    return WriteEnvelope[ScheduleRemovalOut](
         data=env.data, run_id=ctx.run_id, project_id=env.project_id
+    )
+
+
+async def _schedule_runs(
+    inp: ScheduleRunsInput, ctx: MCPContext, _emit: ProgressEmitter
+) -> Page[ScheduledRunOut]:
+    return ScheduledJobRepository(ctx.session).runs(
+        project_id=inp.project_id,
+        schedule_id=inp.schedule_id,
+        limit=inp.limit,
+        after_id=inp.after_id,
     )
 
 
@@ -315,6 +341,7 @@ def register(registry: ToolRegistry) -> None:
             "schedule.set",
             "schedule.toggle",
             "schedule.remove",
+            "schedule.runs",
         ),
     )
 

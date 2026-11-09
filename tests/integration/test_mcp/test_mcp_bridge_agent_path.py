@@ -1538,7 +1538,7 @@ def test_bridge_scopes_project_from_workspace_and_injects_project_id(
             "project_id": other_project_id,
             "kind": "other-weekly-review",
             "cron_expr": "0 6 * * 1",
-            "enabled": True,
+            "enabled": False,
         },
     )
     other_schedule_id = other_schedule["data"]["id"]
@@ -2113,7 +2113,7 @@ def test_bridge_toolbox_operates_setup_actions(
                     "project_id": project_id,
                     "kind": "weekly-review",
                     "cron_expr": "0 4 * * *",
-                    "enabled": True,
+                    "enabled": False,
                 },
             },
             request_id="schedule-set",
@@ -2131,7 +2131,17 @@ def test_bridge_toolbox_operates_setup_actions(
             request_id="schedule-remove",
         )
     )
-    assert removed_schedule["data"]["enabled"] is False
+    assert removed_schedule["data"] == {
+        "project_id": project_id,
+        "job_id": schedule["data"]["id"],
+        "removed": True,
+    }
+    runs = _structured(
+        _toolbox_call(
+            proxy, client, "schedule.runs", {"project_id": project_id}, request_id="schedule-runs"
+        )
+    )
+    assert runs["items"] == []
 
     httpx_mock.add_response(
         method="POST",

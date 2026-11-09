@@ -17,8 +17,10 @@ from stackos.repositories.projects import (
     IntegrationBudgetRepository,
     ProjectOut,
     ProjectRepository,
+    ScheduleConfiguration,
     ScheduledJobOut,
     ScheduledJobRepository,
+    ScheduleRemovalOut,
 )
 from stackos.repositories.runs import RunRepository
 
@@ -56,10 +58,8 @@ class ProjectUpdateRequest(BaseModel):
     is_active: bool | None = None
 
 
-class ScheduleUpsertRequest(BaseModel):
-    kind: str = Field(min_length=1, max_length=120)
-    cron_expr: str = Field(min_length=1, max_length=120)
-    enabled: bool = True
+class ScheduleUpsertRequest(ScheduleConfiguration):
+    pass
 
 
 class BudgetUpsertRequest(BaseModel):
@@ -158,6 +158,13 @@ async def upsert_schedule(
             kind=body.kind,
             cron_expr=body.cron_expr,
             enabled=body.enabled,
+            name=body.name,
+            timezone=body.timezone,
+            template_key=body.template_key,
+            inputs_json=body.inputs_json,
+            execution_json=body.execution_json.model_dump(exclude_none=True)
+            if body.execution_json
+            else None,
         )
     )
 
@@ -169,18 +176,18 @@ async def toggle_schedule(
     enabled: bool,
     session: Session = Depends(get_session),
 ) -> WriteResponse[ScheduledJobOut]:
-    _ = project_id
-    return write_response(ScheduledJobRepository(session).toggle(job_id, enabled=enabled))
+    return write_response(
+        ScheduledJobRepository(session).toggle(job_id, project_id=project_id, enabled=enabled)
+    )
 
 
-@router.delete("/{project_id}/schedules/{job_id}", response_model=WriteResponse[ScheduledJobOut])
+@router.delete("/{project_id}/schedules/{job_id}", response_model=WriteResponse[ScheduleRemovalOut])
 async def delete_schedule(
     project_id: int,
     job_id: int,
     session: Session = Depends(get_session),
-) -> WriteResponse[ScheduledJobOut]:
-    _ = project_id
-    return write_response(ScheduledJobRepository(session).toggle(job_id, enabled=False))
+) -> WriteResponse[ScheduleRemovalOut]:
+    return write_response(ScheduledJobRepository(session).remove(job_id, project_id=project_id))
 
 
 @router.get("/{project_id}/budgets", response_model=list[IntegrationBudgetOut])

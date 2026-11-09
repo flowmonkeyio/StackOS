@@ -11,6 +11,7 @@ import pytest
 
 from stackos.actions.repository.durable import DurableActionItemOut, DurableActionJobOut
 from stackos.config import Settings
+from stackos.mcp.tools.projects import ScheduleRunsInput, ScheduleSetInput
 from stackos.operations.actions.schemas import (
     ActionCallDurableItemsOut,
     ActionCallResumeInput,
@@ -32,6 +33,7 @@ from stackos.operations.tracker.schemas import (
     TrackerAgentStatsInput,
     TrackerGetInput,
 )
+from stackos.repositories.projects import ScheduledJobOut, ScheduledRunOut, ScheduleRemovalOut
 from stackos.repositories.tracker.schema import (
     AgentStatsCoverageOut,
     AgentStatsDayOut,
@@ -118,6 +120,11 @@ def test_ui_generation_includes_registry_owned_durable_contracts(
         FinanceMoneyInput,
         FinanceMoneyOut,
         FinanceRecordOut,
+        ScheduleSetInput,
+        ScheduleRunsInput,
+        ScheduledRunOut,
+        ScheduleRemovalOut,
+        ScheduledJobOut,
     ):
         assert schemas[model.__name__]["properties"].keys() == model.model_fields.keys()
         assert f"Schema{model.__name__}" in generated

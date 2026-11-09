@@ -677,7 +677,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0035_generic_task_delivery",
+            "0036_workflow_schedules",
         )
     finally:
         conn.close()
@@ -1923,6 +1923,125 @@ def test_ownership_migration_preserves_existing_data_and_refuses_history_loss(
     assert "work_item_ownership" in _list_tables(isolated_alembic)
     with sqlite3.connect(isolated_alembic) as conn:
         assert conn.execute("SELECT id FROM projects").fetchall() == [(1,)]
+
+
+def test_workflow_schedule_migration_preserves_history_and_disarms_legacy(
+    isolated_alembic: Path,
+) -> None:
+    from sqlmodel import Session
+
+    from stackos.db.models import AgentRequest, RunPlan, ScheduledJob
+    from stackos.repositories.agent_requests import AgentRequestRepository
+    from stackos.repositories.run_plans import RunPlanRepository
+    from stackos.repositories.tracker import TrackerRepository
+
+    _run_alembic(["upgrade", "0035_generic_task_delivery"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        _insert_legacy_project(conn, project_id=1, now="2026-11-05")
+        conn.execute(
+            "INSERT INTO scheduled_jobs "
+            "(id, project_id, kind, cron_expr, enabled, next_run_at, last_run_status) "
+            "VALUES (41, 1, 'old-review', '0 9 * * 1', 1, '2026-11-12', 'success')"
+        )
+    engine = make_engine(isolated_alembic)
+    with Session(engine) as session:
+        tracker = TrackerRepository(session)
+        tracker.configure_delivery(project_id=1, delivery={"host_key": "codex"})
+        plan = (
+            RunPlanRepository(session)
+            .create(
+                project_id=1,
+                run_plan_json={
+                    "schema_version": "stackos.run-plan.v1",
+                    "key": "historic.run",
+                    "title": "Historic",
+                    "steps": [{"id": "work", "title": "Work"}],
+                },
+            )
+            .data
+        )
+        request = (
+            AgentRequestRepository(session)
+            .create(project_id=1, request_key="historic", title="Historic request")
+            .data
+        )
+    engine.dispose()
+    _run_alembic(["upgrade", "head"])
+    _run_alembic(["upgrade", "head"])
+    engine = make_engine(isolated_alembic)
+    with Session(engine) as session:
+        row = session.get(ScheduledJob, 41)
+        assert row.project_id == 1 and row.kind == "old-review" and row.cron_expr == "0 9 * * 1"
+        assert row.enabled is False and row.next_run_at is None
+        assert row.last_run_status == "success"
+        assert row.template_key is None and row.execution_json is None
+        assert session.get(RunPlan, plan.id).title == "Historic"
+        assert session.get(AgentRequest, request.id).title == "Historic request"
+        assert TrackerRepository(session).delivery_defaults(project_id=1) == {"host_key": "codex"}
+        assert (
+            TrackerRepository(session)
+            .get(project_id=1, task_key=f"workflow-{plan.id}", include_graph=False)
+            .tasks[0]
+            .title
+            == "Historic"
+        )
+        row.last_request_id = request.id
+        session.add(row)
+        session.commit()
+        session.delete(session.get(AgentRequest, request.id))
+        session.commit()
+        session.refresh(row)
+        assert row.last_request_id is None
+    engine.dispose()
+    # Rebuild committed but version stamp lost: retry preserves explicitly saved state.
+    with sqlite3.connect(isolated_alembic) as conn:
+        conn.execute("UPDATE scheduled_jobs SET enabled=1, name='Configured after migration'")
+        conn.execute("UPDATE alembic_version SET version_num='0035_generic_task_delivery'")
+    _run_alembic(["upgrade", "head"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        assert conn.execute("SELECT enabled, name FROM scheduled_jobs").fetchone() == (
+            1,
+            "Configured after migration",
+        )
+
+
+def test_workflow_schedule_migration_failure_rolls_back_and_can_retry(
+    isolated_alembic: Path,
+) -> None:
+    _run_alembic(["upgrade", "0035_generic_task_delivery"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        _insert_legacy_project(conn, project_id=1, now="2026-11-05")
+        conn.execute(
+            "INSERT INTO scheduled_jobs (project_id, kind, cron_expr, enabled) "
+            "VALUES (1, 'legacy', '0 9 * * mon', 1)"
+        )
+    migration = importlib.import_module("stackos.db.migrations.versions.0036_workflow_schedules")
+    engine = make_engine(isolated_alembic)
+    with engine.connect() as conn:
+
+        def fail_after_drop(_conn, _cursor, statement, _parameters, _context, _many):
+            if statement.strip().upper() == "DROP TABLE SCHEDULED_JOBS":
+                raise RuntimeError("injected schedule migration failure")
+
+        sa.event.listen(conn, "after_cursor_execute", fail_after_drop)
+        context = MigrationContext.configure(conn, opts={"transaction_per_migration": True})
+        with (
+            pytest.raises(RuntimeError, match="injected schedule migration failure"),
+            context.begin_transaction(_per_migration=True),
+            Operations.context(context),
+        ):
+            migration.upgrade()
+        sa.event.remove(conn, "after_cursor_execute", fail_after_drop)
+        conn.rollback()
+        assert "name" not in {
+            column[1] for column in conn.exec_driver_sql("PRAGMA table_info(scheduled_jobs)").all()
+        }
+        assert conn.exec_driver_sql("SELECT enabled FROM scheduled_jobs").scalar_one() == 1
+    engine.dispose()
+    _run_alembic(["upgrade", "head"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        assert conn.execute("SELECT enabled FROM scheduled_jobs").fetchone()[0] == 0
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
 def test_generic_delivery_migration_preserves_settings_and_history(isolated_alembic: Path) -> None:

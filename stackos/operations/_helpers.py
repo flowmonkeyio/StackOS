@@ -34,6 +34,7 @@ def operation_spec(
     secret_policy: str = "no-secret-output",
     category: str | None = None,
     response_policy: OperationResponsePolicy | None = None,
+    browser_safe: bool = False,
 ) -> OperationSpec:
     return OperationSpec(
         name=name,
@@ -45,6 +46,7 @@ def operation_spec(
             mcp=OperationSurface(enabled=True),
             rest=OperationSurface(
                 enabled=True,
+                browser_safe=browser_safe,
                 path=rest_path or f"/api/v1/operations/{name}/call",
             ),
             cli=OperationSurface(enabled=True, command=cli_command or f"ops call {name}"),

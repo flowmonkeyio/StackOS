@@ -4,18 +4,25 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from typing import Any, Literal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict
+from apscheduler.triggers.cron import CronTrigger
+from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ValidationError as SchemaValidationError
 from sqlmodel import Session, col, select
 
 from stackos.db.models import (
+    AgentRequest,
     Credential,
     IntegrationBudget,
     IntegrationCredential,
     Project,
+    Run,
+    RunPlan,
     ScheduledJob,
     TrackerItemStatus,
 )
+from stackos.operations.tracker.schemas import TaskDeliveryAgentOverride, TaskMcpConfigRef
 from stackos.repositories.base import (
     BudgetExceededError,
     ConflictError,
@@ -24,7 +31,9 @@ from stackos.repositories.base import (
     Page,
     ValidationError,
     cursor_paginate,
+    cursor_paginate_desc,
 )
+from stackos.repositories.tracker.schema import ActiveExecutionOut, AgentStatsMetricsOut
 
 
 def _utcnow() -> datetime:
@@ -92,6 +101,30 @@ class IntegrationBudgetOut(BaseModel):
     updated_at: datetime
 
 
+class ScheduleExecution(BaseModel):
+    """Existing handoff settings, without occurrence-specific lifecycle arguments."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    project_dir: str = Field(min_length=1)
+    host_key: str | None = Field(default=None, min_length=1)
+    delivery_agent: TaskDeliveryAgentOverride | None = None
+    review_agent: TaskDeliveryAgentOverride | None = None
+    mcp_config_ref: TaskMcpConfigRef | None = None
+
+
+class ScheduleConfiguration(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    kind: str = Field(min_length=1, max_length=120)
+    cron_expr: str = Field(min_length=1, max_length=120)
+    enabled: bool = False
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    timezone: str | None = Field(default=None, min_length=1, max_length=100)
+    template_key: str | None = Field(default=None, min_length=1, max_length=160)
+    inputs_json: dict[str, Any] | None = None
+    execution_json: ScheduleExecution | None = None
+
+
 class ScheduledJobOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -103,6 +136,37 @@ class ScheduledJobOut(BaseModel):
     last_run_at: datetime | None
     last_run_status: str | None
     enabled: bool
+    name: str | None
+    timezone: str | None
+    template_key: str | None
+    inputs_json: dict[str, Any] | None
+    execution_json: ScheduleExecution | None
+    last_request_id: int | None
+    setup_issue: str | None = None
+
+
+class ScheduleRemovalOut(BaseModel):
+    project_id: int
+    job_id: int
+    removed: bool = True
+
+
+class ScheduledRunOut(BaseModel):
+    project_id: int
+    request_id: int
+    schedule_id: int
+    schedule_name: str
+    template_key: str | None
+    workflow_title: str | None
+    run_plan_id: int
+    run_id: int | None
+    task_key: str | None
+    status: str
+    started_at: datetime | None
+    ended_at: datetime | None
+    duration_seconds: float | None
+    agent_stats: AgentStatsMetricsOut | None
+    active_execution: ActiveExecutionOut | None
 
 
 class ProjectRepository:
@@ -478,7 +542,7 @@ class IntegrationBudgetRepository:
 
 
 class ScheduledJobRepository:
-    """Operator-facing schedule metadata."""
+    """Canonical project schedule configuration and linked execution projection."""
 
     def __init__(self, session: Session) -> None:
         self._s = session
@@ -489,7 +553,7 @@ class ScheduledJobRepository:
             .where(ScheduledJob.project_id == project_id)
             .order_by(ScheduledJob.id.asc())  # type: ignore[union-attr]
         ).all()
-        return [ScheduledJobOut.model_validate(row) for row in rows]
+        return [self._out(row) for row in rows]
 
     def set(
         self,
@@ -497,49 +561,269 @@ class ScheduledJobRepository:
         project_id: int,
         kind: str,
         cron_expr: str,
-        enabled: bool = True,
+        enabled: bool = False,
+        name: str | None = None,
+        timezone: str | None = None,
+        template_key: str | None = None,
+        inputs_json: dict[str, Any] | None = None,
+        execution_json: dict[str, Any] | None = None,
     ) -> Envelope[ScheduledJobOut]:
+        ProjectRepository(self._s).get(project_id)
+        try:
+            config = ScheduleConfiguration.model_validate(
+                {
+                    "kind": kind,
+                    "cron_expr": cron_expr,
+                    "enabled": enabled,
+                    "name": name,
+                    "timezone": timezone,
+                    "template_key": template_key,
+                    "inputs_json": inputs_json,
+                    "execution_json": execution_json,
+                }
+            ).model_dump(mode="json")
+        except SchemaValidationError as exc:
+            raise ValidationError(
+                "Invalid schedule configuration",
+                data={
+                    "errors": exc.errors(include_input=False, include_url=False),
+                },
+            ) from None
+        self._validate_configuration(project_id, config)
         row = self._s.exec(
             select(ScheduledJob).where(
                 ScheduledJob.project_id == project_id,
-                ScheduledJob.kind == kind,
+                ScheduledJob.kind == config["kind"],
             )
         ).first()
         if row is None:
             row = ScheduledJob(
                 project_id=project_id,
-                kind=kind,
-                cron_expr=cron_expr,
-                enabled=enabled,
+                **config,
             )
         else:
-            row.cron_expr = cron_expr
-            row.enabled = enabled
+            for key, value in config.items():
+                setattr(row, key, value)
+        row.next_run_at = self._next_run(config) if enabled else None
         self._s.add(row)
         self._s.commit()
         self._s.refresh(row)
-        return Envelope(data=ScheduledJobOut.model_validate(row), project_id=project_id)
+        self._reconcile(row.project_id, row.id)
+        return Envelope(data=self._out(row), project_id=project_id)
 
     def toggle(
         self,
         job_id: int,
         *,
         enabled: bool,
-        project_id: int | None = None,
+        project_id: int,
     ) -> Envelope[ScheduledJobOut]:
+        row = self._get(project_id, job_id)
+        if enabled:
+            self._validate_configuration(
+                project_id,
+                {
+                    **{key: getattr(row, key) for key in ScheduleConfiguration.model_fields},
+                    "enabled": True,
+                },
+            )
+        row.enabled = enabled
+        row.next_run_at = (
+            self._next_run(
+                {
+                    "cron_expr": row.cron_expr,
+                    "timezone": row.timezone,
+                }
+            )
+            if enabled
+            else None
+        )
+        self._s.add(row)
+        self._s.commit()
+        self._s.refresh(row)
+        self._reconcile(project_id, job_id)
+        return Envelope(data=self._out(row), project_id=project_id)
+
+    def _get(self, project_id: int, job_id: int) -> ScheduledJob:
         row = self._s.get(ScheduledJob, job_id)
-        if row is None:
-            raise NotFoundError(f"scheduled job {job_id} not found")
-        if project_id is not None and row.project_id != project_id:
+        if row is None or row.project_id != project_id:
             raise NotFoundError(
                 f"scheduled job {job_id} not found in project {project_id}",
                 data={"project_id": project_id, "job_id": job_id},
             )
-        row.enabled = enabled
-        self._s.add(row)
+        return row
+
+    def remove(self, job_id: int, *, project_id: int) -> Envelope[ScheduleRemovalOut]:
+        row = self._get(project_id, job_id)
+        self._s.delete(row)
         self._s.commit()
-        self._s.refresh(row)
-        return Envelope(data=ScheduledJobOut.model_validate(row), project_id=row.project_id)
+        self._reconcile(project_id, job_id)
+        return Envelope(
+            data=ScheduleRemovalOut(project_id=project_id, job_id=job_id), project_id=project_id
+        )
+
+    def _reconcile(self, project_id: int, job_id: int | None) -> None:
+        # Daemon-owned seam; every adapter also reaches it via this repository.
+        reconcile = self._s.info.get("operation_services", {}).get("schedule_reconcile")
+        if reconcile is not None:
+            reconcile(project_id=project_id, job_id=job_id)
+
+    @staticmethod
+    def _next_run(config: dict[str, Any]) -> datetime | None:
+        trigger = CronTrigger.from_crontab(
+            config["cron_expr"], timezone=ZoneInfo(config["timezone"])
+        )
+        next_fire = trigger.get_next_fire_time(None, datetime.now(UTC))
+        return next_fire.astimezone(UTC).replace(tzinfo=None) if next_fire else None
+
+    def _validate_configuration(self, project_id: int, config: dict[str, Any]) -> None:
+        from stackos.workflows.run_plan_schema import ensure_run_plan_has_no_secrets
+
+        try:
+            ensure_run_plan_has_no_secrets(config)
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from None
+        timezone = config.get("timezone")
+        try:
+            zone = ZoneInfo(timezone) if timezone else ZoneInfo("UTC")
+            CronTrigger.from_crontab(config["cron_expr"], timezone=zone)
+        except (ValueError, ZoneInfoNotFoundError) as exc:
+            raise ValidationError(f"Invalid schedule cron/timezone: {exc}") from None
+        if not config.get("enabled"):
+            return
+        missing = [
+            key
+            for key in ("name", "timezone", "template_key", "execution_json")
+            if not config.get(key)
+        ]
+        if missing:
+            raise ValidationError(
+                "Schedule needs setup: " + ", ".join(missing), data={"missing_fields": missing}
+            )
+        from stackos.repositories.run_plans import RunPlanRepository
+        from stackos.task_delivery import resolve_delivery_settings
+
+        execution = ScheduleExecution.model_validate(config["execution_json"]).model_dump(
+            exclude_none=True
+        )
+        validation = RunPlanRepository(self._s).validate_plan(
+            template_key=config["template_key"],
+            project_id=project_id,
+            repo_root=execution["project_dir"],
+            inputs_json=config.get("inputs_json"),
+            enforce_required_inputs=True,
+        )
+        if not validation.valid:
+            raise ValidationError(
+                "Workflow setup is invalid",
+                data={
+                    "errors": [issue.model_dump() for issue in validation.errors],
+                },
+            )
+        resolve_delivery_settings(self._s, project_id=project_id, **execution)
+
+    def _out(self, row: ScheduledJob) -> ScheduledJobOut:
+        out = ScheduledJobOut.model_validate(row)
+        missing = [
+            key
+            for key in ("name", "timezone", "template_key", "execution_json")
+            if not getattr(row, key)
+        ]
+        out.setup_issue = "Schedule needs setup: " + ", ".join(missing) if missing else None
+        if not row.enabled and not missing:
+            try:
+                self._validate_configuration(
+                    row.project_id,
+                    {
+                        **{key: getattr(row, key) for key in ScheduleConfiguration.model_fields},
+                        "enabled": True,
+                    },
+                )
+            except ValidationError as exc:
+                errors = exc.data.get("errors", [])
+                messages = [issue.get("message", "") for issue in errors if isinstance(issue, dict)]
+                out.setup_issue = ": ".join([exc.detail, *filter(None, messages)])
+        return out
+
+    def runs(
+        self,
+        *,
+        project_id: int,
+        schedule_id: int | None = None,
+        limit: int | None = None,
+        after_id: int | None = None,
+    ) -> Page[ScheduledRunOut]:
+        ProjectRepository(self._s).get(project_id)
+        statement = (
+            select(AgentRequest)
+            .join(RunPlan, col(AgentRequest.run_plan_id) == col(RunPlan.id))
+            .where(
+                AgentRequest.project_id == project_id,
+                RunPlan.project_id == project_id,
+                AgentRequest.source_kind == "schedule",
+                AgentRequest.run_plan_id.is_not(None),  # type: ignore[union-attr]
+                AgentRequest.metadata_json["schedule_id"].as_integer().is_not(None),  # type: ignore[index]
+            )
+        )
+        if schedule_id is not None:
+            statement = statement.where(
+                AgentRequest.metadata_json["schedule_id"].as_integer() == schedule_id,  # type: ignore[index]
+            )
+        return cursor_paginate_desc(
+            self._s,
+            statement,
+            id_col=col(AgentRequest.id),
+            limit=limit,
+            after_id=after_id,
+            converter=self._run_out,
+        )
+
+    def _run_out(self, request: AgentRequest) -> ScheduledRunOut:
+        from stackos.repositories.tracker import TrackerRepository
+
+        plan = self._s.get(RunPlan, request.run_plan_id)
+        if (
+            plan is None
+            or plan.id is None
+            or request.id is None
+            or plan.project_id != request.project_id
+        ):
+            raise NotFoundError("Scheduled request has no project-scoped run plan")
+        run = self._s.get(Run, plan.run_id) if plan.run_id else None
+        tasks = (
+            TrackerRepository(self._s)
+            .get(
+                project_id=request.project_id,
+                run_plan_id=plan.id,
+                include_graph=False,
+            )
+            .tasks
+        )
+        task = next(
+            (task for task in tasks if (task.source_json or {}).get("run_plan_id") == plan.id), None
+        )
+        metadata = request.metadata_json or {}
+        started = (task.started_at if task else None) or plan.started_at
+        ended = (task.completed_at if task else None) or plan.completed_at
+        return ScheduledRunOut(
+            project_id=request.project_id,
+            request_id=request.id,
+            schedule_id=metadata["schedule_id"],
+            schedule_name=metadata.get("schedule_name", request.title),
+            template_key=plan.template_key,
+            workflow_title=plan.title,
+            run_plan_id=plan.id,
+            run_id=run.id if run and run.project_id == request.project_id else None,
+            task_key=task.key if task else None,
+            status=task.status.value if task else plan.status.value,
+            started_at=started,
+            ended_at=ended,
+            duration_seconds=max(0, (ended - started).total_seconds())
+            if started and ended
+            else None,
+            agent_stats=task.agent_stats if task else None,
+            active_execution=task.active_execution if task else None,
+        )
 
 
 __all__ = [

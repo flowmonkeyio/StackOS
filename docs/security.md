@@ -246,6 +246,11 @@ revoke). Provider-auth route definitions own method validity inside that
 namespace. Mutating operation calls are allowed only when the operation's REST
 surface declares `browser_safe=True` for explicit local setup, the bounded
 human finance console contract described below, or the task-content contract.
+The explicit project automation setup operations `schedule.set`,
+`schedule.toggle` and `schedule.remove` are browser-safe. They validate the
+selected project and saved setup without granting workflow action approvals;
+delivery-default administration and run lifecycle mutation retain their
+existing separate authority.
 `tracker.updateTaskContent` is MCP-disabled and uses the exact-path
 `local-admin-console-write` boundary. It permits only description correction
 and appended operator input on an existing project task. Server-owned actor,

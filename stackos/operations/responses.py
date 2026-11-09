@@ -740,6 +740,15 @@ def _compact_operation_summary(item: dict[str, Any]) -> dict[str, Any]:
 def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
     if not isinstance(data, dict):
         return {"value": data}
+    if operation_name == "schedule.remove":
+        return {key: data[key] for key in ("project_id", "job_id", "removed") if key in data}
+    if operation_name in {"schedule.list", "schedule.set", "schedule.toggle", "schedule.runs"}:
+        # Preserve state/repair fields and canonical metrics. Concrete setup remains in raw.
+        return {
+            key: copy.deepcopy(value)
+            for key, value in data.items()
+            if key not in {"inputs_json", "execution_json"}
+        }
     if operation_name == "localAgentChat.createMessage":
         out = {
             k: copy.deepcopy(data[k])

@@ -6,6 +6,7 @@ import json
 import sys
 from pathlib import Path
 
+from pydantic import BaseModel
 from pydantic.json_schema import models_json_schema
 
 from stackos.operations.registry import build_operation_registry
@@ -27,6 +28,7 @@ def main() -> int:
         for spec in build_operation_registry().by_surface("rest")
         if (
             spec.name.startswith("actionCall.")
+            or spec.name.startswith("schedule.")
             or spec.name in {"tracker.agentStats", "tracker.agentStatsAll", "tracker.get"}
             or spec.grant_policy in {"local-admin-console-read", "local-admin-console-write"}
             or spec.name == "localAgentChat.createMessage"
@@ -35,6 +37,7 @@ def main() -> int:
             (spec.input_model, "validation"),
             (spec.output_model, "serialization"),
         )
+        if isinstance(model, type) and issubclass(model, BaseModel)
     ]
     _, operation_schema = models_json_schema(models, ref_template="#/components/schemas/{model}")
     components = document.setdefault("components", {}).setdefault("schemas", {})

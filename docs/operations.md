@@ -28,6 +28,76 @@ behavior. Operations define the callable contract around that behavior:
 - enabled surfaces
 - agent guidance, prerequisites, return notes, and examples
 
+## Project workflow schedules
+
+`schedule.list`, `schedule.set`, `schedule.toggle`, `schedule.remove` and
+`schedule.runs` share the project schedule repository through MCP, generic
+REST operation calls and `stackos ops call`. The existing project schedule
+REST URLs delegate to that same owner, including the URL project ID on
+PATCH/DELETE. ID-based mutations require `project_id`; another project's
+job is reported missing before any effect.
+
+`schedule.set` replaces configuration under a stable project `kind` key.
+It accepts a display `name`, five-field `cron_expr`, IANA `timezone`, existing
+`template_key`, concrete `inputs_json`, and `execution_json`. Execution settings
+reuse `tracker.startDelivery`: required `project_dir`, optional `host_key`,
+`delivery_agent`/`review_agent` overrides and `mcp_config_ref`. Task keys,
+ticket assignments, run-plan IDs and step IDs belong to occurrences and are
+rejected here. Roles must carry explicitly prepared workflow instructions in
+project defaults or these overrides; validation does not judge their semantic
+suitability. Credentials remain daemon-held; raw secret fields are rejected,
+including in disabled drafts. Opaque secret markers keep their existing rules.
+Cron parsing uses the existing APScheduler `CronTrigger.from_crontab` contract:
+numeric weekdays run from Monday (`0`) to Sunday (`6`); named weekdays such as
+`mon` avoid ambiguity. Persisted next-fire timestamps use UTC.
+
+Schedules default to disabled. Incomplete disabled drafts are permitted;
+supplied cron, timezone and execution shape must still be valid. Enabling
+strictly validates effective workflow inputs/defaults with the existing
+read-only run-plan validator and resolves current host/role settings through
+the handoff preflight. This creates no request, run plan, run or tracker task,
+and grants no external action approval. Legacy metadata rows migrate to
+disabled, retain their IDs/key/cron/history and show a needs-setup issue.
+
+`schedule.remove` actually deletes configuration and reconciles its timer;
+it returns `{project_id, job_id, removed}` in the write envelope. It never
+cancels existing work or deletes its request, plan, run or task.
+The daemon installs `operation_services.schedule_reconcile(project_id, job_id)`
+for affected timer reconciliation; every mutation reaches that seam after
+commit, and queued admission must re-read current configuration.
+
+`schedule.runs` pages existing scheduled requests linked to project-scoped
+plans (`limit` 1–200, descending request ID cursor `after_id`, optional
+`schedule_id`). Scheduled request metadata carries `schedule_id` and
+`schedule_name` snapshots; `source_kind` is `schedule`. Rows retain these
+snapshots after configuration rename/removal. The projection returns actual
+request/plan/run IDs, workflow title/key, nullable canonical task key, task
+status, timestamps/derived duration, `agent_stats` and `active_execution` from
+the tracker. A draft plan has no run ID until started; an unmaterialized or
+skipped tick has no row. There is no schedule occurrence/status/usage ledger.
+Run and claim tokens and arbitrary request metadata are never projected.
+
+For example, save an inert draft with
+`stackos ops call schedule.set --input automation.json`, using:
+
+```json
+{
+  "project_id": 1,
+  "kind": "weekly-review",
+  "name": "Weekly review",
+  "cron_expr": "0 9 * * 1",
+  "timezone": "America/Los_Angeles",
+  "template_key": "core.project-memory-review",
+  "inputs_json": {"goal": "Review project memory"},
+  "execution_json": {"project_dir": "/work/project"},
+  "enabled": false
+}
+```
+
+Finish suitable role setup before enabling. The desktop admission and timer
+runtime own whether a future firing is currently available; saved enabled
+configuration alone is not evidence of a running desktop app.
+
 ## Local backup administration
 
 `backup.status`, `backup.configure` and `backup.create` share the generic

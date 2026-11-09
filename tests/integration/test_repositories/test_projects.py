@@ -234,5 +234,211 @@ def test_scheduled_jobs(session: Session, project_id: int) -> None:
     assert len(rows) == 1
     assert rows[0].cron_expr == "0 3 * * *"
 
-    repo.toggle(env.data.id, enabled=False)
+    repo.toggle(env.data.id, project_id=project_id, enabled=False)
     assert repo.list(project_id)[0].enabled is False
+
+
+def test_schedule_enable_preflight_and_settings_are_read_only(
+    session: Session, project_id: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from stackos.db.models import AgentRequest, Run, RunPlan, TrackerTask
+    from stackos.repositories.tracker import TrackerRepository
+
+    # Only the native launch capability is controlled; workflow/default resolution is real.
+    monkeypatch.setattr("stackos.task_delivery.agent_selection_error", lambda *args, **kwargs: None)
+
+    class FixedClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            from datetime import UTC
+
+            return datetime(2026, 11, 2, 15, 0, tzinfo=UTC)
+
+    monkeypatch.setattr("stackos.repositories.projects.datetime", FixedClock)
+    roles = {
+        role: {"name": role, "instructions": "Perform the prepared review workflow."}
+        for role in ("delivery_agent", "review_agent")
+    }
+    TrackerRepository(session).configure_delivery(project_id=project_id, delivery=roles)
+    repo = ScheduledJobRepository(session)
+    config = dict(
+        project_id=project_id,
+        kind="weekly",
+        name="Weekly review",
+        cron_expr="0 9 * * mon",
+        timezone="America/Los_Angeles",
+        template_key="core.project-memory-review",
+        execution_json={"project_dir": str(tmp_path)},
+    )
+    draft = repo.set(**config)
+    assert not draft.data.enabled
+    assert "goal" in draft.data.setup_issue
+    with pytest.raises(ValidationError, match="Workflow setup"):
+        repo.toggle(draft.data.id, project_id=project_id, enabled=True)
+    configured = repo.set(
+        **config, inputs_json={"goal": "Review synthetic project memory"}, enabled=True
+    )
+    assert configured.data.enabled
+    assert configured.data.next_run_at is not None
+    assert configured.data.next_run_at == datetime(2026, 11, 2, 17, 0)
+    assert configured.data.setup_issue is None
+    # Upsert retains its immutable identity while replacing the operator label/configuration.
+    assert configured.data.id == draft.data.id
+    for model in (AgentRequest, RunPlan, Run, TrackerTask):
+        assert session.exec(select(model)).all() == []
+    repo.toggle(draft.data.id, project_id=project_id, enabled=False)
+    assert repo.list(project_id)[0].next_run_at is None
+    assert repo.list(project_id)[0].execution_json.delivery_agent is None
+
+
+@pytest.mark.parametrize(
+    "patch",
+    [
+        {"cron_expr": "not cron"},
+        {"timezone": "Mars/Olympus"},
+        {"execution_json": {"project_dir": "/tmp", "task_key": "forbidden"}},
+        {"inputs_json": {"api_key": "do-not-store"}},
+    ],
+)
+def test_schedule_rejects_invalid_drafts_without_writes(
+    session: Session, project_id: int, patch: dict
+) -> None:
+    repo = ScheduledJobRepository(session)
+    with pytest.raises(ValidationError):
+        repo.set(**{"project_id": project_id, "kind": "invalid", "cron_expr": "0 9 * * 1", **patch})
+    assert repo.list(project_id) == []
+
+
+def test_schedule_reconcile_and_history_reuse_canonical_task(
+    session: Session, project_id: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from stackos.db.models import AgentRequest, ScheduledJob
+    from stackos.repositories.agent_requests import AgentRequestRepository
+    from stackos.repositories.run_plans import RunPlanRepository
+    from stackos.repositories.tracker import TrackerRepository
+    from tests.integration.test_repositories.test_agent_statistics import _receipt
+
+    reconciled = []
+    session.info["operation_services"] = {
+        "schedule_reconcile": lambda **scope: reconciled.append(scope)
+    }
+    repo = ScheduledJobRepository(session)
+    schedule = repo.set(
+        project_id=project_id, kind="history", name="Original name", cron_expr="0 9 * * 1"
+    ).data
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        template_key="core.project-memory-review",
+        inputs_json={"goal": "Synthetic history"},
+    ).data
+    plans.start(plan.id, project_id=project_id)
+    request = (
+        AgentRequestRepository(session)
+        .create(
+            project_id=project_id,
+            request_key="schedule:history:one",
+            title="Original name",
+            source_kind="schedule",
+            metadata_json={"schedule_id": schedule.id, "schedule_name": "Original name"},
+        )
+        .data
+    )
+    row = session.get(AgentRequest, request.id)
+    row.run_plan_id = plan.id
+    session.add(row)
+    session.commit()
+    tracker = TrackerRepository(session)
+    ticket_key = f"workflow-{plan.id}-clarify-goal"
+    tracker.update_ticket(
+        project_id=project_id,
+        ticket_key=ticket_key,
+        patch_json={
+            "completion_evidence_json": {
+                "automatic_delivery": {
+                    "attempt": 1,
+                    "delivery": _receipt(total=10),
+                    "review": _receipt("review_agent", total=20),
+                }
+            },
+        },
+    )
+    # One request is linked to a real plan/run; a skipped tick is never a row.
+    AgentRequestRepository(session).create(
+        project_id=project_id, request_key="not-a-run", title="Skipped", source_kind="schedule"
+    )
+    expected_task = tracker.get(
+        project_id=project_id, task_key=f"workflow-{plan.id}", include_graph=False
+    ).tasks[0]
+    history = repo.runs(project_id=project_id, schedule_id=schedule.id, limit=1)
+    assert history.total_estimate == 1
+    item = history.items[0]
+    assert item.schedule_name == "Original name"
+    assert item.run_id == plans.get(plan.id, project_id=project_id).run_id
+    assert item.task_key == expected_task.key
+    assert item.status == expected_task.status
+    assert item.agent_stats == expected_task.agent_stats
+    assert item.agent_stats.reported_usage.input == 30
+    assert item.active_execution == expected_task.active_execution
+    repo.set(project_id=project_id, kind="history", name="Renamed", cron_expr="0 10 * * 1")
+    repo.remove(schedule.id, project_id=project_id)
+    assert session.get(ScheduledJob, schedule.id) is None
+    assert repo.runs(project_id=project_id).items[0] == item
+    assert plans.get(plan.id, project_id=project_id).run_id == item.run_id
+    assert reconciled == [{"project_id": project_id, "job_id": schedule.id}] * 3
+    other = (
+        ProjectRepository(session)
+        .create(slug="other-history", name="Other", domain="other.test")
+        .data.id
+    )
+    assert repo.runs(project_id=other, schedule_id=schedule.id).items == []
+
+
+def test_scheduled_run_pagination_and_nullable_run_link(session: Session, project_id: int) -> None:
+    from stackos.db.models import AgentRequest
+    from stackos.repositories.agent_requests import AgentRequestRepository
+    from stackos.repositories.run_plans import RunPlanRepository
+
+    repo = ScheduledJobRepository(session)
+    ids = []
+    for number in range(2):
+        plan = (
+            RunPlanRepository(session)
+            .create(
+                project_id=project_id,
+                run_plan_json={
+                    "schema_version": "stackos.run-plan.v1",
+                    "key": f"history-{number}.run",
+                    "title": "Unstarted occurrence",
+                    "steps": [{"id": "work", "title": "Work"}],
+                },
+            )
+            .data
+        )
+        request = (
+            AgentRequestRepository(session)
+            .create(
+                project_id=project_id,
+                request_key=f"history-{number}",
+                title="Snapshot",
+                source_kind="schedule",
+                metadata_json={"schedule_id": 17, "schedule_name": "Snapshot"},
+            )
+            .data
+        )
+        row = session.get(AgentRequest, request.id)
+        row.run_plan_id = plan.id
+        session.add(row)
+        session.commit()
+        ids.append(request.id)
+    first = repo.runs(project_id=project_id, schedule_id=17, limit=1)
+    assert first.total_estimate == 2 and first.next_cursor == ids[1]
+    assert first.items[0].request_id == ids[1]
+    assert first.items[0].run_id is None and first.items[0].started_at is None
+    assert first.items[0].agent_stats.coverage.usage_status == "empty"
+    assert first.items[0].agent_stats.reported_usage.input == 0
+    second = repo.runs(project_id=project_id, schedule_id=17, limit=1, after_id=first.next_cursor)
+    assert [item.request_id for item in second.items] == [ids[0]]
+    assert second.next_cursor is None
+    with pytest.raises(ValidationError):
+        repo.runs(project_id=project_id, limit=201)

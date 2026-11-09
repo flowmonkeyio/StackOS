@@ -12,6 +12,7 @@ from stackos.mcp.tools.projects import (
     ProjectUpdateInput,
     ScheduleListInput,
     ScheduleRemoveInput,
+    ScheduleRunsInput,
     ScheduleSetInput,
     ScheduleToggleInput,
     _budget_list,
@@ -22,12 +23,20 @@ from stackos.mcp.tools.projects import (
     _project_update,
     _schedule_list,
     _schedule_remove,
+    _schedule_runs,
     _schedule_set,
     _schedule_toggle,
 )
 from stackos.operations._helpers import operation_spec
 from stackos.operations.spec import OperationExample
-from stackos.repositories.projects import IntegrationBudgetOut, ProjectOut, ScheduledJobOut
+from stackos.repositories.base import Page
+from stackos.repositories.projects import (
+    IntegrationBudgetOut,
+    ProjectOut,
+    ScheduledJobOut,
+    ScheduledRunOut,
+    ScheduleRemovalOut,
+)
 
 
 def operation_specs():
@@ -82,6 +91,24 @@ def operation_specs():
             purpose="Use this during setup or workflow readiness checks to inspect spend limits.",
             when_to_use=("A workflow/action may use a budgeted provider.",),
             examples=(OperationExample(title="List budgets", arguments={"project_id": 1}),),
+            mutating=False,
+            grant_policy="direct-read",
+        ),
+        operation_spec(
+            name="schedule.runs",
+            summary="Page actual scheduled workflows and their canonical task usage.",
+            input_model=ScheduleRunsInput,
+            output_model=Page[ScheduledRunOut],
+            handler=_schedule_runs,
+            purpose="Inspect linked scheduled executions, including history after removal.",
+            returns=(
+                "Skipped ticks create no history row. Task status and usage remain canonical.",
+            ),
+            examples=(
+                OperationExample(
+                    title="Read scheduled runs", arguments={"project_id": 1, "limit": 50}
+                ),
+            ),
             mutating=False,
             grant_policy="direct-read",
         ),
@@ -151,12 +178,19 @@ def operation_specs():
         ),
         operation_spec(
             name="schedule.set",
+            browser_safe=True,
             summary="Create or replace a project scheduled job.",
             input_model=ScheduleSetInput,
             output_model=WriteEnvelope[ScheduledJobOut],
             handler=_schedule_set,
             purpose="Use this for explicit local-admin recurring job setup.",
-            prerequisites=("Requires a cron expression supplied by the operator or workflow.",),
+            prerequisites=(
+                "Use a stable kind/key; set replaces the complete configuration.",
+                "Enabling requires name, IANA timezone, existing workflow, concrete inputs "
+                "and execution_json with an existing project_dir and configured suitable roles.",
+                "Strict preflight is read-only; it creates no request, run plan or task. "
+                "Disabled incomplete drafts remain inert. Normal grants and approvals still apply.",
+            ),
             examples=(
                 OperationExample(
                     title="Schedule weekly review",
@@ -164,6 +198,12 @@ def operation_specs():
                         "project_id": 1,
                         "kind": "weekly-review",
                         "cron_expr": "0 9 * * 1",
+                        "name": "Weekly review",
+                        "timezone": "America/Los_Angeles",
+                        "template_key": "core.project-memory-review",
+                        "inputs_json": {},
+                        "execution_json": {"project_dir": "/work/project"},
+                        "enabled": False,
                     },
                 ),
             ),
@@ -172,6 +212,7 @@ def operation_specs():
         ),
         operation_spec(
             name="schedule.toggle",
+            browser_safe=True,
             summary="Enable or disable one scheduled job.",
             input_model=ScheduleToggleInput,
             output_model=WriteEnvelope[ScheduledJobOut],
@@ -188,9 +229,10 @@ def operation_specs():
         ),
         operation_spec(
             name="schedule.remove",
-            summary="Disable one scheduled job.",
+            browser_safe=True,
+            summary="Remove one scheduled job and its timer; preserve execution history.",
             input_model=ScheduleRemoveInput,
-            output_model=WriteEnvelope[ScheduledJobOut],
+            output_model=WriteEnvelope[ScheduleRemovalOut],
             handler=_schedule_remove,
             purpose="Use this when an operator explicitly removes a daemon schedule.",
             examples=(

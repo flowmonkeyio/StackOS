@@ -5371,6 +5371,21 @@ export interface components {
              */
             total_estimate: number;
         };
+        /** Page[ScheduledRunOut] */
+        Page_ScheduledRunOut_: {
+            /** Items */
+            items: components["schemas"]["ScheduledRunOut"][];
+            /**
+             * Next Cursor
+             * @default null
+             */
+            next_cursor: number | null;
+            /**
+             * Total Estimate
+             * @default 0
+             */
+            total_estimate: number;
+        };
         /**
          * PermissionVerificationOut
          * @description Safe, manifest-owned grant evidence posture exposed to callers.
@@ -6178,17 +6193,262 @@ export interface components {
          * @enum {string}
          */
         RunStatus: RunStatus;
+        /**
+         * ScheduleExecution
+         * @description Existing handoff settings, without occurrence-specific lifecycle arguments.
+         */
+        ScheduleExecution: {
+            delivery_agent?: components["schemas"]["TaskDeliveryAgentOverride"] | null;
+            /** Host Key */
+            host_key?: string | null;
+            mcp_config_ref?: components["schemas"]["TaskMcpConfigRef"] | null;
+            /** Project Dir */
+            project_dir: string;
+            review_agent?: components["schemas"]["TaskDeliveryAgentOverride"] | null;
+        };
+        /**
+         * ScheduleListInput
+         * @example {
+         *       "project_id": 1
+         *     }
+         */
+        ScheduleListInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ScheduleListInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** ScheduleRemovalOut */
+        ScheduleRemovalOut: {
+            /** Job Id */
+            job_id: number;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Removed
+             * @default true
+             */
+            removed: boolean;
+        };
+        /**
+         * ScheduleRemoveInput
+         * @example {
+         *       "job_id": 1,
+         *       "project_id": 1
+         *     }
+         */
+        ScheduleRemoveInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Job Id */
+            job_id: number;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ScheduleRemoveInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** ScheduleRunsInput */
+        ScheduleRunsInput: {
+            /**
+             * After Id
+             * @default null
+             */
+            after_id: number | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Limit
+             * @default 50
+             */
+            limit: number;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ScheduleRunsInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Schedule Id
+             * @default null
+             */
+            schedule_id: number | null;
+        };
+        /**
+         * ScheduleSetInput
+         * @example {
+         *       "cron_expr": "0 9 * * 1",
+         *       "kind": "weekly-review",
+         *       "project_id": 1
+         *     }
+         */
+        ScheduleSetInput: {
+            /** Cron Expr */
+            cron_expr: string;
+            /**
+             * Enabled
+             * @default false
+             */
+            enabled: boolean;
+            /** @default null */
+            execution_json: components["schemas"]["ScheduleExecution"] | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Inputs Json
+             * @default null
+             */
+            inputs_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Kind */
+            kind: string;
+            /**
+             * Name
+             * @default null
+             */
+            name: string | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ScheduleSetInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Template Key
+             * @default null
+             */
+            template_key: string | null;
+            /**
+             * Timezone
+             * @default null
+             */
+            timezone: string | null;
+        };
+        /**
+         * ScheduleToggleInput
+         * @example {
+         *       "enabled": false,
+         *       "job_id": 1,
+         *       "project_id": 1
+         *     }
+         */
+        ScheduleToggleInput: {
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Job Id */
+            job_id: number;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ScheduleToggleInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
         /** ScheduleUpsertRequest */
         ScheduleUpsertRequest: {
             /** Cron Expr */
             cron_expr: string;
             /**
              * Enabled
-             * @default true
+             * @default false
              */
             enabled: boolean;
+            execution_json?: components["schemas"]["ScheduleExecution"] | null;
+            /** Inputs Json */
+            inputs_json?: {
+                [key: string]: unknown;
+            } | null;
             /** Kind */
             kind: string;
+            /** Name */
+            name?: string | null;
+            /** Template Key */
+            template_key?: string | null;
+            /** Timezone */
+            timezone?: string | null;
         };
         /** ScheduledJobOut */
         ScheduledJobOut: {
@@ -6196,18 +6456,64 @@ export interface components {
             cron_expr: string;
             /** Enabled */
             enabled: boolean;
+            execution_json: components["schemas"]["ScheduleExecution"] | null;
             /** Id */
             id: number;
+            /** Inputs Json */
+            inputs_json: {
+                [key: string]: unknown;
+            } | null;
             /** Kind */
             kind: string;
+            /** Last Request Id */
+            last_request_id: number | null;
             /** Last Run At */
             last_run_at: string | null;
             /** Last Run Status */
             last_run_status: string | null;
+            /** Name */
+            name: string | null;
             /** Next Run At */
             next_run_at: string | null;
             /** Project Id */
             project_id: number;
+            /** Setup Issue */
+            setup_issue?: string | null;
+            /** Template Key */
+            template_key: string | null;
+            /** Timezone */
+            timezone: string | null;
+        };
+        /** ScheduledRunOut */
+        ScheduledRunOut: {
+            active_execution: components["schemas"]["ActiveExecutionOut"] | null;
+            agent_stats: components["schemas"]["AgentStatsMetricsOut"] | null;
+            /** Duration Seconds */
+            duration_seconds: number | null;
+            /** Ended At */
+            ended_at: string | null;
+            /** Project Id */
+            project_id: number;
+            /** Request Id */
+            request_id: number;
+            /** Run Id */
+            run_id: number | null;
+            /** Run Plan Id */
+            run_plan_id: number;
+            /** Schedule Id */
+            schedule_id: number;
+            /** Schedule Name */
+            schedule_name: string;
+            /** Started At */
+            started_at: string | null;
+            /** Status */
+            status: string;
+            /** Task Key */
+            task_key: string | null;
+            /** Template Key */
+            template_key: string | null;
+            /** Workflow Title */
+            workflow_title: string | null;
         };
         /** SitemapFetchRequest */
         SitemapFetchRequest: {
@@ -6244,36 +6550,18 @@ export interface components {
          * @description Task choices may omit fields supplied by project defaults.
          */
         TaskDeliveryAgentOverride: {
-            /**
-             * Host Key
-             * @default null
-             */
-            host_key: string | null;
-            /**
-             * Instructions
-             * @default null
-             */
-            instructions: string | null;
-            /**
-             * Model
-             * @default null
-             */
-            model: string | null;
-            /**
-             * Name
-             * @default null
-             */
-            name: string | null;
-            /**
-             * Profile
-             * @default null
-             */
-            profile: string | null;
-            /**
-             * Provider
-             * @default null
-             */
-            provider: string | null;
+            /** Host Key */
+            host_key?: string | null;
+            /** Instructions */
+            instructions?: string | null;
+            /** Model */
+            model?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Profile */
+            profile?: string | null;
+            /** Provider */
+            provider?: string | null;
         };
         /**
          * TaskDeliveryDefaults
@@ -6289,6 +6577,16 @@ export interface components {
             host_key: string | null;
             /** @default null */
             review_agent: components["schemas"]["TaskDeliveryAgentOverride"] | null;
+        };
+        /**
+         * TaskMcpConfigRef
+         * @description Task-only native route identity; never a project/default setting.
+         */
+        TaskMcpConfigRef: {
+            /** Path */
+            path: string;
+            /** Sha256 */
+            sha256: string;
         };
         /** TelegramApplicationStatusOut */
         TelegramApplicationStatusOut: {
@@ -7749,6 +8047,34 @@ export interface components {
              */
             run_id: number | null;
         };
+        /** WriteEnvelope[ScheduleRemovalOut] */
+        WriteEnvelope_ScheduleRemovalOut_: {
+            data: components["schemas"]["ScheduleRemovalOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
+        /** WriteEnvelope[ScheduledJobOut] */
+        WriteEnvelope_ScheduledJobOut_: {
+            data: components["schemas"]["ScheduledJobOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
         /** WriteEnvelope[TrackerSummaryOut] */
         WriteEnvelope_TrackerSummaryOut_: {
             data: components["schemas"]["TrackerSummaryOut"];
@@ -8028,6 +8354,19 @@ export interface components {
             run_id?: number | null;
         };
         /**
+         * WriteResponse[ScheduleRemovalOut]
+         * @example {
+         *       "project_id": 1
+         *     }
+         */
+        WriteResponse_ScheduleRemovalOut_: {
+            data: components["schemas"]["ScheduleRemovalOut"];
+            /** Project Id */
+            project_id?: number | null;
+            /** Run Id */
+            run_id?: number | null;
+        };
+        /**
          * WriteResponse[ScheduledJobOut]
          * @example {
          *       "project_id": 1
@@ -8171,6 +8510,7 @@ export type SchemaPageResponseResourceRecordOut = components['schemas']['PageRes
 export type SchemaPageResponseRunOut = components['schemas']['PageResponse_RunOut_'];
 export type SchemaPageResponseRunPlanSummaryOut = components['schemas']['PageResponse_RunPlanSummaryOut_'];
 export type SchemaPageActionCallAuditOut = components['schemas']['Page_ActionCallAuditOut_'];
+export type SchemaPageScheduledRunOut = components['schemas']['Page_ScheduledRunOut_'];
 export type SchemaPermissionVerificationOut = components['schemas']['PermissionVerificationOut'];
 export type SchemaPluginCatalogOut = components['schemas']['PluginCatalogOut'];
 export type SchemaPluginEnableRequest = components['schemas']['PluginEnableRequest'];
@@ -8195,13 +8535,22 @@ export type SchemaRunPlanStepHandoffOut = components['schemas']['RunPlanStepHand
 export type SchemaRunPlanStepOut = components['schemas']['RunPlanStepOut'];
 export type SchemaRunPlanSummaryOut = components['schemas']['RunPlanSummaryOut'];
 export type SchemaRunPlanWorkflowContractOut = components['schemas']['RunPlanWorkflowContractOut'];
+export type SchemaScheduleExecution = components['schemas']['ScheduleExecution'];
+export type SchemaScheduleListInput = components['schemas']['ScheduleListInput'];
+export type SchemaScheduleRemovalOut = components['schemas']['ScheduleRemovalOut'];
+export type SchemaScheduleRemoveInput = components['schemas']['ScheduleRemoveInput'];
+export type SchemaScheduleRunsInput = components['schemas']['ScheduleRunsInput'];
+export type SchemaScheduleSetInput = components['schemas']['ScheduleSetInput'];
+export type SchemaScheduleToggleInput = components['schemas']['ScheduleToggleInput'];
 export type SchemaScheduleUpsertRequest = components['schemas']['ScheduleUpsertRequest'];
 export type SchemaScheduledJobOut = components['schemas']['ScheduledJobOut'];
+export type SchemaScheduledRunOut = components['schemas']['ScheduledRunOut'];
 export type SchemaSitemapFetchRequest = components['schemas']['SitemapFetchRequest'];
 export type SchemaSitemapFetchResponse = components['schemas']['SitemapFetchResponse'];
 export type SchemaSnapshotRef = components['schemas']['SnapshotRef'];
 export type SchemaTaskDeliveryAgentOverride = components['schemas']['TaskDeliveryAgentOverride'];
 export type SchemaTaskDeliveryDefaults = components['schemas']['TaskDeliveryDefaults'];
+export type SchemaTaskMcpConfigRef = components['schemas']['TaskMcpConfigRef'];
 export type SchemaTelegramApplicationStatusOut = components['schemas']['TelegramApplicationStatusOut'];
 export type SchemaTemplateBaseSpec = components['schemas']['TemplateBaseSpec'];
 export type SchemaTemplateIoSpec = components['schemas']['TemplateIOSpec'];
@@ -8250,6 +8599,8 @@ export type SchemaWriteEnvelopeDurableActionJobOut = components['schemas']['Writ
 export type SchemaWriteEnvelopeFinanceCommitOut = components['schemas']['WriteEnvelope_FinanceCommitOut_'];
 export type SchemaWriteEnvelopeFinanceStatusOut = components['schemas']['WriteEnvelope_FinanceStatusOut_'];
 export type SchemaWriteEnvelopeLocalAgentChatMessageOut = components['schemas']['WriteEnvelope_LocalAgentChatMessageOut_'];
+export type SchemaWriteEnvelopeScheduleRemovalOut = components['schemas']['WriteEnvelope_ScheduleRemovalOut_'];
+export type SchemaWriteEnvelopeScheduledJobOut = components['schemas']['WriteEnvelope_ScheduledJobOut_'];
 export type SchemaWriteEnvelopeTrackerSummaryOut = components['schemas']['WriteEnvelope_TrackerSummaryOut_'];
 export type SchemaWriteEnvelopeTrackerTaskContentOut = components['schemas']['WriteEnvelope_TrackerTaskContentOut_'];
 export type SchemaWriteEnvelopeWorkflowTemplateExtensionDeleteOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionDeleteOut_'];
@@ -8272,6 +8623,7 @@ export type SchemaWriteResponseProjectOut = components['schemas']['WriteResponse
 export type SchemaWriteResponseProjectPluginOut = components['schemas']['WriteResponse_ProjectPluginOut_'];
 export type SchemaWriteResponseResourceRecordOut = components['schemas']['WriteResponse_ResourceRecordOut_'];
 export type SchemaWriteResponseRunOut = components['schemas']['WriteResponse_RunOut_'];
+export type SchemaWriteResponseScheduleRemovalOut = components['schemas']['WriteResponse_ScheduleRemovalOut_'];
 export type SchemaWriteResponseScheduledJobOut = components['schemas']['WriteResponse_ScheduledJobOut_'];
 export type $defs = Record<string, never>;
 export interface operations {
@@ -10766,7 +11118,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["WriteResponse_ScheduledJobOut_"];
+                    "application/json": components["schemas"]["WriteResponse_ScheduleRemovalOut_"];
                 };
             };
             /** @description Validation Error */
@@ -11753,6 +12105,41 @@ export enum RunStatus {
     success = "success",
     failed = "failed",
     aborted = "aborted"
+}
+export enum ScheduleListInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ScheduleRemoveInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ScheduleRunsInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ScheduleSetInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ScheduleToggleInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
 }
 export enum TrackerAgentStatsAllInputGroup_by {
     agent = "agent",

@@ -666,6 +666,71 @@ def _save_evidence(repo, project_id, ticket_key, evidence, **patch) -> None:
     )
 
 
+def resolve_delivery_settings(
+    session: Session,
+    *,
+    project_id: int,
+    project_dir: str,
+    host_key: str | None = None,
+    delivery_agent: dict[str, Any] | None = None,
+    review_agent: dict[str, Any] | None = None,
+    mcp_config_ref: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Read-only execution preflight shared by handoff and schedule setup.
+
+    Resolve current settings here; only start_delivery freezes them on a task.
+    """
+    directory = Path(project_dir).expanduser().resolve()
+    if not directory.is_dir():
+        raise ValidationError("project_dir must be an existing working directory")
+    defaults = TrackerRepository(session).delivery_defaults(project_id=project_id)
+    if not isinstance(defaults, dict):
+        raise ValidationError("Task delivery defaults must be an object")
+    host_key = host_key or defaults.get("host_key") or "codex"
+    if not isinstance(host_key, str):
+        raise ValidationError("Task delivery host_key must be a string")
+    resolved = {}
+    for role, override in (("delivery_agent", delivery_agent), ("review_agent", review_agent)):
+        default_agent = defaults.get(role, {})
+        if not isinstance(default_agent, dict):
+            raise ValidationError(f"Task delivery {role} must be an object")
+        try:
+            agent = TaskDeliveryAgent.model_validate(
+                {**default_agent, **(override or {})}
+            ).model_dump(exclude_none=True)
+        except SchemaValidationError as schema_error:
+            raise ValidationError(f"Resolved {role} is invalid: {schema_error}") from schema_error
+        agent["host_key"] = agent.get("host_key") or host_key
+        sandbox: AgentSandbox = (
+            agent_review_sandbox(agent["host_key"]) if role == "review_agent" else "workspace-write"
+        )
+        error = agent_selection_error(
+            agent["host_key"],
+            sandbox=sandbox,
+            model=agent.get("model"),
+            provider=agent.get("provider"),
+            profile=agent.get("profile"),
+        )
+        if error:
+            raise ValidationError(error)
+        resolved[role] = agent
+    if mcp_config_ref is not None:
+        if any(agent["host_key"] != "codex" for agent in resolved.values()):
+            raise ValidationError("Task MCP configuration is unsupported by this host")
+        from stackos.host_mcp.adapters.codex import task_mcp_overrides
+
+        try:
+            mcp_config_ref, _ = task_mcp_overrides(directory, mcp_config_ref)
+        except ValueError as route_error:
+            raise ValidationError(str(route_error)) from None
+    return {
+        "project_dir": str(directory),
+        "host_key": host_key,
+        **resolved,
+        **({"mcp_config_ref": mcp_config_ref} if mcp_config_ref is not None else {}),
+    }
+
+
 def start_delivery(
     *,
     session: Session,
@@ -719,46 +784,18 @@ def start_delivery(
     _workflow_scope(repo, project_id, task, run_plan_id, step_id, starting=True)
     if task.status not in {TrackerItemStatus.NOT_STARTED, TrackerItemStatus.IN_PROGRESS}:
         raise ValidationError("Task must be open before starting delivery")
-    defaults = repo.delivery_defaults(project_id=project_id)
-    if not isinstance(defaults, dict):
-        raise ValidationError("Task delivery defaults must be an object")
-    host_key = host_key or defaults.get("host_key") or "codex"
-    if not isinstance(host_key, str):
-        raise ValidationError("Task delivery host_key must be a string")
-    resolved = {}
-    for role, override in (("delivery_agent", delivery_agent), ("review_agent", review_agent)):
-        default_agent = defaults.get(role, {})
-        if not isinstance(default_agent, dict):
-            raise ValidationError(f"Task delivery {role} must be an object")
-        try:
-            agent = TaskDeliveryAgent.model_validate(
-                {**default_agent, **(override or {})}
-            ).model_dump(exclude_none=True)
-        except SchemaValidationError as schema_error:
-            raise ValidationError(f"Resolved {role} is invalid: {schema_error}") from schema_error
-        agent["host_key"] = agent.get("host_key") or host_key
-        sandbox: AgentSandbox = (
-            agent_review_sandbox(agent["host_key"]) if role == "review_agent" else "workspace-write"
-        )
-        error = agent_selection_error(
-            agent["host_key"],
-            sandbox=sandbox,
-            model=agent.get("model"),
-            provider=agent.get("provider"),
-            profile=agent.get("profile"),
-        )
-        if error:
-            raise ValidationError(error)
-        resolved[role] = agent
-    if mcp_config_ref is not None:
-        if any(agent["host_key"] != "codex" for agent in resolved.values()):
-            raise ValidationError("Task MCP configuration is unsupported by this host")
-        from stackos.host_mcp.adapters.codex import task_mcp_overrides
-
-        try:
-            mcp_config_ref, _ = task_mcp_overrides(directory, mcp_config_ref)
-        except ValueError as route_error:
-            raise ValidationError(str(route_error)) from None
+    settings = resolve_delivery_settings(
+        session,
+        project_id=project_id,
+        project_dir=str(directory),
+        host_key=host_key,
+        delivery_agent=delivery_agent,
+        review_agent=review_agent,
+        mcp_config_ref=mcp_config_ref,
+    )
+    host_key = settings["host_key"]
+    mcp_config_ref = settings.get("mcp_config_ref")
+    resolved = {role: settings[role] for role in ("delivery_agent", "review_agent")}
     assignments = {}
     if plan:
         for step in plan.steps:

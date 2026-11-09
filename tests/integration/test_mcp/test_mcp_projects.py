@@ -81,7 +81,7 @@ def test_project_update_preserves_workspace_binding(mcp_client: MCPClient) -> No
 
 
 def test_schedule_set_toggle_and_remove(mcp_client: MCPClient, seeded_project: dict) -> None:
-    """schedule.remove mirrors REST DELETE by disabling the scheduled job."""
+    """MCP uses the same inert-draft, scoped-toggle and true-removal contract."""
     pid = seeded_project["data"]["id"]
     created = mcp_client.call_tool_structured(
         "schedule.set",
@@ -89,23 +89,31 @@ def test_schedule_set_toggle_and_remove(mcp_client: MCPClient, seeded_project: d
             "project_id": pid,
             "kind": "weekly-review",
             "cron_expr": "15 3 * * *",
-            "enabled": True,
+            "enabled": False,
         },
     )
     job_id = created["data"]["id"]
 
     disabled = mcp_client.call_tool_structured(
-        "schedule.toggle", {"job_id": job_id, "enabled": False}
+        "schedule.toggle", {"project_id": pid, "job_id": job_id, "enabled": False}
     )
     assert disabled["data"]["enabled"] is False
 
-    reenabled = mcp_client.call_tool_structured(
-        "schedule.toggle", {"job_id": job_id, "enabled": True}
+    invalid = mcp_client.call_tool_error(
+        "schedule.toggle", {"project_id": pid, "job_id": job_id, "enabled": True}
     )
-    assert reenabled["data"]["enabled"] is True
+    assert invalid["code"] == -32602
+    assert mcp_client.call_tool_structured("schedule.runs", {"project_id": pid})["items"] == []
 
-    removed = mcp_client.call_tool_structured("schedule.remove", {"job_id": job_id})
-    assert removed["data"]["enabled"] is False
+    for operation in ("schedule.toggle", "schedule.remove"):
+        arguments = {"project_id": pid + 1, "job_id": job_id}
+        if operation == "schedule.toggle":
+            arguments["enabled"] = False
+        assert mcp_client.call_tool_error(operation, arguments)["code"] == -32004
+    removed = mcp_client.call_tool_structured(
+        "schedule.remove", {"project_id": pid, "job_id": job_id}
+    )
+    assert removed["data"] == {"project_id": pid, "job_id": job_id, "removed": True}
 
 
 def test_project_create_duplicate_slug_returns_conflict(
