@@ -1713,11 +1713,16 @@ def test_revision_allocation_rolls_back_with_ticket_change(session, project_id):
 
 
 def test_scheduling_failure_releases_only_its_directory(session, project_id, tmp_path):
+    from apscheduler.jobstores.base import JobLookupError
+
     prepared_task(session, project_id)
 
     class UnavailableScheduler:
         def add_job(self, *args, **kwargs):
             raise RuntimeError("Fixture scheduling failure")
+
+        def remove_job(self, job_id, **kwargs):
+            raise JobLookupError(job_id)
 
     with pytest.raises(RuntimeError, match="Fixture scheduling failure"):
         submit(session, project_id, tmp_path, UnavailableScheduler())
@@ -1861,7 +1866,8 @@ def test_parallel_task_jobs_stop_and_resume_independently(
             )
         resumed = QueuedScheduler()
         receipt = submit(session, project_id, paths["deliver"], resumed)
-        assert receipt["job_ref"] == receipts["deliver"]["job_ref"]
+        # A new handoff gets its own job while retaining native sessions below.
+        assert receipt["job_ref"] != receipts["deliver"]["job_ref"]
         resumed.run()
         session.expire_all()
         for key in paths:
@@ -3259,6 +3265,142 @@ def test_dequeued_callback_cannot_use_a_new_delivery_handoff(
     assert not calls
     scheduler.run()
     assert calls == ["delivery"]
+
+
+@pytest.mark.parametrize("registration", ["success", "error-before", "error-after"])
+@pytest.mark.parametrize("rehandoff", [False, True])
+def test_abort_during_scheduler_registration_preserves_only_current_handoff(
+    delivery_engine, project_id, tmp_path, monkeypatch, registration, rehandoff
+):
+    from threading import Lock
+
+    from apscheduler.executors.pool import ThreadPoolExecutor as APSExecutor
+    from apscheduler.jobstores.memory import MemoryJobStore
+    from apscheduler.schedulers.background import BackgroundScheduler
+
+    from stackos import task_delivery
+
+    ready, release, lock = Event(), Event(), Lock()
+    actual = BackgroundScheduler(
+        jobstores={"memory": MemoryJobStore()}, executors={"long": APSExecutor(1)}
+    )
+    actual.start(paused=True)
+    calls, old_jobs = [], []
+
+    class BarrierScheduler:
+        count = 0
+
+        def add_job(self, function, **options):
+            with lock:
+                self.count += 1
+                first = self.count == 1
+            if first:
+                old_jobs.append((function, options))
+                ready.set()
+                assert release.wait(10)
+                if registration == "error-before":
+                    raise RuntimeError("Fixture registration failure")
+            job = actual.add_job(function, **options)
+            if first and registration == "error-after":
+                raise RuntimeError("Fixture registration failure after insert")
+            return job
+
+        def remove_job(self, *args, **kwargs):
+            return actual.remove_job(*args, **kwargs)
+
+    def launch(*args, **kwargs):
+        packet = json.loads(args[3])
+        calls.append(packet["brief"]["ticket"]["key"])
+        return AgentRunResult(0, thread_id="fresh-session", result=generic_result("blocked"))
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = BarrierScheduler()
+    try:
+        with Session(delivery_engine) as session:
+            plans = RunPlanRepository(session)
+            plan_id = workflow_task(session, project_id)
+            key = f"workflow-{plan_id}"
+
+        def first_handoff():
+            with Session(delivery_engine) as own_session:
+                return submit(
+                    own_session,
+                    project_id,
+                    tmp_path,
+                    scheduler,
+                    task_key=key,
+                    run_plan_id=plan_id,
+                    step_id="deliver",
+                )
+
+        with ThreadPoolExecutor() as workers:
+            old = workers.submit(first_handoff)
+            assert ready.wait(5)
+            with Session(delivery_engine) as session:
+                _, cancellation = task_delivery.abort_run_plan(
+                    session, run_plan_id=plan_id, project_id=project_id, scheduler=scheduler
+                )
+                assert cancellation["status"] == "state_only"
+                plans = RunPlanRepository(session)
+                repo = TrackerRepository(session)
+                if rehandoff:
+                    plans.reopen(
+                        run_plan_id=plan_id,
+                        project_id=project_id,
+                        step_id="deliver",
+                        reason="Isolated fresh work after abort during registration",
+                    )
+                    plans.claim_step(
+                        run_plan_id=plan_id,
+                        project_id=project_id,
+                        run_id=plans.get(plan_id).run_id,
+                        step_id="deliver",
+                    )
+                    repo.create_ticket(
+                        project_id=project_id,
+                        task_key=key,
+                        key="fresh-worker",
+                        title="Fresh isolated work",
+                        parent_ticket_key=f"{key}-deliver",
+                        run_plan_id=plan_id,
+                        run_plan_step_id=plans.get_step(plan_id, "deliver").id,
+                    )
+                    current = submit(
+                        session,
+                        project_id,
+                        tmp_path,
+                        scheduler,
+                        task_key=key,
+                        run_plan_id=plan_id,
+                        step_id="deliver",
+                    )
+                before = repo.get(project_id=project_id, task_key=key)
+                before_plan = plans.get(plan_id).model_dump(mode="json")
+                release.set()
+                if registration == "success":
+                    assert old.result(timeout=5)["status"] == "stopped"
+                else:
+                    with pytest.raises(RuntimeError, match="Fixture registration failure"):
+                        old.result(timeout=5)
+                session.expire_all()
+                assert repo.get(project_id=project_id, task_key=key) == before
+                assert plans.get(plan_id).model_dump(mode="json") == before_plan
+                function, options = old_jobs[0]
+                assert actual.get_job(options["id"], jobstore="memory") is None
+                # Even an already-dequeued stale registration must remain inert.
+                function(**options["kwargs"])
+                session.expire_all()
+                assert repo.get(project_id=project_id, task_key=key) == before
+                assert not calls
+                jobs = actual.get_jobs(jobstore="memory")
+                assert len(jobs) == int(rehandoff)
+                if rehandoff:
+                    assert jobs[0].id == current["job_ref"]
+                    jobs[0].func(**jobs[0].kwargs)
+                    assert calls == ["fresh-worker"]
+    finally:
+        release.set()
+        actual.shutdown(wait=True)
 
 
 def test_abort_real_managed_invocation_through_lifecycle_coordinator(

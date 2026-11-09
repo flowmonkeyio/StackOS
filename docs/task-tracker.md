@@ -60,9 +60,11 @@ registration and late success/error/exception acceptance. Each accepted
 snapshot and scheduled callback. Reopening a run does not revive its stopped
 handoff, even after the native invocation retires. A fresh explicit handoff gets a
 new identity; old callbacks and buffered returns cannot claim its steps, launch
-agents or overwrite its evidence. Only registry-owned invocations can be stopped;
-external sessions receive state changes only. The existing execution/usage handoff
-finishes readers and retains measured counters without inventing final-only usage.
+agents or overwrite its evidence. Scheduler job IDs also include that handoff
+identity. Delayed registration removes only its own stale job, and registration
+failure can stop only its current handoff. Only registry-owned invocations can be
+stopped; external sessions receive state changes only. The existing execution/usage
+handoff finishes readers and retains measured counters without inventing final-only usage.
 Runs, Board and Graph share the same confirmation and refresh their current
 transport-backed projections. A plain task has no inferred run-plan abort action.
 

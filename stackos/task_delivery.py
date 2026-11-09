@@ -529,7 +529,15 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
                 "The working directory is already owned by an active task",
                 data={"project_dir": str(directory), "next_operations": ["tracker.get"]},
             )
-        return _update_delivery(repo, project_id, task_key, **changes, handoff_id=uuid4().hex), True
+        handoff_id = uuid4().hex
+        return _update_delivery(
+            repo,
+            project_id,
+            task_key,
+            **changes,
+            handoff_id=handoff_id,
+            job_ref=f"task-delivery:{project_id}:{task.id}:{handoff_id}",
+        ), True
     except Exception:
         session.rollback()
         raise
@@ -951,10 +959,13 @@ def start_delivery(
         step_id=step_id,
         agent_assignments=assignments,
         controller_run_id=plan.run_id if plan else None,
-        job_ref=f"task-delivery:{project_id}:{task.id}",
     )
     if not queued:
         return _receipt(task_key, state)
+    with managed_launch_lock:
+        session.expire_all()
+        if not _delivery_active(_task(repo, project_id, task_key), state["handoff_id"]):
+            return _receipt(task_key, {**state, "status": "stopped"})
     try:
         scheduler.add_job(
             run_delivery,
@@ -970,8 +981,27 @@ def start_delivery(
             },
         )
     except Exception as error:
-        _update_delivery(repo, project_id, task_key, status="stopped", reason=str(error))
+        with managed_launch_lock:
+            session.expire_all()
+            if _delivery_active(_task(repo, project_id, task_key), state["handoff_id"]):
+                _update_delivery(repo, project_id, task_key, status="stopped", reason=str(error))
+        # Registration may have inserted the job before raising. This exact ID
+        # belongs only to the original admission, never a superseding handoff.
+        with suppress(JobLookupError):
+            scheduler.remove_job(state["job_ref"], jobstore="memory")
         raise
+    with managed_launch_lock:
+        session.expire_all()
+        task = _task(repo, project_id, task_key)
+        if not _delivery_active(task, state["handoff_id"]):
+            with suppress(JobLookupError):
+                scheduler.remove_job(state["job_ref"], jobstore="memory")
+            current = (task.metadata_json or {}).get("delivery", {})
+            state = (
+                current
+                if current.get("handoff_id") == state["handoff_id"]
+                else {**state, "status": "stopped"}
+            )
     return _receipt(task_key, state)
 
 
