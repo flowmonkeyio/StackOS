@@ -1,119 +1,251 @@
 <script setup lang="ts">
-// SchedulesTab — read-only scheduled job visibility.
-
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { storeToRefs } from 'pinia'
-
 import DataTable from '@/components/DataTable.vue'
+import TabBar from '@/components/TabBar.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
-import { UiButton, UiCallout, UiMetricCard } from '@/components/ui'
+import { UiButton, UiCallout, UiConfirmDialog, UiDropdownMenu, UiIcon, UiIconButton, UiSwitch } from '@/components/ui'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import { formatAbsoluteDateTime, formatRelativeDateTime } from '@/lib/stackos/time'
+import { formatApiError } from '@/lib/client'
+import { subscribeUsageUpdates } from '@/lib/usageUpdates'
 import { useSchedulesStore, type ScheduledJob } from '@/stores/schedules'
 import type { DataTableColumn } from '@/components/types'
+import ScheduleEditor from './ScheduleEditor.vue'
+import ScheduledRuns from './ScheduledRuns.vue'
+import { readableSchedule } from './schedulePresentation'
 
-const schedulesStore = useSchedulesStore()
-
+const store = useSchedulesStore()
 const { projectId } = useProjectRouteScope()
-const { items, loading, error } = storeToRefs(schedulesStore)
-
-const enabledCount = computed(() => items.value.filter((job) => job.enabled).length)
-
-// Schedules have no created_at; the operational order is soonest next run
-// first, with never-scheduled (disabled) jobs at the bottom.
-const itemsByNextRun = computed(() =>
-  [...items.value].sort((a, b) => {
-    const ta = a.next_run_at ? Date.parse(a.next_run_at) : Number.POSITIVE_INFINITY
-    const tb = b.next_run_at ? Date.parse(b.next_run_at) : Number.POSITIVE_INFINITY
-    return ta - tb
-  }),
-)
-
+const { items, loading, error, saving } = storeToRefs(store)
+const activeTab = ref('automations')
+const tabs = [{ key: 'automations', label: 'Automations' }, { key: 'runs', label: 'Runs' }]
+const editing = ref(false)
+const selectedJob = ref<ScheduledJob | null>(null)
+const removing = ref<ScheduledJob | null>(null)
+const actionError = ref<string | null>(null)
+const itemsByNextRun = computed(() => [...items.value].sort((a, b) =>
+  (a.next_run_at ? Date.parse(a.next_run_at) : Infinity) - (b.next_run_at ? Date.parse(b.next_run_at) : Infinity),
+))
 const columns: DataTableColumn<ScheduledJob>[] = [
-  { key: 'kind', label: 'Kind', cellClass: 'font-medium text-fg-strong' },
-  { key: 'cron_expr', label: 'Schedule', cellClass: 'font-mono text-xs' },
-  { key: 'next_run_at', label: 'Next run' },
-  { key: 'last_run_at', label: 'Last run' },
-  { key: 'last_run_status', label: 'Last status', widthClass: 'w-28' },
-  { key: 'enabled', label: 'State', widthClass: 'w-24' },
+  { key: 'name', label: 'Automation', widthClass: 'w-[26%]' },
+  { key: 'cron_expr', label: 'Schedule', widthClass: 'w-[25%]' },
+  { key: 'next_run_at', label: 'Next run', widthClass: 'w-[20%]' },
+  { key: 'last_run_status', label: 'Last result', widthClass: 'w-[18%]' },
+  { key: 'enabled', label: 'Enabled', widthClass: 'w-[11%]' },
 ]
-
-const { refresh } = useProjectScopedLoader({
-  projectId,
-  load: ({ projectId }) => schedulesStore.refresh(projectId),
+let refreshing: Promise<unknown> | null = null
+function load(): Promise<unknown> {
+  if (!refreshing) refreshing = Promise.all([store.refresh(projectId.value), store.refreshRuns(projectId.value)]).finally(() => { refreshing = null })
+  return refreshing
+}
+const { refresh } = useProjectScopedLoader({ projectId, load })
+const unsubscribe = subscribeUsageUpdates(projectId.value, {
+  usage: updates => { if (updates) store.applyUsage(updates); else void refresh() },
+  status: () => { void refresh() }, resume: () => { void refresh() },
 })
+onBeforeUnmount(unsubscribe)
+
+function edit(job: ScheduledJob | null): void { selectedJob.value = job; editing.value = true; actionError.value = null }
+async function toggle(job: ScheduledJob, enabled: boolean): Promise<void> {
+  actionError.value = null
+  try { await store.toggle(projectId.value, job.id, enabled) }
+  catch (cause) { actionError.value = formatApiError(cause) }
+}
+async function remove(): Promise<void> {
+  if (!removing.value || saving.value) return
+  actionError.value = null
+  try { await store.remove(projectId.value, removing.value.id); removing.value = null }
+  catch (cause) { actionError.value = formatApiError(cause) }
+}
 </script>
 
 <template>
-  <section class="space-y-5">
-    <div class="flex justify-end">
-      <UiButton
-        size="sm"
-        variant="secondary"
-        icon-left="refresh"
-        :loading="loading"
-        @click="refresh"
-      >
-        Refresh
-      </UiButton>
-    </div>
-
+  <section class="automation-page min-w-0 space-y-5">
+    <TabBar
+      :tabs="tabs"
+      :active-key="activeTab"
+      aria-label="Automations"
+      @change="activeTab = $event"
+    />
     <UiCallout
-      v-if="error"
+      v-if="actionError"
       tone="danger"
-      title="Failed to load schedules"
+      title="Automation change failed"
     >
-      {{ error }}
+      {{ actionError }}
     </UiCallout>
-
-    <div class="grid gap-4 md:grid-cols-3">
-      <UiMetricCard
-        label="Schedules"
-        :value="items.length"
-      />
-      <UiMetricCard
-        label="Enabled"
-        :value="enabledCount"
-      />
-      <UiMetricCard
-        label="Disabled"
-        :value="items.length - enabledCount"
-      />
-    </div>
-
-    <DataTable
-      :items="itemsByNextRun"
-      :columns="columns"
-      :loading="loading"
-      aria-label="Scheduled jobs"
-      empty-message="Agent-owned schedules will appear here with next run, last run, and status."
+    <div
+      v-if="activeTab === 'automations'"
+      role="tabpanel"
+      aria-labelledby="cs-tab-automations"
+      class="space-y-4"
     >
-      <template #cell:next_run_at="{ value }">
-        <span :title="formatAbsoluteDateTime(value ? String(value) : null)">
-          {{ formatRelativeDateTime(value ? String(value) : null) }}
-        </span>
-      </template>
-      <template #cell:last_run_at="{ value }">
-        <span :title="formatAbsoluteDateTime(value ? String(value) : null)">
-          {{ formatRelativeDateTime(value ? String(value) : null) }}
-        </span>
-      </template>
-      <template #cell:last_run_status="{ row }">
-        <StatusBadge
-          v-if="(row as ScheduledJob).last_run_status"
-          :status="(row as ScheduledJob).last_run_status as string"
-          kind="job"
-          :small="true"
-        />
-        <span v-else>-</span>
-      </template>
-      <template #cell:enabled="{ row }">
-        <StatusBadge
-          domain="step"
-          :status="(row as ScheduledJob).enabled ? 'enabled' : 'disabled'"
-        />
-      </template>
-    </DataTable>
+      <div class="flex min-h-8 items-center justify-between gap-4">
+        <p class="text-sm text-fg-muted">
+          Runs only while StackOS is open. Missed runs are skipped.
+        </p>
+        <div class="flex shrink-0 items-center gap-2">
+          <UiIconButton
+            aria-label="Refresh automations"
+            :disabled="loading"
+            @click="refresh"
+          >
+            <UiIcon
+              name="refresh"
+              class="h-4 w-4"
+            />
+          </UiIconButton>
+          <UiButton
+            variant="primary"
+            icon-left="plus"
+            :disabled="saving"
+            @click="edit(null)"
+          >
+            New automation
+          </UiButton>
+        </div>
+      </div>
+      <UiCallout
+        v-if="error"
+        tone="danger"
+        title="Failed to load automations"
+      >
+        {{ error }}
+      </UiCallout>
+      <DataTable
+        class="automations-table"
+        :items="itemsByNextRun"
+        :columns="columns"
+        :loading="loading"
+        aria-label="Automations"
+        :empty-message="error ? 'Automation list unavailable. Refresh to retry.' : 'No automations yet. Create an automation to schedule a workflow.'"
+      >
+        <template #cell:name="{ row }">
+          <div
+            class="truncate font-medium text-fg-strong"
+            :title="row.name ?? row.kind"
+          >
+            {{ row.name ?? row.kind }}
+          </div>
+          <div
+            class="truncate text-xs text-fg-muted"
+            :title="row.template_key ?? 'Workflow not selected'"
+          >
+            {{ row.template_key ?? 'Workflow not selected' }}
+          </div>
+        </template>
+        <template #cell:cron_expr="{ row }">
+          <div
+            class="truncate"
+            :title="row.cron_expr"
+          >
+            {{ readableSchedule(row.cron_expr) }}
+          </div>
+          <div
+            class="truncate text-xs text-fg-muted"
+            :title="row.timezone ?? 'Timezone not set'"
+          >
+            {{ row.timezone ?? 'Timezone not set' }}
+          </div>
+        </template>
+        <template #cell:next_run_at="{ row }">
+          <span
+            class="block truncate"
+            :title="formatAbsoluteDateTime(row.next_run_at)"
+          >{{ row.next_run_at ? formatAbsoluteDateTime(row.next_run_at) : '—' }}</span>
+        </template>
+        <template #cell:last_run_status="{ row }">
+          <div
+            class="truncate"
+            :title="row.setup_issue ?? undefined"
+          >
+            <StatusBadge
+              v-if="row.setup_issue || row.last_run_status"
+              kind="job"
+              :status="row.setup_issue ? 'needs_setup' : row.last_run_status!"
+              :label="row.setup_issue ? 'Needs setup' : undefined"
+            />
+            <span
+              v-else
+              class="text-fg-muted"
+            >—</span>
+          </div>
+          <span
+            v-if="row.last_run_at"
+            class="block truncate text-xs text-fg-muted"
+            :title="formatAbsoluteDateTime(row.last_run_at)"
+          >{{ formatRelativeDateTime(row.last_run_at) }}</span>
+        </template>
+        <template #cell:enabled="{ row }">
+          <div class="flex items-center justify-between gap-2">
+            <UiSwitch
+              :model-value="row.enabled"
+              :disabled="saving"
+              :aria-label="`Enable ${row.name ?? row.kind}`"
+              @update:model-value="toggle(row, $event)"
+            />
+            <UiDropdownMenu
+              placement="bottom-end"
+              :aria-label="`Actions for ${row.name ?? row.kind}`"
+              :items="[{ key: 'edit', label: 'Edit automation', disabled: saving, onSelect: () => edit(row) }, { key: 'remove', label: 'Remove automation', tone: 'danger', disabled: saving, onSelect: () => { removing = row; actionError = null } }]"
+            >
+              <template #trigger="{ toggle: toggleMenu, open }">
+                <UiIconButton
+                  :aria-label="`Actions for ${row.name ?? row.kind}`"
+                  data-dropdown-trigger
+                  aria-haspopup="menu"
+                  :aria-expanded="open"
+                  @click="toggleMenu"
+                >
+                  <UiIcon
+                    name="more"
+                    class="h-4 w-4 rotate-90"
+                  />
+                </UiIconButton>
+              </template>
+            </UiDropdownMenu>
+          </div>
+        </template>
+      </DataTable>
+    </div>
+    <ScheduledRuns
+      v-else
+      :project-id="projectId"
+      @refresh="refresh"
+    />
+    <ScheduleEditor
+      v-if="editing"
+      :project-id="projectId"
+      :job="selectedJob"
+      @close="editing = false"
+      @saved="editing = false"
+    />
+    <UiConfirmDialog
+      :model-value="!!removing"
+      title="Remove automation?"
+      :description="`Remove ${removing?.name ?? removing?.kind ?? 'this automation'}? Future runs stop; existing runs and history are retained.`"
+      confirm-label="Remove automation"
+      tone="danger"
+      :loading="saving"
+      @update:model-value="!$event && !saving && (removing = null)"
+      @confirm="remove"
+    >
+      <UiCallout
+        v-if="actionError"
+        tone="danger"
+        title="Could not remove automation"
+      >
+        {{ actionError }}
+      </UiCallout>
+    </UiConfirmDialog>
   </section>
 </template>
+
+<style scoped>
+.automation-page :deep(table) { width: 100%; table-layout: fixed; }
+.automation-page :deep(td) { height: 72px; }
+.automation-page :deep(.ui-badge) { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.automations-table :deep(.overflow-x-auto) { overflow: visible; }
+</style>

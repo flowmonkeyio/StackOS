@@ -62,6 +62,16 @@ header: labels stay above fixed number/canvas columns in the same shared rendere
 This changes arrangement only; normalization, lifetime scope and chart ownership
 remain unchanged.
 
+Project Automations reuses this inline compact renderer in its Runs table.
+`SchedulesTab` owns exactly two shared underline tabs, Automations and Runs;
+`ScheduleEditor` uses the existing dialog/form primitives for inert drafts and
+validated activation through `schedule.set/toggle/remove`. Removing a schedule
+preserves existing runs. `ScheduledRuns` reads the paginated `schedule.runs`
+projection and links its actual `task_key` to the existing Work graph. The
+schedules store patches canonical task usage through `usageUpdates`, including
+updates received during pending history reads; it never sums receipts or polls
+rows. Table geometry is fixed across empty, measured, unknown and retained usage.
+
 ## Shipped — app-level primitives (`ui/src/components/`)
 
 | Component | Notes |
@@ -339,7 +349,7 @@ These are the common copy-paste patterns I'd expect to find in views — when mi
 |---|---|---|
 | Projects list | UiPageHeader, UiFilterBar, UiBadge, UiButton | (none) |
 | Project overview | UiPageHeader, UiDescriptionList, UiMetricCard, DataTable | ProjectPageHeader |
-| Project schedules tab | UiPanel, UiBadge, DataTable | ProjectPageHeader |
+| Project Automations / Runs tabs | TabBar, DataTable, UiSwitch, UiDropdownMenu, UiDialog, UiConfirmDialog, UiFormField | ProjectPageHeader, AgentUsageSummary |
 | Project budget tab | UiPanel, UiMetricCard, DataTable | ProjectPageHeader |
 | Runs list | UiFilterBar, DataTable, UiBadge | (none) |
 | Run detail | UiPageHeader, UiCodeBlock, UiJsonBlock, RunPlanRenderer, ArtifactRenderer | (none) |

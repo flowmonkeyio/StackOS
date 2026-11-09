@@ -46,6 +46,11 @@ export const runStatus = defineStatuses({
 });
 
 export const stepStatus = defineStatuses({
+  needs_setup: { label: 'Needs setup', tone: 'warning', icon: 'wrench' },
+  admitted: { label: 'Admitted', tone: 'info', icon: 'clock' },
+  started: { label: 'Started', tone: 'info', icon: 'loader', dot: true },
+  overlap: { label: 'Skipped · overlap', tone: 'neutral', icon: 'skip-forward' },
+  unavailable: { label: 'Skipped · unavailable', tone: 'warning', icon: 'skip-forward' },
   pending: { label: 'Pending', tone: 'neutral', icon: 'clock' },
   queued: { label: 'Queued', tone: 'neutral', icon: 'clock' },
   running: { label: 'Running', tone: 'info', icon: 'loader', dot: true, inFlight: true },

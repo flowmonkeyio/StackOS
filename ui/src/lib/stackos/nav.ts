@@ -73,7 +73,7 @@ export function coreNavSections(projectId: number): StackOsNavSection[] {
       label: 'Configure',
       items: [
         { key: 'connections', label: 'Connections', to: `${base}/connections`, icon: 'link' },
-        { key: 'schedules', label: 'Automation', to: `${base}/schedules`, icon: 'calendar' },
+        { key: 'schedules', label: 'Automations', to: `${base}/schedules`, icon: 'calendar' },
         { key: 'cost-budget', label: 'Spend', to: `${base}/cost-budget`, icon: 'banknotes' },
         {
           key: 'agent-defaults',

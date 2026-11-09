@@ -27,7 +27,7 @@ describe('StackOS nav contributions', () => {
     expect(core[0].items.find((item) => item.label === 'Work')?.to).toBe('/projects/7/tasks')
     expect(core[1].items.map((item) => item.label)).toEqual([
       'Connections',
-      'Automation',
+      'Automations',
       'Spend',
       'Agent defaults',
       'Plugins',

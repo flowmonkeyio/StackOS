@@ -25,12 +25,16 @@ let revision = 0
 export function usageCheckpoint(): number { return revision }
 
 export function patchUsageAfter(target: TrackerSnapshot | null, projectId: number, checkpoint: number): void {
+  patchUsageSnapshot(target, usageAfter(projectId, checkpoint))
+}
+
+export function usageAfter(projectId: number, checkpoint: number): UsageProjection {
   const latest = channels.get(projectId)?.latest
-  if (!latest) return
-  patchUsageSnapshot(target, {
+  if (!latest) return { tasks: [], tickets: [] }
+  return {
     tasks: [...latest.tasks.values()].filter((value) => value.version > checkpoint).map((value) => value.item),
     tickets: [...latest.tickets.values()].filter((value) => value.version > checkpoint).map((value) => value.item),
-  })
+  }
 }
 
 // One transport/refresh owner shared by Work, Home and Overview. It never reads

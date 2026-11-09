@@ -49,7 +49,7 @@ const PAGE_COPY = {
       'Project state, enabled plugins, reusable templates, run plans, resources, and recent runs.',
   },
   schedules: {
-    title: 'Schedules',
+    title: 'Automations',
     description: 'Recurring project operations and scheduled maintenance.',
   },
   'cost-budget': {
