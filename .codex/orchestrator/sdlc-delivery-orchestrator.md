@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.10
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.11
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Workflow: `engineering.tracked-delivery` v0.8.2 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -21,9 +21,12 @@ evidence and recommendations.
   `workflowTemplate.describe` and `agentPreset.resolveForWorkflow`. The latter
   includes main-agent skill presets; request a separate skill packet only when
   needed. Read complete applicable contracts: compact navigation can truncate
-  guidance, so use targeted `response_mode=raw` descriptions/resolution. Retrieve
-  bounded current sections once; expand for missing contracts, contradictions
-  or changed evidence without skipping required guidance.
+  guidance, so use targeted `response_mode=raw` descriptions/resolution. Read
+  applicable source sections in bounded pieces. Use concise receipts and inspect
+  underlying evidence for missing contracts, contradictions or changed evidence.
+  If output is truncated, narrow the next read. Return current conclusions with
+  evidence refs rather than copied history; preserve full-read/merge before JSON
+  mutation.
 - Load this guide and the applicable `.codex/agents/sdlc-*.toml` contracts.
   Inspect `.codex/config.toml` for registration and actual host capabilities.
   `stackos:stackos` remains the managed host skill for MCP mechanics.
@@ -286,11 +289,15 @@ The following dispatch and acceptance steps apply to terminal-managed delivery:
 
 ## Evidence And Feedback
 
-Reviewers execute relevant planned specs and integration checks themselves and
-report commands/results/current SHA. Failed required specs reject; genuinely
-unavailable required verification blocks. Within ticket plus integration scope,
-cover business regression, architecture gaps, inaccurate wiring and canonical
-ownership where relevant. Required repairs cite scoped criteria/evidence. Put
+Reviewers independently assess the intended outcome against requirements, actual
+changes, affected consumers and available proof. They choose proportionate
+checks, execute relevant planned specs and integration checks plus necessary omissions, and report
+commands/results/current SHA. Explain material gaps or why evidence is sufficient;
+do not impose a fixed sequence, finding quota or extra report. Failed required
+specs reject; genuinely unavailable required verification blocks. Keep checks
+within ticket plus integration scope and the existing required obligations. Consider
+business regression, architecture gaps, inaccurate wiring and canonical ownership
+where relevant. Required repairs cite scoped criteria/evidence. Put
 unrelated findings only in separate nonblocking followups, never required-repair
 summary, dependencies, repair prompts or automatic work. Explicit automatic
 handoff authorizes routing stored scoped rejection without main message relay;
