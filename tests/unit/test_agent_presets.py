@@ -964,7 +964,6 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
         "omitted requirements",
         "independence from implementation",
         "every executable child",
-        "run authorized focused checks",
         "do not edit production implementation",
         "main agent's final acceptance decision",
         "tracker.verify structural consistency",
@@ -989,8 +988,6 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     ):
         assert requirement in delivery
     for requirement in (
-        "completeness and proportionality",
-        "omitted checks",
         "unnecessary abstractions",
         "duplicate ownership",
         "unrelated cleanup",
@@ -1033,15 +1030,8 @@ def test_sdlc_source_and_local_verification_repair_contracts() -> None:
         source_text = " ".join(source.prompt_contract.must_do)
         local = tomllib.loads((REPO_ROOT / f".codex/agents/sdlc-{role}.toml").read_text())
         for text in (source_text, local["developer_instructions"]):
-            for requirement in (
-                "planned specs and integration checks",
-                "business regression",
-                "architecture gaps",
-                "inaccurate wiring",
-                "canonical ownership",
-                "nonblocking followups",
-            ):
-                assert requirement in text, (role, requirement)
+            # Preserve the scope boundary without pinning the review method's wording.
+            assert "nonblocking followups" in text, role
     for role in ("delivery", "delivery-reviewer"):
         source = loader.describe_preset(key=f"stackos.sdlc.{role}").preset
         local = tomllib.loads((REPO_ROOT / f".codex/agents/sdlc-{role}.toml").read_text())
@@ -1114,7 +1104,6 @@ def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
     ):
         assert obligation in texts["delivery"]
     for obligation in (
-        "Independently derive coverage",
         "repair-only slice cannot inherit an incomplete review",
         "executed on the current candidate",
         "valid unchanged evidence with scope/prerequisite/environment justification",

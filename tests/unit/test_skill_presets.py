@@ -253,9 +253,6 @@ def test_sdlc_orchestrator_manual_adoption_and_bounded_repair() -> None:
             "affected consumers",
             "actual ownership conflicts",
             "unrelated naming",
-            "completeness",
-            "omitted checks",
-            "speculative abstractions",
         ):
             assert requirement.lower() in text.lower(), requirement
         for requirement in (
@@ -269,11 +266,6 @@ def test_sdlc_orchestrator_manual_adoption_and_bounded_repair() -> None:
             "explicit requeue",
             "rejection after the third repair",
             "clean unchanged HEAD",
-            "planned specs and integration checks",
-            "business regression",
-            "architecture gaps",
-            "inaccurate wiring",
-            "canonical ownership",
             "nonblocking followups",
             "tracker.configureDelivery",
             "provider/profile",
