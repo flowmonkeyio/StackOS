@@ -128,6 +128,30 @@ edits do not update saved instructions, installed runtimes or frozen jobs. No
 synchronizer or cross-project rollout exists. Main retains scope admission and
 final claims; terminal-managed delivery keeps its sole-writer contract.
 
+## Native Desktop Schedule Admission
+
+Electron main owns one authenticated availability stream through
+`desktop/src/service.js`, independently of BrowserWindow and notifications.
+The REST-only `desktop.availability` operation declares the dedicated POST
+stream at `/api/v1/desktop/availability`; browser console tokens, MCP and CLI
+cannot advertise native presence. Suspend and Quit close the connection;
+resume/start and transport reconnection open a new one. No presence field,
+heartbeat, lease, or occurrence replay is persisted.
+
+`WorkflowScheduleRuntime` holds the current connection and generation in daemon
+memory and uses the existing APScheduler memory jobstore. One stable job ID per
+schedule carries its exact next cron instant in a date trigger with one-second
+misfire tolerance. Execution or misfire rearms strictly after the current time.
+Losing availability removes only these workflow timers. Superseded callbacks,
+late firings and old stream cleanup cannot admit work or clear newer presence.
+Schedule mutations reconcile the affected timer; admission re-reads the current
+enabled configuration and fences edits even during asynchronous preflight.
+
+The occurrence-launch consumer receives `(row, due_utc, admit)`. It must call
+`admit()` after any awaited readiness checks, immediately before creating work,
+without an intervening await. The scheduler owns eligibility only; request,
+run-plan, tracker and task-delivery owners retain admitted workflow lifecycle.
+
 ## Data Model
 
 Core StackOS tables include:

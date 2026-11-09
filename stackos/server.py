@@ -56,6 +56,7 @@ from stackos.jobs.scheduler import (
     RUNS_REAPER_JOB_ID,
     build_scheduler,
 )
+from stackos.jobs.workflow_schedules import WorkflowScheduleRuntime
 from stackos.logging import configure_logging, get_logger
 from stackos.mcp import register_mcp
 from stackos.repositories.runs import RunRepository
@@ -304,9 +305,12 @@ def _build_lifespan(
         # skipped) so re-running on every boot is fine.
         scheduler = build_scheduler(settings, engine)
         app.state.scheduler = scheduler
+        workflow_schedules = WorkflowScheduleRuntime(scheduler, lambda: Session(engine))
+        app.state.workflow_schedules = workflow_schedules
         app.state.operation_services.update(
             scheduler=scheduler,
             session_factory=lambda: Session(engine),
+            schedule_reconcile=workflow_schedules.reconcile,
         )
 
         # Crash-recovery sweep: any ``status='running' AND
@@ -369,6 +373,8 @@ def _build_lifespan(
             yield
         finally:
             log.info("daemon.shutdown.clean")
+            if workflow_schedules.connection is not None:
+                workflow_schedules.disconnect(workflow_schedules.connection)
             from stackos.host_mcp.service import shutdown_usage
 
             shutdown_usage()

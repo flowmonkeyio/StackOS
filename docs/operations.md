@@ -69,6 +69,17 @@ The daemon installs `operation_services.schedule_reconcile(project_id, job_id)`
 for affected timer reconciliation; every mutation reaches that seam after
 commit, and queued admission must re-read current configuration.
 
+Native availability uses the registered REST-only `desktop.availability`
+transport: Electron main POSTs `/api/v1/desktop/availability` with the locally
+read daemon token and holds the response stream open. The response begins with
+an SSE `ready` event and has no replay or heartbeat. Connection lifetime is the
+availability fact; it is not a JSON presence setter. Generic JSON operation
+calls cannot open it, and browser console tokens, CLI and MCP cannot enable it.
+Quit, suspend or disconnect removes workflow timers while maintenance and
+admitted tasks remain active. Reconnection arms future times only. Workflow
+jobs override the scheduler's permissive defaults with one-second jitter
+tolerance and generation/configuration checks before admission.
+
 `schedule.runs` pages existing scheduled requests linked to project-scoped
 plans (`limit` 1–200, descending request ID cursor `after_id`, optional
 `schedule_id`). Scheduled request metadata carries `schedule_id` and

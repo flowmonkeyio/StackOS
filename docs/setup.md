@@ -158,6 +158,15 @@ replacement without reinstalling the full local runtime, and prevents the first
 status report from racing stale pre-repair state. Optional host absence remains
 advisory and does not block startup.
 
+Workflow automations are eligible only while the native StackOS process is
+running and the computer is awake. Minimized windows and closing the last
+macOS window keep the app running; **Quit StackOS**, a crash, connection loss,
+or suspend removes future workflow timers. A healthy background daemon or an
+open browser tab alone does not enable them. Opening the app, reconnecting,
+or resuming arms the next strictly future cron time; missed times are skipped.
+This admission rule does not stop workflows that already started, the runs
+reaper, or backup maintenance.
+
 The desktop home and project toolbars keep a visible **Getting started** action,
 and **Help → Getting Started** remains the menu fallback. Every entry opens
 `https://stackos.flowmonkey.io/getting-started` in the default browser. They

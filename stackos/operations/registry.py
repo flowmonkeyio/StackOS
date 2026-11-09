@@ -132,6 +132,7 @@ def build_operation_registry() -> OperationRegistry:
         catalog,
         communications,
         cost,
+        desktop,
         discovery,
         execution_contexts,
         finance,
@@ -153,6 +154,8 @@ def build_operation_registry() -> OperationRegistry:
     from stackos.operations import tracker as tracker_operations
 
     registry = OperationRegistry()
+    for spec in desktop.operation_specs():
+        registry.register(spec)
     for spec in finance.operation_specs():
         registry.register(spec)
     for spec in discovery.operation_specs():

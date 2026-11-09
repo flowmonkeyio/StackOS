@@ -441,6 +441,41 @@ function authenticatedJsonGet(pathname, options = {}) {
   return daemonJsonGet(pathname, { ...options, auth: true });
 }
 
+function openDesktopAvailability(onDisconnect) {
+  let closed = false;
+  const disconnected = () => {
+    if (closed) return;
+    closed = true;
+    req.destroy();
+    onDisconnect();
+  };
+  const req = http.request(new URL("/api/v1/desktop/availability", DAEMON_URL), {
+    method: "POST",
+    headers: { Authorization: `Bearer ${readAuthToken()}` }
+  }, (res) => {
+    if (res.statusCode !== 200) {
+      res.resume();
+      disconnected();
+      return;
+    }
+    req.setTimeout(0); // A live idle connection is presence; no polling/lease.
+    res.on("error", disconnected);
+    res.on("end", disconnected);
+    res.on("close", disconnected);
+    res.resume();
+  });
+  req.on("error", disconnected);
+  req.on("close", disconnected);
+  req.setTimeout(5000, disconnected); // Header/connect timeout only.
+  req.end();
+  return {
+    close() {
+      closed = true;
+      req.destroy();
+    }
+  };
+}
+
 async function waitForHealth(timeoutMs = 20000) {
   const startedAt = Date.now();
   let last = await checkHealth();
@@ -842,6 +877,7 @@ module.exports = {
   DAEMON_URL,
   HEALTH_URL,
   authenticatedJsonGet,
+  openDesktopAvailability,
   authTokenPath,
   checkHealth,
   daemonLogPath,

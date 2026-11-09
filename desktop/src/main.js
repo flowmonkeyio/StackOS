@@ -1,6 +1,6 @@
 "use strict";
 
-const { app, BrowserWindow, dialog, ipcMain, Menu, Notification, safeStorage, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, Menu, Notification, powerMonitor, safeStorage, shell } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
 const service = require("./service");
@@ -9,12 +9,14 @@ const { buildApplicationMenuTemplate } = require("./menu-template");
 const { createNotificationController } = require("./notifications");
 const { createUpdateController } = require("./updates");
 const { createBackupController, registerBackupIpc } = require("./backups");
+const { createAvailabilityController } = require("./availability");
 
 const GETTING_STARTED_URL = "https://stackos.flowmonkey.io/getting-started";
 
 let mainWindow = null;
 let updateController = null;
 let notificationController = null;
+let availabilityController = null;
 let pendingDeepLink = null;
 
 function escapeHtml(value) {
@@ -462,6 +464,8 @@ async function prepareAndLoadStackOS({ forceInstall = false } = {}) {
     return;
   }
 
+  availabilityController.start();
+
   await showStartupProgress("Opening your workspace...", 94);
   loadingPageActive = false;
   await mainWindow.loadURL(service.DAEMON_URL);
@@ -765,6 +769,7 @@ app.on("before-quit", () => {
 app.whenReady().then(async () => {
   app.setName("StackOS");
   service.setPackagedRuntime(app.isPackaged);
+  availabilityController = createAvailabilityController({ app, powerMonitor, service });
   app.setAsDefaultProtocolClient("stackos");
   updateController = createUpdateController();
   notificationController = createNotificationController({
