@@ -582,6 +582,11 @@ class ScheduledJobRepository:
                     "execution_json": execution_json,
                 }
             ).model_dump(mode="json")
+            if execution_json is not None:
+                # Preserve omitted versus explicit-null role overrides through storage.
+                config["execution_json"] = ScheduleExecution.model_validate(
+                    execution_json
+                ).model_dump(mode="json", exclude_unset=True)
         except SchemaValidationError as exc:
             raise ValidationError(
                 "Invalid schedule configuration",
@@ -589,7 +594,7 @@ class ScheduledJobRepository:
                     "errors": exc.errors(include_input=False, include_url=False),
                 },
             ) from None
-        self._validate_configuration(project_id, config)
+        self.validate_configuration(project_id, config)
         row = self._s.exec(
             select(ScheduledJob).where(
                 ScheduledJob.project_id == project_id,
@@ -620,7 +625,7 @@ class ScheduledJobRepository:
     ) -> Envelope[ScheduledJobOut]:
         row = self._get(project_id, job_id)
         if enabled:
-            self._validate_configuration(
+            self.validate_configuration(
                 project_id,
                 {
                     **{key: getattr(row, key) for key in ScheduleConfiguration.model_fields},
@@ -676,7 +681,10 @@ class ScheduledJobRepository:
         next_fire = trigger.get_next_fire_time(None, datetime.now(UTC))
         return next_fire.astimezone(UTC).replace(tzinfo=None) if next_fire else None
 
-    def _validate_configuration(self, project_id: int, config: dict[str, Any]) -> None:
+    def validate_configuration(
+        self, project_id: int, config: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        """Read-only setup/admission preflight; return validated execution settings."""
         from stackos.workflows.run_plan_schema import ensure_run_plan_has_no_secrets
 
         try:
@@ -690,7 +698,7 @@ class ScheduledJobRepository:
         except (ValueError, ZoneInfoNotFoundError) as exc:
             raise ValidationError(f"Invalid schedule cron/timezone: {exc}") from None
         if not config.get("enabled"):
-            return
+            return None
         missing = [
             key
             for key in ("name", "timezone", "template_key", "execution_json")
@@ -704,7 +712,7 @@ class ScheduledJobRepository:
         from stackos.task_delivery import resolve_delivery_settings
 
         execution = ScheduleExecution.model_validate(config["execution_json"]).model_dump(
-            exclude_none=True
+            exclude_unset=True
         )
         validation = RunPlanRepository(self._s).validate_plan(
             template_key=config["template_key"],
@@ -721,6 +729,7 @@ class ScheduledJobRepository:
                 },
             )
         resolve_delivery_settings(self._s, project_id=project_id, **execution)
+        return execution
 
     def _out(self, row: ScheduledJob) -> ScheduledJobOut:
         out = ScheduledJobOut.model_validate(row)
@@ -730,9 +739,9 @@ class ScheduledJobRepository:
             if not getattr(row, key)
         ]
         out.setup_issue = "Schedule needs setup: " + ", ".join(missing) if missing else None
-        if not row.enabled and not missing:
+        if not missing:
             try:
-                self._validate_configuration(
+                self.validate_configuration(
                     row.project_id,
                     {
                         **{key: getattr(row, key) for key in ScheduleConfiguration.model_fields},

@@ -116,6 +116,25 @@ def test_schedule_set_toggle_and_remove(mcp_client: MCPClient, seeded_project: d
     assert removed["data"] == {"project_id": pid, "job_id": job_id, "removed": True}
 
 
+def test_schedule_role_null_survives_mcp_storage(mcp_client, seeded_project, mcp_app, tmp_path):
+    from sqlmodel import Session
+
+    from stackos.db.models import ScheduledJob
+
+    execution = {"project_dir": str(tmp_path), "delivery_agent": {"model": None}}
+    result = mcp_client.call_tool_structured(
+        "schedule.set",
+        {
+            "project_id": seeded_project["data"]["id"],
+            "kind": "role-clear",
+            "cron_expr": "0 9 * * *",
+            "execution_json": execution,
+        },
+    )
+    with Session(mcp_app.state.engine) as session:
+        assert session.get(ScheduledJob, result["data"]["id"]).execution_json == execution
+
+
 def test_project_create_duplicate_slug_returns_conflict(
     mcp_client: MCPClient, seeded_project: dict
 ) -> None:

@@ -406,6 +406,16 @@ native rehearsal must demonstrate omitted-check discovery, final tests/lint,
 truthful self-signoff, independent review and restraint on unrelated cleanup.
 No source-only check proves saved adoption or current native/installed consumption.
 
+The bounded automated planning permission was reviewed on 2026-11-09 against
+[Codex instruction discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md)
+and the OpenAI skills/prompt guidance linked above. Applicability: state the
+permitted child-materialization path and its completion boundary alongside the
+prohibited lifecycle writes, without adding model-specific workflow policy.
+Source/local parity checks establish availability; a bounded native rehearsal
+must exercise child creation, refusal of self-claim/record/dispatch, the safe
+return of outputs, and preservation of unrelated work. Full scheduled native
+workflow progression remains a separate integration proof.
+
 Source upgrades do not rewrite existing run-plan snapshots or host-local
 files. Existing runs keep their frozen structure and output contracts. Local
 adaptations record the version they actually implement and are refreshed only

@@ -276,7 +276,7 @@ async def _schedule_set(
         timezone=inp.timezone,
         template_key=inp.template_key,
         inputs_json=inp.inputs_json,
-        execution_json=inp.execution_json.model_dump(exclude_none=True)
+        execution_json=inp.execution_json.model_dump(exclude_unset=True)
         if inp.execution_json
         else None,
     )

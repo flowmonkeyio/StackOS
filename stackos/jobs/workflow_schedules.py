@@ -21,8 +21,14 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
 from sqlmodel import Session, select
 
-from stackos.db.models import ScheduledJob
-from stackos.repositories.projects import ScheduleConfiguration
+from stackos.artifacts import redact_secret_text
+from stackos.db.models import AgentRequest, RunPlan, ScheduledJob, TrackerTask
+from stackos.repositories.agent_requests import AgentRequestRepository
+from stackos.repositories.projects import ScheduleConfiguration, ScheduledJobRepository
+from stackos.repositories.run_plan_state import TERMINAL_PLAN_STATUSES
+from stackos.repositories.run_plans import RunPlanRepository
+from stackos.repositories.tracker.utils import TERMINAL_TRACKER_STATUSES
+from stackos.task_delivery import start_delivery
 
 WORKFLOW_JOB_PREFIX = "workflow-schedule-"
 Launch = Callable[[ScheduledJob, datetime, Callable[[], bool]], Awaitable[None]]
@@ -47,7 +53,7 @@ class WorkflowScheduleRuntime:
     ) -> None:
         self.scheduler = scheduler
         self.session_factory = session_factory
-        self.launch = launch
+        self.launch = launch or self._launch
         self.now = now
         self.generation = 0
         self.connection: object | None = None
@@ -155,6 +161,127 @@ class WorkflowScheduleRuntime:
                     and 0 <= (self.now() - registration.due).total_seconds() <= 1
                 ),
             )
+
+    async def _launch(self, row: ScheduledJob, due: datetime, admit: Callable[[], bool]) -> None:
+        """Admit once; lifecycle and dependency traversal stay with existing owners."""
+        with self.session_factory() as session:
+            current = session.get(ScheduledJob, row.id)
+            if (
+                current is None
+                or current.project_id != row.project_id
+                or not current.enabled
+                or self._config(current) != self._config(row)
+            ):
+                return
+            requests = AgentRequestRepository(session)
+            request_key = f"schedule:{row.id}:{due.astimezone(UTC).isoformat()}"
+            # Even a NEW or failed preparation is historical evidence, never retry authority.
+            if requests.find_by_key(project_id=row.project_id, request_key=request_key):
+                return
+            if self._unfinished(session, current):
+                self._result(session, current, due, "overlap")
+                return
+            request_id = None
+            try:
+                settings = ScheduledJobRepository(session).validate_configuration(
+                    row.project_id, self._config(current)
+                )
+                assert settings is not None
+                # Setup/host checks may outlive presence, configuration or jitter allowance.
+                if not admit():
+                    return
+                metadata = {
+                    "schedule_id": row.id,
+                    "schedule_name": current.name,
+                    "schedule_due_at": due.astimezone(UTC).isoformat(),
+                    "template_key": current.template_key,
+                }
+                request = requests.create(
+                    project_id=row.project_id,
+                    request_key=request_key,
+                    title=current.name or current.kind,
+                    source_kind="schedule",
+                    metadata_json=metadata,
+                ).data
+                request_id = request.id
+                current.last_request_id = request_id
+                self._result(session, current, due, "admitted")
+                # prepare/create strictly validates and freezes one effective template
+                # and its concrete inputs together, including ordinary grants/approvals.
+                plan = requests.prepare_run_plan(
+                    project_id=row.project_id,
+                    request_id=request_id,
+                    claimed_by="schedule",
+                    key=f"schedule-{row.id}-{due.strftime('%Y%m%dt%H%M%S%f')}",
+                    template_key=current.template_key,
+                    repo_root=settings["project_dir"],
+                    inputs_json=current.inputs_json,
+                    metadata_json=metadata,
+                ).data.run_plan
+                plans = RunPlanRepository(session)
+                started = plans.start(plan.id, project_id=row.project_id)
+                step = plans.claim_step(
+                    run_plan_id=plan.id,
+                    project_id=row.project_id,
+                    run_id=started.run_id,
+                    claimed_by="schedule",
+                ).data
+                start_delivery(
+                    session=session,
+                    session_factory=self.session_factory,
+                    scheduler=self.scheduler,
+                    project_id=row.project_id,
+                    task_key=f"workflow-{plan.id}",
+                    run_plan_id=plan.id,
+                    step_id=step.step_id,
+                    **settings,
+                )
+                self._result(session, current, due, "started")
+            except Exception as error:
+                # No fallback/resume/queue. Keep admitted state inspectable for explicit repair.
+                session.rollback()
+                session.refresh(current)
+                self._result(session, current, due, "blocked" if request_id else "unavailable")
+                if request_id is not None:
+                    request_row = session.get(AgentRequest, request_id)
+                    assert request_row is not None
+                    request_row.metadata_json = {
+                        **(request_row.metadata_json or {}),
+                        "schedule_error": redact_secret_text(str(error)),
+                    }
+                    session.add(request_row)
+                    session.commit()
+
+    @staticmethod
+    def _unfinished(session: Session, row: ScheduledJob) -> bool:
+        if row.last_request_id is None:
+            return False
+        request = session.get(AgentRequest, row.last_request_id)
+        if request is None or request.project_id != row.project_id:
+            return True
+        if request.run_plan_id is None:
+            return False
+        plan = session.get(RunPlan, request.run_plan_id)
+        if (
+            plan is None
+            or plan.project_id != row.project_id
+            or plan.status not in TERMINAL_PLAN_STATUSES
+        ):
+            return True
+        task = session.exec(
+            select(TrackerTask).where(
+                TrackerTask.project_id == row.project_id,
+                TrackerTask.key == f"workflow-{plan.id}",
+            )
+        ).first()
+        return task is None or task.status not in TERMINAL_TRACKER_STATUSES
+
+    @staticmethod
+    def _result(session: Session, row: ScheduledJob, due: datetime, status: str) -> None:
+        row.last_run_at = due.astimezone(UTC).replace(tzinfo=None)
+        row.last_run_status = status
+        session.add(row)
+        session.commit()
 
     def _missed(self, event: JobEvent) -> None:
         if not event.job_id.startswith(WORKFLOW_JOB_PREFIX):

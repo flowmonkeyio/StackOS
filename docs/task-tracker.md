@@ -211,6 +211,19 @@ entries win. The resolved map is frozen with each execution snapshot.
 An unassigned mirror uses `delivery_agent`. Models and instructions remain
 project/task settings. No workflow or step name selects behavior.
 
+An already-automated frozen planning contract may explicitly authorize
+`tracker.createTicket` and dependency updates for contract-declared children
+in that same task/run and named attachment steps. Include briefs, ownership,
+checks and dependencies, inspect `tracker.get(include_graph=true)`, and return
+the declared outputs. Attach work to the declared downstream step so the same
+runner can activate and accept its children before executing that step's
+remaining contract. This permission grants no claim/record/accept/dispatch
+authority and does not start another runner or wait for main advancement.
+Tracker tools retain their existing direct-write project/task checks; actual
+resources, artifacts and actions still require frozen step grants. Terminal
+planning returns packets for main to materialize. Saved instruction adoption
+remains an explicit reviewed current-project action; active snapshots stay frozen.
+
 The call returns task/job/status refs immediately. Each task has its own memory
 scheduler job (`task-delivery:<project_id>:<task_id>`). Distinct canonical working
 directories can execute concurrently, within the existing long executor's two

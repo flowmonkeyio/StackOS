@@ -868,10 +868,10 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     expected_versions = {
         "requirements-flow-definer": "0.6.2",
         "codebase-explorer": "0.6.2",
-        "planning": "0.7.7",
+        "planning": "0.7.8",
         "architecture": "0.6.2",
         "test-designer": "0.6.3",
-        "delivery": "0.7.7",
+        "delivery": "0.7.8",
         "delivery-reviewer": "0.6.7",
     }
     presets = {
@@ -1073,6 +1073,7 @@ def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
     loader = AgentPresetLoader()
     prefixes = {
         "delivery": (
+            "An explicitly assigned automated planning/materialization contract",
             "After final edits,",
             "Before handoff,",
             "For visual changes,",

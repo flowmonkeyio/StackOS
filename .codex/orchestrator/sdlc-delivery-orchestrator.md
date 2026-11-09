@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.8
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.9
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Workflow: `engineering.tracked-delivery` v0.8.1 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -214,6 +214,14 @@ after accepted descendants; groups never launch. Only RunPlanRepository records
 mirror/plan/run terminal state. Assigned agents execute integration and workflow
 phase gates. Main retains scope admission and final claims and observes without
 competing lifecycle writes; child approval alone never satisfies final proof.
+
+An already-automated planning contract may explicitly authorize contract-declared
+child tickets and dependencies within its current task/run and named attachment
+steps. Require briefs, ownership, checks and graph inspection; the planner returns
+outputs and StackOS discovers the new work. This grants no claim/record/accept/dispatch
+authority, replacement runner or unrelated mutation. Keep terminal-managed
+materialization with main. Saved instruction adoption remains explicit and reviewed
+for this project; active snapshots stay frozen.
 
 The following dispatch and acceptance steps apply to terminal-managed delivery:
 

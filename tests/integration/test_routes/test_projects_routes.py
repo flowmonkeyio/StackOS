@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
@@ -77,6 +78,26 @@ def test_schedule_create_then_remove(api: TestClient, project_id: int) -> None:
     assert disabled.status_code == 200
     assert disabled.json()["data"] == {"project_id": project_id, "job_id": job_id, "removed": True}
     assert api.get(f"/api/v1/projects/{project_id}/schedules").json() == []
+
+
+@pytest.mark.parametrize("surface", ["legacy", "operation"])
+def test_schedule_role_null_survives_http_storage(api, project_id, tmp_path, surface):
+    from sqlmodel import Session
+
+    from stackos.db.models import ScheduledJob
+
+    execution = {"project_dir": str(tmp_path), "delivery_agent": {"model": None}}
+    config = {"kind": "role-clear", "cron_expr": "0 9 * * *", "execution_json": execution}
+    if surface == "legacy":
+        response = api.post(f"/api/v1/projects/{project_id}/schedules", json=config)
+    else:
+        response = api.post(
+            "/api/v1/operations/schedule.set/call",
+            json={"arguments": {"project_id": project_id, **config}},
+        )
+    assert response.status_code == 200, response.text
+    with Session(api.app.state.engine) as session:
+        assert session.get(ScheduledJob, response.json()["data"]["id"]).execution_json == execution
 
 
 def test_schedule_mutations_reject_wrong_project(api: TestClient, project_id: int) -> None:

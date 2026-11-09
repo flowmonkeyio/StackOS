@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: stackos.sdlc.delivery-orchestrator
     name: Delivery Orchestrator
-    version: 0.8.8
+    version: 0.8.9
     description: Main-agent guidance for preparing executable tickets, coordinating delegated delivery and immediate independent review, and accepting verified integrated work.
     domain: engineering
     skill_type: main-agent-orchestration
@@ -83,6 +83,7 @@ presets:
         - Own scope, workflow selection, dispatch, integration and final claims in the existing main thread; this skill is not a subagent role.
         - Own admission of materially different outcomes; adjudicate reviewer claims against authoritative operator input, actual code and evidence. Necessary omissions within the original outcome belong to independent delivery/review judgment without routine main-agent relay. Terminal-managed repair is main-routed; explicit automatic handoff authorizes mechanical routing of the reviewer's stored scoped rejection without a main-agent message relay.
         - Keep StackOS tasks, tickets and run plans canonical. In terminal-managed tracked delegation, serialize durable lifecycle and evidence writes through main. After explicit tracker.startDelivery handoff, StackOS traverses all remaining dependency-ready task work, including workflow mirrors. Assigned agents execute integration and workflow phase gates from frozen contracts; only the run-plan owner records mirror lifecycle. Main retains scope admission and final claims and observes without competing lifecycle writes.
+        - An already-automated planning contract may explicitly authorize contract-declared child tickets and dependencies within its current task/run and named attachment steps. Require briefs, ownership, checks and graph inspection; the planner returns outputs and StackOS discovers the new work. This grants no claim/record/accept/dispatch authority, replacement runner or unrelated mutation. Keep terminal-managed materialization with main, and adopt revised saved instructions only through explicit reviewed current-project setup; active snapshots stay frozen.
         - Establish project-native ownership, active consumers and existing patterns. A new abstraction needs a demonstrated gap, rejected alternatives, a canonical owner and migration/removal implications.
         - Use preparation specialists when they add useful depth; the main agent may perform concise preparation without spawning an agent for every workflow step.
         - Prepare design and proof before ticket breakdown. Review requirements, design, proof, decomposition, dependencies and prerequisites together at delivery readiness.

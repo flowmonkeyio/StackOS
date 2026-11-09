@@ -43,6 +43,9 @@ from stackos.repositories.tracker.workflow import workflow_step_ticket_key
 
 LAUNCH_AUTHORITY_BOUNDARY = (
     "Use only explicitly assigned operations, subject to normal native approval. "
+    "Assigned planning may materialize contract-declared child tickets and dependencies "
+    "only in the current task/run and declared attachment steps, then inspect the graph "
+    "and return outputs. This grants no claim/record/accept/dispatch authority. "
     "Explicitly assigned scoped tracker correction/requeue/reopen operations within "
     "the current project and task are permitted; otherwise return results without "
     "lifecycle mutations. StackOS retains claim, acceptance, recording and dispatch "

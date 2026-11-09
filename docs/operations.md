@@ -80,6 +80,23 @@ admitted tasks remain active. Reconnection arms future times only. Workflow
 jobs override the scheduler's permissive defaults with one-second jitter
 tolerance and generation/configuration checks before admission.
 
+Each admitted due instant uses the existing project/request key
+`schedule:<id>:<due-UTC-ISO8601>`. An existing key is a no-op, including a
+request whose preparation failed; it is never prepared or started again.
+Later due times skip with `overlap` while the last linked canonical plan or
+task is unfinished, including stopped/approval-blocked work. Request lease
+expiry is not workflow completion. No skipped tick creates queued work.
+Admission repeats strict read-only configuration/host preflight, checks the
+current availability guard, and calls `agentRequest.prepareRunPlan` once.
+Its existing strict builder freezes the effective template, inputs, grants
+and approvals together. Existing plan start/claim selects the first
+dependency-ready step without a named phase, then `startDelivery` freezes
+current role settings on that task and traverses its dependencies. A non-Git
+workspace is valid. The schedule records `started`, `overlap`, `unavailable`
+or `blocked`; admitted failures retain safe request diagnostics and canonical
+plan/approval state for explicit inspection/repair, with no automatic retry.
+Role override omission inherits defaults; explicit optional nulls clear them.
+
 `schedule.runs` pages existing scheduled requests linked to project-scoped
 plans (`limit` 1–200, descending request ID cursor `after_id`, optional
 `schedule_id`). Scheduled request metadata carries `schedule_id` and
