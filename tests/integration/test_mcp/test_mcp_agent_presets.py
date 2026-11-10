@@ -240,9 +240,9 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     actual = {item["preset"]["key"]: item for item in compact["required_agents"]}
     expected_versions = {
         "stackos.sdlc.requirements-flow-definer": "0.6.4",
-        "stackos.sdlc.planning": "0.7.10",
-        "stackos.sdlc.delivery": "0.7.10",
-        "stackos.sdlc.delivery-reviewer": "0.6.9",
+        "stackos.sdlc.planning": "0.7.11",
+        "stackos.sdlc.delivery": "0.7.11",
+        "stackos.sdlc.delivery-reviewer": "0.6.10",
     }
     assert set(actual) == set(expected) == set(expected_versions)
     for key, item in actual.items():
