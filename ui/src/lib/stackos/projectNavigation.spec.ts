@@ -26,6 +26,7 @@ describe('projectSwitchDestination', () => {
     'tasks',
     'plugins/seo',
     'plugins/seo/workflows/seo.audit',
+    'workflows/customer.weekly-review',
     'finance',
   ])('keeps the %s project surface', (surface) => {
     const suffix = surface ? `/${surface}` : ''

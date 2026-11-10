@@ -22,6 +22,8 @@ export async function openView(component: Component, path: string) {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/projects/:id/plugins/:pluginSlug', component },
     { path: '/projects/:id/plugins/:pluginSlug/workflows/:templateKey', component },
+    { path: '/projects/:id/workflows/:templateKey', component },
+    { path: '/projects/:id', component: { template: '<div>Project Home</div>' } },
     { path: '/projects/:id/library', component: { template: '<div>Library destination</div>' } },
   ] })
   await router.push(path)

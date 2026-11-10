@@ -219,7 +219,7 @@ function inspectStatus(status: TrackerStatus): void {
             >
               <RouterLink
                 v-slot="{ href, navigate }"
-                :to="workflow.pluginSlug ? `${base}/plugins/${encodeURIComponent(workflow.pluginSlug)}/workflows/${encodeURIComponent(workflow.key)}` : `${base}/plugins`"
+                :to="workflow.pluginSlug ? `${base}/plugins/${encodeURIComponent(workflow.pluginSlug)}/workflows/${encodeURIComponent(workflow.key)}` : `${base}/workflows/${encodeURIComponent(workflow.key)}`"
                 custom
               >
                 <UiButton

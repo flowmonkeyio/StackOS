@@ -71,6 +71,7 @@ async function mountProject() {
     routes: [
       { path: '/projects/:id', component: HomeConsoleView },
       { path: '/projects/:id/tasks', component: { template: '<div>Work tickets</div>' } },
+      { path: '/projects/:id/workflows/:templateKey', component: { template: '<div>Workflow inspection</div>' } },
     ],
   })
   await router.push('/projects/1')
@@ -89,6 +90,26 @@ async function mountProject() {
 }
 
 describe('project ticket overview', () => {
+  it.each(['project', 'repo', 'user'])('keeps the exact configured %s workflow when it has no plugin', async (source) => {
+    const key = `${source}.weekly-review`
+    const operations = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => name === 'workflowExtension.list'
+      ? { extensions: [{ workflow_key: key, enabled: true }] } as never
+      : operations(name, args))
+    const fetch = vi.mocked(apiFetch).getMockImplementation()!
+    vi.mocked(apiFetch).mockImplementation(async (url, options) => url.includes('/workflow-templates')
+      ? { templates: [{ key, name: 'Weekly review', source, plugin_slug: null }] } as never
+      : fetch(url, options))
+    const { wrapper, router } = await mountProject()
+    try {
+      const link = wrapper.get(`a[href="/projects/1/workflows/${key}"]`)
+      await link.trigger('click')
+      await flushPromises()
+      expect(router.currentRoute.value.fullPath).toBe(`/projects/1/workflows/${key}`)
+      expect(wrapper.text()).toContain('Workflow inspection')
+    } finally { wrapper.unmount() }
+  })
+
   it('retains overview/count polling while usage refresh stays with its shared owner', async () => {
     vi.useFakeTimers()
     const { wrapper } = await mountProject()

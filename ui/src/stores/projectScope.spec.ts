@@ -5,7 +5,6 @@ import { createPinia, setActivePinia } from 'pinia'
 
 import { useProjectDataStore } from './projectData'
 import { useStackOsResourcesStore } from './stackosResources'
-import { useWorkflowTemplatesStore } from './workflowTemplates'
 
 const clientMocks = vi.hoisted(() => ({
   apiFetch: vi.fn(),
@@ -65,26 +64,6 @@ describe('project-scoped stores', () => {
     expect(store.artifacts.map((row) => row.id)).toEqual([2])
   })
 
-  it('does not let an old workflow-template failure replace the new scope', async () => {
-    const projectOne = deferred<void>()
-    clientMocks.apiFetch.mockImplementation(async (url: string) => {
-      if (url.includes('/projects/1/')) {
-        await projectOne.promise
-        throw new Error('project one unavailable')
-      }
-      return { templates: [] }
-    })
-    const store = useWorkflowTemplatesStore()
-
-    const older = store.refresh(1)
-    await store.refresh(2)
-    projectOne.resolve()
-    await older
-
-    expect(store.currentProjectId).toBe(2)
-    expect(store.items).toEqual([])
-    expect(store.error).toBeNull()
-  })
 })
 
 function deferred<T>() {

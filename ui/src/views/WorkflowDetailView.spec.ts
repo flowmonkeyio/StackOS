@@ -6,13 +6,56 @@ import { openView, plugin, workflow } from './plugin-domain/testSupport'
 const client = vi.hoisted(() => ({ apiFetch: vi.fn() }))
 vi.mock('@/lib/client', () => ({ apiFetch: client.apiFetch, formatApiError: (e: unknown) => String(e) }))
 const wrappers: Awaited<ReturnType<typeof openView>>['wrapper'][] = []
-async function open() {
-  const result = await openView(WorkflowDetailView, '/projects/1/plugins/engineering/workflows/engineering.tracked-delivery')
+async function open(path = '/projects/1/plugins/engineering/workflows/engineering.tracked-delivery') {
+  const result = await openView(WorkflowDetailView, path)
   wrappers.push(result.wrapper); await flushPromises(); return result
 }
 describe('Workflow detail', () => {
   beforeEach(() => { client.apiFetch.mockReset().mockImplementation(async (url: string) => url.startsWith('/api/v1/plugins?') ? [plugin(), plugin('support')] : workflow()) })
   afterEach(() => { wrappers.forEach(wrapper => wrapper.unmount()); wrappers.length = 0; document.body.innerHTML = '' })
+  function configuredWorkflow(key = 'customer.weekly-review') {
+    const result = workflow(key)
+    result.summary.plugin_slug = null
+    result.summary.source = 'project'
+    result.spec.name = 'Customer weekly review'
+    return result
+  }
+  it('inspects a non-plugin workflow at its project origin without requiring a plugin catalog read', async () => {
+    client.apiFetch.mockResolvedValue(configuredWorkflow())
+    const { wrapper } = await open('/projects/1/workflows/customer.weekly-review')
+    expect(wrapper.get('h1').text()).toBe('Customer weekly review')
+    expect(wrapper.get('a').attributes('href')).toBe('/projects/1')
+    expect(wrapper.get('a').text()).toBe('Home / Workflows')
+    expect(wrapper.get('ol').text()).toContain('Prepare')
+    expect(client.apiFetch.mock.calls.map(([url]) => url)).toEqual(['/api/v1/projects/1/workflow-templates/customer.weekly-review'])
+  })
+  it('retains project/key identity through route reuse and rejects stale non-plugin detail', async () => {
+    let resolveOld!: (value: unknown) => void
+    client.apiFetch.mockReturnValue(new Promise(resolve => { resolveOld = resolve }))
+    const { wrapper, router } = await open('/projects/1/workflows/customer.weekly-review')
+    client.apiFetch.mockImplementation(async (url: string) => url.startsWith('/api/v1/plugins?') ? [plugin()] : workflow())
+    await router.push('/projects/1/plugins/engineering/workflows/engineering.tracked-delivery'); await flushPromises()
+    resolveOld(configuredWorkflow()); await flushPromises()
+    expect(wrapper.get('h1').text()).toBe('Tracked delivery')
+    client.apiFetch.mockResolvedValue(configuredWorkflow('user.weekly-review'))
+    await router.push('/projects/2/workflows/user.weekly-review'); await flushPromises()
+    expect(client.apiFetch).toHaveBeenLastCalledWith('/api/v1/projects/2/workflow-templates/user.weekly-review')
+    expect(wrapper.get('a').attributes('href')).toBe('/projects/2')
+    expect(wrapper.get('h1').text()).toBe('Customer weekly review')
+  })
+  it('reports unavailable and mismatched non-plugin sources, then retries the same exact workflow', async () => {
+    client.apiFetch.mockRejectedValue(new Error('Workflow not found'))
+    const { wrapper } = await open('/projects/1/workflows/customer.weekly-review')
+    expect(wrapper.text()).toContain('Workflow not found')
+    expect(wrapper.find('ol').exists()).toBe(false)
+    client.apiFetch.mockResolvedValue(workflow('customer.weekly-review'))
+    await wrapper.findAll('button').find(button => button.text() === 'Retry')!.trigger('click'); await flushPromises()
+    expect(wrapper.text()).toContain('does not match this page')
+    client.apiFetch.mockResolvedValue(configuredWorkflow())
+    await wrapper.findAll('button').find(button => button.text() === 'Retry')!.trigger('click'); await flushPromises()
+    expect(wrapper.get('h1').text()).toBe('Customer weekly review')
+    expect(wrapper.find('ol').exists()).toBe(true)
+  })
   it('reads the effective contract with dependency/checkpoint meaning and performs only reads', async () => {
     const { wrapper } = await open()
     expect(wrapper.get('h1').text()).toBe('Tracked delivery')

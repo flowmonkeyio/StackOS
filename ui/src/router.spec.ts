@@ -12,6 +12,9 @@ describe('approved human routes', () => {
     expect(router.resolve(`/projects/7/${suffix}`).matched).toEqual([])
   })
   it('preserves scoped query identity and separated global destinations', () => {
+    const workflow = router.resolve('/projects/7/workflows/customer.weekly-review')
+    expect(workflow.matched).toHaveLength(1)
+    expect(workflow.params).toEqual({ id: '7', templateKey: 'customer.weekly-review' })
     const route = router.resolve('/projects/7/library?tab=saved&plugin=engineering&type=decision&item=decision:42')
     expect(route.query).toEqual({ tab: 'saved', plugin: 'engineering', type: 'decision', item: 'decision:42' })
     for (const path of ['/', '/accounts', '/setup']) expect(router.resolve(path).matched).toHaveLength(1)

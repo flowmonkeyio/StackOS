@@ -37,6 +37,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/projects/:id/plugins', name: 'project-plugins', component: PluginsView },
   { path: '/projects/:id/plugins/:pluginSlug', name: 'project-plugin', component: PluginDomainView },
   { path: '/projects/:id/plugins/:pluginSlug/workflows/:templateKey', name: 'project-workflow', component: WorkflowDetailView },
+  { path: '/projects/:id/workflows/:templateKey', name: 'project-configured-workflow', component: WorkflowDetailView },
   { path: '/projects/:id/library', name: 'project-library', component: LibraryView },
   { path: '/projects/:id/agents', name: 'project-agents', component: AgentsView },
   { path: '/projects/:id/connections', name: 'project-connections', component: ConnectionsView },

@@ -267,6 +267,9 @@ logos and operator UI logos cannot drift.
 
 Workflow details use `TemplateRenderer`'s compact stage list, declared inputs,
 outputs and approval gates, with the sanitized effective contract in Details.
+`WorkflowDetailView` owns both plugin-scoped details and Home's exact configured
+project/repository/user workflow inspection. Non-plugin workflows read the same
+effective-template API directly and return to Home; no global list store remains.
 They use ordinary page scrolling. The task tracker dependency map remains a
 bounded, page-sized exploration canvas: node geometry and spacing may extend
 beyond the viewport, while pan, wheel/pinch zoom, minimap and controls expose

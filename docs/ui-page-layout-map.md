@@ -31,6 +31,7 @@ not become narrower when its data or selected mode changes.
 | `/projects/:id/plugins` | Plugins | `PluginsView` | plugin catalog/cards |
 | `/projects/:id/plugins/:pluginSlug` | Domain | `PluginDomainView` | workflows and canonical saved information/files |
 | `/projects/:id/plugins/:pluginSlug/workflows/:templateKey` | Workflow details | `WorkflowDetailView` | effective workflow contract and the same scoped records/files |
+| `/projects/:id/workflows/:templateKey` | Configured workflow details | `WorkflowDetailView` | exact project/repository/user workflow contract selected from Home; return to that project's Home |
 | `/projects/:id/library` | Library | `LibraryView` | Saved information / Files with typed source identity, filters and shared reader |
 | `/projects/:id/agents` | Agents | `AgentsView` | native project sources, Add/Edit and explicit saved-default adoption |
 | `/projects/:id/finance` | Finance | `FinanceView` | Overview / Expenses & income / Reports; contextual request inspection without inferred task links |
@@ -65,5 +66,8 @@ surfaces pair each activity bar with a wrapping group identity and exact count.
 Library URLs preserve `tab=saved|files`, `plugin`, `type` and
 `item=<source-kind>:<id>`. Switching projects preserves reusable filters and
 domain/workflow identity, clearing selected record/file/task/ticket/request IDs.
-Home configured-workflow links carry the exact plugin slug and template key;
-the catalog remains distinct from domain and workflow pages.
+Home configured-workflow links carry the exact template key. Plugin workflows
+retain their plugin slug and domain route; project/repository/user workflows
+without a plugin use the contextual `/projects/:id/workflows/:templateKey`
+detail route. This route has no catalog/list owner. The plugin catalog remains
+distinct from domain and workflow pages.

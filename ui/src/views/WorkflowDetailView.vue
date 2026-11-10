@@ -27,15 +27,18 @@ async function load(nextProjectId = projectId.value, nextSlug = slug.value, next
   error.value = ''
   loading.value = true
   if (!Number.isSafeInteger(nextProjectId)) { loading.value = false; return }
-  await catalog.refreshPlugins(nextProjectId)
-  if (current !== generation) return
-  if (catalog.error) error.value = catalog.error
-  else if (!catalog.plugins.some(item => item.slug === nextSlug && item.enabled_for_project !== false)) error.value = 'This plugin is unavailable or disabled for this project.'
-  else {
+  if (nextSlug) {
+    await catalog.refreshPlugins(nextProjectId)
+    if (current !== generation) return
+    if (catalog.error) error.value = catalog.error
+    else if (!catalog.plugins.some(item => item.slug === nextSlug && item.enabled_for_project !== false)) error.value = 'This plugin is unavailable or disabled for this project.'
+  }
+  if (!error.value) {
     try {
-      const result = await apiFetch<SchemaLoadedWorkflowTemplate>(`/api/v1/projects/${nextProjectId}/workflow-templates/${encodeURIComponent(nextKey)}?plugin_slug=${encodeURIComponent(nextSlug)}`)
+      const suffix = nextSlug ? `?plugin_slug=${encodeURIComponent(nextSlug)}` : ''
+      const result = await apiFetch<SchemaLoadedWorkflowTemplate>(`/api/v1/projects/${nextProjectId}/workflow-templates/${encodeURIComponent(nextKey)}${suffix}`)
       if (current !== generation) return
-      if (result.summary.key !== nextKey || result.summary.plugin_slug !== nextSlug || result.spec.key !== nextKey) throw new Error('The workflow source does not match this page.')
+      if (result.summary.key !== nextKey || (result.summary.plugin_slug ?? '') !== nextSlug || result.spec.key !== nextKey) throw new Error('The workflow source does not match this page.')
       template.value = result
     } catch (err) { if (current === generation) error.value = formatApiError(err, 'Workflow unavailable') }
   }
@@ -47,7 +50,7 @@ async function load(nextProjectId = projectId.value, nextSlug = slug.value, next
 const workflowRoute = route.matched[route.matched.length - 1]
 const removeRouteListener = router.afterEach((to, from, failure) => {
   if (failure) return
-  if (!workflowRoute || !to.matched.includes(workflowRoute)) { generation++; return }
+  if (!workflowRoute || !to.matched.some(record => record.components?.default === workflowRoute.components?.default)) { generation++; return }
   const nextProjectId = projectIdFromRoute(to) ?? Number.NaN
   const nextSlug = String(to.params.pluginSlug ?? '')
   const nextKey = String(to.params.templateKey ?? '')
@@ -64,9 +67,9 @@ onBeforeUnmount(() => { generation++; removeRouteListener() })
   <UiPageShell class="workflow-page">
     <RouterLink
       class="focus-ring w-fit rounded-sm text-sm text-fg-muted"
-      :to="domainLocation(projectId, slug)"
+      :to="slug ? domainLocation(projectId, slug) : `/projects/${projectId}`"
     >
-      {{ plugin?.name ?? slug }} / Workflows
+      {{ slug ? (plugin?.name ?? slug) : 'Home' }} / Workflows
     </RouterLink>
     <ProjectPageHeader
       :project-id="projectId"
