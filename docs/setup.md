@@ -143,10 +143,29 @@ URL and separate local listener/data/state settings; it rejects Supabase/DB
 credentials. Clients use the StackOS URL, never Supabase directly. Runtime
 connection must verify the expected server environment before admitting work.
 
-These settings are the handoff to Postgres, Auth and runtime startup owners.
-Selecting a server/runtime role refuses the standalone SQLite path; it cannot
-start the old daemon against a fallback database. Existing standalone settings
-remain available for the current installation and isolated source test fixtures.
+Server startup and Alembic use the selected `database_url` through the existing
+engine factory and psycopg driver. Application tables and Alembic tracking live
+in the private `stackos` Postgres schema, outside the client Data API; client
+roles have no schema access. Fresh `upgrade head` creates the schema and runs
+the existing migration chain. No history is imported or adopted. Application
+sessions keep the existing JSON and naive UTC timestamp conventions, foreign
+keys, and sequence-based IDs. Runtime processes have no application database.
+
+The schema/repository/startup proof uses an explicitly prepared disposable
+environment, never installed defaults:
+
+```bash
+STACKOS_TEST_POSTGRES_ENV_FILE=/private/tmp/stackos-dev-a/server.env \
+  .venv/bin/python -m pytest tests/integration/test_schema.py -q -n0
+```
+
+The real-Postgres cases report an explicit skip when that fixture is not
+selected; SQLite regression coverage does not establish Postgres readiness.
+These cases also verify Data API denial with a real synthetic Auth session.
+Auth and runtime startup owners consume the same selected settings.
+Selecting a server/runtime role refuses the standalone SQLite path. Existing
+standalone settings remain available for the current installation and isolated
+source test fixtures.
 No install, launchd, host registration or installed-app change is part of this
 preparation. Main owns later consolidation and installed-product proof.
 

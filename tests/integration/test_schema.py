@@ -5,28 +5,222 @@ from __future__ import annotations
 import importlib
 import json
 import os
+import secrets
 import sqlite3
 import subprocess
 import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 import sqlalchemy as sa
 from alembic import command
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from pydantic import SecretStr
 
 from stackos.browser.runtime import BROWSER_PROFILE_DIRNAME, browser_profile_dir
 from stackos.communication_surface_bindings import communication_surface_binding_external_id
 from stackos.config import Settings
-from stackos.db.connection import make_engine
-from stackos.db.migrate import alembic_config, upgrade_to_head
+from stackos.db.connection import database_url, make_engine, make_settings_engine
+from stackos.db.migrate import alembic_config, current_alembic_version, upgrade_to_head
 from tests.helpers.sqlite_schema import (
     SQLiteSnapshot,
     capture_database_snapshot,
     restore_database_snapshot,
 )
+
+
+def test_database_target_refuses_runtime_and_preserves_url_escaping(tmp_path: Path) -> None:
+    """Target selection is shared by sessions, startup and ConfigParser/Alembic."""
+    standalone = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
+    assert database_url(standalone) == f"sqlite:///{standalone.db_path}"
+    # URL handling only; real role/target validation has separate coverage.
+    selected = standalone.model_copy(
+        update={
+            "process_role": "server",
+            "database_url": SecretStr(
+                "postgresql://postgres:fixture%25password@127.0.0.1:18922/postgres"
+            ),
+        }
+    )
+    expected = "postgresql+psycopg://postgres:fixture%25password@127.0.0.1:18922/postgres"
+    assert database_url(selected) == expected
+    assert alembic_config(selected).get_main_option("sqlalchemy.url") == expected
+    with pytest.raises(ValueError, match="runtime has no application database"):
+        make_settings_engine(standalone.model_copy(update={"process_role": "runtime"}))
+
+
+@pytest.fixture
+def postgres_settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
+    """Opt in with a prepared disposable Supabase server.env; never use defaults."""
+    env_file = os.environ.get("STACKOS_TEST_POSTGRES_ENV_FILE")
+    if not env_file:
+        pytest.skip("real Postgres requires explicit STACKOS_TEST_POSTGRES_ENV_FILE")
+    from stackos.config import get_settings
+
+    monkeypatch.setenv("STACKOS_ENV_FILE", env_file)
+    selected = get_settings()
+    assert selected.process_role == "server"
+    return selected
+
+
+def test_postgres_migration_repositories_and_private_schema(postgres_settings: Settings) -> None:
+    """Real driver, Alembic chain, repositories, reconnect, FKs and client denial."""
+    import httpx
+    from sqlmodel import Session, SQLModel
+
+    from stackos.db.models import Project, Run, RunKind
+    from stackos.repositories.projects import ProjectRepository
+    from stackos.repositories.runs import RunRepository
+
+    selected = postgres_settings
+    assert upgrade_to_head(selected).stamped_existing_schema is False
+    assert current_alembic_version(selected) == "0037_schedule_id_nonreuse"
+    engine = make_settings_engine(selected)
+    assert engine.dialect.name == "postgresql"
+    try:
+        with engine.connect() as connection:
+            assert set(sa.inspect(connection).get_table_names()) >= EXPECTED_TABLES
+            assert set(SQLModel.metadata.tables) <= set(sa.inspect(connection).get_table_names())
+            assert connection.exec_driver_sql("SELECT current_schema()").scalar_one() == "stackos"
+        SQLModel.metadata.create_all(engine)
+        payload = {"nested": {"unicode": "持久化", "values": [None, True, 1, 1.25]}, "empty": {}}
+        slug = f"pg-{uuid4().hex[:16]}"
+        with Session(engine) as session:
+            project = (
+                ProjectRepository(session)
+                .create(
+                    slug=slug, name="Postgres proof", domain="example.test", schedule_json=payload
+                )
+                .data
+            )
+            run = (
+                RunRepository(session)
+                .start(project_id=project.id, kind=RunKind.ACTION, metadata_json=payload)
+                .data
+            )
+            assert project.id and run.id
+        engine.dispose()
+        # New engine/session, persisted repository values and exact timestamps.
+        engine = make_settings_engine(selected)
+        assert upgrade_to_head(selected).stamped_existing_schema is False
+        with Session(engine) as session:
+            loaded = ProjectRepository(session).get(project.id)
+            assert loaded.schedule_json == payload
+            assert loaded.created_at == project.created_at
+            assert loaded.updated_at == project.updated_at
+            loaded_run = RunRepository(session).get(run_id=run.id)
+            assert loaded_run.metadata_json == payload
+            assert loaded_run.started_at == run.started_at
+            assert loaded_run.started_at.tzinfo is None
+            session.add(Run(project_id=-1, kind=RunKind.ACTION))
+            with pytest.raises(sa.exc.IntegrityError):
+                session.commit()
+            session.rollback()
+            session.delete(session.get(Run, run.id))
+            session.delete(session.get(Project, project.id))
+            session.commit()
+            replacement = (
+                ProjectRepository(session)
+                .create(slug=slug, name="Replacement", domain="example.test")
+                .data
+            )
+            assert replacement.id > project.id
+            session.delete(session.get(Project, replacement.id))
+            session.commit()
+        with engine.begin() as connection:
+            for role in ("anon", "authenticated", "service_role"):
+                with connection.begin_nested():
+                    connection.exec_driver_sql(f'SET LOCAL ROLE "{role}"')
+                    with (
+                        pytest.raises(sa.exc.ProgrammingError, match="permission denied"),
+                        connection.begin_nested(),
+                    ):
+                        connection.exec_driver_sql("SELECT id FROM stackos.projects LIMIT 1")
+                    connection.exec_driver_sql("RESET ROLE")
+        assert selected.supabase_anon_key and selected.supabase_service_role_key
+        service_key = selected.supabase_service_role_key.get_secret_value()
+        admin_headers = {"apikey": service_key, "Authorization": f"Bearer {service_key}"}
+        credentials = {"email": f"{slug}@example.test", "password": secrets.token_urlsafe(24)}
+        with httpx.Client(timeout=10, trust_env=False) as client:
+            # A real valid Auth session ensures the Data API denies the schema,
+            # rather than merely rejecting an invalid bearer before authorization.
+            created = client.post(
+                f"{selected.supabase_url}/auth/v1/admin/users",
+                headers=admin_headers,
+                json=credentials | {"email_confirm": True},
+            )
+            assert created.status_code == 200
+            user_id = created.json()["id"]
+            try:
+                anon_key = selected.supabase_anon_key.get_secret_value()
+                login = client.post(
+                    f"{selected.supabase_url}/auth/v1/token?grant_type=password",
+                    headers={"apikey": anon_key},
+                    json=credentials,
+                )
+                assert login.status_code == 200
+                token = login.json()["access_token"]
+                response = client.get(
+                    f"{selected.supabase_url}/rest/v1/projects?select=id",
+                    headers={
+                        "apikey": anon_key,
+                        "Authorization": f"Bearer {token}",
+                        "Accept-Profile": "stackos",
+                    },
+                )
+                assert response.status_code == 406
+                assert response.json()["code"] == "PGRST106"
+            finally:
+                deleted = client.delete(
+                    f"{selected.supabase_url}/auth/v1/admin/users/{user_id}",
+                    headers=admin_headers,
+                )
+                assert deleted.status_code == 200
+        assert not (selected.data_dir / "stackos.db").exists()
+    finally:
+        engine.dispose()
+
+
+def test_postgres_application_restart_reads_persisted_data(postgres_settings: Settings) -> None:
+    """Exercise the real application lifespan and session dependency on Postgres."""
+    from fastapi.testclient import TestClient
+    from sqlmodel import Session
+
+    from stackos.db.models import Project
+    from stackos.repositories.projects import ProjectRepository
+    from stackos.server import create_app
+
+    selected = postgres_settings
+    slug = f"restart-{uuid4().hex[:16]}"
+    for attempt in range(2):
+        app = create_app(selected)
+        with TestClient(app, base_url=selected.server_url) as client:
+            health = client.get("/api/v1/health")
+            assert health.status_code == 200
+            assert health.json()["db_status"] == "ok"
+            assert health.json()["scheduler_running"] is True
+            assert app.state.engine.dialect.name == "postgresql"
+            with Session(app.state.engine) as session:
+                repository = ProjectRepository(session)
+                if attempt == 0:
+                    project = repository.create(
+                        slug=slug,
+                        name="Restart persistence",
+                        domain="example.test",
+                        schedule_json={"persisted": True},
+                    ).data
+                else:
+                    loaded = repository.get(slug)
+                    assert loaded.id == project.id
+                    assert loaded.schedule_json == {"persisted": True}
+                    assert loaded.created_at == project.created_at
+                    session.delete(session.get(Project, loaded.id))
+                    session.commit()
+        assert not app.state.scheduler_running
+    assert not (selected.data_dir / "stackos.db").exists()
 
 
 @pytest.fixture(params=["standalone", "explicit-settings"])

@@ -38,7 +38,7 @@ from stackos.backups import run_due_backup
 from stackos.config import Settings, get_settings
 from stackos.crypto import cleanup_old_backup
 from stackos.crypto.aes_gcm import configure_seed_path
-from stackos.db.connection import make_engine
+from stackos.db.connection import make_settings_engine
 from stackos.db.migrate import upgrade_to_head
 from stackos.integrations.telegram_tdlib.daemon import (
     build_telegram_runtime,
@@ -261,11 +261,11 @@ def _build_lifespan(
         cleanup_old_backup(settings.seed_path)
         token = ensure_token(settings.token_path)
 
-        # Bring the SQLite schema to the tracked Alembic head on every daemon
+        # Bring the selected database to the tracked Alembic head on every daemon
         # boot. The follow-up ``create_all`` remains a no-op safety net for
         # tests and partially-initialised dev databases.
         upgrade_to_head(settings)
-        engine = make_engine(settings.db_path)
+        engine = make_settings_engine(settings)
 
         SQLModel.metadata.create_all(engine)
         app.state.settings = settings
@@ -424,7 +424,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         version=__version__,
         summary="Local StackOS runtime for agents and humans.",
         description=(
-            "A local Python daemon (FastAPI + SQLite/WAL + MCP Streamable HTTP) "
+            "A Python daemon (FastAPI + selected database + MCP Streamable HTTP) "
             "plus Vue UI for projects, plugins, workflow templates, run plans, "
             "resources, actions, and auditable runs."
         ),

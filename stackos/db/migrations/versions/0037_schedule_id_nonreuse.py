@@ -15,6 +15,9 @@ depends_on = None
 
 def upgrade() -> None:
     bind = op.get_bind()
+    if bind.dialect.name != "sqlite":
+        # Fresh Postgres schedules use their non-reusing sequence from creation.
+        return
     ddl = bind.execute(
         sa.text("SELECT sql FROM sqlite_master WHERE type='table' AND name='scheduled_jobs'")
     ).scalar_one()

@@ -1,9 +1,4 @@
-"""SQLAlchemy engine factory + WAL PRAGMAs.
-
-Every new connection runs the PRAGMA block from PLAN.md F3. SQLite-on-disk
-uses one `make_engine`; the in-memory engine for tests skips the file-only
-mmap_size pragma since it's harmless but pointless on `:memory:`.
-"""
+"""Database engines for standalone SQLite and explicitly selected Postgres."""
 
 from __future__ import annotations
 
@@ -13,7 +8,10 @@ from typing import Any
 
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
+from sqlalchemy.engine.url import make_url
 from sqlmodel import Session, create_engine
+
+from stackos.config import Settings
 
 # PRAGMAs per PLAN.md "SQLite PRAGMAs (set at every connect)". We set them
 # *every* connect because SQLite scopes most of these per-connection.
@@ -45,14 +43,45 @@ def _attach_pragma_listener(engine: Engine) -> None:
             cursor.close()
 
 
-def make_engine(db_path: Path, *, echo: bool = False) -> Engine:
-    """Build a SQLAlchemy engine for the on-disk SQLite DB.
+def database_url(settings: Settings) -> str:
+    """Resolve the selected database without falling back between process roles."""
+    if settings.process_role == "runtime":
+        raise ValueError("runtime has no application database")
+    if settings.process_role == "server":
+        assert settings.database_url is not None
+        url = make_url(settings.database_url.get_secret_value())
+        return url.set(drivername="postgresql+psycopg").render_as_string(hide_password=False)
+    return f"sqlite:///{settings.db_path}"
+
+
+def make_settings_engine(settings: Settings, *, echo: bool = False) -> Engine:
+    """Use the same selected target for application sessions and migrations."""
+    return make_engine(database_url(settings), echo=echo)
+
+
+def make_engine(db_path: Path | str, *, echo: bool = False) -> Engine:
+    """Build an engine, applying SQLite PRAGMAs only to SQLite connections.
 
     `check_same_thread=False` is set because FastAPI dispatches on a thread
     pool by default and SQLAlchemy manages its own pool already.
     """
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    url = f"sqlite:///{db_path}"
+    if isinstance(db_path, Path):
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        url = make_url(f"sqlite:///{db_path}")
+    else:
+        url = make_url(db_path)
+    if url.get_backend_name() == "postgresql":
+        return create_engine(
+            url.set(drivername="postgresql+psycopg"),
+            echo=echo,
+            pool_pre_ping=True,
+            # Unqualified SQLModel tables live outside Supabase's exposed schemas.
+            connect_args={"options": "-csearch_path=stackos,pg_catalog"},
+        )
+    if url.get_backend_name() != "sqlite":
+        raise ValueError("application database must be SQLite or Postgres")
+    if url.database and url.database != ":memory:":
+        Path(url.database).parent.mkdir(parents=True, exist_ok=True)
     engine = create_engine(
         url,
         echo=echo,
