@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUpdate, reactive, ref, toRef } from 'vue'
+import TaskPriorityBadge from './TaskPriorityBadge.vue'
 
 import {
   UiBadge,
@@ -242,7 +243,6 @@ const taskFacts = computed(() => {
   if (!task) return []
   return [
     { label: 'Owner', value: task.owner ?? '-' },
-    { label: 'Priority', value: task.priority_key, mono: true },
     { label: 'Lane', value: task.lane_key, mono: true },
     { label: 'Type', value: task.task_type, mono: true },
     { label: 'Source', value: task.source_kind, mono: true },
@@ -655,6 +655,7 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
                       domain="tracker"
                       :status="task.status"
                     />
+                    <TaskPriorityBadge :priority="task.priority_key" />
                     <UiBadge
                       v-if="workflowManaged"
                       tone="accent"

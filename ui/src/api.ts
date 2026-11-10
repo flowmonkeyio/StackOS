@@ -7587,6 +7587,44 @@ export interface components {
             /** Rank */
             rank: number;
         };
+        /** TrackerReorderTaskInput */
+        TrackerReorderTaskInput: {
+            /** Anchor Task Key */
+            anchor_task_key: string;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: null;
+            expected_status: components["schemas"]["TrackerItemStatus"];
+            /**
+             * Expected Updated At
+             * Format: date-time
+             */
+            expected_updated_at: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /**
+             * Placement
+             * @enum {string}
+             */
+            placement: TrackerReorderTaskInputPlacement;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default raw
+             * @enum {string}
+             */
+            response_mode: TrackerReorderTaskInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: null;
+            /** Task Key */
+            task_key: string;
+        };
         /** TrackerSnapshotOut */
         TrackerSnapshotOut: {
             /** Dependencies */
@@ -7680,6 +7718,25 @@ export interface components {
             run_token: string | null;
             /** Task Key */
             task_key: string;
+        };
+        /** TrackerTaskBoardOut */
+        TrackerTaskBoardOut: {
+            /** Affected Task Keys */
+            affected_task_keys: string[];
+            /** Changed */
+            changed: boolean;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /**
+             * Replayed
+             * @default false
+             */
+            replayed: boolean;
+            /** Request Sha256 */
+            request_sha256: string;
+            /** Rev */
+            rev: number;
+            task: components["schemas"]["TrackerTaskOut"];
         };
         /** TrackerTaskContentOut */
         TrackerTaskContentOut: {
@@ -8030,6 +8087,42 @@ export interface components {
              * @enum {string}
              */
             response_mode: TrackerUpdateTaskContentInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: null;
+            /** Task Key */
+            task_key: string;
+        };
+        /** TrackerUpdateTaskPriorityInput */
+        TrackerUpdateTaskPriorityInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: null;
+            expected_status: components["schemas"]["TrackerItemStatus"];
+            /**
+             * Expected Updated At
+             * Format: date-time
+             */
+            expected_updated_at: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /**
+             * Priority Key
+             * @enum {string}
+             */
+            priority_key: TrackerUpdateTaskPriorityInputPriority_key;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default raw
+             * @enum {string}
+             */
+            response_mode: TrackerUpdateTaskPriorityInputResponse_mode;
             /**
              * Run Token
              * @default null
@@ -8676,6 +8769,20 @@ export interface components {
              */
             run_id: number | null;
         };
+        /** WriteEnvelope[TrackerTaskBoardOut] */
+        WriteEnvelope_TrackerTaskBoardOut_: {
+            data: components["schemas"]["TrackerTaskBoardOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
         /** WriteEnvelope[TrackerTaskContentOut] */
         WriteEnvelope_TrackerTaskContentOut_: {
             data: components["schemas"]["TrackerTaskContentOut"];
@@ -9186,9 +9293,11 @@ export type SchemaTrackerGraphOut = components['schemas']['TrackerGraphOut'];
 export type SchemaTrackerLaneOut = components['schemas']['TrackerLaneOut'];
 export type SchemaTrackerLinkOut = components['schemas']['TrackerLinkOut'];
 export type SchemaTrackerPriorityOut = components['schemas']['TrackerPriorityOut'];
+export type SchemaTrackerReorderTaskInput = components['schemas']['TrackerReorderTaskInput'];
 export type SchemaTrackerSnapshotOut = components['schemas']['TrackerSnapshotOut'];
 export type SchemaTrackerSummaryOut = components['schemas']['TrackerSummaryOut'];
 export type SchemaTrackerTaskActivityInput = components['schemas']['TrackerTaskActivityInput'];
+export type SchemaTrackerTaskBoardOut = components['schemas']['TrackerTaskBoardOut'];
 export type SchemaTrackerTaskContentOut = components['schemas']['TrackerTaskContentOut'];
 export type SchemaTrackerTaskInputOut = components['schemas']['TrackerTaskInputOut'];
 export type SchemaTrackerTaskOut = components['schemas']['TrackerTaskOut'];
@@ -9196,6 +9305,7 @@ export type SchemaTrackerTaskResultsInput = components['schemas']['TrackerTaskRe
 export type SchemaTrackerTaskTicketSummaryOut = components['schemas']['TrackerTaskTicketSummaryOut'];
 export type SchemaTrackerTicketOut = components['schemas']['TrackerTicketOut'];
 export type SchemaTrackerUpdateTaskContentInput = components['schemas']['TrackerUpdateTaskContentInput'];
+export type SchemaTrackerUpdateTaskPriorityInput = components['schemas']['TrackerUpdateTaskPriorityInput'];
 export type SchemaUiTokenResponse = components['schemas']['UiTokenResponse'];
 export type SchemaUsageSampleOut = components['schemas']['UsageSampleOut'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
@@ -9223,6 +9333,7 @@ export type SchemaWriteEnvelopeFinanceStatusOut = components['schemas']['WriteEn
 export type SchemaWriteEnvelopeLocalAgentChatMessageOut = components['schemas']['WriteEnvelope_LocalAgentChatMessageOut_'];
 export type SchemaWriteEnvelopeScheduleRemovalOut = components['schemas']['WriteEnvelope_ScheduleRemovalOut_'];
 export type SchemaWriteEnvelopeScheduledJobOut = components['schemas']['WriteEnvelope_ScheduledJobOut_'];
+export type SchemaWriteEnvelopeTrackerTaskBoardOut = components['schemas']['WriteEnvelope_TrackerTaskBoardOut_'];
 export type SchemaWriteEnvelopeTrackerTaskContentOut = components['schemas']['WriteEnvelope_TrackerTaskContentOut_'];
 export type SchemaWriteEnvelopeWorkflowTemplateExtensionDeleteOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionDeleteOut_'];
 export type SchemaWriteEnvelopeWorkflowTemplateExtensionUpsertOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionUpsertOut_'];
@@ -12893,6 +13004,15 @@ export enum TrackerLinkKind {
     action_call = "action-call",
     external = "external"
 }
+export enum TrackerReorderTaskInputPlacement {
+    before = "before",
+    after = "after"
+}
+export enum TrackerReorderTaskInputResponse_mode {
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
 export enum TrackerSourceKind {
     manual = "manual",
     workflow = "workflow",
@@ -12924,6 +13044,17 @@ export enum TrackerTicketKind {
     group = "group"
 }
 export enum TrackerUpdateTaskContentInputResponse_mode {
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum TrackerUpdateTaskPriorityInputPriority_key {
+    p0 = "p0",
+    p1 = "p1",
+    p2 = "p2",
+    p3 = "p3"
+}
+export enum TrackerUpdateTaskPriorityInputResponse_mode {
     raw = "raw",
     standard = "standard",
     verbose = "verbose"

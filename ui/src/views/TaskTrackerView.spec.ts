@@ -11,7 +11,7 @@ vi.mock('@/lib/operations', () => ({ callOperation: mocks.callOperation }))
 vi.mock('@/lib/task-tracker/liveEvents', () => ({ openTrackerStatusStream: mocks.stream }))
 
 const taskA = trackerTask({ title: 'Alpha task' })
-const taskB = trackerTask({ id: 2, key: 'task-b', title: 'Beta task', status: 'complete' })
+const taskB = trackerTask({ id: 2, key: 'task-b', title: 'Beta task', status: 'complete', completed_at: '2026-11-09T12:00:00Z' })
 const ticketA = trackerTicket()
 const ticketB = trackerTicket({ id: 12, key: 'ticket-b', title: 'Beta ticket', task_id: 2, task_key: 'task-b', status: 'complete' })
 
@@ -43,7 +43,7 @@ function dataMock(tasks = [taskA, taskB], tickets = [ticketA, ticketB], graphNod
   })
 }
 
-async function render(url = '/projects/7/tasks', realDialogs = false) {
+async function render(url = '/projects/7/tasks', realDialogs = false, realControls = false) {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/projects/:id/tasks', component: TaskTrackerView },
     { path: '/other', component: { template: '<div>Other page</div>' } },
@@ -54,8 +54,8 @@ async function render(url = '/projects/7/tasks', realDialogs = false) {
     attachTo: realDialogs ? document.body : undefined,
     global: { plugins: [router, createPinia()], stubs: {
       ProjectPageHeader: { template: '<header><slot name="actions" /></header>' },
-      TaskTrackerCommandPanel: { name: 'TaskTrackerCommandPanel', props: ['viewMode','activeTaskKey','taskOptions','search','filtersActive','taskAgentStats','taskAutomated','taskDelivery','abortTarget'], template: '<nav />' },
-      TrackerBoardPanel: { name: 'TrackerBoardPanel', props: ['rows'], template: '<section data-test="board"><button v-for="row in rows" :key="row.key" @click="$emit(\'openTask\', row.key)">{{ row.task.title }}</button></section>' },
+      TaskTrackerCommandPanel: realControls ? false : { name: 'TaskTrackerCommandPanel', props: ['viewMode','activeTaskKey','taskOptions','search','filtersActive','boardFilters','taskAgentStats','taskAutomated','taskDelivery','abortTarget'], template: '<nav />' },
+      TrackerBoardPanel: { name: 'TrackerBoardPanel', props: ['rows','hideEmptyColumns'], template: '<section data-test="board"><button v-for="row in rows" :key="row.key" @click="$emit(\'openTask\', row.key)">{{ row.task.title }}</button></section>' },
       TrackerGraphPanel: { name: 'TrackerGraphPanel', props: ['loading','activeTaskTitle','selectedTicket','selectionVisible','selectionLabel','flow'], template: '<section data-test="graph" />' },
       TrackerWarningSummary: true,
       TrackerTaskDetailDialog: realDialogs ? false : { name: 'TrackerTaskDetailDialog', props: ['modelValue','task','tickets','loading','error','contexts','ticket','ticketKey','results','activity'], template: '<aside />' },
@@ -236,6 +236,8 @@ describe('Work board navigation', () => {
   })
 
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-10T12:00:00Z'))
     setActivePinia(createPinia())
     sessionStorage.clear()
     mocks.callOperation.mockReset()
@@ -243,7 +245,75 @@ describe('Work board navigation', () => {
     mocks.stream.mockReset().mockReturnValue({ close: mocks.close })
     dataMock()
   })
-  afterEach(() => vi.restoreAllMocks())
+  afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
+
+  it('uses URL clauses for filters/display, history and reload without changing Graph picker order', async () => {
+    dataMock([
+      { ...taskA, priority_key: 'p0', order_index: 1, source_json: { template_key: 'engineering.delivery' }, owner: 'Operator' },
+      { ...taskB, priority_key: 'p2', order_index: 0, created_at: '2026-11-01T12:00:00Z' },
+      trackerTask({ id: 3, key: 'aborted', title: 'Aborted task', status: 'aborted', priority_key: 'p0' }),
+    ], [ticketA, ticketB])
+    const { wrapper, router, controls, board } = await render()
+    const keys = () => board().props('rows').map((row: { key: string }) => row.key)
+    expect(keys()).toEqual(['task-b', 'task-a'])
+    expect(controls().props('boardFilters').completed).toBe('past-week')
+    expect(controls().props('taskOptions').map((option: { value: string }) => option.value)).toEqual(['task-b', 'aborted', 'task-a'])
+    controls().vm.$emit('update:filter', { field: 'priority', operator: 'is', values: ['p0'] })
+    await flushPromises()
+    expect(keys()).toEqual(['task-a'])
+    controls().vm.$emit('update:filter', { field: 'workflow', operator: 'is', value: 'engineering.delivery' })
+    await flushPromises()
+    controls().vm.$emit('update:filter', { field: 'assignee', operator: 'is', value: 'Operator' })
+    await flushPromises()
+    controls().vm.$emit('update:filter', { field: 'text', value: 'Alpha' })
+    await flushPromises()
+    controls().vm.$emit('update:display', { hideEmptyColumns: true, completed: 'none' })
+    await flushPromises()
+    expect(board().props('hideEmptyColumns')).toBe(true)
+    expect(router.currentRoute.value.query).toMatchObject({ search: 'Alpha', priority: 'p0', workflow: 'engineering.delivery', assignee: 'Operator', completed: 'none', hide_empty: '1' })
+    controls().vm.$emit('clear')
+    await flushPromises()
+    expect(keys()).toEqual(['task-b', 'aborted', 'task-a'])
+    expect(controls().props('boardFilters')).toMatchObject({ clauses: [], completed: 'all' })
+    expect(router.currentRoute.value.query).toEqual({ status: 'all', completed: 'all', hide_empty: '1' })
+    router.back()
+    await flushPromises()
+    expect(keys()).toEqual(['task-a'])
+    expect(controls().props('boardFilters').completed).toBe('none')
+    router.forward()
+    await flushPromises()
+    const url = router.currentRoute.value.fullPath
+    wrapper.unmount()
+    const reloaded = await render(url)
+    expect(reloaded.controls().props('boardFilters')).toMatchObject({ clauses: [], completed: 'all' })
+    expect(reloaded.board().props('rows')).toHaveLength(3)
+    reloaded.wrapper.unmount()
+  })
+
+  it('removes legacy restrictions and reconciles Complete plus None in the route consumer', async () => {
+    const { wrapper, router, controls } = await render('/projects/7/tasks?ticket_status=complete&focus=blocked&completed=none')
+    controls().vm.$emit('removeFilter', 'ticket-status')
+    await flushPromises()
+    expect(router.currentRoute.value.query.ticket_status).toBeUndefined()
+    expect(router.currentRoute.value.query.focus).toBe('blocked')
+    controls().vm.$emit('removeFilter', 'blocked')
+    await flushPromises()
+    controls().vm.$emit('update:filter', { field: 'status', operator: 'is', values: ['complete'] })
+    await flushPromises()
+    expect(router.currentRoute.value.query.completed).toBe('all')
+    expect(controls().props('boardFilters').completed).toBe('all')
+    wrapper.unmount()
+  })
+
+  it('retains the open task and draft when a new filter excludes it', async () => {
+    const { wrapper, router, dialog } = await render('/projects/7/tasks?detail=task-a', true)
+    await popup().get('textarea').setValue('Keep my draft')
+    await router.push({ query: { ...router.currentRoute.value.query, search: 'Beta' } })
+    await flushPromises()
+    expect(dialog().props('task')?.key).toBe('task-a')
+    expect(popup().get('textarea').element.value).toBe('Keep my draft')
+    wrapper.unmount()
+  })
 
   it('opens the complete task index on Board without selecting a task or fetching all tickets', async () => {
     const { wrapper, router, controls, board } = await render()
@@ -257,12 +327,58 @@ describe('Work board navigation', () => {
     expect(mocks.close).toHaveBeenCalled()
   })
 
+  it('keeps controls available through loading, error and retry, then shows an empty project', async () => {
+    let fail!: (error: Error) => void
+    mocks.callOperation.mockReturnValue(new Promise((_resolve, reject) => { fail = reject }))
+    const { wrapper, board, controls } = await render()
+    expect(wrapper.text()).toContain('Loading work')
+    expect(controls().exists()).toBe(true)
+    fail(new Error('Fixture index unavailable'))
+    await flushPromises()
+    expect(wrapper.text()).toContain('Fixture index unavailable')
+    dataMock([], [])
+    await wrapper.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('Fixture index unavailable')
+    expect(wrapper.text()).toContain('No tasks yet.')
+    expect(board().props('rows')).toEqual([])
+    wrapper.unmount()
+  })
+
+  it.each([true, false])('announces an unavailable count until retry resolves (empty=%s)', async (empty) => {
+    let fail!: (error: Error) => void
+    mocks.callOperation.mockReturnValue(new Promise((_resolve, reject) => { fail = reject }))
+    const { wrapper } = await render('/projects/7/tasks', false, true)
+    const count = () => wrapper.get('.board-filter-bar__count')
+    expect(count().text()).toBe('— / — tasks')
+    expect(count().attributes('aria-label')).toBe('Task count unavailable')
+    fail(new Error('Fixture count unavailable'))
+    await flushPromises()
+    expect(wrapper.text()).toContain('Fixture count unavailable')
+    expect(count().text()).toBe('— / — tasks')
+    dataMock(empty ? [] : [taskA, taskB], empty ? [] : [ticketA, ticketB])
+    await wrapper.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click')
+    await flushPromises()
+    const knownCount = empty ? '0 / 0 tasks' : '2 / 2 tasks'
+    expect(count().text()).toBe(knownCount)
+    expect(count().attributes('aria-label')).toBeUndefined()
+    // A later failed refresh retains the last accepted index, including a known empty result.
+    mocks.callOperation.mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject }))
+    await wrapper.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click')
+    expect(count().text()).toBe(knownCount)
+    fail(new Error('Fixture refresh unavailable'))
+    await flushPromises()
+    expect(wrapper.text()).toContain('Fixture refresh unavailable')
+    expect(count().text()).toBe(knownCount)
+    wrapper.unmount()
+  })
+
   it('opens the clicked task independently of map selection and restores Board filters and mounted scroll region', async () => {
     const { wrapper, router, controls, board, dialog } = await render('/projects/7/tasks?view=graph&task=task-a')
-    controls().vm.$emit('update:viewMode', 'board')
+    wrapper.findComponent({ name: 'UiSegmentedControl' }).vm.$emit('select', 'board')
     await flushPromises()
     const boardInstance = board().vm
-    controls().vm.$emit('update:search', 'Beta')
+    controls().vm.$emit('update:filter', { field: 'text', value: 'Beta' })
     await flushPromises()
     expect(board().props('rows').map((row: {key: string}) => row.key)).toEqual(['task-b'])
     board().vm.$emit('openTask', 'task-b')
@@ -274,24 +390,61 @@ describe('Work board navigation', () => {
     expect(router.currentRoute.value.query).toMatchObject({ view: 'graph', task: 'task-b', search: 'Beta' })
     expect(dialog().props('modelValue')).toBe(false)
     expect(wrapper.findComponent({ name: 'TrackerGraphPanel' }).props('activeTaskTitle')).toBe('Beta task')
-    controls().vm.$emit('update:viewMode', 'board')
+    wrapper.findComponent({ name: 'UiSegmentedControl' }).vm.$emit('select', 'board')
     await flushPromises()
     expect(board().vm).toBe(boardInstance)
-    expect(controls().props('search')).toBe('Beta')
+    expect(controls().props('boardFilters').clauses).toContainEqual({ field: 'text', value: 'Beta' })
     expect(board().props('rows')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('refreshes the index on Graph return and preserves the mounted Board scroll and URL', async () => {
+    dataMock()
+    const { wrapper, router, controls, board } = await render('/projects/7/tasks?search=Alpha&completed=all')
+    const boardElement = board().element as HTMLElement
+    boardElement.scrollLeft = 320
+    boardElement.scrollTop = 120
+    await wrapper.get('[aria-label="Work view"] [role="tab"]:last-child').trigger('click')
+    await flushPromises()
+    dataMock([{ ...taskA, title: 'Alpha updated from another task', priority_key: 'p0' }, taskB])
+    await wrapper.get('[aria-label="Work view"] [role="tab"]:first-child').trigger('click')
+    await flushPromises()
+    expect(board().element).toBe(boardElement)
+    expect(boardElement.scrollLeft).toBe(320)
+    expect(boardElement.scrollTop).toBe(120)
+    expect(board().props('rows')[0].task.title).toBe('Alpha updated from another task')
+    expect(router.currentRoute.value.query).toMatchObject({ search: 'Alpha', completed: 'all' })
+    expect(controls().props('taskOptions').map((option: { value: string }) => option.value)).toEqual(['task-b', 'task-a'])
+    wrapper.unmount()
+  })
+
+  it('ignores a late Board-return index after project navigation', async () => {
+    const { wrapper, router, board } = await render('/projects/7/tasks?view=graph&task=task-a')
+    let finish!: (snapshot: TrackerSnapshot) => void
+    const late = new Promise<TrackerSnapshot>(resolve => { finish = resolve })
+    const normal = mocks.callOperation.getMockImplementation()!
+    mocks.callOperation.mockImplementation((name, args) => args.project_id === 7 && args.task_index_only ? late : normal(name, args))
+    await wrapper.get('[aria-label="Work view"] [role="tab"]:first-child').trigger('click')
+    await flushPromises()
+    await router.push('/projects/8/tasks')
+    await flushPromises()
+    finish(trackerSnapshot([{ ...taskA, title: 'Old project response' }], []))
+    await flushPromises()
+    expect(board().props('rows').map((row: { task: TrackerTask }) => row.task.title)).not.toContain('Old project response')
+    expect(mocks.stream).toHaveBeenLastCalledWith(expect.objectContaining({ projectId: 8 }))
     wrapper.unmount()
   })
 
   it('offers every task in the map picker even when Board filters exclude it', async () => {
     const { wrapper, controls, board } = await render('/projects/7/tasks?search=Alpha')
-    controls().vm.$emit('update:viewMode', 'graph')
+    wrapper.findComponent({ name: 'UiSegmentedControl' }).vm.$emit('select', 'graph')
     await flushPromises()
     expect(controls().props('taskOptions').map((option: {value: string}) => option.value)).toContain('task-b')
     controls().vm.$emit('taskSelect', 'task-b')
     await flushPromises()
     expect(controls().props('activeTaskKey')).toBe('task-b')
     expect(wrapper.findComponent({ name: 'TrackerGraphPanel' }).props('activeTaskTitle')).toBe('Beta task')
-    controls().vm.$emit('update:viewMode', 'board')
+    wrapper.findComponent({ name: 'UiSegmentedControl' }).vm.$emit('select', 'board')
     await flushPromises()
     expect(board().props('rows').map((row: {key: string}) => row.key)).toEqual(['task-a'])
     wrapper.unmount()
@@ -321,12 +474,12 @@ describe('Work board navigation', () => {
     expect(controls().props('activeTaskKey')).toBe('task-b')
     expect(router.currentRoute.value.query.task).toBe('task-b')
     expect(mocks.callOperation).toHaveBeenCalledWith('tracker.get', expect.objectContaining({ task_key: 'task-b', include_graph: true }))
-    controls().vm.$emit('update:viewMode', 'board')
+    wrapper.findComponent({ name: 'UiSegmentedControl' }).vm.$emit('select', 'board')
     await flushPromises()
     sessionStorage.clear()
-    controls().vm.$emit('update:search', 'Alpha')
+    controls().vm.$emit('update:filter', { field: 'text', value: 'Alpha' })
     await flushPromises()
-    controls().vm.$emit('update:viewMode', 'graph')
+    wrapper.findComponent({ name: 'UiSegmentedControl' }).vm.$emit('select', 'graph')
     await flushPromises()
     expect(controls().props('activeTaskKey')).toBe('task-b')
     expect(router.currentRoute.value.query.task).toBe('task-b')
@@ -359,7 +512,7 @@ describe('Work board navigation', () => {
     sessionStorage.setItem('stackos:work-map-task:7', 'deleted-task')
     const { wrapper, router, controls } = await render()
     expect(sessionStorage.getItem('stackos:work-map-task:7')).toBeNull()
-    controls().vm.$emit('update:viewMode', 'graph')
+    wrapper.findComponent({ name: 'UiSegmentedControl' }).vm.$emit('select', 'graph')
     await flushPromises()
     expect(controls().props('activeTaskKey')).toBe('task-b')
     expect(router.currentRoute.value.query.task).toBe('task-b')
@@ -392,7 +545,7 @@ describe('Work board navigation', () => {
     const read = mocks.callOperation.getMockImplementation()!
     mocks.callOperation.mockImplementation((name, args) => name === 'tracker.get' && args.task_index_only ? pending : read(name, args))
     const { wrapper, router, controls } = await render()
-    controls().vm.$emit('update:viewMode', 'graph')
+    wrapper.findComponent({ name: 'UiSegmentedControl' }).vm.$emit('select', 'graph')
     await flushPromises()
     expect(router.currentRoute.value.query.task).toBeUndefined()
     resolveIndex(trackerSnapshot([taskA, taskB], []))
@@ -551,8 +704,8 @@ describe('Work board navigation', () => {
   })
 
   it('labels ticket count links explicitly while grouping by each task’s own status', async () => {
-    const { wrapper, board } = await render('/projects/7/tasks?ticket_status=complete')
-    expect(wrapper.text()).toContain('Contains tickets: Complete')
+    const { wrapper, board, controls } = await render('/projects/7/tasks?ticket_status=complete')
+    expect(controls().props('boardFilters').clauses).toContainEqual({ field: 'ticket-status', value: 'complete' })
     expect(board().props('rows').map((row: {key: string}) => row.key)).toEqual(['task-b'])
     wrapper.unmount()
   })
@@ -605,7 +758,7 @@ describe('Work board navigation', () => {
   it('refreshes the board for project events without a selected task', async () => {
     const { wrapper, board } = await render()
     const onEvent = mocks.stream.mock.calls.at(-1)![0].onEvent
-    dataMock([{ ...taskA, status: 'complete' }, taskB], [ticketA, ticketB])
+    dataMock([{ ...taskA, status: 'complete', completed_at: '2026-11-10T11:00:00Z' }, taskB], [ticketA, ticketB])
     onEvent({ id: 9301, event_type: 'tracker.task.status_changed', metadata_json: { task_key: 'task-a' } })
     await flushPromises()
     expect(board().props('rows').find((row: {key: string}) => row.key === 'task-a').task.status).toBe('complete')

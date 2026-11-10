@@ -6,7 +6,7 @@ const PROJECT_PATH = /^\/projects\/[^/]+(?:\/(.*))?$/
 // controls that still mean the same thing after the project scope changes.
 const PORTABLE_QUERY_KEYS_BY_SURFACE: Readonly<Record<string, readonly string[]>> = {
   connections: ['section'],
-  tasks: ['view', 'status', 'ticket_status', 'focus'],
+  tasks: ['view', 'status', 'status_op', 'priority', 'priority_op', 'completed', 'hide_empty', 'focus', 'ticket_status'],
   library: ['tab', 'plugin', 'type'],
 }
 

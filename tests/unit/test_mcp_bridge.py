@@ -1614,7 +1614,10 @@ def test_registered_product_mutations_are_agent_reachable() -> None:
     registry = ToolRegistry()
     register_all(registry)
     registered = set(registry._tools)
-    agent_surface = _AGENT_VISIBLE_TOOL_NAMES | _AGENT_SETUP_TOOLBOX_NAMES
+    catalog = {spec.name: _to_tool(spec).model_dump(by_alias=True) for spec in registry.all()}
+    agent_surface = _AGENT_VISIBLE_TOOL_NAMES | _bridge_allowed_tool_names(
+        None, {}, catalog=catalog
+    )
 
     hidden_mutations = {
         name
@@ -1638,6 +1641,55 @@ def test_registered_product_mutations_are_agent_reachable() -> None:
     }
 
     assert hidden_mutations == set()
+
+
+@pytest.mark.parametrize("run_id", [None, 7])
+def test_registered_board_operations_are_direct_and_keep_grant_denials(run_id: int | None) -> None:
+    registry = ToolRegistry()
+    register_all(registry)
+    catalog = {spec.name: _to_tool(spec).model_dump(by_alias=True) for spec in registry.all()}
+    board_operations = {"tracker.updateTaskPriority", "tracker.reorderTask"}
+    allowed_by_run = {7: {"resource.upsert"}}
+    allowed = _bridge_allowed_tool_names(run_id, allowed_by_run, catalog=catalog)
+
+    assert board_operations <= allowed
+    assert {"project.update", "artifact.create"}.isdisjoint(allowed)
+    assert ("resource.upsert" in allowed) is (run_id is not None)
+
+    response = _bridge_toolbox_describe(
+        42,
+        catalog=catalog,
+        arguments={
+            "tool_names": sorted(
+                board_operations
+                | {
+                    "project.update",
+                    "artifact.create",
+                    "resource.upsert",
+                }
+            ),
+        },
+        run_id=run_id,
+        allowed_by_run=allowed_by_run,
+    )
+    payload = _structured(response)
+    statuses = {item["name"]: item for item in payload["tool_statuses"]}
+    described = {tool["name"] for tool in payload["described_tools"]}
+    assert board_operations <= described
+    assert payload["unknown_tool_names"] == []
+    for name in board_operations:
+        assert statuses[name]["allowed"] is True
+        assert statuses[name]["call_via"] == "toolbox.call"
+        assert statuses[name]["reason_code"] == "available"
+        assert statuses[name]["operation"]["grant_policy"] == "direct-tracker-write"
+    assert statuses["project.update"]["reason_code"] == "local_admin_required"
+    assert statuses["artifact.create"]["reason_code"] == (
+        "run_plan_step_grant_required" if run_id is None else "not_granted_to_active_step"
+    )
+    assert {"project.update", "artifact.create"}.isdisjoint(described)
+    assert statuses["resource.upsert"]["reason_code"] == (
+        "run_plan_step_grant_required" if run_id is None else "active_step_granted"
+    )
 
 
 def test_bridge_setup_surface_is_bootstrap_granted() -> None:

@@ -36,6 +36,8 @@ def main() -> int:
                 "tracker.get",
                 "tracker.taskActivity",
                 "tracker.taskResults",
+                "tracker.updateTaskPriority",
+                "tracker.reorderTask",
             }
             or spec.grant_policy in {"local-admin-console-read", "local-admin-console-write"}
             or spec.name == "localAgentChat.createMessage"

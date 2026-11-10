@@ -81,6 +81,21 @@ describe('projectSwitchDestination', () => {
     })
   })
 
+  it('keeps portable Board clauses/display while clearing project-specific filters and identities', () => {
+    expect(projectSwitchDestination({
+      path: '/projects/1/tasks', hash: '',
+      query: {
+        view: 'graph', status: 'complete,failed', status_op: 'is-not', priority: 'p0,p1', priority_op: 'is',
+        completed: 'all', hide_empty: '1', ticket_status: 'failed', focus: 'blocked',
+        search: 'old text', workflow: 'old workflow', workflow_op: 'is-not', assignee: 'old agent', assignee_op: 'is',
+        task: 'old-task', detail: 'old-task', ticket: 'old-ticket',
+      },
+    }, 7)).toEqual({
+      path: '/projects/7/tasks', hash: '',
+      query: { view: 'graph', status: 'complete,failed', status_op: 'is-not', priority: 'p0,p1', priority_op: 'is', completed: 'all', hide_empty: '1', ticket_status: 'failed', focus: 'blocked' },
+    })
+  })
+
   it('keeps the connection section while clearing the previous provider selection', () => {
     expect(
       projectSwitchDestination(

@@ -3,16 +3,70 @@
 import { describe, expect, it } from 'vitest'
 
 import type { TrackerSnapshot, TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
+import { parseBoardFilters } from './boardFilters'
 
 import {
   buildFilteredTrackerSnapshot,
   buildTaskProgressRows,
+  projectBoardRows,
   groupTicketsByTask,
   mergeFocusedTrackerSnapshot,
   selectGraphVisibleTickets,
 } from './viewModel'
 
 describe('task tracker view model', () => {
+  it('projects Board rank with repository tie ordering while leaving the Graph list newest-first', () => {
+    const tasks = [
+      makeTask({ id: 1, key: 'old', order_index: 0, created_at: '2026-11-01T00:00:00' }),
+      makeTask({ id: 2, key: 'new', order_index: 0, created_at: '2026-11-02T00:00:00Z' }),
+      makeTask({ id: 3, key: 'tie', order_index: 0, created_at: '2026-11-02T00:00:00Z' }),
+      makeTask({ id: 4, key: 'last', order_index: 7, created_at: '2026-11-03T00:00:00Z' }),
+    ]
+    const rows = buildTaskProgressRows(tasks, new Map(), emptyFilters())
+    expect(projectBoardRows(rows, parseBoardFilters({})).map(row => row.key)).toEqual(['tie', 'new', 'old', 'last'])
+    expect(rows.map(row => row.key)).toEqual(['last', 'tie', 'new', 'old'])
+  })
+
+  it.each([
+    ['past-day', ['today', 'day']],
+    ['past-week', ['today', 'day', 'over-day', 'week']],
+    ['past-month', ['today', 'day', 'over-day', 'week', 'over-week', 'month']],
+    ['all', ['today', 'day', 'over-day', 'week', 'over-week', 'month', 'old', 'unknown', 'invalid', 'future']],
+    ['none', []],
+  ])('uses actual Complete UTC timestamps for %s, inclusive of the rolling boundary', (completed, expected) => {
+    const dates = {
+      today: '2026-11-10T11:00:00', day: '2026-11-09T12:00:00Z',
+      'over-day': '2026-11-09T11:59:59.999Z', week: '2026-11-03T14:00:00+02:00',
+      'over-week': '2026-11-03T11:59:59.999Z', month: '2026-10-11T12:00:00Z',
+      old: '2026-10-11T11:59:59.999Z', unknown: null, invalid: 'invalid', future: '2026-11-10T12:00:01Z',
+    }
+    const tasks = Object.entries(dates).map(([key, completed_at], i) => makeTask({
+      id: i + 1, key, order_index: i, status: 'complete', completed_at,
+      // Do not accidentally filter on updated/created timestamps.
+      created_at: '2020-01-01T00:00:00Z', updated_at: '2030-01-01T00:00:00Z',
+    }))
+    tasks.push(makeTask({ key: 'reopened', status: 'in-progress', completed_at: dates.old, order_index: 50 }))
+    const rows = buildTaskProgressRows(tasks, new Map(), emptyFilters())
+    expect(projectBoardRows(rows, parseBoardFilters({ status: 'all', completed }), new Date('2026-11-10T12:00:00Z')).map(row => row.key)).toEqual([...expected, 'reopened'])
+  })
+
+  it('combines clauses against index summaries and full tickets, including negation and legacy restrictions', () => {
+    const task = makeTask({ source_json: { template_key: 'engineering.delivery' }, ticket_summary: {
+      total_count: 1, terminal_count: 0, in_progress_count: 0, blocked_count: 1,
+      status_counts: { failed: 1 }, assignees: ['Reviewer'], search_text: 'Needle evidence',
+    } })
+    const state = parseBoardFilters({ search: 'needle', priority: 'p1', status: 'aborted', status_op: 'is-not',
+      workflow: 'engineering.delivery', assignee: 'Reviewer', ticket_status: 'failed', focus: 'blocked' })
+    const rows = buildTaskProgressRows([task], new Map(), emptyFilters())
+    expect(projectBoardRows(rows, state)).toHaveLength(1)
+    expect(projectBoardRows(rows, parseBoardFilters({ assignee: 'Reviewer', assignee_op: 'is-not' }))).toEqual([])
+    expect(projectBoardRows(rows, parseBoardFilters({ workflow: 'engineering.delivery', workflow_op: 'is-not' }))).toEqual([])
+    expect(projectBoardRows(rows, parseBoardFilters({ priority: 'p1', priority_op: 'is-not' }))).toEqual([])
+    const ticket = makeTicket({ status: 'failed', assignee: 'Reviewer', title: 'Needle evidence' })
+    const blocked = makeTicket({ id: 2, key: 'blocked', status: 'in-progress', blocker_reason: 'Waiting' })
+    expect(projectBoardRows(buildTaskProgressRows([{ ...task, ticket_summary: null }], groupTicketsByTask([ticket, blocked]), emptyFilters()), state)).toHaveLength(1)
+  })
+
   it('uses actual dependency titles in full snapshots without turning ready sibling work into a blocked task', () => {
     const task = makeTask({ key: 'delivery' })
     const waiting = makeTicket({ key: 'waiting', task_key: 'delivery', blocked_by: ['upstream'] })

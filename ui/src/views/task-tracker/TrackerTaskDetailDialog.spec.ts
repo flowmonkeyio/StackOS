@@ -20,6 +20,14 @@ vi.mock('@/lib/operations', () => ({ callOperation }))
 const popup = () => new DOMWrapper(document.body)
 
 describe('TrackerTaskDetailDialog', () => {
+  it('refreshes the shared task priority badge while leaving the selected ticket priority unchanged', async () => {
+    const wrapper = mount(TrackerTaskDetailDialog, { props: { modelValue: true, task: { ...task(), priority_key: 'p0' }, tickets: [sourceTicket()] } })
+    expect(popup().get('[aria-label="Priority P0"]').classes()).toContain('text-danger-fg')
+    await wrapper.setProps({ task: { ...task(), priority_key: 'p1' } })
+    expect(popup().get('[aria-label="Priority P1"]').classes()).toContain('text-warning-fg')
+    expect(wrapper.props('tickets')![0]!.priority_key).toBe(sourceTicket().priority_key)
+    wrapper.unmount()
+  })
   it('keeps task and shared ticket elapsed distinct after completion without visible Started facts', async () => {
     const record = { ...task(), status: 'complete' as const, started_at: '2026-11-08T01:00:00', completed_at: '2026-11-09T05:00:00' }
     const source = { ...sourceTicket(), status: 'complete' as const, started_at: '2026-11-08T02:00:00', completed_at: '2026-11-08T04:22:00' }

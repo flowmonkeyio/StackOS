@@ -1193,6 +1193,46 @@ behavior. Readback plus an exact subsequent native prompt can additionally prove
 saved-instruction consumption in that isolated scope; primary installed activation
 and consumption remain separate claims.
 
+## Board priority and order writes
+
+`tracker.updateTaskPriority` and `tracker.reorderTask` are strict, browser-safe
+operations exposed through the same registry to REST, CLI and MCP. They use
+the existing task `priority_key` and integer `order_index`; no migration or
+ranking store is involved. The UI client is `lib/stackos/taskBoard.ts`.
+
+Both require `project_id`, `task_key`, `expected_status`, `expected_updated_at`
+and a stable `idempotency_key`. Priority accepts only `priority_key: p0|p1|p2|p3`.
+Reorder accepts `anchor_task_key` and `placement: before|after`. The anchor
+must currently belong to the same project and status column as the moved task.
+There is no lifecycle, ticket-priority or execution-policy payload. These direct
+tracker intents do not accept a run token or arbitrary patch fields.
+
+The repository reserves the SQLite writer before validating current state and
+retry identity. Stale task snapshots or missing/moved anchors return a structured
+conflict with `next_operations: [tracker.get]`; refresh and submit a new intent.
+An identical retry returns its saved raw receipt with `replayed: true`; reusing
+the key with different arguments conflicts. The receipt includes the saved task,
+`affected_task_keys`, `changed`, tracker revision and request fingerprint.
+
+Board projection and reorder must sort by `order_index` ascending, then
+`created_at` descending and numeric `id` descending. Reorder removes only the
+selected task from that complete column sequence and inserts it at the anchor,
+preserving hidden tasks' relative order. A real move normalizes only that column
+to zero-based integer positions. A same-position/self-anchor move and an
+unchanged priority are no-ops: no normalization, revision or change event.
+No-op receipts still make retries stable. All changed ranks, revision, events
+and retry receipt commit together; the moved task's snapshot also advances when
+a tied integer remains unchanged but its relative position changes.
+
+Real priority/order edits emit `tracker.task.changed` into the existing timeline
+and `tracker-status` SSE transport, including task scope and `changed_fields`.
+Relative movement with an unchanged integer uses `order`; changed integers use
+`order_index`. Existing agent priority patches emit the same genuine task-change
+event. These events invalidate readers without masquerading as status changes
+or adding a polling path. UI callers retain the immutable intent for transport
+retry, reconcile after conflicts, and check project ownership before applying a
+late response. The card and navigation consumers own that interaction state.
+
 ## Status Events
 
 Task inspection uses `tracker.taskActivity` and `tracker.taskResults` through
@@ -1295,6 +1335,8 @@ Agent write operations:
 - `tracker.createTicket`
 - `tracker.updateTask`
 - `tracker.updateTaskContent` (human console REST/CLI only)
+- `tracker.updateTaskPriority` (bounded task priority; MCP/REST/CLI/browser)
+- `tracker.reorderTask` (same-status neighbor placement; MCP/REST/CLI/browser)
 - `tracker.updateTicket`
 - `tracker.patch`
 - `tracker.rejectTask`
@@ -1711,15 +1753,59 @@ theme changes and device pixel ratio changes. Its observers and listeners are
 released on unmount. The compact summary adds no fit-based visibility gate or
 refresh timer.
 
+## Board URL state
+
+`TaskTrackerView` owns Board filter and display state through the current URL.
+The pure `task-tracker/boardFilters.ts` parser, serializer and update/remove/clear
+commands provide one typed clause model to the controls and Board projection.
+There is no saved filter store. History and reload read the same query state;
+changing filters preserves the open detail identity and its draft.
+
+| Query | Meaning |
+| --- | --- |
+| `search` | Text substring across task and ticket/index search fields, case insensitive |
+| `status`, `priority` | Comma-separated or repeated values; OR within a field, AND between clauses |
+| `status_op`, `priority_op` | `is` (default) or `is-not`; priorities are `p0` through `p3` |
+| `workflow`, `assignee` | One workflow key or assignee; corresponding `_op` accepts `is` or `is-not` |
+| `ticket_status`, `focus=blocked` | Legacy Home restrictions represented as removable clauses |
+| `completed` | `all`, `past-day`, `past-week`, `past-month`, or `none` |
+| `hide_empty=1` | Hide columns without any projected tasks |
+
+Missing status/completed choices default to Status is not Aborted and Completed
+Past week. Explicit `status=all&completed=all` keeps Clear all unrestricted on
+reload; clearing filters retains the empty-column display choice. Invalid
+enum values are ignored, with missing/invalid status and completion choices
+using the same defaults. Complete selected explicitly with Completed None
+reconciles to All in the control state and subsequent URL writes.
+
+Completion windows apply only to tasks whose actual status is `complete`,
+using `completed_at` and the existing StackOS UTC timestamp parser. Windows
+include their lower boundary and exclude future or unknown/invalid timestamps;
+Past month means 30 rolling days. All includes unknown dates. Other statuses,
+including reopened tasks, are unaffected by completion dates.
+
+Board rows sort by persisted `order_index`, then newest `created_at` and
+descending ID, matching the reorder repository. Graph's picker retains its
+unfiltered newest-first order. Project switching preserves view, status,
+priority, completion/display choices and portable legacy restrictions, and
+clears text, workflow, assignee and task/ticket selections.
+
 ## UI
 
 The Work UI provides two views, Board and Graph. It renders:
 
-- Board by default, with seven fixed columns for the current task statuses:
+- Board by default, with seven columns for the current task statuses (empty
+  columns can be hidden through the display choice):
   `not-started`, `in-progress`, `complete`, `deferred`, `aborted`, `failed`,
   and `skipped`. Cards cannot be dragged between columns or change status.
-- a Board / Graph switch in the same shared desktop toolbar as the
-  current view's controls. There are no separate Stories or Tickets views.
+- a Board / Graph switch in the same top-right page-header position in both
+  views. Board has one filter bar: Filter opens Text, Status, Priority,
+  Workflow and Assignee editors; applied chips support edit and removal.
+  Excess chips collapse into a +N filters popover without wrapping or horizontal
+  scrolling. Clear all, result count and Display keep their reserved space.
+  Display contains Completed tasks and Hide empty columns. Returning from Graph
+  refreshes the task index while retaining the mounted Board and its scroll.
+  There are no separate Stories or Tickets views.
 - project-wide task cards with leading identity, title, status and completion
   progress, followed by quiet usage for automated work and an anchored execution
   footer. A current occurrence shows its actual host logo, readable role, exact

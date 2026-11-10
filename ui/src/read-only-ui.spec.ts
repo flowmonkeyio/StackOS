@@ -12,6 +12,7 @@ const AUTH_SETUP_STORE = join(ROOT, 'stores', 'plugins.ts')
 const PROJECTS_STORE = join(ROOT, 'stores', 'projects.ts')
 const OPERATIONS_CLIENT = join(ROOT, 'lib', 'operations.ts')
 const TASK_CONTENT_CONTROLLER = join(ROOT, 'views', 'task-tracker', 'useTrackerTaskContent.ts')
+const TASK_BOARD_CLIENT = join(ROOT, 'lib', 'stackos', 'taskBoard.ts')
 const ALLOWED_WRITE_FILES = new Set([AUTH_SETUP_STORE, PROJECTS_STORE, OPERATIONS_CLIENT])
 
 function filesUnder(dir: string): string[] {
@@ -93,9 +94,10 @@ describe('restricted UI write contract', () => {
     expect(text).toContain("method: 'POST'")
   })
 
-  it('keeps tracker writes limited to the bounded task content controller', () => {
+  it('keeps tracker writes limited to the bounded task content and Board controllers', () => {
     const allowedOperations = new Map([
       [TASK_CONTENT_CONTROLLER, ['tracker.updateTaskContent']],
+      [TASK_BOARD_CLIENT, ['tracker.updateTaskPriority', 'tracker.reorderTask']],
     ])
     const callers: string[] = []
     for (const scope of SCOPES) {
