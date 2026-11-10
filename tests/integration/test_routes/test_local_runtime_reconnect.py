@@ -2,6 +2,7 @@
 
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 
@@ -48,11 +49,93 @@ def test_loss_shows_last_known_work_and_accepts_late_result_once(connected, monk
     with pytest.raises(ConflictError, match="disconnected"):
         exchange.require_available(connection)
     assert "launch" not in call(client, "poll", **identity).json()
+    assert call(client, "status", **identity).json()["needs_attention"]
+    # The original invocation's presence cannot erase another consumer's loss.
+    call(client, "poll", **identity, invocation_id=invocation.invocation_id)
+    assert call(client, "status", **identity).json()["needs_attention"]
     report = terminal(invocation)
     assert call(client, "report", **identity, report=report).json()["replayed"] is False
     assert call(client, "report", **identity, report=report).json()["replayed"] is True
     assert handoff.outcome().ok
-    assert call(client, "status", **identity).json()["last_known_state"] == "completed"
+    observed = call(client, "status", **identity).json()
+    assert observed["last_known_state"] == "completed" and not observed["needs_attention"]
+
+
+def test_fresh_consumer_exposes_controller_invocation_uncertainty(connected, tmp_path, monkeypatch):
+    store = local_store(connected, tmp_path)
+    client, _, identity, computer, args, jobs = prepare(connected, monkeypatch)
+    poll(client, identity, computer)
+    assert start(client, args).status_code == 200
+    launches = []
+    worker = OutboundWorker(client, store, lambda *args: launches.append(args))
+    fn, job = jobs[0]
+    with ThreadPoolExecutor() as pool:
+        future = pool.submit(fn, **job["kwargs"])
+        deadline = time.monotonic() + 10
+        while True:
+            received = poll(client, identity, computer).json()
+            if received["state"] == "launch":
+                break
+            assert not future.done() and time.monotonic() < deadline
+            time.sleep(0.01)
+        try:
+            with pytest.raises(ValueError, match="uncertain"):
+                worker.exchange_once()
+            for observed in (
+                call(client, "status", **identity).json(),
+                call(client, "list", project_id=identity["project_id"]).json()["items"][0],
+            ):
+                assert observed["connection_state"] == "needs_attention"
+                assert observed["needed_action"]
+                assert observed["unresolved_tasks"][0]["invocation_id"] == received["invocation_id"]
+            assert not launches and start(client, args).status_code == 409
+        finally:
+            # Only the matching synthetic report retires this waiting controller.
+            finished = client.post(
+                "/api/v1/operations/localRuntime.report/call",
+                json={
+                    "arguments": identity
+                    | {
+                        "report": {
+                            "invocation_id": received["invocation_id"],
+                            "attempt": received["scope"]["attempt"],
+                            "state": "unknown",
+                        }
+                    }
+                },
+                headers={"Authorization": computer},
+            )
+            assert finished.status_code == 200
+            future.result(timeout=10)
+
+
+@pytest.mark.parametrize("mode", ["wrong-sha", "same-session"])
+def test_known_terminal_failure_releases_only_transport_and_keeps_failed_evidence(
+    connected, monkeypatch, mode
+):
+    client, identity, _, args, jobs = _run_connected_scenario(connected, monkeypatch, mode)
+    observed = call(client, "status", **identity).json()
+    assert observed["invocation_id"] is None
+    assert not observed["needs_attention"] and not observed["unresolved_tasks"]
+    with Session(client.app.state.engine) as session:
+        repo = TrackerRepository(session)
+        before = repo.get(project_id=identity["project_id"], task_key="connected")
+        assert before.tickets[0].status == "failed"
+        state = before.tasks[0].metadata_json["delivery"]
+        assert state["status"] == "stopped" and not state.get("uncertain_invocation")
+        evidence = before.tickets[0].completion_evidence_json
+        repo.create_task(project_id=identity["project_id"], key="next", title="Next")
+        repo.create_ticket(
+            project_id=identity["project_id"], task_key="next", key="next-build", title="Next"
+        )
+    assert start(client, args | {"task_key": "next"}).status_code == 200
+    assert len(jobs) == 2
+    with Session(client.app.state.engine) as session:
+        after = TrackerRepository(session).get(
+            project_id=identity["project_id"], task_key="connected"
+        )
+        assert after.tickets[0].status == "failed"
+        assert after.tickets[0].completion_evidence_json == evidence
 
 
 def test_presence_loss_leaves_accepted_process_alive_and_report_retry_is_same_work(

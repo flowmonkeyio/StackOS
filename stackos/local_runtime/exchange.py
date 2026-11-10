@@ -83,6 +83,7 @@ class InvocationHandoff:
     state: str = "pending"
     report: InvocationReport | None = None
     ready: Event = field(default_factory=Event)
+    consumer_uncertain: bool = False
 
     def outcome(self) -> AgentRunResult:
         if self.report is not None and self.report.outcome is not None:
@@ -135,7 +136,8 @@ class InvocationExchange:
             attention = bool(
                 handoff
                 and (
-                    state == "unknown"
+                    handoff.consumer_uncertain
+                    or state == "unknown"
                     or handoff.call.cancelled.is_set()
                     or (
                         (handoff.call.retired.is_set() or handoff.call.finished)
@@ -231,17 +233,22 @@ class InvocationExchange:
                 }
             call = handoff.call
             if invocation_id is not None and invocation_id != call.invocation_id:
+                handoff.consumer_uncertain = True
                 return {"state": "unknown", "needs_attention": True}
             if call.cancelled.is_set() or (
                 (call.retired.is_set() or call.finished) and handoff.state != "completed"
             ):
                 return {"state": "unknown", "needs_attention": True}
+            if handoff.state == "dispatched" and invocation_id is None:
+                # This consumer cannot identify already accepted work. Retain
+                # the uncertainty for status readers, without closing the slot
+                # for a known late report from the original invocation.
+                handoff.consumer_uncertain = True
             response = {
                 "invocation_id": call.invocation_id,
                 "scope": asdict(call.scope),
                 "state": handoff.state,
-                "needs_attention": handoff.state == "unknown"
-                or (handoff.state == "dispatched" and invocation_id is None),
+                "needs_attention": handoff.consumer_uncertain or handoff.state == "unknown",
             }
             if handoff.state == "pending":
                 handoff.state = "dispatched"
@@ -295,6 +302,7 @@ class InvocationExchange:
             self._seen[connection.id] = (_identity(connection), time.monotonic())
             self._seen_at[connection.id] = time.time()
             handoff.state = report.state
+            handoff.consumer_uncertain = report.state == "unknown"
             handoff.ready.set()
             return {
                 "invocation_id": report.invocation_id,

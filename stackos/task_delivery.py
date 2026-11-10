@@ -483,6 +483,7 @@ def connection_execution_state(session: Session, connection, exchange) -> dict:
             state.get("needs_attention")
             or (invocation_id and invocation_id != observed["invocation_id"])
             or (invocation_id and observed["needs_attention"])
+            or (invocation_id and state.get("status") == "stopped")
         ):
             unresolved.append(
                 {
@@ -1801,6 +1802,14 @@ def run_delivery(
                             # of the newly pending occurrence (even for success).
                             evidence[phase]["superseded"] = True
                             _save_evidence(repo, project_id, ticket_key, evidence)
+                            if (
+                                remote_handoff is not None
+                                and remote_handoff[2].state == "completed"
+                            ):
+                                _update_delivery(
+                                    repo, project_id, task_key, uncertain_invocation=None
+                                )
+                                local_invocations.release(*remote_handoff[:2])
                             # Requeued children may still await activation by their
                             # pending parent. Detect persisted progress here; the next
                             # selection applies dependency readiness and claims it.
@@ -1863,6 +1872,7 @@ def run_delivery(
                     # Clear uncertainty only after the owning attempt receipt is durable.
                     if remote_handoff is not None and remote_handoff[2].state == "completed":
                         _update_delivery(repo, project_id, task_key, uncertain_invocation=None)
+                        local_invocations.release(*remote_handoff[:2])
                     if accepted and phase == "review" and state.get("connection_id"):
                         _update_delivery(
                             repo,
@@ -1875,8 +1885,6 @@ def run_delivery(
                             repo, project_id, task_key, status="stopped", reason=reason
                         )
                         return
-                if remote_handoff is not None:
-                    local_invocations.release(*remote_handoff[:2])
                 if repair:
                     rejected_sha = evidence["candidate"].get("commit_sha")
                     _archive_attempt(evidence)

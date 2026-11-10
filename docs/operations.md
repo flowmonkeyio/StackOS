@@ -61,6 +61,9 @@ presence; reads do not. An accepted worker polls only its exact invocation while
 native work runs. Lost presence retains the last-known work without killing it
 or allowing a duplicate. Temporary transport errors retain the same worker and
 pending report; identity, authorization and unknown-outcome errors stop it.
+If a consumer cannot identify already dispatched work, status/list retain that
+uncertainty and its needed action. An exact known late report can still resolve
+the transport outcome; a presence poll alone cannot clear uncertainty.
 
 After server restart, connected queued/running controllers become stopped with
 `needs_attention`; ticket outcomes, sessions, candidates and repair counts stay
@@ -135,6 +138,10 @@ first terminal report signals the owning caller; identical repeats acknowledge
 Only the controller can release a known completed handoff after persisting its
 result and finishing the existing invocation. This transport does not advance
 tracker/run state or decide whether a domain result succeeds.
+Known terminal handoffs are released after their evidence is durable even when
+validation rejects the candidate or the workflow occurrence was superseded.
+The rejected result remains failed; releasing transport ownership does not
+accept it. Unknown or live work retains its admission fence.
 
 A lost poll response returns `needs_attention` on subsequent polls without a
 second launch payload. A lost report response can resend the same retained result
