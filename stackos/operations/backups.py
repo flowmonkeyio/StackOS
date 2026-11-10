@@ -10,6 +10,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from stackos import backups
+from stackos.backups.models import require_standalone_backup
 from stackos.config import Settings
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
@@ -66,6 +67,10 @@ def _settings(inp: MCPInput, ctx: MCPContext) -> Settings:
     settings = ctx.extras.get("settings")
     if not isinstance(settings, Settings):
         raise ValidationError("Local backup settings are unavailable.")
+    try:
+        require_standalone_backup(settings)
+    except backups.BackupError as exc:
+        raise ValidationError(exc.message, data=exc.as_dict()) from exc
     return settings
 
 
@@ -137,7 +142,10 @@ def operation_specs() -> list[OperationSpec]:
             "Back up managed project data and explicitly enrolled external folders "
             "in encrypted recovery archives."
         ),
-        prerequisites=("Explicit local operator authority; no workflow/run-token authority.",),
+        prerequisites=(
+            "Standalone SQLite installation only; unavailable for Postgres servers and runtimes.",
+            "Explicit local operator authority; no workflow/run-token authority.",
+        ),
         returns=("Safe policy, coverage and outcome metadata; no private keys or archive bytes.",),
         secret_policy="public-key-input-no-secret-output",
         category="system",

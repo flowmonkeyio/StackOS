@@ -264,6 +264,40 @@ new local destinations. Missing/expired sessions, revoked/foreign connections,
 changed folders and unavailable servers refuse; they never fall back to the
 local runtime or start a standalone data daemon. Sign in or repair explicitly.
 
+### First connected flow and manual attention
+
+1. Prepare and start a new isolated Supabase workdir as above. Select its private
+   `server.env` to run the source server: `STACKOS_ENV_FILE=/private/tmp/stackos-dev-a/server.env stackos serve`.
+   Keep the original installation running with its own unchanged data/state.
+2. Open that server's exact origin in web or desktop. Register, verify through
+   the local mailbox and sign in. Create a new private project; signup does not
+   adopt any existing installation's projects, Accounts or files.
+3. In a separate terminal, select the same environment's `runtime.env`, sign in
+   with `stackos login`, and run `stackos connect --project-id <id> --folder /absolute/existing/folder`.
+   Use the connected-service startup and host registration instructions above.
+   Native hosts, subscriptions, tools and Git remain on this computer.
+4. Check **Local computer** readiness, then use the existing delivery controller
+   for an authorized task. Confirm accepted native delivery, independent review,
+   result download and the recorded result/usage in Work. Browsing needs no executor.
+
+If work is disconnected or marked **Needs attention**, stop new admission.
+Inspect the recorded invocation and the actual local host/process; determine
+whether it finished or is still running. Preserve its outputs and history.
+An unknown result is not proof of failure or permission to launch it again.
+Do not automatically kill or relaunch it. After confirming that no owned work
+remains active, the verified owner can use the existing
+[`localRuntime.reconcile` operation](operations.md#computer-connection-setup)
+with the exact recorded identities, confirmed outcome and a non-secret note.
+Reconnect explicitly and recheck readiness before requesting new work. Service
+restart alone cannot reconstruct or confirm an invocation's outcome.
+
+This flow starts fresh; it performs no historical import, live data/key export
+or automatic rollback. Legacy backup/export/restore is unavailable for the
+online server and runtime; see [backup limits](backups.md#availability).
+Preserve the original installation and archives. Consolidation and installed-app
+proof are main-owned later work. Production Compose StackOS with hosted Supabase
+remains the separate deployment task798.
+
 ## Package Or Operator Setup
 
 Build the StackOS wheel and let the installer resolve its pinned connector
@@ -516,6 +550,10 @@ database under `~/.local/share/stackos/` and daemon state under
 `~/.local/state/stackos/`, including `seed.bin` and `auth.token`.
 
 ## Backup
+
+These controls apply to standalone SQLite installations. Online servers and
+connected runtimes refuse legacy full-instance backup/export/restore; the online
+page explains that limitation. See [availability](backups.md#availability).
 
 In the desktop app, open **Backups** in the App footer and choose **Enable
 backups**. Choose a backup folder, then save the recovery key using the native

@@ -302,7 +302,10 @@ configuration alone is not evidence of a running desktop app.
 ## Local backup administration
 
 `backup.status`, `backup.configure` and `backup.create` share the generic
-encrypted local backup service. They are local-admin REST/CLI operations,
+encrypted local backup service for standalone SQLite installations. Online
+server/runtime calls refuse with `unsupported_backup_backend` before reading
+local state or keys; there is no Postgres full-instance archive/export/restore.
+They are local-admin REST/CLI operations,
 with explicitly browser-safe controls on Backups (`/setup`). They
 are excluded from MCP, project/workflow grants and derived agent-token
 authority. Their exact registered REST paths enforce the local-admin boundary.

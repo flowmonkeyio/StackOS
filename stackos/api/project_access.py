@@ -50,6 +50,15 @@ def authorize_request(session: Session, request: Request, settings: Settings) ->
 
     bind_user_session(session, request, settings)
     path, method = request.url.path, request.method
+    from stackos.operations.backups import operation_specs as backup_specs
+
+    if method == "POST" and path in {spec.surfaces.rest.path for spec in backup_specs()}:
+        from stackos.backups.models import BackupError, require_standalone_backup
+
+        try:
+            require_standalone_backup(settings)
+        except BackupError as exc:
+            raise HTTPException(403, exc.as_dict()) from exc
     if path in {"/mcp", "/mcp/"}:
         return  # MCP binds this verified request to the shared operation dispatcher.
     if method in {"GET", "HEAD"} and _OPERATION_CATALOG.fullmatch(path):

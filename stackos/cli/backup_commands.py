@@ -11,9 +11,16 @@ from pydantic import ValidationError
 
 from stackos import backups
 from stackos.backups import service
-from stackos.config import get_settings
+from stackos.backups.models import require_standalone_backup
+from stackos.config import Settings, get_settings
 
 from .app import app, backups_app
+
+
+def _settings() -> Settings:
+    settings = get_settings()
+    require_standalone_backup(settings)
+    return settings
 
 
 def _emit(value: dict[str, Any]) -> None:
@@ -50,7 +57,7 @@ def backup(
     try:
         _emit(
             backups.create_backup(
-                get_settings(),
+                _settings(),
                 output=output,
                 recipient_public_key=_public_key(public_key_file) if public_key_file else None,
             )
@@ -76,7 +83,7 @@ def keygen(
     try:
         _emit(
             backups.generate_recovery_key(
-                get_settings(),
+                _settings(),
                 private_key_file,
                 public_key_file,
                 first_time=first_time,
@@ -108,7 +115,7 @@ def custody(
     try:
         _emit(
             service.recovery_key_custody(
-                get_settings(),
+                _settings(),
                 protected_path,
                 reserve=reserve,
                 first_time=first_time,
@@ -131,7 +138,7 @@ def initialize(
 ) -> None:
     """Enable a first-time setup while preserving existing targets and schedule choices."""
     try:
-        settings = get_settings()
+        settings = _settings()
         service.initialize_backups(
             settings,
             _public_key(public_key_file),
@@ -150,7 +157,7 @@ def export_archive(
 ) -> None:
     """Export the latest successful backup after verifying its saved checksum and size."""
     try:
-        _emit(service.export_latest_backup(get_settings(), output))
+        _emit(service.export_latest_backup(_settings(), output))
     except (backups.BackupError, OSError, ValueError) as exc:
         _fail(exc)
 
@@ -169,7 +176,7 @@ def export_key(
     try:
         _emit(
             service.export_recovery_key(
-                get_settings(), private_key_file, output, expected_recipient=expected_recipient
+                _settings(), private_key_file, output, expected_recipient=expected_recipient
             )
         )
     except (backups.BackupError, OSError, ValueError) as exc:
@@ -196,7 +203,7 @@ def configure(
 ) -> None:
     """Patch local policy. Automatic backups remain off until --enabled."""
     try:
-        settings = get_settings()
+        settings = _settings()
         fields: dict[str, Any] = {}
         target = None
         for name, value in (
@@ -228,7 +235,7 @@ def configure(
 def status() -> None:
     """Show safe coverage, opt-in state, and the latest backup outcomes."""
     try:
-        _emit(backups.backup_status(get_settings()))
+        _emit(backups.backup_status(_settings()))
     except (backups.BackupError, OSError, ValueError) as exc:
         _fail(exc)
 
@@ -243,6 +250,6 @@ def restore(
 ) -> None:
     """Authenticate and verify a backup into a new directory without activating it."""
     try:
-        _emit(backups.restore_backup(get_settings(), file, private_key_file, output_dir))
+        _emit(backups.restore_backup(_settings(), file, private_key_file, output_dir))
     except (backups.BackupError, OSError, ValueError) as exc:
         _fail(exc)

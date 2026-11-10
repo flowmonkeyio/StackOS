@@ -109,6 +109,16 @@ Bump major version. Release notes call out manual migrations:
 
 ## Rollback
 
+The rollback/archive instructions below apply to standalone SQLite installations.
+Fresh online environments use separate local Supabase workdirs and private
+server/runtime settings; they do not upgrade or adopt the original installation's
+data. Postgres legacy full-instance backup, archive/key export and restore are
+unavailable. Do not use a SQLite archive to seed an online account. Keep the
+original installation, credentials and archives intact. There is no automatic
+rollback or restart recovery framework; uncertain native work requires
+[manual attention](setup.md#first-connected-flow-and-manual-attention).
+Production Compose StackOS with hosted Supabase remains separate task798.
+
 ```bash
 # Roll back to a previous commit (clone mode)
 git checkout <previous-tag>
