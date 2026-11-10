@@ -43,7 +43,7 @@ def operation_specs():
     return [
         operation_spec(
             name="project.update",
-            summary="Patch safe project metadata such as display name.",
+            summary="Patch safe project metadata or explicitly select its primary folder binding.",
             input_model=ProjectUpdateInput,
             output_model=WriteEnvelope[ProjectOut],
             handler=_project_update,
@@ -59,11 +59,18 @@ def operation_specs():
             prerequisites=(
                 "Requires an existing project_id and an explicit patch.",
                 "Changing project metadata does not move or rebind workspace folders.",
+                "primary_workspace_binding_id selects an existing same-project directory "
+                "binding; null leaves the project without a local folder. Existing schedules "
+                "and task/run execution snapshots retain their saved targets.",
             ),
             examples=(
                 OperationExample(
                     title="Rename project",
                     arguments={"project_id": 1, "patch": {"name": "Acme Pro"}},
+                ),
+                OperationExample(
+                    title="Select a previously confirmed project folder",
+                    arguments={"project_id": 1, "patch": {"primary_workspace_binding_id": 2}},
                 ),
             ),
             mutating=True,

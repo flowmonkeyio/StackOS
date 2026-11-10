@@ -56,6 +56,7 @@ class ProjectUpdateRequest(BaseModel):
     locale: str | None = Field(default=None, max_length=16)
     schedule_json: dict[str, Any] | None = None
     is_active: bool | None = None
+    primary_workspace_binding_id: int | None = Field(default=None, gt=0, strict=True)
 
 
 class ScheduleUpsertRequest(ScheduleConfiguration):

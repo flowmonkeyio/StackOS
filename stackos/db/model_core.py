@@ -39,6 +39,15 @@ class Project(SQLModel, table=True):
     locale: str = Field(max_length=16)
     is_active: bool = Field(default=False)
     schedule_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    # Optional reverse link: bindings still own their project; exclude this edge
+    # from metadata's creation order to avoid a cyclic table-sort dependency.
+    primary_workspace_binding_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("workspace_bindings.id", ondelete="SET NULL", use_alter=True),
+            nullable=True,
+        ),
+    )
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
 

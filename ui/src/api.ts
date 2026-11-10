@@ -5910,6 +5910,12 @@ export interface components {
             name: string;
             /** Niche */
             niche: string | null;
+            /** Primary Workspace Binding Id */
+            primary_workspace_binding_id?: number | null;
+            /** Project Dir */
+            project_dir?: string | null;
+            /** Project Folder Issue */
+            project_folder_issue?: string | null;
             /** Schedule Json */
             schedule_json: {
                 [key: string]: unknown;
@@ -5965,6 +5971,8 @@ export interface components {
             name?: string | null;
             /** Niche */
             niche?: string | null;
+            /** Primary Workspace Binding Id */
+            primary_workspace_binding_id?: number | null;
             /** Schedule Json */
             schedule_json?: {
                 [key: string]: unknown;

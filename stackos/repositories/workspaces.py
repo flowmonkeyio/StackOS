@@ -301,6 +301,7 @@ class WorkspaceRepository:
                         "requested_project_id": project_id,
                     },
                 )
+            self._protect_primary_root(row, normalized_root)
             row.project_id = project_id
             if git_remote_url is not None:
                 row.git_remote_url = git_remote_url
@@ -914,6 +915,19 @@ class WorkspaceRepository:
     def _project_slug_exists(self, slug: str) -> bool:
         return self._s.exec(select(Project.id).where(Project.slug == slug)).first() is not None
 
+    def _protect_primary_root(self, row: WorkspaceBinding, new_root: str | None) -> None:
+        if new_root is None or new_root == row.last_known_root:
+            return
+        primary_owner = self._s.exec(
+            select(Project.id).where(Project.primary_workspace_binding_id == row.id)
+        ).first()
+        if primary_owner is not None:
+            raise ValidationError(
+                "The configured project folder cannot move implicitly. Use a distinct "
+                "directory binding for a task worktree. To relocate the primary folder, "
+                "clear its reference in project setup, update the binding, then select it again."
+            )
+
     def _update_binding_row(
         self,
         *,
@@ -929,6 +943,7 @@ class WorkspaceRepository:
         row = self._s.get(WorkspaceBinding, binding_id)
         if row is None:
             raise NotFoundError(f"workspace binding {binding_id} not found")
+        self._protect_primary_root(row, last_known_root)
         if row.repo_fingerprint != repo_fingerprint:
             conflict = self._s.exec(
                 select(WorkspaceBinding).where(
@@ -971,6 +986,15 @@ class WorkspaceRepository:
         cwd: str | None,
     ) -> WorkspaceBootstrapOut:
         normalized_cwd = _normalize_path(cwd)
+        # Only initial folder-backed project setup records the primary folder.
+        # Connecting or revisiting an existing project (including task worktrees)
+        # never guesses or replaces its selection. Existing projects use project.update.
+        if project_was_created and binding.last_known_root:
+            project = (
+                ProjectRepository(self._s)
+                .update(project.id, primary_workspace_binding_id=binding.id)
+                .data
+            )
         return WorkspaceBootstrapOut(
             project_id=project.id,
             project=project,

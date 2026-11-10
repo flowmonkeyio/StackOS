@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref, toRef } from 'vue'
 import type { SchemaWorkflowTemplateListOut } from '@/api'
-import { UiButton, UiCallout, UiCheckbox, UiDialog, UiFormField, UiInput, UiSelect, UiTextarea } from '@/components/ui'
+import { UiButton, UiCallout, UiCheckbox, UiConfirmDialog, UiDialog, UiFormField, UiInput, UiLoadingState, UiSelect, UiTextarea } from '@/components/ui'
+import { useProjectFolder } from '@/composables/useProjectFolder'
 import { apiFetch, formatApiError } from '@/lib/client'
 import { useSchedulesStore, type ScheduledJob, type ScheduleConfiguration } from '@/stores/schedules'
 import ScheduleAgentSelectors from './ScheduleAgentSelectors.vue'
@@ -9,13 +10,23 @@ import ScheduleAgentSelectors from './ScheduleAgentSelectors.vue'
 const props = defineProps<{ projectId: number; job: ScheduledJob | null }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
 const store = useSchedulesStore()
+const editorProjectId = props.projectId
+const scopeChanged = computed(() => editorProjectId !== props.projectId)
+const { projectDir: configuredDir, folderIssue, folderLoading, refreshFolder } = useProjectFolder(toRef(props, 'projectId'))
 const job = props.job
 const kind = job?.kind ?? `automation-${crypto.randomUUID()}`
 const name = ref(job?.name ?? '')
 const templateKey = ref(job?.template_key ?? '')
 const cron = ref(job?.cron_expr ?? '0 9 * * *')
 const timezone = ref(job?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone)
-const projectDir = ref(job?.execution_json?.project_dir ?? '')
+const savedTarget = ref(job?.execution_json?.project_dir ?? null)
+const projectDir = computed(() => scopeChanged.value ? '' : savedTarget.value ?? configuredDir.value)
+const targetMismatch = computed(() => !!savedTarget.value && !!configuredDir.value && savedTarget.value !== configuredDir.value)
+const confirmTargetChange = ref(false)
+function reconcileTarget() {
+  if (!scopeChanged.value && configuredDir.value) savedTarget.value = configuredDir.value
+  confirmTargetChange.value = false
+}
 const enabled = ref(job?.enabled ?? false)
 const inputs = ref(JSON.stringify(job?.inputs_json ?? {}, null, 2))
 const existingOptions = { ...job?.execution_json }
@@ -72,9 +83,11 @@ const workflowOptions = computed(() => {
   if (templateKey.value && !options.some(item => item.value === templateKey.value)) options.push({ value: templateKey.value, label: templateKey.value })
   return options
 })
-void apiFetch<SchemaWorkflowTemplateListOut>(`/api/v1/projects/${props.projectId}/workflow-templates`)
-  .then(result => { workflows.value = result.templates ?? [] })
-  .catch(cause => { workflowError.value = formatApiError(cause) })
+let disposed = false
+onBeforeUnmount(() => { disposed = true })
+void apiFetch<SchemaWorkflowTemplateListOut>(`/api/v1/projects/${editorProjectId}/workflow-templates`)
+  .then(result => { if (!disposed && !scopeChanged.value) workflows.value = result.templates ?? [] })
+  .catch(cause => { if (!disposed && !scopeChanged.value) workflowError.value = formatApiError(cause) })
 
 function objectJson(value: string, label: string): Record<string, unknown> {
   const parsed: unknown = JSON.parse(value)
@@ -86,6 +99,9 @@ async function save(): Promise<void> {
   if (store.saving) return
   error.value = null
   try {
+    if (scopeChanged.value || disposed) throw new Error('Project changed. Reopen this automation from the current project.')
+    if (folderLoading.value && !savedTarget.value) throw new Error('Wait for the project folder to load.')
+    if (enabled.value && !projectDir.value) throw new Error(folderIssue.value || 'Set the project folder once in project setup before enabling this automation.')
     const options = objectJson(executionOptions.value, 'Execution options')
     const selectionError = selectors.value?.validate()
     if (selectionError) throw new Error(selectionError)
@@ -101,8 +117,8 @@ async function save(): Promise<void> {
         ...(Object.keys(assignments.value).length ? { step_agent_assignments: assignments.value } : {}),
       } : null,
     }
-    await store.save(props.projectId, configuration)
-    emit('saved')
+    await store.save(editorProjectId, configuration)
+    if (!disposed && !scopeChanged.value) emit('saved')
   } catch (cause) { error.value = formatApiError(cause) }
 }
 </script>
@@ -116,7 +132,15 @@ async function save(): Promise<void> {
     layout="detail"
     @update:model-value="!$event && !store.saving && emit('close')"
   >
+    <UiCallout
+      v-if="scopeChanged"
+      tone="warning"
+      title="Project changed"
+    >
+      Reopen this automation from the current project.
+    </UiCallout>
     <form
+      v-else
       id="schedule-editor"
       class="space-y-4"
       @submit.prevent="save"
@@ -169,15 +193,39 @@ async function save(): Promise<void> {
           />
         </UiFormField>
       </div>
-      <UiFormField
-        label="Working directory"
-        help="The existing folder where the configured agents will work."
+      <UiLoadingState
+        v-if="folderLoading"
+        label="Loading project folder…"
+      />
+      <UiCallout
+        v-else-if="folderIssue"
+        tone="warning"
+        title="Project folder needs setup"
       >
-        <UiInput
-          v-model="projectDir"
+        {{ folderIssue }}
+        <UiButton @click="refreshFolder">
+          Retry project folder
+        </UiButton>
+      </UiCallout>
+      <UiCallout
+        v-else-if="targetMismatch"
+        tone="warning"
+        title="Automation uses a different folder"
+      >
+        This automation keeps its saved folder, {{ savedTarget }}. The configured project folder is {{ configuredDir }}. Other edits keep the saved folder.
+        <UiButton
           :disabled="store.saving"
-        />
-      </UiFormField>
+          @click="confirmTargetChange = true"
+        >
+          Use project folder
+        </UiButton>
+      </UiCallout>
+      <p
+        v-if="projectDir"
+        class="text-sm text-fg-muted break-all"
+      >
+        Project folder: {{ projectDir }}
+      </p>
       <ScheduleAgentSelectors
         ref="selectors"
         v-model:agents="agents"
@@ -236,9 +284,18 @@ async function save(): Promise<void> {
         form="schedule-editor"
         variant="primary"
         :loading="store.saving"
+        :disabled="scopeChanged || (folderLoading && !savedTarget)"
       >
         Save automation
       </UiButton>
     </template>
   </UiDialog>
+  <UiConfirmDialog
+    :model-value="confirmTargetChange && !scopeChanged"
+    title="Use the configured project folder?"
+    :description="`Change this automation from ${savedTarget} to ${configuredDir}. Its saved agent selections will be checked in that folder when you save.`"
+    confirm-label="Use project folder"
+    @confirm="reconcileTarget"
+    @update:model-value="confirmTargetChange = $event"
+  />
 </template>

@@ -677,7 +677,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0037_schedule_id_nonreuse",
+            "0038_project_primary_workspace",
         )
     finally:
         conn.close()
@@ -1553,6 +1553,29 @@ def test_global_account_migration_refuses_data_collapsing_downgrade(
         conn.close()
 
 
+def _prepare_current_project_model(db_path: Path) -> None:
+    """Seed historical migration inputs through today's repositories.
+
+    These older migration tests use current repositories only to author their
+    fixtures. Supply the unrelated nullable project reference from its canonical
+    migration, without stamping or executing the historical migration under test.
+    The dedicated folder-migration test below covers the original missing-column
+    state and unchanged legacy rows independently.
+    """
+    migration = importlib.import_module(
+        "stackos.db.migrations.versions.0038_project_primary_workspace"
+    )
+    engine = make_engine(db_path)
+    try:
+        with (
+            engine.begin() as connection,
+            Operations.context(MigrationContext.configure(connection)),
+        ):
+            migration.upgrade()
+    finally:
+        engine.dispose()
+
+
 def test_telegram_cutover_retires_active_bindings_preserves_history(isolated_alembic: Path) -> None:
     from sqlmodel import Session
 
@@ -1562,7 +1585,6 @@ def test_telegram_cutover_retires_active_bindings_preserves_history(isolated_ale
         ActionCall,
         Credential,
         Plugin,
-        Project,
         ProjectCredential,
         Provider,
         Resource,
@@ -1570,11 +1592,10 @@ def test_telegram_cutover_retires_active_bindings_preserves_history(isolated_ale
     )
 
     _run_alembic(["upgrade", "0030_durable_action_runtime"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        _insert_legacy_project(conn, project_id=1, now="2026-11-05")
     engine = make_engine(isolated_alembic)
     with Session(engine) as session:
-        session.add(
-            Project(id=1, slug="cutover", name="Cutover", domain="example.test", locale="en-US")
-        )
         session.add(Plugin(id=1, slug="communications", name="Communications", source="builtin"))
         session.commit()
         session.add(Provider(id=1, plugin_id=1, key="telegram-bot", name="Old Telegram"))
@@ -1736,6 +1757,80 @@ def test_alembic_upgrade_creates_expected_stackos_tables(isolated_alembic: Path)
         "attached_at",
         "attached_by",
     }
+
+
+def test_project_folder_migration_requires_explicit_adoption_and_preserves_state(
+    isolated_alembic: Path,
+) -> None:
+    _run_alembic(["upgrade", "0037_schedule_id_nonreuse"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute(
+            "INSERT INTO projects (id,slug,name,domain,locale,is_active,created_at,updated_at) "
+            "VALUES (1,'folder-fixture','Fixture','fixture.test','en-US',1,"
+            "CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"
+        )
+        for binding_id, root in ((1, "/fixture/primary"), (2, "/fixture/task")):
+            conn.execute(
+                "INSERT INTO workspace_bindings (id,project_id,repo_fingerprint,last_known_root,"
+                "created_at,updated_at) VALUES (?,1,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
+                (binding_id, f"path:{binding_id}", root),
+            )
+        conn.execute(
+            "INSERT INTO agent_sessions (project_id,workspace_binding_id,runtime,cwd,created_at,"
+            "last_seen_at) VALUES (1,2,'codex','/fixture/task',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"
+        )
+        conn.execute(
+            "INSERT INTO scheduled_jobs (project_id,kind,cron_expr,enabled,execution_json) "
+            "VALUES (1,'saved','* * * * *',0,?)",
+            (json.dumps({"project_dir": "/fixture/old", "host_key": "claude"}),),
+        )
+        before = {
+            table: conn.execute(f"SELECT * FROM {table}").fetchall()
+            for table in ("workspace_bindings", "agent_sessions", "scheduled_jobs")
+        }
+        project_before = conn.execute("SELECT * FROM projects").fetchall()
+    _run_alembic(["upgrade", "head"])
+    _run_alembic(["upgrade", "head"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        assert conn.execute("SELECT primary_workspace_binding_id FROM projects").fetchall() == [
+            (None,)
+        ]
+        assert [
+            row[:-1] for row in conn.execute("SELECT * FROM projects").fetchall()
+        ] == project_before
+        assert {
+            table: conn.execute(f"SELECT * FROM {table}").fetchall() for table in before
+        } == before
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("UPDATE projects SET primary_workspace_binding_id=1 WHERE id=1")
+        conn.execute("UPDATE alembic_version SET version_num='0037_schedule_id_nonreuse'")
+    # A lost stamp must preserve an explicitly selected reference on retry.
+    _run_alembic(["upgrade", "head"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        assert conn.execute("SELECT primary_workspace_binding_id FROM projects").fetchone() == (1,)
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("DELETE FROM workspace_bindings WHERE id=1")
+        assert conn.execute("SELECT primary_workspace_binding_id FROM projects").fetchone() == (
+            None,
+        )
+
+
+def test_project_folder_migration_refuses_incompatible_retained_column(
+    isolated_alembic: Path,
+) -> None:
+    _run_alembic(["upgrade", "0037_schedule_id_nonreuse"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        conn.execute("ALTER TABLE projects ADD COLUMN primary_workspace_binding_id INTEGER")
+    with pytest.raises(subprocess.CalledProcessError) as failure:
+        _run_alembic(["upgrade", "head"])
+    assert "incompatible schema" in failure.value.stderr
+    with sqlite3.connect(isolated_alembic) as conn:
+        assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            "0037_schedule_id_nonreuse",
+        )
+        assert conn.execute("PRAGMA foreign_key_list(projects)").fetchall() == []
 
 
 def _project_migration_fixture(db_path: Path) -> dict:
@@ -1936,6 +2031,7 @@ def test_workflow_schedule_migration_preserves_history_and_disarms_legacy(
     from stackos.repositories.tracker import TrackerRepository
 
     _run_alembic(["upgrade", "0035_generic_task_delivery"])
+    _prepare_current_project_model(isolated_alembic)
     with sqlite3.connect(isolated_alembic) as conn:
         _insert_legacy_project(conn, project_id=1, now="2026-11-05")
         conn.execute(
@@ -2057,6 +2153,7 @@ def test_schedule_id_upgrade_retains_removed_history_and_sequence(
     from stackos.repositories.run_plans import RunPlanRepository
 
     _run_alembic(["upgrade", "0036_workflow_schedules"])
+    _prepare_current_project_model(isolated_alembic)
     with sqlite3.connect(isolated_alembic) as conn:
         _insert_legacy_project(conn, project_id=1, now="2026-11-05")
     engine = make_engine(isolated_alembic)
@@ -2207,6 +2304,7 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
     from stackos.repositories.tracker.utils import DEFAULT_LANES, DEFAULT_PRIORITIES
 
     _run_alembic(["upgrade", "0034_work_item_ownership"])
+    _prepare_current_project_model(isolated_alembic)
     with sqlite3.connect(isolated_alembic) as conn:
         for project_id in (1, 2, 3):
             _insert_legacy_project(conn, project_id=project_id, now="2026-11-05")
@@ -2360,6 +2458,7 @@ def test_generic_delivery_migration_handles_null_configuration(
     from stackos.repositories.tracker import TrackerRepository
 
     _run_alembic(["upgrade", "0034_work_item_ownership"])
+    _prepare_current_project_model(isolated_alembic)
     with sqlite3.connect(isolated_alembic) as conn:
         _insert_legacy_project(conn, project_id=1, now="2026-11-06")
     defaults = {

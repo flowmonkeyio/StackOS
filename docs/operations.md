@@ -30,6 +30,29 @@ behavior. Operations define the callable contract around that behavior:
 
 ## Project workflow schedules
 
+Project folder setup has one owner: `Project.primary_workspace_binding_id`.
+Initial folder-backed project bootstrap records its chosen binding. Connecting
+task worktrees or starting sessions never changes that selection. Existing
+projects deliberately remain unselected after migration; setup must confirm an
+existing same-project directory binding from `workspace.listBindings`, then use
+the local-admin `project.update` patch `{"primary_workspace_binding_id": <binding_id>}`
+once. Null supports projects without a local folder. This does not rebind a
+workspace, change project identity, or grant filesystem access.
+The selected binding's root cannot be moved implicitly through connect/bootstrap;
+task worktrees use distinct directory bindings. Intentional folder relocation
+clears the primary reference, updates the binding, then selects it again.
+
+`project.get` returns the stored reference plus `project_dir`, resolved only
+from that exact binding, or an actionable `project_folder_issue` for missing,
+wrong-project, conflicting or unavailable folders. Agents and new Automations
+share this read; neither screen chooses among task worktrees. File operations
+still enforce exact project/path association and local-admin authority.
+Explicit task worktrees and queued/running snapshots retain their own targets.
+Existing Automations keep their saved execution directory on unrelated edits.
+The editor explains a mismatch with project setup and requires explicit
+confirmation before using the configured project folder; saving then checks
+its agent selections in that folder. Setup never rewrites saved schedules.
+
 `schedule.list`, `schedule.set`, `schedule.toggle`, `schedule.remove` and
 `schedule.runs` share the project schedule repository through MCP, generic
 REST operation calls and `stackos ops call`. The existing project schedule

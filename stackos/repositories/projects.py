@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -21,6 +22,7 @@ from stackos.db.models import (
     RunPlan,
     ScheduledJob,
     TrackerItemStatus,
+    WorkspaceBinding,
 )
 from stackos.operations.tracker.schemas import (
     AgentRole,
@@ -55,6 +57,9 @@ class ProjectOut(BaseModel):
     locale: str
     is_active: bool
     schedule_json: dict[str, Any] | None
+    primary_workspace_binding_id: int | None = None
+    project_dir: str | None = None
+    project_folder_issue: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -212,7 +217,47 @@ class ProjectRepository:
 
     def get(self, id_or_slug: int | str) -> ProjectOut:
         row = self._fetch_row(id_or_slug)
-        return ProjectOut.model_validate(row)
+        return self._out(row)
+
+    def _out(self, row: Project) -> ProjectOut:
+        out = ProjectOut.model_validate(row)
+        setup = (
+            "Ask your setup agent to select this project's folder once from its existing "
+            "workspace bindings in project setup. "
+            "Projects without a local folder can continue using other features."
+        )
+        binding = (
+            self._s.get(WorkspaceBinding, row.primary_workspace_binding_id)
+            if row.primary_workspace_binding_id
+            else None
+        )
+        if binding is None or binding.project_id != row.id or not binding.last_known_root:
+            return out.model_copy(update={"project_folder_issue": setup})
+        try:
+            root = Path(binding.last_known_root).resolve(strict=True)
+            if not root.is_dir() or not root.is_absolute() or root == Path(root.anchor):
+                raise ValueError("unavailable folder")
+            # Match the exact project/path association enforced by projectAgent.*.
+            owners = set()
+            for candidate in self._s.exec(select(WorkspaceBinding)).all():
+                try:
+                    if (
+                        candidate.last_known_root
+                        and Path(candidate.last_known_root).resolve() == root
+                    ):
+                        owners.add(candidate.project_id)
+                except (OSError, RuntimeError, ValueError):
+                    continue
+            if owners != {row.id}:
+                raise ValueError("conflicting folder association")
+        except (OSError, RuntimeError, ValueError):
+            return out.model_copy(
+                update={
+                    "project_folder_issue": "The configured project folder is unavailable "
+                    "or its binding needs repair. " + setup
+                }
+            )
+        return out.model_copy(update={"project_dir": str(root)})
 
     def resolve_identifier(
         self,
@@ -253,7 +298,7 @@ class ProjectRepository:
             id_col=Project.id,
             limit=limit,
             after_id=after_id,
-            converter=lambda row: ProjectOut.model_validate(row),
+            converter=self._out,
         )
 
     def portfolio(
@@ -286,7 +331,31 @@ class ProjectRepository:
         row = self._fetch_row(project_id)
         if "slug" in patch and patch["slug"] != row.slug:
             raise ValidationError("project slug is immutable")
-        allowed = {"name", "domain", "niche", "locale", "schedule_json", "is_active"}
+        if "primary_workspace_binding_id" in patch:
+            binding_id = patch["primary_workspace_binding_id"]
+            if binding_id is not None:
+                if type(binding_id) is not int or binding_id <= 0:
+                    raise ValidationError(
+                        "primary_workspace_binding_id must be a positive integer or null"
+                    )
+                binding = self._s.get(WorkspaceBinding, binding_id)
+                if (
+                    binding is None
+                    or binding.project_id != project_id
+                    or not binding.last_known_root
+                ):
+                    raise ValidationError(
+                        "Select an existing directory workspace binding belonging to this project"
+                    )
+        allowed = {
+            "name",
+            "domain",
+            "niche",
+            "locale",
+            "schedule_json",
+            "is_active",
+            "primary_workspace_binding_id",
+        }
         for key, value in patch.items():
             if key in allowed:
                 setattr(row, key, value)
@@ -294,7 +363,7 @@ class ProjectRepository:
         self._s.add(row)
         self._s.commit()
         self._s.refresh(row)
-        return Envelope(data=ProjectOut.model_validate(row), project_id=row.id)
+        return Envelope(data=self._out(row), project_id=row.id)
 
     def delete(self, project_id: int, *, hard: bool = False) -> Envelope[ProjectOut]:
         row = self._fetch_row(project_id)

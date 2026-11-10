@@ -1,6 +1,6 @@
 """Local console authority and live bytes, independent of workspace binding."""
 
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from stackos.auth import derive_ui_token
 from stackos.db.models import ScheduledJob, TaskTracker, WorkspaceBinding
@@ -26,6 +26,68 @@ def bind(api, project_id, root):
         )
         session.commit()
     return {"project_id": project_id, "project_dir": str(root), "host_key": "codex"}
+
+
+def test_explicit_project_folder_setup_readback_preserves_worktree_authority(
+    api, project_id, tmp_path, settings
+):
+    from stackos.repositories.projects import ProjectRepository
+
+    primary = bind(api, project_id, tmp_path / "primary")
+    task = bind(api, project_id, tmp_path / "task")
+    with Session(api.app.state.engine) as session:
+        bindings = session.exec(
+            select(WorkspaceBinding).where(WorkspaceBinding.project_id == project_id)
+        ).all()
+        binding_id = next(
+            row.id for row in bindings if row.last_known_root == primary["project_dir"]
+        )
+        other_project = (
+            ProjectRepository(session)
+            .create(slug="other-folder", name="Other", domain="other.test")
+            .data.id
+        )
+    # Browser authority remains narrower than explicit local-admin setup authority.
+    ui = {"Authorization": f"Bearer {derive_ui_token(settings.token_path.read_text().strip())}"}
+    arguments = {"project_id": project_id, "patch": {"primary_workspace_binding_id": binding_id}}
+    assert (
+        api.post(
+            "/api/v1/operations/project.update/call", json={"arguments": arguments}, headers=ui
+        ).status_code
+        == 403
+    )
+    chosen = api.post("/api/v1/operations/project.update/call", json={"arguments": arguments})
+    assert chosen.status_code == 200, chosen.text
+    assert chosen.json()["data"]["primary_workspace_binding_id"] == binding_id
+    read = api.post(
+        "/api/v1/operations/project.get/call",
+        json={"arguments": {"project_id": project_id, "response_mode": "raw"}},
+        headers=ui,
+    )
+    assert read.status_code == 200, read.text
+    assert read.json()["project_dir"] == primary["project_dir"]
+    # Both direct and operation adapters use the same owner; wrong-project choices reject.
+    assert api.get(f"/api/v1/projects/{project_id}").json()["project_dir"] == primary["project_dir"]
+    rejected = api.patch(
+        f"/api/v1/projects/{other_project}", json={"primary_workspace_binding_id": binding_id}
+    )
+    assert rejected.status_code == 422, rejected.text
+    for scope in (primary, task):
+        created = call(
+            api,
+            "create",
+            {
+                **scope,
+                "fields": {
+                    "name": "research",
+                    "description": "d",
+                    "developer_instructions": scope["project_dir"],
+                },
+            },
+        )
+        assert created.status_code == 200, created.text
+        assert created.json()["data"]["project_dir"] == scope["project_dir"]
+    assert call(api, "list", {**task, "project_id": other_project}).status_code == 422
 
 
 def test_local_ui_add_get_edit_exact_readback(api, project_id, tmp_path, settings):

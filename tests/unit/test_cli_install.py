@@ -51,7 +51,7 @@ from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.secrets import PayloadSecretRepository
 
-HEAD_REVISION = "0037_schedule_id_nonreuse"
+HEAD_REVISION = "0038_project_primary_workspace"
 
 
 @pytest.fixture
