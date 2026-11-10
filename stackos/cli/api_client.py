@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import httpx
 import typer
 
 from stackos.config import Settings, get_settings
@@ -35,9 +36,34 @@ def _api_request(
     from urllib.request import Request, urlopen
 
     settings = settings or get_settings()
-    if getattr(settings, "process_role", "standalone") != "standalone":
-        import httpx
+    if path.startswith("/api/v1/operations/browser.") and path.endswith("/call"):
+        from stackos.local_runtime.browser import BROWSER_OPERATIONS, call_browser
 
+        name = path.removeprefix("/api/v1/operations/").removesuffix("/call")
+        if name in BROWSER_OPERATIONS and settings.process_role != "standalone":
+            from stackos.repositories.base import RepositoryError
+
+            try:
+                return call_browser(settings, name, (body or {}).get("arguments", {}))
+            except RepositoryError as exc:
+                typer.echo(
+                    _format_daemon_api_error(
+                        409,
+                        {
+                            "detail": str(exc),
+                            "data": exc.data,
+                        },
+                    ),
+                    err=True,
+                )
+                raise typer.Exit(code=1) from None
+            except (ValueError, OSError, httpx.HTTPError):
+                typer.echo(
+                    "Selected local browser unavailable; check this computer's connection.",
+                    err=True,
+                )
+                raise typer.Exit(code=1) from None
+    if getattr(settings, "process_role", "standalone") != "standalone":
         from .server_session import ServerSession
 
         try:

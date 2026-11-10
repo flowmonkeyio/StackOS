@@ -62,6 +62,13 @@ def authorize_request(session: Session, request: Request, settings: Settings) ->
         f"/api/v1/operations/{name}/call" for name in CONNECTION_OPERATIONS
     }:
         return  # Dispatcher requires a verified owner and refuses runtime escalation.
+    from stackos.operations.browser import operation_specs as browser_specs
+
+    if method == "POST" and path in {
+        f"/api/v1/operations/{spec.name}/call" for spec in browser_specs()
+    }:
+        # Server handlers own metadata only; dispatcher retains owner/grant checks.
+        return
     if path == "/api/v1/projects" and method in {"GET", "POST"}:
         return
     # The dispatcher checks the exact operation and its persisted identifiers;

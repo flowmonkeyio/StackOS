@@ -93,6 +93,47 @@ def create_project(api, slug):
     return response.json()["data"]["id"]
 
 
+def test_online_browser_metadata_retains_owner_and_credential_boundaries(private_api, monkeypatch):
+    api, _settings, _users, login = private_api
+
+    def forbidden():
+        pytest.fail("server touched native browser runtime")
+
+    monkeypatch.setattr("stackos.operations.browser.get_browser_runtime", forbidden)
+    login("u1")
+    p1 = create_project(api, "browser-one")
+
+    def call(name, **arguments):
+        return api.post(
+            f"/api/v1/operations/{name}/call",
+            json={"arguments": {**arguments, "response_mode": "raw"}},
+        )
+
+    created = call("browser.session.start", project_id=p1, profile_key="proof", session_key="main")
+    assert created.status_code == 200, created.text
+    row = created.json()["data"]
+    assert row["status"] == "unavailable" and row["native_cli"] is None
+    ref = row["session_ref"]
+    for name, extra in [
+        ("browser.runtime.status", {}),
+        ("browser.profile.list", {}),
+        ("browser.session.list", {}),
+        ("browser.session.status", {"session_ref": ref}),
+        ("browser.session.stop", {"session_ref": ref}),
+    ]:
+        response = call(name, project_id=p1, **extra)
+        assert response.status_code == 200, response.text
+    login("u2")
+    p2 = create_project(api, "browser-two")
+    assert call("browser.profile.list", project_id=p1).status_code == 404
+    assert call("browser.session.start", project_id=p1).status_code == 404
+    assert call("browser.session.status", project_id=p2, session_ref=ref).status_code == 404
+    issued = call("localRuntime.authorize", project_id=p2)
+    assert issued.status_code == 200, issued.text
+    api.headers["Authorization"] = "Bearer " + issued.json()["credential"]
+    assert call("browser.session.start", project_id=p2).status_code == 403
+
+
 def test_same_environment_private_projects_and_no_adoption(private_api):
     api, selected, users, login = private_api
     with Session(api.app.state.engine) as session:

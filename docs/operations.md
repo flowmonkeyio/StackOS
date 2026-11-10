@@ -543,6 +543,14 @@ may call `/api/v1/operations/tracker.agentStatsAll/call` with
 
 ## Browser Operations
 
+For online clients, the same operations retain metadata in the server's existing
+browser repository and execute native lifecycle work through the connected
+computer's CLI/MCP adapter. The server reports native state as unavailable and
+returns no native context; it never launches a browser. The local adapter checks
+the selected login, exact computer/project/folder and runtime health before using
+the existing browser runtime. Server authorization and run grants still precede
+local lifecycle work. See [online browser routing](browser-automation.md#launcher-contract).
+
 The browser operation surface owns runtime status, profile create/list, and
 session start/list/status/stop. Session discovery reconciles owned gstack state
 and OS process identity after daemon restart. Every session row includes a ready

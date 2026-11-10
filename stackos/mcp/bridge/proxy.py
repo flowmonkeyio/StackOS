@@ -86,6 +86,7 @@ class AgentBridgeProxy:
         attempt_id: str | None = None,
         connected_project_id: int | None = None,
         headers_provider: Any = None,
+        browser_call: Any = None,
     ) -> None:
         self.url = url
         self.headers = headers
@@ -112,6 +113,7 @@ class AgentBridgeProxy:
         self.modern_request_meta: dict[str, Any] | None = None
         self.connected_project_id = connected_project_id
         self.headers_provider = headers_provider
+        self.browser_call = browser_call
         if connected_project_id is not None:
             self.scoped_project_id = connected_project_id
             self.workspace_scope_checked = True
@@ -126,6 +128,39 @@ class AgentBridgeProxy:
             payload: object = json.loads(body)
         except json.JSONDecodeError:
             payload = None
+        if self.browser_call is not None and isinstance(payload, dict):
+            from stackos.local_runtime.browser import BROWSER_OPERATIONS
+            from stackos.repositories.base import RepositoryError
+
+            from .protocol import _bridge_tool_result
+
+            name = _bridge_tool_call_name(payload)
+            if payload.get("method") == "tools/call" and name in BROWSER_OPERATIONS:
+                try:
+                    result = self.browser_call(name, _bridge_tool_call_arguments(payload))
+                    return _bridge_tool_result(payload.get("id"), result, is_error=False)
+                except RepositoryError as exc:
+                    return _bridge_tool_result(
+                        payload.get("id"),
+                        {
+                            "code": exc.code,
+                            "message": str(exc),
+                            "data": exc.data,
+                        },
+                        is_error=True,
+                    )
+                except (ValueError, OSError, HTTPError):
+                    return _bridge_tool_result(
+                        payload.get("id"),
+                        {
+                            "code": "local_browser_unavailable",
+                            "message": (
+                                "Check this computer's selected runtime, connection "
+                                "and browser session."
+                            ),
+                        },
+                        is_error=True,
+                    )
         download_destination = None
         download_arguments: dict[str, Any] = {}
         download_tool = _bridge_tool_call_name(payload) if isinstance(payload, dict) else None

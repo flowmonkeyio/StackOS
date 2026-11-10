@@ -179,6 +179,7 @@ class BrowserRepository:
         profile: BrowserProfile,
         session_ref: str,
         metadata_json: dict[str, Any] | None,
+        native_status: str = "running",
     ) -> Envelope[BrowserSessionOut]:
         row = self._s.exec(
             select(BrowserSession).where(
@@ -194,14 +195,14 @@ class BrowserRepository:
                 profile_id=_required_id(profile.id),
                 session_ref=session_ref,
                 provider=BROWSER_PROVIDER,
-                status="running",
+                status=native_status,
                 headless=False,
                 metadata_json=metadata_json,
             )
         else:
             row.profile_id = _required_id(profile.id)
             row.provider = BROWSER_PROVIDER
-            row.status = "running"
+            row.status = native_status
             row.metadata_json = metadata_json
             row.ended_at = None
             row.updated_at = now

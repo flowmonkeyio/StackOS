@@ -147,6 +147,13 @@ def _identifier(value: Any) -> int:
 # owners add their own authorization before their routes can be admitted.
 _PROJECT_DISCOVERY = {"project.list", "project.portfolio", "project.get", "project.create"}
 _PROJECT_OPERATIONS = {
+    "browser.runtime.status",
+    "browser.profile.create",
+    "browser.profile.list",
+    "browser.session.start",
+    "browser.session.list",
+    "browser.session.status",
+    "browser.session.stop",
     "artifact.get",
     "artifact.query",
     "artifact.read",

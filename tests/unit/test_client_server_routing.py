@@ -289,6 +289,28 @@ def test_bound_proxy_keeps_local_scope_and_rechecks_headers():
     assert checks == [True, True, True]
 
 
+def test_bound_browser_proxy_uses_local_adapter_without_server_native_call():
+    calls = []
+    proxy = AgentBridgeProxy(
+        url="http://127.0.0.1:18510/mcp",
+        headers={},
+        connected_project_id=12,
+        browser_call=lambda name, args: calls.append((name, args)) or {"local": True},
+    )
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "browser.session.status",
+            "arguments": {"project_id": 12, "session_ref": "ref"},
+        },
+    }
+    result = json.loads(proxy.request_daemon(None, json.dumps(payload)))
+    assert result["result"]["structuredContent"] == {"local": True}
+    assert calls == [("browser.session.status", {"project_id": 12, "session_ref": "ref"})]
+
+
 def test_session_repr_and_malformed_record_do_not_expose_cookie(selected):
     session = save(selected)
     session.path.write_text('{"cookie":"private-secret"}')

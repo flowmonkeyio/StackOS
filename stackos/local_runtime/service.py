@@ -7,14 +7,13 @@ One outbound consumer delegates finite invocations to the existing native host.
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from pathlib import Path
 from threading import Event, Thread
 
 import httpx
 from fastapi import FastAPI, HTTPException
 
 from stackos.config import Settings, get_settings
-from stackos.local_runtime.connection import LocalConnectionStore, check_connection
+from stackos.local_runtime.connection import LocalBinding, LocalConnectionStore, check_connection
 from stackos.local_runtime.native import NativeAgentRunner
 from stackos.local_runtime.worker import OutboundWorker
 
@@ -57,9 +56,9 @@ def consume_invocations(settings: Settings, stop: Event) -> None:
                 return
 
 
-def connection_state(settings: Settings) -> str:
+def connection_state(settings: Settings, *, binding: LocalBinding | None = None) -> str:
     store = LocalConnectionStore(settings.state_dir)
-    binding = store.load()
+    binding = binding or store.load()
     if binding is None:
         return "not_connected"
     if (binding.environment_id, binding.server_url) != (
@@ -67,7 +66,7 @@ def connection_state(settings: Settings) -> str:
         settings.server_url,
     ):
         raise ValueError("saved computer binding differs from the selected environment/server")
-    store.require_folder(binding, Path(binding.root))
+    store.require_binding(binding)
     with httpx.Client(timeout=5, follow_redirects=False, trust_env=False) as client:
         check_connection(client, binding)
     return "authorized"
@@ -103,7 +102,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/v1/health")
     def health():
         try:
-            state = connection_state(settings)
+            binding = LocalConnectionStore(settings.state_dir).load()
+            state = connection_state(settings, binding=binding)
         except (ValueError, OSError, httpx.HTTPError):
             raise HTTPException(503, "Selected computer connection needs attention") from None
         return {
@@ -112,6 +112,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "environment_id": settings.environment_id,
             "server_url": settings.server_url,
             "connection_state": state,
+            **(
+                {"connection_id": binding.connection_id, "project_id": binding.project_id}
+                if binding is not None
+                else {}
+            ),
         }
 
     return app

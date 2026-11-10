@@ -738,6 +738,7 @@ def mcp_bridge(
         started_at = time.monotonic()
         connected_project_id = None
         headers_provider = None
+        browser_call = None
         if settings.process_role == "runtime":
             from stackos.cli.server_session import ServerSession
             from stackos.local_runtime.connection import LocalConnectionStore
@@ -759,6 +760,19 @@ def mcp_bridge(
             headers = connected_headers()
             connected_project_id = binding.project_id
             headers_provider = connected_headers
+            from stackos.local_runtime.browser import call_browser
+
+            def connected_browser(name, arguments):
+                return call_browser(
+                    settings,
+                    name,
+                    arguments,
+                    expected_binding=binding,
+                    folder=selected_folder,
+                    surface="mcp",
+                )
+
+            browser_call = connected_browser
             url = selected_session.origin + "/mcp"
         elif settings.process_role == "server":
             raise ValueError("native stdio MCP requires the computer's runtime environment")
@@ -787,6 +801,7 @@ def mcp_bridge(
             attempt_id=attempt_id,
             connected_project_id=connected_project_id,
             headers_provider=headers_provider,
+            browser_call=browser_call,
             **workspace_hints,
         )
     except Exception as exc:
