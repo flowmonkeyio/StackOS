@@ -64,7 +64,6 @@ function blocker(row: TaskProgressRow): string | null {
             :class="{ 'tracker-board__card--selected': selectedTaskKey === row.key, 'tracker-board__card--blocked': blocker(row) }"
             :aria-label="`Open task #${row.id}: ${row.task.title}${row.task.active_execution ? `; Active now: ${activeExecutionTitle(row.task.active_execution)}` : ''}`"
             :title="row.task.active_execution ? activeExecutionTitle(row.task.active_execution) : undefined"
-            @focus="($event.currentTarget as HTMLElement).scrollIntoView({ block: 'nearest', inline: 'nearest' })"
             @click="$emit('openTask', row.key)"
           >
             <span class="tracker-board__identity tracker-board__identity--header">

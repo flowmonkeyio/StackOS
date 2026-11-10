@@ -1749,8 +1749,14 @@ The Work UI provides two views, Board and Graph. It renders:
   columns can be hidden through the display choice):
   `not-started`, `in-progress`, `complete`, `deferred`, `aborted`, `failed`,
   and `skipped`. Cards cannot be dragged between columns or change status.
-- a Board / Graph switch in the same shared desktop toolbar as the
-  current view's controls. There are no separate Stories or Tickets views.
+- a Board / Graph switch in the same top-right page-header position in both
+  views. Board has one filter bar: Filter opens Text, Status, Priority,
+  Workflow and Assignee editors; applied chips support edit and removal.
+  Excess chips collapse into a +N filters popover without wrapping or horizontal
+  scrolling. Clear all, result count and Display keep their reserved space.
+  Display contains Completed tasks and Hide empty columns. Returning from Graph
+  refreshes the task index while retaining the mounted Board and its scroll.
+  There are no separate Stories or Tickets views.
 - project-wide task cards with leading identity, title, status and completion
   progress, followed by quiet usage for automated work and an anchored execution
   footer. A current occurrence shows its actual host logo, readable role, exact

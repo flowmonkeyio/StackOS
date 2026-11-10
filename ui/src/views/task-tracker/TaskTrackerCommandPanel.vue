@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { UiBadge, UiButton, UiIcon, UiInput, UiSegmentedControl, UiSelect, UiToolbar } from '@/components/ui'
+import { UiBadge, UiButton, UiSelect, UiToolbar } from '@/components/ui'
+import TrackerBoardFilterBar from './TrackerBoardFilterBar.vue'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
 import RunAbortAction from '@/components/domain/RunAbortAction.vue'
 import type { RunAbortTarget } from '@/composables/useRunAbort'
@@ -16,15 +17,11 @@ const props = defineProps<{
   viewMode: ViewMode
   activeTaskKey: string
   taskOptions: TrackerTaskSelectOption[]
-  search: string
-  workflowFilter: string
   workflowOptions: TrackerSelectOption[]
-  assigneeFilter: string
   assigneeOptions: TrackerSelectOption[]
   taskRowsCount: number
   tasksCount: number
-  filtersActive: boolean
-  boardFilters?: BoardFilterState
+  boardFilters: BoardFilterState
   taskAvailable: boolean
   taskId?: number
   taskStatus?: string
@@ -38,10 +35,6 @@ const props = defineProps<{
 }>()
 defineEmits<{
   (e: 'taskSelect', value: string | number | null): void
-  (e: 'update:viewMode', value: ViewMode): void
-  (e: 'update:search', value: string): void
-  (e: 'update:workflowFilter', value: string): void
-  (e: 'update:assigneeFilter', value: string): void
   (e: 'update:filter', value: BoardFilterClause): void
   (e: 'removeFilter', field: BoardFilterField): void
   (e: 'update:display', changes: Partial<Pick<BoardFilterState, 'completed' | 'hideEmptyColumns'>>): void
@@ -49,7 +42,6 @@ defineEmits<{
   (e: 'clear'): void
   (e: 'refresh'): void
 }>()
-const viewOptions = [{ key: 'board', label: 'Board' }, { key: 'graph', label: 'Graph' }]
 const state = computed(() => executionStatus(props.taskStatus ?? 'not-started', props.activeExecution, props.taskDelivery))
 </script>
 
@@ -60,58 +52,18 @@ const state = computed(() => executionStatus(props.taskStatus ?? 'not-started', 
     :class="{ 'tracker-command-panel--graph': viewMode === 'graph' }"
     variant="plain"
   >
-    <UiSegmentedControl
-      class="tracker-command-panel__views"
-      :model-value="viewMode"
-      label="Work view"
-      :options="viewOptions"
-      @select="$emit('update:viewMode', String($event) as ViewMode)"
+    <TrackerBoardFilterBar
+      v-if="viewMode === 'board'"
+      :filters="boardFilters"
+      :workflow-options="workflowOptions"
+      :assignee-options="assigneeOptions"
+      :task-rows-count="taskRowsCount"
+      :tasks-count="tasksCount"
+      @update:filter="$emit('update:filter', $event)"
+      @remove-filter="$emit('removeFilter', $event)"
+      @update:display="$emit('update:display', $event)"
+      @clear="$emit('clear')"
     />
-    <template v-if="viewMode === 'board'">
-      <div class="tracker-command-panel__search">
-        <UiInput
-          :model-value="search"
-          type="search"
-          placeholder="Search tasks"
-          aria-label="Search tasks"
-          @update:model-value="$emit('update:search', String($event ?? ''))"
-        >
-          <template #prefix>
-            <UiIcon
-              name="search"
-              class="h-4 w-4"
-            />
-          </template>
-        </UiInput>
-      </div>
-      <div class="tracker-command-panel__filter">
-        <UiSelect
-          :model-value="workflowFilter"
-          :options="workflowOptions"
-          aria-label="Workflow filter"
-          @change="$emit('update:workflowFilter', String($event ?? ''))"
-        />
-      </div>
-      <div class="tracker-command-panel__filter tracker-command-panel__assignee">
-        <UiSelect
-          :model-value="assigneeFilter"
-          :options="assigneeOptions"
-          aria-label="Assignee filter"
-          @change="$emit('update:assigneeFilter', String($event ?? ''))"
-        />
-      </div>
-      <UiButton
-        v-if="filtersActive"
-        variant="ghost"
-        size="sm"
-        @click="$emit('clear')"
-      >
-        Clear
-      </UiButton>
-      <span class="tracker-command-panel__count text-xs text-fg-muted">
-        {{ filtersActive ? `${taskRowsCount} / ${tasksCount}` : tasksCount }} tasks
-      </span>
-    </template>
     <div
       v-else
       class="tracker-command-panel__context"
@@ -202,10 +154,6 @@ const state = computed(() => executionStatus(props.taskStatus ?? 'not-started', 
 <style scoped>
 .tracker-command-panel { flex: none; flex-wrap: nowrap; min-width: 0; gap: 8px; container-type: inline-size; }
 .tracker-command-panel--graph { flex-wrap: wrap; }
-.tracker-command-panel__views { flex: none; flex-wrap: nowrap; white-space: nowrap; }
-.tracker-command-panel__search { flex: 0 1 280px; min-width: 120px; }
-.tracker-command-panel__filter { flex: 0 1 180px; min-width: 110px; }
-.tracker-command-panel__assignee { flex-basis: 160px; }
 .tracker-command-panel__context { display: grid; grid-template-columns: minmax(140px, 1fr) 160px 354px max-content; align-items: center; gap: 16px; width: 100%; min-width: 0; padding: 10px 14px; border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); background: var(--color-bg-surface); }
 .tracker-command-panel__task { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; flex: 1 1 240px; min-width: 140px; }
 .tracker-command-panel__identity { display: flex; align-items: center; gap: 8px; height: 20px; color: var(--color-fg-muted); font-size: 11px; }
@@ -217,7 +165,6 @@ const state = computed(() => executionStatus(props.taskStatus ?? 'not-started', 
 .tracker-command-panel__progress { display: grid; flex: 0 0 120px; gap: 4px; padding-left: 16px; border-left: 1px solid var(--color-border-default); color: var(--color-fg-muted); font-size: 11px; white-space: nowrap; }
 .tracker-command-panel__progress :deep(.ui-badge) { border: 0; padding: 0; justify-self: start; background: transparent; }
 .tracker-command-panel__state { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-.tracker-command-panel__count { margin-left: auto; flex: none; white-space: nowrap; }
 .tracker-command-panel__usage { flex: 0 0 354px; min-width: 0; padding-left: 16px; border-left: 1px solid var(--color-border-default); }
 .tracker-command-panel__context > :last-child { grid-column: 4; margin-left: auto; }
 @container (max-width: 850px) {
@@ -226,12 +173,5 @@ const state = computed(() => executionStatus(props.taskStatus ?? 'not-started', 
   .tracker-command-panel__progress { grid-column: 2; grid-row: 1; padding-left: 12px; }
   .tracker-command-panel__usage { grid-column: 1; grid-row: 2; width: min(354px, 100%); padding-left: 0; border-left: 0; }
   .tracker-command-panel__context > :last-child { grid-column: 2; grid-row: 2; }
-}
-@media (max-width: 1100px) {
-  .tracker-command-panel__count { display: none; }
-  .tracker-command-panel__filter { flex-basis: 120px; min-width: 95px; }
-}
-@media (max-width: 800px) {
-  .tracker-command-panel { flex-wrap: wrap; }
 }
 </style>

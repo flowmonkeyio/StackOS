@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { TrackerStatus, TrackerTask } from '@/lib/task-tracker/types'
 import { trackerStatus } from '@/design/status'
 import { UiIcon } from '@/components/ui'
@@ -13,6 +13,17 @@ const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
 const automaticMetadata = { delivery: { status: 'running', job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent } }
 
 describe('Work board presentation', () => {
+  it('respects restored opener focus without forcing a new scroll', () => {
+    const rows = buildTaskProgressRows([task('in-progress')], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
+    const wrapper = mount(TrackerBoardPanel, { attachTo: document.body, props: { rows } })
+    const card = wrapper.get<HTMLButtonElement>('.tracker-board__card').element
+    const forcedScroll = vi.fn()
+    card.scrollIntoView = forcedScroll
+    card.focus({ preventScroll: true })
+    expect(document.activeElement).toBe(card)
+    expect(forcedScroll).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   it('hides only empty projected columns when requested and restores all columns when cleared', async () => {
     const rows = buildTaskProgressRows([task('in-progress')], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
     const wrapper = mount(TrackerBoardPanel, { props: { rows } })
@@ -215,15 +226,15 @@ describe('Work board presentation', () => {
 
   it('renders only Board and Graph, with the task picker exclusive to the graph', async () => {
     const wrapper = mount(TaskTrackerCommandPanel, { props: {
-      viewMode: 'board', activeTaskKey: 'board-task', taskOptions: [], search: '', workflowFilter: '', workflowOptions: [],
-      assigneeFilter: '', assigneeOptions: [], taskRowsCount: 1, tasksCount: 1, filtersActive: false, taskAvailable: true, taskId: 1, completedCount: 12, totalCount: 20,
+      viewMode: 'board', activeTaskKey: 'board-task', taskOptions: [], boardFilters: { clauses: [], completed: 'all', hideEmptyColumns: false }, workflowOptions: [],
+      assigneeOptions: [], taskRowsCount: 1, tasksCount: 1, taskAvailable: true, taskId: 1, completedCount: 12, totalCount: 20,
     } })
-    expect(wrapper.findAll('[role="tab"]').map(tab => tab.text())).toEqual(['Board', 'Graph'])
+    expect(wrapper.find('[aria-label="Board filters"]').exists()).toBe(true)
     expect(wrapper.find('[aria-label="Selected task"]').exists()).toBe(false)
-    expect(wrapper.find('[aria-label="Search tasks"]').exists()).toBe(true)
+    expect(wrapper.find('input[type="search"]').exists()).toBe(false)
     await wrapper.setProps({ viewMode: 'graph' })
     expect(wrapper.find('[aria-label="Selected task"]').exists()).toBe(true)
-    expect(wrapper.find('[aria-label="Search tasks"]').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="Board filters"]').exists()).toBe(false)
     const metrics = agentStatsFixture().totals
     await wrapper.setProps({ taskAgentStats: metrics })
     expect(wrapper.find('.tracker-command-panel__usage').exists()).toBe(false)

@@ -2,7 +2,7 @@
 import { computed, provide, ref } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter, type LocationQueryRaw } from 'vue-router'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
-import { UiButton, UiCallout, UiEmptyState, UiLoadingState, UiPageShell } from '@/components/ui'
+import { UiButton, UiCallout, UiEmptyState, UiLoadingState, UiPageShell, UiSegmentedControl } from '@/components/ui'
 import { callOperation } from '@/lib/operations'
 import { patchUsageSnapshot, patchUsageAfter, usageCheckpoint } from '@/lib/usageUpdates'
 import type { UsageProjection } from '@/lib/usageUpdates'
@@ -24,7 +24,7 @@ import { useTrackerExecutionContexts } from './task-tracker/useTrackerExecutionC
 import { useTrackerGraphSession } from './task-tracker/useTrackerGraphSession'
 import type { ViewMode } from './task-tracker/viewTypes'
 import { buildAssigneeOptions, buildTaskProgressRows, buildWorkflowOptions, groupTicketsByTask, mergeFocusedTrackerSnapshot, projectBoardRows } from './task-tracker/viewModel'
-import { boardFilterLabel, boardFilterQuery, clearBoardFilters, parseBoardFilters, removeBoardFilter, updateBoardDisplay, updateBoardFilter } from './task-tracker/boardFilters'
+import { boardFilterQuery, clearBoardFilters, parseBoardFilters, removeBoardFilter, updateBoardDisplay, updateBoardFilter } from './task-tracker/boardFilters'
 import type { BoardFilterClause, BoardFilterField, BoardFilterState } from './task-tracker/boardFilters'
 
 const route = useRoute()
@@ -39,10 +39,7 @@ const mapTaskStorageKey = `stackos:work-map-task:${projectId.value}`
 const mapTaskKey = ref(queryText(route.query.task) || rememberedMapTask())
 const viewMode = computed<ViewMode>(() => route.query.view === 'graph' ? 'graph' : 'board')
 const boardFilters = computed(() => parseBoardFilters(route.query))
-const search = computed(() => boardFilters.value.clauses.find(clause => clause.field === 'text')?.value ?? '')
-const workflowFilter = computed(() => boardFilters.value.clauses.find(clause => clause.field === 'workflow')?.value ?? '')
-const assigneeFilter = computed(() => boardFilters.value.clauses.find(clause => clause.field === 'assignee')?.value ?? '')
-const contextualClauses = computed(() => boardFilters.value.clauses.filter(clause => ['status', 'priority', 'ticket-status', 'blocked'].includes(clause.field)))
+const viewOptions = [{ key: 'board', label: 'Board' }, { key: 'graph', label: 'Graph' }]
 const detailTaskKey = computed(() => queryText(route.query.detail))
 const detailTicketKey = computed(() => queryText(route.query.ticket))
 const detailSnapshot = ref<TrackerSnapshot | null>(null)
@@ -65,7 +62,6 @@ const taskSelectOptions = computed(() => allTaskRows.value.map((row) => ({
 })))
 const workflowOptions = computed(() => buildWorkflowOptions(tasks.value))
 const assigneeOptions = computed(() => buildAssigneeOptions(tasks.value, snapshot.value?.tickets ?? []))
-const filtersActive = computed(() => boardFilters.value.clauses.length > 0 || boardFilters.value.completed !== 'all')
 const liveTaskKey = computed(() => viewMode.value === 'graph' ? mapTaskKey.value : '')
 const graph = useTrackerGraphSession({
   projectId, activeTaskKey: mapTaskKey, liveTaskKey, activeTaskRow, snapshot, routeError: error,
@@ -239,8 +235,8 @@ function viewDependencies(taskKey: string): void {
 function clearFilters(): void {
   navigate(boardFilterQuery(clearBoardFilters(boardFilters.value)))
 }
-function updateFilter(clause: BoardFilterClause, replace = false): void {
-  navigate(boardFilterQuery(updateBoardFilter(boardFilters.value, clause)), replace)
+function updateFilter(clause: BoardFilterClause): void {
+  navigate(boardFilterQuery(updateBoardFilter(boardFilters.value, clause)))
 }
 function removeFilter(field: BoardFilterField): void {
   navigate(boardFilterQuery(removeBoardFilter(boardFilters.value, field)))
@@ -276,6 +272,10 @@ const removeRouteListener = router.afterEach(async (to, from, failure) => {
   if (mapChanged && !mapNeedsCanonicalRoute()) graph.restartStatusStream()
   if (viewMode.value === 'graph' && mapChanged) {
     await loadMap()
+    if (!currentScope() || router.currentRoute.value !== to) return
+  }
+  if (viewMode.value === 'board' && from.query.view === 'graph') {
+    await load({ restartStream: false })
     if (!currentScope() || router.currentRoute.value !== to) return
   }
   if (to.query.detail !== from.query.detail) {
@@ -321,6 +321,12 @@ useProjectScopedLoader({
         >
           Refresh
         </UiButton>
+        <UiSegmentedControl
+          :model-value="viewMode"
+          label="Work view"
+          :options="viewOptions"
+          @select="setViewMode(String($event) as ViewMode)"
+        />
       </template>
     </ProjectPageHeader>
     <UiCallout
@@ -339,12 +345,8 @@ useProjectScopedLoader({
       :active-task-key="mapTaskKey"
       :task-options="taskSelectOptions"
       :view-mode="viewMode"
-      :filters-active="filtersActive"
       :board-filters="boardFilters"
-      :search="search"
-      :workflow-filter="workflowFilter"
       :workflow-options="workflowOptions"
-      :assignee-filter="assigneeFilter"
       :assignee-options="assigneeOptions"
       :task-rows-count="taskRows.length"
       :tasks-count="tasks.length"
@@ -360,32 +362,12 @@ useProjectScopedLoader({
       :abort-target="taskRunAbortTarget(activeTaskRow?.task)"
       @refresh="load()"
       @task-select="selectMapTask"
-      @update:view-mode="setViewMode"
-      @update:search="updateFilter({ field: 'text', value: $event }, true)"
-      @update:workflow-filter="updateFilter({ field: 'workflow', operator: 'is', value: $event })"
-      @update:assignee-filter="updateFilter({ field: 'assignee', operator: 'is', value: $event })"
       @update:filter="updateFilter($event)"
       @remove-filter="removeFilter"
       @update:display="updateDisplay"
       @clear="clearFilters"
       @open-task-detail="openTaskDetail(mapTaskKey)"
     />
-    <div
-      v-if="viewMode === 'board' && contextualClauses.length"
-      class="flex flex-wrap items-center gap-2"
-    >
-      <UiButton
-        v-for="clause in contextualClauses"
-        :key="clause.field"
-        variant="ghost"
-        size="sm"
-        icon-right="close"
-        :aria-label="`Remove ${boardFilterLabel(clause)}`"
-        @click="removeFilter(clause.field)"
-      >
-        {{ boardFilterLabel(clause) }}
-      </UiButton>
-    </div>
     <UiLoadingState
       v-if="loading && !snapshot"
       label="Loading work…"
