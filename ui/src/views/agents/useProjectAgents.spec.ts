@@ -79,4 +79,47 @@ describe('native project agents', () => {
     await agents.save()
     expect(callOperation).toHaveBeenCalledWith('projectAgent.update', expect.objectContaining({ patch: { features: { apps: null } } }))
   })
+  it.each(['features', 'skills'] as const)('accepts native null readback after removing the final %s restriction and uses the new digest', async key => {
+    const row = definition()
+    row.fields![key] = key === 'features' ? { shell_tool: false } : { include_instructions: false }
+    const { agents } = setup(); await flushPromises()
+    vi.mocked(callOperation).mockResolvedValueOnce(row); await agents.edit(row)
+    agents.draft.value![key] = {}
+    const readback = { ...row, digest: 'b'.repeat(64), fields: { ...row.fields!, [key]: null } }
+    vi.mocked(callOperation).mockResolvedValueOnce({ project_id: 1, data: readback })
+    await agents.save()
+    expect(agents.error.value).toBe('')
+    expect(agents.dirty.value).toBe(false)
+    expect(agents.draft.value![key]).toBeNull()
+    expect(agents.selected.value!.digest).toBe(readback.digest)
+    const leaf = key === 'features' ? 'shell_tool' : 'include_instructions'
+    expect(callOperation).toHaveBeenCalledWith('projectAgent.update', expect.objectContaining({ patch: { [key]: { [leaf]: null } } }))
+    agents.draft.value!.description = 'Second edit'
+    vi.mocked(callOperation).mockResolvedValueOnce({ project_id: 1, data: { ...readback, fields: { ...readback.fields, description: 'Second edit' } } })
+    await agents.save()
+    expect(callOperation).toHaveBeenLastCalledWith('projectAgent.list', expect.anything())
+    expect(callOperation).toHaveBeenCalledWith('projectAgent.update', expect.objectContaining({ expected_digest: readback.digest, patch: { description: 'Second edit' } }))
+    expect(agents.error.value).toBe('')
+  })
+  it.each(['features', 'skills'] as const)('accepts empty %s on create as inherited native readback', async key => {
+    const { agents } = setup(); await flushPromises(); agents.add()
+    agents.draft.value = { ...blankAgent(), name: 'research', description: 'Research', developer_instructions: 'Full text', [key]: {} }
+    const readback = { ...definition(), fields: { ...agents.draft.value, [key]: null } }
+    vi.mocked(callOperation).mockResolvedValueOnce({ project_id: 1, data: readback }); await agents.save()
+    expect(agents.error.value).toBe(''); expect(agents.dirty.value).toBe(false)
+    expect(agents.selected.value?.digest).toBe(readback.digest)
+  })
+  it.each(['features', 'skills'] as const)('accepts explicit %s inheritance but rejects a different nonempty native setting', async key => {
+    const row = definition()
+    row.fields![key] = key === 'features' ? { shell_tool: false } : { include_instructions: false }
+    const { agents } = setup(); await flushPromises()
+    vi.mocked(callOperation).mockResolvedValueOnce(row); await agents.edit(row)
+    agents.draft.value![key] = null
+    vi.mocked(callOperation).mockResolvedValueOnce({ project_id: 1, data: { ...row, fields: { ...row.fields, [key]: null } } }); await agents.save()
+    expect(agents.error.value).toBe('')
+    agents.draft.value![key] = {}
+    vi.mocked(callOperation).mockResolvedValueOnce({ project_id: 1, data: row }); await agents.save()
+    expect(agents.error.value).toContain('differs from the draft')
+    expect(agents.dirty.value).toBe(true)
+  })
 })

@@ -22,21 +22,49 @@ const existingOptions = { ...job?.execution_json }
 delete existingOptions.project_dir
 delete existingOptions.agents
 delete existingOptions.step_agent_assignments
-const agents = ref({ ...job?.execution_json?.agents })
-for (const role of ['delivery_agent', 'review_agent'] as const) {
-  if (existingOptions[role]?.source_ref) {
-    agents.value[role] ??= existingOptions[role]
-    delete existingOptions[role]
-  }
-}
+type AgentBindings = NonNullable<NonNullable<ScheduleConfiguration['execution_json']>['agents']>
+const savedAgents = ref<AgentBindings>({ ...job?.execution_json?.agents })
+const legacyRoles = ['delivery_agent', 'review_agent'] as const
 const assignments = ref({ ...job?.execution_json?.step_agent_assignments })
 const selectors = ref<InstanceType<typeof ScheduleAgentSelectors> | null>(null)
 const executionOptions = ref(JSON.stringify(existingOptions, null, 2))
+const error = ref<string | null>(null)
+const agents = computed<AgentBindings>({
+  get() {
+    const effective = { ...savedAgents.value }
+    try {
+      const options = objectJson(executionOptions.value, 'Execution options')
+      // Match schedule admission: a nonempty legacy role replaces its mapped choice.
+      for (const role of legacyRoles) {
+        const legacy = options[role] as AgentBindings[string] | null | undefined
+        if (legacy && Object.keys(legacy).length) effective[role] = legacy
+      }
+    } catch { /* Save reports invalid JSON without discarding the text. */ }
+    return effective
+  },
+  set(next) {
+    try {
+      const options = objectJson(executionOptions.value, 'Execution options')
+      const current = agents.value
+      const updated = { ...savedAgents.value }
+      let changedLegacy = false
+      for (const role of new Set([...Object.keys(current), ...Object.keys(next)])) {
+        if (JSON.stringify(current[role]) === JSON.stringify(next[role])) continue
+        if (next[role]) updated[role] = next[role]; else delete updated[role]
+        if (legacyRoles.some(key => key === role) && role in options) {
+          delete options[role]
+          changedLegacy = true
+        }
+      }
+      savedAgents.value = updated
+      if (changedLegacy) executionOptions.value = JSON.stringify(options, null, 2)
+    } catch (cause) { error.value = formatApiError(cause) }
+  },
+})
 const hostKey = computed(() => {
   try { return String(objectJson(executionOptions.value, 'Execution options').host_key ?? 'codex') }
   catch { return 'codex' }
 })
-const error = ref<string | null>(null)
 const workflows = ref<SchemaWorkflowTemplateListOut['templates']>([])
 const workflowError = ref<string | null>(null)
 const workflowOptions = computed(() => {
@@ -69,7 +97,7 @@ async function save(): Promise<void> {
       inputs_json: objectJson(inputs.value, 'Workflow inputs'),
       execution_json: projectDir.value.trim() ? {
         ...options, project_dir: projectDir.value.trim(),
-        ...(Object.keys(agents.value).length ? { agents: agents.value } : {}),
+        ...(Object.keys(savedAgents.value).length ? { agents: savedAgents.value } : {}),
         ...(Object.keys(assignments.value).length ? { step_agent_assignments: assignments.value } : {}),
       } : null,
     }

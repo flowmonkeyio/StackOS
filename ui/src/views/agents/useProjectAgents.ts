@@ -90,7 +90,13 @@ export function useProjectAgents(projectId: Ref<number>, projectDir: Ref<string>
       if (currentScope !== generation) return
       if (result.project_id !== projectId.value || result.data.project_id !== projectId.value || result.data.project_dir !== projectDir.value || !result.data.fields || !result.data.digest || result.data.source_ref.native_name !== fields.name || (row && result.data.source_ref.source_path !== row.source_ref.source_path)) throw new Error('Save readback is unavailable. Refresh before retrying.')
       // The native write owner returns its exact disk readback, including preserved settings.
-      if (canonical(result.data.fields) !== canonical(fields)) throw new Error('Saved source differs from the draft. Refresh and reconcile before retrying.')
+      const expectedFields = { ...fields }
+      for (const key of ['features', 'skills'] as const) {
+        if (expectedFields[key] && Object.keys(expectedFields[key]).length === 0) expectedFields[key] = null
+      }
+      // Native readback treats empty option tables as inherited. Keep the original
+      // leaf-removal patch so unknown native siblings are still preserved on disk.
+      if (canonical(result.data.fields) !== canonical(expectedFields)) throw new Error('Saved source differs from the draft. Refresh and reconcile before retrying.')
       selected.value = result.data; draft.value = copy(result.data.fields); original.value = copy(result.data.fields)
       message.value = 'Saved in the project file.'
       await refresh()

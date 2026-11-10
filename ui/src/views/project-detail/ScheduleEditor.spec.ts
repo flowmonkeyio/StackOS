@@ -21,6 +21,14 @@ function setup(roleCount = 1, missing = false) {
   wrapper = mount(ScheduleEditor, { props: { projectId: 1, job: { kind: 'fixture', name: 'Fixture', template_key: 'fixture', cron_expr: '* * * * *', timezone: 'UTC', enabled: false, execution_json: { project_dir: '/fixture', agents: missing ? { researcher: { source_ref: source } } : {}, host_key: 'codex' } } as never }, global: { stubs: { teleport: true } } })
   return wrapper
 }
+const namedSource = (name: string) => ({ ...source, native_name: name, source_path: `.codex/agents/${name}.toml` })
+function legacySchedule(execution: object) {
+  setActivePinia(createPinia())
+  vi.mocked(callOperation).mockResolvedValue({ project_id: 1, project_dir: '/fixture', items: ['mapped', 'legacy', 'new'].map(name => ({ project_id: 1, source_ref: namedSource(name), fields: { ...blankAgent(), name } })) })
+  vi.mocked(apiFetch).mockImplementation(async path => path.endsWith('/workflow-templates') ? { templates: [{ key: 'fixture', name: 'Fixture' }] } : { spec: { agent_requirements: ['delivery_agent', 'review_agent'].map(role => ({ role, requirement: 'required' })), steps: [] } })
+  wrapper = mount(ScheduleEditor, { props: { projectId: 1, job: { kind: 'fixture', name: 'Fixture', template_key: 'fixture', cron_expr: '* * * * *', timezone: 'UTC', enabled: false, execution_json: { project_dir: '/fixture', host_key: 'codex', ...execution } } as never }, global: { stubs: { teleport: true } } })
+  return wrapper
+}
 afterEach(() => { wrapper?.unmount(); vi.resetAllMocks() })
 describe('workflow-specific schedule agents', () => {
   it.each([1, 3])('renders %i declared roles and saves explicit native references with no inline prompts', async count => {
@@ -56,5 +64,41 @@ describe('workflow-specific schedule agents', () => {
     const save = vi.spyOn(useSchedulesStore(), 'save').mockResolvedValue()
     await w.get('form').trigger('submit'); await flushPromises()
     expect(save).toHaveBeenCalledWith(1, expect.objectContaining({ execution_json: expect.objectContaining({ host_key: 'claude', delivery_agent: { name: 'existing', instructions: 'Keep native host route', profile: 'saved' } }) }))
+  })
+  it.each(['delivery_agent', 'review_agent'] as const)('preserves the canonical %s choice and both saved representations when unchanged', async role => {
+    const execution = { project_dir: '/fixture', host_key: 'codex', agents: { [role]: { source_ref: namedSource('mapped'), model: 'mapped-model' } }, [role]: { source_ref: namedSource('legacy'), model: 'legacy-model', provider: 'saved-provider', profile: 'saved-profile' } }
+    const w = legacySchedule(execution); await flushPromises()
+    const picker = w.getComponent(ScheduleAgentSelectors).findAllComponents(UiSelect)[role === 'delivery_agent' ? 0 : 1]!
+    expect(picker.props('modelValue')).toBe(agentIdentity(namedSource('legacy')))
+    const save = vi.spyOn(useSchedulesStore(), 'save').mockResolvedValue()
+    await w.get('form').trigger('submit'); await flushPromises()
+    expect(save.mock.calls[0]![1].execution_json).toEqual(execution)
+  })
+  it.each(['delivery_agent', 'review_agent'] as const)('makes explicit %s source selection authoritative over legacy inline settings', async role => {
+    const settings = { model: 'retained-model', model_reasoning_effort: 'high', provider: 'saved-provider', profile: 'saved-profile' }
+    const other = role === 'delivery_agent' ? 'review_agent' : 'delivery_agent'
+    const untouched = { name: 'Other host', instructions: 'Preserve other host route', host_key: 'claude', model: 'other-model' }
+    const w = legacySchedule({ [role]: { name: 'Old role', instructions: 'Old copied prompt', ...settings }, [other]: untouched }); await flushPromises()
+    const picker = w.getComponent(ScheduleAgentSelectors).findAllComponents(UiSelect)[role === 'delivery_agent' ? 0 : 1]!
+    picker.vm.$emit('update:modelValue', agentIdentity(namedSource('new'))); await flushPromises()
+    const save = vi.spyOn(useSchedulesStore(), 'save').mockResolvedValue()
+    await w.get('form').trigger('submit'); await flushPromises()
+    const saved = save.mock.calls[0]![1].execution_json!
+    expect(saved[role]).toBeUndefined()
+    expect(saved.agents?.[role]).toEqual({ ...settings, host_key: 'codex', source_ref: namedSource('new') })
+    expect(saved[other]).toEqual(untouched)
+  })
+  it.each(['delivery_agent', 'review_agent'] as const)('clears and reassigns %s without leaving a legacy override or revealing a shadowed agent', async role => {
+    const w = legacySchedule({ agents: { [role]: { source_ref: namedSource('mapped') } }, [role]: { source_ref: namedSource('legacy') } }); await flushPromises()
+    const picker = w.getComponent(ScheduleAgentSelectors).findAllComponents(UiSelect)[role === 'delivery_agent' ? 0 : 1]!
+    const save = vi.spyOn(useSchedulesStore(), 'save').mockResolvedValue()
+    picker.vm.$emit('update:modelValue', ''); await flushPromises()
+    await w.get('form').trigger('submit'); await flushPromises()
+    let saved = save.mock.calls[0]![1].execution_json!
+    expect(saved[role]).toBeUndefined(); expect(saved.agents?.[role]).toBeUndefined()
+    picker.vm.$emit('update:modelValue', agentIdentity(namedSource('new'))); await flushPromises()
+    await w.get('form').trigger('submit'); await flushPromises()
+    saved = save.mock.calls[1]![1].execution_json!
+    expect(saved[role]).toBeUndefined(); expect(saved.agents?.[role]?.source_ref).toEqual(namedSource('new'))
   })
 })
