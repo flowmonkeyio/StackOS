@@ -148,6 +148,8 @@ describe('Finance management', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-14T12:00:00Z'))
     const { wrapper, router } = await mounted()
+    expect(wrapper.find('[aria-label="Reporting setup"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Reporting setup needed')
     const queries = () =>
       vi.mocked(callOperation).mock.calls.filter((call) => call[0] === 'finance.query')
     expect(queries()).toHaveLength(1)

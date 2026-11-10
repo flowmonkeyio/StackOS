@@ -25,7 +25,7 @@ const groups = computed(() =>
 <template>
   <section class="min-w-0 space-y-5" aria-label="Finance overview">
     <p v-if="!readiness.hasMetrics" class="text-sm text-fg-muted">
-      No supported accounting totals yet. Inspect the existing records and reporting setup above;
+      No supported accounting totals yet. Inspect the existing records and source gaps;
       this does not mean there are no invoices.
     </p>
     <section

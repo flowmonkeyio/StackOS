@@ -24,7 +24,6 @@ import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import FinanceFilters from '@/components/finance/FinanceFilters.vue'
 import FinanceRecordPanel from '@/components/finance/FinanceRecordPanel.vue'
 import FinanceOverview from './finance/FinanceOverview.vue'
-import FinanceReportingReadiness from './finance/FinanceReportingReadiness.vue'
 import { financeRecordLabel } from './finance/reportingReadiness'
 import FinanceOverviewInsights from './finance/FinanceOverviewInsights.vue'
 import { aiCategory, insightsModel } from './finance/insightsViewModel'
@@ -680,7 +679,6 @@ onBeforeUnmount(() => {
               · {{ query.date_basis }} dates · {{ query.timezone }} · prepared/unposted · coverage
               {{ text(projection.coverage.state) }}
             </p>
-            <FinanceReportingReadiness :projection="projection" @records="section = 'records'" />
             <details class="text-xs text-fg-muted">
               <summary class="focus-ring cursor-pointer">Source and reporting gaps</summary>
               <p class="break-all">

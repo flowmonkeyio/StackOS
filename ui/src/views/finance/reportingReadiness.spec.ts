@@ -1,12 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
-import FinanceReportingReadiness from './FinanceReportingReadiness.vue'
 import FinanceOverview from './FinanceOverview.vue'
 import { chartProjection } from './overviewFixtures'
 import { financeRecordLabel, reportingReadiness } from './reportingReadiness'
 
 describe('legacy reporting readiness', () => {
-  it('uses full-population readiness instead of paginated rows and exposes a records action', async () => {
+  it('uses full-population readiness instead of paginated rows', () => {
     const projection = chartProjection()
     projection.reporting_readiness = {
       missing_metadata_count: 31,
@@ -17,12 +16,8 @@ describe('legacy reporting readiness', () => {
       state: 'unavailable',
       issues: ['missing_or_conflicting_reporting_policy'],
     }
-    const wrapper = mount(FinanceReportingReadiness, { props: { projection } })
-    expect(wrapper.text()).toContain('31 bookkeeping entries need reporting setup')
-    expect(wrapper.text()).toContain('62 amounts')
-    expect(wrapper.text()).toContain('vendor payment evidence is not a bank reconciliation')
-    await wrapper.get('button').trigger('click')
-    expect(wrapper.emitted('records')).toHaveLength(1)
+    expect(reportingReadiness(projection).missing).toBe(31)
+    expect(reportingReadiness(projection).precision).toBe(62)
     expect(reportingReadiness(projection).total).toBe(65)
   })
   it('does not render empty charts or unavailable metric cards when no totals are supported', () => {
@@ -79,9 +74,8 @@ describe('legacy reporting readiness', () => {
       reasons: [{ reason: 'stale_metadata', count: 1 }],
     }
     projection.coverage = { state: 'partial', issues: ['policy_conflict'] }
-    const wrapper = mount(FinanceReportingReadiness, { props: { projection } })
-    expect(wrapper.text()).toContain('stale metadata')
-    expect(wrapper.text()).toContain('policy conflict')
-    expect(wrapper.text()).toContain('2 amounts')
+    expect(reportingReadiness(projection).reasons).toContain('stale metadata')
+    expect(reportingReadiness(projection).coverageIssues).toContain('policy conflict')
+    expect(reportingReadiness(projection).precision).toBe(2)
   })
 })

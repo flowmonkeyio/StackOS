@@ -10,6 +10,10 @@ setup look like lost invoices or a runtime failure.
 
 ## Changes
 
+Owner scope correction: the unsolicited reporting-setup callout was removed.
+This fix must not substitute a new explanatory section for working reporting.
+The existing source-gap details remain the place for missing evidence.
+
 - Return readiness counts and readable labels for the complete filtered selection,
   including records outside the visible page.
 - Explain missing recognition metadata, currency precision and source coverage.
