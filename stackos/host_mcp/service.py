@@ -384,11 +384,12 @@ def run_agent(
     previous_usage: Any = None,
     mcp_config_ref: dict[str, str] | None = None,
     launch_allowed: Callable[[], bool] | None = None,
+    invocation_transport: Callable[[ActiveInvocation], AgentRunResult] | None = None,
 ) -> AgentRunResult:
     """Run a project agent through the same host registry used by Overview."""
     from stackos.config import get_settings
 
-    if get_settings().process_role == "server":
+    if get_settings().process_role == "server" and invocation_transport is None:
         return AgentRunResult(
             None, error="Native execution requires an authorized connected computer."
         )
@@ -435,7 +436,7 @@ def run_agent(
         progress_kwargs["mcp_config_ref"] = mcp_config_ref
     result: AgentRunResult | None = None
     registered = False
-    if call is not None and host_key == "codex":
+    if call is not None and host_key == "codex" and invocation_transport is None:
         progress_kwargs["on_session"] = lambda session_id: _attach_session(
             call, session_id, Path(project_dir), resume_thread_id
         )
@@ -449,24 +450,29 @@ def run_agent(
                 _register(call)
                 registered = True
                 _notify_execution(on_execution_change, call, True)
-        result = definition.run_agent(
-            Path(project_dir).expanduser().resolve(),
-            instructions,
-            prompt,
-            output_schema,
-            sandbox=sandbox,
-            **progress_kwargs,
-            **{
-                key: value
-                for key, value in {
-                    "model": model,
-                    "provider": provider,
-                    "profile": profile,
-                    "resume_thread_id": resume_thread_id,
-                }.items()
-                if value is not None
-            },
-        )
+        if invocation_transport is not None:
+            if call is None:
+                raise ValueError("connected execution requires an invocation scope")
+            result = invocation_transport(call)
+        else:
+            result = definition.run_agent(
+                Path(project_dir).expanduser().resolve(),
+                instructions,
+                prompt,
+                output_schema,
+                sandbox=sandbox,
+                **progress_kwargs,
+                **{
+                    key: value
+                    for key, value in {
+                        "model": model,
+                        "provider": provider,
+                        "profile": profile,
+                        "resume_thread_id": resume_thread_id,
+                    }.items()
+                    if value is not None
+                },
+            )
     finally:
         if call is not None and registered:
             try:

@@ -190,6 +190,7 @@ _PROJECT_OPERATIONS = {
     "tracker.next",
     "tracker.ticketCounts",
     "tracker.agentStats",
+    "tracker.startDelivery",
 }
 
 
@@ -223,6 +224,16 @@ def authorize_operation(
         if values.get("connection_id") is not None:
             LocalRuntimeConnectionRepository(session).owned(project_id, values["connection_id"])
         return project_id
+    if name == "tracker.startDelivery":
+        from stackos.repositories.workspaces import LocalRuntimeConnectionRepository
+
+        project_id = _identifier(values.get("project_id"))
+        if not values.get("connection_id"):
+            raise ToolNotGrantedError("server delivery requires an owned connected computer")
+        LocalRuntimeConnectionRepository(session).owned(project_id, values["connection_id"])
+        return authorize_project_refs(
+            session, {k: v for k, v in values.items() if k != "connection_id"}, run=run
+        )
     if name in {"operation.list", "operation.describe", "schema.get"}:
         return None  # Public contract metadata; no project state or execution authority.
     if name not in _PROJECT_DISCOVERY | _PROJECT_OPERATIONS:

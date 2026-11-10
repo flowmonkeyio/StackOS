@@ -10,6 +10,7 @@ from contextlib import suppress
 from copy import deepcopy
 from dataclasses import asdict
 from datetime import UTC, datetime
+from functools import partial
 from hashlib import sha256
 from pathlib import Path
 from threading import Event
@@ -493,9 +494,23 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
         session.expire_all()
         task = _task(repo, project_id, task_key)
         previous = (task.metadata_json or {}).get("delivery", {})
-        directory = Path(changes["project_dir"])
-        _retain_directory(previous, directory)
-        _retain_mcp_config(previous, changes.get("mcp_config_ref"))
+        remote = changes.get("connection_id")
+        directory = Path(changes["project_dir"]) if not remote else None
+        if remote:
+            if previous and previous.get("connection_id") != remote:
+                raise ValidationError("Task delivery must retain its connected computer")
+            active = session.exec(select(TrackerTask).where(TrackerTask.id != task.id)).all()
+            if any(
+                (t.metadata_json or {}).get("delivery", {}).get("connection_id") == remote
+                and (t.metadata_json or {}).get("delivery", {}).get("status")
+                in {"queued", "running"}
+                for t in active
+            ):
+                raise ConflictError("Computer already owned by an active task")
+        else:
+            assert directory is not None
+            _retain_directory(previous, directory)
+            _retain_mcp_config(previous, changes.get("mcp_config_ref"))
         if previous.get("status") in {"queued", "running"}:
             if (previous.get("run_plan_id"), previous.get("step_id")) != (
                 changes.get("run_plan_id"),
@@ -525,7 +540,9 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
             )
         ).all()
         if any(
-            path and _same_directory(directory, Path(path).expanduser().resolve())
+            directory is not None
+            and path
+            and _same_directory(directory, Path(path).expanduser().resolve())
             for path in active_directories
         ):
             raise ValidationError(
@@ -807,7 +824,7 @@ def resolve_delivery_settings(
     session: Session,
     *,
     project_id: int,
-    project_dir: str,
+    project_dir: str | None,
     host_key: str | None = None,
     delivery_agent: dict[str, Any] | None = None,
     review_agent: dict[str, Any] | None = None,
@@ -817,8 +834,8 @@ def resolve_delivery_settings(
 
     Resolve current settings here; only start_delivery freezes them on a task.
     """
-    directory = Path(project_dir).expanduser().resolve()
-    if not directory.is_dir():
+    directory = Path(project_dir).expanduser().resolve() if project_dir else None
+    if directory is not None and not directory.is_dir():
         raise ValidationError("project_dir must be an existing working directory")
     defaults = TrackerRepository(session).delivery_defaults(project_id=project_id)
     if not isinstance(defaults, dict):
@@ -852,6 +869,8 @@ def resolve_delivery_settings(
             raise ValidationError(error)
         resolved[role] = agent
     if mcp_config_ref is not None:
+        if directory is None:
+            raise ValidationError("Native MCP configuration requires a local directory")
         if any(agent["host_key"] != "codex" for agent in resolved.values()):
             raise ValidationError("Task MCP configuration is unsupported by this host")
         from stackos.host_mcp.adapters.codex import task_mcp_overrides
@@ -861,7 +880,7 @@ def resolve_delivery_settings(
         except ValueError as route_error:
             raise ValidationError(str(route_error)) from None
     return {
-        "project_dir": str(directory),
+        "project_dir": str(directory) if directory is not None else None,
         "host_key": host_key,
         **resolved,
         **({"mcp_config_ref": mcp_config_ref} if mcp_config_ref is not None else {}),
@@ -875,7 +894,10 @@ def start_delivery(
     scheduler: BaseScheduler,
     project_id: int,
     task_key: str,
-    project_dir: str,
+    project_dir: str | None = None,
+    connection_id: str | None = None,
+    base_commit_sha: str | None = None,
+    local_invocations=None,
     host_key: str | None = None,
     delivery_agent: dict[str, Any] | None = None,
     review_agent: dict[str, Any] | None = None,
@@ -897,11 +919,30 @@ def start_delivery(
         RunPlanRepository(session).validate_delivery_controller(
             run_plan_id=plan.id, project_id=project_id, run_id=plan.run_id
         )
-    directory = Path(project_dir).expanduser().resolve()
-    if not directory.is_dir():
+    if (project_dir is None) == (connection_id is None):
+        raise ValidationError("select exactly one local directory or connected computer")
+    directory = Path(project_dir).expanduser().resolve() if project_dir else None
+    if directory is not None and not directory.is_dir():
         raise ValidationError("project_dir must be an existing working directory")
     previous = (task.metadata_json or {}).get("delivery", {})
-    _retain_directory(previous, directory)
+    if previous.get("uncertain_invocation"):
+        raise ConflictError("Invocation outcome needs manual reconciliation before admission")
+    if connection_id:
+        from stackos.repositories.workspaces import LocalRuntimeConnectionRepository
+
+        row = LocalRuntimeConnectionRepository(session).owned(project_id, connection_id)
+        if LocalRuntimeConnectionRepository.public(row)["status"] != "authorized":
+            raise ValidationError("Computer authorization unavailable")
+        if local_invocations is None:
+            raise ValidationError("Connected delivery requires the server invocation exchange")
+        local_invocations.require_available(row)
+        if previous and previous.get("connection_id") != connection_id:
+            raise ValidationError("Task delivery must retain its connected computer")
+        if mcp_config_ref is not None:
+            raise ValidationError("Connected computer MCP configuration stays local")
+    else:
+        assert directory is not None
+        _retain_directory(previous, directory)
     # Omission on rehandoff preserves the frozen route, including its digest.
     mcp_config_ref = mcp_config_ref or previous.get("mcp_config_ref")
     if mcp_config_ref is not None:
@@ -924,7 +965,7 @@ def start_delivery(
     settings = resolve_delivery_settings(
         session,
         project_id=project_id,
-        project_dir=str(directory),
+        project_dir=str(directory) if directory is not None else None,
         host_key=host_key,
         delivery_agent=delivery_agent,
         review_agent=review_agent,
@@ -953,7 +994,12 @@ def start_delivery(
         status="queued",
         ticket_key=None,
         reason=None,
-        project_dir=str(directory),
+        project_dir=str(directory) if directory is not None else None,
+        **(
+            {"connection_id": connection_id, "base_commit_sha": base_commit_sha}
+            if connection_id
+            else {}
+        ),
         **({"mcp_config_ref": mcp_config_ref} if mcp_config_ref is not None else {}),
         host_key=host_key,
         delivery_agent=resolved["delivery_agent"],
@@ -981,6 +1027,7 @@ def start_delivery(
                 "project_id": project_id,
                 "task_key": task_key,
                 "handoff_id": state["handoff_id"],
+                **({"local_invocations": local_invocations} if connection_id else {}),
             },
         )
     except Exception as error:
@@ -1041,12 +1088,79 @@ def _record_execution_transition(
         record_execution_change(session, call, active)
 
 
+def _run_connected_agent(
+    host_key,
+    project_dir,
+    instructions,
+    prompt,
+    output_schema,
+    *,
+    session_factory,
+    connection_id,
+    exchange,
+    candidate,
+    handoffs,
+    **kwargs,
+):
+    """Transport one existing controller invocation; no local lifecycle decisions."""
+    from stackos.local_runtime.exchange import NativeLaunch
+    from stackos.repositories.workspaces import LocalRuntimeConnectionRepository
+
+    def transport(call):
+        scope = call.scope
+        with session_factory() as session:
+            connection = LocalRuntimeConnectionRepository(session).owned(
+                scope.project_id, connection_id
+            )
+            session.expunge(connection)
+        with managed_launch_lock, session_factory() as session:
+            if not kwargs["launch_allowed"]():
+                raise ValidationError("Connected invocation fenced before dispatch")
+            exchange.require_available(connection)
+            _update_delivery(
+                TrackerRepository(session),
+                scope.project_id,
+                scope.task_key,
+                uncertain_invocation=call.invocation_id,
+            )
+            handoff = exchange.offer(
+                connection,
+                call,
+                NativeLaunch(
+                    instructions=instructions,
+                    prompt=prompt,
+                    output_schema=output_schema,
+                    sandbox=kwargs.get("sandbox", "workspace-write"),
+                    resume_thread_id=kwargs.get("resume_thread_id"),
+                    candidate=candidate or None,
+                    provider=kwargs.get("provider"),
+                    profile=kwargs.get("profile"),
+                ),
+            )
+            handoffs.append((connection, call, handoff))
+        while not handoff.ready.wait(1):
+            if not kwargs["launch_allowed"]():
+                return handoff.outcome()
+        return handoff.outcome()
+
+    return run_agent(
+        host_key,
+        project_dir,
+        instructions,
+        prompt,
+        output_schema,
+        invocation_transport=transport,
+        **kwargs,
+    )
+
+
 def run_delivery(
     *,
     session_factory: Callable[[], Session],
     project_id: int,
     task_key: str,
     handoff_id: str,
+    local_invocations=None,
 ) -> None:
     cancellation: Event | None = None
 
@@ -1161,6 +1275,11 @@ def run_delivery(
                     "agent": agent["name"],
                     "host_key": host_key,
                     "project_dir": state["project_dir"],
+                    **(
+                        {"connection_id": state["connection_id"]}
+                        if state.get("connection_id")
+                        else {}
+                    ),
                     **selection,
                     **(
                         {"mcp_config_ref": state["mcp_config_ref"]}
@@ -1197,11 +1316,22 @@ def run_delivery(
                             )
                         )
                     )
-                    evidence["candidate"] = _launch_baseline(
-                        state["project_dir"], ticket_key, evidence, phase, native_session
-                    )
+                    if state.get("connection_id"):
+                        evidence["candidate"] = deepcopy(
+                            evidence.get("candidate")
+                            or (
+                                {"base_commit_sha": state["base_commit_sha"]}
+                                if state.get("base_commit_sha")
+                                else {}
+                            )
+                        )
+                    else:
+                        evidence["candidate"] = _launch_baseline(
+                            state["project_dir"], ticket_key, evidence, phase, native_session
+                        )
                     baseline_clean = bool(
                         evidence["candidate"].get("base_commit_sha")
+                        and not state.get("connection_id")
                         and not _git(
                             state["project_dir"], "status", "--porcelain", "--untracked-files=all"
                         )
@@ -1274,9 +1404,22 @@ def run_delivery(
                     ),
                     None,
                 )
-                result = run_agent(
+                handoffs: list = []
+                runner = (
+                    partial(
+                        _run_connected_agent,
+                        session_factory=session_factory,
+                        connection_id=state["connection_id"],
+                        exchange=local_invocations,
+                        candidate=evidence["candidate"],
+                        handoffs=handoffs,
+                    )
+                    if state.get("connection_id")
+                    else run_agent
+                )
+                result = runner(
                     host_key,
-                    state["project_dir"],
+                    state["project_dir"] or "",
                     f"{agent['instructions']}\n\n{LAUNCH_AUTHORITY_BOUNDARY}",
                     json.dumps(
                         _work_prompt_copy(
@@ -1350,6 +1493,7 @@ def run_delivery(
                     **({"resume_thread_id": resume_thread_id} if resume_thread_id else {}),
                 )
                 # The shared schema owner also protects controlled/injected harnesses.
+                remote_handoff = handoffs[0] if handoffs else None
                 result = validate_agent_result(result, schema, host_key)
                 observed = evidence[phase]
                 final_usage = normalize_usage(
@@ -1428,11 +1572,20 @@ def run_delivery(
                                 )
                             )
                         ):
-                            sha = _candidate_commit(
-                                state["project_dir"],
-                                returned_sha,
-                                evidence["candidate"].get("base_commit_sha"),
-                            )
+                            if state.get("connection_id"):
+                                if not isinstance(returned_sha, str) or not re.fullmatch(
+                                    r"[0-9a-f]{40}", returned_sha
+                                ):
+                                    raise ValidationError(
+                                        "Connected candidate requires an exact commit SHA"
+                                    )
+                                sha = returned_sha
+                            else:
+                                sha = _candidate_commit(
+                                    state["project_dir"],
+                                    returned_sha,
+                                    evidence["candidate"].get("base_commit_sha"),
+                                )
                             if workflow_step is not None or phase == "delivery":
                                 if (
                                     workflow_step is None
@@ -1459,8 +1612,15 @@ def run_delivery(
                     and result.thread_id
                     and sessions.get("delivery") == {**identity, "thread_id": result.thread_id}
                 ):
-                    receipt = _owned_work_receipt(
-                        state["project_dir"], ticket_key, evidence, baseline_clean=baseline_clean
+                    receipt = (
+                        None
+                        if state.get("connection_id")
+                        else _owned_work_receipt(
+                            state["project_dir"],
+                            ticket_key,
+                            evidence,
+                            baseline_clean=baseline_clean,
+                        )
                     )
                     if receipt:
                         evidence["owned_work"] = receipt
@@ -1605,11 +1765,23 @@ def run_delivery(
                             _save_evidence(repo, project_id, ticket_key, evidence)
                     else:
                         _save_evidence(repo, project_id, ticket_key, evidence, **patch)
+                    # Clear uncertainty only after the owning attempt receipt is durable.
+                    if remote_handoff is not None and remote_handoff[2].state == "completed":
+                        _update_delivery(repo, project_id, task_key, uncertain_invocation=None)
+                    if accepted and phase == "review" and state.get("connection_id"):
+                        _update_delivery(
+                            repo,
+                            project_id,
+                            task_key,
+                            base_commit_sha=evidence["candidate"].get("commit_sha"),
+                        )
                     if not accepted and not repair:
                         _update_delivery(
                             repo, project_id, task_key, status="stopped", reason=reason
                         )
                         return
+                if remote_handoff is not None:
+                    local_invocations.release(*remote_handoff[:2])
                 if repair:
                     rejected_sha = evidence["candidate"].get("commit_sha")
                     _archive_attempt(evidence)

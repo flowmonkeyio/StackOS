@@ -67,6 +67,29 @@ async def tracker_start_delivery(
     session_factory = ctx.extras.get("session_factory")
     if scheduler is None or session_factory is None:
         raise ValidationError("Task delivery requires the running StackOS daemon")
+    settings = ctx.extras.get("settings")
+    if settings is not None and settings.process_role == "server":
+        if not inp.connection_id or ctx.principal is None:
+            raise ValidationError("Server delivery requires an owned connected computer")
+        if inp.mcp_config_ref is not None or inp.project_dir is not None:
+            raise ValidationError("Native folder and MCP configuration stay on the computer")
+        from stackos.repositories.workspaces import LocalRuntimeConnectionRepository
+
+        connection = LocalRuntimeConnectionRepository(ctx.session).owned(
+            inp.project_id, inp.connection_id
+        )
+        if connection.server_origin != settings.server_url:
+            raise ValidationError("Connection belongs to another server")
+        original_factory = session_factory
+        principal = ctx.principal
+
+        def session_factory():
+            session = original_factory()
+            session.info["user_principal"] = principal
+            session.info["server_environment_id"] = settings.environment_id
+            return session
+    elif inp.connection_id is not None:
+        raise ValidationError("Connected delivery requires the selected online server")
     result = task_delivery.start_delivery(
         session=ctx.session,
         session_factory=session_factory,
@@ -74,6 +97,9 @@ async def tracker_start_delivery(
         project_id=inp.project_id,
         task_key=inp.task_key,
         project_dir=inp.project_dir,
+        connection_id=inp.connection_id,
+        base_commit_sha=inp.base_commit_sha,
+        local_invocations=ctx.extras.get("local_invocations"),
         mcp_config_ref=inp.mcp_config_ref.model_dump() if inp.mcp_config_ref else None,
         host_key=inp.host_key,
         delivery_agent=inp.delivery_agent.model_dump(exclude_unset=True)

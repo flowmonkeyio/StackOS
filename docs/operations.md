@@ -121,7 +121,23 @@ After transport retirement/restart, a query naming an absent invocation returns
 `unknown`, and a late report refuses. There is no durable queue or automatic
 restart reconstruction. The controller must retain uncertainty in its existing
 attempt owner before considering further work; transport `idle` alone proves no
-prior outcome. The interruption and native lifecycle tickets own that wiring.
+prior outcome.
+
+On a selected server, `tracker.startDelivery` takes `connection_id` in place of
+`project_dir`. The verified owner selects an authorized computer that is actively
+polling. Optional `base_commit_sha` pins the initial local source; local candidate
+validation and independent review enforce the returned exact SHA. Folder and MCP
+configuration remain on that computer. Server input cannot select them.
+The existing server controller freezes role settings, dispatches invocations,
+persists results/usage, and alone accepts tickets and workflow steps. Separate
+native sessions, three repair passes, and correction rules retain their owners.
+
+Admission reserves that connection in the existing task snapshot. Before offering
+an invocation the controller marks its outcome uncertain there; only a persisted
+known result clears that marker. A disconnected computer, unresolved handoff or
+uncertainty surviving restart requires manual reconciliation before a new handoff.
+An idle transport after restart does not authorize replay. No process is killed
+or relaunched to resolve uncertainty.
 
 ## Project workflow schedules
 

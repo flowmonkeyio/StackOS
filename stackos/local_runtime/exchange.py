@@ -114,6 +114,21 @@ class InvocationExchange:
     def __init__(self) -> None:
         self._calls: dict[str, InvocationHandoff] = {}
         self._lock = RLock()
+        self._seen: dict[str, tuple[tuple, float]] = {}
+
+    def require_available(self, connection: LocalRuntimeConnection) -> None:
+        with self._lock:
+            seen = self._seen.get(connection.id)
+            if (
+                connection.revoked_at is not None
+                or connection.expires_at <= time.time()
+                or seen is None
+                or seen[0] != _identity(connection)
+                or time.monotonic() - seen[1] > 30
+            ):
+                raise ConflictError("Computer disconnected; connect and poll before admission")
+            if connection.id in self._calls:
+                raise ConflictError("Computer has unresolved work; manual reconciliation required")
 
     def offer(
         self, connection: LocalRuntimeConnection, call: ActiveInvocation, launch: NativeLaunch
@@ -151,6 +166,7 @@ class InvocationExchange:
 
     def poll(self, connection: LocalRuntimeConnection, invocation_id: str | None) -> dict:
         with self._lock:
+            self._seen[connection.id] = (_identity(connection), time.monotonic())
             handoff = self._calls.get(connection.id)
             if handoff is None or handoff.identity != _identity(connection):
                 return {
@@ -215,6 +231,7 @@ class InvocationExchange:
             ):
                 raise ConflictError("native session identity mismatch; reconciliation required")
             handoff.report = report.model_copy(deep=True)
+            self._seen[connection.id] = (_identity(connection), time.monotonic())
             handoff.state = report.state
             handoff.ready.set()
             return {
