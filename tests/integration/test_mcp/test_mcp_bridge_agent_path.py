@@ -1885,7 +1885,9 @@ def test_bridge_no_hint_start_session_lists_named_workspace_candidates(
                 "home": f"/projects/{bootstrapped['project_id']}",
                 "connections": f"/projects/{bootstrapped['project_id']}/connections",
                 "tasks": f"/projects/{bootstrapped['project_id']}/tasks",
-                "workflow_templates": f"/projects/{bootstrapped['project_id']}/workflow-templates",
+                "plugins": f"/projects/{bootstrapped['project_id']}/plugins",
+                "library": f"/projects/{bootstrapped['project_id']}/library",
+                "agents": f"/projects/{bootstrapped['project_id']}/agents",
             },
             "ui_urls": {
                 "home": f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}",
@@ -1893,10 +1895,9 @@ def test_bridge_no_hint_start_session_lists_named_workspace_candidates(
                     f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}/connections"
                 ),
                 "tasks": f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}/tasks",
-                "workflow_templates": (
-                    "http://127.0.0.1:5180/projects/"
-                    f"{bootstrapped['project_id']}/workflow-templates"
-                ),
+                "plugins": f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}/plugins",
+                "library": f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}/library",
+                "agents": f"http://127.0.0.1:5180/projects/{bootstrapped['project_id']}/agents",
             },
         }
     ]
