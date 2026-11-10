@@ -6,6 +6,7 @@ import { UiButton, UiMetricCard } from '@/components/ui'
 import { metricText, object, objects, refs, text } from '@/lib/finance'
 import FinanceOverviewCharts from './FinanceOverviewCharts.vue'
 import { contributionRows, overviewCurrencies } from './overviewViewModel'
+import { reportingReadiness } from './reportingReadiness'
 
 const props = defineProps<{ projection: SchemaFinanceProjectionOut }>()
 const emit = defineEmits<{
@@ -13,6 +14,7 @@ const emit = defineEmits<{
   drill: [dimension: string, row: Record<string, unknown>]
 }>()
 const currencies = computed(() => overviewCurrencies(props.projection))
+const readiness = computed(() => reportingReadiness(props.projection))
 const groups = computed(() =>
   Object.entries(object(props.projection.breakdowns)).map(([dimension, value]) => ({
     dimension,
@@ -22,12 +24,12 @@ const groups = computed(() =>
 </script>
 <template>
   <section class="min-w-0 space-y-5" aria-label="Finance overview">
-    <p v-if="!projection.metrics_by_currency.length" class="text-sm text-fg-muted">
-      Metrics unavailable. Records remain inspectable; confirm reporting policy, treatment and
-      source coverage.
+    <p v-if="!readiness.hasMetrics" class="text-sm text-fg-muted">
+      No supported accounting totals yet. Inspect the existing records and reporting setup above;
+      this does not mean there are no invoices.
     </p>
     <section
-      v-for="metric in projection.metrics_by_currency"
+      v-for="metric in readiness.hasMetrics ? projection.metrics_by_currency : []"
       :key="text(metric.currency)"
       class="space-y-3"
     >
@@ -61,8 +63,12 @@ const groups = computed(() =>
         </div>
       </div>
     </section>
-    <FinanceOverviewCharts :currencies="currencies" @inspect="emit('inspect', $event)" />
-    <details class="space-y-3">
+    <FinanceOverviewCharts
+      v-if="readiness.hasChartMetrics"
+      :currencies="currencies"
+      @inspect="emit('inspect', $event)"
+    />
+    <details v-if="readiness.hasMetrics" class="space-y-3">
       <summary class="focus-ring cursor-pointer text-sm font-medium">Detailed breakdowns</summary>
       <div class="space-y-5 pt-2">
         <p class="text-sm text-fg-muted">

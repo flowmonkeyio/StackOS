@@ -263,6 +263,12 @@ def _display_amount(
     if not amount:
         return None, None
     exponent, issue = _precision(current, settings, record, reporting)
+    if exponent is None and issue is None and amount["currency"] == "USD":
+        return {
+            **_money(amount["amount_minor"], amount["currency"], 2),
+            "precision_basis": "currency-convention",
+            "precision_warning": "Display units only; record precision has not been reviewed.",
+        }, None
     return _money(amount["amount_minor"], amount["currency"], exponent), issue
 
 
@@ -680,6 +686,94 @@ def _document_projection(
     return documents, summary
 
 
+def _reporting_readiness(
+    rows: list[dict[str, Any]], recognized: list[dict[str, Any]], coverage: dict[str, Any]
+) -> dict[str, Any]:
+    """Describe selected records without inferring treatment or approving metadata."""
+    counts: dict[str, int] = defaultdict(int)
+    reasons: dict[str, int] = defaultdict(int)
+    for row in rows:
+        counts[row["collection"]] += 1
+        if row["metric_exclusion"]:
+            reasons[row["metric_exclusion"]] += 1
+    supported = {row["record_ref"] for row in recognized}
+    bookkeeping = [row for row in rows if row["collection"] == "bookkeeping"]
+    excluded = sum(row["record_ref"] not in supported for row in bookkeeping)
+    missing_precision = sum(
+        bool(
+            row["amount"]
+            and (
+                row["amount"].get("exponent") is None
+                or row["amount"].get("precision_basis") == "currency-convention"
+            )
+        )
+        for row in rows
+    )
+    needs_review = (
+        excluded
+        or missing_precision
+        or coverage["state"] != "complete"
+        or any(row["needs_review"] for row in rows)
+    )
+    return {
+        "state": "empty" if not rows else "needs_review" if needs_review else "ready",
+        "selected_record_count": len(rows),
+        "counts_by_collection": dict(sorted(counts.items())),
+        "bookkeeping_count": len(bookkeeping),
+        "supported_bookkeeping_count": len(supported),
+        "excluded_bookkeeping_count": excluded,
+        "missing_metadata_count": sum(
+            row["metric_exclusion"] == "missing_metadata" for row in bookkeeping
+        ),
+        "missing_precision_count": missing_precision,
+        "undated_count": sum(not row["date"] for row in rows),
+        "reasons": [
+            {"reason": reason, "count": count} for reason, count in sorted(reasons.items())
+        ],
+        "coverage_issues": list(coverage["issues"]),
+    }
+
+
+def _record_label(row: dict[str, Any]) -> str:
+    # Display-only selected facts; never substitute account identifiers or paths.
+    title = (
+        row["counterparty"]
+        or row["business_purpose"]
+        or {"receipts": "Receipt", "bookkeeping": "Bookkeeping entry", "billing_versions": "Bill"}[
+            row["collection"]
+        ]
+    )
+    title = " ".join(str(title).split())[:160]
+    if not row["date"]:
+        filenames = sorted(
+            {
+                _document_filename(document["filename"])
+                for document in row.get("documents", [])
+                if document.get("filename")
+                and _document_filename(document["filename"]) != "Unnamed original"
+            }
+        )
+        if filenames:
+            title = f"{title} · {filenames[0]}"
+    return f"{title} · {row['date'] or 'Date not recorded'}"
+
+
+def _receipt_merchant(current: CurrentRecords, record: dict[str, Any]) -> str:
+    refs = record.get("receipt_refs", [])
+    if not refs:
+        return ""
+    merchants = set()
+    for ref in refs:
+        if current.collections.get(ref) != "receipts":
+            return ""
+        receipt = current.records[current.resolve(ref)]
+        merchant = receipt.get("merchant", "").strip()
+        if not merchant or receipt["status"] in {"superseded", "rejected", "withdrawn"}:
+            return ""
+        merchants.add(merchant)
+    return next(iter(merchants)) if len(merchants) == 1 else ""
+
+
 def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
     """One filtered population supplies rows, totals, groups, trends and reports."""
     q = normalize_query(filters)
@@ -791,6 +885,13 @@ def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
                     reason
                     or record.get("gaps")
                     or category.get("state") in {"unresolved", "proposed"}
+                    or (
+                        display_amount
+                        and (
+                            display_amount.get("exponent") is None
+                            or display_amount.get("precision_basis") == "currency-convention"
+                        )
+                    )
                 )
                 row = {
                     "record_ref": ref,
@@ -802,7 +903,7 @@ def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
                     "business_purpose": record.get("business_purpose", ""),
                     "counterparty": reporting.get("counterparty_label", "")
                     if reporting
-                    else record.get("merchant", ""),
+                    else record.get("merchant", "") or _receipt_merchant(current, record),
                     "counterparty_ref": reporting.get("counterparty_ref") if reporting else None,
                     "account_ref": record.get("account_ref"),
                     "category_ref": category.get("category_ref"),
@@ -1093,6 +1194,8 @@ def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
         "coverage": coverage,
         "exclusions": excluded,
         "undated_or_period_only": undated,
+        "reporting_readiness": _reporting_readiness(rows, recognized, coverage),
+        "record_labels": {row["record_ref"]: _record_label(row) for row in rows},
         "warnings": ["prepared/unposted; supported operating result, not posted books"],
     }
     if q.get("comparison"):

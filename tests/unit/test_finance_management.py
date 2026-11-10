@@ -608,6 +608,7 @@ def test_document_metadata_and_indirect_custody_do_not_change_filtered_financial
             for row in result["rows"]:
                 row.pop("documents")
                 row.pop("document_summary")
+            result.pop("record_labels")  # Display filenames may change, never financial selection.
         assert before == after
     actual = module.query(source, QUERY)
     assert "book:expense" in actual["metrics_by_currency"][0]["spend"]["included_record_refs"]
@@ -1208,9 +1209,9 @@ def test_precision_legacy_optional_and_nonamount_rebind_only(tmp_path):
     )
     lr = module.commit(path, legacy, module.preview(s, legacy)["preview_digest"])
     legacy_ref = next(r for r in lr["changed_refs"] if r.endswith(":record"))
-    assert (
-        module.record_detail(module.read_snapshot(path), legacy_ref)["amount"]["exponent"] is None
-    )
+    legacy_amount = module.record_detail(module.read_snapshot(path), legacy_ref)["amount"]
+    assert legacy_amount["exponent"] == 2
+    assert legacy_amount["precision_basis"] == "currency-convention"
 
 
 def test_precision_nonamount_correction_does_not_rebind_stale_review(tmp_path):

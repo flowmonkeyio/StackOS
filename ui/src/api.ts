@@ -3927,6 +3927,10 @@ export interface components {
             exponent: number | null;
             /** Minor */
             minor: string;
+            /** Precision Basis */
+            precision_basis?: string | null;
+            /** Precision Warning */
+            precision_warning?: string | null;
         };
         /** FinancePreviewOut */
         FinancePreviewOut: {
@@ -3977,6 +3981,14 @@ export interface components {
             };
             /** Query */
             query: {
+                [key: string]: unknown;
+            };
+            /** Record Labels */
+            record_labels?: {
+                [key: string]: string;
+            };
+            /** Reporting Readiness */
+            reporting_readiness?: {
                 [key: string]: unknown;
             };
             /** Review Items */

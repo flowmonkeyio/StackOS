@@ -24,6 +24,8 @@ import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import FinanceFilters from '@/components/finance/FinanceFilters.vue'
 import FinanceRecordPanel from '@/components/finance/FinanceRecordPanel.vue'
 import FinanceOverview from './finance/FinanceOverview.vue'
+import FinanceReportingReadiness from './finance/FinanceReportingReadiness.vue'
+import { financeRecordLabel } from './finance/reportingReadiness'
 import FinanceOverviewInsights from './finance/FinanceOverviewInsights.vue'
 import { aiCategory, insightsModel } from './finance/insightsViewModel'
 import {
@@ -678,6 +680,7 @@ onBeforeUnmount(() => {
               · {{ query.date_basis }} dates · {{ query.timezone }} · prepared/unposted · coverage
               {{ text(projection.coverage.state) }}
             </p>
+            <FinanceReportingReadiness :projection="projection" @records="section = 'records'" />
             <details class="text-xs text-fg-muted">
               <summary class="focus-ring cursor-pointer">Source and reporting gaps</summary>
               <p class="break-all">
@@ -703,7 +706,7 @@ onBeforeUnmount(() => {
                 size="sm"
                 variant="ghost"
                 @click="inspect(refValue)"
-                >{{ refValue }}</UiButton
+                >{{ financeRecordLabel(projection, refValue) }}</UiButton
               >
             </section>
             <FinanceOverview
@@ -713,7 +716,8 @@ onBeforeUnmount(() => {
               @drill="drill"
             />
             <FinanceOverviewInsights
-              v-if="section === 'overview'"
+              v-if="section === 'overview' && insights.hasResult"
+              :show-controls="false"
               :model="insights"
               :status="statusText"
               :has-request="!!selectedRequest"
@@ -737,7 +741,7 @@ onBeforeUnmount(() => {
                     projection.rows.find((row) => row.record_ref === refValue),
                   )
                 "
-                >{{ refValue }}</UiButton
+                >{{ financeRecordLabel(projection, refValue) }}</UiButton
               >
             </section>
             <section v-if="section === 'records'" class="space-y-3">

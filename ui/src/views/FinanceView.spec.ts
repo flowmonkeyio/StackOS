@@ -314,7 +314,11 @@ describe('Finance management', () => {
         : basics(name, args),
     )
     const { wrapper } = await mounted()
-    await wrapper.get('section[aria-label="AI categories and concerns"] button').trigger('click')
+    expect(wrapper.find('section[aria-label="AI categories and concerns"]').exists()).toBe(false)
+    await wrapper
+      .findAll('section[aria-label="Agent finance analysis"] button')
+      .find((button) => button.text() === 'Request category and concern review')!
+      .trigger('click')
     await flushPromises()
     const requests = vi
       .mocked(callOperation)
@@ -1668,7 +1672,8 @@ describe('Finance management', () => {
     const { wrapper } = await mounted()
     expect(wrapper.text()).toContain('USD 90,071,992,547,409.93')
     expect(wrapper.text()).toContain('Unavailable')
-    expect(wrapper.text()).toContain('receipt:undated')
+    expect(wrapper.text()).toContain('Inspect record details')
+    expect(wrapper.text()).not.toContain('receipt:undated')
     expect(wrapper.text()).toContain('Expenses & income')
     wrapper.unmount()
   })
