@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, toRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUpdate, reactive, ref, toRef } from 'vue'
 
 import {
   UiBadge,
@@ -122,8 +122,10 @@ const resultResource = computed(() => {
 let taskScroll = 0
 let returnFocus: HTMLElement | null = null
 let currentTaskKey = props.task ? `${props.task.project_id}:${props.task.key}` : ''
+let renderedTask = props.task
 
 function syncTask(task: TrackerTask | null): void {
+  renderedTask = task
   const identity = task ? `${task.project_id}:${task.key}` : ''
   if (identity !== currentTaskKey) {
     currentTaskKey = identity
@@ -134,7 +136,9 @@ function syncTask(task: TrackerTask | null): void {
   }
   content.syncTask(task)
 }
-watch(() => props.task, syncTask)
+onBeforeUpdate(() => {
+  if (props.task !== renderedTask) syncTask(props.task)
+})
 
 function prepareInspection(nextTicketKey: string): void {
   if (!props.ticketKey && nextTicketKey) {

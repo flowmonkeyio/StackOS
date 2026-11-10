@@ -15,6 +15,7 @@ describe('task results reader', () => {
     call.mockResolvedValueOnce(page([record], 'next'))
     const scope = effectScope()
     const reader = scope.run(() => useTaskResults({ projectId: ref(1), taskKey: ref('alpha') }))!
+    await reader.refresh()
     await flushPromises()
     call.mockResolvedValueOnce({ ...page([record, artifact]), warnings: ['Missing linked source'] })
     await reader.more()
@@ -27,6 +28,7 @@ describe('task results reader', () => {
     call.mockResolvedValueOnce({ ...page([]), task_key: 'other' })
     const scope = effectScope()
     const reader = scope.run(() => useTaskResults({ projectId: ref(1), taskKey: ref('alpha') }))!
+    await reader.refresh()
     await flushPromises()
     expect(reader.error.value).toContain('scope')
     expect(reader.loaded.value).toBe(false)

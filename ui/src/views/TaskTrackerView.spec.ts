@@ -58,7 +58,7 @@ async function render(url = '/projects/7/tasks', realDialogs = false) {
       TrackerBoardPanel: { name: 'TrackerBoardPanel', props: ['rows'], template: '<section data-test="board"><button v-for="row in rows" :key="row.key" @click="$emit(\'openTask\', row.key)">{{ row.task.title }}</button></section>' },
       TrackerGraphPanel: { name: 'TrackerGraphPanel', props: ['loading','activeTaskTitle','selectedTicket','selectionVisible','selectionLabel','flow'], template: '<section data-test="graph" />' },
       TrackerWarningSummary: true,
-      TrackerTaskDetailDialog: realDialogs ? false : { name: 'TrackerTaskDetailDialog', props: ['modelValue','task','tickets','loading','error','contexts','ticket','ticketKey'], template: '<aside />' },
+      TrackerTaskDetailDialog: realDialogs ? false : { name: 'TrackerTaskDetailDialog', props: ['modelValue','task','tickets','loading','error','contexts','ticket','ticketKey','results','activity'], template: '<aside />' },
       TrackerTicketDetailPanel: realDialogs ? false : { name: 'TrackerTicketDetailPanel', props: ['modelValue','ticket','parentTask','error','presentation'], template: '<aside />' },
     }},
   })
@@ -69,6 +69,43 @@ async function render(url = '/projects/7/tasks', realDialogs = false) {
 const popup = () => new DOMWrapper(document.body)
 
 describe('Work board navigation', () => {
+  it('owns initial inspection reads, task-switch invalidation, live refresh and close cleanup', async () => {
+    const fallback = mocks.callOperation.getMockImplementation()!
+    const late: Array<(value: unknown) => void> = []
+    let revision = 1
+    const page = (taskKey: string, sourceId: number) => ({
+      project_id: 7, task_key: taskKey,
+      items: [{ source_kind: 'project_event', source_id: sourceId }],
+      next_cursor: null, coverage: 'Recorded sources', warnings: [],
+    })
+    mocks.callOperation.mockImplementation((operation: string, args: Record<string, unknown>) => {
+      if (operation !== 'tracker.taskActivity' && operation !== 'tracker.taskResults') return fallback(operation, args)
+      if (args.task_key === taskA.key) return new Promise(resolve => { late.push(resolve) })
+      return Promise.resolve(page(taskB.key, revision))
+    })
+    const { wrapper, router, dialog } = await render('/projects/7/tasks?detail=task-a')
+    expect(late).toHaveLength(2)
+    expect(dialog().props('results')).toMatchObject({ items: [], loading: true })
+    await router.push({ query: { detail: taskB.key } })
+    await flushPromises()
+    expect(dialog().props('results').items[0].source_id).toBe(1)
+    expect(dialog().props('activity').items[0].source_id).toBe(1)
+    for (const resolve of late) resolve(page(taskA.key, 99))
+    await flushPromises()
+    expect(dialog().props('results').items[0].source_id).toBe(1)
+    expect(dialog().props('activity').items[0].source_id).toBe(1)
+    revision = 2
+    mocks.stream.mock.calls.at(-1)![0].onEvent({ id: 9910, event_type: 'tracker.task.updated', metadata_json: { task_key: taskB.key } })
+    await flushPromises()
+    expect(dialog().props('results').items[0].source_id).toBe(2)
+    expect(dialog().props('activity').items[0].source_id).toBe(2)
+    await router.push({ query: {} })
+    await flushPromises()
+    expect(dialog().props('results')).toMatchObject({ items: [], loaded: false, loading: false })
+    expect(dialog().props('activity')).toMatchObject({ items: [], loaded: false, loading: false })
+    wrapper.unmount()
+  })
+
   it('retains visible inert Board content, filter and scroll while the popup pages real reads, then restores its opener on Escape', async () => {
     const { wrapper, board, router } = await render('/projects/7/tasks?search=Alpha', true)
     const instance = board().vm

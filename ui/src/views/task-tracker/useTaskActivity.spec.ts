@@ -17,6 +17,8 @@ describe('task history reader', () => {
     call.mockResolvedValueOnce(page([5, 4, 3], 'older'))
     const scope = effectScope()
     const reader = scope.run(() => useTaskActivity({ projectId: ref(1), taskKey: ref('alpha') }))!
+    expect(call).not.toHaveBeenCalled()
+    await reader.refresh()
     await flushPromises()
     expect(call).toHaveBeenLastCalledWith('tracker.taskActivity', { project_id: 1, task_key: 'alpha', limit: 3, cursor: null })
     call.mockRejectedValueOnce(new Error('Unavailable'))
@@ -43,15 +45,19 @@ describe('task history reader', () => {
     call.mockReturnValueOnce(old).mockResolvedValueOnce(page([2], null, 'beta')).mockReturnValueOnce(disposed)
     const scope = effectScope(), projectId = ref(1), taskKey = ref('alpha')
     const reader = scope.run(() => useTaskActivity({ projectId, taskKey }))!
+    const first = reader.refresh()
     taskKey.value = 'beta'
+    const second = reader.refresh()
+    expect(reader.items.value).toEqual([])
     resolveOld(page([1]))
-    await flushPromises()
+    await Promise.all([first, second])
     expect(reader.items.value.map(x => x.source_id)).toEqual([2])
     projectId.value = 2
+    const third = reader.refresh()
     expect(reader.items.value).toEqual([])
     scope.stop()
     resolveDisposed(page([3], null, 'beta', 2))
-    await flushPromises()
+    await third
     expect(reader.items.value).toEqual([])
     expect(reader.loading.value).toBe(false)
   })

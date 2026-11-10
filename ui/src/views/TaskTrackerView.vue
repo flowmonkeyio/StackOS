@@ -167,6 +167,8 @@ async function loadDetail(taskKey: string): Promise<void> {
   if (detailSnapshot.value?.tasks[0]?.key !== taskKey) {
     detailSnapshot.value = null
     taskDialog.value?.syncTask?.(null)
+    results.reset()
+    activity.reset()
     void contexts.load(null)
   }
   try {
@@ -181,8 +183,8 @@ async function loadDetail(taskKey: string): Promise<void> {
     taskDialog.value?.syncTask?.(task)
     if (snapshot.value) snapshot.value = mergeFocusedTrackerSnapshot(snapshot.value, next)
     void contexts.load(task)
-    if (results.loaded) void results.refresh()
-    if (activity.loaded) void activity.refresh()
+    void results.refresh()
+    void activity.refresh()
   } catch (cause) {
     if (currentScope() && sequence === detailSequence) {
       detailError.value = cause instanceof Error ? cause.message : 'Could not load task details.'
@@ -296,6 +298,8 @@ const removeRouteListener = router.afterEach(async (to, from, failure) => {
       taskDialog.value?.syncTask?.(null)
       detailError.value = null
       detailLoading.value = false
+      results.reset()
+      activity.reset()
       void contexts.load(null)
     }
   }
@@ -306,6 +310,9 @@ useProjectScopedLoader({
     alive = false
     loadSequence += 1
     detailSequence += 1
+    results.reset()
+    activity.reset()
+    void contexts.load(null)
     graph.stopStatusStream()
     removeRouteListener()
   },

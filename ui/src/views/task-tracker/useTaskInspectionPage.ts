@@ -1,4 +1,4 @@
-import { onScopeDispose, ref, shallowRef, watch, type Ref } from 'vue'
+import { onScopeDispose, ref, shallowRef, type Ref } from 'vue'
 import { callOperation } from '@/lib/operations'
 import { formatApiError } from '@/lib/client'
 
@@ -34,6 +34,8 @@ export function useTaskInspectionPage<T extends SourceIdentity>(scope: TaskInspe
   let generation = 0
   let disposed = false
   let lastAppend = false
+  let selectedProject: number | null = null
+  let selectedTask = ''
 
   function reset() {
     generation++
@@ -44,12 +46,22 @@ export function useTaskInspectionPage<T extends SourceIdentity>(scope: TaskInspe
     warnings.value = []
     loaded.value = false
     loading.value = false
+    selectedProject = null
+    selectedTask = ''
+    lastAppend = false
   }
   async function read(append: boolean) {
-    if (disposed || !scope.taskKey.value || !Number.isSafeInteger(scope.projectId.value) || scope.projectId.value <= 0) return
+    if (disposed) return
+    const project = scope.projectId.value, key = scope.taskKey.value
+    if (project !== selectedProject || key !== selectedTask) {
+      reset()
+      selectedProject = project
+      selectedTask = key
+      append = false
+    }
+    if (!key || !Number.isSafeInteger(project) || project <= 0) return
     if (append && (loading.value || nextCursor.value === null)) return
     const request = ++generation
-    const project = scope.projectId.value, key = scope.taskKey.value
     const current = () => !disposed && request === generation && project === scope.projectId.value && key === scope.taskKey.value
     const target = append ? 0 : items.value.length
     lastAppend = append
@@ -91,7 +103,6 @@ export function useTaskInspectionPage<T extends SourceIdentity>(scope: TaskInspe
   const refresh = () => read(false)
   const more = () => read(true)
   const retry = () => read(lastAppend)
-  watch([scope.projectId, scope.taskKey], () => { reset(); void refresh() }, { immediate: true, flush: 'sync' })
   onScopeDispose(() => { disposed = true; reset() })
-  return { items, nextCursor, loading, loaded, error, coverage, warnings, refresh, more, retry }
+  return { items, nextCursor, loading, loaded, error, coverage, warnings, refresh, more, retry, reset }
 }

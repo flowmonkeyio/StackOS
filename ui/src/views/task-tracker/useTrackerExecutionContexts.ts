@@ -1,4 +1,4 @@
-import { onScopeDispose, ref, watch, type Ref } from 'vue'
+import { onScopeDispose, ref, type Ref } from 'vue'
 
 import { formatApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
@@ -30,6 +30,8 @@ export function useTrackerExecutionContexts({ projectId }: UseTrackerExecutionCo
   async function load(task: TrackerTask | null): Promise<void> {
     if (disposed) return
     const currentRequest = ++requestSeq
+    const requestProject = projectId.value
+    const current = () => !disposed && currentRequest === requestSeq && projectId.value === requestProject
     error.value = null
     if (!validProjectId(projectId.value) || !task) {
       reset()
@@ -39,16 +41,16 @@ export function useTrackerExecutionContexts({ projectId }: UseTrackerExecutionCo
     loading.value = true
     try {
       const page = await callOperation<TaskExecutionContextPage>('executionContext.list', {
-        project_id: projectId.value,
+        project_id: requestProject,
         task_key: task.key,
         limit: 20,
       })
-      if (currentRequest !== requestSeq) return
+      if (!current()) return
 
       contexts.value = page.items
       pageInfo.value = paginationInfo(page, 20)
-      const entries = await Promise.all(page.items.map(loadArtifacts))
-      if (currentRequest !== requestSeq) return
+      const entries = await Promise.all(page.items.map(context => loadArtifacts(context, requestProject)))
+      if (!current()) return
 
       artifacts.value = Object.fromEntries(
         entries.map(([contextRef, value]) => [contextRef, value.items]),
@@ -57,15 +59,18 @@ export function useTrackerExecutionContexts({ projectId }: UseTrackerExecutionCo
         entries.map(([contextRef, value]) => [contextRef, value.info]),
       )
     } catch (cause) {
-      if (currentRequest !== requestSeq) return
+      if (!current()) return
       reset()
       error.value = formatApiError(cause, 'failed to load task contexts')
     } finally {
-      if (currentRequest === requestSeq) loading.value = false
+      if (currentRequest === requestSeq) {
+        if (projectId.value !== requestProject) reset()
+        else loading.value = false
+      }
     }
   }
 
-  async function loadArtifacts(context: TaskExecutionContext) {
+  async function loadArtifacts(context: TaskExecutionContext, requestProject: number) {
     if (!context.context_ref || (context.artifact_count ?? 0) === 0) {
       return [
         context.context_ref,
@@ -76,7 +81,7 @@ export function useTrackerExecutionContexts({ projectId }: UseTrackerExecutionCo
     const page = await callOperation<TaskExecutionContextArtifactPage>(
       'executionContext.artifact.list',
       {
-        project_id: projectId.value,
+        project_id: requestProject,
         context_ref: context.context_ref,
         limit: 5,
       },
@@ -92,7 +97,6 @@ export function useTrackerExecutionContexts({ projectId }: UseTrackerExecutionCo
     loading.value = false
   }
 
-  watch(projectId, () => { void load(null) }, { flush: 'sync' })
   onScopeDispose(() => { disposed = true; requestSeq++; reset() })
 
   return {
