@@ -22,6 +22,44 @@ def seed_inspection(session: Session, project_id: int) -> TrackerRepository:
     return repo
 
 
+@pytest.mark.parametrize("malformed", [[], {"unexpected": "value"}])
+def test_activity_retains_task_events_with_malformed_optional_ticket_metadata(
+    session, project_id, malformed
+):
+    from stackos.context.repository import ContextRepository
+
+    repo = seed_inspection(session, project_id)
+    task = repo.get(project_id=project_id, task_key="inspect", include_graph=False).tasks[0]
+    event = ContextRepository(session)._record_event(
+        project_id=project_id,
+        source_type="tracker_task",
+        source_id=task.id,
+        event_type="tracker.task.note",
+        title="Persisted task note",
+        metadata_json={"ticket_key": malformed},
+    )
+    session.commit()
+    writes_before = session.connection().exec_driver_sql("SELECT total_changes()").scalar()
+
+    page = repo.task_activity(project_id=project_id, task_key="inspect")
+
+    item = next(
+        item
+        for item in page.items
+        if item.source_kind == "project_event" and item.source_id == event.id
+    )
+    assert item.task_key == "inspect"
+    assert item.ticket_key is None
+    assert item.summary == "Persisted task note"
+    assert item.details["source_type"] == "tracker_task"
+    assert item.details["source_id"] == task.id
+    assert item.details["metadata_json"]["ticket_key"] == malformed
+    assert any(item.kind == "tracker.ticket.status_changed" for item in page.items)
+    assert session.connection().exec_driver_sql("SELECT total_changes()").scalar() == writes_before
+    session.refresh(event)
+    assert event.metadata_json["ticket_key"] == malformed
+
+
 def test_activity_uses_real_writers_filters_before_paging_and_never_writes(session, project_id):
     repo = seed_inspection(session, project_id)
     _update_delivery(repo, project_id, "inspect", status="running", ticket_key="child")

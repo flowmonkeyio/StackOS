@@ -98,7 +98,9 @@ class TaskActivityMixin:
                     kind=row.event_type,
                     summary=payload.summary or payload.title or row.event_type,
                     task_key=task_key,
-                    ticket_key=ticket_key if ticket_key in scope.ticket_keys else None,
+                    ticket_key=ticket_key
+                    if isinstance(ticket_key, str) and ticket_key in scope.ticket_keys
+                    else None,
                     run_id=row.run_id if row.run_id in scope.runs else None,
                     run_plan_id=metadata.get("run_plan_id")
                     if type(metadata.get("run_plan_id")) is int
