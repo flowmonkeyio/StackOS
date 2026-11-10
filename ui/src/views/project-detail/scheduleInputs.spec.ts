@@ -38,4 +38,18 @@ describe('schedule input contracts', () => {
     expect(fieldError(field!, { title: 'Retain' }, false)).toBeNull()
     expect(propertyFields({ ...field!, depth: 3 })).toEqual([])
   })
+  it.each(['number', 'integer'])('validates present %s list items while permitting absent optional inputs', type => {
+    const [list, optional, strings] = workflowFields(workflow([
+      { key: 'quantities', type: 'array', schema_json: { items: { type } } },
+      { key: 'optional', type },
+      { key: 'strings', type: 'array', schema_json: { items: { type: 'string' } } },
+    ]))
+    expect(fieldError(list!, [null], true)).toContain(`Enter a valid ${type}`)
+    expect(fieldError(list!, [null], false)).toContain(`Enter a valid ${type}`)
+    expect(fieldError(list!, [0], true)).toBeNull()
+    expect(fieldError(list!, undefined, true)).toBeNull()
+    expect(fieldError(optional!, undefined, true)).toBeNull()
+    expect(fieldError(optional!, null, true)).toBeNull()
+    expect(fieldError(strings!, [''], true)).toBeNull()
+  })
 })

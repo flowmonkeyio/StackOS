@@ -10,6 +10,7 @@ export interface InputField {
   schema: InputValues
   options?: unknown[]
   depth: number
+  listItem?: boolean
 }
 export const isObject = (value: unknown): value is InputValues => !!value && typeof value === 'object' && !Array.isArray(value)
 export const missingInput = (value: unknown): boolean => value == null || value === '' || (Array.isArray(value) && !value.length) || (isObject(value) && !Object.keys(value).length)
@@ -44,7 +45,7 @@ export function schemaField(key: string, raw: unknown, depth: number, required =
   return { key, label: typeof schema.title === 'string' ? schema.title : key, help: typeof schema.description === 'string' ? schema.description : '', type: typeof schema.type === 'string' ? schema.type : 'opaque', schema, required, depth }
 }
 export function itemField(field: InputField, index: number): InputField {
-  return schemaField(`${index + 1}`, field.schema.items, field.depth + 1)
+  return { ...schemaField(`${index + 1}`, field.schema.items, field.depth + 1), listItem: true }
 }
 export function fieldKind(field: InputField): string {
   if (field.depth > 3 || ['oneOf', 'anyOf', 'allOf', '$ref'].some(key => key in field.schema)) return 'opaque'
@@ -65,7 +66,9 @@ export function fieldError(field: InputField, value: unknown, enabling: boolean)
   const kind = fieldKind(field)
   if (missingInput(value)) {
     if (field.required && enabling) return kind === 'opaque' ? 'Required data is missing. Complete workflow setup before enabling; you can save a disabled draft.' : 'This field is required before enabling.'
-    if (value == null) return null
+    // A list slot is a supplied value, even when its control is blank. Validate
+    // it against the item type instead of treating it as an omitted input.
+    if (value == null && !field.listItem) return null
   }
   if (kind === 'opaque') return null // Canonical server validation owns unsupported schemas.
   if (kind === 'option' && !fieldOptions(field).some(option => equal(option, value))) return 'Choose one of the declared options.'
