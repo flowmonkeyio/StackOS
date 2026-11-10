@@ -743,14 +743,20 @@ def mcp_bridge(
             from stackos.local_runtime.connection import LocalConnectionStore
 
             selected_session = ServerSession(settings)
-            selected_folder = (workspace_root or Path.cwd()).resolve()
+            local_workspace = _mcp_bridge_workspace_hints(Path.cwd(), workspace_root=workspace_root)
+            if not local_workspace.get("cwd"):
+                raise ValueError("select an existing local workspace folder")
+            selected_folder = Path(local_workspace["cwd"])
+            binding = LocalConnectionStore(settings.state_dir).load()
+            if binding is None:
+                raise ValueError("connect this computer and existing folder with `stackos connect`")
 
             def connected_headers():
-                return selected_session.headers(require_connection=True, folder=selected_folder)
+                return selected_session.headers(
+                    require_connection=True, folder=selected_folder, expected_binding=binding
+                )
 
             headers = connected_headers()
-            binding = LocalConnectionStore(settings.state_dir).load()
-            assert binding is not None
             connected_project_id = binding.project_id
             headers_provider = connected_headers
             url = selected_session.origin + "/mcp"

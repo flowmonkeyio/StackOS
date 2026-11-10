@@ -254,7 +254,11 @@ before removing its local binding. Neither command changes browser sessions.
 Registered stdio MCP validates the current native session, computer authorization
 and exact existing folder before forwarding scoped operations. Workspace startup
 reports that local binding without sending local paths to the server or creating
-another project. The shared operation dispatcher still enforces ownership and
+another project. Folder selection retains `--workspace-root`,
+`STACKOS_WORKSPACE_ROOT`, `CLAUDE_PROJECT_DIR`, then current-directory precedence.
+A live bridge retains its original connection identity; disconnecting or replacing
+that binding requires a new bridge, even when the folder or project is unchanged.
+The shared operation dispatcher still enforces ownership and
 run grants. Explicit download operations materialize authorized private files in
 new local destinations. Missing/expired sessions, revoked/foreign connections,
 changed folders and unavailable servers refuse; they never fall back to the

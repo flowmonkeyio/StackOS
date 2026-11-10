@@ -12,7 +12,12 @@ import httpx
 from pydantic import BaseModel, ConfigDict, SecretStr
 
 from stackos.config import Settings
-from stackos.local_runtime.connection import LocalConnectionStore, check_connection, server_origin
+from stackos.local_runtime.connection import (
+    LocalBinding,
+    LocalConnectionStore,
+    check_connection,
+    server_origin,
+)
 
 
 class NativeSession(BaseModel):
@@ -90,7 +95,11 @@ class ServerSession:
                 os.unlink(temporary)
 
     def headers(
-        self, *, require_connection: bool = False, folder: Path | None = None
+        self,
+        *,
+        require_connection: bool = False,
+        folder: Path | None = None,
+        expected_binding: LocalBinding | None = None,
     ) -> dict[str, str]:
         saved = self.load()
         headers = {
@@ -116,6 +125,8 @@ class ServerSession:
                     raise ValueError(
                         "connect this computer and existing folder with `stackos connect`"
                     )
+                if expected_binding is not None and binding != expected_binding:
+                    raise ValueError("computer binding changed; start a new bridge explicitly")
                 if any(
                     getattr(binding, key) != getattr(saved, key)
                     for key in ("server_url", "environment_id", "user_id")

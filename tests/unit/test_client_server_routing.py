@@ -5,10 +5,14 @@ import json
 import httpx
 import pytest
 import typer
+from pydantic import SecretStr
+from typer.testing import CliRunner
 
 from stackos.auth import session_cookie_name
+from stackos.cli import app, daemon_commands
 from stackos.cli.api_client import _api_request
 from stackos.cli.server_session import ServerSession
+from stackos.local_runtime.connection import LocalBinding, LocalConnectionStore
 from stackos.mcp.bridge import AgentBridgeProxy
 
 
@@ -31,6 +35,159 @@ def save(selected):
             client, {"environment_id": "native-test", "user_id": "owner", "csrf_token": "csrf"}
         )
     return session
+
+
+@pytest.fixture
+def native_bridge(selected, tmp_path, monkeypatch):
+    """Run the real stdio loop/session/folder owners with substituted HTTP transport."""
+    save(selected)
+    folder = (tmp_path / "project").resolve()
+    folder.mkdir()
+    other = (tmp_path / "other").resolve()
+    other.mkdir()
+    info = folder.stat()
+    store = LocalConnectionStore(selected.state_dir)
+    state = {
+        "binding": LocalBinding(
+            server_url=selected.server_url,
+            environment_id=selected.environment_id,
+            user_id="owner",
+            project_id=12,
+            connection_id="initial-connection",
+            credential=SecretStr("stackos_runtime_synthetic"),
+            root=str(folder),
+            root_device=info.st_dev,
+            root_inode=info.st_ino,
+        ),
+        "forwarded_ids": [],
+        "replace_after": None,
+    }
+
+    def replace(**changes):
+        binding = state["binding"].model_copy(update=changes)
+        payload = binding.model_dump(mode="json")
+        payload["credential"] = binding.credential.get_secret_value()
+        store.path.write_text(json.dumps(payload))
+        store.path.chmod(0o600)
+        state["binding"] = binding
+
+    replace()
+
+    def respond(request):
+        if request.url.path == "/api/v1/auth/session":
+            return httpx.Response(
+                200,
+                json={
+                    "status": "authenticated",
+                    "environment_id": selected.environment_id,
+                    "user_id": "owner",
+                },
+            )
+        if request.url.path.endswith("localRuntime.status/call"):
+            return httpx.Response(
+                200,
+                json={
+                    **{
+                        key: getattr(state["binding"], key)
+                        for key in (
+                            "server_url",
+                            "environment_id",
+                            "user_id",
+                            "project_id",
+                            "connection_id",
+                        )
+                    },
+                    "status": "authorized",
+                },
+            )
+        assert request.url.path == "/mcp"
+        message = json.loads(request.content)
+        state["forwarded_ids"].append(message["id"])
+        result = {}
+        if message["method"] == "initialize":
+            result = {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "serverInfo": {"name": "synthetic-server", "version": "1"},
+            }
+        if message["id"] == 2 and state["replace_after"] is not None:
+            replace(**state["replace_after"])
+        return httpx.Response(200, json={"jsonrpc": "2.0", "id": message["id"], "result": result})
+
+    original = httpx.Client
+    monkeypatch.setattr(
+        httpx, "Client", lambda **kw: original(**kw, transport=httpx.MockTransport(respond))
+    )
+    monkeypatch.setattr(daemon_commands, "get_settings", lambda: selected)
+    monkeypatch.delenv("STACKOS_WORKSPACE_ROOT", raising=False)
+    monkeypatch.delenv("CLAUDE_PROJECT_DIR", raising=False)
+    return folder, other, state
+
+
+def initialize():
+    return {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "native-regression", "version": "1"},
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "cwd_bound,env_root,claude_root,flag_root,accept",
+    [
+        (True, "other", None, None, False),
+        (False, "bound", None, None, True),
+        (False, None, "bound", None, True),
+        (False, "other", "other", "bound", True),
+        (True, "bound", "bound", "other", False),
+        (False, "bound", "other", None, True),
+        (True, "missing", None, None, False),
+        (True, None, None, None, True),
+    ],
+)
+def test_runtime_bridge_uses_canonical_workspace_selection(
+    native_bridge, monkeypatch, cwd_bound, env_root, claude_root, flag_root, accept
+):
+    folder, other, state = native_bridge
+    roots = {"bound": folder, "other": other, "missing": folder.parent / "missing"}
+    monkeypatch.chdir(folder if cwd_bound else other)
+    if env_root:
+        monkeypatch.setenv("STACKOS_WORKSPACE_ROOT", str(roots[env_root]))
+    if claude_root:
+        monkeypatch.setenv("CLAUDE_PROJECT_DIR", str(roots[claude_root]))
+    args = ["mcp-bridge"]
+    if flag_root:
+        args += ["--workspace-root", str(roots[flag_root])]
+    result = CliRunner().invoke(app, args, input=json.dumps(initialize()) + "\n")
+    assert (result.exit_code == 0) is accept, result.output
+    assert state["forwarded_ids"] == ([1] if accept else [])
+    assert state["binding"].project_id == 12 and state["binding"].root == str(folder)
+
+
+@pytest.mark.parametrize("replacement_project", [12, 13])
+def test_persistent_runtime_bridge_refuses_replacement_connection(
+    native_bridge, monkeypatch, replacement_project
+):
+    folder, _other, state = native_bridge
+    monkeypatch.chdir(folder)
+    state["replace_after"] = {
+        "connection_id": "replacement-connection",
+        "project_id": replacement_project,
+    }
+    messages = [initialize(), *({"jsonrpc": "2.0", "id": n, "method": "ping"} for n in (2, 3))]
+    result = CliRunner().invoke(
+        app, ["mcp-bridge"], input="".join(json.dumps(message) + "\n" for message in messages)
+    )
+    assert result.exit_code == 0
+    responses = {json.loads(line)["id"]: json.loads(line) for line in result.stdout.splitlines()}
+    assert "result" in responses[2]  # The established connection remains usable.
+    assert state["forwarded_ids"] == [1, 2]  # Replacement cannot authorize the old process.
+    assert "error" in responses[3]
 
 
 def test_native_session_is_private_and_wrong_environment_refuses(selected):
