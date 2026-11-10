@@ -547,7 +547,11 @@ async def _server_dispatch(
         return await call_next(request)
     try:
         check_server_origin(request, settings, required=method not in {"GET", "HEAD", "OPTIONS"})
-        public = {("GET", "/api/v1/health"), ("GET", "/api/v1/auth/callback")}
+        public = {
+            ("GET", "/api/v1/health"),
+            ("GET", "/api/v1/auth/callback"),
+            ("GET", "/api/v1/auth/oauth/callback"),
+        }
         public.update(
             ("POST", f"/api/v1/auth/{name}")
             for name in (

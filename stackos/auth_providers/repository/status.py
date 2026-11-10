@@ -15,10 +15,12 @@ from stackos.db.models import (
     CredentialAccount,
     CredentialScope,
     CredentialUsageEvent,
+    Project,
     ProjectCredential,
 )
-from stackos.repositories.base import NotFoundError
+from stackos.repositories.project_access import project_owner_filter
 
+from .access import account_owner_filter, require_account_owner
 from .schema import AccountOut, AuthStatusOut, AuthTestOut
 
 
@@ -39,7 +41,9 @@ class CredentialStatusMixin:
                 provider_key=provider_key,
             )
         else:
-            stmt = select(Credential).where(col(Credential.status) != "revoked")
+            stmt = select(Credential).where(
+                account_owner_filter(self._s), col(Credential.status) != "revoked"
+            )
             if provider_key is not None:
                 stmt = stmt.where(col(Credential.provider_key) == provider_key)
             rows = self._s.exec(
@@ -72,6 +76,7 @@ class CredentialStatusMixin:
                 col(ProjectCredential.credential_id) == col(Credential.id),
             )
             .where(
+                account_owner_filter(self._s),
                 col(Credential.status) != "revoked",
                 col(ProjectCredential.project_id) == project_id,
             )
@@ -93,11 +98,11 @@ class CredentialStatusMixin:
         credential = self._s.exec(
             select(Credential).where(col(Credential.credential_ref) == credential_ref)
         ).first()
-        if credential is None:
-            raise NotFoundError(f"Account {credential_ref!r} not found")
+        credential = require_account_owner(self._s, credential)
         return self._account_out(credential)
 
     def _account_out(self, credential: Credential) -> AccountOut:
+        require_account_owner(self._s, credential)
         assert credential.id is not None
         has_backing = credential.integration_credential_id is not None
         status = (
@@ -198,7 +203,11 @@ class CredentialStatusMixin:
     def _project_ids_for_credential(self, credential_id: int) -> list[int]:
         rows = self._s.exec(
             select(ProjectCredential)
-            .where(col(ProjectCredential.credential_id) == credential_id)
+            .join(Project, col(Project.id) == col(ProjectCredential.project_id))
+            .where(
+                col(ProjectCredential.credential_id) == credential_id,
+                project_owner_filter(self._s),
+            )
             .order_by(col(ProjectCredential.project_id).asc())
         ).all()
         return [row.project_id for row in rows]

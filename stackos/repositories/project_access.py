@@ -187,6 +187,18 @@ def authorize_operation(
     runtime_id = session.info.get("local_runtime_connection_id")
     if runtime_id is not None and name not in RUNTIME_OPERATIONS:
         raise ToolNotGrantedError("computer credential cannot access this operation")
+    from stackos.auth_providers.repository.access import ACCOUNT_OPERATIONS
+
+    if name in ACCOUNT_OPERATIONS:
+        project_id = values.get("project_id")
+        for field in ("project_id", "attach_project_id"):
+            if values.get(field) is not None:
+                require_project(session, values[field])
+        # The auth repository checks the Account independently of the project.
+        # Keep run/step grants and project-bound test semantics in the dispatcher.
+        if run is not None:
+            return authorize_project_refs(session, values, run=run)
+        return project_id
     if name in CONNECTION_OPERATIONS:
         from stackos.repositories.workspaces import LocalRuntimeConnectionRepository
 

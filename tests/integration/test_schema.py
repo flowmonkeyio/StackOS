@@ -33,6 +33,42 @@ from tests.helpers.sqlite_schema import (
 )
 
 
+def test_account_owner_migration_preserves_legacy_custody(isolated_alembic: Path) -> None:
+    _run_alembic(["upgrade", "0040_local_runtime_connections"])
+    with sqlite3.connect(isolated_alembic) as connection:
+        connection.execute(
+            "INSERT INTO integration_credentials "
+            "(id, encrypted_payload, nonce, created_at, updated_at) "
+            "VALUES (1, ?, ?, '2026-11-10', '2026-11-10')",
+            (b"preserved-ciphertext", b"nonce"),
+        )
+        connection.execute(
+            "INSERT INTO credentials (id, integration_credential_id, credential_ref, provider_key, "
+            "display_name, display_name_key, auth_type, auth_method_key, status, "
+            "created_at, updated_at) "
+            "VALUES (1, 1, 'cred_legacy', 'openrouter', 'Legacy', 'legacy', 'api_key', 'api_key', "
+            "'connected', '2026-11-10', '2026-11-10')"
+        )
+    _run_alembic(["upgrade", "head"])
+    with sqlite3.connect(isolated_alembic) as connection:
+        assert connection.execute(
+            "SELECT owner_user_id, environment_id FROM credentials"
+        ).fetchone() == (None, None)
+        assert connection.execute(
+            "SELECT encrypted_payload, nonce FROM integration_credentials"
+        ).fetchone() == (b"preserved-ciphertext", b"nonce")
+        connection.execute(
+            "UPDATE credentials SET owner_user_id='synthetic-user', environment_id='synthetic-env'"
+        )
+    with pytest.raises(subprocess.CalledProcessError) as refused:
+        _run_alembic(["downgrade", "0040_local_runtime_connections"])
+    assert "Refusing to discard private Account ownership" in refused.value.stderr
+    with sqlite3.connect(isolated_alembic) as connection:
+        assert connection.execute("SELECT owner_user_id FROM credentials").fetchone() == (
+            "synthetic-user",
+        )
+
+
 def test_database_target_refuses_runtime_and_preserves_url_escaping(tmp_path: Path) -> None:
     """Target selection is shared by sessions, startup and ConfigParser/Alembic."""
     standalone = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
@@ -78,7 +114,7 @@ def test_postgres_migrate_cli_reports_safe_success(postgres_settings: Settings) 
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "migrate: alembic upgraded to head (Postgres)."
-    assert current_alembic_version(postgres_settings) == "0040_local_runtime_connections"
+    assert current_alembic_version(postgres_settings) == "0041_account_owners"
     assert postgres_settings.database_url is not None
     url = postgres_settings.database_url.get_secret_value()
     password = sa.engine.make_url(url).password
@@ -99,7 +135,7 @@ def test_postgres_migration_repositories_and_private_schema(postgres_settings: S
 
     selected = postgres_settings
     assert upgrade_to_head(selected).stamped_existing_schema is False
-    assert current_alembic_version(selected) == "0040_local_runtime_connections"
+    assert current_alembic_version(selected) == "0041_account_owners"
     engine = make_settings_engine(selected)
     assert engine.dialect.name == "postgresql"
     try:
@@ -923,7 +959,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0040_local_runtime_connections",
+            "0041_account_owners",
         )
     finally:
         conn.close()
@@ -1806,7 +1842,6 @@ def test_telegram_cutover_retires_active_bindings_preserves_history(isolated_ale
     from stackos.db.models import (
         Action,
         ActionCall,
-        Credential,
         Plugin,
         ProjectCredential,
         Provider,
@@ -1824,13 +1859,20 @@ def test_telegram_cutover_retires_active_bindings_preserves_history(isolated_ale
         session.commit()
         session.add(Provider(id=1, plugin_id=1, key="telegram-bot", name="Old Telegram"))
         session.add(Provider(id=2, plugin_id=1, key="slack-bot", name="Slack"))
-        session.add(
-            Credential(
+        # This fixture intentionally targets the pre-ownership credential schema.
+        legacy_credentials = sa.Table("credentials", sa.MetaData(), autoload_with=engine)
+        session.execute(
+            legacy_credentials.insert().values(
                 id=1,
                 provider_key="telegram-bot",
                 credential_ref="cred_old_bot",
                 display_name="Old bot",
                 display_name_key="old bot",
+                auth_type="none",
+                auth_method_key="default",
+                status="connected",
+                created_at=sa.func.current_timestamp(),
+                updated_at=sa.func.current_timestamp(),
             )
         )
         session.commit()

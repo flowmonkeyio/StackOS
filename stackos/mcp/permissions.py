@@ -779,6 +779,16 @@ def check_call_grant(tool_name: str, ctx: Any, parsed_arguments: Any | None = No
     generic mutation tools so a stored run plan, not agent discretion, defines
     what can be called.
     """
+    from stackos.auth_providers.repository.access import ACCOUNT_SETUP_OPERATIONS
+
+    if tool_name in ACCOUNT_SETUP_OPERATIONS and ctx.principal is not None:
+        if (
+            ctx.extras.get("surface") != "rest"
+            or ctx.extras.get("auth_scope") != "verified-user"
+            or ctx.run_token is not None
+        ):
+            raise ToolNotGrantedError("Account setup requires direct verified owner authority")
+        return
     from stackos.operations.local_runtime import (
         CONNECTION_OPERATIONS,
         EXCHANGE_OPERATIONS,

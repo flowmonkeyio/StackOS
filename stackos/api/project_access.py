@@ -23,6 +23,10 @@ _CHILD_READ = re.compile(
     r"(?:resource-records/(?P<record_id>[1-9][0-9]*)))"
 )
 _OPERATION_CALL = re.compile(r"/api/v1/operations/[^/]+/call")
+_ACCOUNT_ROUTE = re.compile(
+    r"/api/v1/(?:auth/providers|auth/accounts(?:/[^/]+(?:/(?:start|test|revoke))?)?"
+    r"|projects/[1-9][0-9]*/connections/accounts(?:/[^/]+)?)"
+)
 
 
 def bind_user_session(session: Session, request: Request, settings: Settings) -> None:
@@ -39,6 +43,8 @@ def authorize_request(session: Session, request: Request, settings: Settings) ->
 
     bind_user_session(session, request, settings)
     path, method = request.url.path, request.method
+    if _ACCOUNT_ROUTE.fullmatch(path) or path == "/api/v1/auth/oauth/complete":
+        return  # Exact auth routes dispatch; repository owns both Account and project checks.
     from stackos.operations.local_runtime import CONNECTION_OPERATIONS
 
     if method == "POST" and path in {

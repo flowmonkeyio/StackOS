@@ -399,6 +399,7 @@ class IntegrationCredentialRepository:
         return Envelope(data=IntegrationCredentialOut.model_validate(row))
 
     def get_decrypted(self, credential_id: int) -> bytes:
+        from stackos.auth_providers.repository.access import require_account_owner
         from stackos.crypto.aes_gcm import decrypt_account
 
         row = self._s.get(IntegrationCredential, credential_id)
@@ -412,6 +413,7 @@ class IntegrationCredentialRepository:
                 "Account identity for encrypted credential backing not found",
                 data={"integration_credential_id": credential_id},
             )
+        require_account_owner(self._s, account)
         return decrypt_account(
             row.encrypted_payload,
             nonce=row.nonce,
