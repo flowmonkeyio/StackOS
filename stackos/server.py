@@ -284,11 +284,14 @@ def _build_lifespan(
             connectors=connectors,
             asset_dir=settings.generated_assets_dir,
         )
+        from stackos.local_runtime.exchange import InvocationExchange
+
         app.state.operation_services = {
             "settings": settings,
             "telegram_runtime": telegram_runtime,
             "action_connectors": connectors,
             "durable_dispatcher": delivery,
+            "local_invocations": InvocationExchange(),
         }
 
         with Session(engine) as session:

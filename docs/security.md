@@ -81,9 +81,12 @@ project. It issues a random, 30-day revocable computer credential for that exact
 user/environment/project/server origin. The server stores only its digest and
 safe connection identity. `localRuntime.list`, `status` and `revoke` check that
 same persisted ownership; ownership changes invalidate existing credentials.
-The credential permits only its own status and revocation operations. It grants
-no browser session, local-admin access, project browsing, arbitrary tool calls,
-filesystem access or native invocation. Command exchange is a separate boundary.
+The credential permits its own status, revocation and finite invocation
+poll/report operations. It grants no browser session, local-admin access, project
+browsing, arbitrary tool calls or filesystem access. Only the existing server
+controller can offer a scoped host invocation; the computer cannot enqueue work
+or advance tracker/run lifecycle. Poll/report require the computer bearer even
+when a verified browser session belongs to the same user.
 
 The local connection module stores the endpoint, identity and credential in a
 user-owned `0600` file under a private `0700` directory. The signed-in owner must
@@ -94,6 +97,15 @@ identity. Changed, missing, expired, revoked and foreign bindings refuse reuse;
 they never implicitly rebind or create a project. Disconnect confirms server
 revocation before removing the local record. No local application database,
 scheduler, repository synchronization or host registration is created here.
+
+Invocation transport binds owner/environment/project/origin/computer plus the
+existing host invocation/attempt and exact resume session. Pending work is handed
+out once; terminal results are accepted once. A lost response never authorizes
+another native launch. Ambiguous work requires attention and blocks admission;
+this boundary neither reconstructs restart history nor kills a process. The
+outbound consumer validates its finite input and rechecks the locally chosen
+folder before passing it to the native runner. Server paths never select local
+cwd, commands, files or MCP configuration. See [operation exchange](operations.md#computer-connection-setup).
 
 ## Local Daemon Auth Posture
 

@@ -71,6 +71,39 @@ native host startup, MCP routing and invocation exchange use their existing
 owners in subsequent setup. Server workspace IDs and paths never select local
 filesystem access.
 
+`localRuntime.poll` and `localRuntime.report` are REST-only, raw-only computer
+operations. They require that exact connection's bearer, project and connection
+IDs. A browser login cannot exchange invocations. Run tokens, dispatcher replay
+keys, MCP/CLI exposure and arbitrary command/file/proxy arguments are refused.
+Poll is a write because it consumes a pending launch before returning it.
+
+The app's `local_invocations` operation service holds one in-memory handoff per
+computer. The existing host/controller supplies `ActiveInvocation` and its exact
+attempt/scope, host, model and resume-session identity through `offer`; this is
+an internal handoff, with no enqueue operation for clients. Poll returns the
+finite host input once, without a server-selected folder or MCP config path.
+The local `OutboundWorker.exchange_once` uses the existing private folder binding
+and a locally supplied native runner. Host startup, selection and controller
+integration retain their existing downstream owners.
+
+Reports contain `invocation_id`, `attempt`, `state=completed|unknown`, and an
+`outcome` only for completed work, using the existing host result fields. The
+first terminal report signals the owning caller; identical repeats acknowledge
+`replayed=true`, and conflicting reports or session identities refuse with 409.
+Only the controller can release a known completed handoff after persisting its
+result and finishing the existing invocation. This transport does not advance
+tracker/run state or decide whether a domain result succeeds.
+
+A lost poll response returns `needs_attention` on subsequent polls without a
+second launch payload. A lost report response can resend the same retained result
+without rerunning native work. Unknown work blocks admission and requires
+explicit reconciliation; neither disconnect nor uncertainty sends process signals.
+After transport retirement/restart, a query naming an absent invocation returns
+`unknown`, and a late report refuses. There is no durable queue or automatic
+restart reconstruction. The controller must retain uncertainty in its existing
+attempt owner before considering further work; transport `idle` alone proves no
+prior outcome. The interruption and native lifecycle tickets own that wiring.
+
 ## Project workflow schedules
 
 `schedule.list`, `schedule.set`, `schedule.toggle`, `schedule.remove` and
