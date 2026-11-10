@@ -131,12 +131,26 @@ overrides and credential custody. No local database or workflow engine is added.
 Uncertain transport/source identity stops consumption for explicit attention;
 service shutdown fences new launches without claiming a running process stopped.
 
-Reports contain `invocation_id`, `attempt`, `state=completed|unknown`, and an
-`outcome` only for completed work, using the existing host result fields. The
-first terminal report signals the owning caller; identical repeats acknowledge
+Explicit abort uses this same exchange: only a poll naming the exact dispatched
+invocation receives `state=stop` with its attempt. The local consumer relays that
+intent to the existing native process control, which fences registration/spawn
+or confirms owned process-group exit. It never signals a session or searches
+for processes. Connection loss alone still sends no stop. A pending, unconsumed
+launch can be prevented on the server; dispatched work requires local confirmation.
+
+Reports contain `invocation_id`, `attempt`, `state=completed|unknown|stopped`, and
+an `outcome` for completed work, using the existing host result fields. A stopped
+report requires `stop_outcome=stopped|prevented` and may retain the native
+outcome/usage. Unconfirmed termination uses `state=unknown` with
+`stop_outcome=unconfirmed`. These reports are accepted only for the matching stop
+intent, including after controller retirement, and cannot accept work or revive a run.
+Offline/unconfirmed abort stays `stop_unconfirmed` with needs attention in the
+existing delivery metadata; retirement or a second abort is not confirmation.
+Owner reconciliation resolves retained uncertainty before another handoff.
+The first terminal report signals the owning caller; identical repeats acknowledge
 `replayed=true`, and conflicting reports or session identities refuse with 409.
-Only the controller can release a known completed handoff after persisting its
-result and finishing the existing invocation. This transport does not advance
+Only the controller can release a known completed or confirmed-stopped handoff
+after persisting its result and finishing the existing invocation. This transport does not advance
 tracker/run state or decide whether a domain result succeeds.
 Known terminal handoffs are released after their evidence is durable even when
 validation rejects the candidate or the workflow occurrence was superseded.

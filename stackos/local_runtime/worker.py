@@ -17,7 +17,12 @@ from stackos.local_runtime.connection import (
     _call,
     check_connection,
 )
-from stackos.local_runtime.exchange import InvocationCommand, InvocationReport, NativeResult
+from stackos.local_runtime.exchange import (
+    InvocationCommand,
+    InvocationReport,
+    NativeResult,
+    StopOutcome,
+)
 
 
 class OutboundWorker:
@@ -36,6 +41,7 @@ class OutboundWorker:
         self._last_id: str | None = None
         self._report: InvocationReport | None = None
         self._acknowledged = False
+        self._stop_outcome: StopOutcome | None = None
 
     def exchange_once(self) -> dict:
         """One poll/launch/report, or report retry, without an automatic I/O loop."""
@@ -60,13 +66,17 @@ class OutboundWorker:
                 raise ValueError("duplicate or foreign invocation; refusing relaunch")
             self._last_id = invocation_id  # Fence before entering any native runner.
             self._acknowledged = False
+            self._stop_outcome = None
             self._report = InvocationReport(
                 invocation_id=invocation_id, attempt=scope.attempt, state="unknown"
             )
             try:
                 root = self.store.require_binding(binding)
-                # Presence for this accepted invocation cannot consume another
-                # launch, cancel a process, or decide its outcome.
+                prepare = getattr(self.runner, "prepare", None)
+                if prepare is not None:
+                    prepare(command)
+                # Presence names only this invocation. An explicit matching
+                # stop intent can reach only its locally registered handle.
                 stop_presence = Event()
                 presence = Thread(
                     target=self._presence,
@@ -79,21 +89,36 @@ class OutboundWorker:
                     result = self.runner(command.model_dump(), root, binding.model_copy(deep=True))
                 finally:
                     stop_presence.set()
+                    presence.join(4)
+                if presence.is_alive():
+                    raise ValueError("owned stop observation has not retired")
                 self._report = InvocationReport(
                     invocation_id=invocation_id,
                     attempt=scope.attempt,
-                    state="completed",
+                    state="unknown"
+                    if self._stop_outcome == "unconfirmed"
+                    else "stopped"
+                    if self._stop_outcome
+                    else "completed",
+                    stop_outcome=self._stop_outcome,
                     outcome=NativeResult.model_validate(asdict(result)),
                 )
             except Exception:
                 # No guessed process identity, signals, or second launch. Report
                 # uncertainty without sending exception text or local paths.
+                if self._stop_outcome is not None:
+                    self._report = InvocationReport(
+                        invocation_id=invocation_id,
+                        attempt=scope.attempt,
+                        state="unknown" if self._stop_outcome == "unconfirmed" else "stopped",
+                        stop_outcome=self._stop_outcome,
+                    )
                 self._send_report(binding, identity)
                 raise
             return self._send_report(binding, identity)
 
     def _presence(self, binding, identity, invocation_id, stop: Event) -> None:
-        while not stop.wait(5):
+        while not stop.wait(1):
             try:
                 response = _call(
                     self.client,
@@ -102,6 +127,18 @@ class OutboundWorker:
                     identity | {"invocation_id": invocation_id},
                     binding.credential,
                 )
+                if (
+                    response.get("state") == "stop"
+                    and response.get("invocation_id") == invocation_id
+                ):
+                    command = self._report
+                    if command is None or response.get("attempt") != command.attempt:
+                        return
+                    cancel = getattr(self.runner, "stop", None)
+                    self._stop_outcome = (
+                        cancel(invocation_id, command.attempt) if cancel else "unconfirmed"
+                    )
+                    return
                 if (
                     response.get("needs_attention")
                     or response.get("invocation_id") != invocation_id

@@ -178,8 +178,8 @@ def operation_specs() -> list[OperationSpec]:
                 )
                 if name == "reconcile"
                 else (
-                    "Identity, state and needs_attention; poll returns a launch once.",
-                    "One terminal result; exact duplicate acknowledges replay; conflict refuses.",
+                    "Identity, state and needs_attention; one launch or exact owned stop intent.",
+                    "Terminal result/stop outcome; exact duplicates replay; conflicts refuse.",
                 )
                 if full_name in EXCHANGE_OPERATIONS
                 else (

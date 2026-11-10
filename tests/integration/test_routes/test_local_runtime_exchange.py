@@ -19,6 +19,7 @@ from sqlmodel import Session
 
 from stackos.api.deps import get_settings
 from stackos.db.models import LocalRuntimeConnection
+from stackos.host_mcp.agent_execution import ManagedProcessControl
 from stackos.host_mcp.result import AgentRunResult
 from stackos.host_mcp.service import ActiveInvocation, AgentExecutionScope
 from stackos.local_runtime.connection import LocalBinding, LocalConnectionStore
@@ -435,6 +436,7 @@ def test_changed_local_folder_cannot_execute_and_valid_next_attempt_can(connecte
         invocation_id=uuid4().hex,
         scope=replace(invocation.scope, attempt=2),
         finished=False,
+        process_control=ManagedProcessControl(),
     )
     next_handoff = exchange.offer(connection, next_call, launch)
     assert worker.exchange_once()["state"] == "completed"
@@ -446,6 +448,7 @@ def test_changed_local_folder_cannot_execute_and_valid_next_attempt_can(connecte
         invocation_id=uuid4().hex,
         scope=replace(next_call.scope, attempt=3),
         finished=False,
+        process_control=ManagedProcessControl(),
     )
     uncertain = exchange.offer(connection, third, launch)
     root = Path(store.load().root)

@@ -215,6 +215,11 @@ automatic delivery at its launch and result-acceptance boundaries. It cancels th
 matching queued job and stops only the exact invocation registered by StackOS for
 that project and task, using its private native process handle. On POSIX, the
 invocation owns a new process group; termination uses bounded TERM then KILL waits.
+For a connected computer, the same invocation exchange relays the exact stop
+intent to its local process control. A dispatched launch is never reported as
+prevented merely because the server has no local process handle. Confirmation
+requires the computer's matching attempt and owned-stop report; offline work
+retains needs attention until its outcome is explicitly resolved.
 It never finds processes by name, model, PID search or native session identifier.
 External sessions, including the operator's main agent, remain open.
 

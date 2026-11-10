@@ -128,13 +128,26 @@ def abort_run_plan(
                     (ticket.completion_evidence_json or {}).get("automatic_delivery", {}).get(phase)
                 ]
             )
+            expected = expected or bool(
+                state.get("needs_attention")
+                and state.get("cancellation", {}).get("status") == "stop_unconfirmed"
+            )
         env = plans.abort(
             run_plan_id=run_plan_id, project_id=project_id, reason=reason, actor=actor
         )
         calls = cancel_task_invocations(project_id, task.key) if task else []
         if state:
             _update_delivery(
-                repo, project_id, task.key, status="stopped", reason=reason or "Run aborted."
+                repo,
+                project_id,
+                task.key,
+                status="stopped",
+                reason=reason or "Run aborted.",
+                **(
+                    {"needs_attention": True, "cancellation": {"status": "stop_unconfirmed"}}
+                    if state.get("connection_id")
+                    else {}
+                ),
             )
             if scheduler is not None and state.get("job_ref"):
                 with suppress(JobLookupError):
@@ -156,6 +169,18 @@ def abort_run_plan(
         "prevented_count": outcomes.count("prevented"),
         "external_sessions_terminated": False,
     }
+    if state and state.get("connection_id"):
+        with managed_launch_lock:
+            session.expire_all()
+            current = (_task(repo, project_id, task.key).metadata_json or {}).get("delivery", {})
+            if current.get("handoff_id") == state.get("handoff_id"):
+                _update_delivery(
+                    repo,
+                    project_id,
+                    task.key,
+                    cancellation=cancellation,
+                    needs_attention=unconfirmed or bool(current.get("uncertain_invocation")),
+                )
     if unconfirmed:
         raise ConflictError(
             "Run aborted, but managed process termination could not be confirmed. "
@@ -1236,6 +1261,10 @@ def _run_connected_agent(
             handoffs.append((connection, call, handoff))
         while not handoff.ready.wait(1):
             if not kwargs["launch_allowed"]():
+                if call.cancelled.is_set():
+                    # Retain available terminal usage/session while the exact
+                    # owned-stop acknowledgement crosses the local boundary.
+                    handoff.ready.wait(5)
                 return handoff.outcome()
         return handoff.outcome()
 
@@ -1748,6 +1777,15 @@ def run_delivery(
                             "handoff_id"
                         ) == handoff_id:
                             _save_evidence(repo, project_id, ticket_key, evidence)
+                            if remote_handoff and remote_handoff[2].stop_confirmed.is_set():
+                                local_invocations.release(remote_handoff[0], remote_handoff[1])
+                                _update_delivery(
+                                    repo,
+                                    project_id,
+                                    task_key,
+                                    uncertain_invocation=None,
+                                    needs_attention=False,
+                                )
                         return
                     _workflow_scope(
                         repo, project_id, task, state.get("run_plan_id"), state.get("step_id")

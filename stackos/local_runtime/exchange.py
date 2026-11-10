@@ -19,6 +19,8 @@ from stackos.host_mcp.result import AgentRunResult, AgentSandbox
 from stackos.host_mcp.service import ActiveInvocation, AgentExecutionScope
 from stackos.repositories.base import ConflictError, ValidationError
 
+StopOutcome = Literal["stopped", "prevented", "unconfirmed"]
+
 
 class NativeLaunch(BaseModel):
     """Finite host input. Local configuration alone chooses folder and MCP paths."""
@@ -65,11 +67,19 @@ class InvocationReport(BaseModel):
 
     invocation_id: str = Field(min_length=1, max_length=64)
     attempt: int = Field(gt=0)
-    state: Literal["completed", "unknown"]
+    state: Literal["completed", "unknown", "stopped"]
     outcome: NativeResult | None = None
+    stop_outcome: StopOutcome | None = None
 
     @model_validator(mode="after")
     def terminal_shape(self):
+        if self.stop_outcome is not None:
+            expected = "unknown" if self.stop_outcome == "unconfirmed" else "stopped"
+            if self.state != expected:
+                raise ValueError("stop state must reflect the owned stop outcome")
+            return self
+        if self.state == "stopped":
+            raise ValueError("stopped requires an owned stop outcome")
         if (self.state == "completed") != (self.outcome is not None):
             raise ValueError("completed requires an outcome; unknown has no outcome")
         return self
@@ -84,6 +94,8 @@ class InvocationHandoff:
     report: InvocationReport | None = None
     ready: Event = field(default_factory=Event)
     consumer_uncertain: bool = False
+    stop_confirmed: Event = field(default_factory=Event)
+    stop_outcome: str | None = None
 
     def outcome(self) -> AgentRunResult:
         if self.report is not None and self.report.outcome is not None:
@@ -218,8 +230,24 @@ class InvocationExchange:
                         "attempt already bound to a computer; refusing duplicate admission"
                     )
             handoff = InvocationHandoff(call, _identity(connection), launch.model_copy(deep=True))
+            call.process_control.delegate_stop(lambda timeout: self._stop(handoff, timeout))
             self._calls[connection.id] = handoff
             return handoff
+
+    def _stop(self, handoff: InvocationHandoff, timeout: float) -> str:
+        with self._lock:
+            handoff.call.cancelled.set()
+            if handoff.state == "pending":
+                handoff.state = "stopped"
+                handoff.stop_outcome = "prevented"
+                handoff.stop_confirmed.set()
+                handoff.ready.set()
+            if handoff.stop_confirmed.is_set():
+                return handoff.stop_outcome or "unconfirmed"
+        # Wait only for this computer's exact owned-stop acknowledgement. The
+        # controller may already have retired; its cancellation fence survives.
+        handoff.stop_confirmed.wait(timeout * 2 + min(timeout, 1))
+        return handoff.stop_outcome or "unconfirmed"
 
     def poll(self, connection: LocalRuntimeConnection, invocation_id: str | None) -> dict:
         with self._lock:
@@ -235,9 +263,16 @@ class InvocationExchange:
             if invocation_id is not None and invocation_id != call.invocation_id:
                 # A delayed poll names other work; it cannot change this handoff.
                 return {"state": "unknown", "needs_attention": True}
-            if call.cancelled.is_set() or (
-                (call.retired.is_set() or call.finished) and handoff.state != "completed"
-            ):
+            if call.cancelled.is_set() or call.process_control.cancelled.is_set():
+                if invocation_id == call.invocation_id and handoff.state != "pending":
+                    return {
+                        "state": "stop",
+                        "invocation_id": call.invocation_id,
+                        "attempt": call.scope.attempt,
+                        "needs_attention": True,
+                    }
+                return {"state": "unknown", "needs_attention": True}
+            if (call.retired.is_set() or call.finished) and handoff.state != "completed":
                 return {"state": "unknown", "needs_attention": True}
             if handoff.state == "dispatched" and invocation_id is None:
                 # This consumer cannot identify already accepted work. Retain
@@ -282,6 +317,20 @@ class InvocationExchange:
                     "state": handoff.state,
                     "replayed": True,
                 }
+            if report.stop_outcome is not None:
+                if not handoff.call.cancelled.is_set() or handoff.state == "pending":
+                    raise ConflictError("No matching dispatched stop intent")
+                handoff.report = report.model_copy(deep=True)
+                handoff.stop_outcome = report.stop_outcome
+                handoff.state = report.state
+                if report.stop_outcome in {"stopped", "prevented"}:
+                    handoff.stop_confirmed.set()
+                handoff.ready.set()
+                return {
+                    "invocation_id": report.invocation_id,
+                    "state": report.state,
+                    "replayed": False,
+                }
             if (
                 handoff.state != "dispatched"
                 or handoff.call.finished
@@ -318,7 +367,10 @@ class InvocationExchange:
                 handoff is None
                 or handoff.call is not call
                 or handoff.identity != _identity(connection)
-                or handoff.state != "completed"
+                or not (
+                    handoff.state == "completed"
+                    or (handoff.state == "stopped" and handoff.stop_confirmed.is_set())
+                )
                 or not call.finished
             ):
                 raise ConflictError("only the owning known terminal invocation can be released")

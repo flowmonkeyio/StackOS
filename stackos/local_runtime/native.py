@@ -6,11 +6,12 @@ import json
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
+from threading import Event, RLock
 
 from stackos.host_mcp import service as hosts
 from stackos.host_mcp.result import AgentRunResult
 from stackos.local_runtime.connection import LocalBinding, LocalConnectionStore
-from stackos.local_runtime.exchange import InvocationCommand
+from stackos.local_runtime.exchange import InvocationCommand, StopOutcome
 from stackos.local_runtime.source import check_codex_source
 from stackos.repositories.base import ValidationError
 from stackos.task_delivery import _candidate_commit
@@ -34,9 +35,43 @@ class NativeAgentRunner:
         self.store = store
         self.mcp_config_ref = dict(mcp_config_ref) if mcp_config_ref is not None else None
         self.launch_allowed = launch_allowed
+        self._stop_lock = RLock()
+        self._command: InvocationCommand | None = None
+        self._cancelled = Event()
+        self._call: hosts.ActiveInvocation | None = None
+
+    def prepare(self, command: InvocationCommand) -> None:
+        """Fence a stop arriving before discovery or host registration completes."""
+        with self._stop_lock:
+            if self._command == command:
+                return
+            if self._call is not None and not self._call.finished:
+                raise ValueError("native invocation still owned")
+            self._command = command
+            self._cancelled = Event()
+            self._call = None
+
+    def stop(self, invocation_id: str, attempt: int) -> StopOutcome:
+        with self._stop_lock:
+            if self._command is None or (
+                self._command.invocation_id,
+                self._command.scope.attempt,
+            ) != (invocation_id, attempt):
+                return "unconfirmed"
+            self._cancelled.set()
+            call = self._call
+            if call is not None:
+                call.cancelled.set()
+        outcome = call.process_control.stop() if call is not None else "prevented"
+        if outcome == "stopped":
+            return "stopped"
+        if outcome == "prevented":
+            return "prevented"
+        return "unconfirmed"
 
     def __call__(self, request: dict, root: Path, binding: LocalBinding) -> AgentRunResult:
         command = InvocationCommand.model_validate(request)
+        self.prepare(command)
         if (
             not isinstance(binding, LocalBinding)
             or command.scope.project_id != binding.project_id
@@ -65,6 +100,8 @@ class NativeAgentRunner:
         self.store.require_binding(binding)
 
         def launch_allowed() -> bool:
+            if self._cancelled.is_set():
+                return False
             if self.launch_allowed is not None and not self.launch_allowed():
                 return False
             try:
@@ -72,6 +109,10 @@ class NativeAgentRunner:
             except (ValueError, OSError):
                 return False
             return True
+
+        def execution_changed(call: hosts.ActiveInvocation, active: bool) -> None:
+            with self._stop_lock:
+                self._call = call
 
         result = hosts.run_agent(
             command.host_key,
@@ -89,6 +130,7 @@ class NativeAgentRunner:
             # The existing host checks this before registration and its owned
             # process handle checks it again immediately before spawning.
             launch_allowed=launch_allowed,
+            on_execution_change=execution_changed,
         )
         if result.ok and (
             not result.thread_id

@@ -103,6 +103,11 @@ Only that verified owner can use `localRuntime.reconcile` to confirm a stopped,
 exact task/handoff/invocation after inspecting the native outcome. The computer
 credential cannot clear uncertainty or accept its own result. Confirmation
 preserves ticket evidence and does not execute or kill native work.
+The existing `runPlan.abort` and audit-run abort operation resolve persisted
+project ownership before cancelling work. A computer credential cannot invoke
+them. The finite exchange can relay only an already recorded abort to the exact
+invocation/attempt's local process control; offline or unconfirmed termination
+remains needs attention and grants no new admission.
 
 The local connection module stores the endpoint, identity and credential in a
 user-owned `0600` file under a private `0700` directory. The signed-in owner must
