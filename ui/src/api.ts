@@ -2324,6 +2324,11 @@ export interface components {
         ActiveExecutionOut: {
             /** Agent */
             agent: string;
+            /**
+             * Connection State
+             * @default null
+             */
+            connection_state: ActiveExecutionOutConnection_stateAnyOf0 | null;
             /** Host Key */
             host_key: string;
             /** Invocation Id */
@@ -2334,6 +2339,11 @@ export interface components {
             model: string | null;
             /** Started At */
             started_at: string;
+            /**
+             * Stop Requested
+             * @default false
+             */
+            stop_requested: boolean;
             /** Ticket Key */
             ticket_key: string;
         };
@@ -11858,6 +11868,11 @@ export enum ActionCallStatus {
     running = "running",
     success = "success",
     failed = "failed"
+}
+export enum ActiveExecutionOutConnection_stateAnyOf0 {
+    connected = "connected",
+    disconnected = "disconnected",
+    needs_attention = "needs_attention"
 }
 export enum AgentRequestAttentionStatus {
     unread = "unread",

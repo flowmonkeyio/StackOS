@@ -232,6 +232,16 @@ class InvocationExchange:
             handoff = InvocationHandoff(call, _identity(connection), launch.model_copy(deep=True))
             call.process_control.delegate_stop(lambda timeout: self._stop(handoff, timeout))
             self._calls[connection.id] = handoff
+
+            def observe_connection() -> str:
+                observed = self.snapshot(connection)
+                return (
+                    observed["connection_state"]
+                    if observed["invocation_id"] == call.invocation_id
+                    else "needs_attention"
+                )
+
+            call.observe_connection = observe_connection
             return handoff
 
     def _stop(self, handoff: InvocationHandoff, timeout: float) -> str:

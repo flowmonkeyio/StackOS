@@ -152,6 +152,8 @@ class ActiveExecutionOut(ExecutionIdentityOut):
 
     invocation_id: str
     live_usage: LiveUsageOut | None = None
+    connection_state: Literal["connected", "disconnected", "needs_attention"] | None = None
+    stop_requested: bool = False
 
 
 class TrackerTaskOut(BaseModel):

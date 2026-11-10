@@ -69,6 +69,8 @@ class ActiveInvocation:
     # Explicit invocation cancellation is separate from native I/O cleanup stops.
     cancelled: Event = field(default_factory=Event)
     retired: Event = field(default_factory=Event)
+    # The connected transport owns liveness; readers only observe its snapshot.
+    observe_connection: Callable[[], str] | None = None
 
     def projection(self) -> dict[str, Any]:
         return {
@@ -78,6 +80,7 @@ class ActiveInvocation:
             "model": self.model,
             "started_at": self.started_at,
             "ticket_key": self.scope.ticket_key,
+            "stop_requested": self.cancelled.is_set(),
             "live_usage": {
                 "usage": {
                     "unit": "tokens",
@@ -236,15 +239,27 @@ atexit.register(shutdown_usage)
 def usage_executions(project_id: int | None = None) -> list[dict[str, Any]]:
     """Safe transient transport state; no native I/O or durable samples."""
     with _active_invocations_lock:
-        return [
-            {
-                "project_id": call.scope.project_id,
-                "task_key": call.scope.task_key,
-                **call.projection(),
-            }
+        snapshots = [
+            (call, call.projection())
             for call in _active_invocations.values()
             if not call.finished and (project_id is None or call.scope.project_id == project_id)
         ]
+    return [
+        {
+            "project_id": call.scope.project_id,
+            "task_key": call.scope.task_key,
+            **_observe_execution(call, projection),
+        }
+        for call, projection in snapshots
+    ]
+
+
+def _observe_execution(call: ActiveInvocation, projection: dict[str, Any]) -> dict[str, Any]:
+    # Never acquire the exchange lock under the registry lock: native telemetry
+    # takes those locks in the opposite order. No native I/O or SQL is performed.
+    if call.observe_connection is not None:
+        projection["connection_state"] = call.observe_connection()
+    return projection
 
 
 type ProvisionalUsage = dict[tuple[int, str], list[tuple[int | None, str | None, dict[str, Any]]]]
@@ -281,7 +296,9 @@ def active_execution(
             and not call.finished
             and (ticket_key is None or call.scope.ticket_key == ticket_key)
         ]
-        return max(matches, key=lambda call: call.started_at).projection() if matches else None
+        call = max(matches, key=lambda call: call.started_at) if matches else None
+        projection = call.projection() if call else None
+    return _observe_execution(call, projection) if call and projection else None
 
 
 def _notify_execution(

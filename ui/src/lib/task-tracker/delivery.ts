@@ -4,6 +4,8 @@ export interface TaskDeliveryState {
   status: 'queued' | 'running' | 'stopped' | 'complete'
   ticketKey: string | null
   reason: string | null
+  needsAttention?: boolean
+  stopUnconfirmed?: boolean
 }
 
 /** The persisted handoff identifies the delivery method even after execution ends. */
@@ -26,6 +28,9 @@ export function taskDeliveryState(task: Pick<TrackerTask, 'metadata_json'> | nul
     status: delivery.status as TaskDeliveryState['status'],
     ticketKey: nonemptyString(delivery.ticket_key) ? delivery.ticket_key.trim() : null,
     reason: delivery.status === 'stopped' && nonemptyString(delivery.reason) ? delivery.reason.trim() : null,
+    ...(delivery.needs_attention === true || (delivery.status === 'stopped' && nonemptyString(delivery.uncertain_invocation)) ? { needsAttention: true } : {}),
+    // Reconciliation retains cancellation history but explicitly clears attention.
+    ...(delivery.needs_attention !== false && isRecord(delivery.cancellation) && delivery.cancellation.status === 'stop_unconfirmed' ? { stopUnconfirmed: true } : {}),
   }
 }
 

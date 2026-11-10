@@ -61,8 +61,8 @@ function blocker(row: TaskProgressRow): string | null {
             type="button"
             class="tracker-board__card focus-ring"
             :class="{ 'tracker-board__card--selected': selectedTaskKey === row.key, 'tracker-board__card--blocked': blocker(row) }"
-            :aria-label="`Open task #${row.id}: ${row.task.title}${row.task.active_execution ? `; Active now: ${activeExecutionTitle(row.task.active_execution)}` : ''}`"
-            :title="row.task.active_execution ? activeExecutionTitle(row.task.active_execution) : undefined"
+            :aria-label="`Open task #${row.id}: ${row.task.title}${row.task.active_execution ? `; ${state(row).label}: ${activeExecutionTitle(row.task.active_execution)}` : ''}`"
+            :title="state(row).description ?? (row.task.active_execution ? activeExecutionTitle(row.task.active_execution) : undefined)"
             @focus="($event.currentTarget as HTMLElement).scrollIntoView({ block: 'nearest', inline: 'nearest' })"
             @click="$emit('openTask', row.key)"
           >
@@ -89,6 +89,7 @@ function blocker(row: TaskProgressRow): string | null {
                 class="tracker-board__state"
                 :tone="state(row).tone"
                 :dot="true"
+                :title="state(row).description"
                 variant="outline"
               >{{ state(row).label }}</UiBadge>
             </span>

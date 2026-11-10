@@ -58,7 +58,7 @@ describe('TicketGraphNode', () => {
 
   it('shows the recorded stop instead of treating focus as a running agent', () => {
     const wrapper = mount(TicketGraphNode, {
-      props: { data: nodeData({ active: true, status: 'failed', deliveryStopped: true, deliveryStopReason: 'Browser access denied.' }) },
+      props: { data: nodeData({ active: true, status: 'failed', deliveryStopped: true, deliveryStopReason: 'Browser access denied.', taskDelivery: { status: 'stopped', ticketKey: 'child', reason: 'Browser access denied.' } }) },
       global: { stubs: { Handle: true } },
     })
     expect(wrapper.text()).toContain('Stopped')
@@ -147,4 +147,4 @@ function nodeData(overrides: Partial<TrackerVueNodeData> = {}): TrackerVueNodeDa
   }
 }
 
-const execution = { live_usage: null, invocation_id: 'call-review', agent: 'Delivery reviewer', host_key: 'codex', model: 'gpt-6-astra', started_at: '2026-11-08T01:08:00Z', ticket_key: 'tracker-chart-live-client' }
+const execution = { live_usage: null, connection_state: null, stop_requested: false, invocation_id: 'call-review', agent: 'Delivery reviewer', host_key: 'codex', model: 'gpt-6-astra', started_at: '2026-11-08T01:08:00Z', ticket_key: 'tracker-chart-live-client' }

@@ -5,7 +5,7 @@ import { usageFeedKey } from '@/composables/useUsageFeed'
 import type { UsageFeedState } from '@/lib/usageUpdates'
 import ActiveExecutionLine from './ActiveExecutionLine.vue'
 
-const execution = { live_usage: null, invocation_id: 'call-1', agent: 'Project_delivery_agent_with_a_long_name', host_key: 'codex', model: 'gpt-6.1-sol', started_at: '2026-11-08T01:08:00Z', ticket_key: 'child' }
+const execution = { live_usage: null, connection_state: null, stop_requested: false, invocation_id: 'call-1', agent: 'Project_delivery_agent_with_a_long_name', host_key: 'codex', model: 'gpt-6.1-sol', started_at: '2026-11-08T01:08:00Z', ticket_key: 'child' }
 
 describe('ActiveExecutionLine', () => {
   afterEach(() => vi.useRealTimers())

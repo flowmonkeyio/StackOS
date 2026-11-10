@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import StatusBadge from '@/components/StatusBadge.vue'
+import { UiBadge } from '@/components/ui'
+import { resolveStatus } from '@/design/status'
+import { executionAttention } from '@/lib/task-tracker/execution'
 import type { TaskDeliveryState } from '@/lib/task-tracker/delivery'
 import type { TrackerTicket } from '@/lib/task-tracker/types'
 
@@ -10,19 +12,18 @@ const props = defineProps<{
   detailed?: boolean
 }>()
 const ticketLabel = computed(() => props.tickets?.find(ticket => ticket.key === props.delivery?.ticketKey)?.title || props.delivery?.ticketKey)
+const attention = computed(() => executionAttention(null, props.delivery))
+const state = computed(() => attention.value ?? resolveStatus('delivery', 'stopped'))
 </script>
 
 <template>
   <span
-    v-if="delivery?.status === 'stopped'"
+    v-if="delivery?.status === 'stopped' || attention"
     class="task-delivery-stop"
-    :title="delivery.reason ?? undefined"
+    :title="[delivery?.reason, attention?.description].filter(Boolean).join(' ')"
   >
     <span class="task-delivery-stop__summary">
-      <StatusBadge
-        domain="delivery"
-        status="stopped"
-      />
+      <UiBadge :tone="state.tone">{{ state.label }}</UiBadge>
       <span
         v-if="ticketLabel"
         class="task-delivery-stop__ticket"
@@ -30,9 +31,9 @@ const ticketLabel = computed(() => props.tickets?.find(ticket => ticket.key === 
       >{{ ticketLabel }}</span>
     </span>
     <span
-      v-if="detailed && delivery.reason"
+      v-if="detailed && (delivery?.reason || attention)"
       class="task-delivery-stop__reason"
-    >{{ delivery.reason }}</span>
+    >{{ [delivery?.reason, attention?.description].filter(Boolean).join(' ') }}</span>
   </span>
 </template>
 

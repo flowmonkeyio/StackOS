@@ -41,6 +41,7 @@ def test_loss_shows_last_known_work_and_accepts_late_result_once(connected, monk
     now[0] += 31
     observed = call(client, "status", **identity).json()
     assert observed["connection_state"] == "disconnected"
+    assert invocation.observe_connection() == "disconnected"
     assert observed["last_known_state"] == "dispatched"
     assert observed["invocation_id"] == invocation.invocation_id
     assert observed["last_seen_at"]
@@ -51,6 +52,7 @@ def test_loss_shows_last_known_work_and_accepts_late_result_once(connected, monk
         exchange.require_available(connection)
     assert "launch" not in call(client, "poll", **identity).json()
     assert call(client, "status", **identity).json()["needs_attention"]
+    assert invocation.observe_connection() == "needs_attention"
     # The original invocation's presence cannot erase another consumer's loss.
     call(client, "poll", **identity, invocation_id=invocation.invocation_id)
     assert call(client, "status", **identity).json()["needs_attention"]
@@ -150,6 +152,7 @@ def test_stale_poll_preserves_the_current_handoff(connected, current_state):
     old.finished = True
     exchange.release(connection, old)
     _, _, current, _, handoff = offer(connected)
+    assert old.observe_connection() == "needs_attention"
     if current_state != "pending":
         exchange.poll(connection, current.invocation_id)
     if current_state == "uncertain":
