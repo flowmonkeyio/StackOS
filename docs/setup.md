@@ -219,8 +219,8 @@ configuration. It repairs StackOS host registration through `stackos.host_mcp`
 and can generate autostart through the existing launchd owner. Generated jobs
 retain only `STACKOS_ENV_FILE` plus ordinary process context, without copying
 server/database keys. Host MCP commands remain local stdio `mcp-bridge`, with
-`--env-file` and the host-specific `--runtime`; the next client-routing layer
-owns authenticated operation forwarding. Never put credential contents in host
+`--env-file` and the host-specific `--runtime`. Authenticated forwarding uses
+the selected server session and the local folder binding. Never put credential contents in host
 config or synchronize native configuration with the server.
 
 For a source desktop connected-service launch, set `STACKOS_ENV_FILE` to that
@@ -235,6 +235,30 @@ files stop startup; they never open the installed standalone console.
 These are source startup contracts. Main owns consolidation and later packaged
 install/repair and installed-app restart proof; this source delivery does not
 replace or restart the current installation.
+
+### CLI and stdio MCP server routing
+
+Keep `STACKOS_ENV_FILE` set to the computer's private runtime file. Run
+`stackos login` with the verified account, then
+`stackos connect --project-id <id> --folder /absolute/existing/folder`.
+The project console's **Local computer** panel shows authorization and these
+commands. The web and desktop login share the same server; a native client signs
+in separately so browser cookies never enter renderer-accessible storage.
+
+Native sign-in retains only an opaque StackOS cookie and CSRF token in a private
+`0600` client session file. CLI data requests go to the selected server; service,
+Git, subscriptions and host operations stay on this computer. `stackos logout`
+revokes the native session. `stackos disconnect` confirms computer revocation
+before removing its local binding. Neither command changes browser sessions.
+
+Registered stdio MCP validates the current native session, computer authorization
+and exact existing folder before forwarding scoped operations. Workspace startup
+reports that local binding without sending local paths to the server or creating
+another project. The shared operation dispatcher still enforces ownership and
+run grants. Explicit download operations materialize authorized private files in
+new local destinations. Missing/expired sessions, revoked/foreign connections,
+changed folders and unavailable servers refuse; they never fall back to the
+local runtime or start a standalone data daemon. Sign in or repair explicitly.
 
 ## Package Or Operator Setup
 

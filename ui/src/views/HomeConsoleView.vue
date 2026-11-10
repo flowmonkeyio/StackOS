@@ -3,6 +3,8 @@ import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ProjectPageHeader } from '@/components/domain'
 import ProviderMark from '@/components/domain/ProviderMark.vue'
+import ComputerConnection from '@/components/domain/ComputerConnection.vue'
+import { useAuthStore } from '@/stores/auth'
 import StatusBadge from '@/components/StatusBadge.vue'
 import {
   UiButton,
@@ -27,6 +29,7 @@ import { useProjectOverview } from './home/useProjectOverview'
 import { ticketWorkUrl } from './home/ticketOverview'
 
 const { projectId } = useProjectRouteScope()
+const auth = useAuthStore()
 const router = useRouter()
 const base = computed(() => `/projects/${projectId.value}`)
 const overview = useProjectOverview(projectId)
@@ -70,6 +73,10 @@ function inspectStatus(status: TrackerStatus): void {
         </UiButton>
       </template>
     </ProjectPageHeader>
+    <ComputerConnection
+      v-if="auth.mode === 'server'"
+      :project-id="projectId"
+    />
     <div class="grid items-start gap-4 xl:grid-cols-[minmax(0,7fr)_minmax(16rem,3fr)]">
       <UiCard
         section

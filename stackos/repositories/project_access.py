@@ -223,6 +223,8 @@ def authorize_operation(
         if values.get("connection_id") is not None:
             LocalRuntimeConnectionRepository(session).owned(project_id, values["connection_id"])
         return project_id
+    if name in {"operation.list", "operation.describe", "schema.get"}:
+        return None  # Public contract metadata; no project state or execution authority.
     if name not in _PROJECT_DISCOVERY | _PROJECT_OPERATIONS:
         raise ToolNotGrantedError("operation requires an adapted owner boundary")
     if name in _PROJECT_DISCOVERY:
@@ -235,6 +237,8 @@ def authorize_operation(
             from stackos.repositories.projects import ProjectRepository
 
             selected_project = ProjectRepository(session).get(values["id_or_slug"]).id
+            if values.get("project_id") is not None and selected_project != values["project_id"]:
+                raise NotFoundError("project or child not found")
         if run is not None:
             project_id = authorize_project_refs(
                 session, {"project_id": values.get("project_id")}, run=run

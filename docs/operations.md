@@ -53,23 +53,22 @@ status/list responses contain identity, expiry and authorization state, with
 no credential. A computer bearer may only inspect/revoke that same connection.
 Browser setup retains exact Origin and session CSRF enforcement.
 
-An explicit local setup caller is available as:
+Select the computer's private runtime environment file, then use the existing CLI:
 
 ```bash
-python -m stackos.local_runtime connect --server-url http://127.0.0.1:19960 \
-  --environment-id selected-environment --project-id 1 \
-  --state-dir /absolute/private/runtime-state --folder /absolute/existing/project \
-  --email owner@example.test
+export STACKOS_ENV_FILE=/absolute/private/runtime.env
+stackos login --email owner@example.test
+stackos connect --project-id 1 --folder /absolute/existing/project
 ```
 
 The password is prompted locally and exchanged only with the selected StackOS
-server. The short-lived setup login is logged out afterward; only the scoped
-computer credential remains locally. Repeat the same command to validate and
-reuse the exact binding. Use `disconnect` with the same identity/state arguments
-to revoke and remove it. The module configures authorization and folder identity;
-native host startup, MCP routing and invocation exchange use their existing
-owners in subsequent setup. Server workspace IDs and paths never select local
-filesystem access.
+server. The native session and computer credential have separate private local
+custody. Repeat `connect` to validate and reuse the exact binding; `disconnect`
+confirms server revocation before removing it. `logout` revokes the native
+session independently. All commands retain the same selected environment.
+Native host startup and invocation exchange keep their existing owners. Server
+workspace IDs and paths never select local filesystem access. See
+[CLI and stdio routing](setup.md#cli-and-stdio-mcp-server-routing).
 
 `localRuntime.poll` and `localRuntime.report` are REST-only, raw-only computer
 operations. They require that exact connection's bearer, project and connection

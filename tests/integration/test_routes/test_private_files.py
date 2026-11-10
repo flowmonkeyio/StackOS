@@ -446,29 +446,8 @@ def test_bridge_download_returns_real_local_path(api, project_id, tmp_path):
             },
         },
     }
-    denied = json.loads(proxy.handle(api, payload=request, line=json.dumps(request), request_id=1))[
-        "result"
-    ]
-    assert denied["isError"] is True
-    assert not destination.exists()
-    # Named disposable source-test state; never workflow-796 or installed state.
-    from stackos.repositories.run_plans import RunPlanRepository
-
-    with Session(api.app.state.engine) as session:
-        repository = RunPlanRepository(session)
-        plan = repository.create(
-            project_id=project_id,
-            run_plan_json={
-                "schema_version": "stackos.run-plan.v1",
-                "key": "file-download-proof",
-                "title": "Disposable file download proof",
-                "grants": {"step_tools": {"download": ["artifact.download"]}},
-                "steps": [{"id": "download", "title": "Download"}],
-            },
-        ).data
-        started = repository.start(plan.id, project_id=project_id).data
-        repository.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="download")
-        request["params"]["arguments"]["run_id"] = started.run_id
+    # The operation registry declares an owned file download as direct-read;
+    # a workspace-scoped caller needs no fabricated execution step to read it.
     result = json.loads(proxy.handle(api, payload=request, line=json.dumps(request), request_id=1))[
         "result"
     ]

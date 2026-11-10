@@ -736,15 +736,41 @@ def mcp_bridge(
         phase = "token_read"
         lifecycle.stage(phase)
         started_at = time.monotonic()
-        token = settings.token_path.read_text(encoding="utf-8").strip()
+        connected_project_id = None
+        headers_provider = None
+        if settings.process_role == "runtime":
+            from stackos.cli.server_session import ServerSession
+            from stackos.local_runtime.connection import LocalConnectionStore
+
+            selected_session = ServerSession(settings)
+            selected_folder = (workspace_root or Path.cwd()).resolve()
+
+            def connected_headers():
+                return selected_session.headers(require_connection=True, folder=selected_folder)
+
+            headers = connected_headers()
+            binding = LocalConnectionStore(settings.state_dir).load()
+            assert binding is not None
+            connected_project_id = binding.project_id
+            headers_provider = connected_headers
+            url = selected_session.origin + "/mcp"
+        elif settings.process_role == "server":
+            raise ValueError("native stdio MCP requires the computer's runtime environment")
+        else:
+            token = settings.token_path.read_text(encoding="utf-8").strip()
+            headers = {"Authorization": f"Bearer {token}"}
         phase = "workspace_hints"
         lifecycle.stage(phase)
         started_at = time.monotonic()
-        workspace_hints = _mcp_bridge_workspace_hints(Path.cwd(), workspace_root=workspace_root)
+        workspace_hints = (
+            {}
+            if connected_project_id is not None
+            else _mcp_bridge_workspace_hints(Path.cwd(), workspace_root=workspace_root)
+        )
         proxy = AgentBridgeProxy(
             url=url,
             headers={
-                "Authorization": f"Bearer {token}",
+                **headers,
                 "Accept": "application/json, text/event-stream",
                 "Content-Type": "application/json",
             },
@@ -753,6 +779,8 @@ def mcp_bridge(
             startup_timeout_seconds=settings.bridge_startup_timeout_seconds,
             diagnostic_log_path=diagnostic_log_path,
             attempt_id=attempt_id,
+            connected_project_id=connected_project_id,
+            headers_provider=headers_provider,
             **workspace_hints,
         )
     except Exception as exc:
@@ -837,6 +865,7 @@ def mcp_bridge(
                         and has_request_id
                         and isinstance(original_exc, (httpx.ConnectError, httpx.ConnectTimeout))
                         and not autostart_attempted
+                        and settings.process_role == "standalone"
                         and daemon_processes._is_loopback_host(bridge_host)
                     ):
                         try:

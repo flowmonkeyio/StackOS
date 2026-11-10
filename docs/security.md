@@ -74,6 +74,18 @@ origin, refusing alternate hosts, ports, schemes and credential-bearing URLs.
 Private-request 401s remove the authenticated shell; sign-in/sign-out use a fresh
 document so a previous user's project stores and streams cannot carry over.
 
+Native CLI/MCP clients sign in through the same StackOS endpoints. Their opaque
+StackOS session cookie and CSRF value stay in a private local `0600` file, bound
+to the selected origin, environment and verified user. No Supabase token is
+exported. Stdio MCP rechecks this identity plus the revocable computer credential
+and local folder before requests; its HTTP request supplies the verified user
+to the existing operation dispatcher. Legacy unadapted MCP handlers remain
+denied. The local workspace handshake reports the existing computer/project
+binding without sending local paths or bootstrapping another project. Missing
+targets and expired authorization stop; a runtime-selected bridge never starts
+a standalone data daemon. Private downloads retain their registered direct-read
+policy and still require server ownership checks and explicit local destinations.
+
 ### Computer authorization and local folders
 
 `localRuntime.authorize` requires the verified owner of an existing private

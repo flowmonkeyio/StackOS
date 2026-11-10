@@ -102,12 +102,16 @@ class MCPDispatcher:
             if self._settings_resolver is not None:
                 settings = self._settings_resolver()
                 if getattr(settings, "process_role", "standalone") == "server":
-                    # HTTP-to-native session authority is owned by client routing.
-                    # Until adapted, neither legacy tools nor operations may bypass
-                    # the authenticated owner boundary via a fresh MCP session.
-                    return self._repo_error(
-                        ToolNotGrantedError("MCP requires an adapted authenticated owner boundary")
-                    )
+                    request = request_context.request if request_context is not None else None
+                    if request is None or spec.operation_name is None:
+                        return self._repo_error(
+                            ToolNotGrantedError("MCP requires an authenticated operation request")
+                        )
+                    from stackos.api.project_access import bind_user_session
+
+                    bind_user_session(session, request, settings)
+                    if session.info.get("user_principal") is None:
+                        return self._repo_error(ToolNotGrantedError("verified user required"))
             if self._services_resolver is not None:
                 session.info["operation_services"] = self._services_resolver()
             if spec.operation_name is not None:

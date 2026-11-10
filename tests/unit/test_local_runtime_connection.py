@@ -67,6 +67,47 @@ def call(client, name, **arguments):
     )
 
 
+def test_authenticated_mcp_uses_same_owner_and_refuses_unadapted_tools(online):
+    client, _selected, _state, project_id = online
+    assert client.get("/api/v1/operations").status_code == 200
+    assert client.get("/api/v1/operations/artifact.download").status_code == 200
+    client.headers["Accept"] = "application/json, text/event-stream"
+
+    def rpc(method, params):
+        response = client.post(
+            "/mcp", json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    initialized = rpc(
+        "initialize",
+        {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "proof", "version": "1"},
+        },
+    )
+    assert "result" in initialized
+    own = rpc("tools/call", {"name": "project.get", "arguments": {"id_or_slug": project_id}})
+    assert own["result"]["isError"] is False, own
+    foreign = rpc(
+        "tools/call", {"name": "project.get", "arguments": {"id_or_slug": project_id + 1}}
+    )
+    assert foreign["result"]["isError"] is True
+    unadapted = rpc(
+        "tools/call",
+        {
+            "name": "workspace.startSession",
+            "arguments": {"global_session": True, "project_id": project_id},
+        },
+    )
+    assert unadapted["result"]["isError"] is True
+    client.cookies.clear()
+    response = client.post("/mcp", json={"jsonrpc": "2.0", "id": 1, "method": "ping"})
+    assert response.status_code == 401
+
+
 def test_credential_is_scoped_revocable_and_never_replayed(online):
     from stackos.db.models import IdempotencyKey, LocalRuntimeConnection
 

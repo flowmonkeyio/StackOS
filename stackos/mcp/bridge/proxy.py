@@ -84,6 +84,8 @@ class AgentBridgeProxy:
         startup_timeout_seconds: float = 15.0,
         diagnostic_log_path: Path | None = None,
         attempt_id: str | None = None,
+        connected_project_id: int | None = None,
+        headers_provider: Any = None,
     ) -> None:
         self.url = url
         self.headers = headers
@@ -108,8 +110,18 @@ class AgentBridgeProxy:
         self.scoped_project_id: int | None = None
         self.protocol_version: str | None = None
         self.modern_request_meta: dict[str, Any] | None = None
+        self.connected_project_id = connected_project_id
+        self.headers_provider = headers_provider
+        if connected_project_id is not None:
+            self.scoped_project_id = connected_project_id
+            self.workspace_scope_checked = True
+            self.global_session = False
 
     def request_daemon(self, client: Any, body: str) -> str:
+        if self.headers_provider is not None:
+            # Recheck session, computer authorization and local folder on every call,
+            # including file materialization. No expired-target or local fallback.
+            self.headers = {**self.headers, **self.headers_provider()}
         try:
             payload: object = json.loads(body)
         except json.JSONDecodeError:
@@ -236,6 +248,34 @@ class AgentBridgeProxy:
 
         tool_name = _bridge_tool_call_name(payload)
         arguments = _bridge_tool_call_arguments(payload)
+        if self.connected_project_id is not None and tool_name in {
+            "workspace.startSession",
+            "workspace.resolve",
+        }:
+            if self.headers_provider is not None:
+                self.headers_provider()
+            if (
+                arguments.get("project_id", self.connected_project_id) != self.connected_project_id
+                or arguments.get("global_session") is True
+                or any(
+                    arguments.get(key) is not None
+                    for key in ("cwd", "repo_fingerprint", "git_remote_url", "workspace_alias")
+                )
+            ):
+                return _bridge_call_error(request_id, -32007, "Connected workspace scope is fixed.")
+            from .protocol import _bridge_tool_result
+
+            return _bridge_tool_result(
+                request_id,
+                {
+                    "project_id": self.connected_project_id,
+                    "workspace_bound": True,
+                    "needs_connect": False,
+                    "runtime": self.runtime,
+                    "global_session": False,
+                },
+                is_error=False,
+            )
         self._ensure_workspace_scope(client)
         if tool_name == _TOOLBOX_DESCRIBE_TOOL:
             return self._handle_toolbox_describe(client, request_id, arguments)
@@ -806,8 +846,9 @@ class AgentBridgeProxy:
             )
         run_id = run_id if run_id is not None else inner_run_id
         run_plan_id = None if direct_target else _bridge_as_int(target_args.get("run_plan_id"))
-        refresh_required = run_id is not None or target_name in (
-            _AGENT_RUN_PLAN_GATED_TOOL_NAMES | _AGENT_STEP_GATED_TOOL_NAMES
+        refresh_required = run_id is not None or (
+            not direct_target
+            and target_name in (_AGENT_RUN_PLAN_GATED_TOOL_NAMES | _AGENT_STEP_GATED_TOOL_NAMES)
         )
         if refresh_required:
             run_id = self._refresh_run_context(

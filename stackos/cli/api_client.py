@@ -35,6 +35,45 @@ def _api_request(
     from urllib.request import Request, urlopen
 
     settings = settings or get_settings()
+    if getattr(settings, "process_role", "standalone") != "standalone":
+        import httpx
+
+        from .server_session import ServerSession
+
+        try:
+            session = ServerSession(settings)
+            from urllib.parse import urlsplit
+
+            target = urlsplit(path)
+            if (
+                not path.startswith("/api/v1/")
+                or target.netloc
+                or target.fragment
+                or ".." in target.path.split("/")
+            ):
+                raise ValueError("CLI data requests require a selected-server API path")
+            with httpx.Client(timeout=30, follow_redirects=False) as client:
+                response = client.request(
+                    method,
+                    session.origin + path,
+                    json=body,
+                    headers=session.headers() | {"X-StackOS-Client-Surface": "cli"},
+                )
+                if not response.is_success:
+                    try:
+                        payload = response.json()
+                    except ValueError:
+                        payload = {"detail": "selected server refused this request"}
+                    typer.echo(_format_daemon_api_error(response.status_code, payload), err=True)
+                    raise typer.Exit(code=1)
+                return response.json() if response.content else None
+        except (ValueError, OSError, httpx.HTTPError):
+            typer.echo(
+                "Selected server request failed. Check the environment and `stackos login`; "
+                "the local runtime does not serve project data.",
+                err=True,
+            )
+            raise typer.Exit(code=1) from None
     token = _read_daemon_token(settings)
     url = f"http://{settings.host}:{settings.port}{path}"
     data = None if body is None else json.dumps(body).encode("utf-8")

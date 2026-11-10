@@ -184,7 +184,7 @@ def test_real_host_config_write_preserves_sibling_tools(selected, monkeypatch):
     assert claude_desktop.register(Path.home()).ok
 
 
-def test_bridge_accepts_persisted_file_and_refuses_overlay(selected, monkeypatch):
+def test_runtime_bridge_requires_server_login_and_refuses_overlay(selected, monkeypatch):
     settings = get_settings()
     settings.ensure_dirs()
     settings.token_path.write_text("synthetic-local-token")
@@ -198,9 +198,8 @@ def test_bridge_accepts_persisted_file_and_refuses_overlay(selected, monkeypatch
 
     monkeypatch.setattr(daemon_commands, "AgentBridgeProxy", proxy)
     result = CliRunner().invoke(app, ["mcp-bridge", "--env-file", str(selected)], input="")
-    assert result.exit_code == 0, result.output
-    assert observed[0]["url"] == "http://127.0.0.1:19811/mcp"
-    assert observed[0]["headers"]["Authorization"] == "Bearer synthetic-local-token"
+    assert result.exit_code == 1
+    assert observed == []  # A runtime daemon token never authorizes server MCP.
     result = CliRunner().invoke(app, ["mcp-bridge", "--env-file", str(selected), "--port", "19812"])
     assert result.exit_code == 2 and "cannot be mixed" in result.output
 
