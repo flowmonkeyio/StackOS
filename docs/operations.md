@@ -84,7 +84,11 @@ finite host input once, without a server-selected folder or MCP config path.
 The runtime service attaches one outbound consumer. Its
 `OutboundWorker.exchange_once` uses the existing private folder binding and
 `NativeAgentRunner`, which checks the actual source/tools and delegates to
-`host_mcp.run_agent`. The first connected flow supports Codex; unsupported hosts
+`host_mcp.run_agent`. The worker passes the exact binding authenticated for its
+poll. The runner checks that binding after discovery and again through the
+host's registration and process-spawn guards, including credential and folder
+identity. A changed or missing binding never selects a replacement connection.
+The first connected flow supports Codex; unsupported hosts
 stop without substitution. The server process refuses native spawning.
 Host/model/provider/profile, schema, instructions and exact resume ID travel
 unchanged. Optional candidate evidence travels as `NativeLaunch.candidate` and

@@ -254,7 +254,7 @@ def test_network_loss_never_relaunches_local_work(connected, tmp_path, fault):
     store = local_store(connected, tmp_path)
     launches = []
 
-    def runner(command, root):
+    def runner(command, root, binding):
         launches.append(command["invocation_id"])
         # Real fixed fixture process at the folder selected locally; the server
         # cannot supply argv, cwd, paths or a general tool/proxy request.
@@ -309,7 +309,7 @@ def test_unknown_runner_outcome_blocks_new_admission_without_killing(connected, 
     store = local_store(connected, tmp_path)
     launches = []
 
-    def uncertain(_command, _root):
+    def uncertain(_command, _root, _binding):
         launches.append(1)
         raise RuntimeError("synthetic native outcome lost")
 
@@ -420,7 +420,7 @@ def test_changed_local_folder_cannot_execute_and_valid_next_attempt_can(connecte
     store = local_store(connected, tmp_path)
     launches = []
 
-    def runner(command, root):
+    def runner(command, root, binding):
         assert command["host_key"] == invocation.host_key
         assert command["model"] == invocation.model
         launches.append(root)

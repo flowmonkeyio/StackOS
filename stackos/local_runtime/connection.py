@@ -102,6 +102,22 @@ class LocalConnectionStore:
             raise ValueError("local folder binding changed; explicitly disconnect and choose again")
         return root
 
+    def require_binding(self, binding: LocalBinding) -> Path:
+        """Retain the exact admitted identity, including its opaque credential.
+
+        Compare models rather than redacted serialization: two different secrets
+        have the same display value. No binding field is exposed on refusal.
+        """
+        try:
+            current = self.load()
+        except (ValueError, OSError):
+            raise ValueError(
+                "local computer binding unavailable; reconciliation required"
+            ) from None
+        if current != binding:
+            raise ValueError("local computer binding changed; reconciliation required")
+        return self.require_folder(binding, Path(binding.root))
+
 
 def _call(
     client, origin: str, name: str, arguments: dict[str, Any], credential: SecretStr | None = None

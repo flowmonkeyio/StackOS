@@ -9,7 +9,12 @@ from threading import Lock
 from typing import Any
 
 from stackos.host_mcp.result import AgentRunResult
-from stackos.local_runtime.connection import LocalConnectionStore, _call, check_connection
+from stackos.local_runtime.connection import (
+    LocalBinding,
+    LocalConnectionStore,
+    _call,
+    check_connection,
+)
 from stackos.local_runtime.exchange import InvocationCommand, InvocationReport, NativeResult
 
 
@@ -18,7 +23,7 @@ class OutboundWorker:
         self,
         client,
         store: LocalConnectionStore,
-        runner: Callable[[dict[str, Any], Path], AgentRunResult] | None = None,
+        runner: Callable[[dict[str, Any], Path, LocalBinding], AgentRunResult] | None = None,
     ):
         if runner is None:
             from stackos.local_runtime.native import NativeAgentRunner
@@ -57,8 +62,8 @@ class OutboundWorker:
                 invocation_id=invocation_id, attempt=scope.attempt, state="unknown"
             )
             try:
-                root = self.store.require_folder(binding, Path(binding.root))
-                result = self.runner(command.model_dump(), root)
+                root = self.store.require_binding(binding)
+                result = self.runner(command.model_dump(), root, binding.model_copy(deep=True))
                 self._report = InvocationReport(
                     invocation_id=invocation_id,
                     attempt=scope.attempt,

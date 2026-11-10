@@ -9,7 +9,7 @@ from pathlib import Path
 
 from stackos.host_mcp import service as hosts
 from stackos.host_mcp.result import AgentRunResult
-from stackos.local_runtime.connection import LocalConnectionStore
+from stackos.local_runtime.connection import LocalBinding, LocalConnectionStore
 from stackos.local_runtime.exchange import InvocationCommand
 from stackos.local_runtime.source import check_codex_source
 from stackos.repositories.base import ValidationError
@@ -35,16 +35,17 @@ class NativeAgentRunner:
         self.mcp_config_ref = dict(mcp_config_ref) if mcp_config_ref is not None else None
         self.launch_allowed = launch_allowed
 
-    def __call__(self, request: dict, root: Path) -> AgentRunResult:
+    def __call__(self, request: dict, root: Path, binding: LocalBinding) -> AgentRunResult:
         command = InvocationCommand.model_validate(request)
-        binding = self.store.load()
         if (
-            binding is None
+            not isinstance(binding, LocalBinding)
             or command.scope.project_id != binding.project_id
             or command.scope.attempt is None
             or command.scope.attempt < 1
         ):
             raise ValueError("an exact locally bound invocation is required")
+        binding = binding.model_copy(deep=True)
+        self.store.require_binding(binding)
         root = self.store.require_folder(binding, root)
         if command.host_key != "codex":
             raise ValueError("local source/tool validation is unavailable for the selected host")
@@ -59,6 +60,19 @@ class NativeAgentRunner:
             provider=launch.provider,
             profile=launch.profile,
         )
+        # Discovery can run subprocesses. The authenticated poll's binding must
+        # still be present afterwards; never adopt a new same-folder connection.
+        self.store.require_binding(binding)
+
+        def launch_allowed() -> bool:
+            if self.launch_allowed is not None and not self.launch_allowed():
+                return False
+            try:
+                self.store.require_binding(binding)
+            except (ValueError, OSError):
+                return False
+            return True
+
         result = hosts.run_agent(
             command.host_key,
             root,
@@ -72,7 +86,9 @@ class NativeAgentRunner:
             resume_thread_id=launch.resume_thread_id,
             execution_scope=command.scope,
             mcp_config_ref=self.mcp_config_ref,
-            launch_allowed=self.launch_allowed,
+            # The existing host checks this before registration and its owned
+            # process handle checks it again immediately before spawning.
+            launch_allowed=launch_allowed,
         )
         if result.ok and (
             not result.thread_id
