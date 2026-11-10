@@ -1,4 +1,4 @@
-"""Read-only legacy readiness projections, not inferred financial recognition."""
+"""Read-only legacy labels and display precision, not inferred recognition."""
 
 import copy
 import json
@@ -15,7 +15,7 @@ from tests.unit.test_finance_management import (
 )
 
 
-def test_legacy_readiness_is_full_population_without_adopting_metadata():
+def test_legacy_labels_cover_full_population_without_adopting_metadata():
     module = management()
     document = fixture_document()
     document["operating_settings"] = [
@@ -33,24 +33,15 @@ def test_legacy_readiness_is_full_population_without_adopting_metadata():
     )
     before = copy.deepcopy(document)
     projected = module.query(snapshot(document), {**QUERY, "limit": 1})
-    readiness = projected["reporting_readiness"]
     assert len(projected["rows"]) == 1
-    assert readiness["selected_record_count"] == 9
-    assert readiness["counts_by_collection"] == {"bookkeeping": 8, "receipts": 1}
-    assert readiness["bookkeeping_count"] == readiness["missing_metadata_count"] == 8
-    assert readiness["supported_bookkeeping_count"] == 0
-    assert readiness["excluded_bookkeeping_count"] == 8
-    assert readiness["missing_precision_count"] == 9
-    assert readiness["undated_count"] == 1
-    assert readiness["state"] == "needs_review"
-    assert readiness["coverage_issues"] == ["missing_or_conflicting_reporting_policy"]
+    assert "reporting_readiness" not in projected
     assert projected["record_labels"]["receipt:legacy"] == "Legacy merchant · Date not recorded"
     assert all(metric["spend"]["amount"] is None for metric in projected["metrics_by_currency"])
     assert all(metric["revenue"]["amount"] is None for metric in projected["metrics_by_currency"])
     assert document == before
 
 
-def test_readiness_and_labels_follow_selection_without_leaking_other_records():
+def test_labels_follow_selection_without_leaking_other_records():
     module = management()
     document = fixture_document()
     document["receipts"].append(
@@ -65,23 +56,14 @@ def test_readiness_and_labels_follow_selection_without_leaking_other_records():
         )
     )
     projected = module.query(snapshot(document), {**QUERY, "kind": "income", "limit": 1})
-    assert projected["reporting_readiness"]["selected_record_count"] == 2
-    assert projected["reporting_readiness"]["supported_bookkeeping_count"] == 2
-    assert projected["reporting_readiness"]["excluded_bookkeeping_count"] == 0
-    assert projected["reporting_readiness"]["missing_metadata_count"] == 0
-    assert projected["reporting_readiness"]["missing_precision_count"] == 0
     assert set(projected["record_labels"]) == {"book:revenue", "book:refund"}
     assert "Hidden merchant" not in json.dumps(projected)
     empty = module.query(snapshot(document), {**QUERY, "q": "no-such-record"})
-    assert empty["reporting_readiness"]["state"] == "empty"
     assert empty["record_labels"] == {}
 
 
-def test_readiness_preserves_approved_metrics():
+def test_display_changes_preserve_approved_metrics():
     projected = management().query(snapshot(fixture_document()), QUERY)
-    assert projected["reporting_readiness"]["supported_bookkeeping_count"] == 8
-    assert projected["reporting_readiness"]["excluded_bookkeeping_count"] == 0
-    assert projected["reporting_readiness"]["missing_precision_count"] == 0
     assert projected["metrics_by_currency"][0]["spend"]["amount"]["minor"] == "11000"
     assert projected["metrics_by_currency"][0]["revenue"]["amount"]["minor"] == "95000"
 
@@ -142,7 +124,6 @@ def test_display_fallback_keeps_dated_receipt_in_review_filter():
         snapshot(document), {**QUERY, "kind": "receipt", "needs_review": True}
     )
     assert [row["record_ref"] for row in result["rows"]] == ["receipt:dated"]
-    assert result["reporting_readiness"]["missing_precision_count"] == 1
 
 
 def test_linked_receipt_merchant_requires_unanimous_active_labels():
@@ -178,7 +159,6 @@ def test_reporting_defaults_use_only_unanimous_valid_metadata_without_changing_q
     assert result["reporting_defaults"] == {"recognition_basis": "accrual", "date_basis": "issue"}
     assert result["query"]["recognition_basis"] == "cash"
     assert result["query"]["date_basis"] == "transaction"
-    assert result["reporting_readiness"]["supported_bookkeeping_count"] == 0
     metadata(document, document["bookkeeping"][1])
     assert management().query(snapshot(document), QUERY)["reporting_defaults"] is None
     document["bookkeeping"][1]["date"] = "2026-09-04"  # stale second metadata cannot set defaults

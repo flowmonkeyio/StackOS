@@ -36,16 +36,15 @@ coverage produces unavailable/partial profit, never invented zero or implicit FX
 Legacy USD amounts without reviewed precision use two decimal places for display
 only, marked `precision_basis: currency-convention` with an explicit unreviewed
 warning. Stale or conflicting precision never uses this fallback. It does not
-contribute to financial recognition, and readiness still counts it as missing
-reviewed precision. Undated labels include a sanitized original document filename
-when linked, without inferring a date from the filename.
+contribute to financial recognition, and it remains unreviewed precision. Undated
+labels include a sanitized original document filename when linked, without
+inferring a date from the filename.
 
-The query's `reporting_readiness` describes the complete filtered population,
-not just the displayed page: supported/excluded bookkeeping counts, missing
-reporting metadata or display precision, undated records and coverage issues.
-`record_labels` supplies human-readable labels for that same population so
-undated and drill-down links remain useful across pagination. These read-only
-fields do not approve policy, infer dates/treatment or change ledger records.
+The query's `record_labels` supplies human-readable labels for the complete
+filtered population so undated and drill-down links remain useful across
+pagination. These labels do not approve policy, infer dates/treatment or change
+ledger records. See [invoice reporting and verification](../../docs/finance-reporting-readiness.md)
+for the current behavior, evidence requirements and remaining limits.
 Business-wide views include shared/unassigned costs. Optional verified project
 labels do not infer allocation from customer names or require agency setup.
 

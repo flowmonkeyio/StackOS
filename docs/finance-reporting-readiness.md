@@ -1,81 +1,94 @@
-# Finance reporting readiness fix
+# Finance invoice reporting
 
-## Problem and scope
+## Current behavior
 
-Recovered legacy records are valid source evidence but do not automatically carry
-the reviewed metadata required for accounting recognition. The overview previously
-rendered several empty charts and repeated `Unavailable` cards, raw undated receipt
-identifiers, and duplicate analysis-request controls. This made incomplete reporting
-setup look like lost invoices or a runtime failure.
+Recovered ledger records remain source evidence until reporting treatment and date
+basis are explicitly adopted. The console must not infer cash payments, zero
+revenue, complete coverage, tax treatment or business-use allocation from invoices.
 
-## Changes
+When valid approved reporting metadata unanimously uses one recognition/date basis,
+the existing console filters initially select that basis. Mixed or absent metadata
+leaves the existing default unchanged; subsequent user filter selections win.
+Supported partial amounts appear in the existing metric cards as
+`Incomplete · unposted`. The existing period caption identifies missing invoice
+dates/source coverage and keeps payment matching and posting separate. The rejected
+blue reporting-setup section is removed; no replacement section or controls exist.
 
-Owner scope correction: the unsolicited reporting-setup callout was removed.
-This fix must not substitute a new explanatory section for working reporting.
-The existing source-gap details remain the place for missing evidence.
+Undated documents use sanitized original filenames rather than internal receipt
+IDs. Merchant labels may use unanimous active linked receipt evidence. Labels cover
+the complete filtered selection, including records outside the current page.
+Legacy USD minor units use two decimal places for display only, marked
+`display units only`. Stale/conflicting precision never uses that fallback;
+accounting totals never consume the display-only convention. Supported comparison
+charts remain available even when the current period has no supported totals.
+There is one analysis-request control; existing results/history remain accessible.
 
-The owner then selected invoice-based, incomplete reporting. Initial console
-filters now use the unanimous basis/date basis of valid approved reporting
-metadata, rather than silently opening cash/transaction reporting for invoice
-records. Mixed or absent approved metadata does not choose a new default; later
-explicit filter choices remain authoritative. Existing metric cards label partial
-amounts `Incomplete · unposted`; the existing period caption identifies missing
-invoice dates/source coverage and separates payment matching/posting. No new
-controls or reporting sections were added.
-
-- Return readiness counts and readable labels for the complete filtered selection,
-  including records outside the visible page.
-- Explain missing recognition metadata, currency precision and source coverage.
-  Suppress empty overview cards/charts while retaining supported comparison data.
-- Show undated documents with sanitized original filenames. Bookkeeping merchant
-  labels may use unanimous active linked receipt evidence, never inferred identity.
-- Display legacy USD minor units with two decimal places and an explicit
-  `display units only` marker. Missing reviewed precision remains a review item.
-  Stale/conflicting precision cannot use this fallback. Detail responses retain
-  the marker, and accounting totals never consume the display-only convention.
-- Keep one analysis request control and preserve existing analysis results/history.
+Unused readiness-count projections from the removed callout are deleted from the
+plugin query, response schema, generated client and presentation helper. Existing
+row exclusions, coverage evidence, labels and supported metrics remain canonical.
 
 ## Data and permission boundaries
 
-This patch does not change ledger records, custody, source amounts, accounting
-treatment, date basis, allocation, policy, source coverage or bank matching. It does
-not change plugin authorization. Vendor payment evidence is not bank reconciliation;
-prepared/unposted entries are not posted books. Missing income is not zero.
+The code changes do not rewrite ledger facts or approve accounting policy. The
+owner separately authorized invoice-based incomplete reporting. That local-data
+adoption used the existing reviewed preview/commit path, preserving original
+sources, amounts, dates, unresolved gaps and prepared/unposted status. Vendor
+payment dates were not substituted for invoice issue dates. No bank matching,
+complete coverage, revenue, profit, allocation or tax treatment was inferred.
 
-Owner-authorized adoption of invoice-reporting metadata is a separate local-data
-operation using the existing preview/commit correction path. It preserves original
-sources, amounts, dates, unresolved gaps and prepared/unposted status. Vendor payment
-dates are not substituted for missing invoice issue dates. Complete coverage, bank
-matching, revenue, profit and tax treatment are not inferred.
+The scope of PR #22 also includes explicit plugin enablement, guarded recovery and
+verified build inputs. See [Finance operations](../plugins/finance/README.md),
+[project storage](architecture.md#project-finance-files) and
+[desktop distribution](desktop-distribution.md) for their contracts. Browser setup
+permission does not grant agent/MCP mutation authority or permission to supply
+plugin config.
 
-## Verification and remaining gaps
+## Latest installed checkpoint (before this cleanup)
 
-- 283 backend management/readiness/REST tests passed; touched Python Ruff and mypy
-  checks passed.
-- The invoice-default follow-up passed 284 backend tests and UI tests/typecheck/build.
-  Independent review found no source-code blocker in the approved-basis selection.
-- Final invoice-reporting build `20261110T214635Z` was installed after byte-comparing
-  its bundled UI with the completed source UI build. Actual desktop verification
-  confirmed the removed blue section stays absent, approved invoice basis is selected,
-  and the existing Spend card shows the supported subtotal as `Incomplete · unposted`.
-  Revenue/profit remain unavailable where evidence is missing. Source financial facts
-  and originals were preserved through reviewed, sequential preview/commit adoption.
-  Build ordering is mandatory: finish the UI build **before** starting desktop
-  packaging, because the wheel captures `ui_dist` at packaging start. Compare the
-  packaged `ui_dist/index.html` and referenced JS asset before replacing the app.
-- Full UI test command, type-check and production UI build passed. New regressions
-  cover selection-wide counts, prior-period charts, detail markers, precision review,
-  filename labels, and safe linked-merchant fallback.
-- Independent review found no remaining blocker in this diff.
-- Installed development build `20261110T211726Z` (`2.1.44`) after preserving the
-  previous app. Actual installed-app verification confirmed Running, the readiness
-  explanation, readable undated document labels, a single analysis-request control,
-  and decimal display-only USD amounts in Expenses & income. `stackos doctor --json`
-  returned `ok: true`; the installed runtime's read-only `finance.query` succeeded.
-  Existing managed/original Finance file hashes and modes remained unchanged.
-- Repository-wide `make signoff` remains blocked by existing lint errors in retained
-  release/report scripts; this patch does not claim complete repository signoff.
-- Recognition totals still require evidence-backed reporting setup and confirmed
-  coverage. The fix explains that gap rather than fabricating financial decisions.
-- Existing desktop development build/install flow remains documented in
-  [desktop distribution](desktop-distribution.md). No bundled Finance data is added.
+Development build `2.1.44 / 20261110T214635Z` was installed and verified on the
+actual desktop. It selected the approved invoice basis, showed USD 2,485.00 in the
+existing Spend card as `Incomplete · unposted`, and showed no blue section.
+Twenty-three supported invoice entries were adopted; eight MongoDB entries still
+lack verified invoice issue dates. Revenue/profit remained unavailable. These
+counts and amounts describe that local checkpoint, not bundled product data or a
+universal expected result. Doctor passed; original records/evidence were preserved.
+
+The superseded `20261110T211726Z` installation used the rejected explanatory
+section. It is not evidence for the final user experience or a current build.
+
+## Verification
+
+The installed invoice-reporting candidate passed 284 focused backend tests and UI
+checks/typecheck/build. An independent review of PR head `60d78b29` subsequently
+passed 55 focused Python and 101 UI tests; a separate security review passed 59
+middleware/recovery/runtime tests and four downloader tests. Those runs did not
+constitute complete release signoff: aggregate lint failed in retained release
+scripts and hosted checks were absent.
+
+The cleanup removes unused readiness code, fixes retained-script lint without
+weakening lint rules, and consolidates these docs. It passed `make lint`, 284
+focused Finance Python tests, UI tests and a rebuilt UI bundle. Independent
+cleanup review found no actionable regression and confirmed that retained-script
+changes preserve behavior.
+
+The complete `make signoff` passed on native ARM64 Python 3.12.16 using an
+isolated environment synchronized from the frozen lockfile. This gate includes
+lint/formatting, typecheck, the complete Python suite, UI unit tests and UI build.
+External network access was denied by a process sandbox; localhost remained
+available for integration tests. The original unrestricted attempt had been
+stopped by the execution approval layer on an external Anthropic request whose
+source was not established. No network exception or alternate transmission route
+was used. An intermediate offline run under x86_64 Python passed 5,628 tests but
+failed five ARM64-specific installer tests; rerunning on the supported native
+interpreter resolved all five without changing production guards or test fixtures.
+
+The final source cleanup and generated bundle have not been installed. No live
+ledger mutation is part of this cleanup. PR-description synchronization remains
+blocked by the GitHub connector's `403 Resource not accessible by integration`;
+these repository docs contain the current scope and verification record.
+
+Finish the UI build **before** desktop packaging: the wheel captures `ui_dist` at
+packaging start. Compare packaged `ui_dist/index.html` and its referenced JS asset
+with the completed source build before replacing the app. See
+[release signoff](release-signoff.md) for the aggregate gate and
+[desktop distribution](desktop-distribution.md) for build/install steps.

@@ -3991,10 +3991,6 @@ export interface components {
             reporting_defaults?: {
                 [key: string]: string;
             } | null;
-            /** Reporting Readiness */
-            reporting_readiness?: {
-                [key: string]: unknown;
-            };
             /** Review Items */
             review_items: {
                 [key: string]: unknown;

@@ -5,21 +5,6 @@ import { chartProjection } from './overviewFixtures'
 import { financeRecordLabel, reportingReadiness } from './reportingReadiness'
 
 describe('legacy reporting readiness', () => {
-  it('uses full-population readiness instead of paginated rows', () => {
-    const projection = chartProjection()
-    projection.reporting_readiness = {
-      missing_metadata_count: 31,
-      missing_precision_count: 62,
-      selected_record_count: 65,
-    }
-    projection.coverage = {
-      state: 'unavailable',
-      issues: ['missing_or_conflicting_reporting_policy'],
-    }
-    expect(reportingReadiness(projection).missing).toBe(31)
-    expect(reportingReadiness(projection).precision).toBe(62)
-    expect(reportingReadiness(projection).total).toBe(65)
-  })
   it('does not render empty charts or unavailable metric cards when no totals are supported', () => {
     const projection = chartProjection()
     projection.metrics_by_currency = [
@@ -49,7 +34,6 @@ describe('legacy reporting readiness', () => {
   it('retains compatibility with older projections and never manufactures metrics', () => {
     const projection = chartProjection()
     projection.exclusions = [{ record_ref: 'book:one', reason: 'missing_metadata' }]
-    expect(reportingReadiness(projection).missing).toBe(1)
     expect(reportingReadiness(projection).hasMetrics).toBe(true)
   })
   it('preserves supported prior-period charts when this period has no totals', () => {
@@ -65,17 +49,5 @@ describe('legacy reporting readiness', () => {
     })
     expect(reportingReadiness(projection).hasMetrics).toBe(false)
     expect(wrapper.findComponent({ name: 'FinanceOverviewCharts' }).exists()).toBe(true)
-  })
-  it('explains stale policy and precision-only review without missing-metadata entries', () => {
-    const projection = chartProjection()
-    projection.reporting_readiness = {
-      state: 'needs_review',
-      missing_precision_count: 2,
-      reasons: [{ reason: 'stale_metadata', count: 1 }],
-    }
-    projection.coverage = { state: 'partial', issues: ['policy_conflict'] }
-    expect(reportingReadiness(projection).reasons).toContain('stale metadata')
-    expect(reportingReadiness(projection).coverageIssues).toContain('policy conflict')
-    expect(reportingReadiness(projection).precision).toBe(2)
   })
 })

@@ -308,7 +308,7 @@ def test_undated_legacy_receipt_keeps_ref_and_supported_rows_without_rewriting_m
     assert response.status_code == 200, response.text
     data = body(response)
     assert data["undated_or_period_only"] == canonical["undated_or_period_only"]
-    assert data["reporting_readiness"] == canonical["reporting_readiness"]
+    assert "reporting_readiness" not in data
     assert data["record_labels"] == canonical["record_labels"]
     assert (
         data["record_labels"]["receipt:undated"] == "Synthetic · original.html · Date not recorded"
