@@ -334,7 +334,7 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     assert "new descendant commit" in " ".join(delivery["must_do"])
     compact_skill = compact["required_skill_presets"][0]["preset"]
     full_skill = raw["required_skill_presets"][0]["preset"]
-    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.11"
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.12"
     full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
     # Skill lists are bounded navigation; raw retains the full contract.
     assert len(compact_skill["must_do"]) == 25
