@@ -44,8 +44,8 @@ export function useTaskBoardEdits(options: {
       project_id: projectId, task_key: row.key, expected_status: row.task.status,
       expected_updated_at: row.task.updated_at, idempotency_key: crypto.randomUUID(),
     }
-    // Keep this exact intent for transport retries; never invent a new snapshot
-    // or idempotency key within the save attempt.
+    // Each explicit edit has one snapshot and idempotency key. A failed save
+    // refreshes the Board before the user makes another edit.
     const intent: TaskPriorityIntent | TaskReorderIntent = 'priority' in edit
       ? { ...base, priority_key: edit.priority }
       : { ...base, anchor_task_key: edit.anchorKey, placement: edit.placement }

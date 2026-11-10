@@ -6,7 +6,7 @@ import type {
 import { callOperation } from '@/lib/operations'
 
 // The caller owns the immutable intent, pending state and project-generation
-// check. Retry transport failures with that same intent; refresh after 409.
+// check. These calls submit once; the caller refreshes after a failed save.
 export type TaskPriorityIntent = Omit<SchemaTrackerUpdateTaskPriorityInput,
   'run_token' | 'expected_etag' | 'response_mode' | 'priority_key' | 'expected_status'> & {
   priority_key: `${SchemaTrackerUpdateTaskPriorityInput['priority_key']}`
