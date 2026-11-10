@@ -779,6 +779,25 @@ def check_call_grant(tool_name: str, ctx: Any, parsed_arguments: Any | None = No
     generic mutation tools so a stored run plan, not agent discretion, defines
     what can be called.
     """
+    from stackos.operations.local_runtime import CONNECTION_OPERATIONS, RUNTIME_OPERATIONS
+
+    if tool_name in CONNECTION_OPERATIONS:
+        arguments = _model_to_dict(parsed_arguments)
+        settings = ctx.extras.get("settings")
+        scope = ctx.extras.get("auth_scope")
+        if (
+            ctx.principal is None
+            or settings is None
+            or settings.process_role != "server"
+            or ctx.extras.get("surface") != "rest"
+            or scope not in {"verified-user", "local-runtime"}
+            or (scope == "local-runtime" and tool_name not in RUNTIME_OPERATIONS)
+            or ctx.run_token is not None
+            or arguments.get("idempotency_key") is not None
+            or arguments.get("expected_etag") is not None
+        ):
+            raise ToolNotGrantedError("computer setup requires direct verified owner authority")
+        return
     skill_name = getattr(ctx, "skill_name", INVALID_SKILL)
     check_grant(tool_name, skill_name)
     if tool_name in RUN_PLAN_OWNER_TOOL_NAMES and skill_name != RUN_PLAN_CONTROLLER_SKILL:

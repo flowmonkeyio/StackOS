@@ -561,6 +561,31 @@ async def _server_dispatch(
         )
         if (method, path) in public:
             response = await call_next(request)
+        elif request.headers.get("Authorization", "").startswith("Bearer stackos_runtime_"):
+            # A computer credential is never a user session or local-admin token.
+            # Admit only its finite operation set, even when cookies are also sent.
+            from stackos.operations.local_runtime import RUNTIME_OPERATIONS
+            from stackos.repositories.base import RepositoryError
+            from stackos.repositories.workspaces import LocalRuntimeConnectionRepository
+
+            allowed_paths = {f"/api/v1/operations/{name}/call" for name in RUNTIME_OPERATIONS}
+            if method != "POST" or path not in allowed_paths:
+                raise HTTPException(403, {"code": "runtime_scope_denied"})
+            with Session(request.app.state.engine) as session:
+                try:
+                    runtime_connection = LocalRuntimeConnectionRepository(session).authenticate(
+                        request.headers["Authorization"][7:],
+                        environment_id=settings.environment_id or "",
+                        server_origin=settings.server_url or "",
+                    )
+                except RepositoryError:
+                    raise HTTPException(401, {"code": "connection_unavailable"}) from None
+                request.state.principal = UserPrincipal(
+                    runtime_connection.owner_user_id, runtime_connection.environment_id
+                )
+                request.state.local_runtime_connection_id = runtime_connection.id
+                request.state.auth_scope = "local-runtime"
+            response = await call_next(request)
         else:
             if path == "/api/v1/auth/ui-token":
                 raise HTTPException(401, {"code": "sign_in_required"})

@@ -74,6 +74,27 @@ origin, refusing alternate hosts, ports, schemes and credential-bearing URLs.
 Private-request 401s remove the authenticated shell; sign-in/sign-out use a fresh
 document so a previous user's project stores and streams cannot carry over.
 
+### Computer authorization and local folders
+
+`localRuntime.authorize` requires the verified owner of an existing private
+project. It issues a random, 30-day revocable computer credential for that exact
+user/environment/project/server origin. The server stores only its digest and
+safe connection identity. `localRuntime.list`, `status` and `revoke` check that
+same persisted ownership; ownership changes invalidate existing credentials.
+The credential permits only its own status and revocation operations. It grants
+no browser session, local-admin access, project browsing, arbitrary tool calls,
+filesystem access or native invocation. Command exchange is a separate boundary.
+
+The local connection module stores the endpoint, identity and credential in a
+user-owned `0600` file under a private `0700` directory. The signed-in owner must
+deliberately select an existing folder. Its canonical path and device/inode stay
+on that computer; the server receives no path. Reuse checks the exact signed-in
+owner, environment, server and project, the current credential, and the folder's
+identity. Changed, missing, expired, revoked and foreign bindings refuse reuse;
+they never implicitly rebind or create a project. Disconnect confirms server
+revocation before removing the local record. No local application database,
+scheduler, repository synchronization or host registration is created here.
+
 ## Local Daemon Auth Posture
 
 Google service-account JSON keys use the existing encrypted Account backing.

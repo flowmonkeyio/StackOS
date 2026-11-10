@@ -182,6 +182,19 @@ def authorize_operation(
 ) -> int | None:
     if user_principal(session) is None:
         return None
+    from stackos.operations.local_runtime import CONNECTION_OPERATIONS, RUNTIME_OPERATIONS
+
+    runtime_id = session.info.get("local_runtime_connection_id")
+    if runtime_id is not None and name not in RUNTIME_OPERATIONS:
+        raise ToolNotGrantedError("computer credential cannot access this operation")
+    if name in CONNECTION_OPERATIONS:
+        from stackos.repositories.workspaces import LocalRuntimeConnectionRepository
+
+        project_id = _identifier(values.get("project_id"))
+        require_project(session, project_id)
+        if values.get("connection_id") is not None:
+            LocalRuntimeConnectionRepository(session).owned(project_id, values["connection_id"])
+        return project_id
     if name not in _PROJECT_DISCOVERY | _PROJECT_OPERATIONS:
         raise ToolNotGrantedError("operation requires an adapted owner boundary")
     if name in _PROJECT_DISCOVERY:

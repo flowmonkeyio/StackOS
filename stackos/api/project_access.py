@@ -27,6 +27,9 @@ _OPERATION_CALL = re.compile(r"/api/v1/operations/[^/]+/call")
 
 def bind_user_session(session: Session, request: Request, settings: Settings) -> None:
     session.info["user_principal"] = getattr(request.state, "principal", None)
+    session.info["local_runtime_connection_id"] = getattr(
+        request.state, "local_runtime_connection_id", None
+    )
     if settings.process_role == "server":
         session.info["server_environment_id"] = settings.environment_id
 
@@ -36,6 +39,12 @@ def authorize_request(session: Session, request: Request, settings: Settings) ->
 
     bind_user_session(session, request, settings)
     path, method = request.url.path, request.method
+    from stackos.operations.local_runtime import CONNECTION_OPERATIONS
+
+    if method == "POST" and path in {
+        f"/api/v1/operations/{name}/call" for name in CONNECTION_OPERATIONS
+    }:
+        return  # Dispatcher requires a verified owner and refuses runtime escalation.
     if path == "/api/v1/projects" and method in {"GET", "POST"}:
         return
     # The dispatcher checks the exact operation and its persisted identifiers;

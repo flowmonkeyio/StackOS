@@ -41,6 +41,36 @@ global consumers remain denied until their owning implementation supplies its bo
 Verified browser sessions retain the existing read/browser-safe surface policy;
 they never receive local-admin authority. See [security](security.md).
 
+## Computer connection setup
+
+The REST-only `localRuntime.authorize`, `localRuntime.list`, `localRuntime.status`
+and `localRuntime.revoke` operations use the shared registry and dispatcher.
+They require a verified server owner and explicit `project_id`; status/revoke
+also require `connection_id`. They accept no run token or idempotency key and
+are raw-only. Authorization returns its scoped credential once, directly to
+the local caller; it is never persisted in an operation replay record. Safe
+status/list responses contain identity, expiry and authorization state, with
+no credential. A computer bearer may only inspect/revoke that same connection.
+Browser setup retains exact Origin and session CSRF enforcement.
+
+An explicit local setup caller is available as:
+
+```bash
+python -m stackos.local_runtime connect --server-url http://127.0.0.1:19960 \
+  --environment-id selected-environment --project-id 1 \
+  --state-dir /absolute/private/runtime-state --folder /absolute/existing/project \
+  --email owner@example.test
+```
+
+The password is prompted locally and exchanged only with the selected StackOS
+server. The short-lived setup login is logged out afterward; only the scoped
+computer credential remains locally. Repeat the same command to validate and
+reuse the exact binding. Use `disconnect` with the same identity/state arguments
+to revoke and remove it. The module configures authorization and folder identity;
+native host startup, MCP routing and invocation exchange use their existing
+owners in subsequent setup. Server workspace IDs and paths never select local
+filesystem access.
+
 ## Project workflow schedules
 
 `schedule.list`, `schedule.set`, `schedule.toggle`, `schedule.remove` and

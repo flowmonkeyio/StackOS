@@ -78,7 +78,7 @@ def test_postgres_migrate_cli_reports_safe_success(postgres_settings: Settings) 
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "migrate: alembic upgraded to head (Postgres)."
-    assert current_alembic_version(postgres_settings) == "0039_project_owners"
+    assert current_alembic_version(postgres_settings) == "0040_local_runtime_connections"
     assert postgres_settings.database_url is not None
     url = postgres_settings.database_url.get_secret_value()
     password = sa.engine.make_url(url).password
@@ -99,7 +99,7 @@ def test_postgres_migration_repositories_and_private_schema(postgres_settings: S
 
     selected = postgres_settings
     assert upgrade_to_head(selected).stamped_existing_schema is False
-    assert current_alembic_version(selected) == "0039_project_owners"
+    assert current_alembic_version(selected) == "0040_local_runtime_connections"
     engine = make_settings_engine(selected)
     assert engine.dialect.name == "postgresql"
     try:
@@ -309,6 +309,7 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "artifacts",
         "auth_providers",
         "user_sessions",
+        "local_runtime_connections",
         "browser_action_receipts",
         "browser_profiles",
         "browser_sessions",
@@ -922,7 +923,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0039_project_owners",
+            "0040_local_runtime_connections",
         )
     finally:
         conn.close()
@@ -2536,7 +2537,10 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
         tables_before = _list_tables(isolated_alembic)
     _run_alembic(["upgrade", "head"])
     with sqlite3.connect(isolated_alembic) as conn:
-        assert _list_tables(isolated_alembic) == tables_before | {"user_sessions"}
+        assert _list_tables(isolated_alembic) == tables_before | {
+            "user_sessions",
+            "local_runtime_connections",
+        }
         for table, rows in before.items():
             assert conn.execute(f"SELECT * FROM {table}").fetchall() == rows
         configs = {
@@ -2815,3 +2819,40 @@ def test_project_owner_migration_preserves_unassigned_data_and_refuses_owner_los
         assert connection.execute(
             "SELECT owner_user_id, environment_id FROM projects WHERE id = 7"
         ).fetchone() == ("00000000-0000-0000-0000-000000000001", "synthetic-owner-migration")
+
+
+def test_computer_authorization_migration_preserves_data_and_refuses_loss(
+    isolated_alembic: Path,
+) -> None:
+    _run_alembic(["upgrade", "0039_project_owners"])
+    with sqlite3.connect(isolated_alembic) as connection:
+        _insert_legacy_project(connection, project_id=7, now="2026-11-10 00:00:00")
+        before = connection.execute("SELECT * FROM projects WHERE id = 7").fetchone()
+    _run_alembic(["upgrade", "head"])
+    with sqlite3.connect(isolated_alembic) as connection:
+        assert connection.execute("SELECT * FROM projects WHERE id = 7").fetchone() == before
+        assert connection.execute("SELECT * FROM local_runtime_connections").fetchall() == []
+        connection.execute(
+            "INSERT INTO local_runtime_connections "
+            "(id, project_id, owner_user_id, environment_id, server_origin, credential_digest, "
+            "created_at, expires_at) VALUES (?, 7, ?, ?, ?, ?, ?, ?)",
+            (
+                "connection",
+                "owner",
+                "synthetic",
+                "http://127.0.0.1:19960",
+                "digest",
+                "2026-11-10 00:00:00",
+                2000000000,
+            ),
+        )
+    with pytest.raises(subprocess.CalledProcessError) as refused:
+        _run_alembic(["downgrade", "0039_project_owners"])
+    assert "Refusing to discard computer authorizations" in refused.value.stderr
+    with sqlite3.connect(isolated_alembic) as connection:
+        assert connection.execute("SELECT id FROM local_runtime_connections").fetchall() == [
+            ("connection",)
+        ]
+        assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            "0040_local_runtime_connections",
+        )
