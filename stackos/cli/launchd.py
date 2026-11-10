@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import plistlib
+import re
 import shutil
 import subprocess
 import time
@@ -74,6 +75,14 @@ def _launchd_loaded() -> tuple[bool, str]:
     except RuntimeError as exc:
         return False, str(exc)
     return _launchctl(["print", service])
+
+
+def _loaded_launchd_pid() -> int | None:
+    loaded, output = _launchd_loaded()
+    if not loaded:
+        return None
+    matches = re.findall(r"^\s*pid = ([1-9][0-9]*)\s*$", output, flags=re.MULTILINE)
+    return int(matches[0]) if len(matches) == 1 else None
 
 
 def _launchd_bootout(

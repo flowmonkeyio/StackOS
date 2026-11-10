@@ -11,6 +11,7 @@ import types
 from pathlib import Path
 
 import pytest
+import typer
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
@@ -48,7 +49,11 @@ def test_serve_preserves_selection_and_uses_execution_app(selected, monkeypatch)
         assert target == "stackos.local_runtime.service:create_app"
         assert kwargs["port"] == 19811
         assert get_settings() == settings
-        assert settings.pid_path.read_text().strip() == str(os.getpid())
+        assert daemon_processes._read_pid_file(settings.pid_path) == os.getpid()
+        assert (
+            json.loads(settings.pid_path.read_text())["context"]["environment_id"]
+            == "startup-proof"
+        )
 
     monkeypatch.setitem(sys.modules, "uvicorn", types.SimpleNamespace(run=run))
     result = CliRunner().invoke(app, ["serve"], catch_exceptions=False)
@@ -329,3 +334,164 @@ def test_stop_cleans_only_the_observed_terminated_pid(selected, monkeypatch, rep
         assert settings.pid_path.read_text() == "5678\n"
     else:
         assert not settings.pid_path.exists()
+
+
+def test_runtime_discovery_refuses_foreign_listener_without_selected_pid(selected, monkeypatch):
+    settings = get_settings()
+    settings.ensure_dirs()
+    monkeypatch.setattr(daemon_processes, "_listener_pids", lambda *_: [12345])
+    monkeypatch.setattr(daemon_processes, "_pid_command", lambda *_: "python -m stackos serve")
+    monkeypatch.setattr(daemon_processes, "_pid_is_running", lambda *_: True)
+    assert daemon_processes._discover_daemon_processes(settings, settings.port) == ([], [12345])
+
+
+@pytest.mark.parametrize("command", ["stop", "restart"])
+def test_foreign_runtime_blocks_launchd_control(selected, monkeypatch, command):
+    monkeypatch.setattr(
+        daemon_commands, "_launchd_plist_for_requested_context", lambda *a, **kw: selected
+    )
+    monkeypatch.setattr(launchd, "_loaded_launchd_plist", lambda *_: selected)
+    monkeypatch.setattr(launchd, "_launchd_loaded", lambda: (True, "loaded"))
+    monkeypatch.setattr(daemon_processes, "_discover_daemon_processes", lambda *a: ([], [12345]))
+    monkeypatch.setattr(launchd, "_launchd_bootout", lambda *a, **kw: pytest.fail("foreign unload"))
+    monkeypatch.setattr(
+        daemon_processes,
+        "_terminate_daemon_processes",
+        lambda *a, **kw: pytest.fail("foreign signal"),
+    )
+    monkeypatch.setattr(
+        daemon_processes, "_spawn_detached_daemon", lambda *a, **kw: pytest.fail("foreign takeover")
+    )
+    result = CliRunner().invoke(app, [command, "--force"], catch_exceptions=False)
+    assert result.exit_code != 0
+
+
+def _owned_runtime(selected, monkeypatch):
+    settings = get_settings()
+    settings.ensure_dirs()
+    monkeypatch.setattr(daemon_processes, "_listener_pids", lambda *_: [12345])
+    monkeypatch.setattr(daemon_processes, "_pid_command", lambda *_: "python -m stackos serve")
+    monkeypatch.setattr(daemon_processes, "_pid_is_running", lambda *_: True)
+    monkeypatch.setattr(daemon_processes, "_pid_start_time", lambda *_: "process-birth-A")
+    daemon_processes._write_pid_file(settings.pid_path, 12345, settings=settings)
+    return settings
+
+
+@pytest.mark.parametrize(
+    "mismatch",
+    [
+        "environment_id",
+        "server_url",
+        "data_dir",
+        "state_dir",
+        "env_file",
+        "process_birth",
+        "legacy_pid",
+        "missing_birth",
+        "unknown_command",
+    ],
+)
+def test_runtime_ownership_refuses_foreign_or_uncertain_identity(selected, monkeypatch, mismatch):
+    settings = _owned_runtime(selected, monkeypatch)
+    assert daemon_processes._discover_daemon_processes(settings, settings.port) == ([12345], [])
+    record = json.loads(settings.pid_path.read_text())
+    if mismatch in record["context"]:
+        record["context"][mismatch] = "different-selected-context"
+    elif mismatch == "process_birth":
+        monkeypatch.setattr(daemon_processes, "_pid_start_time", lambda *_: "process-birth-B")
+    elif mismatch == "missing_birth":
+        record["process_started_at"] = None
+    elif mismatch == "legacy_pid":
+        record = 12345
+    else:
+        monkeypatch.setattr(daemon_processes, "_pid_command", lambda *_: None)
+    settings.pid_path.write_text(json.dumps(record))
+    assert daemon_processes._discover_daemon_processes(settings, settings.port) == ([], [12345])
+
+
+def test_owned_wedged_runtime_can_restart_without_health(selected, monkeypatch):
+    import signal
+
+    _owned_runtime(selected, monkeypatch)
+    signals = []
+    monkeypatch.setattr(daemon_processes.os, "kill", lambda pid, sig: signals.append((pid, sig)))
+    monkeypatch.setattr(daemon_processes, "_wait_for_pids_to_exit", lambda *a, **kw: True)
+    monkeypatch.setattr(
+        daemon_processes,
+        "_daemon_health_ok",
+        lambda *a, **kw: pytest.fail("wedged health is not ownership"),
+    )
+    monkeypatch.setattr(
+        daemon_processes,
+        "_spawn_detached_daemon",
+        lambda *a, **kw: (True, "started selected runtime"),
+    )
+    result = CliRunner().invoke(app, ["restart"], catch_exceptions=False)
+    assert result.exit_code == 0, result.output
+    assert signals == [(12345, signal.SIGTERM)]
+
+
+def test_reused_runtime_pid_is_rechecked_before_signals(selected, monkeypatch):
+    settings = _owned_runtime(selected, monkeypatch)
+    assert daemon_processes._runtime_process_owned(settings, 12345)
+    monkeypatch.setattr(daemon_processes, "_pid_start_time", lambda *_: "reused-process")
+    monkeypatch.setattr(
+        daemon_processes.os, "kill", lambda *a: pytest.fail("foreign process signaled")
+    )
+    ok, message = daemon_processes._terminate_daemon_processes(
+        [12345], timeout=0, force=True, settings=settings
+    )
+    assert not ok and "ownership" in message
+
+
+def test_runtime_force_stop_rechecks_process_after_wait(selected, monkeypatch):
+    import signal
+
+    settings = _owned_runtime(selected, monkeypatch)
+    signals = []
+    monkeypatch.setattr(daemon_processes.os, "kill", lambda pid, sig: signals.append((pid, sig)))
+
+    def wait(*args, **kwargs):
+        monkeypatch.setattr(daemon_processes, "_pid_start_time", lambda *_: "reused-process")
+        return False
+
+    monkeypatch.setattr(daemon_processes, "_wait_for_pids_to_exit", wait)
+    ok, message = daemon_processes._terminate_daemon_processes(
+        [12345], timeout=0, force=True, settings=settings
+    )
+    assert not ok and "identity changed" in message
+    assert signals == [(12345, signal.SIGTERM)]
+
+
+@pytest.mark.parametrize("command", ["stop", "restart"])
+def test_foreign_loaded_job_is_not_unloaded_for_owned_listener(selected, monkeypatch, command):
+    _owned_runtime(selected, monkeypatch)
+    monkeypatch.setattr(
+        daemon_commands, "_launchd_plist_for_requested_context", lambda *a, **kw: selected
+    )
+    monkeypatch.setattr(launchd, "_loaded_launchd_plist", lambda *_: selected)
+    monkeypatch.setattr(launchd, "_launchd_loaded", lambda: (True, "job = {\n\tpid = 67890\n}"))
+    monkeypatch.setattr(
+        launchd, "_launchd_bootout", lambda *a, **kw: pytest.fail("foreign job unload")
+    )
+    monkeypatch.setattr(
+        daemon_processes,
+        "_terminate_daemon_processes",
+        lambda *a, **kw: pytest.fail("foreign signal"),
+    )
+    result = CliRunner().invoke(app, [command], catch_exceptions=False)
+    assert result.exit_code != 0 and "job ownership is uncertain" in result.output
+
+
+@pytest.mark.parametrize("reported", ["pid = 12345", "missing", "pid = 12345\npid = 67890"])
+def test_runtime_launchd_control_requires_one_confirmed_owned_job_pid(
+    selected, monkeypatch, reported
+):
+    settings = _owned_runtime(selected, monkeypatch)
+    monkeypatch.setattr(launchd, "_launchd_loaded", lambda: (True, reported))
+    if reported == "pid = 12345":
+        daemon_commands._require_runtime_launchd_process(settings, [12345])
+    else:
+        with pytest.raises(typer.Exit) as exc:
+            daemon_commands._require_runtime_launchd_process(settings, [12345])
+        assert exc.value.exit_code == 1

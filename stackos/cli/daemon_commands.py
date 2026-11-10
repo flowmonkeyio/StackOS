@@ -86,7 +86,7 @@ def serve(
         _require_selected_listener(settings, host, port, log_level)
         host, port, log_level = settings.host, settings.port, settings.log_level
         settings.ensure_dirs()
-        daemon_processes._write_pid_file(settings.pid_path, os.getpid())
+        daemon_processes._write_pid_file(settings.pid_path, os.getpid(), settings=settings)
         # Late-import uvicorn so `--help` is fast and the heavy import only
         # happens on actual serve.
         import uvicorn
@@ -123,6 +123,24 @@ def _require_selected_listener(
         or (log_level is not None and log_level.upper() != settings.log_level)
     ):
         raise typer.BadParameter("selected environment listener/settings cannot be overridden")
+
+
+def _process_blocker_message(settings: Settings, port: int, pids: list[int]) -> str:
+    reason = (
+        "processes with foreign or uncertain selected runtime ownership"
+        if settings.process_role == "runtime"
+        else "non-StackOS process pid(s)"
+    )
+    return f"error: port {port} is held by {reason}: {', '.join(str(pid) for pid in pids)}"
+
+
+def _require_runtime_launchd_process(settings: Settings, pids: list[int]) -> None:
+    if settings.process_role != "runtime":
+        return
+    pid = launchd._loaded_launchd_pid()
+    if pid is None or pid not in pids or not daemon_processes._runtime_process_owned(settings, pid):
+        typer.echo("error: loaded runtime job ownership is uncertain; refusing unload", err=True)
+        raise typer.Exit(code=1)
 
 
 @app.command(name="runtime-config")
@@ -307,9 +325,7 @@ def start(
     daemon_pids, blocker_pids = daemon_processes._discover_daemon_processes(settings, daemon_port)
     if blocker_pids:
         typer.echo(
-            "error: port "
-            f"{daemon_port} is held by non-StackOS process pid(s): "
-            f"{', '.join(str(pid) for pid in blocker_pids)}",
+            _process_blocker_message(settings, daemon_port, blocker_pids),
             err=True,
         )
         raise typer.Exit(code=1)
@@ -320,8 +336,13 @@ def start(
 
     if daemon_pids or daemon_processes._tcp_can_connect(daemon_host, daemon_port, timeout=0.25):
         typer.echo(
-            "error: daemon process or port is present but health is not ready; "
-            "run `stackos restart`.",
+            "error: selected runtime listener ownership or readiness is unconfirmed; "
+            "check its environment and process before retrying."
+            if settings.process_role == "runtime"
+            else (
+                "error: daemon process or port is present but health is not ready; "
+                "run `stackos restart`."
+            ),
             err=True,
         )
         raise typer.Exit(code=1)
@@ -382,20 +403,25 @@ def stop(
     loaded_launchd_plist = (
         launchd._loaded_launchd_plist(_doctor_home()) if launchd_plist is not None else None
     )
+    daemon_pids, blocker_pids = daemon_processes._discover_daemon_processes(settings, daemon_port)
+    if blocker_pids:
+        typer.echo(_process_blocker_message(settings, daemon_port, blocker_pids), err=True)
+        raise typer.Exit(code=1)
     if loaded_launchd_plist is not None:
+        _require_runtime_launchd_process(settings, daemon_pids)
         ok, message = launchd._launchd_bootout(loaded_launchd_plist, wait_timeout=timeout)
         if not ok:
             typer.echo(f"stop: launchd bootout failed: {message}", err=True)
             raise typer.Exit(code=1)
         detail = f"; {message}" if message else ""
         typer.echo(f"stop: unloaded launchd job{detail}")
+        daemon_pids, blocker_pids = daemon_processes._discover_daemon_processes(
+            settings, daemon_port
+        )
 
-    daemon_pids, blocker_pids = daemon_processes._discover_daemon_processes(settings, daemon_port)
     if blocker_pids:
         typer.echo(
-            "error: port "
-            f"{daemon_port} is held by non-StackOS process pid(s): "
-            f"{', '.join(str(pid) for pid in blocker_pids)}",
+            _process_blocker_message(settings, daemon_port, blocker_pids),
             err=True,
         )
         raise typer.Exit(code=1)
@@ -414,6 +440,7 @@ def stop(
         daemon_pids,
         timeout=timeout,
         force=force,
+        **({"settings": settings} if settings.process_role == "runtime" else {}),
     )
     if not ok:
         typer.echo(f"stop: {message}", err=True)
@@ -474,14 +501,12 @@ def restart(
     daemon_pids, blocker_pids = daemon_processes._discover_daemon_processes(settings, daemon_port)
     if blocker_pids:
         typer.echo(
-            "error: port "
-            f"{daemon_port} is held by non-StackOS process pid(s): "
-            f"{', '.join(str(pid) for pid in blocker_pids)}",
+            _process_blocker_message(settings, daemon_port, blocker_pids),
             err=True,
         )
         raise typer.Exit(code=1)
-
     if launchd_plist is not None and launchd_loaded:
+        _require_runtime_launchd_process(settings, daemon_pids)
         ok, message = launchd._launchd_bootout(launchd_plist, wait_timeout=timeout)
         if not ok:
             typer.echo(f"restart: launchd bootout failed: {message}", err=True)
@@ -493,11 +518,7 @@ def restart(
         )
 
     if blocker_pids:
-        message = (
-            "error: port "
-            f"{daemon_port} is held by non-StackOS process pid(s): "
-            f"{', '.join(str(pid) for pid in blocker_pids)}"
-        )
+        message = _process_blocker_message(settings, daemon_port, blocker_pids)
         if restart_via_launchd:
             assert launchd_plist is not None
             _abort_restart_after_launchd_bootout(launchd_plist, message)
@@ -509,6 +530,7 @@ def restart(
             daemon_pids,
             timeout=timeout,
             force=force,
+            **({"settings": settings} if settings.process_role == "runtime" else {}),
         )
         if not ok:
             error_message = f"restart: {message}"

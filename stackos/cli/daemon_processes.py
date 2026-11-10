@@ -137,15 +137,36 @@ def _spawn_detached_daemon(
     return False, f"daemon exited with code {exit_code}; log={log_path}"
 
 
-def _write_pid_file(path: Path, pid: int) -> None:
-    path.write_text(f"{pid}\n", encoding="utf-8")
+def _runtime_context(settings: Settings) -> dict[str, str | int | None]:
+    selected = os.environ.get("STACKOS_ENV_FILE")
+    return {
+        "process_role": settings.process_role,
+        "environment_id": settings.environment_id,
+        "server_url": settings.server_url,
+        "host": settings.host,
+        "port": settings.port,
+        "data_dir": str(settings.data_dir.resolve()),
+        "state_dir": str(settings.state_dir.resolve()),
+        "env_file": str(Path(selected).resolve()) if selected is not None else None,
+    }
+
+
+def _write_pid_file(path: Path, pid: int, *, settings: Settings | None = None) -> None:
+    if settings is not None and settings.process_role == "runtime":
+        # One process-ownership record, not a work queue or restart journal.
+        record = {
+            "pid": pid,
+            "context": _runtime_context(settings),
+            "process_started_at": _pid_start_time(pid),
+        }
+        path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+        path.chmod(0o600)
+    else:
+        path.write_text(f"{pid}\n", encoding="utf-8")
 
 
 def _remove_pid_file(path: Path, pid: int) -> None:
-    try:
-        current = int(path.read_text(encoding="utf-8").strip())
-    except (FileNotFoundError, ValueError):
-        return
+    current = _read_pid_file(path)
     if current == pid:
         path.unlink(missing_ok=True)
 
@@ -156,10 +177,49 @@ def _read_pid_file(path: Path) -> int | None:
     except FileNotFoundError:
         return None
     try:
-        pid = int(raw)
+        record = json.loads(raw)
     except ValueError:
         return None
+    pid = record.get("pid") if isinstance(record, dict) else record
+    if type(pid) is not int:
+        return None
     return pid if pid > 0 else None
+
+
+def _pid_start_time(pid: int) -> str | None:
+    ps = shutil.which("ps")
+    if not ps:
+        return None
+    try:
+        result = subprocess.run(
+            [ps, "-p", str(pid), "-o", "lstart="],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+            env={**os.environ, "LC_ALL": "C"},
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return result.stdout.strip() or None if result.returncode == 0 else None
+
+
+def _runtime_process_owned(settings: Settings, pid: int) -> bool:
+    try:
+        record = json.loads(settings.pid_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(record, dict) or (
+        type(record.get("pid")) is not int
+        or record["pid"] != pid
+        or record.get("context") != _runtime_context(settings)
+        or not isinstance(record.get("process_started_at"), str)
+        or not record["process_started_at"]
+    ):
+        return False
+    return record["process_started_at"] == _pid_start_time(pid) and _command_looks_like_daemon(
+        _pid_command(pid)
+    )
 
 
 def _pid_is_running(pid: int) -> bool:
@@ -256,6 +316,19 @@ def _discover_daemon_processes(settings: Settings, port: int) -> tuple[list[int]
     blockers: list[int] = []
     seen_daemons: set[int] = set()
 
+    if settings.process_role == "runtime":
+        for pid in dict.fromkeys([*listener_pids, *([pid_file_pid] if pid_file_pid else [])]):
+            if pid == os.getpid():
+                continue
+            if not _pid_is_running(pid):
+                if pid == pid_file_pid:
+                    _remove_pid_file(settings.pid_path, pid)
+            elif _runtime_process_owned(settings, pid):
+                daemons.append(pid)
+            else:
+                blockers.append(pid)
+        return daemons, blockers
+
     for pid in listener_pids:
         if pid == os.getpid():
             continue
@@ -289,7 +362,14 @@ def _terminate_daemon_processes(
     *,
     timeout: float,
     force: bool,
+    settings: Settings | None = None,
 ) -> tuple[bool, str]:
+    if (
+        settings is not None
+        and settings.process_role == "runtime"
+        and any(not _runtime_process_owned(settings, pid) for pid in pids)
+    ):
+        return False, "runtime process ownership is foreign or uncertain; no process stopped"
     for pid in pids:
         try:
             os.kill(pid, signal.SIGTERM)
@@ -305,6 +385,12 @@ def _terminate_daemon_processes(
         for pid in pids:
             if not _pid_is_running(pid):
                 continue
+            if (
+                settings is not None
+                and settings.process_role == "runtime"
+                and not (_runtime_process_owned(settings, pid))
+            ):
+                return False, "runtime process identity changed; refusing force-stop"
             try:
                 os.kill(pid, signal.SIGKILL)
             except ProcessLookupError:

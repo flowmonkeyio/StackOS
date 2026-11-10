@@ -197,6 +197,15 @@ identifies the role, environment and selected server so another local server
 cannot satisfy readiness. An unconnected service reports `not_connected`;
 that is service liveness, not authorization to execute work.
 
+The runtime PID file binds its PID and observed process start time to the exact
+selected environment, server, listener, paths and settings file. Stop/restart
+must confirm that record against the current process before signaling it or
+unloading a runtime launchd job. Foreign listeners, mismatched or incomplete
+records and unobservable process identity refuse control without takeover.
+An owned process can still be restarted when its health endpoint is wedged;
+health failure alone never proves ownership. This record tracks only the local
+service process and does not reconstruct native work after restart.
+
 The runtime service exposes local health only. It creates no application
 database, migrations, workflow scheduler, provider seed or fallback UI/server.
 The existing local connection file retains the computer credential and exact
