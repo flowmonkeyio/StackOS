@@ -1,17 +1,19 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, onBeforeUnmount, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import type { SchemaLoadedWorkflowTemplate } from '@/api'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import TemplateRenderer from '@/components/renderers/TemplateRenderer.vue'
 import { UiButton, UiCallout, UiLoadingState, UiPageShell } from '@/components/ui'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { apiFetch, formatApiError } from '@/lib/client'
+import { projectIdFromRoute } from '@/lib/stackos/projectNavigation'
 import { useStackOsCatalogStore } from '@/stores/plugins'
 import { domainLocation } from './plugin-domain/viewModel'
 
 const route = useRoute()
-const { projectId, isValid } = useProjectRouteScope(route)
+const router = useRouter()
+const { projectId } = useProjectRouteScope(route)
 const slug = computed(() => String(route.params.pluginSlug ?? ''))
 const key = computed(() => String(route.params.templateKey ?? ''))
 const catalog = useStackOsCatalogStore()
@@ -20,20 +22,20 @@ const template = ref<SchemaLoadedWorkflowTemplate | null>(null)
 const error = ref('')
 const loading = ref(true)
 let generation = 0
-async function load() {
+async function load(nextProjectId = projectId.value, nextSlug = slug.value, nextKey = key.value) {
   const current = ++generation
   error.value = ''
   loading.value = true
-  if (!isValid.value) { loading.value = false; return }
-  await catalog.refreshPlugins(projectId.value)
+  if (!Number.isSafeInteger(nextProjectId)) { loading.value = false; return }
+  await catalog.refreshPlugins(nextProjectId)
   if (current !== generation) return
   if (catalog.error) error.value = catalog.error
-  else if (!plugin.value || plugin.value.enabled_for_project === false) error.value = 'This plugin is unavailable or disabled for this project.'
+  else if (!catalog.plugins.some(item => item.slug === nextSlug && item.enabled_for_project !== false)) error.value = 'This plugin is unavailable or disabled for this project.'
   else {
     try {
-      const result = await apiFetch<SchemaLoadedWorkflowTemplate>(`/api/v1/projects/${projectId.value}/workflow-templates/${encodeURIComponent(key.value)}?plugin_slug=${encodeURIComponent(slug.value)}`)
+      const result = await apiFetch<SchemaLoadedWorkflowTemplate>(`/api/v1/projects/${nextProjectId}/workflow-templates/${encodeURIComponent(nextKey)}?plugin_slug=${encodeURIComponent(nextSlug)}`)
       if (current !== generation) return
-      if (result.summary.key !== key.value || result.summary.plugin_slug !== slug.value || result.spec.key !== key.value) throw new Error('The workflow source does not match this page.')
+      if (result.summary.key !== nextKey || result.summary.plugin_slug !== nextSlug || result.spec.key !== nextKey) throw new Error('The workflow source does not match this page.')
       template.value = result
     } catch (err) { if (current === generation) error.value = formatApiError(err, 'Workflow unavailable') }
   }
@@ -42,8 +44,20 @@ async function load() {
     loading.value = false
   }
 }
-watch([projectId, slug, key], () => { template.value = null; void load() }, { immediate: true })
-onBeforeUnmount(() => { generation++ })
+const workflowRoute = route.matched[route.matched.length - 1]
+const removeRouteListener = router.afterEach((to, from, failure) => {
+  if (failure) return
+  if (!workflowRoute || !to.matched.includes(workflowRoute)) { generation++; return }
+  const nextProjectId = projectIdFromRoute(to) ?? Number.NaN
+  const nextSlug = String(to.params.pluginSlug ?? '')
+  const nextKey = String(to.params.templateKey ?? '')
+  if (nextProjectId !== projectIdFromRoute(from) || nextSlug !== String(from.params.pluginSlug ?? '') || nextKey !== String(from.params.templateKey ?? '')) {
+    template.value = null
+    void load(nextProjectId, nextSlug, nextKey)
+  }
+})
+void load()
+onBeforeUnmount(() => { generation++; removeRouteListener() })
 </script>
 
 <template>
@@ -63,7 +77,7 @@ onBeforeUnmount(() => { generation++ })
         <UiButton
           icon-left="refresh"
           :loading="loading"
-          @click="load"
+          @click="load()"
         >
           Refresh
         </UiButton>
@@ -79,7 +93,7 @@ onBeforeUnmount(() => { generation++ })
     >
       {{ error }} <UiButton
         size="sm"
-        @click="load"
+        @click="load()"
       >
         Retry
       </UiButton>

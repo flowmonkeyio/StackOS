@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import DataTable from '@/components/DataTable.vue'
 import InspectableDetailDrawer from '@/components/InspectableDetailDrawer.vue'
 import ArtifactRenderer from '@/components/renderers/ArtifactRenderer.vue'
@@ -10,7 +10,7 @@ import { toLibrarySource, type LibrarySource } from '@/lib/librarySources'
 import { useStackOsResourcesStore } from '@/stores/stackosResources'
 import { filterSources, humanLabel, libraryLocation, refreshLoadedPages, sourceType, sourceUpdated } from '../library/viewModel'
 
-const props = defineProps<{ projectId: number; pluginSlug: string; kind: 'saved' | 'files'; refreshKey: number }>()
+const props = defineProps<{ projectId: number; pluginSlug: string; kind: 'saved' | 'files' }>()
 const resources = useStackOsResourcesStore()
 const search = ref('')
 const type = ref('')
@@ -94,8 +94,19 @@ async function refresh() {
   if (!page.value.error) reading = null
 }
 async function readMore() { retryRefresh = false; await reader().more() }
-watch(() => props.refreshKey, () => { void refresh() }, { immediate: true })
-watch([search, type], () => { if (!visible.value.some(source => source.identity === selectedId.value)) selectedId.value = '' })
+function clearIncompatibleSelection() {
+  if (!visible.value.some(source => source.identity === selectedId.value)) selectedId.value = ''
+}
+function setSearch(value: string | number | null) {
+  search.value = String(value ?? '')
+  clearIncompatibleSelection()
+}
+function setType(value: string | number | null) {
+  type.value = String(value ?? '')
+  clearIncompatibleSelection()
+}
+defineExpose({ refresh })
+void refresh()
 onBeforeUnmount(() => { generation++ })
 </script>
 
@@ -122,16 +133,18 @@ onBeforeUnmount(() => { generation++ })
       class="domain-filters"
     >
       <UiInput
-        v-model="search"
+        :model-value="search"
         type="search"
         placeholder="Search this list"
         aria-label="Search this list"
         clearable
+        @update:model-value="setSearch"
       />
       <UiSelect
-        v-model="type"
+        :model-value="type"
         :options="types"
         aria-label="Type"
+        @update:model-value="setType"
       />
     </div>
     <UiCallout

@@ -1,17 +1,19 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import type { SchemaPluginOut, SchemaWorkflowTemplateSummaryOut } from '@/api'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import { UiButton, UiCallout, UiLoadingState, UiPageShell, UiSectionHeader } from '@/components/ui'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { apiFetch, formatApiError } from '@/lib/client'
+import { projectIdFromRoute } from '@/lib/stackos/projectNavigation'
 import { useStackOsCatalogStore } from '@/stores/plugins'
 import DomainContentSection from './plugin-domain/DomainContentSection.vue'
 import { domainPage, workflowLocation } from './plugin-domain/viewModel'
 
 const route = useRoute()
-const { projectId, isValid } = useProjectRouteScope(route)
+const router = useRouter()
+const { projectId } = useProjectRouteScope(route)
 const slug = computed(() => String(route.params.pluginSlug ?? ''))
 const catalog = useStackOsCatalogStore()
 const plugin = ref<SchemaPluginOut>()
@@ -22,27 +24,49 @@ const workflows = ref<SchemaWorkflowTemplateSummaryOut[]>([])
 const loading = ref(true)
 const initialized = ref(false)
 const error = ref('')
-const refreshKey = ref(0)
+const contentReaders = ref<InstanceType<typeof DomainContentSection>[]>([])
 let generation = 0
-async function load() {
+async function load(nextProjectId = projectId.value, nextSlug = slug.value) {
   const current = ++generation
+  const mountedReaders = [...contentReaders.value]
   loading.value = true
   error.value = ''
-  if (!isValid.value) { loading.value = false; return }
-  await catalog.refreshPlugins(projectId.value)
+  if (!Number.isSafeInteger(nextProjectId)) { loading.value = false; return }
+  await catalog.refreshPlugins(nextProjectId)
   if (current !== generation) return
-  if (!catalog.error) plugin.value = catalog.plugins.find(item => item.slug === slug.value)
+  if (!catalog.error) plugin.value = catalog.plugins.find(item => item.slug === nextSlug)
   if (catalog.error) error.value = catalog.error
   else if (enabled.value && page.value.sections.includes('workflows')) {
     try {
-      const result = await apiFetch<{ templates: SchemaWorkflowTemplateSummaryOut[] }>(`/api/v1/projects/${projectId.value}/workflow-templates?plugin_slug=${encodeURIComponent(slug.value)}`)
-      if (current === generation) workflows.value = result.templates.filter(item => item.plugin_slug === slug.value)
+      const result = await apiFetch<{ templates: SchemaWorkflowTemplateSummaryOut[] }>(`/api/v1/projects/${nextProjectId}/workflow-templates?plugin_slug=${encodeURIComponent(nextSlug)}`)
+      if (current === generation) workflows.value = result.templates.filter(item => item.plugin_slug === nextSlug)
     } catch (err) { if (current === generation) error.value = formatApiError(err, 'Failed to load workflows') }
   }
-  if (current === generation) { loading.value = false; initialized.value = true; refreshKey.value++ }
+  if (current !== generation) return
+  loading.value = false
+  initialized.value = true
+  await nextTick()
+  if (current !== generation) return
+  // New sections initialize themselves. Refresh only the retained instances,
+  // preserving their filters and reading state without a prop observer.
+  await Promise.all(contentReaders.value.filter(reader => mountedReaders.includes(reader)).map(reader => reader.refresh()))
 }
-watch([projectId, slug], () => { plugin.value = undefined; workflows.value = []; initialized.value = false; void load() }, { immediate: true })
-onBeforeUnmount(() => { generation++ })
+function enterScope(nextProjectId: number, nextSlug: string) {
+  plugin.value = undefined
+  workflows.value = []
+  initialized.value = false
+  void load(nextProjectId, nextSlug)
+}
+const domainRoute = route.matched[route.matched.length - 1]
+const removeRouteListener = router.afterEach((to, from, failure) => {
+  if (failure) return
+  if (!domainRoute || !to.matched.includes(domainRoute)) { generation++; return }
+  const nextProjectId = projectIdFromRoute(to) ?? Number.NaN
+  const nextSlug = String(to.params.pluginSlug ?? '')
+  if (nextProjectId !== projectIdFromRoute(from) || nextSlug !== String(from.params.pluginSlug ?? '')) enterScope(nextProjectId, nextSlug)
+})
+enterScope(projectId.value, slug.value)
+onBeforeUnmount(() => { generation++; removeRouteListener() })
 </script>
 
 <template>
@@ -56,7 +80,7 @@ onBeforeUnmount(() => { generation++ })
         <UiButton
           icon-left="refresh"
           :loading="loading"
-          @click="load"
+          @click="load()"
         >
           Refresh
         </UiButton>
@@ -68,7 +92,7 @@ onBeforeUnmount(() => { generation++ })
     >
       {{ error }} <UiButton
         size="sm"
-        @click="load"
+        @click="load()"
       >
         Retry
       </UiButton>
@@ -120,11 +144,11 @@ onBeforeUnmount(() => { generation++ })
       </section>
       <DomainContentSection
         v-for="section in contentSections"
+        ref="contentReaders"
         :key="`${projectId}:${slug}:${section}`"
         :project-id="projectId"
         :plugin-slug="slug"
         :kind="section"
-        :refresh-key="refreshKey"
       />
       <p
         v-if="!page.sections.length"

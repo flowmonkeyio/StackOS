@@ -50,4 +50,38 @@ describe('Workflow detail', () => {
     await wrapper.findAll('button').find(button => button.text() === 'Retry')!.trigger('click'); await flushPromises()
     expect(wrapper.text()).toContain('Source unavailable')
   })
+
+  it('retains open Details on query-only navigation and rejects a delayed result from another project', async () => {
+    const { wrapper, router } = await open()
+    ;(wrapper.get('details').element as HTMLDetailsElement).open = true
+    const calls = client.apiFetch.mock.calls.length
+    await router.push('/projects/1/plugins/engineering/workflows/engineering.tracked-delivery?inspection=retained'); await flushPromises()
+    expect(client.apiFetch.mock.calls).toHaveLength(calls)
+    expect((wrapper.get('details').element as HTMLDetailsElement).open).toBe(true)
+    let resolve!: (value: unknown) => void
+    client.apiFetch.mockImplementation((url: string) => {
+      if (url.startsWith('/api/v1/plugins?')) return Promise.resolve([plugin()])
+      if (url.includes('/projects/1/')) return new Promise(value => { resolve = value })
+      const result = workflow()
+      result.spec.name = 'Project two workflow'
+      return Promise.resolve(result)
+    })
+    await wrapper.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click'); await flushPromises()
+    await router.push('/projects/2/plugins/engineering/workflows/engineering.tracked-delivery'); await flushPromises()
+    resolve(workflow()); await flushPromises()
+    expect(wrapper.get('h1').text()).toBe('Project two workflow')
+    expect((wrapper.get('details').element as HTMLDetailsElement).open).toBe(false)
+  })
+
+  it('preserves the current workflow and disclosure when navigation is cancelled', async () => {
+    const { wrapper, router } = await open()
+    ;(wrapper.get('details').element as HTMLDetailsElement).open = true
+    const calls = client.apiFetch.mock.calls.length
+    router.beforeResolve(to => !to.path.includes('/support/'))
+    await router.push('/projects/1/plugins/support/workflows/support.investigate'); await flushPromises()
+    expect(router.currentRoute.value.params.pluginSlug).toBe('engineering')
+    expect(client.apiFetch.mock.calls).toHaveLength(calls)
+    expect(wrapper.get('h1').text()).toBe('Tracked delivery')
+    expect((wrapper.get('details').element as HTMLDetailsElement).open).toBe(true)
+  })
 })

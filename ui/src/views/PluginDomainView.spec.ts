@@ -55,6 +55,8 @@ describe('Plugin domain', () => {
     document.body.querySelector('.ui-sidepanel__body')!.scrollTop = 90
     await button(wrapper, 'Refresh').trigger('click'); await flushPromises()
     expect(document.body.textContent).toContain('Exact saved decision 51')
+    expect(client.apiFetch.mock.calls.filter(([url]) => url.includes('/resource-records?') && !url.includes('after='))).toHaveLength(2)
+    expect(client.apiFetch.mock.calls.filter(([url]) => url.includes('/artifacts?'))).toHaveLength(2)
     expect((document.body.querySelector('.ui-sidepanel__body details') as HTMLDetailsElement).open).toBe(true)
     expect(document.body.querySelector('.ui-sidepanel__body')!.scrollTop).toBe(90)
     expect(wrapper.find('[data-source="resource_record:51"]').exists()).toBe(true)
@@ -70,6 +72,57 @@ describe('Plugin domain', () => {
     expect(wrapper.get('section[aria-label="Workflows"]').text()).toContain('Tracked delivery')
     expect(wrapper.text()).not.toContain('No workflows available')
     resolve({ templates: [workflow().summary] }); await flushPromises()
+  })
+
+  it('keeps query-only navigation local and clears filtered-out selection through both controls', async () => {
+    client.apiFetch.mockImplementation(async (url: string) => url.includes('/resource-records?') ? page([record(1), record(2, 'engineering-evidence')]) : defaults(url))
+    const { wrapper, router } = await open()
+    expect(client.apiFetch.mock.calls.filter(([url]) => url.includes('/resource-records?'))).toHaveLength(1)
+    expect(client.apiFetch.mock.calls.filter(([url]) => url.includes('/artifacts?'))).toHaveLength(1)
+    await wrapper.get('[data-source="resource_record:1"]').trigger('click'); await flushPromises()
+    const calls = client.apiFetch.mock.calls.length
+    await router.push('/projects/1/plugins/engineering?inspection=retained'); await flushPromises()
+    expect(client.apiFetch.mock.calls).toHaveLength(calls)
+    expect(document.body.textContent).toContain('Exact saved decision 1')
+    wrapper.findComponent({ name: 'UiSelect' }).vm.$emit('update:modelValue', 'engineering-evidence'); await flushPromises()
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(wrapper.findAll('a').some(a => a.attributes('href')?.includes('type=engineering-evidence'))).toBe(true)
+    await wrapper.get('[data-source="resource_record:2"]').trigger('click'); await flushPromises()
+    await wrapper.get('input[placeholder="Search this list"]').setValue('no match'); await flushPromises()
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(wrapper.text()).toContain('No matches in the loaded list.')
+  })
+
+  it('ignores a delayed workflow list after domain navigation and reloads the prior domain on back', async () => {
+    let resolve!: (value: unknown) => void
+    client.apiFetch.mockImplementation((url: string) => {
+      if (url.startsWith('/api/v1/plugins?')) return Promise.resolve([plugin(), plugin('publishing', ['saved', 'files'])])
+      if (url.includes('workflow-templates?plugin_slug=engineering')) return new Promise(value => { resolve = value })
+      return Promise.resolve(defaults(url))
+    })
+    const { wrapper, router } = await open()
+    const finishOldList = resolve
+    await router.push('/projects/1/plugins/publishing'); await flushPromises()
+    finishOldList({ templates: [workflow().summary] }); await flushPromises()
+    expect(wrapper.get('h1').text()).toBe('publishing')
+    expect(wrapper.find('section[aria-label="Workflows"]').exists()).toBe(false)
+    router.back(); await flushPromises()
+    resolve({ templates: [workflow().summary] }); await flushPromises()
+    expect(wrapper.get('h1').text()).toBe('Engineering')
+    expect(wrapper.get('section[aria-label="Workflows"]').text()).toContain('Tracked delivery')
+  })
+
+  it('keeps the current domain and selection when a later navigation guard cancels a scope change', async () => {
+    client.apiFetch.mockImplementation(async (url: string) => url.includes('/resource-records?') ? page([record(1)]) : defaults(url))
+    const { wrapper, router } = await open()
+    await wrapper.get('[data-source="resource_record:1"]').trigger('click'); await flushPromises()
+    const calls = client.apiFetch.mock.calls.length
+    router.beforeResolve(to => !to.path.endsWith('/publishing'))
+    await router.push('/projects/1/plugins/publishing'); await flushPromises()
+    expect(router.currentRoute.value.params.pluginSlug).toBe('engineering')
+    expect(client.apiFetch.mock.calls).toHaveLength(calls)
+    expect(wrapper.get('h1').text()).toBe('Engineering')
+    expect(document.body.textContent).toContain('Exact saved decision 1')
   })
 
   it('shows failed reads, retries the section, scopes types and Library links, and rejects late project data', async () => {
