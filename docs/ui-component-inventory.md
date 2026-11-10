@@ -322,6 +322,16 @@ agent/MCP path.
 
 ## Design-system showcase
 
+Work Board card edits use `useTaskBoardEdits` for one pending bounded priority or
+same-column neighbor intent, optimistic presentation, rollback and canonical
+index refresh. `TrackerBoardPanel` supplies a six-dot draggable grip with the
+same keyboard Move up/down commands, invalidates gestures when the filter or
+task snapshot changes, and keeps the body open target separate from header
+controls. `TaskPriorityBadge` shares P0 danger / P1 warning / P2 info / P3 neutral
+labels and tints across Board, task details and existing task Graph nodes;
+ticket priorities retain their own presentation. The 224px card height, usage
+slots and 56px footer stay fixed.
+
 `RunAbortAction` provides the shared run menu trigger on Scheduled Runs, Board and
 the Graph task header. `RunAbortDialog` stays at the page composition root so a
 task moving to the Aborted column cannot dismiss a stop error or its retry.

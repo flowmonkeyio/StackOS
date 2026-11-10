@@ -26,6 +26,7 @@ import type { ViewMode } from './task-tracker/viewTypes'
 import { buildAssigneeOptions, buildTaskProgressRows, buildWorkflowOptions, groupTicketsByTask, mergeFocusedTrackerSnapshot, projectBoardRows } from './task-tracker/viewModel'
 import { boardFilterQuery, clearBoardFilters, parseBoardFilters, removeBoardFilter, updateBoardDisplay, updateBoardFilter } from './task-tracker/boardFilters'
 import type { BoardFilterClause, BoardFilterField, BoardFilterState } from './task-tracker/boardFilters'
+import { useTaskBoardEdits } from './task-tracker/useTaskBoardEdits'
 
 const route = useRoute()
 const router = useRouter()
@@ -53,6 +54,7 @@ const tasks = computed(() => snapshot.value?.tasks ?? [])
 const ticketsByTask = computed(() => groupTicketsByTask(snapshot.value?.tickets ?? []))
 const allTaskRows = computed(() => buildTaskProgressRows(tasks.value, ticketsByTask.value, { search: '', status: 'all', workflow: '', assignee: '' }))
 const taskRows = computed(() => projectBoardRows(allTaskRows.value, boardFilters.value))
+const boardEdits = useTaskBoardEdits({ rows: taskRows, projectId, currentScope, refresh: () => load({ restartStream: false }) })
 const activeTaskRow = computed(() => allTaskRows.value.find((row) => row.key === mapTaskKey.value) ?? null)
 const taskSelectOptions = computed(() => allTaskRows.value.map((row) => ({
   value: row.key, label: `#${row.id} ${row.task.title}`,
@@ -390,11 +392,16 @@ useProjectScopedLoader({
         No tasks match these filters.
       </p>
       <TrackerBoardPanel
-        :rows="taskRows"
+        :rows="boardEdits.rows.value"
+        :edit-pending="boardEdits.pending.value"
+        :edit-error="boardEdits.error.value"
+        :interaction-key="`${route.path}:${JSON.stringify(boardFilters)}:${viewMode}`"
         :hide-empty-columns="boardFilters.hideEmptyColumns"
         :selected-task-key="detailTaskKey"
         @open-task="openTaskDetail"
         @refresh="load()"
+        @move="boardEdits.move"
+        @priority="boardEdits.priority($event.taskKey, $event.priority)"
       />
     </div>
     <template v-if="viewMode === 'graph' && snapshot">

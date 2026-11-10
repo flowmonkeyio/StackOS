@@ -41,7 +41,7 @@ describe('desktop screen composition contract', () => {
     expect(directory).toContain('Load more projects')
   })
 
-  it('opens Work on a complete read-only task Board with focused map and centered detail inspection', () => {
+  it('opens Work on a task Board with bounded card edits, focused map and centered detail inspection', () => {
     const view = source('views/TaskTrackerView.vue')
     const board = source('views/task-tracker/TrackerBoardPanel.vue')
     const commands = source('views/task-tracker/TaskTrackerCommandPanel.vue')
@@ -63,7 +63,10 @@ describe('desktop screen composition contract', () => {
     expect(board).toMatch(/grid-template-columns:\s*repeat\(7,/)
     expect(board).toContain('row.task.status === status')
     expect(board).toContain("@click=\"$emit('openTask', row.key)\"")
-    expect(board).not.toMatch(/draggable|@drop|@dragstart/)
+    expect(board).toContain('Move up')
+    expect(board).toContain('Move down')
+    expect(board).toContain('<TaskPriorityBadge')
+    expect(view).toContain('@move="boardEdits.move"')
     expect(commands).toContain('<TrackerBoardFilterBar')
     expect(commands).not.toContain('aria-label="Search tasks"')
     expect(commands).toMatch(/<div\s+v-else\s+class="tracker-command-panel__context"\s*>[\s\S]*aria-label="Selected task"/)
