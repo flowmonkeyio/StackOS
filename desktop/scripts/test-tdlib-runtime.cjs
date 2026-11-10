@@ -9,6 +9,10 @@ const { createRequire } = require("node:module");
 const { spawnSync } = require("node:child_process");
 
 const desktopDir = path.resolve(__dirname, "..");
+const downloaderTests = spawnSync(process.env.TDLIB_PYTHON || "python3", [
+  path.join(__dirname, "test-fetch-tdlib-input.py")
+], { encoding: "utf8" });
+assert.equal(downloaderTests.status, 0, downloaderTests.stderr || downloaderTests.error?.message);
 const repoRoot = path.resolve(desktopDir, "..");
 const payload = fs.readFileSync(path.join(desktopDir, "scripts", "build-stackos-payload.sh"), "utf8");
 const builder = fs.readFileSync(path.join(desktopDir, "scripts", "build-tdlib-runtime-mac.sh"), "utf8");
@@ -73,7 +77,7 @@ try {
     assert.notEqual(result.status, 0, JSON.stringify(overrides));
     assert.match(result.stderr, /Packaged TDLib reuse|Unknown TDLIB_INPUT_VARIANT/);
   }
-  for (const variant of ["original", "stackos-2.1.38-packaged-local"]) {
+  for (const variant of ["original", "stackos-2.1.38-packaged-local", "npm-prebuilt-0.1008067.0"]) {
     const result = runGuard({ TDLIB_INPUT_VARIANT: variant });
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /did not match the pinned input artifact digest/);

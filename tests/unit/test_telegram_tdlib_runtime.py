@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from stackos.integrations.telegram_tdlib.runtime import (
+    TDLIB_REGISTRY_INPUT,
     TDLIB_SOURCE_COMMIT,
     TelegramTdlibRuntimeError,
     tdlib_library_path,
@@ -91,3 +92,35 @@ def test_runtime_verification_rejects_an_unpinned_source_archive(tmp_path: Path)
 
     with pytest.raises(TelegramTdlibRuntimeError, match="source archive"):
         verify_tdlib_runtime(runtime_root=runtime_root)
+
+
+def _registry_layout(root: Path) -> dict:
+    _runtime_layout(root)
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    del manifest["source"]["archive_sha256"]
+    del manifest["build"]["source_archive_sha256"]
+    manifest["build"].update(TDLIB_REGISTRY_INPUT)
+    manifest_path.write_text(json.dumps(manifest))
+    return manifest
+
+
+def test_registry_runtime_uses_pinned_distribution_provenance(tmp_path: Path) -> None:
+    _registry_layout(tmp_path)
+    assert verify_tdlib_runtime(runtime_root=tmp_path).source_commit == TDLIB_SOURCE_COMMIT
+
+
+@pytest.mark.parametrize("key", list(TDLIB_REGISTRY_INPUT))
+def test_registry_runtime_rejects_changed_provenance(tmp_path: Path, key: str) -> None:
+    manifest = _registry_layout(tmp_path)
+    manifest["build"][key] = "unapproved"
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    with pytest.raises(TelegramTdlibRuntimeError):
+        verify_tdlib_runtime(runtime_root=tmp_path)
+
+
+def test_registry_runtime_still_rejects_modified_library(tmp_path: Path) -> None:
+    _registry_layout(tmp_path)
+    (tmp_path / "lib" / "libtdjson.dylib").write_bytes(b"modified")
+    with pytest.raises(TelegramTdlibRuntimeError, match="integrity"):
+        verify_tdlib_runtime(runtime_root=tmp_path)
