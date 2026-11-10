@@ -135,13 +135,17 @@ describe('workflow-specific schedule agents', () => {
     expect(w.getComponent(ScheduleAgentSelectors).getComponent(UiSelect).props('options')).toContainEqual(expect.objectContaining({ label: expect.stringContaining('(missing or invalid)') }))
   })
   it('preserves unsupported existing host execution choices', async () => {
-    const w = setup(); await flushPromises()
-    const textareas = w.findAll('textarea')
-    await textareas.at(-1)!.setValue('{"host_key":"claude","delivery_agent":{"name":"existing","instructions":"Keep native host route","profile":"saved"}}')
+    const old = setup(); await flushPromises(); const job = old.getComponent(ScheduleEditor).props('job')!; old.unmount()
+    const execution = { project_dir: '/fixture', host_key: 'claude', delivery_agent: { name: 'existing', instructions: 'Keep native host route', profile: 'saved', provider: 'saved-provider', model: 'saved-model' }, mcp_config_ref: { path: '/fixture/routes.toml', sha256: 'a'.repeat(64) } }
+    wrapper = mount(ScheduleEditor, { props: { projectId: 1, job: { ...job, execution_json: execution } as never }, global: { stubs: { teleport: true } } }); await flushPromises()
+    const w = wrapper
     expect(w.text()).toContain('claude execution settings are preserved')
+    expect(w.findAll('textarea')).toHaveLength(0)
+    expect(w.text()).toContain('Profile saved')
+    expect(w.text()).toContain('/fixture/routes.toml')
     const save = vi.spyOn(useSchedulesStore(), 'save').mockResolvedValue()
     await w.get('form').trigger('submit'); await flushPromises()
-    expect(save).toHaveBeenCalledWith(1, expect.objectContaining({ execution_json: expect.objectContaining({ host_key: 'claude', delivery_agent: { name: 'existing', instructions: 'Keep native host route', profile: 'saved' } }) }))
+    expect(save).toHaveBeenCalledWith(1, expect.objectContaining({ execution_json: execution }))
   })
   it.each(['delivery_agent', 'review_agent'] as const)('preserves the canonical %s choice and both saved representations when unchanged', async role => {
     const execution = { project_dir: '/fixture', host_key: 'codex', agents: { [role]: { source_ref: namedSource('mapped'), model: 'mapped-model' } }, [role]: { source_ref: namedSource('legacy'), model: 'legacy-model', provider: 'saved-provider', profile: 'saved-profile' } }

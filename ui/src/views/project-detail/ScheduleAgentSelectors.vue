@@ -1,50 +1,34 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onBeforeUpdate, ref, toRef } from 'vue'
+import { computed, onBeforeUpdate, toRef } from 'vue'
 import type { components } from '@/api'
 import { UiButton, UiCallout, UiFormField, UiLoadingState, UiSelect } from '@/components/ui'
-import { apiFetch, formatApiError } from '@/lib/client'
 import { agentIdentity, useProjectAgents } from '../agents/useProjectAgents'
+import { useScheduleWorkflow, type ScheduleWorkflowState } from './useScheduleWorkflow'
 
 type Execution = components['schemas']['ScheduleExecution']
 type Agent = components['schemas']['TaskDeliveryAgentOverride']
-const props = defineProps<{ projectId: number; projectDir: string; templateKey: string; hostKey: string; agents: NonNullable<Execution['agents']>; assignments: NonNullable<Execution['step_agent_assignments']>; disabled?: boolean }>()
+const props = defineProps<{ projectId: number; projectDir: string; templateKey: string; hostKey: string; agents: NonNullable<Execution['agents']>; assignments: NonNullable<Execution['step_agent_assignments']>; disabled?: boolean; workflowState?: ScheduleWorkflowState }>()
 const emit = defineEmits<{ 'update:agents': [value: NonNullable<Execution['agents']>]; 'update:assignments': [value: NonNullable<Execution['step_agent_assignments']>] }>()
 const { items, loading, error, diagnostics, refresh } = useProjectAgents(toRef(props, 'projectId'), toRef(props, 'projectDir'))
-const workflow = ref<components['schemas']['LoadedWorkflowTemplate'] | null>(null)
-const workflowLoading = ref(false)
-const workflowError = ref('')
+const { state } = useScheduleWorkflow(toRef(props, 'projectId'), toRef(props, 'templateKey'), () => !props.workflowState)
+const workflow = computed(() => (props.workflowState ?? state.value).workflow)
+const workflowLoading = computed(() => (props.workflowState ?? state.value).loading)
+const workflowError = computed(() => (props.workflowState ?? state.value).error)
 const roles = computed(() => workflow.value?.spec?.agent_requirements ?? [])
 const obsoleteRoles = computed(() => roles.value.length ? Object.keys(props.agents).filter(role => !['delivery_agent', 'review_agent'].includes(role) && !roles.value.some(requirement => requirement.role === role)) : [])
 const displayRoles = computed(() => [...roles.value, ...Object.keys(props.agents).filter(role => !obsoleteRoles.value.includes(role) && !roles.value.some(requirement => requirement.role === role)).map(role => ({ role, purpose: 'Saved execution role. Select its project source or clear the override.' }))])
 const obsoleteSteps = computed(() => Object.keys(props.assignments).filter(id => !workflow.value?.spec?.steps?.some(step => step.id === id)))
 const nativeHost = computed(() => !props.hostKey || props.hostKey === 'codex')
-let generation = 0
 const sourceScope = () => JSON.stringify([props.projectId, props.projectDir])
-const workflowScope = () => JSON.stringify([props.projectId, props.projectDir, props.templateKey])
 let loadedSource = sourceScope()
-let loadedWorkflow = ''
-async function loadWorkflow() {
-  const input = { projectId: props.projectId, templateKey: props.templateKey, scope: workflowScope() }
-  const request = ++generation
-  workflow.value = null; workflowError.value = ''
-  if (!input.templateKey) { workflowLoading.value = false; return }
-  workflowLoading.value = true
-  try {
-    const result = await apiFetch<components['schemas']['LoadedWorkflowTemplate']>(`/api/v1/projects/${input.projectId}/workflow-templates/${encodeURIComponent(input.templateKey)}`)
-    if (request === generation && input.scope === workflowScope()) workflow.value = result
-  } catch (cause) { if (request === generation && input.scope === workflowScope()) workflowError.value = formatApiError(cause) }
-  finally { if (request === generation && input.scope === workflowScope()) workflowLoading.value = false }
-}
 function updateScope() {
   if (loadedSource !== sourceScope()) { loadedSource = sourceScope(); void refresh() }
-  if (loadedWorkflow !== workflowScope()) { loadedWorkflow = workflowScope(); void loadWorkflow() }
 }
 updateScope()
 onBeforeUpdate(updateScope)
-onBeforeUnmount(() => { ++generation })
 function value(role: string): string { const agent = props.agents[role]; return agent?.source_ref ? agentIdentity(agent.source_ref) : agent?.instructions ? '__inline__' : '' }
 function options(role: string) {
-  const result = [{ value: '', label: 'Use project assignment' }, ...items.value.filter(item => item.fields && !item.diagnostics?.length).map(item => ({ value: agentIdentity(item.source_ref), label: `${item.source_ref.native_name} · ${item.source_ref.source_path}` }))]
+  const result = [{ value: '', label: 'Use project defaults' }, ...items.value.filter(item => item.fields && !item.diagnostics?.length).map(item => ({ value: agentIdentity(item.source_ref), label: `${item.source_ref.native_name} · ${item.source_ref.source_path}` }))]
   const agent = props.agents[role]
   if (agent?.instructions && !agent.source_ref) result.push({ value: '__inline__', label: `${agent.name ?? role} (saved inline ${agent.host_key ?? (props.hostKey || 'agent app')} settings)` })
   if (agent?.source_ref && !result.some(option => option.value === value(role))) result.push({ value: value(role), label: `${agent.source_ref.native_name} · ${agent.source_ref.source_path} (missing or invalid)` })
@@ -182,7 +166,7 @@ defineExpose({ validate })
         v-if="!projectDir"
         class="text-xs text-fg-muted"
       >
-        Enter the exact bound working directory to select its project agents.
+        Set the project folder in project setup to select its agents.
       </p>
       <p
         v-else-if="!loading && !items.length && !error"

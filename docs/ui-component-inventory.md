@@ -67,7 +67,14 @@ Project Automations reuses this inline compact renderer in its Runs table.
 `SchedulesTab` owns exactly two shared underline tabs, Automations and Runs;
 `ScheduleEditor` uses the existing dialog/form primitives for inert drafts and
 validated activation through `schedule.set/toggle/remove`. Removing a schedule
-preserves existing runs. `ScheduledRuns` reads the paginated `schedule.runs`
+preserves existing runs. One effective workflow read supplies named input fields
+and agent roles. `ScheduleWorkflowInputs` uses the existing form primitives for
+scalar/options inputs and bounded declared properties/lists (three nested levels,
+30 properties per object, 100 displayed list items). Opaque values and unknown
+saved keys stay intact; missing required setup permits a disabled draft and blocks
+enabling. Execution settings are a readable summary with project-agent selectors.
+Workflow changes and leaving an edited form require discard confirmation.
+`ScheduledRuns` reads the paginated `schedule.runs`
 projection and links its actual `task_key` to the existing Work graph. The
 schedules store patches canonical task usage through `usageUpdates`, including
 updates received during pending history reads; it never sums receipts or polls
