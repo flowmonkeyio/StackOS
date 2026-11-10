@@ -33,9 +33,11 @@ against persisted project ownership before grants, handlers or idempotent replay
 Admitted child IDs resolve their stored project; supplying another project ID
 does not override it. Project list/portfolio discovery includes only the current
 user's environment-owned projects. Other state operations require one owned
-project scope, explicitly or through an admitted persisted child. Payload JSON
-does not select authority. Unadapted Account, file, action, runtime and global
-consumers remain denied until their owning implementation supplies its boundary.
+project scope, explicitly or through an admitted persisted child. Resolved
+implicit scope is passed into the validated query input before pagination and
+counting; operations that cannot carry that project scope are refused. Payload
+JSON does not select authority. Unadapted Account, file, action, runtime and
+global consumers remain denied until their owning implementation supplies its boundary.
 Verified browser sessions retain the existing read/browser-safe surface policy;
 they never receive local-admin authority. See [security](security.md).
 

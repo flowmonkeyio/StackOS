@@ -409,3 +409,137 @@ async def test_unadapted_mcp_sessions_cannot_bypass_server_boundary(private_api)
     )
     assert result.is_error
     assert result.payload["error"]["code"] == -32007
+
+
+def _token_scoped_plans(private_api):
+    api, selected, users, login = private_api
+    login("u2")
+    foreign_project = create_project(api, "foreign")
+    login("u1")
+    own_project = create_project(api, "owned")
+    sibling_project = create_project(api, "same-owner-sibling")
+
+    with Session(api.app.state.engine) as session:
+        repo = RunPlanRepository(session)
+
+        def plan(project_id, key):
+            return repo.create(
+                project_id=project_id,
+                run_plan_json={
+                    "schema_version": "stackos.run-plan.v1",
+                    "key": key,
+                    "title": key,
+                    "steps": [{"id": "work", "title": "Work"}],
+                },
+            ).data
+
+        older = plan(foreign_project, "foreign-older")
+        own = plan(own_project, "own-plan")
+        newer = plan(foreign_project, "foreign-newer")
+        sibling = plan(sibling_project, "same-owner-sibling")
+        started = repo.start(own.id, project_id=own_project).data
+        repo.claim_step(run_plan_id=own.id, run_id=started.run_id, step_id="work")
+        foreign_run = repo.start(newer.id, project_id=foreign_project).data
+        for project_id in (own_project, foreign_project, sibling_project):
+            ResourceRepository(session).upsert_record(
+                project_id=project_id,
+                plugin_slug="core",
+                resource_key="learning",
+                data_json={"body": "Private scoped record"},
+            )
+    return SimpleNamespace(
+        api=api,
+        selected=selected,
+        principal=UserPrincipal(users["u1"], selected.environment_id),
+        project_id=own_project,
+        foreign_project=foreign_project,
+        own=own,
+        older=older,
+        newer=newer,
+        sibling=sibling,
+        started=started,
+        foreign_run=foreign_run,
+    )
+
+
+@pytest.mark.parametrize("page", ["latest", "own", "empty", "foreign"])
+def test_run_plan_list_token_scope_filters_before_counts_and_pages(private_api, page):
+    fixture = _token_scoped_plans(private_api)
+    args = {"run_token": fixture.started.run_token, "limit": 1}
+    if page == "own":
+        args["after_id"] = fixture.newer.id
+    elif page == "empty":
+        args["after_id"] = fixture.own.id
+    elif page == "foreign":
+        args["after_id"] = fixture.older.id
+    response = fixture.api.post("/api/v1/operations/runPlan.list/call", json={"arguments": args})
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["total_estimate"] == 1
+    assert [row["id"] for row in result["items"]] == (
+        [fixture.own.id] if page in {"latest", "own"} else []
+    )
+    assert all(row["project_id"] == fixture.project_id for row in result["items"])
+    assert result["next_cursor"] is None
+    assert "foreign-" not in response.text and "same-owner-sibling" not in response.text
+
+
+@pytest.mark.asyncio
+async def test_dispatcher_propagates_verified_implicit_scope_and_keeps_grants(private_api):
+    from stackos.mcp.errors import ToolNotGrantedError
+    from stackos.operations.dispatcher import OperationDispatcher
+    from stackos.operations.registry import build_operation_registry
+    from stackos.repositories.base import NotFoundError
+
+    fixture = _token_scoped_plans(private_api)
+    dispatcher = OperationDispatcher(build_operation_registry())
+    with Session(fixture.api.app.state.engine) as session:
+        session.info["user_principal"] = fixture.principal
+        result = await dispatcher.dispatch(
+            "runPlan.list",
+            {"run_token": fixture.started.run_token},
+            session=session,
+            surface="mcp",
+            settings=fixture.selected,
+        )
+        assert result.payload["total_estimate"] == 1
+        assert {row["project_id"] for row in result.payload["items"]} == {fixture.project_id}
+        for args in (
+            {"run_token": fixture.foreign_run.run_token},
+            {"run_token": fixture.started.run_token, "project_id": fixture.foreign_project},
+        ):
+            with pytest.raises(NotFoundError) as denied:
+                await dispatcher.dispatch(
+                    "runPlan.list", args, session=session, surface="mcp", settings=fixture.selected
+                )
+            assert denied.value.data == {}
+        with pytest.raises(ToolNotGrantedError):
+            await dispatcher.dispatch(
+                "project.list",
+                {"run_token": fixture.started.run_token},
+                session=session,
+                surface="mcp",
+                settings=fixture.selected,
+            )
+        with pytest.raises(ToolNotGrantedError):
+            await dispatcher.dispatch(
+                "run.list",
+                {"run_token": fixture.started.run_token},
+                session=session,
+                surface="mcp",
+                settings=fixture.selected,
+            )
+        with pytest.raises(ToolNotGrantedError):
+            await dispatcher.dispatch(
+                "resource.upsert",
+                {
+                    "run_token": fixture.started.run_token,
+                    "project_id": fixture.project_id,
+                    "plugin_slug": "core",
+                    "resource_key": "learning",
+                    "data_json": {},
+                },
+                session=session,
+                surface="mcp",
+                settings=fixture.selected,
+            )

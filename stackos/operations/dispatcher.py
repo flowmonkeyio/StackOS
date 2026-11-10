@@ -23,6 +23,7 @@ from stackos.operations.responses import resolve_response_mode, shape_operation_
 from stackos.repositories.base import (
     ConflictError,
     IdempotencyReplayError,
+    NotFoundError,
     RepositoryError,
     ValidationError,
 )
@@ -81,7 +82,15 @@ class OperationDispatcher:
             if settings.process_role == "server" and ctx.principal is None:
                 raise ToolNotGrantedError("server operations require a verified user principal")
         with bind_context(ctx):
-            authorize_operation(session, spec.name, parsed.model_dump(), run=ctx.run)
+            project_id = authorize_operation(session, spec.name, parsed.model_dump(), run=ctx.run)
+            if project_id is not None:
+                if "project_id" not in type(parsed).model_fields:
+                    raise ToolNotGrantedError("operation input cannot carry an owned project scope")
+                # Carry the verified persisted scope into the actual query, not
+                # just the guard. Global counts and empty pages cannot be made
+                # private by inspecting the handler's response afterward.
+                parsed = parsed.model_copy(update={"project_id": project_id})
+                ctx.project_id = project_id
             if ctx.principal is not None and trusted_local_admin:
                 raise ToolNotGrantedError("verified users do not have local-admin authority")
             if (
@@ -146,6 +155,8 @@ class OperationDispatcher:
             if ctx.run is not None and ctx.run.project_id is not None:
                 seen = _find_mismatched_project_id(payload, ctx.run.project_id)
                 if seen is not None:
+                    if ctx.principal is not None:
+                        raise NotFoundError("project or child not found")
                     raise ToolNotGrantedError(
                         "run_token cannot access data from another project",
                         data={

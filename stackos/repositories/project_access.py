@@ -177,9 +177,11 @@ _PROJECT_OPERATIONS = {
 }
 
 
-def authorize_operation(session: Session, name: str, values: dict[str, Any], *, run=None) -> None:
+def authorize_operation(
+    session: Session, name: str, values: dict[str, Any], *, run=None
+) -> int | None:
     if user_principal(session) is None:
-        return
+        return None
     if name not in _PROJECT_DISCOVERY | _PROJECT_OPERATIONS:
         raise ToolNotGrantedError("operation requires an adapted owner boundary")
     if name in _PROJECT_DISCOVERY:
@@ -187,11 +189,17 @@ def authorize_operation(session: Session, name: str, values: dict[str, Any], *, 
             raise ToolNotGrantedError("project creation requires direct setup without a run token")
         if values.get("project_id") is not None:
             require_project(session, values["project_id"])
+        selected_project = None
         if values.get("id_or_slug") is not None:
             from stackos.repositories.projects import ProjectRepository
 
-            ProjectRepository(session).get(values["id_or_slug"])
+            selected_project = ProjectRepository(session).get(values["id_or_slug"]).id
         if run is not None:
-            authorize_project_refs(session, {"project_id": values.get("project_id")}, run=run)
-        return
-    authorize_project_refs(session, values, run=run)
+            project_id = authorize_project_refs(
+                session, {"project_id": values.get("project_id")}, run=run
+            )
+            if selected_project is not None and selected_project != project_id:
+                raise NotFoundError("project or child not found")
+            return project_id
+        return None
+    return authorize_project_refs(session, values, run=run)
