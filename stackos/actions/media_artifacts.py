@@ -13,6 +13,7 @@ from stackos_connectors.shared.base import IntegrationCallResult
 
 from stackos.actions.connectors import ActionConnectorError, ActionConnectorRequest
 from stackos.actions.package_bridge import PackageActionConnector
+from stackos.artifacts.files import generated_output_path
 from stackos.config import Settings
 from stackos.integrations._rate_limit import get_bucket
 from stackos.repositories.base import ValidationError
@@ -41,7 +42,9 @@ async def execute_media_native(
 
     prepared = {key: plain(value) for key, value in data.items() if value is not None}
     asset_root = (request.asset_dir or Settings().generated_assets_dir).resolve()
-    output_dir = asset_root / output_subdir
+    output_dir = generated_output_path(
+        asset_root, Path(output_subdir), session=request.session, project_id=request.project_id
+    )
     bridge = PackageActionConnector(
         connector,
         options=CallOptions(

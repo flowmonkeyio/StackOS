@@ -56,6 +56,7 @@ from stackos.actions.telegram_schema import (
     telegram_file_ref,
 )
 from stackos.actions.telegram_storage import store_sent_messages
+from stackos.artifacts.files import generated_output_path
 from stackos.auth_providers import ResolvedCredential
 from stackos.auth_providers.repository import AuthRepository
 from stackos.communications import (
@@ -1678,12 +1679,14 @@ class TelegramActionConnector:
             raise ActionConnectorError("Telegram returned a file outside this Account's storage")
         suffix = source.suffix if re.fullmatch(r"\.[a-zA-Z0-9]{1,10}", source.suffix) else ".bin"
         relative = Path("telegram") / str(request.project_id) / (uuid.uuid4().hex + suffix)
-        destination = request.asset_dir.resolve() / relative
+        destination = generated_output_path(
+            request.asset_dir, relative, session=session, project_id=request.project_id
+        )
         destination.parent.mkdir(parents=True, exist_ok=True)
         if not destination.resolve().is_relative_to(request.asset_dir.resolve()):
             raise ValidationError("Telegram artifact storage path is outside generated assets")
         shutil.copyfile(source, destination)
-        uri = "/generated-assets/" + relative.as_posix()
+        uri = "/generated-assets/" + destination.relative_to(request.asset_dir.resolve()).as_posix()
         artifact = (
             ArtifactRepository(session)
             .create(

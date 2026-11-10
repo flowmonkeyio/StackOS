@@ -122,6 +122,9 @@ traversal, encoded aliases, symlinks, and the private `imap-transfers` and
 `projects/<project_id>/` beneath generated assets; sanitized action outputs use
 the existing `action-outputs/project-<project_id>/` owner. Arbitrary server paths
 and legacy local-only references cannot be adopted through an Artifact row.
+The existing shared media writer, HubSpot export writer, and Telegram managed
+file copy place fresh authenticated outputs in that same project namespace.
+Standalone producer paths remain unchanged; previously stored files are not moved.
 
 Use `artifact.download` with `project_id` and `artifact_id`, or
 `actionCall.download` with `project_id` and `action_call_id`. These raw-only read

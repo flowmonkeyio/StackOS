@@ -19,6 +19,23 @@ FileSource = Literal["artifact", "action-output"]
 PRIVATE_STAGING_ROOTS = frozenset({"imap-transfers", "stripe-invoice-transfers"})
 
 
+def generated_output_path(
+    root: Path, relative: Path, *, session: Session | None, project_id: int
+) -> Path:
+    """Give existing writers the same private namespace their readers require."""
+    # Online project identity is durable, including in an internal background
+    # producer session. A present user principal is still checked by require_project.
+    project = require_project(session, project_id) if session is not None else None
+    online = project is not None and project.environment_id is not None
+    if online:
+        relative = Path("projects") / str(project_id) / relative
+    return generated_file_path(
+        root,
+        "/generated-assets/" + relative.as_posix(),
+        project_id=project_id if online else None,
+    )
+
+
 def generated_file_path(root: Path, uri: str, *, project_id: int | None = None) -> Path:
     """Reject aliases and staging before opening; online paths are project-namespaced.
 

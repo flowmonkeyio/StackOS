@@ -49,6 +49,7 @@ from stackos.actions.provider_utils import (
     unknown_operation,
 )
 from stackos.artifacts import redact_secret_text, redact_secrets
+from stackos.artifacts.files import generated_output_path
 from stackos.config import Settings
 from stackos.repositories.base import ValidationError
 from stackos.repositories.provider_refs import ProviderObjectReferenceRepository
@@ -3305,7 +3306,9 @@ async def _download_bulk_export_artifact(
             digest=digest_hex,
         )
         relative = Path("hubspot-exports") / digest_hex[:16] / filename
-        final_path = (root / relative).resolve()
+        final_path = generated_output_path(
+            root, relative, session=request.session, project_id=request.project_id
+        )
         if root != final_path and root not in final_path.parents:
             raise ValidationError("HubSpot export artifact path must stay inside generated assets")
         final_path.parent.mkdir(parents=True, exist_ok=True)
@@ -3313,7 +3316,7 @@ async def _download_bulk_export_artifact(
             partial_path.unlink(missing_ok=True)
         else:
             partial_path.replace(final_path)
-        artifact_ref = f"/generated-assets/{relative.as_posix()}"
+        artifact_ref = "/generated-assets/" + final_path.relative_to(root).as_posix()
         artifact_id: int | None = None
         if request.session is not None:
             artifact = (
