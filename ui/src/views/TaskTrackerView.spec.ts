@@ -40,7 +40,7 @@ function dataMock(tasks = [taskA, taskB], tickets = [ticketA, ticketB], graphNod
   })
 }
 
-async function render(url = '/projects/7/tasks', realDialogs = false) {
+async function render(url = '/projects/7/tasks', realDialogs = false, realControls = false) {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/projects/:id/tasks', component: TaskTrackerView },
     { path: '/other', component: { template: '<div>Other page</div>' } },
@@ -51,7 +51,7 @@ async function render(url = '/projects/7/tasks', realDialogs = false) {
     attachTo: realDialogs ? document.body : undefined,
     global: { plugins: [router, createPinia()], stubs: {
       ProjectPageHeader: { template: '<header><slot name="actions" /></header>' },
-      TaskTrackerCommandPanel: { name: 'TaskTrackerCommandPanel', props: ['viewMode','activeTaskKey','taskOptions','search','filtersActive','boardFilters','taskAgentStats','taskAutomated','taskDelivery','abortTarget'], template: '<nav />' },
+      TaskTrackerCommandPanel: realControls ? false : { name: 'TaskTrackerCommandPanel', props: ['viewMode','activeTaskKey','taskOptions','search','filtersActive','boardFilters','taskAgentStats','taskAutomated','taskDelivery','abortTarget'], template: '<nav />' },
       TrackerBoardPanel: { name: 'TrackerBoardPanel', props: ['rows','hideEmptyColumns'], template: '<section data-test="board" />' },
       TrackerGraphPanel: { name: 'TrackerGraphPanel', props: ['loading','activeTaskTitle','selectedTicket','selectionVisible','selectionLabel','flow'], template: '<section data-test="graph" />' },
       TrackerWarningSummary: true,
@@ -279,6 +279,34 @@ describe('Work board navigation', () => {
     expect(wrapper.text()).not.toContain('Fixture index unavailable')
     expect(wrapper.text()).toContain('No tasks yet.')
     expect(board().props('rows')).toEqual([])
+    wrapper.unmount()
+  })
+
+  it.each([true, false])('announces an unavailable count until retry resolves (empty=%s)', async (empty) => {
+    let fail!: (error: Error) => void
+    mocks.callOperation.mockReturnValue(new Promise((_resolve, reject) => { fail = reject }))
+    const { wrapper } = await render('/projects/7/tasks', false, true)
+    const count = () => wrapper.get('.board-filter-bar__count')
+    expect(count().text()).toBe('— / — tasks')
+    expect(count().attributes('aria-label')).toBe('Task count unavailable')
+    fail(new Error('Fixture count unavailable'))
+    await flushPromises()
+    expect(wrapper.text()).toContain('Fixture count unavailable')
+    expect(count().text()).toBe('— / — tasks')
+    dataMock(empty ? [] : [taskA, taskB], empty ? [] : [ticketA, ticketB])
+    await wrapper.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click')
+    await flushPromises()
+    const knownCount = empty ? '0 / 0 tasks' : '2 / 2 tasks'
+    expect(count().text()).toBe(knownCount)
+    expect(count().attributes('aria-label')).toBeUndefined()
+    // A later failed refresh retains the last accepted index, including a known empty result.
+    mocks.callOperation.mockReturnValueOnce(new Promise((_resolve, reject) => { fail = reject }))
+    await wrapper.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click')
+    expect(count().text()).toBe(knownCount)
+    fail(new Error('Fixture refresh unavailable'))
+    await flushPromises()
+    expect(wrapper.text()).toContain('Fixture refresh unavailable')
+    expect(count().text()).toBe(knownCount)
     wrapper.unmount()
   })
 

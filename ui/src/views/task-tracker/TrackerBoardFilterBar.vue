@@ -12,6 +12,7 @@ const props = defineProps<{
   assigneeOptions: TrackerSelectOption[]
   taskRowsCount: number
   tasksCount: number
+  indexAvailable: boolean
 }>()
 const emit = defineEmits<{
   (e: 'update:filter', clause: BoardFilterClause): void
@@ -233,7 +234,8 @@ function apply(clause: BoardFilterClause): void {
       <span
         class="board-filter-bar__count text-xs text-fg-muted"
         role="status"
-      >{{ taskRowsCount }} / {{ tasksCount }} tasks</span>
+        :aria-label="indexAvailable ? undefined : 'Task count unavailable'"
+      >{{ indexAvailable ? `${taskRowsCount} / ${tasksCount} tasks` : '— / — tasks' }}</span>
       <UiPopover
         v-model="displayOpen"
         placement="bottom-end"

@@ -350,6 +350,7 @@ useProjectScopedLoader({
       :assignee-options="assigneeOptions"
       :task-rows-count="taskRows.length"
       :tasks-count="tasks.length"
+      :index-available="Boolean(snapshot)"
       :task-available="Boolean(activeTaskRow)"
       :task-id="activeTaskRow?.id"
       :task-status="activeTaskRow?.task.status"

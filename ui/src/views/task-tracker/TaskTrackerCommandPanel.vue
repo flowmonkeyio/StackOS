@@ -21,6 +21,7 @@ const props = defineProps<{
   assigneeOptions: TrackerSelectOption[]
   taskRowsCount: number
   tasksCount: number
+  indexAvailable: boolean
   boardFilters: BoardFilterState
   taskAvailable: boolean
   taskId?: number
@@ -59,6 +60,7 @@ const state = computed(() => executionStatus(props.taskStatus ?? 'not-started', 
       :assignee-options="assigneeOptions"
       :task-rows-count="taskRowsCount"
       :tasks-count="tasksCount"
+      :index-available="indexAvailable"
       @update:filter="$emit('update:filter', $event)"
       @remove-filter="$emit('removeFilter', $event)"
       @update:display="$emit('update:display', $event)"

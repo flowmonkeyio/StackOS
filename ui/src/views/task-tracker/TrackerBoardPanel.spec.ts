@@ -227,7 +227,7 @@ describe('Work board presentation', () => {
   it('renders only Board and Graph, with the task picker exclusive to the graph', async () => {
     const wrapper = mount(TaskTrackerCommandPanel, { props: {
       viewMode: 'board', activeTaskKey: 'board-task', taskOptions: [], boardFilters: { clauses: [], completed: 'all', hideEmptyColumns: false }, workflowOptions: [],
-      assigneeOptions: [], taskRowsCount: 1, tasksCount: 1, taskAvailable: true, taskId: 1, completedCount: 12, totalCount: 20,
+      assigneeOptions: [], taskRowsCount: 1, tasksCount: 1, indexAvailable: true, taskAvailable: true, taskId: 1, completedCount: 12, totalCount: 20,
     } })
     expect(wrapper.find('[aria-label="Board filters"]').exists()).toBe(true)
     expect(wrapper.find('[aria-label="Selected task"]').exists()).toBe(false)

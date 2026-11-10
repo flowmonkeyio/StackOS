@@ -23,7 +23,7 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); disconnect.mockCl
 function render(query = {}) {
   return mount(TrackerBoardFilterBar, { props: {
     filters: parseBoardFilters(query), workflowOptions: [{ value: 'engineering', label: 'Tracked delivery' }],
-    assigneeOptions: [{ value: 'Codex Main', label: 'Codex Main' }], taskRowsCount: 3, tasksCount: 12,
+    assigneeOptions: [{ value: 'Codex Main', label: 'Codex Main' }], taskRowsCount: 3, tasksCount: 12, indexAvailable: true,
   } })
 }
 function button(wrapper: ReturnType<typeof render>, text: string) {
