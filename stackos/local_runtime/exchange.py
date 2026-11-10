@@ -249,15 +249,22 @@ class InvocationExchange:
         handoff.stop_confirmed.wait(timeout * 2 + min(timeout, 1))
         return handoff.stop_outcome or "unconfirmed"
 
-    def poll(self, connection: LocalRuntimeConnection, invocation_id: str | None) -> dict:
+    def poll(
+        self,
+        connection: LocalRuntimeConnection,
+        invocation_id: str | None,
+        *,
+        allow_dispatch: bool = True,
+    ) -> dict:
         with self._lock:
             self._seen[connection.id] = (_identity(connection), time.monotonic())
             self._seen_at[connection.id] = time.time()
             handoff = self._calls.get(connection.id)
             if handoff is None or handoff.identity != _identity(connection):
+                attention = bool(invocation_id) or not allow_dispatch
                 return {
-                    "state": "unknown" if invocation_id else "idle",
-                    "needs_attention": bool(invocation_id),
+                    "state": "unknown" if attention else "idle",
+                    "needs_attention": attention,
                 }
             call = handoff.call
             if invocation_id is not None and invocation_id != call.invocation_id:
@@ -271,6 +278,10 @@ class InvocationExchange:
                         "attempt": call.scope.attempt,
                         "needs_attention": True,
                     }
+                return {"state": "unknown", "needs_attention": True}
+            if not allow_dispatch:
+                # Uncertainty fences all progression, but the exact retained
+                # stop intent above must still reach its owned local process.
                 return {"state": "unknown", "needs_attention": True}
             if (call.retired.is_set() or call.finished) and handoff.state != "completed":
                 return {"state": "unknown", "needs_attention": True}
@@ -317,6 +328,22 @@ class InvocationExchange:
                     "state": handoff.state,
                     "replayed": True,
                 }
+            expected_session = handoff.launch.resume_thread_id or handoff.call.session_id
+            outcome = report.outcome
+            no_session_prevention = (
+                report.stop_outcome == "prevented"
+                and outcome is not None
+                and outcome.thread_id is None
+                and outcome.usage is None
+                and outcome.result is None
+            )
+            if (
+                expected_session is not None
+                and outcome is not None
+                and outcome.thread_id != expected_session
+                and not no_session_prevention
+            ):
+                raise ConflictError("native session identity mismatch; reconciliation required")
             if report.stop_outcome is not None:
                 if not handoff.call.cancelled.is_set() or handoff.state == "pending":
                     raise ConflictError("No matching dispatched stop intent")
@@ -340,13 +367,6 @@ class InvocationExchange:
                 raise ConflictError(
                     "invocation is not accepting results; reconcile without relaunch"
                 )
-            expected_session = handoff.launch.resume_thread_id or handoff.call.session_id
-            if (
-                expected_session is not None
-                and report.outcome is not None
-                and report.outcome.thread_id != expected_session
-            ):
-                raise ConflictError("native session identity mismatch; reconciliation required")
             handoff.report = report.model_copy(deep=True)
             self._seen[connection.id] = (_identity(connection), time.monotonic())
             self._seen_at[connection.id] = time.time()

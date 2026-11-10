@@ -4590,3 +4590,67 @@ def test_native_stream_exception_persists_primary_final_without_replay(
     else:
         assert receipt["exit_code"] is None
         assert receipt["usage"]["measured"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "adapter", ["plan-operation", "audit-operation", "audit-rest", "rejection"]
+)
+async def test_abort_adapters_allow_concurrent_confirmation(
+    delivery_engine, project_id, monkeypatch, adapter, request
+):
+    """Each serving adapter must let the event loop deliver a stop acknowledgement."""
+    from types import SimpleNamespace
+
+    from stackos import task_delivery
+    from stackos.api.runs import abort_run
+    from stackos.mcp.tools.runs import RunAbortInput, _run_abort
+    from stackos.operations.run_plans.handlers import run_plan_abort
+    from stackos.operations.run_plans.schemas import RunPlanAbortInput
+    from stackos.operations.tracker.schemas import TrackerRejectTaskInput
+    from stackos.operations.tracker.write_handlers import tracker_reject_task
+
+    # The adapters release/reacquire connections while awaiting. Use the existing
+    # concurrent-writer fixture, rather than thread-local in-memory SQLite.
+    session = Session(delivery_engine)
+    request.addfinalizer(session.close)
+    plan_id = workflow_task(session, project_id)
+    plan = RunPlanRepository(session).get(plan_id)
+    ctx = MCPContext(session=session, request_id="abort-confirmation", project_id=project_id)
+    confirmation = Event()
+    name = "abort_run_plan" if adapter in {"plan-operation", "rejection"} else "abort_audit_run"
+    original = getattr(task_delivery, name)
+
+    def wait_for_confirmation(*args, **kwargs):
+        assert confirmation.wait(1), "Serving event loop blocked stop confirmation"
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(task_delivery, name, wait_for_confirmation)
+
+    async def acknowledge():
+        await asyncio.sleep(0)
+        confirmation.set()
+
+    acknowledgement = asyncio.create_task(acknowledge())
+    try:
+        if adapter == "plan-operation":
+            await run_plan_abort(RunPlanAbortInput(run_plan_id=plan_id), ctx, None)
+        elif adapter == "audit-operation":
+            await _run_abort(RunAbortInput(run_id=plan.run_id), ctx, None)
+        elif adapter == "audit-rest":
+            request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(scheduler=None)))
+            await abort_run(plan.run_id, request, False, session)
+        else:
+            await tracker_reject_task(
+                TrackerRejectTaskInput(
+                    project_id=project_id,
+                    run_plan_id=plan_id,
+                    reason="Disposable confirmation check",
+                ),
+                ctx,
+                None,
+            )
+    finally:
+        await acknowledgement
+    session.expire_all()
+    assert RunPlanRepository(session).get(plan_id).status == "aborted"

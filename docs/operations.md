@@ -137,6 +137,9 @@ intent to the existing native process control, which fences registration/spawn
 or confirms owned process-group exit. It never signals a session or searches
 for processes. Connection loss alone still sends no stop. A pending, unconsumed
 launch can be prevented on the server; dispatched work requires local confirmation.
+Unresolved-task admission fences do not suppress a stop for the exact retained
+invocation. Missing, stale or unidentified work remains unknown, and the same
+fence still prevents consuming a new launch.
 
 Reports contain `invocation_id`, `attempt`, `state=completed|unknown|stopped`, and
 an `outcome` for completed work, using the existing host result fields. A stopped
@@ -144,6 +147,9 @@ report requires `stop_outcome=stopped|prevented` and may retain the native
 outcome/usage. Unconfirmed termination uses `state=unknown` with
 `stop_outcome=unconfirmed`. These reports are accepted only for the matching stop
 intent, including after controller retirement, and cannot accept work or revive a run.
+Supplied native outcomes must match the invocation's known resume/session identity
+before any stop confirmation or usage is retained. Launch prevention may omit
+the outcome or provide a sessionless error with no result or usage.
 Offline/unconfirmed abort stays `stop_unconfirmed` with needs attention in the
 existing delivery metadata; retirement or a second abort is not confirmation.
 Owner reconciliation resolves retained uncertainty before another handoff.

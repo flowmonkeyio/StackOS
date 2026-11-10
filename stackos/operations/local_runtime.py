@@ -122,9 +122,9 @@ def _exchange_connection(inp, ctx):
 async def poll(inp, ctx, _emit):
     row = _exchange_connection(inp, ctx)
     observed = _execution_state(ctx, row)
-    if observed["unresolved_tasks"]:
-        return {"state": "unknown", "needs_attention": True}
-    return ctx.extras["local_invocations"].poll(row, inp.invocation_id)
+    return ctx.extras["local_invocations"].poll(
+        row, inp.invocation_id, allow_dispatch=not observed["unresolved_tasks"]
+    )
 
 
 async def report(inp, ctx, _emit):

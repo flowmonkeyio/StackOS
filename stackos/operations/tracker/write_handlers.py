@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from sqlmodel import select
+from starlette.concurrency import run_in_threadpool
 
 from stackos import task_delivery
 from stackos.artifacts import redact_secret_text
@@ -410,7 +411,8 @@ async def tracker_reject_task(
             if plan.status in {RunPlanStatus.DRAFT, RunPlanStatus.STARTED, RunPlanStatus.ABORTED}:
                 from stackos.task_delivery import abort_run_plan
 
-                abort_run_plan(
+                await run_in_threadpool(
+                    abort_run_plan,
                     ctx.session,
                     project_id=inp.project_id,
                     run_plan_id=workflow_run_plan_id,

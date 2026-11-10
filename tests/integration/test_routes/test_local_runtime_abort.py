@@ -12,14 +12,19 @@ from sqlmodel import Session
 
 from stackos.host_mcp import service as hosts
 from stackos.host_mcp.agent_execution import ManagedProcessControl
-from stackos.host_mcp.result import AgentRunResult
+from stackos.host_mcp.result import AgentRunResult, usage_snapshot
 from stackos.local_runtime.exchange import InvocationReport
 from stackos.local_runtime.native import NativeAgentRunner
 from stackos.local_runtime.worker import OutboundWorker
 from stackos.repositories.base import ConflictError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
-from tests.integration.test_routes.test_local_runtime_exchange import local_store, offer, terminal
+from tests.integration.test_routes.test_local_runtime_exchange import (
+    call,
+    local_store,
+    offer,
+    terminal,
+)
 
 pytest_plugins = [
     "tests.integration.test_routes.test_local_runtime_exchange",
@@ -341,3 +346,223 @@ def test_abort_resolves_persisted_owner_and_refuses_computer_credentials(private
         == 403
     )
     assert client.post(url, json={"arguments": {"run_plan_id": owned_plan}}).status_code == 200
+
+
+@pytest.mark.parametrize("stop_outcome", ["stopped", "unconfirmed"])
+def test_stop_report_validates_native_identity_before_retaining_usage(connected, stop_outcome):
+    exchange, connection, invocation, _, handoff = offer(
+        connected, resume_thread_id="expected-native-session"
+    )
+    exchange.poll(connection, None)
+    invocation.cancelled.set()
+    report = InvocationReport(
+        invocation_id=invocation.invocation_id,
+        attempt=invocation.scope.attempt,
+        state="unknown" if stop_outcome == "unconfirmed" else "stopped",
+        stop_outcome=stop_outcome,
+        outcome={
+            "exit_code": -15,
+            "thread_id": "foreign-native-session",
+            "usage": {"input_tokens": 999},
+        },
+    )
+    with pytest.raises(ConflictError, match="session identity mismatch"):
+        exchange.report(connection, report)
+    assert handoff.report is None and not handoff.stop_confirmed.is_set()
+    assert not handoff.ready.is_set()
+    matching = report.model_copy(
+        update={
+            "outcome": report.outcome.model_copy(update={"thread_id": "expected-native-session"})
+        }
+    )
+    assert exchange.report(connection, matching)["state"] == report.state
+    assert exchange.report(connection, matching)["replayed"]
+
+
+@pytest.mark.parametrize("no_outcome", [False, True])
+def test_launch_prevention_without_native_session_remains_valid(connected, no_outcome):
+    exchange, connection, invocation, _, _ = offer(
+        connected, resume_thread_id="expected-native-session"
+    )
+    exchange.poll(connection, None)
+    invocation.cancelled.set()
+    report = InvocationReport(
+        invocation_id=invocation.invocation_id,
+        attempt=invocation.scope.attempt,
+        state="stopped",
+        stop_outcome="prevented",
+        outcome=None
+        if no_outcome
+        else {"exit_code": None, "error": "Prevented before registration"},
+    )
+    assert exchange.report(connection, report)["state"] == "stopped"
+    assert exchange.report(connection, report)["replayed"]
+
+
+def test_unresolved_operation_poll_fences_launch_but_relays_exact_stop(connected):
+    client, _, identity = connected
+    exchange, connection, invocation, _, handoff = offer(connected)
+    with Session(client.app.state.engine) as session:
+        TrackerRepository(session).create_task(
+            project_id=identity["project_id"],
+            key=invocation.scope.task_key,
+            title="Unresolved",
+            metadata_json={
+                "delivery": {
+                    "connection_id": connection.id,
+                    "status": "stopped",
+                    "needs_attention": True,
+                    "uncertain_invocation": invocation.invocation_id,
+                }
+            },
+        )
+    for identifier in (None, invocation.invocation_id, "stale-invocation"):
+        response = call(client, "poll", **identity, invocation_id=identifier)
+        assert response.status_code == 200, response.text
+        assert response.json() == {"state": "unknown", "needs_attention": True}
+        assert handoff.state == "pending"  # A refused poll must not consume the launch.
+    # Prepare an already-dispatched owned invocation, as the controller/worker
+    # test below does through actual REST. Uncertainty still fences every launch.
+    exchange.poll(connection, None)
+    invocation.cancelled.set()
+    stop = call(client, "poll", **identity, invocation_id=invocation.invocation_id).json()
+    assert stop["state"] == "stop" and stop["attempt"] == invocation.scope.attempt
+    for identifier in (None, "stale-invocation"):
+        assert call(client, "poll", **identity, invocation_id=identifier).json() == {
+            "state": "unknown",
+            "needs_attention": True,
+        }
+
+
+def test_controller_rest_worker_confirms_owned_stop(connected, tmp_path, monkeypatch):
+    """Exercise actual controller and HTTP operations with an owned POSIX child.
+
+    Substitute the native runner to keep server and local registries separate in
+    this single-process fixture. NativeAgentRunner has its own real-host tests.
+    """
+    store = local_store(connected, tmp_path)
+    client, identity, computer, args, jobs = workflow(connected, monkeypatch)
+    running = Event()
+    stops = []
+
+    class LocalProcess:
+        def __init__(self):
+            self.control = ManagedProcessControl()
+            self.child = None
+            self.command = None
+
+        def prepare(self, command):
+            self.command = command
+
+        def stop(self, invocation_id, attempt):
+            stops.append((invocation_id, attempt))
+            assert (invocation_id, attempt) == (
+                self.command.invocation_id,
+                self.command.scope.attempt,
+            )
+            return self.control.stop()
+
+        def __call__(self, command, root, binding):
+            self.child = self.control.spawn(
+                [sys.executable, "-E", "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE
+            )
+            running.set()
+            self.child.wait(timeout=12)
+            self.child.stdin.close()
+            return AgentRunResult(
+                self.child.returncode,
+                "owned-session",
+                error="Owned stop",
+                usage=usage_snapshot("owned-session", "invocation", 13, 2),
+            )
+
+    runner = LocalProcess()
+    worker = OutboundWorker(client, store, runner)
+    external = subprocess.Popen(
+        [sys.executable, "-E", "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE
+    )
+    sibling = ManagedProcessControl()
+    sibling_child = sibling.spawn(
+        [sys.executable, "-E", "-c", "import sys; sys.stdin.read()"], stdin=subprocess.PIPE
+    )
+
+    def consume():
+        deadline = time.monotonic() + 8
+        while time.monotonic() < deadline:
+            response = worker.exchange_once()
+            if response["state"] != "idle":
+                return response
+            time.sleep(0.01)
+        raise AssertionError("No controller launch")
+
+    fn, job = jobs[0]
+    try:
+        with ThreadPoolExecutor() as pool:
+            controller = pool.submit(fn, **job["kwargs"])
+            consumer = pool.submit(consume)
+            try:
+                assert running.wait(8)
+                aborted = client.post(
+                    "/api/v1/operations/runPlan.abort/call",
+                    json={
+                        "arguments": {
+                            "project_id": identity["project_id"],
+                            "run_plan_id": args["run_plan_id"],
+                        }
+                    },
+                )
+                assert aborted.status_code == 200, aborted.text
+                assert aborted.json()["data"]["cancellation"]["status"] == "managed_stopped"
+                assert consumer.result(timeout=10)["state"] == "stopped"
+                controller.result(timeout=10)
+            finally:
+                runner.control.stop()
+                handoff = client.app.state.operation_services["local_invocations"]._calls.get(
+                    identity["connection_id"]
+                )
+                if handoff:
+                    handoff.call.cancelled.set()
+                    handoff.ready.set()
+        assert stops == [(runner.command.invocation_id, runner.command.scope.attempt)]
+        assert runner.child.poll() is not None
+        assert external.poll() is None and sibling_child.poll() is None
+        assert not sibling.cancelled.is_set() and len(jobs) == 1
+        late = client.post(
+            "/api/v1/operations/localRuntime.report/call",
+            headers={"Authorization": computer},
+            json={
+                "arguments": identity
+                | {
+                    "report": {
+                        "invocation_id": runner.command.invocation_id,
+                        "attempt": runner.command.scope.attempt,
+                        "state": "completed",
+                        "outcome": {
+                            "exit_code": 0,
+                            "thread_id": "owned-session",
+                            "result": {"status": "success"},
+                        },
+                    }
+                }
+            },
+        )
+        assert late.status_code == 409
+        with Session(client.app.state.engine) as session:
+            snap = TrackerRepository(session).get(
+                project_id=identity["project_id"], task_key=args["task_key"]
+            )
+            state = snap.tasks[0].metadata_json["delivery"]
+            assert snap.tasks[0].status == "aborted"
+            assert state["cancellation"]["status"] == "managed_stopped"
+            assert not state["needs_attention"] and state["uncertain_invocation"] is None
+            evidence = next(
+                t for t in snap.tickets if t.key == "selected"
+            ).completion_evidence_json["automatic_delivery"]
+            assert evidence["delivery"]["cancelled"]
+            assert evidence["delivery"]["thread_id"] == "owned-session"
+            assert evidence["delivery"]["usage"]["measured"]["input"] == 13
+            assert "review" not in evidence
+    finally:
+        runner.control.stop()
+        external.communicate(timeout=5)
+        sibling_child.communicate(timeout=5)
