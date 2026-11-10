@@ -32,6 +32,7 @@ class NativeLaunch(BaseModel):
     provider: str | None = None
     profile: str | None = None
     resume_thread_id: str | None = None
+    candidate: dict[str, str] | None = None
 
 
 class NativeResult(BaseModel):

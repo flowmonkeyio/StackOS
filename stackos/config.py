@@ -117,6 +117,7 @@ class Settings(_StateSettings):
     process_role: Literal["standalone", "server", "runtime"] = "standalone"
     environment_id: str | None = None
     server_url: str | None = None
+    native_mcp_config_ref: dict[str, str] | None = None
     supabase_workdir: Path | None = None
     supabase_url: str | None = None
     database_url: SecretStr | None = None

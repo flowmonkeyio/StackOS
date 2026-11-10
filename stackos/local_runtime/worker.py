@@ -18,8 +18,12 @@ class OutboundWorker:
         self,
         client,
         store: LocalConnectionStore,
-        runner: Callable[[dict[str, Any], Path], AgentRunResult],
+        runner: Callable[[dict[str, Any], Path], AgentRunResult] | None = None,
     ):
+        if runner is None:
+            from stackos.local_runtime.native import NativeAgentRunner
+
+            runner = NativeAgentRunner(store)
         self.client, self.store, self.runner = client, store, runner
         self._lock = Lock()
         self._last_id: str | None = None

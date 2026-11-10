@@ -386,6 +386,12 @@ def run_agent(
     launch_allowed: Callable[[], bool] | None = None,
 ) -> AgentRunResult:
     """Run a project agent through the same host registry used by Overview."""
+    from stackos.config import get_settings
+
+    if get_settings().process_role == "server":
+        return AgentRunResult(
+            None, error="Native execution requires an authorized connected computer."
+        )
     if not instructions.strip():
         return AgentRunResult(None, error="Project-agent instructions must not be empty.")
     if mcp_config_ref is not None and host_key != "codex":

@@ -81,9 +81,25 @@ computer. The existing host/controller supplies `ActiveInvocation` and its exact
 attempt/scope, host, model and resume-session identity through `offer`; this is
 an internal handoff, with no enqueue operation for clients. Poll returns the
 finite host input once, without a server-selected folder or MCP config path.
-The local `OutboundWorker.exchange_once` uses the existing private folder binding
-and a locally supplied native runner. Host startup, selection and controller
-integration retain their existing downstream owners.
+The runtime service attaches one outbound consumer. Its
+`OutboundWorker.exchange_once` uses the existing private folder binding and
+`NativeAgentRunner`, which checks the actual source/tools and delegates to
+`host_mcp.run_agent`. The first connected flow supports Codex; unsupported hosts
+stop without substitution. The server process refuses native spawning.
+Host/model/provider/profile, schema, instructions and exact resume ID travel
+unchanged. Optional candidate evidence travels as `NativeLaunch.candidate` and
+is checked locally; returned commits must identify clean current HEAD descended
+from the supplied base. Native session, result and measured usage return through
+the existing report, separately from lifecycle acceptance. Delivery and review
+session selection remains with the server controller.
+
+Optional `STACKOS_NATIVE_MCP_CONFIG_REF` in the private runtime environment file
+is a JSON object with the existing absolute `path` and `sha256` route identity.
+It is local configuration, checked on each invocation, and cannot be supplied by
+the server launch payload. The existing task-route parser and native host own
+overrides and credential custody. No local database or workflow engine is added.
+Uncertain transport/source identity stops consumption for explicit attention;
+service shutdown fences new launches without claiming a running process stopped.
 
 Reports contain `invocation_id`, `attempt`, `state=completed|unknown`, and an
 `outcome` only for completed work, using the existing host result fields. The

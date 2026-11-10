@@ -1,19 +1,55 @@
 """Local execution service bootstrap. Application state stays on the server.
 
 Only connection configuration, native sessions, PID and logs belong here.
-The native execution owner attaches the outbound invocation consumer separately.
+One outbound consumer delegates finite invocations to the existing native host.
 """
 
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from pathlib import Path
+from threading import Event, Thread
 
 import httpx
 from fastapi import FastAPI, HTTPException
 
 from stackos.config import Settings, get_settings
 from stackos.local_runtime.connection import LocalConnectionStore, check_connection
+from stackos.local_runtime.native import NativeAgentRunner
+from stackos.local_runtime.worker import OutboundWorker
+
+
+def consume_invocations(settings: Settings, stop: Event) -> None:
+    """Poll only the selected server. Uncertainty stops this consumer for attention.
+
+    This is transport, not a scheduler: attempts arrive only from the server's
+    existing controller. Shutdown fences admission without guessing or killing a
+    running native process. The thread owns its client until the last report.
+    """
+    store = LocalConnectionStore(settings.state_dir)
+    with httpx.Client(timeout=10, follow_redirects=False, trust_env=False) as client:
+        runner = NativeAgentRunner(
+            store,
+            mcp_config_ref=settings.native_mcp_config_ref,
+            launch_allowed=lambda: not stop.is_set(),
+        )
+        worker = OutboundWorker(client, store, runner)
+        while not stop.is_set():
+            try:
+                binding = store.load()
+                if binding is not None:
+                    if (binding.environment_id, binding.server_url) != (
+                        settings.environment_id,
+                        settings.server_url,
+                    ):
+                        raise ValueError("computer binding changed; explicit attention required")
+                    worker.exchange_once()
+            except (ValueError, OSError, httpx.HTTPError):
+                # No automatic reissue, reconnect or process signal. The existing
+                # attempt/transport retains the uncertain outcome for its owner.
+                return
+            if stop.wait(1):
+                return
 
 
 def connection_state(settings: Settings) -> str:
@@ -41,7 +77,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         settings.ensure_dirs()
         connection_state(settings)  # Refuse stale/foreign configuration before listening.
-        yield
+        stop = Event()
+        consumer = Thread(
+            target=consume_invocations,
+            args=(settings, stop),
+            name="stackos-local-invocations",
+            daemon=True,
+        )
+        consumer.start()
+        try:
+            yield
+        finally:
+            stop.set()
+            # Never block app shutdown on an agent or treat a timeout as a stop.
+            consumer.join(timeout=0)
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
