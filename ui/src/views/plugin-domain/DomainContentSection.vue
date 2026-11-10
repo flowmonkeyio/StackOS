@@ -180,7 +180,7 @@ onBeforeUnmount(() => { generation++ })
             :title="row.name"
             class="focus-ring block w-full truncate rounded-sm text-left"
             @click.stop="selectedId = row.id"
-            @keydown.enter.stop="selectedId = row.id"
+            @keydown.enter.prevent.stop="selectedId = row.id"
             @keydown.space.prevent.stop="selectedId = row.id"
           >
             {{ row.name }}

@@ -74,6 +74,28 @@ describe('Plugin domain', () => {
     resolve({ templates: [workflow().summary] }); await flushPromises()
   })
 
+  it.each(['Enter', ' '])('retains source inspection after %j default activation when focus enters the drawer', async key => {
+    client.apiFetch.mockImplementation(async (url: string) => url.includes('/resource-records?') ? page([record(1)]) : defaults(url))
+    const { wrapper } = await open()
+    const opener = wrapper.get('[data-source="resource_record:1"]').element as HTMLButtonElement
+    opener.focus()
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true })
+    opener.dispatchEvent(event)
+    await flushPromises()
+    // JSDOM does not synthesize button defaults. Reproduce the uncancelled
+    // default click caught by native browser QA after the drawer moves focus.
+    const close = document.body.querySelector<HTMLButtonElement>('button[aria-label="Close panel"]')!
+    expect(document.activeElement).toBe(close)
+    if (!event.defaultPrevented) (document.activeElement as HTMLButtonElement).click()
+    await flushPromises()
+    expect(document.body.querySelector('[role="dialog"]')?.textContent).toContain('Exact saved decision 1')
+    expect(event.defaultPrevented).toBe(true)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(document.body.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.activeElement).toBe(opener)
+  })
+
   it('keeps query-only navigation local and clears filtered-out selection through both controls', async () => {
     client.apiFetch.mockImplementation(async (url: string) => url.includes('/resource-records?') ? page([record(1), record(2, 'engineering-evidence')]) : defaults(url))
     const { wrapper, router } = await open()
