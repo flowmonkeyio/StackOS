@@ -6,6 +6,8 @@ import { formatDateTime } from '@/lib/stackos/json'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 import SourceDetailRenderer from '@/components/renderers/SourceDetailRenderer.vue'
 import ArtifactRenderer from '@/components/renderers/ArtifactRenderer.vue'
+import RunAbortAction from '@/components/domain/RunAbortAction.vue'
+import { useRunAbort } from '@/composables/useRunAbort'
 import type { SchemaTaskResultItem, SchemaTaskActivityItem } from '@/api'
 
 import type { ActiveExecution, TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
@@ -21,6 +23,19 @@ describe('TrackerTaskDetailDialog', () => {
   beforeEach(() => callOperation.mockReset().mockResolvedValue({ data: {} }))
   afterEach(() => {
     document.body.innerHTML = ''
+  })
+
+  it('opens its footer run menu above the trigger and preserves keyboard access to the selected run', async () => {
+    const wrapper = mount(TrackerTaskDetailDialog, { props: { modelValue: true, task: task() }, attachTo: document.body })
+    await flushPromises()
+    expect(wrapper.getComponent(RunAbortAction).props('placement')).toBe('top-end')
+    await popup().get('.ui-dialog__footer [aria-label^="Run actions for"]').trigger('click')
+    await popup().get('[role="menu"]').trigger('keydown', { key: 'Enter' })
+    expect(useRunAbort().open.value).toBe(true)
+    expect(useRunAbort().selected.value).toMatchObject({ projectId: task().project_id, runPlanId: 39, title: task().title })
+    expect(callOperation).not.toHaveBeenCalled()
+    useRunAbort().close()
+    wrapper.unmount()
   })
 
   it('opens exact result identities in shared Library details and returns to the retained draft, focus and reading position', async () => {

@@ -1052,6 +1052,7 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
       <RunAbortAction
         v-if="!ticketKey && !selectedResult && !content.locked"
         :target="taskRunAbortTarget(task)"
+        placement="top-end"
         @refresh="$emit('retry')"
       />
       <UiButton
