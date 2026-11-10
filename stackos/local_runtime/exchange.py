@@ -233,7 +233,7 @@ class InvocationExchange:
                 }
             call = handoff.call
             if invocation_id is not None and invocation_id != call.invocation_id:
-                handoff.consumer_uncertain = True
+                # A delayed poll names other work; it cannot change this handoff.
                 return {"state": "unknown", "needs_attention": True}
             if call.cancelled.is_set() or (
                 (call.retired.is_set() or call.finished) and handoff.state != "completed"

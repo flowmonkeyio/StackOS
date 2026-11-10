@@ -1,5 +1,6 @@
 """Connection loss is observation; only an owner can reconcile uncertain work."""
 
+import json
 import subprocess
 import sys
 import time
@@ -136,6 +137,107 @@ def test_known_terminal_failure_releases_only_transport_and_keeps_failed_evidenc
         )
         assert after.tickets[0].status == "failed"
         assert after.tickets[0].completion_evidence_json == evidence
+
+
+@pytest.mark.parametrize("current_state", ["pending", "dispatched", "uncertain"])
+def test_stale_poll_preserves_the_current_handoff(connected, current_state):
+    from stackos.local_runtime.exchange import InvocationReport
+
+    client, _, identity = connected
+    exchange, connection, old, _, _ = offer(connected)
+    exchange.poll(connection, None)
+    exchange.report(connection, InvocationReport.model_validate(terminal(old)))
+    old.finished = True
+    exchange.release(connection, old)
+    _, _, current, _, handoff = offer(connected)
+    if current_state != "pending":
+        exchange.poll(connection, current.invocation_id)
+    if current_state == "uncertain":
+        exchange.poll(connection, None)
+    before = exchange.snapshot(connection)
+    late = call(client, "poll", **identity, invocation_id=old.invocation_id).json()
+    assert late == {"state": "unknown", "needs_attention": True}
+    after = exchange.snapshot(connection)
+    for field in ("invocation_id", "last_known_state", "needs_attention"):
+        assert after[field] == before[field]
+    assert not handoff.ready.is_set() and not current.cancelled.is_set()
+
+
+def test_delayed_delivery_presence_allows_the_pending_independent_review(
+    connected, tmp_path, monkeypatch
+):
+    store = local_store(connected, tmp_path)
+    client, _, identity, computer, args, jobs = prepare(connected, monkeypatch)
+    poll(client, identity, computer)
+    assert start(client, args).status_code == 200
+    commands = []
+
+    def runner(command, *_args):
+        commands.append(command)
+        phase = command["scope"]["phase"]
+        return AgentRunResult(
+            0,
+            phase + "-session",
+            {
+                "status": "success",
+                "summary": "Checked",
+                "outputs": json.dumps({"commit_sha": "b" * 40}),
+                "followups": [],
+            },
+        )
+
+    worker = OutboundWorker(client, store, runner)
+    fn, job = jobs[0]
+    with ThreadPoolExecutor() as pool:
+        future = pool.submit(fn, **job["kwargs"])
+
+        def wait_pending(previous_id=None):
+            deadline = time.monotonic() + 10
+            while True:
+                observed = call(client, "status", **identity).json()
+                if (
+                    observed["last_known_state"] == "pending"
+                    and observed["invocation_id"] != previous_id
+                ):
+                    return observed
+                assert not future.done() and time.monotonic() < deadline
+                time.sleep(0.01)
+
+        try:
+            wait_pending()
+            assert worker.exchange_once()["state"] == "completed"
+            old_id = commands[0]["invocation_id"]
+            pending_review = wait_pending(old_id)
+            late = client.post(
+                "/api/v1/operations/localRuntime.poll/call",
+                json={"arguments": identity | {"invocation_id": old_id}},
+                headers={"Authorization": computer},
+            ).json()
+            assert late == {"state": "unknown", "needs_attention": True}
+            observed = call(client, "status", **identity).json()
+            assert observed["invocation_id"] == pending_review["invocation_id"]
+            assert observed["last_known_state"] == "pending" and not observed["needs_attention"]
+            assert worker.exchange_once()["state"] == "completed"
+            future.result(timeout=10)
+        finally:
+            if not future.done():
+                from stackos.task_delivery import _update_delivery
+
+                with Session(client.app.state.engine) as session:
+                    _update_delivery(
+                        TrackerRepository(session),
+                        identity["project_id"],
+                        "connected",
+                        status="stopped",
+                    )
+                future.result(timeout=10)
+    assert [command["scope"]["phase"] for command in commands] == ["delivery", "review"]
+    with Session(client.app.state.engine) as session:
+        snapshot = TrackerRepository(session).get(
+            project_id=identity["project_id"], task_key="connected"
+        )
+        assert snapshot.tickets[0].status == "complete"
+        assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "complete"
 
 
 def test_presence_loss_leaves_accepted_process_alive_and_report_retry_is_same_work(
