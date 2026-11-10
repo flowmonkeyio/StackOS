@@ -1898,6 +1898,7 @@ def test_cli_migrate_stamps_create_all_schema(sandbox: Path) -> None:
 
     assert result.exit_code == 0, result.stdout
     assert "stamped existing create_all schema" in result.stdout
+    assert f"migrate: alembic upgraded to head ({settings.db_path})." in result.stdout
 
     engine = make_engine(settings.db_path)
     try:

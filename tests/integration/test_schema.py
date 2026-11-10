@@ -66,6 +66,27 @@ def postgres_settings(monkeypatch: pytest.MonkeyPatch) -> Settings:
     return selected
 
 
+def test_postgres_migrate_cli_reports_safe_success(postgres_settings: Settings) -> None:
+    """The real migration command must succeed after its database mutation."""
+    result = subprocess.run(
+        [sys.executable, "-m", "stackos", "migrate"],
+        cwd=Path(__file__).resolve().parents[2],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "migrate: alembic upgraded to head (Postgres)."
+    assert current_alembic_version(postgres_settings) == "0037_schedule_id_nonreuse"
+    assert postgres_settings.database_url is not None
+    url = postgres_settings.database_url.get_secret_value()
+    password = sa.engine.make_url(url).password
+    assert password
+    output = result.stdout + result.stderr
+    assert url not in output
+    assert password not in output
+
+
 def test_postgres_migration_repositories_and_private_schema(postgres_settings: Settings) -> None:
     """Real driver, Alembic chain, repositories, reconnect, FKs and client denial."""
     import httpx

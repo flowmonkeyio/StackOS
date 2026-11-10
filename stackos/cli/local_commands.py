@@ -57,7 +57,8 @@ def migrate() -> None:
     result = upgrade_to_head(settings)
     if result.stamped_existing_schema:
         typer.echo("migrate: stamped existing create_all schema at alembic head.")
-    typer.echo(f"migrate: alembic upgraded to head ({settings.db_path}).")
+    target = "Postgres" if settings.process_role == "server" else str(settings.db_path)
+    typer.echo(f"migrate: alembic upgraded to head ({target}).")
 
 
 @app.command()
