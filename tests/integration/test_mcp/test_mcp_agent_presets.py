@@ -332,7 +332,8 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     for brief_rule, full_rule in zip(delivery["must_do"], full_delivery["must_do"], strict=True):
         assert full_rule.startswith(brief_rule.removesuffix("..."))
     assert "new descendant commit" in " ".join(delivery["must_do"])
-    compact_skill = compact["required_skill_presets"][0]["preset"]
+    compact_skill_binding = compact["required_skill_presets"][0]
+    compact_skill = compact_skill_binding["preset"]
     full_skill = raw["required_skill_presets"][0]["preset"]
     assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.9"
     full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
@@ -340,8 +341,29 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     assert len(compact_skill["must_do"]) == 25
     for brief_rule, full_rule in zip(compact_skill["must_do"], full_instructions[:25], strict=True):
         assert full_rule.startswith(brief_rule.removesuffix("..."))
-    assert "Adopt guidance manually per project" in " ".join(compact_skill["must_do"])
-    assert "instruction-only saved-default adoption" in " ".join(compact_skill["must_do"])
+    assert (
+        "targeted raw resolution/description"
+        in compact_skill_binding["project_adaptation"]["required_agent_action"]
+    )
+    described_skill = mcp_client.call_tool_structured(
+        "skillPreset.describe",
+        {
+            "key": compact_skill["key"],
+            "plugin_slug": request["plugin_slug"],
+            "response_mode": "raw",
+        },
+    )
+    assert described_skill["preset"] == full_skill
+    # Adoption rules may fall beyond the compact list; targeted raw retrieval keeps them complete.
+    for requirement in (
+        "Fresh Codex admission selects exact project source_ref bindings",
+        "Adopt Codex source references explicitly",
+        "tracker.configureDelivery adopt_sources preview/write with expected digests",
+        "instruction-only saved-default adoption",
+        "Source edits affect future Codex admissions, never active/historical snapshots "
+        "or resumed sessions",
+    ):
+        assert requirement in " ".join(full_instructions), requirement
     assert "three automatic repair passes per ticket" in " ".join(compact_skill["must_do"])
     assert "repair_count" in " ".join(compact_skill["must_do"])
     assert "rejection after the third repair" in " ".join(compact_skill["must_do"])
