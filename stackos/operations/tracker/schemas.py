@@ -27,9 +27,23 @@ from stackos.db.models import (
 from stackos.host_mcp.project_agents import AgentSourceRef
 from stackos.mcp.contract import MCPInput
 from stackos.repositories.tracker.agent_stats import stats_timezone
+from stackos.repositories.tracker.inspection_schema import ResultSourceKind
 
 TrackerResponseMode = Literal["compact", "raw", "standard", "verbose"]
 AgentRole = Annotated[str, Field(pattern=r"^[a-zA-Z0-9_][a-zA-Z0-9_-]{0,159}$", strict=True)]
+
+
+class TrackerTaskActivityInput(MCPInput):
+    model_config = ConfigDict(extra="forbid")
+    project_id: int = Field(ge=1)
+    task_key: str = Field(min_length=1)
+    limit: int = Field(default=50, ge=1, le=200)
+    cursor: str | None = Field(default=None, max_length=4096)
+    response_mode: TrackerResponseMode = "compact"
+
+
+class TrackerTaskResultsInput(TrackerTaskActivityInput):
+    source_kind: ResultSourceKind | None = None
 
 
 class TaskDeliveryAgentOverride(BaseModel):

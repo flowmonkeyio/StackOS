@@ -10,6 +10,44 @@ import stackos.cli.operation_commands as operation_cli
 from stackos.cli import app
 
 
+def test_cli_task_inspection_keeps_task_filter_and_cursor(monkeypatch):
+    def request(method, path, *, body=None, **kwargs):
+        assert method == "POST"
+        assert path in {
+            "/api/v1/operations/tracker.taskActivity/call",
+            "/api/v1/operations/tracker.taskResults/call",
+        }
+        assert body["arguments"]["project_id"] == 1
+        assert body["arguments"]["task_key"] == "work"
+        assert body["arguments"]["cursor"] == "opaque"
+        return {
+            "project_id": 1,
+            "task_key": "work",
+            "next_cursor": "next",
+            "items": [{"source_kind": "artifact", "source_id": 7}],
+            "warnings": [],
+        }
+
+    monkeypatch.setattr(operation_cli, "_api_request", request)
+    for name in ("tracker.taskActivity", "tracker.taskResults"):
+        result = CliRunner().invoke(
+            app,
+            [
+                "ops",
+                "call",
+                name,
+                "--project",
+                "1",
+                "--input",
+                "-",
+            ],
+            input='{"task_key":"work","cursor":"opaque"}',
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0, result.stdout
+        assert json.loads(result.stdout)["next_cursor"] == "next"
+
+
 def test_cli_ops_list_prints_registered_operations(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     def fake_api_request(method: str, path: str, **_kwargs: object) -> dict[str, Any]:
         assert method == "GET"

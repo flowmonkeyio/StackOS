@@ -1188,6 +1188,33 @@ and consumption remain separate claims.
 
 ## Status Events
 
+Task inspection uses `tracker.taskActivity` and `tracker.taskResults` through
+the shared MCP, REST operation and CLI adapters. Both require `project_id` and
+`task_key`, accept `limit` (1–200, default 50) and an opaque `cursor`, and return
+the exact task scope, canonical source IDs, `next_cursor`, coverage and warnings.
+Compact and raw retain the same bounded projection; ack is unavailable. Cursors
+bind the project, task and source filter, ordered by descending source timestamp,
+source kind and row ID. Pass the returned cursor unchanged for older items.
+
+Activity reads existing task/ticket/run-linked project events and only structured
+delivery lifecycle revision deltas. It writes no history and makes no complete
+internal-audit claim. Missing historical phases remain absent. Existing live
+timeline transport may invalidate/refetch the active read; these operations add
+no poller or durable event store.
+
+Results accepts an optional `source_kind`: `resource_record`, `artifact`,
+`learning`, `decision` or `experiment`. It follows explicit same-project tracker
+membership/links, run-plan/run links, execution-context links (including inactive
+contexts), artifact associations, top-level typed provenance fields
+(`task_key`, `ticket_key`, `run_plan_id`, `run_id`, `context_ref`), validated
+artifact resource links, decision runs, learning snapshot runs and experiment
+run arrays. One result retains all valid association reasons and the existing
+canonical payload for shared Library details. Titles, arbitrary metadata,
+completion prose and nested lookalike keys never establish an association.
+An association does not imply approval or exclusive production; unlinked records
+remain available through Library. Broken or foreign references never create
+placeholder results.
+
 Tracker task and ticket status changes are also written to the project timeline
 as append-only `project_events` rows:
 

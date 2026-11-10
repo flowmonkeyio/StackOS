@@ -24,6 +24,8 @@ def _tracker_operations() -> OperationRegistry:
         "tracker.execute",
         "tracker.verify",
         "tracker.history",
+        "tracker.taskActivity",
+        "tracker.taskResults",
         "tracker.changed",
         "tracker.search",
         "tracker.createTask",

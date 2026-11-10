@@ -509,6 +509,10 @@ def _base_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any
 
 def _compact_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any]:
     data = _data(payload)
+    if spec.name in {"tracker.taskActivity", "tracker.taskResults"}:
+        # These pages already bound payload size and own their coverage contract.
+        # Generic page/mutation shaping would discard task scope and warnings.
+        return copy.deepcopy(payload)
     if spec.name in {"projectAgent.list", "projectAgent.get"}:
         out = _base_payload(spec, payload)
         out["data"] = _compact_data(spec.name, data)

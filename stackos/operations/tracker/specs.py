@@ -25,6 +25,8 @@ from stackos.operations.tracker.read_handlers import (
     tracker_next,
     tracker_search,
     tracker_status,
+    tracker_task_activity,
+    tracker_task_results,
     tracker_ticket_counts,
     tracker_ticket_counts_all,
     tracker_verify,
@@ -49,6 +51,8 @@ from stackos.operations.tracker.schemas import (
     TrackerReopenInput,
     TrackerSearchInput,
     TrackerStartDeliveryInput,
+    TrackerTaskActivityInput,
+    TrackerTaskResultsInput,
     TrackerTicketCountsAllInput,
     TrackerTicketCountsInput,
     TrackerTicketInput,
@@ -90,6 +94,7 @@ from stackos.repositories.tracker import (
     TrackerTicketCountsOut,
     TrackerVerifyOut,
 )
+from stackos.repositories.tracker.inspection_schema import TaskActivityOut, TaskResultsOut
 from stackos.repositories.tracker.schema import TrackerAgentStatsOut
 
 _AGENT_STATS_RESPONSE_POLICY = OperationResponsePolicy(
@@ -572,6 +577,45 @@ def operation_specs() -> list[OperationSpec]:
                 OperationExample(
                     title="Read recent tracker history",
                     arguments={"project_id": 1, "limit": 20, "response_mode": "compact"},
+                ),
+            ),
+        ),
+        _read_spec(
+            name="tracker.taskActivity",
+            summary="Read persisted task-scoped history with stable cursor paging.",
+            input_model=TrackerTaskActivityInput,
+            output_model=TaskActivityOut,
+            handler=tracker_task_activity,
+            purpose=(
+                "Inspect linked events and structured delivery lifecycle revisions. "
+                "Coverage is not a complete internal audit; reads never write history."
+            ),
+            examples=(
+                OperationExample(
+                    title="Read older task history",
+                    arguments={"project_id": 1, "task_key": "manual-work", "limit": 50},
+                ),
+            ),
+        ),
+        _read_spec(
+            name="tracker.taskResults",
+            summary="Read canonical results associated through explicit task provenance.",
+            input_model=TrackerTaskResultsInput,
+            output_model=TaskResultsOut,
+            handler=tracker_task_results,
+            purpose=(
+                "Open shared Library details using canonical source identities and every explicit "
+                "association reason. Historical execution contexts are included; "
+                "association does not imply approval."
+            ),
+            examples=(
+                OperationExample(
+                    title="Read task files",
+                    arguments={
+                        "project_id": 1,
+                        "task_key": "manual-work",
+                        "source_kind": "artifact",
+                    },
                 ),
             ),
         ),

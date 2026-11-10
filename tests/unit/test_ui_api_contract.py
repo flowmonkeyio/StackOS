@@ -32,8 +32,17 @@ from stackos.operations.tracker.schemas import (
     TrackerAgentStatsAllInput,
     TrackerAgentStatsInput,
     TrackerGetInput,
+    TrackerTaskActivityInput,
+    TrackerTaskResultsInput,
 )
 from stackos.repositories.projects import ScheduledJobOut, ScheduledRunOut, ScheduleRemovalOut
+from stackos.repositories.tracker.inspection_schema import (
+    TaskActivityItem,
+    TaskActivityOut,
+    TaskResultAssociation,
+    TaskResultItem,
+    TaskResultsOut,
+)
 from stackos.repositories.tracker.schema import (
     AgentStatsCoverageOut,
     AgentStatsDayOut,
@@ -102,6 +111,13 @@ def test_ui_generation_includes_registry_owned_durable_contracts(
         TrackerAgentStatsAllInput,
         TrackerAgentStatsOut,
         TrackerGetInput,
+        TrackerTaskActivityInput,
+        TrackerTaskResultsInput,
+        TaskActivityItem,
+        TaskActivityOut,
+        TaskResultAssociation,
+        TaskResultItem,
+        TaskResultsOut,
         TrackerSnapshotOut,
         TrackerTaskOut,
         TrackerTicketOut,

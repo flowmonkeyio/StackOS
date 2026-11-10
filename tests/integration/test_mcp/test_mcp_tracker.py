@@ -7,6 +7,40 @@ from tests.integration.test_repositories.test_agent_statistics import _receipt, 
 from .conftest import MCPClient
 
 
+def test_task_inspection_mcp_is_scoped_and_preserves_canonical_read_pages(
+    mcp_client, seeded_project
+):
+    project_id = int(seeded_project["data"]["id"])
+    mcp_client.call_tool_structured(
+        "tracker.createTask", {"project_id": project_id, "key": "inspection", "title": "Inspection"}
+    )
+    mcp_client.call_tool_structured(
+        "tracker.updateTask",
+        {
+            "project_id": project_id,
+            "task_key": "inspection",
+            "patch_json": {"status": "in-progress"},
+        },
+    )
+    for operation in ("tracker.taskActivity", "tracker.taskResults"):
+        pages = []
+        for mode in ("compact", "raw"):
+            page = mcp_client.call_tool_structured(
+                operation,
+                {"project_id": project_id, "task_key": "inspection", "response_mode": mode},
+            )
+            page = page.get("data", page)
+            assert page["task_key"] == "inspection"
+            assert page["project_id"] == project_id
+            assert "coverage" in page and "warnings" in page and "next_cursor" in page
+            pages.append(page)
+        assert pages[0] == pages[1]
+        if operation == "tracker.taskActivity":
+            assert any(item["kind"] == "tracker.task.status_changed" for item in pages[0]["items"])
+        else:
+            assert pages[0]["items"] == []
+
+
 def _workflow_step_plan_json() -> dict:
     return {
         "schema_version": "stackos.run-plan.v1",
