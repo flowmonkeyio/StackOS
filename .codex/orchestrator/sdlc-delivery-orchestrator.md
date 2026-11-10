@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.11
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.12
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Workflow: `engineering.tracked-delivery` v0.8.2 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -111,10 +111,11 @@ before/change/now/why flow context. Expected
 data must have an independent source of truth; use a relevant excluded case,
 ordering or real interaction where the changed boundary needs it. For UI, retain
 the selected hierarchy, exact copy and actual consumer width. In this project,
-new Python support scripts need applicable lint/format checks, shared Vue
-lifecycle changes need the existing no-watch guard, and filtered transport needs
-its existing consumer checks. Use `docs/release-signoff.md` for applicable gates;
-do not require every broad suite for every ticket.
+new Python support scripts need applicable lint/format checks. UI source
+changes follow the independent Vue watcher prohibition in
+`ui/src/design/DESIGN.md`; filtered transport has separate consumer checks.
+Use `docs/release-signoff.md` for applicable gates; do not require every broad
+suite for every ticket.
 
 For a frozen older plan whose `plan-tickets` precedes design/proof, create a
 provisional breakdown at that step. Its earlier `review-design` satisfies the
@@ -133,10 +134,12 @@ For current plans, plan tickets after design and proof. Each bounded packet cont
 - relevant design decisions, interfaces, reference paths and project rules;
 - accepted prerequisites, dependency refs and acceptance basis;
 - known paths, actual write ownership, shared resources, dirty baseline and isolation needs;
-- relevant tests, lint and area checks for delivery to execute after final edits
-  before handoff, with commands/results at the current candidate; independently
-  derived expectations, environment and authority; separately name remaining
-  integration obligations and block unavailable required proof;
+- required proof outcomes/scenarios, independently derived expectations,
+  environment, authority and proof owners; cite applicable project/area guidance;
+  suggested commands are starting points, not an exhaustive checklist. Delivery
+  and review independently select and execute tests, lint and area checks from
+  the actual changes, reporting commands/results at the current candidate;
+  separately name integration obligations and block unavailable required proof;
 - concise durable results and decisive evidence references; raw logs, captures
   and one-off scripts stay outside source history unless intentionally maintained
   project assets with their applicable checks;
@@ -289,6 +292,12 @@ The following dispatch and acceptance steps apply to terminal-managed delivery:
 
 ## Evidence And Feedback
 
+Require a concise coverage table in the existing review receipt: rule/source,
+applicability, inspected work or executed check with evidence refs, and result
+(passed, failed, not reviewed or not applicable). Required gaps for the assigned
+gate block approval; integration-only proof retains its owner. Use this table
+instead of duplicate narrative, without another report or unrelated rule inventory.
+
 Reviewers independently assess the intended outcome against requirements, actual
 changes, affected consumers and available proof. They choose proportionate
 checks, execute relevant planned specs and integration checks plus necessary omissions, and report
@@ -437,8 +446,9 @@ Re-evaluate authority and approval freshness. Late receipts from superseded
 attempts remain historical and cannot satisfy the current acceptance gate.
 
 Integrated verification/review reuses ticket proof with an explicit covered-scope,
-candidate, accepted-prerequisite and environment basis. Distinguish valid unchanged
-evidence, invalidated changed-consumer proof and required never-executed checks.
+candidate, accepted-prerequisite and environment basis. Reuse requires complete
+coverage as well as freshness. Distinguish valid unchanged evidence, invalidated
+changed-consumer proof and required never-executed checks.
 Execute affected, remaining cross-ticket and mandatory signoff checks at their
 existing gates. Keep dependency-mutating setup exclusive against checks consuming that
 environment; run readiness checks after the relevant transition. Agents choose and
