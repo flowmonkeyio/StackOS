@@ -54,6 +54,15 @@ matching, revenue, profit and tax treatment are not inferred.
   checks passed.
 - The invoice-default follow-up passed 284 backend tests and UI tests/typecheck/build.
   Independent review found no source-code blocker in the approved-basis selection.
+- Final invoice-reporting build `20261110T214635Z` was installed after byte-comparing
+  its bundled UI with the completed source UI build. Actual desktop verification
+  confirmed the removed blue section stays absent, approved invoice basis is selected,
+  and the existing Spend card shows the supported subtotal as `Incomplete · unposted`.
+  Revenue/profit remain unavailable where evidence is missing. Source financial facts
+  and originals were preserved through reviewed, sequential preview/commit adoption.
+  Build ordering is mandatory: finish the UI build **before** starting desktop
+  packaging, because the wheel captures `ui_dist` at packaging start. Compare the
+  packaged `ui_dist/index.html` and referenced JS asset before replacing the app.
 - Full UI test command, type-check and production UI build passed. New regressions
   cover selection-wide counts, prior-period charts, detail markers, precision review,
   filename labels, and safe linked-merchant fallback.
