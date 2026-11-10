@@ -10,6 +10,7 @@ from sqlmodel import Session, col
 from stackos.artifacts import redact_secret_text
 from stackos.db.models import Project, TaskTracker, TrackerItemStatus, TrackerTask
 from stackos.repositories.base import Page, ValidationError, _normalise_limit
+from stackos.repositories.project_access import project_owner_filter
 from stackos.repositories.projects import (
     PortfolioTaskOut,
     ProjectPortfolioItemOut,
@@ -55,7 +56,10 @@ def query_portfolio(
     recent = case(
         (tasks.c.task_updated_at.is_(None), tickets.c.latest_ticket_at),
         (tickets.c.latest_ticket_at.is_(None), tasks.c.task_updated_at),
-        else_=func.max(tasks.c.task_updated_at, tickets.c.latest_ticket_at),
+        else_=case(
+            (tasks.c.task_updated_at >= tickets.c.latest_ticket_at, tasks.c.task_updated_at),
+            else_=tickets.c.latest_ticket_at,
+        ),
     )
     sort_value = recent if sort == "recent" else func.lower(Project.name)
     statement = select(
@@ -71,6 +75,7 @@ def query_portfolio(
         sort_value.label("portfolio_sort_key"),
     ).outerjoin(tasks, and_(tasks.c.project_id == Project.id, tasks.c.position == 1))
     statement = statement.outerjoin(tickets, tickets.c.project_id == Project.id)
+    statement = statement.where(project_owner_filter(session))
     if ticket_status is not None:
         statement = statement.where(tickets.c[TrackerItemStatus(ticket_status).value] > 0)
     if project_id is not None:
@@ -78,12 +83,12 @@ def query_portfolio(
     if is_active is not None:
         statement = statement.where(col(Project.is_active).is_(is_active))
     if query and query.strip():
-        term = func.lower(query.strip())
+        term = query.strip().lower()
         statement = statement.where(
             or_(
-                func.instr(func.lower(Project.name), term) > 0,
-                func.instr(func.lower(Project.slug), term) > 0,
-                func.instr(func.lower(Project.domain), term) > 0,
+                func.lower(Project.name).contains(term, autoescape=True),
+                func.lower(Project.slug).contains(term, autoescape=True),
+                func.lower(Project.domain).contains(term, autoescape=True),
             )
         )
     count_statement = select(func.count()).select_from(statement.subquery())

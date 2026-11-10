@@ -28,6 +28,17 @@ behavior. Operations define the callable contract around that behavior:
 - enabled surfaces
 - agent guidance, prerequisites, return notes, and examples
 
+On a selected online server, the shared dispatcher checks the verified principal
+against persisted project ownership before grants, handlers or idempotent replay.
+Admitted child IDs resolve their stored project; supplying another project ID
+does not override it. Project list/portfolio discovery includes only the current
+user's environment-owned projects. Other state operations require one owned
+project scope, explicitly or through an admitted persisted child. Payload JSON
+does not select authority. Unadapted Account, file, action, runtime and global
+consumers remain denied until their owning implementation supplies its boundary.
+Verified browser sessions retain the existing read/browser-safe surface policy;
+they never receive local-admin authority. See [security](security.md).
+
 ## Project workflow schedules
 
 `schedule.list`, `schedule.set`, `schedule.toggle`, `schedule.remove` and

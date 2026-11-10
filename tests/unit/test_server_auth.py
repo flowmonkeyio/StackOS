@@ -88,7 +88,7 @@ def test_verified_session_and_no_data_adoption(online):
             .create(slug="old-data", name="Old data", domain="example.test")
             .data
         )
-        original = existing.model_dump(mode="json")
+        original = session.get(Project, existing.id).model_dump(mode="json")
     response = client.post(
         "/api/v1/auth/register", json={"email": "user@example.test", "password": "password-123"}
     )
@@ -107,8 +107,8 @@ def test_verified_session_and_no_data_adoption(online):
         row = session.exec(select(UserSession)).one()
         assert b"private-access" not in row.encrypted_payload
         assert client.cookies.get(session_cookie_name(selected)) != row.token_digest
+    assert client.get("/api/v1/projects").json()["items"] == []
     for path in (
-        "/api/v1/projects",
         "/api/v1/auth/accounts",
         "/mcp",
         "/generated-assets/private.txt",

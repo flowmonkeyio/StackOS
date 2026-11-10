@@ -581,8 +581,7 @@ async def _server_dispatch(
                     "/api/v1/auth/session",
                 }:
                     raise HTTPException(403, {"code": "password_reset_required"})
-                # The dependent privacy ticket adapts private consumers to persisted
-                # ownership. Until then no global/project/admin route is admitted.
+                request.state.user_session_digest = row.token_digest
                 if path not in {
                     f"/api/v1/auth/{name}"
                     for name in (
@@ -592,9 +591,11 @@ async def _server_dispatch(
                         "password",
                     )
                 }:
-                    raise HTTPException(403, {"code": "owner_boundary_required"})
+                    from stackos.api.project_access import authorize_request
+
+                    authorize_request(session, request, settings)
             response = await call_next(request)
-        if path.startswith("/api/v1/auth/"):
+        if path.startswith("/api/v1/"):
             response.headers.update(
                 {
                     "Cache-Control": "no-store",

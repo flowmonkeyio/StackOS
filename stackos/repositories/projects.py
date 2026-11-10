@@ -185,10 +185,15 @@ class ProjectRepository:
         locale: str = "en-US",
         schedule_json: dict[str, Any] | None = None,
     ) -> Envelope[ProjectOut]:
+        from .project_access import user_principal
+
+        principal = user_principal(self._s)
         now = _utcnow()
         if self._s.exec(select(Project.id).where(Project.slug == slug)).first() is not None:
             raise ConflictError(f"project slug {slug!r} already exists")
         row = Project(
+            owner_user_id=principal.user_id if principal is not None else None,
+            environment_id=principal.environment_id if principal is not None else None,
             slug=slug,
             name=name,
             domain=domain,
@@ -222,7 +227,11 @@ class ProjectRepository:
             return self.get(project_slug)
         if project_name is None:
             raise ValidationError("one of project_id, project_slug, or project_name is required")
-        rows = self._s.exec(select(Project).where(Project.name == project_name)).all()
+        from .project_access import project_owner_filter
+
+        rows = self._s.exec(
+            select(Project).where(Project.name == project_name, project_owner_filter(self._s))
+        ).all()
         if len(rows) == 1:
             return ProjectOut.model_validate(rows[0])
         if len(rows) > 1:
@@ -238,7 +247,9 @@ class ProjectRepository:
         limit: int | None = None,
         after_id: int | None = None,
     ) -> Page[ProjectOut]:
-        stmt = select(Project)
+        from .project_access import project_owner_filter
+
+        stmt = select(Project).where(project_owner_filter(self._s))
         if active_only:
             stmt = stmt.where(col(Project.is_active).is_(True))
         return cursor_paginate(
@@ -305,13 +316,17 @@ class ProjectRepository:
         return Envelope(data=ProjectOut.model_validate(row), project_id=row.id)
 
     def _fetch_row(self, id_or_slug: int | str) -> Project:
+        from .project_access import project_owner_filter, require_project
+
         if isinstance(id_or_slug, int):
             row = self._s.get(Project, id_or_slug)
         else:
-            row = self._s.exec(select(Project).where(Project.slug == id_or_slug)).first()
+            row = self._s.exec(
+                select(Project).where(Project.slug == id_or_slug, project_owner_filter(self._s))
+            ).first()
         if row is None:
-            raise NotFoundError(f"project {id_or_slug!r} not found")
-        return row
+            raise NotFoundError("project or child not found")
+        return require_project(self._s, row.id)
 
 
 class IntegrationCredentialRepository:

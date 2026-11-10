@@ -22,6 +22,7 @@ from stackos.api.pagination import (
     page_response,
     pagination_params,
 )
+from stackos.api.project_access import authorize_stream_poll
 from stackos.context import (
     ContextQueryOut,
     ContextRepository,
@@ -249,6 +250,9 @@ def _timeline_stream(
         emitted = 0
         next_heartbeat = time.monotonic() + heartbeat_ms / 1000
         previous_usage = None
+        with Session(engine) as session:
+            if not await authorize_stream_poll(session, request, project_id):
+                return
         if cursor is None and not replay:
             with Session(engine) as session:
                 cursor = ContextRepository(session).latest_tracker_status_event_id(
@@ -260,6 +264,8 @@ def _timeline_stream(
                 break
 
             with Session(engine) as session:
+                if not await authorize_stream_poll(session, request, project_id):
+                    return
                 page = ContextRepository(session).tracker_status_timeline(
                     project_id=project_id,
                     limit=limit,
@@ -299,6 +305,11 @@ def _timeline_stream(
 
             if page.items:
                 for item in page.items:
+                    # A consumer can pause between frames. Do not release a
+                    # buffered event after logout or an ownership change.
+                    with Session(engine) as session:
+                        if not await authorize_stream_poll(session, request, project_id):
+                            return
                     cursor = item.id
                     emitted += 1
                     yield sse_frame(

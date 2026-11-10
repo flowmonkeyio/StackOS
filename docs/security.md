@@ -14,6 +14,22 @@ email confirmation and private confirmation/recovery templates pointing to
 StackOS. Settings validates those templates and their selected origin. No
 registration path assigns ownership to existing projects or Accounts.
 
+Projects created by a verified user persist that user's ID and the selected
+environment ID on the existing project record. Project discovery filters in
+SQL, including counts and portfolio cursors. Reads of admitted child IDs resolve
+their persisted project before accessing state; a supplied project ID cannot
+override a child's owner. Foreign, missing and ownerless legacy projects return
+the same not-found result. Existing run/project grants still apply after the
+owner check, including before idempotent replay.
+
+Server REST admission is closed in `api/project_access.py`; audited state
+operations use `repositories/project_access.py`. Global streams, Accounts,
+files, native runtime and other unadapted routes/operations remain denied until
+their owning delivery adapts them. Login supplies no local-admin authority.
+Project timeline streams recheck session expiry/logout, provider identity and
+persisted ownership on each poll, and stop if access is lost. Standalone local
+administration retains its existing behavior; signup never adopts its data.
+
 The REST contract under `/api/v1/auth` is:
 
 | Route | Behavior |
@@ -48,13 +64,10 @@ avoids consuming links on email-scanner GETs. See Supabase's
 [email template contract](https://supabase.com/docs/guides/local-development/customizing-email-templates)
 and [local sign-out scope](https://supabase.com/docs/guides/auth/signout).
 
-Private consumers currently fail closed with `owner_boundary_required` pending
-the dependent project-privacy delivery. It must enforce persisted ownership plus
-existing grants before admitting those routes. A provider-verified `UserPrincipal`
-is carried on request state and into operation context through the server-owned
-session; caller arguments cannot assert that identity. Native runtime admission
-is separate subsequent work. This auth ticket does not claim project privacy,
-desktop login UI, native execution, or installed-product proof.
+A provider-verified `UserPrincipal` is carried on request state and into operation
+context through the server-owned session; caller arguments cannot assert that
+identity. Unadapted consumers return `owner_boundary_required`. Native runtime
+admission, desktop login UI and installed-product proof are separate work.
 
 ## Local Daemon Auth Posture
 

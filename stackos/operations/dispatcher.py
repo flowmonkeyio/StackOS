@@ -26,6 +26,7 @@ from stackos.repositories.base import (
     RepositoryError,
     ValidationError,
 )
+from stackos.repositories.project_access import authorize_operation
 from stackos.repositories.runs import IdempotencyKeyRepository
 from stackos.validation_errors import safe_validation_errors
 from stackos.workflows.run_plan_grants import RUN_PLAN_OWNER_TOOL_NAMES
@@ -68,6 +69,8 @@ class OperationDispatcher:
                 data={"operation": name, "errors": safe_validation_errors(exc.errors())},
             ) from exc
 
+        if settings is not None and settings.process_role == "server":
+            session.info["server_environment_id"] = settings.environment_id
         ctx = build_context(arguments, session)
         ctx.extras["surface"] = surface
         ctx.extras["client_surface"] = response_surface
@@ -78,6 +81,9 @@ class OperationDispatcher:
             if settings.process_role == "server" and ctx.principal is None:
                 raise ToolNotGrantedError("server operations require a verified user principal")
         with bind_context(ctx):
+            authorize_operation(session, spec.name, parsed.model_dump(), run=ctx.run)
+            if ctx.principal is not None and trusted_local_admin:
+                raise ToolNotGrantedError("verified users do not have local-admin authority")
             if (
                 ctx.run is not None
                 and ctx.project_id is not None

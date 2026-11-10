@@ -81,7 +81,7 @@ def operation_specs() -> list[OperationSpec]:
     return [
         operation_spec(
             name="project.portfolio",
-            summary="Read a paginated local-admin project portfolio with last recorded work.",
+            summary="Read a paginated project portfolio with last recorded work.",
             input_model=ProjectPortfolioInput,
             output_model=Page[ProjectPortfolioItemOut],
             handler=project_portfolio,
@@ -135,7 +135,7 @@ def operation_specs() -> list[OperationSpec]:
             ),
             returns=(
                 "Safe project metadata only: id, slug, name, domain, locale, active flag, "
-                "and timestamps.",
+                "and timestamps. Selected servers return only the verified user's projects.",
             ),
             examples=(OperationExample(title="List projects", arguments={"limit": 20}),),
             mutating=False,

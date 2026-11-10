@@ -10,6 +10,7 @@ import sqlite3
 import subprocess
 import sys
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from uuid import uuid4
 
@@ -77,7 +78,7 @@ def test_postgres_migrate_cli_reports_safe_success(postgres_settings: Settings) 
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "migrate: alembic upgraded to head (Postgres)."
-    assert current_alembic_version(postgres_settings) == "0038_user_sessions"
+    assert current_alembic_version(postgres_settings) == "0039_project_owners"
     assert postgres_settings.database_url is not None
     url = postgres_settings.database_url.get_secret_value()
     password = sa.engine.make_url(url).password
@@ -98,7 +99,7 @@ def test_postgres_migration_repositories_and_private_schema(postgres_settings: S
 
     selected = postgres_settings
     assert upgrade_to_head(selected).stamped_existing_schema is False
-    assert current_alembic_version(selected) == "0038_user_sessions"
+    assert current_alembic_version(selected) == "0039_project_owners"
     engine = make_settings_engine(selected)
     assert engine.dialect.name == "postgresql"
     try:
@@ -475,6 +476,34 @@ def _run_alembic(
         text=True,
         env=os.environ.copy() if env is None else env,
     )
+
+
+@contextmanager
+def _legacy_project_session(engine):
+    """Use the historical Project projection while preparing pre-0039 fixtures.
+
+    These fixtures deliberately execute current unchanged repositories against
+    older schemas. Ownership did not exist there. Defer only those two new
+    fields in this session; retain real rows, FKs and all migration assertions.
+    This is test setup, never a production legacy-schema fallback.
+    """
+    from sqlalchemy.orm import defer
+    from sqlmodel import Session
+
+    from stackos.db.models import Project
+
+    with Session(engine) as session:
+
+        @sa.event.listens_for(session, "do_orm_execute")
+        def historical_projection(state):
+            if state.is_select and any(
+                item.get("expr") is Project for item in state.statement.column_descriptions
+            ):
+                state.statement = state.statement.options(
+                    defer(Project.environment_id), defer(Project.owner_user_id)
+                )
+
+        yield session
 
 
 def _insert_legacy_project(
@@ -893,7 +922,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0038_user_sessions",
+            "0039_project_owners",
         )
     finally:
         conn.close()
@@ -1778,7 +1807,6 @@ def test_telegram_cutover_retires_active_bindings_preserves_history(isolated_ale
         ActionCall,
         Credential,
         Plugin,
-        Project,
         ProjectCredential,
         Provider,
         Resource,
@@ -1786,11 +1814,11 @@ def test_telegram_cutover_retires_active_bindings_preserves_history(isolated_ale
     )
 
     _run_alembic(["upgrade", "0030_durable_action_runtime"])
+    with sqlite3.connect(isolated_alembic) as connection:
+        _insert_legacy_project(connection, project_id=1, now="2026-11-10 00:00:00")
+        connection.execute("UPDATE projects SET slug='cutover', name='Cutover' WHERE id=1")
     engine = make_engine(isolated_alembic)
     with Session(engine) as session:
-        session.add(
-            Project(id=1, slug="cutover", name="Cutover", domain="example.test", locale="en-US")
-        )
         session.add(Plugin(id=1, slug="communications", name="Communications", source="builtin"))
         session.commit()
         session.add(Provider(id=1, plugin_id=1, key="telegram-bot", name="Old Telegram"))
@@ -2144,7 +2172,6 @@ def test_ownership_migration_preserves_existing_data_and_refuses_history_loss(
 def test_workflow_schedule_migration_preserves_history_and_disarms_legacy(
     isolated_alembic: Path,
 ) -> None:
-    from sqlmodel import Session
 
     from stackos.db.models import AgentRequest, RunPlan, ScheduledJob
     from stackos.repositories.agent_requests import AgentRequestRepository
@@ -2160,7 +2187,7 @@ def test_workflow_schedule_migration_preserves_history_and_disarms_legacy(
             "VALUES (41, 1, 'old-review', '0 9 * * 1', 1, '2026-11-12', 'success')"
         )
     engine = make_engine(isolated_alembic)
-    with Session(engine) as session:
+    with _legacy_project_session(engine) as session:
         tracker = TrackerRepository(session)
         tracker.configure_delivery(project_id=1, delivery={"host_key": "codex"})
         plan = (
@@ -2185,7 +2212,7 @@ def test_workflow_schedule_migration_preserves_history_and_disarms_legacy(
     _run_alembic(["upgrade", "0037_schedule_id_nonreuse"])
     _run_alembic(["upgrade", "0037_schedule_id_nonreuse"])
     engine = make_engine(isolated_alembic)
-    with Session(engine) as session:
+    with _legacy_project_session(engine) as session:
         row = session.get(ScheduledJob, 41)
         assert row.project_id == 1 and row.kind == "old-review" and row.cron_expr == "0 9 * * 1"
         assert row.enabled is False and row.next_run_at is None
@@ -2276,7 +2303,7 @@ def test_schedule_id_upgrade_retains_removed_history_and_sequence(
     with sqlite3.connect(isolated_alembic) as conn:
         _insert_legacy_project(conn, project_id=1, now="2026-11-05")
     engine = make_engine(isolated_alembic)
-    with Session(engine) as session:
+    with _legacy_project_session(engine) as session:
         schedules = ScheduledJobRepository(session)
         live = schedules.set(project_id=1, kind="kept", name="Kept", cron_expr="0 9 * * mon").data
         session.add(
@@ -2320,7 +2347,7 @@ def test_schedule_id_upgrade_retains_removed_history_and_sequence(
     _run_alembic(["upgrade", "0037_schedule_id_nonreuse"])
     _run_alembic(["upgrade", "0037_schedule_id_nonreuse"])
     engine = make_engine(isolated_alembic)
-    with Session(engine) as session:
+    with _legacy_project_session(engine) as session:
         schedules = ScheduledJobRepository(session)
         assert schedules.list(1) == ([live] if keep_live_schedule else [])
         replacement = schedules.set(
@@ -2416,8 +2443,6 @@ def test_schedule_id_upgrade_failure_rolls_back_and_retries(
 
 
 def test_generic_delivery_migration_preserves_settings_and_history(isolated_alembic: Path) -> None:
-    from sqlmodel import Session
-
     from stackos.db.models import Plugin, PluginSource, ProjectPlugin, RunPlan, RunPlanStatus
     from stackos.repositories.tracker import TrackerRepository
     from stackos.repositories.tracker.utils import DEFAULT_LANES, DEFAULT_PRIORITIES
@@ -2446,7 +2471,7 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
         },
     }
     engine = make_engine(isolated_alembic)
-    with Session(engine) as session:
+    with _legacy_project_session(engine) as session:
         plugin = Plugin(slug="engineering", name="Engineering", source=PluginSource.BUILTIN)
         session.add(plugin)
         session.flush()
@@ -2570,8 +2595,6 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
 def test_generic_delivery_migration_handles_null_configuration(
     isolated_alembic: Path, null_owner: str, storage: str
 ) -> None:
-    from sqlmodel import Session
-
     from stackos.db.models import Plugin, PluginSource, ProjectPlugin
     from stackos.repositories.tracker import TrackerRepository
 
@@ -2590,7 +2613,7 @@ def test_generic_delivery_migration_handles_null_configuration(
         "review_agent": {"name": "reviewer", "instructions": "Review", "model": "gpt-6-astra"},
     }
     engine = make_engine(isolated_alembic)
-    with Session(engine) as session:
+    with _legacy_project_session(engine) as session:
         plugin = Plugin(slug="engineering", name="Engineering", source=PluginSource.BUILTIN)
         session.add(plugin)
         session.flush()
@@ -2765,3 +2788,30 @@ def test_browser_replacement_preserves_historic_rows_and_profile_path(
     assert BROWSER_PROFILE_DIRNAME == "playwright-chromium"
     assert profile_sentinel.read_text(encoding="utf-8") == "preserve-profile"
     assert external_cookie.read_text(encoding="utf-8") == "do-not-touch"
+
+
+def test_project_owner_migration_preserves_unassigned_data_and_refuses_owner_loss(
+    isolated_alembic: Path,
+) -> None:
+    _run_alembic(["upgrade", "0038_user_sessions"])
+    with sqlite3.connect(isolated_alembic) as connection:
+        _insert_legacy_project(connection, project_id=7, now="2026-11-10 00:00:00")
+        before = connection.execute("SELECT * FROM projects WHERE id = 7").fetchone()
+    _run_alembic(["upgrade", "head"])
+    with sqlite3.connect(isolated_alembic) as connection:
+        after = connection.execute("SELECT * FROM projects WHERE id = 7").fetchone()
+        assert after == (*before, None, None)
+        connection.execute(
+            "UPDATE projects SET owner_user_id = ?, environment_id = ? WHERE id = 7",
+            ("00000000-0000-0000-0000-000000000001", "synthetic-owner-migration"),
+        )
+    with pytest.raises(subprocess.CalledProcessError) as refused:
+        _run_alembic(["downgrade", "0038_user_sessions"])
+    assert "Refusing to discard private project ownership" in refused.value.stderr
+    with sqlite3.connect(isolated_alembic) as connection:
+        assert connection.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            "0039_project_owners",
+        )
+        assert connection.execute(
+            "SELECT owner_user_id, environment_id FROM projects WHERE id = 7"
+        ).fetchone() == ("00000000-0000-0000-0000-000000000001", "synthetic-owner-migration")

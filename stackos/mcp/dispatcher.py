@@ -99,6 +99,15 @@ class MCPDispatcher:
 
         engine = self._engine_resolver()
         with Session(engine) as session:
+            if self._settings_resolver is not None:
+                settings = self._settings_resolver()
+                if getattr(settings, "process_role", "standalone") == "server":
+                    # HTTP-to-native session authority is owned by client routing.
+                    # Until adapted, neither legacy tools nor operations may bypass
+                    # the authenticated owner boundary via a fresh MCP session.
+                    return self._repo_error(
+                        ToolNotGrantedError("MCP requires an adapted authenticated owner boundary")
+                    )
             if self._services_resolver is not None:
                 session.info["operation_services"] = self._services_resolver()
             if spec.operation_name is not None:

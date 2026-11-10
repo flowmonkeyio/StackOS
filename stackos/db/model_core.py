@@ -32,6 +32,9 @@ class Project(SQLModel, table=True):
     __table_args__ = {"sqlite_autoincrement": True}
 
     id: int | None = Field(default=None, primary_key=True)
+    # Null identifies pre-login standalone data; signing up never adopts it.
+    environment_id: str | None = Field(default=None, max_length=63, index=True)
+    owner_user_id: str | None = Field(default=None, max_length=36, index=True)
     slug: str = Field(max_length=80, unique=True, index=True)
     name: str = Field(max_length=200)
     domain: str = Field(max_length=255)
