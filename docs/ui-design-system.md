@@ -112,8 +112,16 @@ master/detail pages should pass `selected-id` to keep the active row visible.
 quiet Input / Cache / Output slots and a fixed 56px execution footer. Graph
 tickets are 328 × 224px; Board cards are 224px tall at the existing column
 width. Manual work reserves the same card geometry and omits usage. Current
-execution uses the canonical host mark, readable recorded role, exact model
-and start time; retained execution is explicitly `Last:`. Ordinary assignment
+execution uses the canonical host mark, readable recorded role and exact model;
+retained execution is explicitly `Last:`. The same footer slot shows compact
+item elapsed time (`<1m`, `14m`, `2h 22m`, `1d 4h`) with an accessible elapsed
+label, independently of identity, automation or tokens. It uses the persisted
+first start to now for open work, or to completion for terminal work, retaining
+the value after agent exit and reload. Missing/invalid lifecycle data or an end
+before start shows `N/A`; terminal work never falls back to a running clock.
+The shared Work heartbeat invalidates this display without per-card timers.
+Task and shared ticket details use the same presentation and omit duplicate
+Started facts. Ordinary assignment
 never invents an occurrence. Genuine prerequisites use actual ticket titles
 in a bounded bottom-edge badge with full text available on inspection. Board
 has no Graph handles. The contextual task header groups identity/Automated,

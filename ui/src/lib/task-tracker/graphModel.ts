@@ -26,6 +26,7 @@ export interface TrackerVueNodeData {
   assignee?: string | null
   owner?: string | null
   activeExecution?: ActiveExecution | null
+  lifecycle?: Pick<TrackerTask, 'status' | 'started_at' | 'completed_at'> | null
   sourceKind?: string | null
   runPlanId?: number | null
   agentStats?: AgentStatsMetrics | null
@@ -645,6 +646,7 @@ function vueNodeData(
     assignee: ticket?.assignee,
     owner: ticket?.assignee ?? task?.owner,
     activeExecution: ticket?.active_execution ?? null,
+    lifecycle: ticket ?? task,
     sourceKind: ticket?.source_kind ?? task?.source_kind ?? null,
     runPlanId: ticket?.run_plan_id,
     agentStats: ticket ? ticket.agent_stats : task?.agent_stats,

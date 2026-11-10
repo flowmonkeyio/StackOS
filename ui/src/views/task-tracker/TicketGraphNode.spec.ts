@@ -7,6 +7,16 @@ import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 import TicketGraphNode from './TicketGraphNode.vue'
 
 describe('TicketGraphNode', () => {
+  it('shows the ticket lifecycle independently of current execution identity and token eligibility', async () => {
+    const lifecycle = { status: 'complete' as const, started_at: '2026-11-08T01:00:00', completed_at: '2026-11-08T03:22:00' }
+    const data = nodeData({ lifecycle, owner: null })
+    const wrapper = mount(TicketGraphNode, { props: { data }, global: { stubs: { Handle: true } } })
+    expect(wrapper.get('[aria-label="Elapsed time: 2h 22m"]').text()).toBe('2h 22m')
+    expect(wrapper.find('.agent-usage-summary').exists()).toBe(false)
+    await wrapper.setProps({ data: { ...data, lifecycle: { ...lifecycle, started_at: null } } })
+    expect(wrapper.get('.active-execution-line__elapsed').text()).toBe('N/A')
+    wrapper.unmount()
+  })
   it('anchors actual prerequisite titles and retains measured Last identity after execution', () => {
     const metrics = agentStatsFixture().totals
     metrics.last_execution = execution

@@ -15,6 +15,20 @@ vi.mock('@/lib/operations', () => ({ callOperation }))
 const popup = () => new DOMWrapper(document.body)
 
 describe('TrackerTaskDetailDialog', () => {
+  it('keeps task and shared ticket elapsed distinct after completion without visible Started facts', async () => {
+    const record = { ...task(), status: 'complete' as const, started_at: '2026-11-08T01:00:00', completed_at: '2026-11-09T05:00:00' }
+    const source = { ...sourceTicket(), status: 'complete' as const, started_at: '2026-11-08T02:00:00', completed_at: '2026-11-08T04:22:00' }
+    const wrapper = mount(TrackerTaskDetailDialog, { props: { modelValue: true, task: record, tickets: [source] } })
+    expect(popup().get('.active-execution-line__elapsed').text()).toBe('1d 4h')
+    expect(popup().findAll('dt').map(label => label.text())).not.toContain('Started')
+    expect(popup().findAll('dt').map(label => label.text())).toContain('Completed')
+    await wrapper.setProps({ ticketKey: source.key, ticket: source })
+    await flushPromises()
+    expect(popup().get('.tracker-task-detail + div .active-execution-line__elapsed').text()).toBe('2h 22m')
+    expect(popup().findAll('dt').map(label => label.text())).not.toContain('Started')
+    expect(popup().findAll('dt').map(label => label.text())).toContain('Claimed')
+    wrapper.unmount()
+  })
   beforeEach(() => callOperation.mockReset().mockResolvedValue({ data: {} }))
   afterEach(() => {
     document.body.innerHTML = ''

@@ -110,3 +110,17 @@ export function formatDurationBetween(
   const minutes = (endDate.getTime() - startDate.getTime()) / MINUTE
   return formatDurationMinutes(minutes)
 }
+
+/** Item wall-clock duration; terminal items require a persisted end. */
+export function formatElapsedTime(
+  start: string | null | undefined,
+  end: string | null | undefined,
+  terminal: boolean,
+  now: Date = new Date(),
+): string {
+  if (!start || (terminal && !end)) return 'N/A'
+  const startTime = parseStackOsDate(start).getTime()
+  const endTime = terminal ? parseStackOsDate(end!).getTime() : now.getTime()
+  if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime < startTime) return 'N/A'
+  return formatDurationMinutes((endTime - startTime) / MINUTE)
+}

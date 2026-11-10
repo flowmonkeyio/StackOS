@@ -1,28 +1,37 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { ActiveExecution } from '@/lib/task-tracker/types'
+import type { ActiveExecution, TrackerTask } from '@/lib/task-tracker/types'
 import type { SchemaExecutionIdentityOut } from '@/api'
 import { activeExecutionTitle, executionRole } from '@/lib/task-tracker/execution'
 import { resolveAgentHostLogo, resolveAgentOwnerLogo } from '@/lib/stackos/agentIdentity'
+import { formatElapsedTime } from '@/lib/stackos/time'
+import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
+import { useUsageFeed } from '@/composables/useUsageFeed'
 import { UiIcon } from '@/components/ui'
 import UsageLiveIndicator from './UsageLiveIndicator.vue'
 
-const props = defineProps<{ execution?: ActiveExecution | null; lastExecution?: SchemaExecutionIdentityOut | null; owner?: string | null; detailed?: boolean; focusable?: boolean }>()
+const props = defineProps<{ item?: Pick<TrackerTask, 'status' | 'started_at' | 'completed_at'> | null; execution?: ActiveExecution | null; lastExecution?: SchemaExecutionIdentityOut | null; owner?: string | null; detailed?: boolean; focusable?: boolean }>()
 const identity = computed(() => props.execution ?? props.lastExecution)
 const agent = computed(() => identity.value ? executionRole(identity.value.agent) : '')
 const logo = computed(() => identity.value ? resolveAgentHostLogo(identity.value.host_key) : resolveAgentOwnerLogo(props.owner))
-const start = computed(() => identity.value ? new Date(identity.value.started_at) : null)
-const time = computed(() => start.value?.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) ?? '')
+const feed = useUsageFeed()
+const elapsed = computed(() => {
+  // The shared heartbeat invalidates presentation. Read a fresh clock on mount
+  // and invalidation rather than treating cached receivedAt as the current time.
+  void feed?.value.receivedAt
+  return formatElapsedTime(props.item?.started_at, props.item?.completed_at, isTerminalTrackerStatus(props.item?.status ?? ''))
+})
+const elapsedLabel = computed(() => `Elapsed time: ${elapsed.value}`)
 const full = computed(() => identity.value ? activeExecutionTitle(identity.value) : `Assigned: ${props.owner ?? 'Unassigned'}`)
 </script>
 
 <template>
   <span
-    v-if="identity || owner"
+    v-if="item || identity || owner"
     class="active-execution-line focus-ring"
     :class="{ 'active-execution-line--detailed': detailed, 'active-execution-line--last': !execution && identity }"
     :title="full"
-    :aria-label="identity ? `${execution ? 'Active now' : 'Last'}: ${full}` : full"
+    :aria-label="`${identity ? `${execution ? 'Active now' : 'Last'}: ${full}` : full}${item ? ` · ${elapsedLabel}` : ''}`"
     :tabindex="focusable ? 0 : undefined"
     :data-active-execution="execution ? '' : undefined"
     :data-last-execution="!execution && identity ? '' : undefined"
@@ -34,11 +43,14 @@ const full = computed(() => identity.value ? activeExecutionTitle(identity.value
       class="active-execution-line__logo"
     >
     <UiIcon
-      v-else
+      v-else-if="identity || owner"
       name="user"
       class="active-execution-line__logo"
     />
-    <span class="active-execution-line__identity">
+    <span
+      v-if="identity || owner"
+      class="active-execution-line__identity"
+    >
       <span class="active-execution-line__agent">{{ identity ? `${execution ? '' : 'Last: '}${agent}` : `Assigned: ${owner}` }}</span>
       <span
         v-if="identity"
@@ -46,11 +58,19 @@ const full = computed(() => identity.value ? activeExecutionTitle(identity.value
       >{{ identity.model ?? 'Model not recorded' }}</span>
     </span>
     <span
-      v-if="execution"
+      v-if="item || execution"
       class="active-execution-line__activity"
     >
-      <time :datetime="execution.started_at">{{ detailed ? start?.toLocaleString() : time }}</time>
-      <UsageLiveIndicator :active="true" />
+      <span
+        v-if="item"
+        class="active-execution-line__elapsed"
+        :aria-label="elapsedLabel"
+        :title="elapsedLabel"
+      >{{ elapsed }}</span>
+      <UsageLiveIndicator
+        v-if="execution"
+        :active="true"
+      />
     </span>
   </span>
 </template>
@@ -62,8 +82,8 @@ img.active-execution-line__logo { border-radius: var(--radius-sm); box-shadow: v
 .active-execution-line__identity { flex: 1; min-width: 0; display: grid; }
 .active-execution-line__agent, .active-execution-line__model { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .active-execution-line__model { color: var(--color-fg-muted); }
-.active-execution-line time { flex: none; font-variant-numeric: tabular-nums; }
-.active-execution-line__activity { flex: none; display: grid; justify-items: end; min-width: 80px; }
+.active-execution-line__elapsed { width: 80px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.active-execution-line__activity { flex: none; display: grid; justify-items: end; min-width: 80px; margin-left: auto; }
 .active-execution-line--detailed .active-execution-line__activity { display: flex; align-items: center; gap: 12px; }
 .active-execution-line--detailed { flex-wrap: wrap; white-space: normal; font-size: 12px; }
 .active-execution-line--detailed .active-execution-line__agent,

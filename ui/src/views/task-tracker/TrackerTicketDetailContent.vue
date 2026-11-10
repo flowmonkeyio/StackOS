@@ -52,7 +52,6 @@ const ticketTraceFacts = computed(() => {
     { label: 'Parent', value: ticket.parent_ticket_key ?? '-' },
     { label: 'Created', value: formatDateTime(ticket.created_at) },
     { label: 'Claimed', value: ticket.claimed_at ? formatDateTime(ticket.claimed_at) : '-' },
-    { label: 'Started', value: ticket.started_at ? formatDateTime(ticket.started_at) : '-' },
     { label: 'Completed', value: ticket.completed_at ? formatDateTime(ticket.completed_at) : '-' },
   ]
 })
@@ -142,6 +141,7 @@ function relationSummary(ticket: TrackerTicket): string {
         title="Ticket total usage"
       />
       <ActiveExecutionLine
+        :item="ticket"
         :execution="ticket.active_execution"
         detailed
         focusable

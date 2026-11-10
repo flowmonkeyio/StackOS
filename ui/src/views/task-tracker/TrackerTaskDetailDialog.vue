@@ -204,7 +204,6 @@ const taskTraceFacts = computed(() => {
   if (!task) return []
   return [
     { label: 'Created', value: formatDateTime(task.created_at) },
-    { label: 'Started', value: task.started_at ? formatDateTime(task.started_at) : '-' },
     { label: 'Completed', value: task.completed_at ? formatDateTime(task.completed_at) : '-' },
   ]
 })
@@ -343,6 +342,7 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
           title="Task total usage"
         />
         <ActiveExecutionLine
+          :item="task"
           :execution="task.active_execution"
           detailed
           focusable

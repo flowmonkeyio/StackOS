@@ -5,12 +5,41 @@ import { describe, expect, it } from 'vitest'
 import {
   formatDurationBetween,
   formatDurationMinutes,
+  formatElapsedTime,
   formatRelativeDateTime,
   formatShortDate,
   newestFirst,
 } from './time'
 
 const NOW = new Date('2026-06-09T12:00:00Z')
+
+describe('formatElapsedTime', () => {
+  it('formats item wall-clock time with daemon naive UTC and explicit offsets', () => {
+    expect(formatElapsedTime('2026-06-09T11:59:40', null, false, NOW)).toBe('<1m')
+    expect(formatElapsedTime('2026-06-09T11:46:00', null, false, NOW)).toBe('14m')
+    expect(formatElapsedTime('2026-06-09T09:38:00Z', null, false, NOW)).toBe('2h 22m')
+    expect(formatElapsedTime('2026-06-08T08:00:00+00:00', null, false, NOW)).toBe('1d 4h')
+    expect(formatElapsedTime('2026-06-09T03:00:00-07:00', '2026-06-09T11:00:00', true, NOW)).toBe('1h')
+  })
+
+  it('freezes terminal time and resumes from the original start on reopen', () => {
+    const start = '2026-06-09T10:00:00Z'
+    const end = '2026-06-09T11:00:00Z'
+    expect(formatElapsedTime(start, end, true, NOW)).toBe('1h')
+    expect(formatElapsedTime(start, end, true, new Date('2026-06-10T12:00:00Z'))).toBe('1h')
+    expect(formatElapsedTime(start, null, false, NOW)).toBe('2h')
+  })
+
+  it.each([
+    [null, null, false], ['', null, false], ['invalid', null, false],
+    ['2026-06-09T10:00:00Z', null, true],
+    ['2026-06-09T10:00:00Z', 'invalid', true],
+    ['2026-06-09T10:00:00Z', '2026-06-09T09:00:00Z', true],
+    ['2026-06-09T13:00:00Z', null, false],
+  ])('returns N/A for unusable lifecycle data (%s, %s, %s)', (start, end, terminal) => {
+    expect(formatElapsedTime(start, end, terminal, NOW)).toBe('N/A')
+  })
+})
 
 describe('formatShortDate', () => {
   it('keeps older years distinguishable and normalizes daemon UTC timestamps', () => {

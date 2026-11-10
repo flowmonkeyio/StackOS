@@ -13,6 +13,14 @@ const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
 const automaticMetadata = { delivery: { status: 'running', job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent } }
 
 describe('Work board presentation', () => {
+  it('shows persisted item elapsed for completed manual cards without an owner or token eligibility', () => {
+    const record = { ...task('complete'), owner: null, started_at: '2026-11-08T01:00:00', completed_at: '2026-11-09T05:00:00' }
+    const rows = buildTaskProgressRows([record], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
+    const wrapper = mount(TrackerBoardPanel, { props: { rows } })
+    expect(wrapper.get('[aria-label="Elapsed time: 1d 4h"]').text()).toBe('1d 4h')
+    expect(wrapper.find('.agent-usage-summary').exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('uses the shared abort action only for recorded workflow links, beside the card button', () => {
     const record = { ...task('in-progress'), source_kind: 'workflow', source_json: { run_plan_id: 123 } }
     const rows = buildTaskProgressRows([record], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
@@ -139,7 +147,8 @@ describe('Work board presentation', () => {
     const rows = buildTaskProgressRows([record], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
     const wrapper = mount(TrackerBoardPanel, { props: { rows } })
     const card = wrapper.get('button')
-    expect(card.get('.active-execution-line').text()).toBe('Assigned: delivery.agent')
+    expect(card.get('.active-execution-line__agent').text()).toBe('Assigned: delivery.agent')
+    expect(card.get('.active-execution-line__elapsed').text()).toBe('N/A')
     expect(card.find('.tracker-board__source').exists()).toBe(false)
     expect(card.text()).not.toContain('engineering.tracked-delivery')
     expect(card.find('time').exists()).toBe(false)
@@ -186,7 +195,7 @@ describe('Work board presentation', () => {
     record.ticket_summary = { ...record.ticket_summary!, blocked_count: 1 }
     const rows = buildTaskProgressRows([record], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
     const wrapper = mount(TrackerBoardPanel, { props: { rows } })
-    expect(wrapper.get('.active-execution-line').text()).toBe('Assigned: Claude Monet')
+    expect(wrapper.get('.active-execution-line__agent').text()).toBe('Assigned: Claude Monet')
     expect(wrapper.find('.active-execution-line img').exists()).toBe(false)
     expect(wrapper.get('button').text()).not.toMatch(/manual|Blocked/)
   })
