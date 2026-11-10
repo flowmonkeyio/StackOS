@@ -108,8 +108,10 @@ def test_verified_session_and_no_data_adoption(online):
         assert b"private-access" not in row.encrypted_payload
         assert client.cookies.get(session_cookie_name(selected)) != row.token_digest
     assert client.get("/api/v1/projects").json()["items"] == []
+    # Accounts are now admitted through the accepted owner-aware repository;
+    # signing up still cannot see legacy standalone Accounts.
+    assert client.get("/api/v1/auth/accounts").json()["accounts"] == []
     for path in (
-        "/api/v1/auth/accounts",
         "/mcp",
         "/generated-assets/private.txt",
     ):

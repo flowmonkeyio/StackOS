@@ -27,6 +27,12 @@ _ACCOUNT_ROUTE = re.compile(
     r"/api/v1/(?:auth/providers|auth/accounts(?:/[^/]+(?:/(?:start|test|revoke))?)?"
     r"|projects/[1-9][0-9]*/connections/accounts(?:/[^/]+)?)"
 )
+_FILE_READ = re.compile(
+    r"/api/v1/projects/(?P<project_id>[1-9][0-9]*)/files/"
+    r"(?:(?:artifact/(?P<artifact_id>[1-9][0-9]*))|"
+    r"(?:action-output/(?P<action_call_id>[1-9][0-9]*)))"
+)
+_ARTIFACT_READ = re.compile(r"/api/v1/artifacts(?:/(?P<artifact_id>[1-9][0-9]*))?")
 
 
 def bind_user_session(session: Session, request: Request, settings: Settings) -> None:
@@ -58,7 +64,14 @@ def authorize_request(session: Session, request: Request, settings: Settings) ->
     if _OPERATION_CALL.fullmatch(path) and _ui_scope_for_request(path, method) is not None:
         return
     match = (
-        (_PROJECT_READ.fullmatch(path) or _CHILD_READ.fullmatch(path)) if method == "GET" else None
+        (
+            _PROJECT_READ.fullmatch(path)
+            or _CHILD_READ.fullmatch(path)
+            or _FILE_READ.fullmatch(path)
+            or _ARTIFACT_READ.fullmatch(path)
+        )
+        if method in {"GET", "HEAD"}
+        else None
     )
     if match is None:
         raise HTTPException(403, {"code": "owner_boundary_required"})

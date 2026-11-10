@@ -197,7 +197,14 @@ exact-path exception so no sibling route inherits it. Currently:
 
 ## Generated asset and IMAP staging boundary
 
-Ordinary generated media remains available from the loopback-local
+On a selected online server, generated media is private: the legacy static mount
+is not admitted by the server owner boundary. Authenticated download operations
+resolve existing Artifact or ActionCall rows and recheck their project ownership
+at the file route. Caller-authored references cannot adopt another project's
+namespace, arbitrary server paths, symlink aliases, or private staging. See
+[private downloads](resources-and-artifacts.md#private-files-and-explicit-local-downloads).
+
+In standalone mode ordinary generated media remains available from the loopback-local
 `/generated-assets/*` mount without bearer authentication. The reserved
 `imap-transfers` first path component is different: it contains temporary raw
 mail evidence, so the mount rejects that normalized subtree with HTTP 404

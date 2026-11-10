@@ -366,6 +366,13 @@ keeps the references and omits the document body.
 
 ## Response Modes
 
+`artifact.download` and `actionCall.download` are raw-only reads of existing
+project-owned files. They expose authenticated relative download URIs, bytes,
+and checksums. A native MCP caller may explicitly request `destination_path`;
+the bridge materializes and verifies a new local file before returning
+`local_path`. Workflow calls retain active step grants. REST/CLI callers omit
+that host-only argument. See [private files](resources-and-artifacts.md#private-files-and-explicit-local-downloads).
+
 Operation responses are shaped for agent decision-making. The canonical
 operation result is always the raw redacted payload. When an agent requests a
 different shape, StackOS stores raw first for idempotency, then shapes the
@@ -886,6 +893,8 @@ index for common core operations, not a replacement for registry discovery.
 - `actionCall.get`
 - `artifact.create`
 - `artifact.read`
+- `artifact.download`
+- `actionCall.download`
 - `artifact.update`
 - `artifact.archive`
 - `artifact.supersede`

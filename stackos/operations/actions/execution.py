@@ -468,6 +468,9 @@ def _compact_action_output(
         compact_file = {
             "output_mode": "file",
             "path": file.get("path"),
+            "uri": file.get("uri"),
+            "download_operation": file.get("download_operation"),
+            "download_arguments": file.get("download_arguments"),
             "content_type": file.get("content_type"),
             "schema_version": file.get("schema_version"),
             "schema_ref": file.get("schema_ref"),

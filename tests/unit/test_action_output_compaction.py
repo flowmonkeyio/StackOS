@@ -81,6 +81,7 @@ def test_file_backed_action_compact_output_keeps_file_pointer() -> None:
     assert compact == {
         "output_mode": "file",
         "path": "/tmp/generated/action-output.json",
+        "uri": "/generated-assets/action-outputs/project-1/action-output.json",
         "content_type": "application/json",
         "schema_version": "stackos.action-output.v1",
         "schema_ref": "stackos.action-output.v1",
@@ -89,3 +90,20 @@ def test_file_backed_action_compact_output_keeps_file_pointer() -> None:
         "bytes": 1200,
         "sha256": "abc",
     }
+
+
+def test_online_compact_output_keeps_explicit_download_handoff() -> None:
+    pointer = {
+        "uri": "/generated-assets/action-outputs/project-1/output.json",
+        "download_operation": "actionCall.download",
+        "download_arguments": {"project_id": 1, "action_call_id": 7},
+        "sha256": "abc",
+        "bytes": 123,
+    }
+    compact = _compact_action_output(
+        provider_key="fixture",
+        operation="read",
+        output_json={"output_mode": "file", "file": pointer},
+    )
+    assert compact == {"output_mode": "file", **pointer}
+    assert "path" not in compact

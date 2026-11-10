@@ -1518,6 +1518,8 @@ def test_bridge_compacts_communication_profile_without_flat_provider_fields() ->
         "agentRequest.create",
         "artifact.create",
         "artifact.read",
+        "artifact.download",
+        "actionCall.download",
         "artifact.update",
         "artifact.archive",
         "artifact.supersede",
@@ -1600,6 +1602,8 @@ def test_bridge_system_grant_matches_agent_operation_surface() -> None:
     direct_safe_tools = {
         "context.query",
         "artifact.read",
+        "artifact.download",
+        "actionCall.download",
         "executionContext.artifact.read",
         "communication.reply",
         "communication.send",

@@ -19,7 +19,7 @@ from pathlib import Path
 
 from apscheduler.events import EVENT_SCHEDULER_SHUTDOWN
 from apscheduler.triggers.interval import IntervalTrigger
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -33,6 +33,8 @@ from stackos.actions import DEFAULT_ACTION_CONNECTORS, ActionConnectorRegistry, 
 from stackos.actions.durable_dispatcher import DurableActionDispatcher
 from stackos.actions.telegram import TelegramActionConnector
 from stackos.api import register_routers
+from stackos.api.deps import get_session
+from stackos.artifacts.files import FileSource, resolve_file
 from stackos.auth import BearerTokenMiddleware, derive_ui_token, ensure_token
 from stackos.backups import run_due_backup
 from stackos.config import Settings, get_settings
@@ -458,6 +460,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(RequestTimingMiddleware)
 
     register_routers(app)
+
+    @app.get("/api/v1/projects/{project_id}/files/{source}/{file_id}")
+    async def download_project_file(
+        request: Request,
+        project_id: int,
+        source: FileSource,
+        file_id: int,
+        session: Session = Depends(get_session),
+    ) -> FileResponse:
+        stored = resolve_file(
+            session,
+            request.app.state.settings,
+            project_id=project_id,
+            source=source,
+            file_id=file_id,
+        )
+        return FileResponse(
+            stored.path,
+            media_type=stored.content_type,
+            filename=stored.path.name,
+            headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+        )
 
     # Mount the MCP Streamable HTTP transport at /mcp. Bearer-token
     # middleware already covers ``/mcp/*`` via ``PROTECTED_PREFIXES``,

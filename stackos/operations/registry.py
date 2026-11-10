@@ -135,6 +135,7 @@ def build_operation_registry() -> OperationRegistry:
         desktop,
         discovery,
         execution_contexts,
+        files,
         finance,
         guides,
         integrations,
@@ -155,6 +156,8 @@ def build_operation_registry() -> OperationRegistry:
     from stackos.operations import tracker as tracker_operations
 
     registry = OperationRegistry()
+    for spec in files.operation_specs():
+        registry.register(spec)
     for spec in local_runtime.operation_specs():
         registry.register(spec)
     for spec in desktop.operation_specs():

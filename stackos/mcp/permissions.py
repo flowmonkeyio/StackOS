@@ -110,6 +110,8 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "artifact.get",
         "artifact.query",
         "artifact.read",
+        "artifact.download",
+        "actionCall.download",
         "account.list",
         "account.application.status",
         "account.session.status",

@@ -556,6 +556,10 @@ class ArtifactRepository:
                     "artifact project does not match resource record project",
                     data={"project_id": project_id, "resource_record_id": resource_record_id},
                 )
+        from stackos.repositories.project_access import require_project, user_principal
+
+        if user_principal(self._s) is not None:
+            require_project(self._s, project_id)
         row = Artifact(
             project_id=project_id,
             plugin_id=plugin.id if plugin is not None else None,
@@ -710,9 +714,7 @@ class ArtifactRepository:
 
     def get(self, artifact_id: int) -> ArtifactOut:
         self._sync_catalog()
-        row = self._s.get(Artifact, artifact_id)
-        if row is None:
-            raise NotFoundError(f"artifact {artifact_id} not found")
+        row = self._artifact_row(artifact_id)
         plugin = self._s.get(Plugin, row.plugin_id) if row.plugin_id is not None else None
         return self._artifact_out(row, plugin)
 
@@ -731,6 +733,16 @@ class ArtifactRepository:
         self._sync_catalog()
         n = _normalise_limit(limit)
         filters: list[Any] = []
+        from stackos.repositories.project_access import project_owner_filter, user_principal
+
+        if user_principal(self._s) is not None:
+            filters.append(
+                col(Artifact.project_id).in_(
+                    select(Project.id).where(project_owner_filter(self._s))
+                )
+            )
+            if project_id is not None:
+                self._require_project(project_id)
         if project_id is not None:
             filters.append(col(Artifact.project_id) == project_id)
         if resource_record_id is not None:
@@ -809,6 +821,11 @@ class ArtifactRepository:
 
     def _artifact_out(self, row: Artifact, plugin: Plugin | None) -> ArtifactOut:
         assert row.id is not None
+        from stackos.repositories.project_access import user_principal
+
+        metadata = row.metadata_json
+        if user_principal(self._s) is not None and metadata is not None:
+            metadata = {k: v for k, v in metadata.items() if k not in {"path", "absolute_path"}}
         return ArtifactOut(
             id=row.id,
             project_id=row.project_id,
@@ -822,21 +839,28 @@ class ArtifactRepository:
             mime_type=row.mime_type,
             size_bytes=row.size_bytes,
             superseded_by_artifact_id=row.superseded_by_artifact_id,
-            metadata_json=row.metadata_json,
+            metadata_json=metadata,
             provenance_json=row.provenance_json,
             created_at=row.created_at,
             updated_at=row.updated_at,
         )
 
     def _artifact_row(self, artifact_id: int, *, project_id: int | None = None) -> Artifact:
+        from stackos.repositories.project_access import require_project, user_principal
+
+        principal = user_principal(self._s)
         row = self._s.get(Artifact, artifact_id)
         if row is None:
+            if principal is not None:
+                raise NotFoundError("project or child not found")
             raise NotFoundError(f"artifact {artifact_id} not found")
         if project_id is not None and row.project_id != project_id:
             raise NotFoundError(
                 f"artifact {artifact_id} not found in project {project_id}",
                 data={"project_id": project_id, "artifact_id": artifact_id},
             )
+        if principal is not None:
+            require_project(self._s, row.project_id)
         return row
 
     def _set_resource_record(self, row: Artifact, resource_record_id: int | None) -> None:
@@ -890,8 +914,9 @@ class ArtifactRepository:
         return row
 
     def _require_project(self, project_id: int) -> None:
-        if self._s.get(Project, project_id) is None:
-            raise NotFoundError(f"project {project_id} not found")
+        from stackos.repositories.project_access import require_project
+
+        require_project(self._s, project_id)
 
     def _sync_catalog(self) -> None:
         from stackos.repositories.plugins import PluginRepository

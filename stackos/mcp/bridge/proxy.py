@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 from typing import Any, cast
 
+from httpx import HTTPError
+
 from .catalog import (
     _bridge_filter_tool_list_response,
     _bridge_tool_accepts_project_id,
@@ -22,6 +24,7 @@ from .constants import (
     _TOOLBOX_TOOL_NAMES,
 )
 from .diagnostics import bridge_attempt_id, emit_bridge_diagnostic
+from .downloads import DOWNLOAD_TOOLS, materialize_download
 from .protocol import (
     _bridge_as_int,
     _bridge_call_error,
@@ -111,6 +114,15 @@ class AgentBridgeProxy:
             payload: object = json.loads(body)
         except json.JSONDecodeError:
             payload = None
+        download_destination = None
+        download_arguments: dict[str, Any] = {}
+        download_tool = _bridge_tool_call_name(payload) if isinstance(payload, dict) else None
+        if isinstance(payload, dict) and download_tool in DOWNLOAD_TOOLS:
+            download_arguments = dict(_bridge_tool_call_arguments(payload))
+            download_destination = download_arguments.pop("destination_path", None)
+            if download_destination is not None:
+                body = _bridge_replace_tool_call_arguments(payload, arguments=download_arguments)
+                payload = json.loads(body)
         request_meta = _bridge_mcp_request_meta(payload)
         if request_meta is not None:
             self.modern_request_meta = request_meta
@@ -164,6 +176,43 @@ class AgentBridgeProxy:
         )
         if isinstance(payload, dict) and payload.get("method") == "initialize":
             self.protocol_version = _bridge_negotiated_protocol_version(response_text)
+        if (
+            isinstance(payload, dict)
+            and download_destination is not None
+            and download_tool is not None
+        ):
+            from .protocol import _bridge_tool_result
+
+            envelope = json.loads(response_text)
+            result = envelope.get("result", {})
+            if result.get("isError") or "error" in envelope:
+                return response_text
+            try:
+                if not isinstance(download_destination, str):
+                    raise ValueError("destination_path must be an absolute local file path")
+                descriptor = result.get("structuredContent", {})
+                descriptor = materialize_download(
+                    client,
+                    server_url=self.url,
+                    headers=self.headers,
+                    tool_name=download_tool,
+                    arguments=download_arguments,
+                    descriptor=descriptor,
+                    destination_path=download_destination,
+                )
+            except (OSError, ValueError, HTTPError):
+                return _bridge_tool_result(
+                    payload.get("id"),
+                    {
+                        "code": "local_download_failed",
+                        "message": (
+                            "Download was not materialized. Use a new absolute local destination "
+                            "in an existing directory; confirm server access and retry explicitly."
+                        ),
+                    },
+                    is_error=True,
+                )
+            return _bridge_tool_result(payload.get("id"), descriptor, is_error=False)
         return response_text
 
     def handle(self, client: Any, *, payload: object, line: str, request_id: object) -> str:

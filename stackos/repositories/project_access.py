@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any
 from sqlmodel import Session, col
 
 from stackos.db.models import (
+    ActionCall,
+    Artifact,
     ContextSnapshot,
     Experiment,
     Learning,
@@ -64,6 +66,11 @@ def require_project(session: Session, project_id: int | None) -> Project:
 
 
 _CHILD_MODELS: dict[str, type[Any]] = {
+    "artifact_id": Artifact,
+    "replacement_artifact_id": Artifact,
+    "superseded_by_artifact_id": Artifact,
+    "resource_record_id": ResourceRecord,
+    "action_call_id": ActionCall,
     "run_id": Run,
     "parent_run_id": Run,
     "run_plan_id": RunPlan,
@@ -140,6 +147,15 @@ def _identifier(value: Any) -> int:
 # owners add their own authorization before their routes can be admitted.
 _PROJECT_DISCOVERY = {"project.list", "project.portfolio", "project.get", "project.create"}
 _PROJECT_OPERATIONS = {
+    "artifact.get",
+    "artifact.query",
+    "artifact.read",
+    "artifact.download",
+    "artifact.create",
+    "artifact.update",
+    "artifact.archive",
+    "artifact.supersede",
+    "actionCall.download",
     "run.get",
     "run.list",
     "run.children",
