@@ -242,7 +242,7 @@ remains an explicit reviewed current-project action; active snapshots stay froze
 
 The call returns task/job/status refs immediately. Each task has its own memory
 scheduler job (`task-delivery:<project_id>:<task_id>`). Distinct canonical working
-directories can execute concurrently, within the existing long executor's two
+directories can execute concurrently, within the existing long executor's three
 workers shared with other long jobs. Tickets and delivery/review calls within
 one task remain serial until all task work completes or execution stops:
 
