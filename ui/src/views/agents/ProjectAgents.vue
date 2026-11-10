@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, ref, toRef, watch } from 'vue'
+import { computed, inject, onBeforeUnmount, onBeforeUpdate, ref, toRef } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, routerKey } from 'vue-router'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import { resolveAgentHostLogo } from '@/lib/stackos/agentIdentity'
@@ -14,7 +14,15 @@ const folders = ref<string[]>([])
 const folderError = ref('')
 const folderLoading = ref(false)
 const search = ref('')
-const { items, diagnostics, loading, reading, saving, error, message, selected, draft, dirty, refresh, edit, add, close, save } = useProjectAgents(toRef(props, 'projectId'), projectDir)
+const features = ref('null')
+const skills = ref('null')
+const customModel = ref(false)
+function resetEditorOptions(fields: AgentFields | null) {
+  features.value = JSON.stringify(fields?.features ?? null, null, 2)
+  skills.value = JSON.stringify(fields?.skills ?? null, null, 2)
+  customModel.value = false
+}
+const { items, diagnostics, loading, reading, saving, error, message, selected, draft, dirty, refresh, edit, add, close, save } = useProjectAgents(toRef(props, 'projectId'), projectDir, resetEditorOptions)
 const visible = computed(() => items.value.filter(item => `${item.source_ref.native_name} ${item.fields?.description ?? ''} ${item.source_ref.source_path}`.toLowerCase().includes(search.value.toLowerCase())))
 const title = (name: string) => name.replace(/[_-]/g, ' ').replace(/^./, value => value.toUpperCase()).replace(/\bseo\b/gi, 'SEO')
 const pending = ref<(() => void) | null>(null)
@@ -23,12 +31,7 @@ function cancelDiscard() { pending.value = null; cancelNavigation?.(); cancelNav
 function protect(action: () => void) { if (saving.value) return; if (dirty.value) pending.value = action; else action() }
 function discard() { const action = pending.value; pending.value = null; action?.() }
 const editor = ref<HTMLElement | null>(null)
-const features = ref('')
-const skills = ref('')
-watch(draft, value => { features.value = JSON.stringify(value?.features ?? null, null, 2); skills.value = JSON.stringify(value?.skills ?? null, null, 2) }, { immediate: true })
 const optionsError = ref('')
-const customModel = ref(false)
-watch(selected, () => { customModel.value = false })
 const modelOptions = computed(() => [{ value: '', label: 'Default (inherited)' }, ...(draft.value?.model ? [{ value: draft.value.model, label: draft.value.model }] : []), { value: '__custom__', label: 'Custom model…' }])
 function selectModel(value: string | number | null) {
   customModel.value = value === '__custom__'
@@ -64,18 +67,26 @@ const settings: { key: 'model_reasoning_effort' | 'model_reasoning_summary' | 'm
   { key: 'model_verbosity', label: 'Verbosity', values: ['low', 'medium', 'high'] },
 ]
 let generation = 0
-async function loadFolders() {
-  const request = ++generation
-  folderLoading.value = true; folderError.value = ''; projectDir.value = ''; folders.value = []
-  try {
-    const result = await callOperation<{ project_id: number; last_known_root: string | null }[]>('workspace.listBindings', { project_id: props.projectId })
-    if (request !== generation) return
-    folders.value = [...new Set(result.filter(row => row.project_id === props.projectId && row.last_known_root).map(row => row.last_known_root!))]
-    if (folders.value.length === 1) projectDir.value = folders.value[0]!
-  } catch (cause) { if (request === generation) folderError.value = agentError(cause) }
-  finally { if (request === generation) folderLoading.value = false }
+let folderProjectId = props.projectId
+function selectFolder(value: string) {
+  projectDir.value = value
+  void refresh()
 }
-watch(() => props.projectId, loadFolders, { immediate: true })
+async function loadFolders() {
+  const id = props.projectId
+  folderProjectId = id
+  const request = ++generation
+  folderLoading.value = true; folderError.value = ''; selectFolder(''); folders.value = []
+  try {
+    const result = await callOperation<{ project_id: number; last_known_root: string | null }[]>('workspace.listBindings', { project_id: id })
+    if (request !== generation || id !== props.projectId) return
+    folders.value = [...new Set(result.filter(row => row.project_id === id && row.last_known_root).map(row => row.last_known_root!))]
+    if (folders.value.length === 1) selectFolder(folders.value[0]!)
+  } catch (cause) { if (request === generation && id === props.projectId) folderError.value = agentError(cause) }
+  finally { if (request === generation && id === props.projectId) folderLoading.value = false }
+}
+void loadFolders()
+onBeforeUpdate(() => { if (folderProjectId !== props.projectId) void loadFolders() })
 function beforeUnload(event: BeforeUnloadEvent) { if (hasChanges.value) { event.preventDefault(); event.returnValue = '' } }
 window.addEventListener('beforeunload', beforeUnload)
 onBeforeUnmount(() => { ++generation; cancelNavigation?.(); window.removeEventListener('beforeunload', beforeUnload) })
@@ -140,7 +151,7 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
             :model-value="projectDir"
             :options="folders.map(value => ({ value, label: value }))"
             :disabled="saving"
-            @update:model-value="guarded(() => projectDir = String($event ?? ''))"
+            @update:model-value="guarded(() => selectFolder(String($event ?? '')))"
           />
         </UiFormField>
       </div>

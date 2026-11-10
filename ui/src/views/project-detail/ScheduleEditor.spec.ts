@@ -31,6 +31,30 @@ function legacySchedule(execution: object) {
 }
 afterEach(() => { wrapper?.unmount(); vi.resetAllMocks() })
 describe('workflow-specific schedule agents', () => {
+  it('reloads changed source/workflow props and rejects an earlier workflow response without repeated reads on selection', async () => {
+    let resolveOld!: (value: unknown) => void
+    vi.mocked(apiFetch).mockImplementation(async path => path.endsWith('/old') ? new Promise(resolve => { resolveOld = resolve })
+      : { spec: { agent_requirements: [{ role: 'current_role' }], steps: [] } })
+    vi.mocked(callOperation).mockImplementation(async (_operation, args) => ({ project_id: args.project_id, project_dir: args.project_dir, items: [{ source_ref: source, fields: blankAgent() }] }))
+    wrapper = mount(ScheduleAgentSelectors, { props: { projectId: 1, projectDir: '/fixture', templateKey: 'old', hostKey: 'codex', agents: {}, assignments: {} } })
+    await wrapper.setProps({ projectId: 2, projectDir: '/second', templateKey: 'current' }); await flushPromises()
+    resolveOld({ spec: { agent_requirements: [{ role: 'stale_role' }], steps: [] } }); await flushPromises()
+    expect(wrapper.text()).toContain('current_role'); expect(wrapper.text()).not.toContain('stale_role')
+    expect(callOperation).toHaveBeenLastCalledWith('projectAgent.list', expect.objectContaining({ project_id: 2, project_dir: '/second' }))
+    const reads = vi.mocked(callOperation).mock.calls.length
+    await wrapper.setProps({ agents: { current_role: { source_ref: source } } }); await flushPromises()
+    expect(callOperation).toHaveBeenCalledTimes(reads); expect(apiFetch).toHaveBeenCalledTimes(2)
+  })
+  it('clears workflow roles when the selection is cleared while an earlier read is pending', async () => {
+    let resolve!: (value: unknown) => void
+    vi.mocked(apiFetch).mockReturnValueOnce(new Promise(done => { resolve = done }))
+    vi.mocked(callOperation).mockResolvedValue({ project_id: 1, project_dir: '/fixture', items: [] })
+    wrapper = mount(ScheduleAgentSelectors, { props: { projectId: 1, projectDir: '/fixture', templateKey: 'old', hostKey: 'codex', agents: {}, assignments: {} } })
+    await wrapper.setProps({ templateKey: '' }); await flushPromises()
+    resolve({ spec: { agent_requirements: [{ role: 'stale_role' }], steps: [] } }); await flushPromises()
+    expect(wrapper.text()).not.toContain('stale_role')
+    expect(wrapper.text()).not.toContain('Loading workflow roles')
+  })
   it.each([1, 3])('renders %i declared roles and saves explicit native references with no inline prompts', async count => {
     const w = setup(count); await flushPromises()
     const pickers = w.getComponent(ScheduleAgentSelectors).findAllComponents(UiSelect)

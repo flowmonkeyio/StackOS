@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, toRef, watch } from 'vue'
+import { computed, onBeforeUnmount, onBeforeUpdate, ref, toRef } from 'vue'
 import type { components } from '@/api'
 import { UiButton, UiCallout, UiFormField, UiLoadingState, UiSelect } from '@/components/ui'
 import { apiFetch, formatApiError } from '@/lib/client'
@@ -9,7 +9,7 @@ type Execution = components['schemas']['ScheduleExecution']
 type Agent = components['schemas']['TaskDeliveryAgentOverride']
 const props = defineProps<{ projectId: number; projectDir: string; templateKey: string; hostKey: string; agents: NonNullable<Execution['agents']>; assignments: NonNullable<Execution['step_agent_assignments']>; disabled?: boolean }>()
 const emit = defineEmits<{ 'update:agents': [value: NonNullable<Execution['agents']>]; 'update:assignments': [value: NonNullable<Execution['step_agent_assignments']>] }>()
-const { items, loading, error, diagnostics } = useProjectAgents(toRef(props, 'projectId'), toRef(props, 'projectDir'))
+const { items, loading, error, diagnostics, refresh } = useProjectAgents(toRef(props, 'projectId'), toRef(props, 'projectDir'))
 const workflow = ref<components['schemas']['LoadedWorkflowTemplate'] | null>(null)
 const workflowLoading = ref(false)
 const workflowError = ref('')
@@ -19,17 +19,28 @@ const displayRoles = computed(() => [...roles.value, ...Object.keys(props.agents
 const obsoleteSteps = computed(() => Object.keys(props.assignments).filter(id => !workflow.value?.spec?.steps?.some(step => step.id === id)))
 const nativeHost = computed(() => !props.hostKey || props.hostKey === 'codex')
 let generation = 0
-watch(() => [props.projectId, props.projectDir, props.templateKey], async () => {
+const sourceScope = () => JSON.stringify([props.projectId, props.projectDir])
+const workflowScope = () => JSON.stringify([props.projectId, props.projectDir, props.templateKey])
+let loadedSource = sourceScope()
+let loadedWorkflow = ''
+async function loadWorkflow() {
+  const input = { projectId: props.projectId, templateKey: props.templateKey, scope: workflowScope() }
   const request = ++generation
   workflow.value = null; workflowError.value = ''
-  if (!props.templateKey) { workflowLoading.value = false; return }
+  if (!input.templateKey) { workflowLoading.value = false; return }
   workflowLoading.value = true
   try {
-    const result = await apiFetch<components['schemas']['LoadedWorkflowTemplate']>(`/api/v1/projects/${props.projectId}/workflow-templates/${encodeURIComponent(props.templateKey)}`)
-    if (request === generation) workflow.value = result
-  } catch (cause) { if (request === generation) workflowError.value = formatApiError(cause) }
-  finally { if (request === generation) workflowLoading.value = false }
-}, { immediate: true })
+    const result = await apiFetch<components['schemas']['LoadedWorkflowTemplate']>(`/api/v1/projects/${input.projectId}/workflow-templates/${encodeURIComponent(input.templateKey)}`)
+    if (request === generation && input.scope === workflowScope()) workflow.value = result
+  } catch (cause) { if (request === generation && input.scope === workflowScope()) workflowError.value = formatApiError(cause) }
+  finally { if (request === generation && input.scope === workflowScope()) workflowLoading.value = false }
+}
+function updateScope() {
+  if (loadedSource !== sourceScope()) { loadedSource = sourceScope(); void refresh() }
+  if (loadedWorkflow !== workflowScope()) { loadedWorkflow = workflowScope(); void loadWorkflow() }
+}
+updateScope()
+onBeforeUpdate(updateScope)
 onBeforeUnmount(() => { ++generation })
 function value(role: string): string { const agent = props.agents[role]; return agent?.source_ref ? agentIdentity(agent.source_ref) : agent?.instructions ? '__inline__' : '' }
 function options(role: string) {
