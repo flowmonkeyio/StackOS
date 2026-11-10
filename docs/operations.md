@@ -53,6 +53,29 @@ status/list responses contain identity, expiry and authorization state, with
 no credential. A computer bearer may only inspect/revoke that same connection.
 Browser setup retains exact Origin and session CSRF enforcement.
 
+Status/list also expose `connection_state` (`connected`, `disconnected`, or
+`needs_attention`), `last_seen_at`, the retained `invocation_id` and
+`last_known_state`, `needed_action`, and `unresolved_tasks`. Authorization and
+transport presence are distinct. A poll/report within 30 seconds establishes
+presence; reads do not. An accepted worker polls only its exact invocation while
+native work runs. Lost presence retains the last-known work without killing it
+or allowing a duplicate. Temporary transport errors retain the same worker and
+pending report; identity, authorization and unknown-outcome errors stop it.
+
+After server restart, connected queued/running controllers become stopped with
+`needs_attention`; ticket outcomes, sessions, candidates and repair counts stay
+intact. Polling cannot clear that fence. After checking the native outcome and
+confirming no work remains active, the verified owner can call the REST-only,
+browser-safe, raw-only `localRuntime.reconcile` with project/connection IDs,
+`task_key`, the exact `handoff_id` and nullable `invocation_id` from
+`unresolved_tasks`, `confirmed_stopped=true` and a non-secret `outcome_note`.
+The operation rejects active controllers, unretired retained invocations and
+stale identities. It records confirmation in existing task delivery metadata
+and clears only admission uncertainty. It never accepts a result, reopens a
+failed ticket, starts work or sends a signal. A later handoff still requires
+normal ticket/workflow readiness and current computer presence. Runtime bearers
+cannot reconcile. There is no automatic process reattachment or reconstruction.
+
 Select the computer's private runtime environment file, then use the existing CLI:
 
 ```bash

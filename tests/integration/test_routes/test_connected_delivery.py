@@ -17,17 +17,21 @@ from stackos.repositories.tracker import TrackerRepository
 pytest_plugins = ["tests.integration.test_routes.test_local_runtime_exchange"]
 
 
-def test_finished_known_report_waits_for_controller_release(connected):
+@pytest.mark.parametrize("retired", [False, True])
+def test_finished_known_report_waits_for_controller_release(connected, retired):
     from tests.integration.test_routes.test_local_runtime_exchange import offer, terminal
 
     exchange, connection, invocation, _, _ = offer(connected)
     exchange.poll(connection, None)
     exchange.report(connection, InvocationReport.model_validate(terminal(invocation)))
     invocation.finished = True
+    if retired:
+        invocation.retired.set()
     observed = exchange.poll(connection, invocation.invocation_id)
     assert observed["state"] == "completed"
     assert observed["needs_attention"] is False
     assert "launch" not in observed
+    assert exchange.snapshot(connection)["needs_attention"] is False
     exchange.release(connection, invocation)
 
 
@@ -157,7 +161,7 @@ def _run_connected_scenario(connected, monkeypatch, mode):
     if unknown:
         assert start(client, args).status_code == 409
         client.app.state.operation_services["local_invocations"] = InvocationExchange()
-        assert poll(client, identity, computer).json()["state"] == "idle"
+        assert poll(client, identity, computer).json()["state"] == "unknown"
         assert start(client, args).status_code == 409
     return client, identity, computer, args, jobs
 
@@ -188,7 +192,9 @@ def test_connection_admission_honors_prior_task_outcome_after_transport_restart(
 
     # A fresh transport and authenticated poll cannot erase durable uncertainty.
     client.app.state.operation_services["local_invocations"] = InvocationExchange()
-    assert poll(client, identity, computer).json()["state"] == "idle"
+    assert poll(client, identity, computer).json()["state"] == (
+        "unknown" if prior_mode == "unknown" else "idle"
+    )
     other_args = args | {"task_key": "other"}
     queued_before = len(jobs)
     response = start(client, other_args)

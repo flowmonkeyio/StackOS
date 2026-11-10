@@ -11,7 +11,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 244
+    assert len(names) == 245
     assert not names.intersection(
         {"actionCall.aggregate", "actionCall.aggregateAll", "actionCall.queryAll"}
     )
@@ -545,6 +545,7 @@ def test_operation_registry_surface_filter() -> None:
         "localRuntime.list",
         "localRuntime.status",
         "localRuntime.revoke",
+        "localRuntime.reconcile",
         "localRuntime.poll",
         "localRuntime.report",
         "desktop.availability",

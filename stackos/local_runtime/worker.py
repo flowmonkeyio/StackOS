@@ -5,8 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
-from threading import Lock
+from threading import Event, Lock, Thread
 from typing import Any
+
+import httpx
 
 from stackos.host_mcp.result import AgentRunResult
 from stackos.local_runtime.connection import (
@@ -63,7 +65,20 @@ class OutboundWorker:
             )
             try:
                 root = self.store.require_binding(binding)
-                result = self.runner(command.model_dump(), root, binding.model_copy(deep=True))
+                # Presence for this accepted invocation cannot consume another
+                # launch, cancel a process, or decide its outcome.
+                stop_presence = Event()
+                presence = Thread(
+                    target=self._presence,
+                    args=(binding, identity, invocation_id, stop_presence),
+                    daemon=True,
+                    name="stackos-invocation-presence",
+                )
+                presence.start()
+                try:
+                    result = self.runner(command.model_dump(), root, binding.model_copy(deep=True))
+                finally:
+                    stop_presence.set()
                 self._report = InvocationReport(
                     invocation_id=invocation_id,
                     attempt=scope.attempt,
@@ -76,6 +91,27 @@ class OutboundWorker:
                 self._send_report(binding, identity)
                 raise
             return self._send_report(binding, identity)
+
+    def _presence(self, binding, identity, invocation_id, stop: Event) -> None:
+        while not stop.wait(5):
+            try:
+                response = _call(
+                    self.client,
+                    binding.server_url,
+                    "poll",
+                    identity | {"invocation_id": invocation_id},
+                    binding.credential,
+                )
+                if (
+                    response.get("needs_attention")
+                    or response.get("invocation_id") != invocation_id
+                ):
+                    return  # Keep native work alone; the result still needs reconciliation.
+            except httpx.HTTPError:
+                # Presence loss changes server observation, never native lifetime.
+                continue
+            except (ValueError, OSError):
+                return
 
     def _send_report(self, binding, identity) -> dict:
         assert self._report is not None

@@ -99,6 +99,10 @@ browsing, arbitrary tool calls or filesystem access. Only the existing server
 controller can offer a scoped host invocation; the computer cannot enqueue work
 or advance tracker/run lifecycle. Poll/report require the computer bearer even
 when a verified browser session belongs to the same user.
+Only that verified owner can use `localRuntime.reconcile` to confirm a stopped,
+exact task/handoff/invocation after inspecting the native outcome. The computer
+credential cannot clear uncertainty or accept its own result. Confirmation
+preserves ticket evidence and does not execute or kill native work.
 
 The local connection module stores the endpoint, identity and credential in a
 user-owned `0600` file under a private `0700` directory. The signed-in owner must

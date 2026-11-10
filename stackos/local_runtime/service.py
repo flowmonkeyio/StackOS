@@ -44,6 +44,11 @@ def consume_invocations(settings: Settings, stop: Event) -> None:
                     ):
                         raise ValueError("computer binding changed; explicit attention required")
                     worker.exchange_once()
+            except httpx.TransportError:
+                # Retain this worker and its exact pending report across a
+                # temporary network loss. A consumed launch is never reissued;
+                # a lost launch response becomes unknown on the next poll.
+                pass
             except (ValueError, OSError, httpx.HTTPError):
                 # No automatic reissue, reconnect or process signal. The existing
                 # attempt/transport retains the uncertain outcome for its owner.

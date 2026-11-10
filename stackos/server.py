@@ -297,6 +297,10 @@ def _build_lifespan(
         }
 
         with Session(engine) as session:
+            if settings.process_role == "server":
+                from stackos.task_delivery import mark_interrupted_connected_deliveries
+
+                mark_interrupted_connected_deliveries(session)
             reconciled_actions = ActionRepository(session).reconcile_running_calls()
             if reconciled_actions:
                 log.info(

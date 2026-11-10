@@ -115,6 +115,61 @@ class InvocationExchange:
         self._calls: dict[str, InvocationHandoff] = {}
         self._lock = RLock()
         self._seen: dict[str, tuple[tuple, float]] = {}
+        self._seen_at: dict[str, float] = {}
+
+    def snapshot(self, connection: LocalRuntimeConnection) -> dict:
+        """Observe last-known work without changing its lifetime or liveness."""
+        with self._lock:
+            seen = self._seen.get(connection.id)
+            connected = bool(
+                seen
+                and seen[0] == _identity(connection)
+                and time.monotonic() - seen[1] <= 30
+                and connection.revoked_at is None
+                and connection.expires_at > time.time()
+            )
+            handoff = self._calls.get(connection.id)
+            if handoff is not None and handoff.identity != _identity(connection):
+                handoff = None
+            state = handoff.state if handoff else None
+            attention = bool(
+                handoff
+                and (
+                    state == "unknown"
+                    or handoff.call.cancelled.is_set()
+                    or (
+                        (handoff.call.retired.is_set() or handoff.call.finished)
+                        and state != "completed"
+                    )
+                )
+            )
+            return {
+                "connection_state": "needs_attention"
+                if attention
+                else "connected"
+                if connected
+                else "disconnected",
+                "needs_attention": attention,
+                "last_seen_at": self._seen_at.get(connection.id) if seen else None,
+                "invocation_id": handoff.call.invocation_id if handoff else None,
+                "last_known_state": state,
+            }
+
+    def reconcile(self, connection: LocalRuntimeConnection, invocation_id: str | None) -> None:
+        """Forget only a retired handoff after explicit owner confirmation."""
+        with self._lock:
+            handoff = self._calls.get(connection.id)
+            if handoff is None:
+                return
+            if (
+                handoff.identity != _identity(connection)
+                or handoff.call.invocation_id != invocation_id
+                or not handoff.call.finished
+            ):
+                raise ConflictError(
+                    "Invocation still owned or identity changed; wait for retirement"
+                )
+            del self._calls[connection.id]
 
     def require_available(self, connection: LocalRuntimeConnection) -> None:
         with self._lock:
@@ -167,6 +222,7 @@ class InvocationExchange:
     def poll(self, connection: LocalRuntimeConnection, invocation_id: str | None) -> dict:
         with self._lock:
             self._seen[connection.id] = (_identity(connection), time.monotonic())
+            self._seen_at[connection.id] = time.time()
             handoff = self._calls.get(connection.id)
             if handoff is None or handoff.identity != _identity(connection):
                 return {
@@ -176,17 +232,16 @@ class InvocationExchange:
             call = handoff.call
             if invocation_id is not None and invocation_id != call.invocation_id:
                 return {"state": "unknown", "needs_attention": True}
-            if (
-                call.cancelled.is_set()
-                or call.retired.is_set()
-                or (call.finished and handoff.state != "completed")
+            if call.cancelled.is_set() or (
+                (call.retired.is_set() or call.finished) and handoff.state != "completed"
             ):
                 return {"state": "unknown", "needs_attention": True}
             response = {
                 "invocation_id": call.invocation_id,
                 "scope": asdict(call.scope),
                 "state": handoff.state,
-                "needs_attention": handoff.state in {"dispatched", "unknown"},
+                "needs_attention": handoff.state == "unknown"
+                or (handoff.state == "dispatched" and invocation_id is None),
             }
             if handoff.state == "pending":
                 handoff.state = "dispatched"
@@ -213,6 +268,8 @@ class InvocationExchange:
                     raise ConflictError(
                         "terminal invocation report conflicts with accepted outcome"
                     )
+                self._seen[connection.id] = (_identity(connection), time.monotonic())
+                self._seen_at[connection.id] = time.time()
                 return {
                     "invocation_id": report.invocation_id,
                     "state": handoff.state,
@@ -236,6 +293,7 @@ class InvocationExchange:
                 raise ConflictError("native session identity mismatch; reconciliation required")
             handoff.report = report.model_copy(deep=True)
             self._seen[connection.id] = (_identity(connection), time.monotonic())
+            self._seen_at[connection.id] = time.time()
             handoff.state = report.state
             handoff.ready.set()
             return {

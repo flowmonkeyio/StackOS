@@ -177,6 +177,40 @@ def test_runtime_consumer_uses_local_routes_and_stops_on_uncertainty(local, monk
     assert calls == ["poll"]  # No second poll, launch, signal or retry.
 
 
+def test_runtime_consumer_retains_worker_on_temporary_transport_loss(local, monkeypatch):
+    from threading import Event
+    from types import SimpleNamespace
+
+    import httpx
+
+    from stackos.local_runtime.service import consume_invocations
+
+    _, store, _ = local
+    selected = SimpleNamespace(
+        state_dir=store.path.parent,
+        environment_id="native-test",
+        server_url="http://127.0.0.1:19810",
+        native_mcp_config_ref=None,
+    )
+    stop = Event()
+    instances = []
+
+    class Consumer:
+        def __init__(self, *args):
+            self.calls = 0
+            instances.append(self)
+
+        def exchange_once(self):
+            self.calls += 1
+            if self.calls == 1:
+                raise httpx.ReadError("temporary loss with retained report")
+            stop.set()
+
+    monkeypatch.setattr("stackos.local_runtime.service.OutboundWorker", Consumer)
+    consume_invocations(selected, stop)
+    assert len(instances) == 1 and instances[0].calls == 2
+
+
 @pytest.mark.parametrize("returned_id", [None, "", "replacement-session"])
 def test_unknown_or_replacement_session_cannot_be_a_success(local, monkeypatch, returned_id):
     root, store, _ = local

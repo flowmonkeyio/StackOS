@@ -468,6 +468,98 @@ def _same_directory(left: Path, right: Path) -> bool:
     return left == right or (left.exists() and right.exists() and left.samefile(right))
 
 
+def connection_execution_state(session: Session, connection, exchange) -> dict:
+    """Join transport observations to existing task uncertainty, never replay it."""
+    observed = exchange.snapshot(connection)
+    unresolved = []
+    for task in session.exec(
+        select(TrackerTask).where(TrackerTask.project_id == connection.project_id)
+    ).all():
+        state = (task.metadata_json or {}).get("delivery", {})
+        if state.get("connection_id") != connection.id:
+            continue
+        invocation_id = state.get("uncertain_invocation")
+        if (
+            state.get("needs_attention")
+            or (invocation_id and invocation_id != observed["invocation_id"])
+            or (invocation_id and observed["needs_attention"])
+        ):
+            unresolved.append(
+                {
+                    "task_key": task.key,
+                    "handoff_id": state.get("handoff_id"),
+                    "invocation_id": invocation_id,
+                }
+            )
+    if unresolved:
+        observed.update(connection_state="needs_attention", needs_attention=True)
+        if observed["invocation_id"] is None:
+            observed["last_known_state"] = "unknown"
+    observed["unresolved_tasks"] = unresolved
+    observed["needed_action"] = (
+        "Confirm the native outcome and that owned work has stopped; reconcile explicitly."
+        if observed["needs_attention"]
+        else "Restore the connection and wait for the retained result; do not relaunch."
+        if observed["connection_state"] == "disconnected"
+        else None
+    )
+    return observed
+
+
+def mark_interrupted_connected_deliveries(session: Session) -> int:
+    """Startup fences lost controllers; it does not infer or change agent outcomes."""
+    repo = TrackerRepository(session)
+    changed = 0
+    for task in session.exec(select(TrackerTask)).all():
+        state = (task.metadata_json or {}).get("delivery", {})
+        if state.get("connection_id") and state.get("status") in {"queued", "running"}:
+            _update_delivery(
+                repo,
+                task.project_id,
+                task.key,
+                status="stopped",
+                needs_attention=True,
+                reason="Server restarted; confirm native outcome before explicit reconciliation",
+            )
+            changed += 1
+    return changed
+
+
+def reconcile_connected_delivery(
+    session: Session, connection, exchange, *, task_key, handoff_id, invocation_id, outcome_note
+) -> dict:
+    """Owner-attested release of an admission fence, never ticket acceptance."""
+    with managed_launch_lock:
+        repo = TrackerRepository(session)
+        task = _task(repo, connection.project_id, task_key)
+        state = (task.metadata_json or {}).get("delivery", {})
+        if (
+            state.get("connection_id") != connection.id
+            or state.get("handoff_id") != handoff_id
+            or state.get("uncertain_invocation") != invocation_id
+            or state.get("status") != "stopped"
+            or not (state.get("needs_attention") or invocation_id)
+        ):
+            raise ConflictError("Task outcome/identity changed or controller still active")
+        exchange.reconcile(connection, invocation_id)
+        _update_delivery(
+            repo,
+            connection.project_id,
+            task_key,
+            uncertain_invocation=None,
+            needs_attention=False,
+            reconciliation={
+                "invocation_id": invocation_id,
+                "handoff_id": handoff_id,
+                "outcome_note": outcome_note,
+                "confirmed_stopped": True,
+                "confirmed_at": datetime.now(UTC).isoformat(),
+                "confirmed_by": connection.owner_user_id,
+            },
+        )
+        return {"task_key": task_key, "connection_id": connection.id, "reconciled": True}
+
+
 def _retain_directory(state: dict[str, Any], directory: Path) -> None:
     previous = state.get("project_dir")
     if previous and not _same_directory(Path(previous).expanduser().resolve(), directory):
@@ -505,6 +597,7 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
                 if other_state.get("connection_id") == remote and (
                     other_state.get("status") in {"queued", "running"}
                     or other_state.get("uncertain_invocation")
+                    or other_state.get("needs_attention")
                 ):
                     raise ConflictError(
                         "Computer has active or uncertain work; reconcile before admission"
@@ -927,7 +1020,7 @@ def start_delivery(
     if directory is not None and not directory.is_dir():
         raise ValidationError("project_dir must be an existing working directory")
     previous = (task.metadata_json or {}).get("delivery", {})
-    if previous.get("uncertain_invocation"):
+    if previous.get("uncertain_invocation") or previous.get("needs_attention"):
         raise ConflictError("Invocation outcome needs manual reconciliation before admission")
     if connection_id:
         from stackos.repositories.workspaces import LocalRuntimeConnectionRepository
