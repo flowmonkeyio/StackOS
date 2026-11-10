@@ -64,4 +64,27 @@ describe('shared source details', () => {
     expect(own.get('[aria-label="Saved content"]').text()).toContain('Recorded constructor value')
     expect(w.get('details').text()).toContain('Recorded content')
   })
+  it('shows overlapping schema fields once and omits emptied groups', () => {
+    const source = toLibrarySource('resource_record', {
+      id: 3, project_id: 2, resource_id: 8, resource_key: 'engineering-decisions', plugin_slug: 'engineering',
+      data_json: { decision: 'Use the shared source', rationale: 'One owner', status: 'accepted', scope: 'Project', evidence_refs: ['receipt-1'] },
+    } as never)
+    const resource = { id: 8, key: 'engineering-decisions', plugin_slug: 'engineering', ui_schema_json: {
+      summary_fields: ['decision', 'rationale'],
+      table_columns: ['status', 'scope', 'decision'],
+      detail_sections: [
+        { title: 'Decision', fields: ['status', 'decision', 'rationale'] },
+        { title: 'Traceability', fields: ['scope', 'evidence_refs'] },
+        { title: 'Repeated evidence', fields: ['evidence_refs'] },
+      ],
+    } } as never
+    const w = mount(SourceDetailRenderer, { props: { source, resource } })
+    const content = w.get('[aria-label="Saved content"]')
+    expect(content.findAll('dt').map(field => field.text())).toEqual([
+      'Decision', 'Rationale', 'Status', 'Scope', 'Evidence refs',
+    ])
+    expect(content.findAll('h3').map(heading => heading.text())).toEqual(['Summary', 'Facts', 'Traceability'])
+    expect(w.get('details').text()).toContain('receipt-1')
+  })
+
 })

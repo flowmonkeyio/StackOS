@@ -52,7 +52,8 @@ describe('shared Library sources', () => {
     const resources = useStackOsResourcesStore()
     const data = useProjectDataStore()
     await resources.refresh(1)
-    await data.refresh(1)
+    await Promise.all((['decisions', 'learnings', 'experiments'] as const)
+      .map((kind) => data.refreshSource(1, kind)))
     // Both consumers read the canonical artifact owner; an already loaded scope is reused.
     expect(client.apiFetch.mock.calls.filter(([url]) => url.includes('/artifacts?'))).toHaveLength(1)
     await Promise.all([
@@ -126,14 +127,15 @@ describe('shared Library sources', () => {
     expect(resources.records.map((r) => r.id)).toEqual([3, 4])
   })
 
-  it('refreshes an existing aggregate, retains compatible rows while loading, and never exposes another project artifact scope', async () => {
+  it('retains compatible shared artifacts while loading and never exposes another project artifact scope', async () => {
     const resources = useStackOsResourcesStore()
     const data = useProjectDataStore()
     client.apiFetch.mockResolvedValue(page([{ id: 1 }]))
-    await data.refresh(1)
+    await data.refreshSource(1, 'decisions')
+    await resources.refreshArtifacts(1)
     const slow = deferred<unknown>()
     client.apiFetch.mockImplementation((url: string) => url.includes('/artifacts?') ? slow.promise : Promise.resolve(page([])))
-    const refresh = data.refresh(1)
+    const refresh = resources.refreshArtifacts(1)
     expect(data.artifacts.map((r) => r.id)).toEqual([1])
     slow.resolve(page([{ id: 2 }]))
     await refresh
@@ -151,7 +153,8 @@ describe('shared Library sources', () => {
     })
     const data = useProjectDataStore()
     const resources = useStackOsResourcesStore()
-    await data.refresh(1)
+    await data.refreshSource(1, 'decisions')
+    await resources.refreshArtifacts(1)
     expect(data.error).toContain('Project 1 artifact unavailable')
     await data.refreshSource(2, 'decisions')
     expect(data.currentProjectId).toBe(2)

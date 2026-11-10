@@ -22,7 +22,7 @@ describe('project-scoped stores', () => {
     clientMocks.apiFetch.mockReset()
   })
 
-  it('keeps newer project data when an older aggregate request finishes last', async () => {
+  it('keeps newer project data when an older source request finishes last', async () => {
     const projectOne = deferred<void>()
     clientMocks.apiFetch.mockImplementation(async (url: string) => {
       const projectId = url.includes('/projects/1/') ? 1 : 2
@@ -31,13 +31,13 @@ describe('project-scoped stores', () => {
     })
     const store = useProjectDataStore()
 
-    const older = store.refresh(1)
-    await store.refresh(2)
+    const older = store.refreshSource(1, 'decisions')
+    await store.refreshSource(2, 'decisions')
     projectOne.resolve()
     await older
 
     expect(store.currentProjectId).toBe(2)
-    expect(store.timeline.map((row) => row.id)).toEqual([2])
+    expect(store.decisions.map((row) => row.id)).toEqual([2])
     expect(store.error).toBeNull()
   })
 

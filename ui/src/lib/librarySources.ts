@@ -63,15 +63,20 @@ export function sourceFactGroups(source: LibrarySource, resource?: SchemaResourc
     const schema = resource?.id === source.payload.resource_id && resource.plugin_slug === source.plugin_slug && resource.key === source.resource_key
       ? object(resource.ui_schema_json) : {}
     const groups: UiFactGroup[] = []
-    const summary = fields(schema.summary_fields)
-    const columns = fields(schema.table_columns)
-    if (summary.length) groups.push(factGroup('Summary', data, summary, true))
-    if (columns.length) groups.push(factGroup('Facts', data, columns))
+    const shown = new Set<string>()
+    // First placement wins: summary, facts, then additional detail fields.
+    function addGroup(title: string, hints: unknown, wide = false) {
+      const keys = fields(hints).filter(key => !shown.has(key))
+      if (!keys.length) return
+      keys.forEach(key => shown.add(key))
+      groups.push(factGroup(title, data, keys, wide))
+    }
+    addGroup('Summary', schema.summary_fields, true)
+    addGroup('Facts', schema.table_columns)
     if (Array.isArray(schema.detail_sections)) {
       for (const section of schema.detail_sections) {
         const hint = object(section)
-        const keys = fields(hint.fields)
-        if (typeof hint.title === 'string' && keys.length) groups.push(factGroup(String(sanitizeForDisplay(hint.title)), data, keys))
+        if (typeof hint.title === 'string') addGroup(String(sanitizeForDisplay(hint.title)), hint.fields)
       }
     }
     return groups
