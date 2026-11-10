@@ -325,9 +325,14 @@ agent/MCP path.
 
 ## Design-system showcase
 
-Work Board card edits use `useTaskBoardEdits` for one pending bounded priority or
-same-column neighbor intent, optimistic presentation, rollback and canonical
-index refresh. `TrackerBoardPanel` supplies a six-dot draggable grip with the
+Work Board card edits use `useTaskBoardEdits` for bounded priority or
+same-column neighbor intents, with one pending edit per conflicting column,
+optimistic presentation, confirmed-rejection rollback and canonical index
+reconciliation. Save errors, uncertain outcomes and saved-but-stale reads stay
+distinct. `TaskTrackerView` shares one project-index read and one trailing latest
+read across event bursts and explicit refreshes; background reads retain the
+board and leave focused loading with its existing readers. `TrackerBoardPanel`
+scopes disabled edit controls to pending columns and supplies a six-dot draggable grip with the
 same keyboard Move up/down commands, invalidates gestures when the filter or
 task snapshot changes, and keeps the body open target separate from header
 controls. `TaskPriorityBadge` shares P0 danger / P1 warning / P2 info / P3 neutral

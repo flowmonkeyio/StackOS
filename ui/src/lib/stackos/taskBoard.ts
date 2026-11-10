@@ -18,10 +18,10 @@ export type TaskReorderIntent = Omit<SchemaTrackerReorderTaskInput,
   expected_status: `${SchemaTrackerReorderTaskInput['expected_status']}`
 }
 
-export function saveTaskPriority(intent: TaskPriorityIntent): Promise<SchemaWriteEnvelopeTrackerTaskBoardOut> {
-  return callOperation('tracker.updateTaskPriority', intent)
+export function saveTaskPriority(intent: TaskPriorityIntent, signal?: AbortSignal): Promise<SchemaWriteEnvelopeTrackerTaskBoardOut> {
+  return callOperation('tracker.updateTaskPriority', intent, signal ? { signal } : undefined)
 }
 
-export function reorderTask(intent: TaskReorderIntent): Promise<SchemaWriteEnvelopeTrackerTaskBoardOut> {
-  return callOperation('tracker.reorderTask', intent)
+export function reorderTask(intent: TaskReorderIntent, signal?: AbortSignal): Promise<SchemaWriteEnvelopeTrackerTaskBoardOut> {
+  return callOperation('tracker.reorderTask', intent, signal ? { signal } : undefined)
 }

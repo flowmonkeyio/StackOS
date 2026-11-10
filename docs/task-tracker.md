@@ -1239,6 +1239,21 @@ or adding a polling path. UI callers retain the immutable intent for transport
 retry, reconcile after conflicts, and check project ownership before applying a
 late response. The card and navigation consumers own that interaction state.
 
+Work's existing project-index loader shares one in-flight read and one queued
+latest read across live events, manual refresh and post-save reconciliation.
+Background reads retain the current board. Focused graph/detail readers keep
+their own loading state and do not hold that queue open. Board writes and index
+reads have 15-second abort deadlines; scope exit aborts them and ignores late
+outcomes. Pending edits block only conflicting edits in the same status column,
+leaving other columns, inspection, filters and navigation usable.
+
+A confirmed rejected save removes its optimistic edit and reads current truth.
+A successful save followed by a failed read retains the optimistic order and
+reports that the task saved. A timeout, lost response or server error leaves the
+save outcome uncertain: reconcile by reading, without automatically repeating
+the mutation. Refresh retries only the read and clears settled optimistic state
+after a successful current-project index response.
+
 ## Status Events
 
 Task inspection uses `tracker.taskActivity` and `tracker.taskResults` through

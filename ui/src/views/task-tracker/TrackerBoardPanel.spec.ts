@@ -13,6 +13,21 @@ const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
 const automaticMetadata = { delivery: { status: 'running', job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent } }
 
 describe('Work board presentation', () => {
+  it('limits pending edit controls to the conflicting column and keeps task inspection usable', async () => {
+    const records = [task('in-progress'), { ...task('complete'), key: 'other', id: 2 }]
+    const rows = buildTaskProgressRows(records, new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
+    const wrapper = mount(TrackerBoardPanel, { props: { rows, editPending: true, editPendingColumns: ['in-progress'] } })
+    const busy = wrapper.get('[aria-label="In Progress"]')
+    const other = wrapper.get('[aria-label="Complete"]')
+    expect(busy.get('.tracker-board__grip').attributes('disabled')).toBeDefined()
+    expect(other.get('.tracker-board__grip').attributes('disabled')).toBeUndefined()
+    expect(other.get('.tracker-board__priority').attributes('disabled')).toBeUndefined()
+    await busy.get('.tracker-board__open').trigger('click')
+    expect(wrapper.emitted('openTask')).toEqual([['board-task']])
+    await wrapper.setProps({ editPending: false, editPendingColumns: [] })
+    expect(busy.get('.tracker-board__grip').attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
   it('respects restored opener focus without forcing a new scroll', () => {
     const rows = buildTaskProgressRows([task('in-progress')], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
     const wrapper = mount(TrackerBoardPanel, { attachTo: document.body, props: { rows } })

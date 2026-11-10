@@ -16,7 +16,7 @@ import type { BoardMove } from './useTaskBoardEdits'
 
 const props = defineProps<{
   rows: TaskProgressRow[]; selectedTaskKey?: string; hideEmptyColumns?: boolean
-  editPending?: boolean; editError?: string | null; interactionKey?: string
+  editPending?: boolean; editPendingColumns?: string[]; editError?: string | null; interactionKey?: string
 }>()
 const emit = defineEmits<{
   (e: 'openTask', key: string): void; (e: 'refresh'): void
@@ -40,7 +40,10 @@ function blocker(row: TaskProgressRow): string | null {
 const gesture = ref<{ key: string; status: TrackerStatus; fingerprint: string; context?: string } | null>(null)
 const insertion = ref<{ anchorKey: string; placement: 'before' | 'after' } | null>(null)
 const fingerprint = computed(() => JSON.stringify(props.rows.map(row => [row.task.project_id, row.key, row.task.status, row.task.updated_at])))
-const dragging = computed(() => !props.editPending && gesture.value?.fingerprint === fingerprint.value
+function columnPending(status: string): boolean {
+  return props.editPendingColumns?.includes(status) ?? Boolean(props.editPending)
+}
+const dragging = computed(() => gesture.value && !columnPending(gesture.value.status) && gesture.value?.fingerprint === fingerprint.value
   && gesture.value?.context === props.interactionKey ? gesture.value : null)
 
 function cancelDrag(): void { gesture.value = null; insertion.value = null }
@@ -49,7 +52,7 @@ onMounted(() => document.addEventListener('keydown', onEscape))
 onBeforeUnmount(() => document.removeEventListener('keydown', onEscape))
 
 function startDrag(event: DragEvent, row: TaskProgressRow): void {
-  if (props.editPending || !event.dataTransfer) { event.preventDefault(); return }
+  if (columnPending(row.task.status) || !event.dataTransfer) { event.preventDefault(); return }
   gesture.value = { key: row.key, status: row.task.status, fingerprint: fingerprint.value, context: props.interactionKey }
   insertion.value = null
   event.dataTransfer.effectAllowed = 'move'
@@ -77,12 +80,12 @@ function moveItems(row: TaskProgressRow) {
   const column = props.rows.filter(item => item.task.status === row.task.status)
   const index = column.findIndex(item => item.key === row.key)
   return [
-    { key: 'up', label: 'Move up', disabled: props.editPending || index === 0, onSelect: () => emit('move', { taskKey: row.key, anchorKey: column[index - 1]!.key, placement: 'before' }) },
-    { key: 'down', label: 'Move down', disabled: props.editPending || index === column.length - 1, onSelect: () => emit('move', { taskKey: row.key, anchorKey: column[index + 1]!.key, placement: 'after' }) },
+    { key: 'up', label: 'Move up', disabled: columnPending(row.task.status) || index === 0, onSelect: () => emit('move', { taskKey: row.key, anchorKey: column[index - 1]!.key, placement: 'before' }) },
+    { key: 'down', label: 'Move down', disabled: columnPending(row.task.status) || index === column.length - 1, onSelect: () => emit('move', { taskKey: row.key, anchorKey: column[index + 1]!.key, placement: 'after' }) },
   ]
 }
 function priorityItems(row: TaskProgressRow) {
-  return taskPriorities.map(priority => ({ key: priority, label: priority.toUpperCase(), disabled: props.editPending || row.task.priority_key === priority,
+  return taskPriorities.map(priority => ({ key: priority, label: priority.toUpperCase(), disabled: columnPending(row.task.status) || row.task.priority_key === priority,
     onSelect: () => emit('priority', { taskKey: row.key, priority }) }))
 }
 </script>
@@ -137,7 +140,7 @@ function priorityItems(row: TaskProgressRow) {
             class="tracker-board__card"
             :class="{ 'tracker-board__card--selected': selectedTaskKey === row.key, 'tracker-board__card--blocked': blocker(row) }"
             :title="row.task.active_execution ? activeExecutionTitle(row.task.active_execution) : undefined"
-            :aria-busy="editPending || undefined"
+            :aria-busy="columnPending(row.task.status) || undefined"
           >
             <span class="tracker-board__identity tracker-board__identity--header">
               <UiDropdownMenu
@@ -149,8 +152,8 @@ function priorityItems(row: TaskProgressRow) {
                     type="button"
                     class="tracker-board__grip focus-ring"
                     data-dropdown-trigger
-                    :draggable="!editPending"
-                    :disabled="editPending"
+                    :draggable="!columnPending(row.task.status)"
+                    :disabled="columnPending(row.task.status)"
                     :aria-expanded="open"
                     aria-haspopup="menu"
                     :aria-label="`Move task #${row.id}`"
@@ -177,7 +180,7 @@ function priorityItems(row: TaskProgressRow) {
                     type="button"
                     class="tracker-board__priority focus-ring"
                     data-dropdown-trigger
-                    :disabled="editPending"
+                    :disabled="columnPending(row.task.status)"
                     :aria-expanded="open"
                     aria-haspopup="menu"
                     :aria-label="`Change priority for task #${row.id}: ${row.task.priority_key.toUpperCase()}`"
