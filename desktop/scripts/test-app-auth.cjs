@@ -110,5 +110,72 @@ async function checkRuntimeStartup() {
     delete process.env.STACKOS_ENV_FILE;
   }
 }
-checkAdmission().then(checkRuntimeStartup)
+async function checkConnectedAvailabilityStartup() {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const vm = require("node:vm");
+  const { EventEmitter } = require("node:events");
+  const source = fs.readFileSync(path.join(__dirname, "../src/main.js"), "utf8");
+  const { createAvailabilityController } = require("../src/availability");
+
+  function startup({ serverReady = true, runtime = { ok: true } } = {}) {
+    const events = [];
+    const app = new EventEmitter();
+    const powerMonitor = new EventEmitter();
+    app.whenReady = () => ({ then() {} }); // Exercise the caller without installing/opening windows.
+    const selectedService = {
+      SERVER_URL: selected + "/", APP_URL: selected + "/",
+      checkSelectedServer: async () => { events.push("server-ready"); return serverReady; },
+      prepareConnectedRuntime: async () => { events.push("runtime-ready"); return runtime; },
+      openDesktopAvailability: () => {
+        events.push("availability-opened");
+        return { close() { events.push("availability-closed"); } };
+      }
+    };
+    const context = vm.createContext({
+      console: { warn() {} }, process, URL, setTimeout, clearTimeout,
+      require(name) {
+        if (name === "electron") return { app, powerMonitor };
+        if (name === "./service") return selectedService;
+        if (name === "./availability") return { createAvailabilityController };
+        if (name.startsWith("node:")) return require(name);
+        return {}; // Unused notification/update/UI boundaries.
+      },
+      recordLoad: async (url) => events.push("loaded:" + url),
+      recordFailure: async () => events.push("server-failed")
+    });
+    vm.runInContext(source + `
+      mainWindow = { loadURL: recordLoad };
+      loadFailure = recordFailure;
+      availabilityController = createAvailabilityController({ app, powerMonitor, service });
+      globalThis.startup = prepareAndLoadStackOS;
+    `, context, { filename: "desktop/src/main.js" });
+    return { run: context.startup, events, app, powerMonitor };
+  }
+
+  const ready = startup();
+  await ready.run();
+  assert.deepEqual(ready.events, ["server-ready", "runtime-ready", "availability-opened", "loaded:" + selected + "/"]);
+  await ready.run();
+  assert.equal(ready.events.filter(event => event === "availability-opened").length, 1);
+  ready.powerMonitor.emit("suspend");
+  assert.equal(ready.events.at(-1), "availability-closed");
+  ready.powerMonitor.emit("resume");
+  assert.equal(ready.events.filter(event => event === "availability-opened").length, 2);
+  ready.app.emit("before-quit");
+  assert.equal(ready.events.at(-1), "availability-closed");
+
+  for (const runtime of [{ ok: true, browsingOnly: true }, { ok: false }]) {
+    const unavailable = startup({ runtime });
+    await unavailable.run();
+    unavailable.powerMonitor.emit("resume");
+    assert.deepEqual(unavailable.events, ["server-ready", "runtime-ready", "loaded:" + selected + "/"]);
+  }
+  const serverUnavailable = startup({ serverReady: false });
+  await serverUnavailable.run();
+  assert.deepEqual(serverUnavailable.events, ["server-ready", "server-failed"]);
+  console.log("Connected main-process startup availability and refusal checks passed");
+}
+
+checkAdmission().then(checkRuntimeStartup).then(checkConnectedAvailabilityStartup)
   .catch((error) => { console.error(error); process.exitCode = 1; });

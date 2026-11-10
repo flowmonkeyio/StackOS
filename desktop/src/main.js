@@ -443,6 +443,9 @@ async function prepareAndLoadStackOS({ forceInstall = false } = {}) {
     if (!runtime.ok) {
       console.warn("Selected execution runtime needs attention; server browsing remains available.");
     }
+    if (runtime.ok && !runtime.browsingOnly) {
+      availabilityController.start();
+    }
     await mainWindow.loadURL(service.APP_URL);
     if (pendingDeepLink) {
       const candidate = pendingDeepLink;
