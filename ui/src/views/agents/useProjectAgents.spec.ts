@@ -1,0 +1,82 @@
+// @vitest-environment jsdom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { defineComponent, ref } from 'vue'
+import { flushPromises, mount } from '@vue/test-utils'
+import { ApiError } from '@/lib/client'
+import { callOperation } from '@/lib/operations'
+import { blankAgent, useProjectAgents, type AgentDefinition } from './useProjectAgents'
+
+vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
+export const definition = (name = 'research'): AgentDefinition => ({ project_id: 1, project_dir: '/fixture', source_ref: { host_key: 'codex', native_name: name, source_path: `.codex/agents/${name}.toml` }, digest: 'a'.repeat(64), registration_digest: null, fields: { ...blankAgent(), name, description: 'Research description', developer_instructions: 'Complete instructions\n'.repeat(100), model: 'native-model', model_reasoning_effort: 'high' }, capabilities: { read: true, edit: true }, unsupported_fields: ['future_option'] })
+let cleanup: (() => void) | undefined
+function setup() {
+  let agents!: ReturnType<typeof useProjectAgents>
+  const id = ref(1), dir = ref('/fixture')
+  const wrapper = mount(defineComponent({ setup() { agents = useProjectAgents(id, dir); return () => null } }))
+  cleanup = () => wrapper.unmount()
+  return { agents, id, dir }
+}
+describe('native project agents', () => {
+  beforeEach(() => vi.mocked(callOperation).mockImplementation(async (operation) => operation === 'projectAgent.list' ? { project_id: 1, project_dir: '/fixture', items: [definition()] } : definition()))
+  afterEach(() => { cleanup?.(); vi.resetAllMocks() })
+  it('reads full source and sends only changed fields with both preconditions, never dispatching', async () => {
+    const { agents } = setup(); await flushPromises(); await agents.edit(definition())
+    expect(callOperation).toHaveBeenCalledWith('projectAgent.list', expect.objectContaining({ response_mode: 'compact' }))
+    expect(agents.draft.value?.developer_instructions).toBe(definition().fields!.developer_instructions)
+    agents.draft.value!.description = 'Changed'
+    vi.mocked(callOperation).mockImplementation(async operation => operation === 'projectAgent.update' ? { project_id: 1, data: { ...definition(), fields: { ...definition().fields, description: 'Changed' } } } : { project_id: 1, project_dir: '/fixture', items: [definition()] })
+    await agents.save()
+    expect(callOperation).toHaveBeenCalledWith('projectAgent.update', expect.objectContaining({ expected_digest: 'a'.repeat(64), expected_registration_digest: null, patch: { description: 'Changed' } }))
+    expect(agents.dirty.value).toBe(false)
+    expect(agents.message.value).toBe('Saved in the project file.')
+    expect(vi.mocked(callOperation).mock.calls.every(([operation]) => operation.startsWith('projectAgent.'))).toBe(true)
+  })
+  it('retains complete drafts and exposes stale-source and referenced-name repairs', async () => {
+    const { agents } = setup(); await flushPromises(); await agents.edit(definition())
+    agents.draft.value!.name = 'new_name'
+    for (const code of ['stale_source', 'referenced_identity']) {
+      vi.mocked(callOperation).mockRejectedValueOnce(new ApiError('Conflict', 409, { detail: 'Conflict', data: { code, repair: 'Reassign saved references before changing the native name.' } }))
+      await agents.save()
+      expect(agents.draft.value!.name).toBe('new_name')
+      expect(agents.error.value).toContain(code)
+      expect(agents.dirty.value).toBe(true)
+    }
+  })
+  it('creates a real-source request with inherited fields and accepts exact readback', async () => {
+    const { agents } = setup(); await flushPromises(); agents.add()
+    agents.draft.value = { ...blankAgent(), name: 'research', description: 'Research', developer_instructions: 'Full text' }
+    const saved = { ...definition(), fields: { ...agents.draft.value } }
+    vi.mocked(callOperation).mockResolvedValueOnce({ project_id: 1, data: saved })
+    await agents.save()
+    expect(callOperation).toHaveBeenCalledWith('projectAgent.create', expect.objectContaining({ fields: saved.fields }))
+    expect(agents.selected.value!.fields!.model).toBeNull()
+  })
+  it('rejects mismatched save readback while preserving the draft', async () => {
+    const { agents } = setup(); await flushPromises(); await agents.edit(definition())
+    agents.draft.value!.model = null
+    vi.mocked(callOperation).mockResolvedValueOnce({ project_id: 1, data: definition() })
+    await agents.save()
+    expect(agents.error.value).toContain('differs from the draft')
+    expect(agents.draft.value!.model).toBeNull()
+  })
+  it('discards late reads after folder changes', async () => {
+    let resolve!: (value: unknown) => void
+    const { agents, dir } = setup(); await flushPromises()
+    vi.mocked(callOperation).mockImplementationOnce(() => new Promise(done => { resolve = done }))
+    const edit = agents.edit(definition()); dir.value = ''; await flushPromises()
+    resolve(definition()); await edit
+    expect(agents.draft.value).toBeNull()
+    expect(agents.items.value).toEqual([])
+  })
+  it('patches only changed native restriction leaves and explicitly removes cleared leaves', async () => {
+    const row = definition()
+    row.fields!.features = { shell_tool: false, apps: false }
+    const { agents } = setup(); await flushPromises()
+    vi.mocked(callOperation).mockResolvedValueOnce(row)
+    await agents.edit(row)
+    agents.draft.value!.features = { shell_tool: false }
+    vi.mocked(callOperation).mockResolvedValueOnce({ project_id: 1, data: { ...row, fields: { ...row.fields, features: { shell_tool: false } } } })
+    await agents.save()
+    expect(callOperation).toHaveBeenCalledWith('projectAgent.update', expect.objectContaining({ patch: { features: { apps: null } } }))
+  })
+})

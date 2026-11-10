@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
-import AgentDefaultsForm from './agent-defaults/AgentDefaultsForm.vue'
+import ProjectAgents from '../agents/ProjectAgents.vue'
 
 const { projectId } = useProjectRouteScope()
 </script>
 
 <template>
-  <AgentDefaultsForm
+  <ProjectAgents
     :key="projectId"
     :project-id="projectId"
   />

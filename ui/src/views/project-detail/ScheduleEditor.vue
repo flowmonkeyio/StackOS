@@ -4,6 +4,7 @@ import type { SchemaWorkflowTemplateListOut } from '@/api'
 import { UiButton, UiCallout, UiCheckbox, UiDialog, UiFormField, UiInput, UiSelect, UiTextarea } from '@/components/ui'
 import { apiFetch, formatApiError } from '@/lib/client'
 import { useSchedulesStore, type ScheduledJob, type ScheduleConfiguration } from '@/stores/schedules'
+import ScheduleAgentSelectors from './ScheduleAgentSelectors.vue'
 
 const props = defineProps<{ projectId: number; job: ScheduledJob | null }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
@@ -19,7 +20,22 @@ const enabled = ref(job?.enabled ?? false)
 const inputs = ref(JSON.stringify(job?.inputs_json ?? {}, null, 2))
 const existingOptions = { ...job?.execution_json }
 delete existingOptions.project_dir
+delete existingOptions.agents
+delete existingOptions.step_agent_assignments
+const agents = ref({ ...job?.execution_json?.agents })
+for (const role of ['delivery_agent', 'review_agent'] as const) {
+  if (existingOptions[role]?.source_ref) {
+    agents.value[role] ??= existingOptions[role]
+    delete existingOptions[role]
+  }
+}
+const assignments = ref({ ...job?.execution_json?.step_agent_assignments })
+const selectors = ref<InstanceType<typeof ScheduleAgentSelectors> | null>(null)
 const executionOptions = ref(JSON.stringify(existingOptions, null, 2))
+const hostKey = computed(() => {
+  try { return String(objectJson(executionOptions.value, 'Execution options').host_key ?? 'codex') }
+  catch { return 'codex' }
+})
 const error = ref<string | null>(null)
 const workflows = ref<SchemaWorkflowTemplateListOut['templates']>([])
 const workflowError = ref<string | null>(null)
@@ -43,13 +59,19 @@ async function save(): Promise<void> {
   error.value = null
   try {
     const options = objectJson(executionOptions.value, 'Execution options')
+    const selectionError = selectors.value?.validate()
+    if (selectionError) throw new Error(selectionError)
     const configuration: ScheduleConfiguration = {
       kind,
       name: name.value.trim() || null,
       template_key: templateKey.value || null,
       cron_expr: cron.value.trim(), timezone: timezone.value.trim(), enabled: enabled.value,
       inputs_json: objectJson(inputs.value, 'Workflow inputs'),
-      execution_json: projectDir.value.trim() ? { ...options, project_dir: projectDir.value.trim() } : null,
+      execution_json: projectDir.value.trim() ? {
+        ...options, project_dir: projectDir.value.trim(),
+        ...(Object.keys(agents.value).length ? { agents: agents.value } : {}),
+        ...(Object.keys(assignments.value).length ? { step_agent_assignments: assignments.value } : {}),
+      } : null,
     }
     await store.save(props.projectId, configuration)
     emit('saved')
@@ -128,6 +150,16 @@ async function save(): Promise<void> {
           :disabled="store.saving"
         />
       </UiFormField>
+      <ScheduleAgentSelectors
+        ref="selectors"
+        v-model:agents="agents"
+        v-model:assignments="assignments"
+        :project-id="projectId"
+        :project-dir="projectDir.trim()"
+        :template-key="templateKey"
+        :host-key="hostKey"
+        :disabled="store.saving"
+      />
       <UiFormField
         label="Workflow inputs"
         help="Saved input values for the selected workflow, as a JSON object."
@@ -144,8 +176,8 @@ async function save(): Promise<void> {
         </summary>
         <UiFormField
           class="mt-3"
-          label="Host and role overrides"
-          help="Optional existing host_key, delivery_agent, review_agent or mcp_config_ref. Omitted options use project defaults; roles must suit this workflow."
+          label="Agent app and execution context"
+          help="Existing agent app, provider/profile and MCP options are preserved. Use the role selectors for project file assignments. Omitted options use project defaults."
         >
           <UiTextarea
             v-model="executionOptions"
