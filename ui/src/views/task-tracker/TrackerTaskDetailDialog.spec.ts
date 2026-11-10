@@ -4,6 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/lib/client'
 import { formatDateTime } from '@/lib/stackos/json'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
+import SourceDetailRenderer from '@/components/renderers/SourceDetailRenderer.vue'
+import ArtifactRenderer from '@/components/renderers/ArtifactRenderer.vue'
+import type { SchemaTaskResultItem, SchemaTaskActivityItem } from '@/api'
 
 import type { ActiveExecution, TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
 
@@ -20,6 +23,73 @@ describe('TrackerTaskDetailDialog', () => {
     document.body.innerHTML = ''
   })
 
+  it('opens exact result identities in shared Library details and returns to the retained draft, focus and reading position', async () => {
+    const record = { source_kind: 'resource_record', source_id: 31, occurred_at: '2026-11-05T23:00:00Z', associations: [], data: {
+      id: 31, project_id: 1, resource_id: 8, resource_key: 'evidence', plugin_slug: 'engineering',
+      title: 'Browser review', data_json: { summary: 'Recorded outcome' },
+      created_at: '2026-11-05T23:00:00Z', updated_at: '2026-11-05T23:00:00Z', external_id: null, provenance_json: null,
+    } } as SchemaTaskResultItem
+    const file = { source_kind: 'artifact', source_id: 32, data: {
+      id: 32, project_id: 1, name: 'Summary', kind: 'document', plugin_slug: null,
+      uri: 'https://example.invalid/?token=private-result', status: 'superseded',
+    } } as SchemaTaskResultItem
+    const results = { items: [record, file], nextCursor: 'next', loaded: true, loading: false, error: null, warnings: [], coverage: 'Explicit links only' }
+    const wrapper = mount(TrackerTaskDetailDialog, {
+      props: { modelValue: true, task: task(), results, refreshContent: vi.fn() }, attachTo: document.body,
+    })
+    await flushPromises()
+    const shell = popup().get('[role="dialog"]').element
+    await popup().get('[data-edit-content]').trigger('click')
+    await popup().get('[data-description-editor]').setValue('Retained draft')
+    const body = popup().get<HTMLElement>('.ui-dialog__body').element
+    body.scrollTop = 200
+    const opener = popup().get('[data-result-source="resource_record:31"]')
+    ;(opener.element as HTMLElement).focus()
+    await opener.trigger('click')
+    await flushPromises()
+    expect(popup().get('[role="dialog"]').element).toBe(shell)
+    expect(wrapper.findComponent(SourceDetailRenderer).props('source')).toMatchObject({ source_kind: 'resource_record', source_id: 31, payload: record.data })
+    expect(popup().get('[data-task-result-detail]').text()).toContain('Recorded outcome')
+    expect(document.activeElement).toBe(popup().get('h2').element)
+    expect(wrapper.emitted('inspectResult')?.[0]?.[0]).toMatchObject({ source_id: 31 })
+    await popup().findAll('button').find(button => button.text() === 'Back to task')!.trigger('click')
+    await flushPromises()
+    expect(body.scrollTop).toBe(200)
+    expect(document.activeElement).toBe(opener.element)
+    expect(popup().get<HTMLTextAreaElement>('[data-description-editor]').element.value).toBe('Retained draft')
+    await popup().get('[data-result-source="artifact:32"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent(ArtifactRenderer).props('artifact')).toEqual(file.data)
+    const details = popup().get('[data-task-result-detail]')
+    expect(details.find('a').exists()).toBe(false)
+    expect(details.text()).not.toContain('private-result')
+    await wrapper.setProps({ task: { ...task(), key: 'other' } })
+    expect(popup().find('[data-task-result-detail]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows actual history rows, source details and paging without inventing phases or navigating away', async () => {
+    const first = { source_kind: 'tracker_revision', source_id: 90, occurred_at: '2026-11-05T23:00:00Z',
+      kind: 'delivery.stopped', summary: 'Verification stopped', task_key: task().key, ticket_key: 'source-ticket', phase: null, run_id: null, run_plan_id: null,
+      details: { reason: 'Required browser unavailable', api_key: 'private-history' },
+    } as SchemaTaskActivityItem
+    const activity = { items: [first], nextCursor: 'older', loaded: true, loading: false, error: null, warnings: [], coverage: 'Recorded sources; not a complete audit.' }
+    const wrapper = mount(TrackerTaskDetailDialog, { props: { modelValue: true, task: task(), activity } })
+    const history = popup().get('[aria-label="Task history"]')
+    expect(history.text()).toContain('Verification stopped')
+    expect(history.text()).toContain('tracker_revision #90')
+    expect(history.text()).toContain('Required browser unavailable')
+    expect(history.text()).not.toContain('private-history')
+    await history.findAll('button').find(button => button.text() === 'View full history')!.trigger('click')
+    expect(wrapper.emitted('moreHistory')).toHaveLength(1)
+    await wrapper.setProps({ activity: { ...activity, items: [first, { ...first, source_kind: first.source_kind, source_id: 89, summary: 'Review completed' }], nextCursor: null } })
+    expect(history.text()).toContain('Review completed')
+    expect(history.findAll('button').some(button => button.text().includes('history'))).toBe(false)
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(callOperation).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   it('explains the stopped ticket in task and ticket details without changing their lifecycle', async () => {
     const source = sourceTicket()
     const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
@@ -31,7 +101,7 @@ describe('TrackerTaskDetailDialog', () => {
     const stop = popup().get('.task-delivery-stop')
     expect(stop.text()).toContain('Delivery stopped')
     expect(stop.text()).toContain(source.title)
-    expect(stop.get('.task-delivery-stop__reason').text()).toBe('Browser access denied.')
+    expect(popup().get('.task-delivery-stop__reason').text()).toBe('Browser access denied.')
     expect(popup().text()).toContain('In Progress')
     await wrapper.setProps({ ticketKey: source.key, ticket: source })
     await flushPromises()
@@ -51,7 +121,8 @@ describe('TrackerTaskDetailDialog', () => {
     const badge = popup().findAll('.ui-badge').find(badge => badge.text() === 'Automated')!
     expect(badge.text()).toBe('Automated')
     expect(badge.classes()).toContain('text-info-fg')
-    expect(badge.element.previousElementSibling?.textContent).toContain('In Progress')
+    expect(badge.element.previousElementSibling?.textContent).toContain('Delivery stopped')
+    expect(popup().find('[data-kind="tracker"][data-status="in-progress"]').exists()).toBe(true)
     await wrapper.setProps({ task: { ...task(), key: 'terminal-managed', owner: 'Codex' } })
     expect(popup().text()).not.toContain('Automated')
     await wrapper.setProps({ task: { ...automatic, status: 'complete', metadata_json: {

@@ -1,4 +1,4 @@
-import { ref, type Ref } from 'vue'
+import { onScopeDispose, ref, watch, type Ref } from 'vue'
 
 import { formatApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
@@ -25,8 +25,10 @@ export function useTrackerExecutionContexts({ projectId }: UseTrackerExecutionCo
   const loading = ref(false)
   const error = ref<string | null>(null)
   let requestSeq = 0
+  let disposed = false
 
   async function load(task: TrackerTask | null): Promise<void> {
+    if (disposed) return
     const currentRequest = ++requestSeq
     error.value = null
     if (!validProjectId(projectId.value) || !task) {
@@ -89,6 +91,9 @@ export function useTrackerExecutionContexts({ projectId }: UseTrackerExecutionCo
     artifactPageInfo.value = {}
     loading.value = false
   }
+
+  watch(projectId, () => { void load(null) }, { flush: 'sync' })
+  onScopeDispose(() => { disposed = true; requestSeq++; reset() })
 
   return {
     contexts,
