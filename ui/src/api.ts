@@ -6215,12 +6215,14 @@ export interface components {
          * @description Existing handoff settings, without occurrence-specific lifecycle arguments.
          */
         ScheduleExecution: {
+            /** Connection Id */
+            connection_id?: string | null;
             delivery_agent?: components["schemas"]["TaskDeliveryAgentOverride"] | null;
             /** Host Key */
             host_key?: string | null;
             mcp_config_ref?: components["schemas"]["TaskMcpConfigRef"] | null;
             /** Project Dir */
-            project_dir: string;
+            project_dir?: string | null;
             review_agent?: components["schemas"]["TaskDeliveryAgentOverride"] | null;
         };
         /**

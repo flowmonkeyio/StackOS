@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { SchemaWorkflowTemplateListOut } from '@/api'
+import type { SchemaScheduleExecution, SchemaWorkflowTemplateListOut } from '@/api'
 import { UiButton, UiCallout, UiCheckbox, UiDialog, UiFormField, UiInput, UiSelect, UiTextarea } from '@/components/ui'
 import { apiFetch, formatApiError } from '@/lib/client'
 import { useSchedulesStore, type ScheduledJob, type ScheduleConfiguration } from '@/stores/schedules'
@@ -49,7 +49,9 @@ async function save(): Promise<void> {
       template_key: templateKey.value || null,
       cron_expr: cron.value.trim(), timezone: timezone.value.trim(), enabled: enabled.value,
       inputs_json: objectJson(inputs.value, 'Workflow inputs'),
-      execution_json: projectDir.value.trim() ? { ...options, project_dir: projectDir.value.trim() } : null,
+      execution_json: options.connection_id || projectDir.value.trim()
+        ? { ...options, ...(projectDir.value.trim() ? { project_dir: projectDir.value.trim() } : {}) } as SchemaScheduleExecution
+        : null,
     }
     await store.save(props.projectId, configuration)
     emit('saved')

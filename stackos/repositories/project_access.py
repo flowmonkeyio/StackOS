@@ -21,6 +21,7 @@ from stackos.db.models import (
     Run,
     RunPlan,
     RunStep,
+    ScheduledJob,
 )
 from stackos.mcp.errors import ToolNotGrantedError
 from stackos.repositories.base import NotFoundError, ValidationError
@@ -66,6 +67,8 @@ def require_project(session: Session, project_id: int | None) -> Project:
 
 
 _CHILD_MODELS: dict[str, type[Any]] = {
+    "job_id": ScheduledJob,
+    "schedule_id": ScheduledJob,
     "artifact_id": Artifact,
     "replacement_artifact_id": Artifact,
     "superseded_by_artifact_id": Artifact,
@@ -147,6 +150,11 @@ def _identifier(value: Any) -> int:
 # owners add their own authorization before their routes can be admitted.
 _PROJECT_DISCOVERY = {"project.list", "project.portfolio", "project.get", "project.create"}
 _PROJECT_OPERATIONS = {
+    "schedule.list",
+    "schedule.set",
+    "schedule.toggle",
+    "schedule.remove",
+    "schedule.runs",
     "browser.runtime.status",
     "browser.profile.create",
     "browser.profile.list",

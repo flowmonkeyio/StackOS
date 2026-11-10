@@ -183,11 +183,12 @@ def operation_specs():
             input_model=ScheduleSetInput,
             output_model=WriteEnvelope[ScheduledJobOut],
             handler=_schedule_set,
-            purpose="Use this for explicit local-admin recurring job setup.",
+            purpose="Use this for explicit project recurring job setup.",
             prerequisites=(
                 "Use a stable kind/key; set replaces the complete configuration.",
                 "Enabling requires name, IANA timezone, existing workflow, concrete inputs "
-                "and execution_json with an existing project_dir and configured suitable roles.",
+                "and execution_json with a bound connection_id on the selected server or an "
+                "existing project_dir in standalone mode, plus configured suitable roles.",
                 "Strict preflight is read-only; it creates no request, run plan or task. "
                 "Disabled incomplete drafts remain inert. Normal grants and approvals still apply.",
             ),

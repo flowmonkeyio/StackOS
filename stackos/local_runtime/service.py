@@ -6,16 +6,23 @@ One outbound consumer delegates finite invocations to the existing native host.
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
+from secrets import compare_digest
 from threading import Event, Thread
 
+import anyio
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from starlette.responses import StreamingResponse
+from starlette.types import Receive, Scope, Send
 
+from stackos.auth import ensure_token
 from stackos.config import Settings, get_settings
 from stackos.local_runtime.connection import LocalBinding, LocalConnectionStore, check_connection
 from stackos.local_runtime.native import NativeAgentRunner
 from stackos.local_runtime.worker import OutboundWorker
+from stackos.operations.desktop import AVAILABILITY_PATH
 
 
 def consume_invocations(settings: Settings, stop: Event) -> None:
@@ -80,6 +87,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         settings.ensure_dirs()
+        app.state.token = ensure_token(settings.token_path)
         connection_state(settings)  # Refuse stale/foreign configuration before listening.
         stop = Event()
         consumer = Thread(
@@ -98,6 +106,78 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
+
+    @app.post(AVAILABILITY_PATH)
+    async def native_availability(request: Request):
+        # The local disk token is never browser login. Only Electron main can
+        # hold this transport; the project credential stays on this computer.
+        if not compare_digest(
+            request.headers.get("Authorization", ""), f"Bearer {app.state.token}"
+        ):
+            raise HTTPException(403, "Native desktop authentication required")
+        store = LocalConnectionStore(settings.state_dir)
+        try:
+            binding = store.load()
+            if binding is None:
+                raise ValueError("computer not connected")
+            if (binding.environment_id, binding.server_url) != (
+                settings.environment_id,
+                settings.server_url,
+            ):
+                raise ValueError("computer binding differs from selected environment")
+            store.require_binding(binding)
+        except (ValueError, OSError):
+            raise HTTPException(503, "Selected computer connection needs attention") from None
+
+        client = httpx.AsyncClient(
+            timeout=httpx.Timeout(5, read=None), follow_redirects=False, trust_env=False
+        )
+        upstream = None
+        try:
+            async with asyncio.timeout(5):
+                upstream = await client.send(
+                    client.build_request(
+                        "POST",
+                        binding.server_url + AVAILABILITY_PATH,
+                        headers={
+                            "Authorization": f"Bearer {binding.credential.get_secret_value()}",
+                            "Origin": binding.server_url,
+                        },
+                    ),
+                    stream=True,
+                )
+            upstream.raise_for_status()
+        except (httpx.HTTPError, TimeoutError):
+            with anyio.CancelScope(shield=True):
+                if upstream is not None:
+                    await upstream.aclose()
+                await client.aclose()
+            raise HTTPException(503, "Selected computer availability is unavailable") from None
+        except BaseException:
+            with anyio.CancelScope(shield=True):
+                await client.aclose()
+            raise
+
+        response = upstream
+
+        class AvailabilityStream(StreamingResponse):
+            async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+                try:
+                    await super().__call__(scope, receive, send)
+                finally:
+                    # Also retire upstream if the downstream dies while sending
+                    # headers, before the body iterator has ever been entered.
+                    with anyio.CancelScope(shield=True):
+                        await response.aclose()
+                        await client.aclose()
+
+        async def events():
+            async for chunk in response.aiter_bytes():
+                yield chunk
+
+        return AvailabilityStream(
+            events(), media_type="text/event-stream", headers={"Cache-Control": "no-store"}
+        )
 
     @app.get("/api/v1/health")
     def health():

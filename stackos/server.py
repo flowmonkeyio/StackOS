@@ -314,7 +314,9 @@ def _build_lifespan(
         # skipped) so re-running on every boot is fine.
         scheduler = build_scheduler(settings, engine)
         app.state.scheduler = scheduler
-        workflow_schedules = WorkflowScheduleRuntime(scheduler, lambda: Session(engine))
+        workflow_schedules = WorkflowScheduleRuntime(
+            scheduler, lambda: Session(engine), operation_services=app.state.operation_services
+        )
         app.state.workflow_schedules = workflow_schedules
         app.state.operation_services.update(
             scheduler=scheduler,
@@ -382,8 +384,8 @@ def _build_lifespan(
             yield
         finally:
             log.info("daemon.shutdown.clean")
-            if workflow_schedules.connection is not None:
-                workflow_schedules.disconnect(workflow_schedules.connection)
+            for connection in list(workflow_schedules.connections.values()):
+                workflow_schedules.disconnect(connection)
             from stackos.host_mcp.service import shutdown_usage
 
             shutdown_usage()

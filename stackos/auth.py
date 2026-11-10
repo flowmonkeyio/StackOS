@@ -573,6 +573,9 @@ async def _server_dispatch(
             from stackos.repositories.workspaces import LocalRuntimeConnectionRepository
 
             allowed_paths = {f"/api/v1/operations/{name}/call" for name in RUNTIME_OPERATIONS}
+            from stackos.operations.desktop import AVAILABILITY_PATH
+
+            allowed_paths.add(AVAILABILITY_PATH)
             if method != "POST" or path not in allowed_paths:
                 raise HTTPException(403, {"code": "runtime_scope_denied"})
             with Session(request.app.state.engine) as session:

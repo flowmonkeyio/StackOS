@@ -92,6 +92,7 @@ async function checkRuntimeStartup() {
     assert.equal(service.APP_URL, `${config.server_url}/`);
     assert.equal(service.DAEMON_URL, "http://127.0.0.1:19951/");
     assert.equal(service.daemonLogPath(), `${config.state_dir}/daemon.log`);
+    assert.equal(service.authTokenPath(), `${config.state_dir}/auth.token`);
     assert.equal(service.isAppUrl(selected), false);
     const ready = await service.prepareConnectedRuntime();
     assert.equal(ready.ok, true);

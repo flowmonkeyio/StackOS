@@ -22,13 +22,20 @@ from apscheduler.triggers.date import DateTrigger
 from sqlmodel import Session, select
 
 from stackos.artifacts import redact_secret_text
-from stackos.db.models import AgentRequest, RunPlan, ScheduledJob, TrackerTask
+from stackos.db.models import (
+    AgentRequest,
+    LocalRuntimeConnection,
+    Project,
+    RunPlan,
+    ScheduledJob,
+    TrackerTask,
+)
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.projects import ScheduleConfiguration, ScheduledJobRepository
 from stackos.repositories.run_plan_state import TERMINAL_PLAN_STATUSES
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker.utils import TERMINAL_TRACKER_STATUSES
-from stackos.task_delivery import start_delivery
+from stackos.task_delivery import connection_execution_state, start_delivery
 
 WORKFLOW_JOB_PREFIX = "workflow-schedule-"
 Launch = Callable[[ScheduledJob, datetime, Callable[[], bool]], Awaitable[None]]
@@ -36,7 +43,7 @@ Launch = Callable[[ScheduledJob, datetime, Callable[[], bool]], Awaitable[None]]
 
 @dataclass(frozen=True)
 class Registration:
-    generation: int
+    connection: object
     revision: object
     due: datetime
     config: dict[str, Any]
@@ -50,37 +57,42 @@ class WorkflowScheduleRuntime:
         *,
         launch: Launch | None = None,
         now: Callable[[], datetime] = lambda: datetime.now(UTC),
+        operation_services: dict[str, Any] | None = None,
     ) -> None:
         self.scheduler = scheduler
         self.session_factory = session_factory
         self.launch = launch or self._launch
         self.now = now
-        self.generation = 0
-        self.connection: object | None = None
+        self.operation_services = operation_services or {}
+        self.connections: dict[str | None, object] = {}
         self.registrations: dict[int, Registration] = {}
         self.revisions: dict[int, object] = {}
         scheduler.add_listener(self._missed, EVENT_JOB_MISSED | EVENT_JOB_MAX_INSTANCES)
 
-    def connect(self) -> object:
+    @property
+    def connection(self) -> object | None:
+        return self.connections.get(None)
+
+    def connect(self, *, connection_id: str | None = None) -> object:
         # The newest main-process stream owns presence. Superseded cleanup is inert.
-        self._clear()
-        self.generation += 1
-        self.connection = object()
+        previous = self.connections.get(connection_id)
+        if previous is not None:
+            self.disconnect(previous)
+        connection = self.connections[connection_id] = object()
         with self.session_factory() as session:
             rows = session.exec(select(ScheduledJob).where(ScheduledJob.enabled == True)).all()  # noqa: E712
             for row in rows:
-                self._arm(row)
-        return self.connection
+                if (row.execution_json or {}).get("connection_id") == connection_id:
+                    self._arm(row)
+        return connection
 
     def disconnect(self, connection: object) -> None:
-        if connection is self.connection:
-            self.connection = None
-            self.generation += 1
-            self._clear()
-
-    def _clear(self) -> None:
-        for row_id in list(self.registrations):
-            self._remove(row_id)
+        for key, current in list(self.connections.items()):
+            if connection is current:
+                del self.connections[key]
+                for row_id, registration in list(self.registrations.items()):
+                    if registration.connection is connection:
+                        self._remove(row_id)
 
     def _remove(self, row_id: int) -> None:
         self.registrations.pop(row_id, None)
@@ -99,11 +111,14 @@ class WorkflowScheduleRuntime:
             if row is not None and row.project_id != project_id:
                 return
             self._remove(job_id)
-            if self.connection is not None and row is not None:
+            if row is not None:
                 self._arm(row)
 
     def _arm(self, row: ScheduledJob) -> None:
         if not row.enabled or not row.template_key or not row.execution_json or not row.timezone:
+            return
+        connection = self.connections.get(row.execution_json.get("connection_id"))
+        if connection is None:
             return
         assert row.id is not None
         trigger = CronTrigger.from_crontab(row.cron_expr, timezone=ZoneInfo(row.timezone))
@@ -111,7 +126,7 @@ class WorkflowScheduleRuntime:
         if due is None:
             return
         registration = Registration(
-            self.generation,
+            connection,
             self.revisions.setdefault(row.id, object()),
             due.astimezone(UTC),
             self._config(row),
@@ -132,7 +147,8 @@ class WorkflowScheduleRuntime:
         )
 
     def _current(self, row_id: int, registration: Registration) -> ScheduledJob | None:
-        if self.connection is None or self.generation != registration.generation:
+        key = (registration.config.get("execution_json") or {}).get("connection_id")
+        if self.connections.get(key) is not registration.connection:
             return None
         if self.revisions.get(row_id) is not registration.revision:
             return None
@@ -165,6 +181,7 @@ class WorkflowScheduleRuntime:
     async def _launch(self, row: ScheduledJob, due: datetime, admit: Callable[[], bool]) -> None:
         """Admit once; lifecycle and dependency traversal stay with existing owners."""
         with self.session_factory() as session:
+            session.info["operation_services"] = self.operation_services
             current = session.get(ScheduledJob, row.id)
             if (
                 current is None
@@ -183,10 +200,41 @@ class WorkflowScheduleRuntime:
                 return
             request_id = None
             try:
+                connection_id = (current.execution_json or {}).get("connection_id")
+                if connection_id:
+                    from stackos.auth import UserPrincipal
+
+                    connection = session.get(LocalRuntimeConnection, connection_id)
+                    project = session.get(Project, row.project_id)
+                    settings = self.operation_services["settings"]
+                    if (
+                        connection is None
+                        or project is None
+                        or settings.process_role != "server"
+                        or connection.project_id != project.id
+                        or connection.owner_user_id != project.owner_user_id
+                        or connection.environment_id != project.environment_id
+                        or connection.environment_id != settings.environment_id
+                    ):
+                        raise ValueError("Computer authorization unavailable")
+                    session.info.update(
+                        user_principal=UserPrincipal(
+                            connection.owner_user_id, connection.environment_id
+                        ),
+                        server_environment_id=connection.environment_id,
+                    )
                 settings = ScheduledJobRepository(session).validate_configuration(
                     row.project_id, self._config(current)
                 )
                 assert settings is not None
+                if connection_id:
+                    # Use the existing transport's freshness/unresolved-work owner.
+                    # Re-read revocation/expiry in validate_configuration, then
+                    # fence readiness and stream lifetime at this admission boundary.
+                    exchange = self.operation_services["local_invocations"]
+                    exchange.require_available(connection)
+                    if connection_execution_state(session, connection, exchange)["needs_attention"]:
+                        raise ValueError("Computer work needs manual reconciliation")
                 # Setup/host checks may outlive presence, configuration or jitter allowance.
                 if not admit():
                     return
@@ -214,7 +262,7 @@ class WorkflowScheduleRuntime:
                     claimed_by="schedule",
                     key=f"schedule-{row.id}-{due.strftime('%Y%m%dt%H%M%S%f')}",
                     template_key=current.template_key,
-                    repo_root=settings["project_dir"],
+                    repo_root=settings.get("project_dir"),
                     inputs_json=current.inputs_json,
                     metadata_json=metadata,
                 ).data.run_plan
@@ -234,6 +282,7 @@ class WorkflowScheduleRuntime:
                     task_key=f"workflow-{plan.id}",
                     run_plan_id=plan.id,
                     step_id=step.step_id,
+                    local_invocations=self.operation_services.get("local_invocations"),
                     **settings,
                 )
                 self._result(session, current, due, "started")

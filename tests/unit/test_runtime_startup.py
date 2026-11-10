@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import os
@@ -12,6 +13,7 @@ from pathlib import Path
 
 import pytest
 import typer
+from fastapi import Request
 from fastapi.testclient import TestClient
 from typer.testing import CliRunner
 
@@ -223,7 +225,99 @@ def test_runtime_app_has_no_canonical_routes_database_or_scheduler(selected):
         assert not hasattr(application.state, "engine")
         assert not hasattr(application.state, "scheduler")
     assert not (settings.data_dir / "stackos.db").exists()
-    assert not settings.seed_path.exists() and not settings.token_path.exists()
+    assert not settings.seed_path.exists()
+    # Native availability uses a local-only disk token; it never authorizes
+    # server MCP or creates an application database.
+    assert settings.token_path.exists()
+    assert settings.token_path.stat().st_mode & 0o077 == 0
+
+
+def test_runtime_availability_requires_local_token_and_existing_binding(selected):
+    settings = get_settings()
+    with TestClient(create_app(settings)) as client:
+        path = "/api/v1/desktop/availability"
+        assert client.post(path).status_code == 403
+        assert client.post(path, headers={"Authorization": "Bearer wrong"}).status_code == 403
+        assert (
+            client.post(
+                path, headers={"Authorization": "Bearer " + settings.token_path.read_text().strip()}
+            ).status_code
+            == 503
+        )
+
+
+@pytest.mark.asyncio
+async def test_native_proxy_retires_upstream_when_downstream_dies_before_body(
+    selected, tmp_path, monkeypatch
+):
+    settings = get_settings()
+    root = tmp_path / "folder"
+    root.mkdir()
+    info = root.stat()
+    binding = LocalBinding(
+        server_url=settings.server_url,
+        environment_id=settings.environment_id,
+        user_id="owner",
+        project_id=1,
+        connection_id="connection",
+        credential="synthetic",
+        root=str(root),
+        root_device=info.st_dev,
+        root_inode=info.st_ino,
+    )
+    store = LocalConnectionStore(settings.state_dir)
+    with store.reserve() as stream:
+        stream.write(binding.model_dump_json().replace('"**********"', '"synthetic"'))
+    closed = []
+
+    class Upstream:
+        def raise_for_status(self):
+            pass
+
+        async def aclose(self):
+            closed.append("upstream")
+
+        async def aiter_bytes(self):
+            pytest.fail("downstream fails before body iteration")
+            yield b""
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def build_request(self, method, url, **kwargs):
+            assert kwargs["headers"]["Origin"] == settings.server_url
+            return None
+
+        async def send(self, request, **kwargs):
+            return Upstream()
+
+        async def aclose(self):
+            closed.append("client")
+
+    monkeypatch.setattr("stackos.local_runtime.service.httpx.AsyncClient", Client)
+    application = create_app(settings)
+    application.state.token = "native-token"
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0", "spec_version": "2.0"},
+        "method": "POST",
+        "path": "/api/v1/desktop/availability",
+        "app": application,
+        "headers": [(b"authorization", b"Bearer native-token")],
+    }
+    endpoint = next(route.endpoint for route in application.routes if route.path == scope["path"])
+    response = await endpoint(Request(scope))
+
+    async def send(message):
+        raise RuntimeError("downstream gone")
+
+    async def receive():
+        await asyncio.Event().wait()
+
+    with pytest.raises((RuntimeError, ExceptionGroup)):
+        await response(scope, receive, send)
+    assert closed == ["upstream", "client"]
 
 
 def test_foreign_saved_binding_refuses_startup_without_rebinding(selected):

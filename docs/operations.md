@@ -202,7 +202,8 @@ job is reported missing before any effect.
 `schedule.set` replaces configuration under a stable project `kind` key.
 It accepts a display `name`, five-field `cron_expr`, IANA `timezone`, existing
 `template_key`, concrete `inputs_json`, and `execution_json`. Execution settings
-reuse `tracker.startDelivery`: required `project_dir`, optional `host_key`,
+reuse `tracker.startDelivery`: select a bound `connection_id` on the selected
+server, or an existing `project_dir` in standalone mode, with optional `host_key`,
 `delivery_agent`/`review_agent` overrides and `mcp_config_ref`. Task keys,
 ticket assignments, run-plan IDs and step IDs belong to occurrences and are
 rejected here. Roles must carry explicitly prepared workflow instructions in
@@ -237,6 +238,13 @@ read daemon token and holds the response stream open. The response begins with
 an SSE `ready` event and has no replay or heartbeat. Connection lifetime is the
 availability fact; it is not a JSON presence setter. Generic JSON operation
 calls cannot open it, and browser console tokens, CLI and MCP cannot enable it.
+On a connected computer Electron uses this endpoint on the runtime-only local
+service with its selected state directory's disk token. The service forwards
+only the stream using its bound computer credential; server timers are scoped
+to schedules selecting that exact connection. Computer authorization and the
+existing invocation exchange's freshness/unresolved-work checks run again before
+request creation. Server schedules never open server-local folders or receive
+the computer's native MCP configuration.
 Quit, suspend or disconnect removes workflow timers while maintenance and
 admitted tasks remain active. Reconnection arms future times only. Workflow
 jobs override the scheduler's permissive defaults with one-second jitter

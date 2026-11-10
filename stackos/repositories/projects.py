@@ -7,7 +7,7 @@ from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.triggers.cron import CronTrigger
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic import ValidationError as SchemaValidationError
 from sqlmodel import Session, col, select
 
@@ -105,11 +105,20 @@ class ScheduleExecution(BaseModel):
     """Existing handoff settings, without occurrence-specific lifecycle arguments."""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    project_dir: str = Field(min_length=1)
+    project_dir: str | None = Field(default=None, min_length=1)
+    connection_id: str | None = Field(default=None, min_length=36, max_length=36)
     host_key: str | None = Field(default=None, min_length=1)
     delivery_agent: TaskDeliveryAgentOverride | None = None
     review_agent: TaskDeliveryAgentOverride | None = None
     mcp_config_ref: TaskMcpConfigRef | None = None
+
+    @model_validator(mode="after")
+    def execution_target(self):
+        if (self.project_dir is None) == (self.connection_id is None):
+            raise ValueError("select exactly one local directory or connected computer")
+        if self.connection_id is not None and self.mcp_config_ref is not None:
+            raise ValueError("connected computer MCP configuration stays local")
+        return self
 
 
 class ScheduleConfiguration(BaseModel):
@@ -731,10 +740,22 @@ class ScheduledJobRepository:
         execution = ScheduleExecution.model_validate(config["execution_json"]).model_dump(
             exclude_unset=True
         )
+        if self._s.info.get("server_environment_id") is not None:
+            from stackos.repositories.workspaces import LocalRuntimeConnectionRepository
+
+            if not execution.get("connection_id"):
+                raise ValidationError("Server schedules require a connected computer")
+            connection = LocalRuntimeConnectionRepository(self._s).owned(
+                project_id, execution["connection_id"]
+            )
+            if LocalRuntimeConnectionRepository.public(connection)["status"] != "authorized":
+                raise ValidationError("Computer authorization unavailable")
+        elif execution.get("connection_id"):
+            raise ValidationError("Connected schedules require the selected server")
         validation = RunPlanRepository(self._s).validate_plan(
             template_key=config["template_key"],
             project_id=project_id,
-            repo_root=execution["project_dir"],
+            repo_root=execution.get("project_dir"),
             inputs_json=config.get("inputs_json"),
             enforce_required_inputs=True,
         )
@@ -745,7 +766,12 @@ class ScheduledJobRepository:
                     "errors": [issue.model_dump() for issue in validation.errors],
                 },
             )
-        resolve_delivery_settings(self._s, project_id=project_id, **execution)
+        resolve_delivery_settings(
+            self._s,
+            project_id=project_id,
+            **{key: value for key, value in execution.items() if key != "connection_id"},
+            **({"project_dir": None} if "project_dir" not in execution else {}),
+        )
         return execution
 
     def _out(self, row: ScheduledJob) -> ScheduledJobOut:

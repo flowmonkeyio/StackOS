@@ -138,7 +138,14 @@ cannot advertise native presence. Suspend and Quit close the connection;
 resume/start and transport reconnection open a new one. No presence field,
 heartbeat, lease, or occurrence replay is persisted.
 
-`WorkflowScheduleRuntime` holds the current connection and generation in daemon
+For a selected server, Electron holds the same endpoint on the runtime-only
+local service with its private disk token. That service forwards only the
+stream to the selected server using the bound computer credential. Server
+streams apply only to schedules selecting that connection ID; a browser user
+session cannot open them. The current invocation exchange also checks fresh
+computer polling, authorization and unresolved work at admission.
+
+`WorkflowScheduleRuntime` holds each current connection's opaque identity in daemon
 memory and uses the existing APScheduler memory jobstore. One stable job ID per
 schedule carries its exact next cron instant in a date trigger with one-second
 misfire tolerance. Execution or misfire rearms strictly after the current time.

@@ -459,7 +459,7 @@ function checkHealth(timeoutMs = 1000) {
 }
 
 function authTokenPath() {
-  return AUTH_TOKEN_PATH;
+  return runtimeConfig ? path.join(runtimeConfig.state_dir, "auth.token") : AUTH_TOKEN_PATH;
 }
 
 function readAuthToken() {
@@ -519,6 +519,7 @@ function authenticatedJsonGet(pathname, options = {}) {
 }
 
 function openDesktopAvailability(onDisconnect) {
+  if (SERVER_URL && !runtimeConfig) throw new Error("Connect the selected local runtime first.");
   let closed = false;
   const disconnected = () => {
     if (closed) return;

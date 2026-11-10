@@ -14,7 +14,7 @@ from stackos.repositories.project_access import authorize_project_refs, require_
 
 _PROJECT_READ = re.compile(
     r"/api/v1/projects/(?P<project_id>[1-9][0-9]*)(?:/"
-    r"(?:runs|run-plans|resource-records|cost|budgets(?:/[^/]+)?|"
+    r"(?:runs|run-plans|resource-records|schedules|workflow-templates|cost|budgets(?:/[^/]+)?|"
     r"context/(?:timeline(?:/stream)?|snapshots)|learnings|experiments(?:/observations)?|decisions))?"
 )
 _CHILD_READ = re.compile(
@@ -71,6 +71,10 @@ def authorize_request(session: Session, request: Request, settings: Settings) ->
         return
     if path == "/api/v1/projects" and method in {"GET", "POST"}:
         return
+    if method == "POST" and path in {
+        f"/api/v1/operations/schedule.{name}/call" for name in ("set", "toggle", "remove")
+    }:
+        return  # Shared schedule repository checks owner, target and existing grants.
     # The dispatcher checks the exact operation and its persisted identifiers;
     # verified login never creates local-admin or general mutation authority.
     if _OPERATION_CALL.fullmatch(path) and _ui_scope_for_request(path, method) is not None:
