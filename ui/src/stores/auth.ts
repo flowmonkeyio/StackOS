@@ -89,10 +89,13 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function submit(action: 'register' | 'login' | 'resend' | 'recover' | 'password', body: Record<string, string>): Promise<void> {
-    const result = await apiFetch<UserSession>(`/api/v1/auth/${action}`, {
+    // A successful login sets the server cookie, but this document can still
+    // hold another user's project caches. Only the fresh document's bootstrap
+    // may make the private shell ready, including while navigation is delayed.
+    if (action === 'login') expire()
+    await apiFetch(`/api/v1/auth/${action}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     })
-    if (action === 'login') acceptSession(result)
     if (action === 'password') expire()
   }
 

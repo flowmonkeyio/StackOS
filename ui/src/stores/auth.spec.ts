@@ -85,6 +85,24 @@ describe('auth store', () => {
     expect(auth.state.kind).toBe('signed_out')
   })
 
+  it('keeps successful login gated until a fresh document bootstraps its session', async () => {
+    const auth = useAuthStore()
+    auth.mode = 'server'; auth.state = {kind:'signed_out'}
+    const session = {status:'authenticated',user_id:'u2',environment_id:'A',csrf_token:'u2-csrf'}
+    globalThis.fetch = vi.fn(async () => json(session)) as typeof fetch
+    await auth.submit('login',{email:'u2@example.test',password:'synthetic-password'})
+    expect(auth.ready).toBe(false)
+    expect(auth.userId).toBeNull()
+    expect(auth.csrfToken).toBeNull()
+    // The next document has new Pinia stores; only its session bootstrap may
+    // admit private content after the browser has replaced the old document.
+    const fresh = useAuthStore(createPinia())
+    fresh.mode = 'server'
+    await fresh.bootstrap()
+    expect(fresh.ready).toBe(true)
+    expect(fresh.userId).toBe('u2')
+  })
+
   it('keeps recovery outside the private shell and invalidates access on a later 401', async () => {
     globalThis.fetch = vi.fn(async (path) => path === '/api/v1/auth/ui-token'
       ? json({ detail: { code: 'sign_in_required' } }, 401)

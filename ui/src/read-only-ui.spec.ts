@@ -9,11 +9,12 @@ const ROOT = dirname(fileURLToPath(import.meta.url))
 const SCOPES = ['components', 'lib', 'stores', 'views']
 const WRITE_PATTERNS = [/\bapiWrite\b/, /method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/]
 const AUTH_SETUP_STORE = join(ROOT, 'stores', 'plugins.ts')
+const USER_AUTH_STORE = join(ROOT, 'stores', 'auth.ts')
 const PROJECTS_STORE = join(ROOT, 'stores', 'projects.ts')
 const OPERATIONS_CLIENT = join(ROOT, 'lib', 'operations.ts')
 const TASK_CONTENT_CONTROLLER = join(ROOT, 'views', 'task-tracker', 'useTrackerTaskContent.ts')
 const AGENT_DEFAULTS_CONTROLLER = join(ROOT, 'views', 'project-detail', 'agent-defaults', 'useAgentDefaults.ts')
-const ALLOWED_WRITE_FILES = new Set([AUTH_SETUP_STORE, PROJECTS_STORE, OPERATIONS_CLIENT])
+const ALLOWED_WRITE_FILES = new Set([AUTH_SETUP_STORE, USER_AUTH_STORE, PROJECTS_STORE, OPERATIONS_CLIENT])
 
 function filesUnder(dir: string): string[] {
   const out: string[] = []
@@ -84,6 +85,23 @@ describe('restricted UI write contract', () => {
     expect([...text.matchAll(/method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/g)]).toHaveLength(1)
     expect(text).toContain("apiFetch<SchemaWriteResponseProjectOut>('/api/v1/projects'")
     expect(text).toContain("method: 'POST'")
+  })
+
+  it('limits shared user-auth writes to the selected server auth endpoints', () => {
+    const text = readFileSync(USER_AUTH_STORE, 'utf8')
+    expect(text).not.toMatch(/\bapiWrite\b/)
+    const calls = [...text.matchAll(/\bapiFetch(?:<[^>]+>)?\(\s*([`'"])(.*?)\1\s*,\s*\{([\s\S]*?)\}\)/g)]
+    const writes = calls.filter(call => /method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/.test(call[3]!))
+    expect(writes.map(call => [call[2], call[3]!.match(/method:\s*'([^']+)'/)?.[1]])).toEqual([
+      ['/api/v1/auth/${action}', 'POST'],
+      ['/api/v1/auth/logout', 'POST'],
+    ])
+    // The dynamic endpoint has a closed action union. Adding another endpoint
+    // or another write in this otherwise permitted owner must fail this guard.
+    expect(text.match(/async function submit\(action: ([^,]+),/)?.[1]).toBe(
+      "'register' | 'login' | 'resend' | 'recover' | 'password'",
+    )
+    expect([...text.matchAll(/method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/g)]).toHaveLength(writes.length)
   })
 
   it('limits operation transport writes to the generic operation-call helper', () => {
