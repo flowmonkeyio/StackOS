@@ -47,6 +47,7 @@ from stackos.operations.tracker.schemas import (
     TrackerRejectTaskInput,
     TrackerReleaseInput,
     TrackerReopenInput,
+    TrackerReorderTaskInput,
     TrackerSearchInput,
     TrackerStartDeliveryInput,
     TrackerTicketCountsAllInput,
@@ -54,6 +55,7 @@ from stackos.operations.tracker.schemas import (
     TrackerTicketInput,
     TrackerUpdateTaskContentInput,
     TrackerUpdateTaskInput,
+    TrackerUpdateTaskPriorityInput,
     TrackerUpdateTicketInput,
 )
 from stackos.operations.tracker.spec_helpers import (
@@ -71,9 +73,11 @@ from stackos.operations.tracker.write_handlers import (
     tracker_reject_task,
     tracker_release,
     tracker_reopen,
+    tracker_reorder_task,
     tracker_start_delivery,
     tracker_update_task,
     tracker_update_task_content,
+    tracker_update_task_priority,
     tracker_update_ticket,
 )
 from stackos.repositories.base import Page
@@ -90,7 +94,11 @@ from stackos.repositories.tracker import (
     TrackerTicketCountsOut,
     TrackerVerifyOut,
 )
-from stackos.repositories.tracker.schema import TrackerAgentStatsOut, TrackerSummaryOut
+from stackos.repositories.tracker.schema import (
+    TrackerAgentStatsOut,
+    TrackerSummaryOut,
+    TrackerTaskBoardOut,
+)
 
 _AGENT_STATS_RESPONSE_POLICY = OperationResponsePolicy(
     default_mode="compact",
@@ -112,6 +120,72 @@ _TICKET_COUNTS_RESPONSE_POLICY = OperationResponsePolicy(
 
 def operation_specs() -> list[OperationSpec]:
     return [
+        *[
+            OperationSpec(
+                name=name,
+                summary=summary,
+                input_model=model,
+                output_model=WriteEnvelope[TrackerTaskBoardOut],
+                handler=handler,
+                surfaces=OperationSurfaces(
+                    mcp=OperationSurface(enabled=True),
+                    rest=OperationSurface(
+                        enabled=True, browser_safe=True, path=f"/api/v1/operations/{name}/call"
+                    ),
+                    cli=OperationSurface(enabled=True, command=f"ops call {name}"),
+                ),
+                mutating=True,
+                grant_policy="direct-tracker-write",
+                idempotency_policy="handler",
+                response_policy=OperationResponsePolicy(
+                    default_mode="raw",
+                    allowed_modes=("raw",),
+                    ack_safe=False,
+                    raw_only_reason=(
+                        "Preserve task snapshot, affected keys and intent-bound retry receipt."
+                    ),
+                ),
+                purpose=summary
+                + " Does not change lifecycle, ticket priority or execution policy.",
+                prerequisites=(
+                    "Read tracker.get; supply the task's current status and updated_at.",
+                    "Use one stable idempotency_key per intent; "
+                    "refresh and use a new key after conflict.",
+                ),
+                returns=(
+                    "Saved task, changed flag, affected keys, tracker revision and replay receipt.",
+                ),
+                examples=(
+                    OperationExample(
+                        title=summary,
+                        arguments={
+                            "project_id": 1,
+                            "task_key": "manual-work",
+                            "expected_status": "not-started",
+                            "expected_updated_at": "2026-11-10T00:00:00",
+                            "idempotency_key": "board-edit-1",
+                            **example,
+                        },
+                    ),
+                ),
+            )
+            for name, summary, model, handler, example in (
+                (
+                    "tracker.updateTaskPriority",
+                    "Save one task priority.",
+                    TrackerUpdateTaskPriorityInput,
+                    tracker_update_task_priority,
+                    {"priority_key": "p1"},
+                ),
+                (
+                    "tracker.reorderTask",
+                    "Move one task before or after a same-status task.",
+                    TrackerReorderTaskInput,
+                    tracker_reorder_task,
+                    {"anchor_task_key": "neighbor", "placement": "before"},
+                ),
+            )
+        ],
         OperationSpec(
             name="tracker.configureDelivery",
             summary="Save project task delivery defaults through local-admin setup.",

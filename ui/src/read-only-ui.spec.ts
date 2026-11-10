@@ -12,6 +12,7 @@ const AUTH_SETUP_STORE = join(ROOT, 'stores', 'plugins.ts')
 const PROJECTS_STORE = join(ROOT, 'stores', 'projects.ts')
 const OPERATIONS_CLIENT = join(ROOT, 'lib', 'operations.ts')
 const TASK_CONTENT_CONTROLLER = join(ROOT, 'views', 'task-tracker', 'useTrackerTaskContent.ts')
+const TASK_BOARD_CLIENT = join(ROOT, 'lib', 'stackos', 'taskBoard.ts')
 const AGENT_DEFAULTS_CONTROLLER = join(ROOT, 'views', 'project-detail', 'agent-defaults', 'useAgentDefaults.ts')
 const ALLOWED_WRITE_FILES = new Set([AUTH_SETUP_STORE, PROJECTS_STORE, OPERATIONS_CLIENT])
 
@@ -97,6 +98,7 @@ describe('restricted UI write contract', () => {
   it('keeps tracker writes limited to the bounded task content and project defaults controllers', () => {
     const allowedOperations = new Map([
       [TASK_CONTENT_CONTROLLER, ['tracker.updateTaskContent']],
+      [TASK_BOARD_CLIENT, ['tracker.updateTaskPriority', 'tracker.reorderTask']],
       [AGENT_DEFAULTS_CONTROLLER, ['tracker.configureDelivery']],
     ])
     const callers: string[] = []

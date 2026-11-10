@@ -513,6 +513,28 @@ class TrackerUpdateTaskInput(MCPInput):
     actor: str | None = None
 
 
+class TrackerTaskBoardInput(MCPInput):
+    project_id: StrictInt = Field(gt=0)
+    task_key: StrictStr = Field(min_length=1, max_length=200)
+    expected_status: TrackerItemStatus
+    expected_updated_at: datetime
+    idempotency_key: StrictStr = Field(
+        min_length=1, max_length=120, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.:-]*$"
+    )
+    run_token: None = None
+    expected_etag: None = None
+    response_mode: Literal["raw", "standard", "verbose"] = "raw"
+
+
+class TrackerUpdateTaskPriorityInput(TrackerTaskBoardInput):
+    priority_key: Literal["p0", "p1", "p2", "p3"]
+
+
+class TrackerReorderTaskInput(TrackerTaskBoardInput):
+    anchor_task_key: StrictStr = Field(min_length=1, max_length=200)
+    placement: Literal["before", "after"]
+
+
 class TrackerUpdateTaskContentInput(MCPInput):
     """Human content edits cannot supply tracker or workflow execution state."""
 
@@ -784,11 +806,13 @@ __all__ = [
     "TrackerRejectTaskInput",
     "TrackerReleaseInput",
     "TrackerReopenInput",
+    "TrackerReorderTaskInput",
     "TrackerResponseMode",
     "TrackerSearchInput",
     "TrackerStartDeliveryInput",
     "TrackerTicketInput",
     "TrackerUpdateTaskContentInput",
     "TrackerUpdateTaskInput",
+    "TrackerUpdateTaskPriorityInput",
     "TrackerUpdateTicketInput",
 ]

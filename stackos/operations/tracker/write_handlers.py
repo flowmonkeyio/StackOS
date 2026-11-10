@@ -22,9 +22,11 @@ from stackos.operations.tracker.schemas import (
     TrackerRejectTaskInput,
     TrackerReleaseInput,
     TrackerReopenInput,
+    TrackerReorderTaskInput,
     TrackerStartDeliveryInput,
     TrackerUpdateTaskContentInput,
     TrackerUpdateTaskInput,
+    TrackerUpdateTaskPriorityInput,
     TrackerUpdateTicketInput,
 )
 from stackos.repositories.base import ConflictError, ValidationError
@@ -33,6 +35,7 @@ from stackos.repositories.tracker import (
     TrackerMutationOut,
     TrackerReopenOut,
     TrackerRepository,
+    TrackerTaskBoardOut,
     TrackerTaskContentOut,
 )
 from stackos.repositories.tracker.schema import TrackerSummaryOut
@@ -342,6 +345,34 @@ async def tracker_update_task(
     )
 
 
+async def tracker_update_task_priority(
+    inp: TrackerUpdateTaskPriorityInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[TrackerTaskBoardOut]:
+    env = TrackerRepository(ctx.session).update_task_board(
+        **inp.model_dump(exclude={"run_token", "expected_etag", "response_mode"}),
+        actor="local-user:operator"
+        if str(ctx.extras.get("auth_scope")).startswith("ui-")
+        else None,
+    )
+    return WriteEnvelope[TrackerTaskBoardOut](data=env.data, project_id=env.project_id)
+
+
+async def tracker_reorder_task(
+    inp: TrackerReorderTaskInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[TrackerTaskBoardOut]:
+    env = TrackerRepository(ctx.session).update_task_board(
+        **inp.model_dump(exclude={"run_token", "expected_etag", "response_mode"}),
+        actor="local-user:operator"
+        if str(ctx.extras.get("auth_scope")).startswith("ui-")
+        else None,
+    )
+    return WriteEnvelope[TrackerTaskBoardOut](data=env.data, project_id=env.project_id)
+
+
 async def tracker_update_task_content(
     inp: TrackerUpdateTaskContentInput,
     ctx: MCPContext,
@@ -624,8 +655,10 @@ __all__ = [
     "tracker_reject_task",
     "tracker_release",
     "tracker_reopen",
+    "tracker_reorder_task",
     "tracker_start_delivery",
     "tracker_update_task",
     "tracker_update_task_content",
+    "tracker_update_task_priority",
     "tracker_update_ticket",
 ]

@@ -1171,6 +1171,46 @@ behavior. Readback plus an exact subsequent native prompt can additionally prove
 saved-instruction consumption in that isolated scope; primary installed activation
 and consumption remain separate claims.
 
+## Board priority and order writes
+
+`tracker.updateTaskPriority` and `tracker.reorderTask` are strict, browser-safe
+operations exposed through the same registry to REST, CLI and MCP. They use
+the existing task `priority_key` and integer `order_index`; no migration or
+ranking store is involved. The UI client is `lib/stackos/taskBoard.ts`.
+
+Both require `project_id`, `task_key`, `expected_status`, `expected_updated_at`
+and a stable `idempotency_key`. Priority accepts only `priority_key: p0|p1|p2|p3`.
+Reorder accepts `anchor_task_key` and `placement: before|after`. The anchor
+must currently belong to the same project and status column as the moved task.
+There is no lifecycle, ticket-priority or execution-policy payload. These direct
+tracker intents do not accept a run token or arbitrary patch fields.
+
+The repository reserves the SQLite writer before validating current state and
+retry identity. Stale task snapshots or missing/moved anchors return a structured
+conflict with `next_operations: [tracker.get]`; refresh and submit a new intent.
+An identical retry returns its saved raw receipt with `replayed: true`; reusing
+the key with different arguments conflicts. The receipt includes the saved task,
+`affected_task_keys`, `changed`, tracker revision and request fingerprint.
+
+Board projection and reorder must sort by `order_index` ascending, then
+`created_at` descending and numeric `id` descending. Reorder removes only the
+selected task from that complete column sequence and inserts it at the anchor,
+preserving hidden tasks' relative order. A real move normalizes only that column
+to zero-based integer positions. A same-position/self-anchor move and an
+unchanged priority are no-ops: no normalization, revision or change event.
+No-op receipts still make retries stable. All changed ranks, revision, events
+and retry receipt commit together; the moved task's snapshot also advances when
+a tied integer remains unchanged but its relative position changes.
+
+Real priority/order edits emit `tracker.task.changed` into the existing timeline
+and `tracker-status` SSE transport, including task scope and `changed_fields`.
+Relative movement with an unchanged integer uses `order`; changed integers use
+`order_index`. Existing agent priority patches emit the same genuine task-change
+event. These events invalidate readers without masquerading as status changes
+or adding a polling path. UI callers retain the immutable intent for transport
+retry, reconcile after conflicts, and check project ownership before applying a
+late response. The card and navigation consumers own that interaction state.
+
 ## Status Events
 
 Tracker task and ticket status changes are also written to the project timeline
@@ -1246,6 +1286,8 @@ Agent write operations:
 - `tracker.createTicket`
 - `tracker.updateTask`
 - `tracker.updateTaskContent` (human console REST/CLI only)
+- `tracker.updateTaskPriority` (bounded task priority; MCP/REST/CLI/browser)
+- `tracker.reorderTask` (same-status neighbor placement; MCP/REST/CLI/browser)
 - `tracker.updateTicket`
 - `tracker.patch`
 - `tracker.rejectTask`

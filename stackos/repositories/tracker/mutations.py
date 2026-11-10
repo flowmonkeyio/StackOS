@@ -43,6 +43,7 @@ from stackos.repositories.tracker.schema import (
     TrackerListItemResultOut,
     TrackerMutationOut,
     TrackerReopenOut,
+    TrackerTaskBoardOut,
     TrackerTaskContentOut,
     TrackerTaskInputOut,
 )
@@ -399,6 +400,202 @@ class TrackerMutationMixin:
             ),
             project_id=project_id,
         )
+
+    def update_task_board(
+        self,
+        *,
+        project_id: int,
+        task_key: str,
+        expected_status: TrackerItemStatus,
+        expected_updated_at: datetime,
+        idempotency_key: str,
+        priority_key: str | None = None,
+        anchor_task_key: str | None = None,
+        placement: str | None = None,
+        actor: str | None = None,
+    ) -> Envelope[TrackerTaskBoardOut]:
+        """Save one explicit priority or same-column neighbor intent atomically."""
+        priority_edit = priority_key is not None
+        if priority_edit:
+            if (
+                priority_key not in {"p0", "p1", "p2", "p3"}
+                or anchor_task_key is not None
+                or placement is not None
+            ):
+                raise ValidationError("priority save accepts only p0, p1, p2 or p3")
+        elif not anchor_task_key or placement not in {"before", "after"}:
+            raise ValidationError("reorder requires an anchor task and before/after placement")
+        if not idempotency_key or self._s.new or self._s.dirty or self._s.deleted:
+            raise ValidationError(
+                "Board save requires an intent key and clean repository transaction"
+            )
+        expected = (
+            expected_updated_at.astimezone(UTC).replace(tzinfo=None)
+            if expected_updated_at.tzinfo
+            else expected_updated_at
+        )
+        intent = {
+            "project_id": project_id,
+            "task_key": task_key,
+            "expected_status": _status_value(expected_status),
+            "expected_updated_at": expected.isoformat(),
+            "priority_key": priority_key,
+            "anchor_task_key": anchor_task_key,
+            "placement": placement,
+        }
+        fingerprint = hashlib.sha256(json.dumps(intent, sort_keys=True).encode()).hexdigest()
+        operation = "tracker.updateTaskPriority" if priority_edit else "tracker.reorderTask"
+        try:
+            # Reserve the SQLite writer before reading status, anchors or retry receipts.
+            self._s.connection().exec_driver_sql("BEGIN IMMEDIATE")
+            self._s.expire_all()
+            tracker = self._tracker_or_none(project_id=project_id)
+            if tracker is None:
+                raise NotFoundError("tracker task not found", data={"task_key": task_key})
+            task = self._task_by_key(tracker.id, task_key)
+            prior = self._s.exec(
+                select(IdempotencyKey).where(
+                    IdempotencyKey.project_id == project_id,
+                    IdempotencyKey.tool_name == operation,
+                    IdempotencyKey.idempotency_key == idempotency_key,
+                )
+            ).first()
+            if prior is not None:
+                saved = prior.response_json or {}
+                if saved.get("data", {}).get("request_sha256") != fingerprint:
+                    raise ConflictError(
+                        "idempotency key belongs to a different Board intent",
+                        data={"task_key": task_key, "next_operations": ["tracker.get"]},
+                    )
+                replay = Envelope[TrackerTaskBoardOut].model_validate(saved)
+                replay.data.replayed = True
+                self._s.commit()
+                return replay
+            if task.status != expected_status or task.updated_at != expected:
+                raise ConflictError(
+                    "task changed; refresh before saving again",
+                    data={
+                        "task_key": task.key,
+                        "current_status": _status_value(task.status),
+                        "current_updated_at": task.updated_at.isoformat(),
+                        "next_operations": ["tracker.get"],
+                    },
+                )
+            changed_rows: list[TrackerTask] = []
+            rank_changes: set[int | None] = set()
+            before: dict[str, Any]
+            after: dict[str, Any]
+            if priority_edit:
+                before = {"priority_key": task.priority_key}
+                if task.priority_key != priority_key:
+                    task.priority_key = priority_key
+                    changed_rows = [task]
+                after = {"priority_key": task.priority_key}
+            else:
+                # Same comparator as the Board projection: integer rank, newest
+                # creation first for ties, then descending stable numeric ID.
+                column = list(
+                    self._s.exec(
+                        select(TrackerTask)
+                        .where(
+                            TrackerTask.project_id == project_id,
+                            TrackerTask.tracker_id == tracker.id,
+                            TrackerTask.status == task.status,
+                        )
+                        .order_by(
+                            col(TrackerTask.order_index),
+                            col(TrackerTask.created_at).desc(),
+                            col(TrackerTask.id).desc(),
+                        )
+                    ).all()
+                )
+                anchor = next((row for row in column if row.key == anchor_task_key), None)
+                if anchor is None:
+                    raise ConflictError(
+                        "anchor changed; refresh the column before moving again",
+                        data={
+                            "task_key": task.key,
+                            "anchor_task_key": anchor_task_key,
+                            "next_operations": ["tracker.get"],
+                        },
+                    )
+                reordered = list(column)
+                if anchor.id != task.id:
+                    reordered.remove(task)
+                    reordered.insert(reordered.index(anchor) + (placement == "after"), task)
+                before = {
+                    "order": [
+                        {"task_key": row.key, "order_index": row.order_index} for row in column
+                    ]
+                }
+                if [row.id for row in reordered] != [row.id for row in column]:
+                    for index, row in enumerate(reordered):
+                        if row.order_index != index:
+                            row.order_index = index
+                            changed_rows.append(row)
+                            rank_changes.add(row.id)
+                    # Moving within tied ranks can retain the moved task's
+                    # integer while changing its relative position. Invalidate
+                    # its snapshot and selected-task stream as well.
+                    if task not in changed_rows:
+                        changed_rows.append(task)
+                after = {
+                    "order": [
+                        {"task_key": row.key, "order_index": row.order_index} for row in reordered
+                    ]
+                }
+            for row in changed_rows:
+                row.updated_at = max(_utcnow(), row.updated_at + timedelta(microseconds=1))
+                self._s.add(row)
+                self._record_tracker_task_change_event(
+                    row,
+                    [
+                        "priority_key"
+                        if priority_edit
+                        else "order_index"
+                        if row.id in rank_changes
+                        else "order"
+                    ],
+                    actor=actor,
+                )
+            if changed_rows:
+                self._record_revision(
+                    tracker,
+                    actor=actor,
+                    change_kind="board",
+                    entity_kind="task",
+                    entity_id=task.id,
+                    entity_key=task.key,
+                    summary=f"Updated task Board state {task.key}.",
+                    before_json=before,
+                    after_json=after,
+                    patch_json=intent,
+                    metadata_json={"operation": operation, "idempotency_key": idempotency_key},
+                )
+            result = Envelope(
+                data=TrackerTaskBoardOut(
+                    task=self._task_out(task),
+                    affected_task_keys=[row.key for row in changed_rows],
+                    changed=bool(changed_rows),
+                    rev=tracker.rev,
+                    idempotency_key=idempotency_key,
+                    request_sha256=fingerprint,
+                ),
+                project_id=project_id,
+            )
+            self._s.add(
+                IdempotencyKey(
+                    project_id=project_id,
+                    tool_name=operation,
+                    idempotency_key=idempotency_key,
+                    response_json=result.model_dump(mode="json"),
+                )
+            )
+            self._s.commit()
+            return result
+        except Exception:
+            self._s.rollback()
+            raise
 
     def update_task_content(
         self,
@@ -1219,6 +1416,7 @@ class TrackerMutationMixin:
     def _apply_task_patch(self, task: TrackerTask, patch_json: dict[str, Any]) -> None:
         self._validate_task_patch_fields(patch_json)
         self._validate_workflow_task_patch(task, patch_json)
+        old_priority = task.priority_key
         now = _utcnow()
         if "status" in patch_json:
             new_status = _status_value(str(patch_json["status"]))
@@ -1263,6 +1461,8 @@ class TrackerMutationMixin:
                 setattr(task, field, redact_secrets(_jsonable(patch_json[field])))
         if task.status in TERMINAL_TRACKER_STATUSES:
             task.lane_key = "done"
+        if task.priority_key != old_priority:
+            self._record_tracker_task_change_event(task, ["priority_key"])
         task.updated_at = now
         self._s.add(task)
 

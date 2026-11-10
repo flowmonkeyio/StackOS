@@ -14,6 +14,7 @@ from stackos.repositories.project_events import StackOSEventEmitter
 from stackos.repositories.tracker.agent_stats import invocation_receipts, summarize_receipts
 
 TRACKER_TASK_STATUS_CHANGED = "tracker.task.status_changed"
+TRACKER_TASK_CHANGED = "tracker.task.changed"
 TRACKER_TICKET_STATUS_CHANGED = "tracker.ticket.status_changed"
 TRACKER_EXECUTION_CHANGED = "tracker.execution.changed"
 TRACKER_USAGE_CHANGED = "tracker.usage.changed"
@@ -55,6 +56,31 @@ class TrackerEventMixin:
     """Append tracker status changes to the project timeline."""
 
     _s: Session
+
+    def _record_tracker_task_change_event(
+        self,
+        task: TrackerTask,
+        changed_fields: list[str],
+        *,
+        actor: str | None = None,
+    ) -> None:
+        StackOSEventEmitter(self._s).emit(
+            StackOSEvent(
+                project_id=task.project_id,
+                source=StackOSEventSource(type="tracker_task", id=task.id),
+                event_type=TRACKER_TASK_CHANGED,
+                title="Task Board state updated",
+                actor=actor,
+                tags=["tracker"],
+                metadata={
+                    "task_id": task.id,
+                    "task_key": task.key,
+                    "changed_fields": changed_fields,
+                    "url_path": _tracker_task_path(task),
+                    "actor": actor,
+                },
+            )
+        )
 
     def _record_tracker_usage_event(
         self, ticket: TrackerTicket, task: TrackerTask, before_evidence: Any

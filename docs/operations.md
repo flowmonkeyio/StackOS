@@ -658,6 +658,13 @@ status; ACK and compact modes are not available. See [task content](task-tracker
 for storage and UI behavior. Broader tracker operations remain agent/controller
 surfaces and do not become browser-safe through this exception.
 
+`tracker.updateTaskPriority` and `tracker.reorderTask` expose bounded task Board
+edits through MCP, REST (including the local browser) and CLI, with one repository
+transaction owner. Strict inputs require the task's status/timestamp and an
+intent-bound retry key; they cannot supply lifecycle or arbitrary patches.
+See [Board priority and order writes](task-tracker.md#board-priority-and-order-writes)
+for neighbor placement, ordering, conflicts and existing-stream invalidation.
+
 ## CLI Calls
 
 The CLI uses the same REST operation adapter:
@@ -890,6 +897,8 @@ index for common core operations, not a replacement for registry discovery.
 - `tracker.createTicket`
 - `tracker.updateTask`
 - `tracker.updateTaskContent`
+- `tracker.updateTaskPriority`
+- `tracker.reorderTask`
 - `tracker.updateTicket`
 - `tracker.patch`
 - `tracker.rejectTask`
