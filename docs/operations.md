@@ -136,6 +136,7 @@ Admission reserves that connection in the existing task snapshot. Before offerin
 an invocation the controller marks its outcome uncertain there; only a persisted
 known result clears that marker. A disconnected computer, unresolved handoff or
 uncertainty surviving restart requires manual reconciliation before a new handoff.
+This fence covers every task sharing that connection, including stopped tasks.
 An idle transport after restart does not authorize replay. No process is killed
 or relaunched to resolve uncertainty.
 

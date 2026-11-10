@@ -499,14 +499,16 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
         if remote:
             if previous and previous.get("connection_id") != remote:
                 raise ValidationError("Task delivery must retain its connected computer")
-            active = session.exec(select(TrackerTask).where(TrackerTask.id != task.id)).all()
-            if any(
-                (t.metadata_json or {}).get("delivery", {}).get("connection_id") == remote
-                and (t.metadata_json or {}).get("delivery", {}).get("status")
-                in {"queued", "running"}
-                for t in active
-            ):
-                raise ConflictError("Computer already owned by an active task")
+            others = session.exec(select(TrackerTask).where(TrackerTask.id != task.id)).all()
+            for other in others:
+                other_state = (other.metadata_json or {}).get("delivery", {})
+                if other_state.get("connection_id") == remote and (
+                    other_state.get("status") in {"queued", "running"}
+                    or other_state.get("uncertain_invocation")
+                ):
+                    raise ConflictError(
+                        "Computer has active or uncertain work; reconcile before admission"
+                    )
         else:
             assert directory is not None
             _retain_directory(previous, directory)

@@ -79,8 +79,7 @@ def test_disconnected_computer_refuses_handoff(connected, monkeypatch):
     assert start(client, args | {"project_dir": "/server/path"}).status_code == 422
 
 
-@pytest.mark.parametrize("mode", ["success", "unknown", "repair", "wrong-sha", "same-session"])
-def test_server_accepts_review_once_and_unknown_stops_admission(connected, monkeypatch, mode):
+def _run_connected_scenario(connected, monkeypatch, mode):
     unknown = mode == "unknown"
     client, _, identity, computer, args, jobs = prepare(connected, monkeypatch)
     assert poll(client, identity, computer).json()["state"] == "idle"
@@ -160,3 +159,60 @@ def test_server_accepts_review_once_and_unknown_stops_admission(connected, monke
         client.app.state.operation_services["local_invocations"] = InvocationExchange()
         assert poll(client, identity, computer).json()["state"] == "idle"
         assert start(client, args).status_code == 409
+    return client, identity, computer, args, jobs
+
+
+@pytest.mark.parametrize("mode", ["success", "unknown", "repair", "wrong-sha", "same-session"])
+def test_server_accepts_review_once_and_unknown_stops_admission(connected, monkeypatch, mode):
+    _run_connected_scenario(connected, monkeypatch, mode)
+
+
+@pytest.mark.parametrize("prior_mode", ["unknown", "success"])
+def test_connection_admission_honors_prior_task_outcome_after_transport_restart(
+    connected, monkeypatch, prior_mode
+):
+    client, identity, computer, args, jobs = _run_connected_scenario(
+        connected, monkeypatch, prior_mode
+    )
+    with Session(client.app.state.engine) as session:
+        repo = TrackerRepository(session)
+        original = repo.get(project_id=identity["project_id"], task_key="connected")
+        state = original.tasks[0].metadata_json["delivery"]
+        history = original.tickets[0].completion_evidence_json
+        assert state["status"] == ("stopped" if prior_mode == "unknown" else "complete")
+        assert bool(state.get("uncertain_invocation")) == (prior_mode == "unknown")
+        repo.create_task(project_id=identity["project_id"], key="other", title="Other")
+        repo.create_ticket(
+            project_id=identity["project_id"], task_key="other", key="other-build", title="Other"
+        )
+
+    # A fresh transport and authenticated poll cannot erase durable uncertainty.
+    client.app.state.operation_services["local_invocations"] = InvocationExchange()
+    assert poll(client, identity, computer).json()["state"] == "idle"
+    other_args = args | {"task_key": "other"}
+    queued_before = len(jobs)
+    response = start(client, other_args)
+    expected_status = 409 if prior_mode == "unknown" else 200
+    assert response.status_code == expected_status, response.text
+    assert len(jobs) == queued_before + (prior_mode == "success")
+
+    if prior_mode == "unknown":
+        # The fence belongs to this connection, not every computer/project task.
+        issued = client.post(
+            "/api/v1/operations/localRuntime.authorize/call",
+            json={"arguments": {"project_id": identity["project_id"]}},
+        )
+        assert issued.status_code == 200, issued.text
+        other_identity = identity | {"connection_id": issued.json()["connection_id"]}
+        other_computer = "Bearer " + issued.json()["credential"]
+        assert poll(client, other_identity, other_computer).json()["state"] == "idle"
+        response = start(client, other_args | other_identity)
+        assert response.status_code == 200, response.text
+        assert len(jobs) == queued_before + 1
+
+    with Session(client.app.state.engine) as session:
+        original = TrackerRepository(session).get(
+            project_id=identity["project_id"], task_key="connected"
+        )
+        assert original.tasks[0].metadata_json["delivery"] == state
+        assert original.tickets[0].completion_evidence_json == history
