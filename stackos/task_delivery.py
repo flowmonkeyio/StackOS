@@ -830,15 +830,21 @@ def resolve_delivery_settings(
     agents: Mapping[str, dict[str, Any]] | None = None,
     mcp_config_ref: dict[str, str] | None = None,
     role_keys: set[str] | None = None,
+    _retained_agents: Mapping[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Read-only execution preflight shared by handoff and schedule setup.
 
     Resolve current settings here; only start_delivery freezes them on a task.
+    Its internal retained map resumes an already admitted pre-source task.
     """
     directory = Path(project_dir).expanduser().resolve()
     if not directory.is_dir():
         raise ValidationError("project_dir must be an existing working directory")
-    defaults = TrackerRepository(session).delivery_defaults(project_id=project_id)
+    defaults: dict[str, Any] = (
+        {"agents": dict(_retained_agents)}
+        if _retained_agents is not None
+        else TrackerRepository(session).delivery_defaults(project_id=project_id)
+    )
     if not isinstance(defaults, dict):
         raise ValidationError("Task delivery defaults must be an object")
     host_key = host_key or defaults.get("host_key") or "codex"
@@ -873,7 +879,13 @@ def resolve_delivery_settings(
             raise ValidationError("Invalid selected agent role")
         default_agent = _delivery_role_defaults(defaults, role)
         override = overrides.get(role, {})
-        values = {**default_agent, **override}
+        if _retained_agents is not None and role not in _retained_agents:
+            raise ValidationError("Task delivery must retain its admitted agent roles")
+        values = (
+            deepcopy(_retained_agents[role])
+            if _retained_agents is not None
+            else {**default_agent, **override}
+        )
         if values.get("source_ref") is not None and "instructions" not in override:
             # Selected sources replace inherited instructions, never execution fallbacks.
             values.pop("instructions", None)
@@ -882,7 +894,7 @@ def resolve_delivery_settings(
         except SchemaValidationError as schema_error:
             raise ValidationError(f"Resolved {role} is invalid: {schema_error}") from schema_error
         choice["host_key"] = choice.get("host_key") or host_key
-        if choice["host_key"] == "codex":
+        if choice["host_key"] == "codex" and _retained_agents is None:
             if not choice.get("source_ref"):
                 raise ValidationError(
                     f"Codex {role} adoption_required: select an exact project source_ref",
@@ -1092,6 +1104,47 @@ def start_delivery(
     if task.status not in {TrackerItemStatus.NOT_STARTED, TrackerItemStatus.IN_PROGRESS}:
         raise ValidationError("Task must be open before starting delivery")
     snapshot = repo.get(project_id=project_id, task_key=task_key, include_graph=False)
+    retained_agents = None
+    saved_agents = previous.get("agents") or {
+        role: previous[role] for role in ("delivery_agent", "review_agent") if previous.get(role)
+    }
+    if (
+        previous.get("status") == "stopped"
+        and previous.get("handoff_id")
+        and previous.get("job_ref")
+        == f"task-delivery:{project_id}:{task.id}:{previous['handoff_id']}"
+        and any(
+            agent.get("host_key", previous.get("host_key")) == "codex"
+            and not agent.get("source_ref")
+            for agent in saved_agents.values()
+        )
+    ):
+        # A pre-upgrade task was already admitted. Preserve its whole selection,
+        # including untouched tickets; this is not fresh inline Codex admission.
+        if (
+            _resolved_settings is not None
+            or (host_key is not None and host_key != previous.get("host_key"))
+            or run_plan_id != previous.get("run_plan_id")
+        ):
+            raise ValidationError("Task delivery must retain its admitted execution scope")
+        supplied = list((agents or {}).items())
+        for role, override in (("delivery_agent", delivery_agent), ("review_agent", review_agent)):
+            if override is not None:
+                supplied.append((role, override))
+        if any(
+            role not in saved_agents
+            or any(saved_agents[role].get(key) != value for key, value in override.items())
+            for role, override in supplied
+        ) or any(
+            (previous.get("agent_assignments") or {}).get(key) != role
+            for key, role in (agent_assignments or {}).items()
+        ):
+            raise ValidationError("Task delivery must retain its admitted agent selection")
+        retained_agents = deepcopy(saved_agents)
+        host_key = previous["host_key"]
+        agents = retained_agents
+        delivery_agent = review_agent = None
+        agent_assignments = previous.get("agent_assignments") or {}
     mirror_keys = (
         {workflow_step_ticket_key(plan.id, step.step_id) for step in plan.steps} if plan else set()
     )
@@ -1105,7 +1158,11 @@ def start_delivery(
     assignments = dict(agent_assignments or {})
     declared = (plan.template_snapshot_json or {}).get("agent_requirements", []) if plan else []
     selected_roles = None
-    defaults = repo.delivery_defaults(project_id=project_id)
+    defaults = (
+        {"agents": retained_agents}
+        if retained_agents is not None
+        else repo.delivery_defaults(project_id=project_id)
+    )
     if declared:
         assert plan is not None
         declared_roles = {requirement["role"] for requirement in declared}
@@ -1161,6 +1218,7 @@ def start_delivery(
             agents=agents,
             role_keys=selected_roles,
             mcp_config_ref=mcp_config_ref,
+            _retained_agents=retained_agents,
         )
     else:
         if _resolved_settings.get("project_id") != project_id or _resolved_settings.get(

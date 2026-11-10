@@ -50,6 +50,21 @@ def test_fresh_codex_inline_requires_explicit_adoption(session, project_id, tmp_
             delivery_agent={"name": "a", "instructions": "old"},
             review_agent={"name": "b", "instructions": "old"},
         )
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="fresh", title="Fresh")
+    repo.create_ticket(project_id=project_id, task_key="fresh", key="fresh-child", title="Fresh")
+    scheduler = QueuedScheduler()
+    with pytest.raises(ValidationError, match="adoption_required"):
+        start(
+            session,
+            project_id,
+            tmp_path,
+            scheduler,
+            task_key="fresh",
+            delivery_agent={"name": "a", "instructions": "old"},
+            review_agent={"name": "b", "instructions": "old"},
+        )
+    assert not scheduler.jobs
 
 
 @pytest.mark.parametrize("argument_form", ["legacy", "map"])
@@ -738,3 +753,199 @@ def test_ambiguous_declared_roles_need_explicit_assignment(session, project_id, 
         agent_assignments={f"workflow-{plan.id}-work": "two"},
     )
     assert len(scheduler.jobs) == 1
+
+
+def legacy_admission(session, project_id, root):
+    """Persist the pre-source-adoption handoff and native identity shape."""
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="legacy", title="Admitted before upgrade")
+    repo.create_ticket(project_id=project_id, task_key="legacy", key="existing", title="Existing")
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="legacy",
+        key="pending",
+        title="Pending",
+        dependency_keys=["existing"],
+    )
+    task = repo.get(project_id=project_id, task_key="legacy").tasks[0]
+    roles = {
+        "delivery_agent": {
+            "name": "writer",
+            "instructions": "Original writer",
+            "host_key": "codex",
+            "model": "gpt-6.1-sol",
+        },
+        "review_agent": {
+            "name": "reviewer",
+            "instructions": "Original reviewer",
+            "host_key": "codex",
+            "model": "gpt-6-astra",
+        },
+    }
+    state = {
+        "status": "stopped",
+        "handoff_id": "prior-admission",
+        "job_ref": f"task-delivery:{project_id}:{task.id}:prior-admission",
+        "host_key": "codex",
+        "project_dir": str(root),
+        "agent_assignments": {},
+        **roles,
+    }
+    sessions = {
+        phase: {
+            "agent": agent["name"],
+            "host_key": "codex",
+            "project_dir": str(root),
+            "model": agent["model"],
+            "thread_id": f"original-{phase}",
+        }
+        for phase, agent in (
+            ("delivery", roles["delivery_agent"]),
+            ("review", roles["review_agent"]),
+        )
+    }
+    repo.update_task(
+        project_id=project_id,
+        task_key="legacy",
+        patch_json={"metadata_json": {"keep": "yes", "delivery": state}},
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="existing",
+        patch_json={
+            "completion_evidence_json": {
+                "automatic_delivery": {"sessions": sessions, "repair_count": 2}
+            },
+        },
+    )
+    return repo, state, sessions
+
+
+@pytest.mark.parametrize("mapped_snapshot", [False, True])
+@pytest.mark.parametrize("explicit_same_selection", [False, True])
+def test_upgrade_rehandoff_retains_legacy_task_and_native_sessions(
+    session, project_id, tmp_path, monkeypatch, mapped_snapshot, explicit_same_selection
+):
+    repo, prior, sessions = legacy_admission(session, project_id, tmp_path)
+    if mapped_snapshot:
+        prior["agents"] = {role: prior[role] for role in ("delivery_agent", "review_agent")}
+        repo.update_task(
+            project_id=project_id,
+            task_key="legacy",
+            patch_json={
+                "metadata_json": {"keep": "yes", "delivery": prior},
+            },
+        )
+    repo.configure_delivery(
+        project_id=project_id,
+        delivery={
+            "host_key": "claude-code",
+            "delivery_agent": {
+                "name": "future",
+                "instructions": "Future defaults",
+                "model": "claude-sonnet-5-5",
+            },
+        },
+    )
+    calls = []
+
+    def launch(host, directory, instructions, prompt, schema, **kwargs):
+        packet = json.loads(prompt)
+        key, phase = packet["brief"]["ticket"]["key"], packet["phase"]
+        calls.append(
+            (
+                key,
+                phase,
+                host,
+                instructions.split("\n\n", 1)[0],
+                kwargs.get("model"),
+                kwargs.get("resume_thread_id"),
+            )
+        )
+        assert "native_settings" not in kwargs
+        return AgentRunResult(
+            0, thread_id=kwargs.get("resume_thread_id") or f"{key}-{phase}", result=generic_result()
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    selection = (
+        {role: prior[role] for role in ("delivery_agent", "review_agent")}
+        if explicit_same_selection
+        else {}
+    )
+    start(session, project_id, tmp_path, scheduler, task_key="legacy", **selection)
+    admitted = repo.get(project_id=project_id, task_key="legacy").tasks[0].metadata_json
+    assert admitted["keep"] == "yes"
+    assert admitted["delivery"]["agents"] == {
+        role: prior[role] for role in ("delivery_agent", "review_agent")
+    }
+    scheduler.run()
+    assert calls == [
+        ("existing", "delivery", "codex", "Original writer", "gpt-6.1-sol", "original-delivery"),
+        ("existing", "review", "codex", "Original reviewer", "gpt-6-astra", "original-review"),
+        ("pending", "delivery", "codex", "Original writer", "gpt-6.1-sol", None),
+        ("pending", "review", "codex", "Original reviewer", "gpt-6-astra", None),
+    ]
+    session.expire_all()
+    final = repo.brief(
+        project_id=project_id, ticket_key="existing"
+    ).ticket.completion_evidence_json["automatic_delivery"]
+    assert final["sessions"] == sessions
+    assert final["repair_count"] == 2
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"host_key": "claude-code"},
+        {"delivery_agent": {"model": "gpt-6-astra"}},
+        {"delivery_agent": {"instructions": "Changed"}},
+        {"agents": {"extra": {"name": "extra", "instructions": "Extra"}}},
+        {
+            "agents": {"delivery_agent": {"model": "gpt-6-astra"}},
+            "delivery_agent": {"model": "gpt-6.1-sol"},
+        },
+        {"agent_assignments": {"existing": "review_agent"}},
+    ],
+)
+def test_legacy_rehandoff_rejects_changed_selection(session, project_id, tmp_path, changes):
+    legacy_admission(session, project_id, tmp_path)
+    scheduler = QueuedScheduler()
+    with pytest.raises(ValidationError, match="retain"):
+        start(session, project_id, tmp_path, scheduler, task_key="legacy", **changes)
+    assert not scheduler.jobs
+
+
+def test_legacy_rehandoff_still_preflights_host(session, project_id, tmp_path, monkeypatch):
+    legacy_admission(session, project_id, tmp_path)
+    monkeypatch.setattr(
+        task_delivery, "agent_selection_error", lambda *args, **kwargs: "Host unavailable"
+    )
+    scheduler = QueuedScheduler()
+    with pytest.raises(ValidationError, match="Host unavailable"):
+        start(session, project_id, tmp_path, scheduler, task_key="legacy")
+    assert not scheduler.jobs
+
+
+@pytest.mark.parametrize("change", ["directory", "mcp", "job_identity"])
+def test_legacy_rehandoff_preserves_scope_guards(session, project_id, tmp_path, change):
+    repo, prior, _ = legacy_admission(session, project_id, tmp_path)
+    args = {}
+    root = tmp_path
+    if change == "directory":
+        root = tmp_path / "different"
+        root.mkdir()
+    elif change == "mcp":
+        args["mcp_config_ref"] = {"path": str(tmp_path / "different.toml"), "sha256": "a" * 64}
+    else:
+        prior["job_ref"] = "another-task-job"
+        repo.update_task(
+            project_id=project_id,
+            task_key="legacy",
+            patch_json={"metadata_json": {"delivery": prior}},
+        )
+    scheduler = QueuedScheduler()
+    with pytest.raises(ValidationError):
+        start(session, project_id, root, scheduler, task_key="legacy", **args)
+    assert not scheduler.jobs

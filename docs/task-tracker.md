@@ -179,6 +179,12 @@ snapshot from current defaults and overrides. Prior ticket receipts, native
 sessions and consumed repair allowance survive. Completed tasks and frozen
 run/template snapshots are never refreshed. Tickets carry no
 agent settings. Invalid resolved roles or model selections reject before scheduling.
+An already admitted inline Codex task stopped across the source-adoption upgrade
+retains its saved agents and assignments on unchanged explicit rehandoff, including
+work that has not launched yet. Current defaults cannot replace that selection;
+changed host, agent settings or assignments reject. Existing workspace, MCP-route,
+host-preflight and native-session identity guards still apply. This exception does
+not admit a new inline Codex task or refresh its prior receipts or repair count.
 Each role may override `host_key`, `model`, `provider`, and (for Hermes)
 `profile`. The merged role host overrides the task host, then the project host,
 then `codex`. Clearing a role host uses that task/project host chain.
