@@ -9,6 +9,24 @@ Read the canonical
 plugin or moving behavior between plugin and core. Domain method belongs here;
 only reusable, domain-agnostic product primitives belong in core.
 
+## Project enablement
+
+The project Plugins page distinguishes **Available** (not explicitly configured),
+**Disabled**, and **Enabled** (explicitly enabled). Use **Enable for project** to
+persist enablement through the existing local-admin plugin operation. This does
+not grant agent tools, connect credentials or execute plugin workflows. Failures
+stay visible and may be retried; switching projects cannot apply a delayed result
+to the new project.
+
+Finance requires explicit enablement. Enabling or re-enabling Finance does not
+create or reset financial records. Opening Finance resolves its managed store,
+or adopts a uniquely mapped legacy store through the existing custody-checked
+migration. That process retains original files and refuses ambiguous/revoked
+legacy mappings. Before opening Finance after an upgrade, verify that historical
+host-owned files have their valid legacy access mapping; do not delete a mapping
+or manually create an empty master to clear a recovery error. Unmapped files
+outside managed storage are not automatically discovered or imported.
+
 ## Manifest
 
 Plugin manifests live at `plugins/<slug>/plugin.yaml`:

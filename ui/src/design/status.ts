@@ -176,7 +176,14 @@ export const memoryState = defineStatuses({
   archived: { label: 'Archived', tone: 'neutral', icon: 'archive' },
 });
 
+export const pluginStatus = defineStatuses({
+  enabled: { label: 'Enabled', tone: 'success', dot: true },
+  disabled: { label: 'Disabled', tone: 'neutral' },
+  available: { label: 'Available', tone: 'neutral' },
+});
+
 export const statusRegistry = {
+  plugin: pluginStatus,
   run: runStatus,
   step: stepStatus,
   tracker: trackerStatus,

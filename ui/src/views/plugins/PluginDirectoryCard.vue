@@ -1,12 +1,26 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import ProviderMark from '@/components/domain/ProviderMark.vue'
 import { UiBadge, UiButton, UiCard, UiMedallion } from '@/components/ui'
+import { resolveStatus } from '@/design/status'
 import { pluginSectionIcon } from '@/lib/stackos/nav'
 
 import type { PluginDirectoryItem } from './viewModel'
 
-defineProps<{ item: PluginDirectoryItem; availabilityLoading?: boolean; availabilityError?: boolean }>()
-defineEmits<{ showProviders: [] }>()
+const props = defineProps<{
+  item: PluginDirectoryItem
+  availabilityLoading?: boolean
+  availabilityError?: boolean
+  enabling?: boolean
+  enableDisabled?: boolean
+}>()
+defineEmits<{ showProviders: []; enable: [] }>()
+const enablement = computed(() => resolveStatus(
+  'plugin',
+  props.item.plugin.enabled_for_project === true
+    ? 'enabled'
+    : props.item.plugin.enabled_for_project === false ? 'disabled' : 'available',
+))
 </script>
 
 <template>
@@ -26,10 +40,10 @@ defineEmits<{ showProviders: [] }>()
         </div>
       </div>
       <UiBadge
-        :tone="item.plugin.enabled_for_project === false ? 'neutral' : 'success'"
-        :dot="item.plugin.enabled_for_project !== false"
+        :tone="enablement.tone"
+        :dot="enablement.dot"
       >
-        {{ item.plugin.enabled_for_project === false ? 'Available' : 'Enabled' }}
+        {{ enablement.label }}
       </UiBadge>
     </template>
 
@@ -81,6 +95,17 @@ defineEmits<{ showProviders: [] }>()
         View provider availability
       </UiButton>
     </div>
+
+    <UiButton
+      v-if="item.plugin.enabled_for_project !== true"
+      size="sm"
+      :loading="enabling"
+      :disabled="enableDisabled"
+      :aria-label="`Enable ${item.plugin.name} for this project`"
+      @click="$emit('enable')"
+    >
+      {{ enabling ? 'Enabling…' : 'Enable for this project' }}
+    </UiButton>
 
     <template #footer>
       <dl class="flex w-full flex-wrap items-center gap-x-4 gap-y-1 text-xs text-fg-muted">

@@ -42,14 +42,15 @@ describe('restricted UI write contract', () => {
     expect(offenders).toEqual([])
   })
 
-  it('limits the auth setup store writes to provider credential controls', () => {
+  it('limits the catalog setup store writes to explicit plugin enablement and provider credential controls', () => {
     const text = readFileSync(AUTH_SETUP_STORE, 'utf8')
     const methodBlocks = [...text.matchAll(/apiFetch<[\s\S]*?\n\s*\)/g)]
       .map((match) => match[0])
       .filter((block) => /method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/.test(block))
 
-    expect(methodBlocks.length).toBe(11)
+    expect(methodBlocks.length).toBe(12)
     expect(methodBlocks.map((block) => block.match(/method:\s*'([^']+)'/)?.[1])).toEqual([
+      'POST',
       'POST',
       'PATCH',
       'POST',
@@ -63,6 +64,7 @@ describe('restricted UI write contract', () => {
       'POST',
     ])
     expect(methodBlocks.map((block) => block.match(/`([^`]+)`/)?.[1])).toEqual([
+      '/api/v1/projects/${projectId}/plugins/${encodeURIComponent(pluginSlug)}/enable',
       '/api/v1/auth/accounts/${providerKey}',
       '/api/v1/auth/accounts/${encodeURIComponent(credentialRef)}',
       '/api/v1/auth/accounts/${providerKey}/start',
