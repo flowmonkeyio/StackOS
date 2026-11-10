@@ -19,8 +19,7 @@ from uuid import uuid4
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.base import BaseScheduler
 from pydantic import ValidationError as SchemaValidationError
-from sqlalchemy import func
-from sqlmodel import Session, select
+from sqlmodel import Session, col, select
 
 from stackos.db.models import (
     RunPlan,
@@ -484,9 +483,13 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
     if session.new or session.dirty or session.deleted:
         raise ValidationError("Task delivery handoff requires a clean repository transaction")
     try:
-        # Serialize only admission, never execution. Reading and saving the queued
-        # snapshot in one SQLite writer transaction also protects concurrent calls.
-        session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+        # Serialize only admission, never execution. Reserve the table so even
+        # tasks in different projects cannot both claim an unowned directory.
+        connection = session.connection()
+        if connection.dialect.name == "postgresql":
+            connection.exec_driver_sql("LOCK TABLE tracker_tasks IN SHARE ROW EXCLUSIVE MODE")
+        else:
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
         session.expire_all()
         task = _task(repo, project_id, task_key)
         previous = (task.metadata_json or {}).get("delivery", {})
@@ -514,11 +517,11 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
         # Directory ownership spans this daemon's task jobs. Git metadata is
         # deliberately absent from this identity; non-Git directories work too.
         active_directories = session.exec(
-            select(func.json_extract(TrackerTask.metadata_json, "$.delivery.project_dir")).where(
+            select(col(TrackerTask.metadata_json)["delivery"]["project_dir"].as_string()).where(
                 TrackerTask.id != task.id,
-                func.json_extract(TrackerTask.metadata_json, "$.delivery.status").in_(
-                    ("queued", "running")
-                ),
+                col(TrackerTask.metadata_json)["delivery"]["status"]
+                .as_string()
+                .in_(("queued", "running")),
             )
         ).all()
         if any(

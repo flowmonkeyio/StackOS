@@ -649,11 +649,18 @@ class WorkspaceRepository:
             and resolution.binding is None
         )
         if effective_global:
-            # SQLite's writer reservation serializes this decision with every
-            # canonical binding writer. Re-read after acquiring it: preflight
-            # absence is not authority, and lookup errors must fail closed.
+            # Reserve the binding decision against canonical binding writers,
+            # including inserts when no binding row exists yet. Re-read under
+            # the transaction lock; preflight absence is not authority.
             try:
-                self._s.connection().exec_driver_sql("BEGIN IMMEDIATE")
+                connection = self._s.connection()
+                if connection.dialect.name == "postgresql":
+                    connection.exec_driver_sql(
+                        "LOCK TABLE workspace_bindings IN SHARE ROW EXCLUSIVE MODE"
+                    )
+                else:
+                    connection.exec_driver_sql("BEGIN IMMEDIATE")
+                self._s.expire_all()
                 resolution = self.resolve(
                     repo_fingerprint=repo_fingerprint,
                     git_remote_url=git_remote_url,
