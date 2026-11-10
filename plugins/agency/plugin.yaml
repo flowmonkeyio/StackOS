@@ -123,11 +123,9 @@ ui:
   nav:
     section: Agency
     items:
-      - key: agency.resources
-        label: Data
-        to: resources?plugin_slug=agency
-      - key: agency.templates
-        label: Workflows
-        to: workflow-templates?plugin_slug=agency
+      - key: agency.domain
+        label: Agency
+        to: plugins/agency
+        matchPrefix: true
 config:
   schema_version: stackos.plugin.v1

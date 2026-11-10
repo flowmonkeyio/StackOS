@@ -219,7 +219,7 @@ function inspectStatus(status: TrackerStatus): void {
             >
               <RouterLink
                 v-slot="{ href, navigate }"
-                :to="`${base}/workflow-templates${workflow.pluginSlug ? `?plugin_slug=${encodeURIComponent(workflow.pluginSlug)}` : ''}`"
+                :to="workflow.pluginSlug ? `${base}/plugins/${encodeURIComponent(workflow.pluginSlug)}/workflows/${encodeURIComponent(workflow.key)}` : `${base}/plugins`"
                 custom
               >
                 <UiButton
@@ -242,14 +242,14 @@ function inspectStatus(status: TrackerStatus): void {
             No enabled project workflow configuration is recorded.
           </p>
           <UiButton
-            :href="`${base}/workflow-templates`"
+            :href="`${base}/plugins`"
             variant="ghost"
             size="sm"
             icon-right="arrow-right"
             class="mt-3"
-            @click.prevent="router.push(`${base}/workflow-templates`)"
+            @click.prevent="router.push(`${base}/plugins`)"
           >
-            View workflow library
+            Browse plugins
           </UiButton>
         </UiCard>
       </div>

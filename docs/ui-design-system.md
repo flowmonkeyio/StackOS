@@ -49,9 +49,10 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 
 - Sidebar: 256px desktop rail.
 - The project picker directly precedes the scrollable project navigation.
-  **Operate** leads (Home, Attention, Work, Activity), then **Configure**
-  (Connections, Automation, Spend, Agent defaults, Plugins), **Execution**, **Catalog**,
-  **Data & evidence**, and enabled plugin groups.
+  Home, Work, Automations and Library lead without a category heading. **Setup**
+  contains Connections, Spend, Agents and Plugins. The following **Plugins**
+  group contains direct enabled-domain links, including the existing Finance
+  destination. Domain links never expand into Data/Workflows submenus.
 - A separated **App** footer holds Overview, Accounts, and Backups outside the
   project navigation scroll, above the theme control. All three are available
   without a project. Backups retains the global `/setup` route.
@@ -59,6 +60,11 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
   not new top-level product lanes. The root `/` is the project portfolio +
   local system status; `/projects/:id` is the operations console (Home). See
   [`ui-redesign-direction.md`](./ui-redesign-direction.md).
+  There are no Attention, Activity, Execution, Catalog, Data & evidence,
+  Settings, Diagnostics or Advanced navigation wrappers. Work owns contextual
+  results/history; Library owns saved information/files; domain pages own their
+  workflow details. Finance request inspection stays at its origin even before
+  a tracker task exists. See the [route map](./ui-page-layout-map.md).
 - Top bar: 52px. Sticky. Solid `bg.surface`, no blur.
 - Page content: max `1536px` (wide), `1280px` (default), `768px` (reading).
 - Page header: title, slug, description, and utility controls (right). Breadcrumbs optional, above title.

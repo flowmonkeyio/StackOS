@@ -122,7 +122,7 @@ describe('project ticket overview', () => {
     expect(wrapper.text()).not.toContain('Writing')
     expect(wrapper.text()).not.toContain('Agents are working')
     expect(
-      wrapper.find('a[href="/projects/1/workflow-templates?plugin_slug=finance"]').exists(),
+      wrapper.find('a[href="/projects/1/plugins/finance/workflows/finance.followups"]').exists(),
     ).toBe(true)
     wrapper.findComponent({ name: 'TicketStatusChart' }).vm.$emit('select', 'failed')
     await flushPromises()

@@ -144,6 +144,49 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 describe('Finance management', () => {
+  it('resolves an older contextual request beyond the bounded queue page by its exact identity', async () => {
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    const request = { id: 703, project_id: 1, title: 'Older Finance request', status: 'new', run_plan_id: null,
+      metadata_json: { metadata_json: { workspace_ref: access.workspace_ref, query: {} } } }
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name === 'agentRequest.list') return { items: [], next_cursor: 100 }
+      if (name === 'agentRequest.get') return request
+      if (name === 'finance.report.render') return { state: 'awaiting_agent' }
+      return basics(name, args)
+    })
+    const { wrapper } = await mounted('?analysis=703')
+    await wrapper.get('[data-test="inspect-finance-request"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Older Finance request')
+    expect(callOperation).toHaveBeenCalledWith('agentRequest.get', { project_id: 1, request_id: 703, response_mode: 'raw' })
+    wrapper.unmount()
+  })
+  it.each(['new', 'failed'])('inspects a %s Finance request at origin without inventing a tracker task', async (status) => {
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    const request = {
+      id: 702, project_id: 1, title: 'Original Finance review', status,
+      run_plan_id: null, claimed_by: null,
+      metadata_json: { metadata_json: { workspace_ref: access.workspace_ref, query: { start: '2026-01-01', end: '2026-12-31' } } },
+    }
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name === 'agentRequest.list') return { items: [request] }
+      if (name === 'agentRequest.get') return request
+      if (name === 'finance.report.render') return { state: 'awaiting_agent' }
+      return basics(name, args)
+    })
+    const { wrapper, router } = await mounted('?analysis=702')
+    await wrapper.get('[data-test="inspect-finance-request"]').trigger('click')
+    await flushPromises()
+    const dialog = wrapper.get('[role="dialog"]')
+    expect(dialog.text()).toContain('Original Finance review')
+    expect(dialog.text()).toContain(status)
+    expect(dialog.text()).toContain('No linked run')
+    expect(dialog.find('a[href*="tasks"]').exists()).toBe(false)
+    expect(wrapper.find('a[href*="agent-requests"]').exists()).toBe(false)
+    expect(router.currentRoute.value.path).toBe('/projects/1/finance')
+    expect(callOperation).toHaveBeenCalledWith('agentRequest.get', expect.objectContaining({ project_id: 1, request_id: 702 }))
+    wrapper.unmount()
+  })
   it('loads the complete calendar year, applies shortcuts once and restores the default on project remount', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-14T12:00:00Z'))
@@ -949,21 +992,20 @@ describe('Finance management', () => {
     await flushPromises()
     await wrapper.get('[data-test="refresh-finance"]').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('Original analysis request 1 verified in Agent requests')
+    expect(wrapper.text()).toContain('Original analysis request 1 verified in Finance')
     expect(wrapper.text()).toContain('Run prepared — awaiting execution')
-    expect(wrapper.find('a[href="/projects/1/agent-requests?request=1"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="inspect-finance-request"]').attributes('data-request-id')).toBe('1')
     await wrapper
       .findAll('button')
       .find((b) => b.text() === 'Request new category and concern review')!
       .trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.analysis).toBe('2')
-    expect(wrapper.find('a[href="/projects/1/agent-requests?request=2"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="inspect-finance-request"]').attributes('data-request-id')).toBe('2')
     finishOriginal()
     await flushPromises()
     expect(router.currentRoute.value.query.analysis).toBe('2')
-    expect(wrapper.find('a[href="/projects/1/agent-requests?request=2"]').exists()).toBe(true)
-    expect(wrapper.find('a[href="/projects/1/agent-requests?request=1"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="inspect-finance-request"]').attributes('data-request-id')).toBe('2')
     expect(wrapper.text()).toContain('Awaiting agent — a host must claim this request')
     expect(attempts).toHaveLength(2)
     expect(attempts[1]!.message_key).not.toBe(attempts[0]!.message_key)
@@ -1223,7 +1265,7 @@ describe('Finance management', () => {
         .find((b) => b.text() === 'Retry original analysis request')
       if (metadataMatch === 'exact') {
         expect(retry).toBeUndefined()
-        expect(wrapper.text()).toContain('Original analysis request 7 verified in Agent requests')
+        expect(wrapper.text()).toContain('Original analysis request 7 verified in Finance')
         expect(wrapper.text()).toContain('Reviewed result unavailable')
         expect(attempts).toHaveLength(1)
       } else {
@@ -1279,7 +1321,7 @@ describe('Finance management', () => {
     exposeReceipt = true
     await wrapper.get('[data-test="refresh-finance"]').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('Original analysis request 7 verified in Agent requests')
+    expect(wrapper.text()).toContain('Original analysis request 7 verified in Finance')
     expect(wrapper.text()).toContain('Historical project Finance data')
     expect(wrapper.text()).not.toContain('Reviewed analysis · current source')
     expect(

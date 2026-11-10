@@ -365,12 +365,9 @@ ui:
   nav:
     section: Marketing
     items:
-      - key: marketing.resources
-        label: Data
-        to: resources?plugin_slug=marketing
+      - key: marketing.domain
+        label: Marketing
+        to: plugins/marketing
         matchPrefix: true
-      - key: marketing.templates
-        label: Workflows
-        to: workflow-templates?plugin_slug=marketing
 config:
   schema_version: stackos.plugin.v1

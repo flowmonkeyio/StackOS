@@ -360,9 +360,10 @@ callable contract per StackOS primitive. The agent bridge advertises
 prerequisites, return notes, examples, and schemas. Use `toolbox.describe` for
 exact hidden setup and step-granted tools before calling them.
 
-The UI reads the same docs at `/projects/{project_id}/operations`. That page is
-not a second registry; it renders `GET /api/v1/operations` and
-`GET /api/v1/operations/{operation_name}`.
+The operation registry remains agent accessible through MCP, REST and CLI.
+`GET /api/v1/operations` and `GET /api/v1/operations/{operation_name}` retain
+their shared contracts. The standalone human operation-catalog page is removed;
+relevant object Details may expose safe contextual metadata.
 
 ## Agent activity reads
 

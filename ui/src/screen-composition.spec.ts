@@ -80,16 +80,6 @@ describe('desktop screen composition contract', () => {
     expect(taskDialog).toContain('Back to task')
   })
 
-  it('defaults Activity to grouped outcomes with raw audit on demand', () => {
-    const text = source('views/ActivityView.vue')
-
-    expect(text).toContain('const filter = ref<Category>(routeCategory())')
-    expect(text).toContain(": 'outcomes'")
-    expect(text).toContain('Related adjacent changes are grouped into one episode.')
-    expect(text).toContain('Show raw audit')
-    expect(text).toContain('Technical event details')
-  })
-
   it('opens Connections on services and groups messaging and diagnostics', () => {
     const text = source('views/ConnectionsView.vue')
     const connectivity = source('views/connections/ConnectivityPanel.vue')
@@ -106,25 +96,4 @@ describe('desktop screen composition contract', () => {
     expect(accounts).toContain('Set up provider Accounts once')
   })
 
-  it('explains the request-to-work-to-outcome handoff', () => {
-    const text = source('views/AgentRequestsView.vue')
-
-    expect(text).toContain('From request to outcome')
-    expect(text).toContain('Agent claims it')
-    expect(text).toContain('Work becomes visible')
-    expect(text).toContain('Outcome is recorded')
-    expect(text).toContain('Where this request is now')
-  })
-
-  it('gives every Attention item impact, ownership, and an expected result', () => {
-    const store = source('stores/attention.ts')
-    const view = source('views/InboxView.vue')
-
-    expect(store).toContain('impact: string')
-    expect(store).toContain('ownership: string')
-    expect(store).toContain('after: string')
-    expect(view).toContain('Why it matters')
-    expect(view).toContain('Who owns what')
-    expect(view).toContain('After you act')
-  })
 })

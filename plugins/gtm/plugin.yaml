@@ -4388,13 +4388,10 @@ ui:
   nav:
     section: GTM
     items:
-      - key: gtm.resources
-        label: Data
-        to: resources?plugin_slug=gtm
+      - key: gtm.domain
+        label: GTM
+        to: plugins/gtm
         matchPrefix: true
-      - key: gtm.templates
-        label: Workflows
-        to: workflow-templates?plugin_slug=gtm
 config:
   schema_version: stackos.plugin.v1
   provider_connectors:

@@ -85,6 +85,7 @@ ui:
   nav:
     section: Support
     items:
-      - key: support.resources
-        label: Data
-        to: resources?plugin_slug=support
+      - key: support.domain
+        label: Support
+        to: plugins/support
+        matchPrefix: true

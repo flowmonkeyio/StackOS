@@ -229,12 +229,9 @@ ui:
   nav:
     section: Publishing
     items:
-      - key: publishing.resources
-        label: Data
-        to: resources?plugin_slug=publishing
+      - key: publishing.domain
+        label: Publishing
+        to: plugins/publishing
         matchPrefix: true
-      - key: publishing.templates
-        label: Workflows
-        to: workflow-templates?plugin_slug=publishing
 config:
   schema_version: stackos.plugin.v1

@@ -14,10 +14,8 @@ export interface StackOsNavSection {
   key: string
   label: string
   items: StackOsNavItem[]
-  /** Icon registry name for collapsible group headers. Optional, presentational. */
+  /** Optional presentational section icon. */
   icon?: string
-  /** Plugin-contributed sections render as collapsible groups. */
-  collapsible?: boolean
 }
 
 export type StackOsRouteQuery = Record<string, unknown>
@@ -44,76 +42,32 @@ const PLUGIN_LABELS: Record<string, string> = {
   utils: 'Utilities',
 }
 
-interface PluginNavContribution {
-  section?: string
-  items?: Array<{
-    key?: string
-    label?: string
-    to?: string
-    description?: string
-    matchPrefix?: boolean
-  }>
-}
-
 export function coreNavSections(projectId: number): StackOsNavSection[] {
   const base = `/projects/${projectId}`
   return [
     {
-      key: 'operate',
-      label: 'Operate',
+      key: 'project',
+      label: '',
       items: [
         { key: 'home', label: 'Home', to: base, icon: 'home' },
-        { key: 'attention', label: 'Attention', to: `${base}/inbox`, icon: 'inbox' },
         { key: 'tasks', label: 'Work', to: `${base}/tasks`, matchPrefix: true, icon: 'tasks' },
-        { key: 'activity', label: 'Activity', to: `${base}/activity`, icon: 'list' },
+        { key: 'schedules', label: 'Automations', to: `${base}/schedules`, icon: 'bolt' },
+        { key: 'library', label: 'Library', to: `${base}/library`, icon: 'folder' },
       ],
     },
     {
-      key: 'configure',
-      label: 'Configure',
+      key: 'setup',
+      label: 'Setup',
       items: [
         { key: 'connections', label: 'Connections', to: `${base}/connections`, icon: 'link' },
-        { key: 'schedules', label: 'Automations', to: `${base}/schedules`, icon: 'calendar' },
-        { key: 'cost-budget', label: 'Spend', to: `${base}/cost-budget`, icon: 'banknotes' },
+        { key: 'cost-budget', label: 'Spend', to: `${base}/cost-budget`, icon: 'database' },
         {
-          key: 'agent-defaults',
-          label: 'Agent defaults',
-          to: `${base}/agent-defaults`,
-          icon: 'users',
+          key: 'agents',
+          label: 'Agents',
+          to: `${base}/agents`,
+          icon: 'user',
         },
         { key: 'plugins', label: 'Plugins', to: `${base}/plugins`, icon: 'puzzle' },
-      ],
-    },
-    {
-      key: 'execution',
-      label: 'Execution',
-      items: [
-        { key: 'runs', label: 'Runs', to: `${base}/runs`, matchPrefix: true, icon: 'runs' },
-        { key: 'agent-requests', label: 'Agent Requests', to: `${base}/agent-requests`, icon: 'queue-list' },
-        { key: 'action-calls', label: 'Action Calls', to: `${base}/action-calls`, icon: 'bolt' },
-      ],
-    },
-    {
-      key: 'catalog',
-      label: 'Catalog',
-      items: [
-        {
-          key: 'workflow-templates',
-          label: 'Workflow Templates',
-          to: `${base}/workflow-templates`,
-          icon: 'library',
-        },
-        { key: 'agent-presets', label: 'Agent Presets', to: `${base}/agent-presets`, icon: 'users' },
-        { key: 'capabilities', label: 'Capabilities', to: `${base}/capabilities`, icon: 'chip' },
-        { key: 'operations', label: 'Operations', to: `${base}/operations`, icon: 'terminal' },
-      ],
-    },
-    {
-      key: 'data-evidence',
-      label: 'Data & evidence',
-      items: [
-        { key: 'resources', label: 'Resources', to: `${base}/resources`, icon: 'folder' },
-        { key: 'project-data', label: 'Project Data', to: `${base}/data`, icon: 'database' },
       ],
     },
   ]
@@ -129,6 +83,8 @@ export function pluginSectionIcon(slug: string): string {
     publishing: 'newspaper',
     seo: 'search',
     support: 'lifebuoy',
+    agency: 'users',
+    finance: 'database',
     trackbooth: 'sparkles',
     core: 'cube',
     utils: 'wrench',
@@ -140,11 +96,7 @@ export function projectNavSections(
   projectId: number,
   plugins: SchemaPluginOut[],
 ): StackOsNavSection[] {
-  const [operate, configure, execution, catalog, dataEvidence] = coreNavSections(projectId)
-  const pluginSections = pluginContributionSections(projectId, plugins)
-  return [operate, configure, execution, catalog, dataEvidence, ...pluginSections].filter(
-    (section): section is StackOsNavSection => Boolean(section?.items.length),
-  )
+  return [...coreNavSections(projectId), ...pluginContributionSections(projectId, plugins)]
 }
 
 export function pluginContributionSections(
@@ -152,36 +104,25 @@ export function pluginContributionSections(
   plugins: SchemaPluginOut[],
 ): StackOsNavSection[] {
   const base = `/projects/${projectId}`
-  const sections: StackOsNavSection[] = []
+  const items: StackOsNavItem[] = []
   for (const plugin of [...plugins].sort(comparePlugins)) {
     if (plugin.enabled_for_project === false) continue
     const ui = isRecord(plugin.manifest_json?.ui) ? plugin.manifest_json.ui : null
-    const nav = isPluginNav(ui?.nav) ? ui.nav : null
-    if (!nav) continue
-    const items: StackOsNavItem[] = []
-    for (const item of nav.items ?? []) {
-      if (item.label && item.to) {
-        const to = item.to.startsWith('/') ? item.to : `${base}/${item.to.replace(/^\/+/, '')}`
-        items.push({
-          key: item.key ?? `${plugin.slug}.${item.label}`,
-          label: item.label,
-          to,
-          description: item.description,
-          matchPrefix: item.matchPrefix,
-        })
-      }
-    }
-    if (items.length > 0) {
-      sections.push({
-        key: `plugin-${plugin.slug}`,
-        label: nav.section ?? plugin.name,
-        items,
-        icon: pluginSectionIcon(plugin.slug),
-        collapsible: true,
-      })
-    }
+    const nav = isRecord(ui?.nav) ? ui.nav : null
+    if (!nav && !isRecord(ui?.page)) continue
+    // Domain identity owns the destination. Normalize older Data/Workflows
+    // contributions here too, including Agency and Support.
+    const label = plugin.slug === 'finance' ? 'Finance'
+      : typeof nav?.section === 'string' ? nav.section : plugin.name
+    items.push({
+      key: `plugin-${plugin.slug}`,
+      label,
+      to: plugin.slug === 'finance' ? `${base}/finance` : `${base}/plugins/${encodeURIComponent(plugin.slug)}`,
+      matchPrefix: true,
+      icon: pluginSectionIcon(plugin.slug),
+    })
   }
-  return sections
+  return items.length ? [{ key: 'domains', label: 'Plugins', items }] : []
 }
 
 function comparePlugins(a: SchemaPluginOut, b: SchemaPluginOut): number {
@@ -224,11 +165,7 @@ export function isStackOsNavItemActive(
     return targetKeys.every((key) => queryValueMatches(currentQuery[key], targetParams.getAll(key)))
   }
 
-  return currentQuery.plugin_slug === undefined || currentQuery.plugin_slug === null
-}
-
-function isPluginNav(value: unknown): value is PluginNavContribution {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+  return true
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

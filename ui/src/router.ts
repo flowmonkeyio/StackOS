@@ -5,23 +5,15 @@ import LocalSetupView from './views/LocalSetupView.vue'
 import AuthErrorView from './views/AuthErrorView.vue'
 import ProjectDetailView from './views/ProjectDetailView.vue'
 import HomeConsoleView from './views/HomeConsoleView.vue'
-import InboxView from './views/InboxView.vue'
-import ActivityView from './views/ActivityView.vue'
 import SchedulesTab from './views/project-detail/SchedulesTab.vue'
 import CostBudgetTab from './views/project-detail/CostBudgetTab.vue'
-import AgentDefaultsTab from './views/project-detail/AgentDefaultsTab.vue'
-import RunsView from './views/RunsView.vue'
 import PluginsView from './views/PluginsView.vue'
-import CapabilitiesView from './views/CapabilitiesView.vue'
 import ConnectionsView from './views/ConnectionsView.vue'
 import AccountsView from './views/AccountsView.vue'
-import OperationsView from './views/OperationsView.vue'
-import WorkflowTemplatesView from './views/WorkflowTemplatesView.vue'
-import AgentPresetsView from './views/AgentPresetsView.vue'
-import ProjectDataView from './views/ProjectDataView.vue'
-import ResourceExplorerView from './views/ResourceExplorerView.vue'
-import ActionCallsView from './views/ActionCallsView.vue'
-import AgentRequestsView from './views/AgentRequestsView.vue'
+import LibraryView from './views/LibraryView.vue'
+import AgentsView from './views/AgentsView.vue'
+import PluginDomainView from './views/PluginDomainView.vue'
+import WorkflowDetailView from './views/WorkflowDetailView.vue'
 import TaskTrackerView from './views/TaskTrackerView.vue'
 import FinanceView from './views/FinanceView.vue'
 
@@ -38,44 +30,18 @@ const routes: RouteRecordRaw[] = [
       // Home is the operations console; it owns its own page chrome, so
       // ProjectDetailView renders it without the configuration header wrapper.
       { path: '', name: 'project-home', component: HomeConsoleView },
-      { path: 'overview', redirect: (to) => ({ path: `/projects/${to.params.id}` }) },
       { path: 'schedules', name: 'project-detail-schedules', component: SchedulesTab },
       { path: 'cost-budget', name: 'project-detail-cost-budget', component: CostBudgetTab },
-      {
-        path: 'agent-defaults',
-        name: 'project-detail-agent-defaults',
-        component: AgentDefaultsTab,
-      },
     ],
   },
-  { path: '/projects/:id/inbox', name: 'project-inbox', component: InboxView },
-  { path: '/projects/:id/activity', name: 'project-activity', component: ActivityView },
   { path: '/projects/:id/plugins', name: 'project-plugins', component: PluginsView },
-  { path: '/projects/:id/capabilities', name: 'project-capabilities', component: CapabilitiesView },
+  { path: '/projects/:id/plugins/:pluginSlug', name: 'project-plugin', component: PluginDomainView },
+  { path: '/projects/:id/plugins/:pluginSlug/workflows/:templateKey', name: 'project-workflow', component: WorkflowDetailView },
+  { path: '/projects/:id/library', name: 'project-library', component: LibraryView },
+  { path: '/projects/:id/agents', name: 'project-agents', component: AgentsView },
   { path: '/projects/:id/connections', name: 'project-connections', component: ConnectionsView },
-  { path: '/projects/:id/operations', name: 'project-operations', component: OperationsView },
-  { path: '/projects/:id/action-calls', name: 'project-action-calls', component: ActionCallsView },
-  {
-    path: '/projects/:id/agent-requests',
-    name: 'project-agent-requests',
-    component: AgentRequestsView,
-  },
-  {
-    path: '/projects/:id/agent-presets',
-    name: 'project-agent-presets',
-    component: AgentPresetsView,
-  },
   { path: '/projects/:id/tasks', name: 'project-tasks', component: TaskTrackerView },
   { path: '/projects/:id/finance', name: 'project-finance', component: FinanceView },
-  {
-    path: '/projects/:id/workflow-templates',
-    name: 'project-workflow-templates',
-    component: WorkflowTemplatesView,
-  },
-  { path: '/projects/:id/data', name: 'project-data', component: ProjectDataView },
-  { path: '/projects/:id/resources', name: 'project-resources', component: ResourceExplorerView },
-  { path: '/projects/:id/runs', name: 'project-runs', component: RunsView },
-  { path: '/projects/:id/runs/:run_id', name: 'project-run-detail', component: RunsView },
 ]
 
 const router = createRouter({

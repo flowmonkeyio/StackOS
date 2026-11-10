@@ -295,12 +295,9 @@ ui:
   nav:
     section: Engineering
     items:
-      - key: engineering.resources
-        label: Data
-        to: resources?plugin_slug=engineering
+      - key: engineering.domain
+        label: Engineering
+        to: plugins/engineering
         matchPrefix: true
-      - key: engineering.templates
-        label: Workflows
-        to: workflow-templates?plugin_slug=engineering
 config:
   schema_version: stackos.plugin.v1

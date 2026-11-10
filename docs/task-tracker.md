@@ -100,20 +100,12 @@ revision in raw mode; compact and ack are unsupported. Existing
 `tracker.get` with `response_mode=raw` exposes `tracker.config_json` for readback.
 MCP/system and workflow grants cannot authorize this local-admin write.
 
-The local console exposes this setup at **Configure → Agent defaults**
-(`/projects/:id/agent-defaults`). It reads `tracker.status` in raw mode and edits
-a copy of the complete saved delivery object, changing only selected fields.
-Untouched optional fields and other role settings are retained; the operation
-preserves unrelated tracker configuration. Blank optional selectors save as
-null; untouched absent fields remain absent. Harness/model choices and supported
-provider/profile controls use the shared host capability catalog, with no model
-access claim. After a harness change, incompatible saved provider/profile values
-remain visible until explicitly cleared in the same input. Clear them before
-using that harness; saving defaults does not establish execution readiness.
-A successful save reloads and checks the stored delivery object
-against the operation result and displays its revision. Failures remain visible
-and retain the draft. Existing task snapshots and ticket receipts stay unchanged;
-saving does not call `tracker.startDelivery` or refresh instructions from files.
+The local console exposes native project definitions at **Setup → Agents**
+(`/projects/:id/agents`). It lists, adds and edits actual native files through
+`projectAgent.*`; generic presets are not the live project list. Its saved-default
+adoption uses the preview/write/readback contract below. The old fixed
+delivery/review form is removed. Editing a source or adopting defaults never
+calls `tracker.startDelivery` and does not establish execution readiness.
 
 Migration `0035_generic_task_delivery` moves existing engineering plugin
 delivery defaults once, preserving role instructions, names, host, model,
@@ -135,6 +127,16 @@ replaces only selected editable instruction owners with `agents` references and
 checks the saved readback. No source file is rewritten. Queued/running task state,
 run/template snapshots, receipts and history remain unchanged. No database upgrade,
 watcher, preset lookup or same-name file inference performs adoption.
+
+For other-host inline defaults, after independent source/local approval,
+explicitly authorized instruction-only saved-default adoption may occur during a running task.
+Queued/running snapshots stay frozen. Explicit rehandoff after complete/stopped
+execution resolves current defaults while preserving prior ticket receipts,
+native sessions and consumed repair allowance. Completed tasks and frozen
+run/template snapshots stay unchanged. Installed activation is separately
+authorized and main-owned after task closure. Adoption does not authorize
+restarting the daemon orchestrating the active task; source checks do not prove
+saved adoption, native consumption or installed activation.
 
 The handoff is task-level; role objects and their fields can be omitted when
 project defaults supply them:
