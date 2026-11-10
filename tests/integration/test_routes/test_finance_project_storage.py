@@ -621,6 +621,14 @@ def test_publication_marker_is_durable_until_completed_reconciliation(
     monkeypatch.setattr(FinanceConsole, "_clear_publication", clear)
     monkeypatch.setattr(builtin_finance, "_publish_directory", publish)
     resumed = call(api, "finance.status", {"project_id": project_id})
+    if boundary == "journal":
+        # A marker without custody metadata is ambiguous. Do not silently
+        # restart initialization and risk substituting an empty ledger.
+        assert resumed.status_code == 422
+        assert "storage_publication_incomplete" in resumed.text
+        assert marker.exists()
+        assert not (parent / "finance").exists()
+        return
     assert resumed.status_code == 200, resumed.text
     assert not marker.exists()
     assert json.loads((parent / "finance-state.json").read_text())["phase"] == "ready"

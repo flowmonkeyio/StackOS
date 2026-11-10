@@ -81,6 +81,7 @@ from .doctor_commands import (
     doctor,
     mcp_host_status,
 )
+from .finance_recovery_commands import finance_recover
 from .launchd import (
     _install_launchd_autostart,
     _launchctl,
