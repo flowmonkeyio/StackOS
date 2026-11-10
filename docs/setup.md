@@ -85,6 +85,71 @@ http://127.0.0.1:5173/
 
 The Vite app proxies `/api` and `/mcp` to the daemon on port `5180`.
 
+### Isolated local Supabase environments
+
+Online source development uses one native Supabase CLI workdir and project ID
+per environment. Use Docker and Supabase CLI 2.84.2; do not reuse an installed
+StackOS data/state directory, another workdir's project ID, or its volumes.
+This is fresh setup, with no historical data import or production provisioning.
+
+Prepare each environment once, outside Git, with explicit unused ports:
+
+```bash
+.venv/bin/python scripts/prepare-local-supabase.py \
+  --workdir /private/tmp/stackos-dev-a --environment-id stackos-dev-a \
+  --server-port 18610 --runtime-port 18611 --api-port 18621 \
+  --db-port 18622 --shadow-port 18620 --mail-port 18624
+.venv/bin/python scripts/prepare-local-supabase.py \
+  --workdir /private/tmp/stackos-dev-b --environment-id stackos-dev-b \
+  --server-port 18710 --runtime-port 18711 --api-port 18721 \
+  --db-port 18722 --shadow-port 18720 --mail-port 18724
+```
+
+The script refuses existing workdirs, project-owned Docker containers/volumes,
+unavailable Docker and occupied/duplicate ports. It prepares private files only;
+the native Supabase CLI owns start/stop and persistent project-named volumes.
+Each config has distinct Auth signing/API keys, Auth issuer and redirect origin,
+and explicit API, database, shadow and mail ports. Optional services are disabled;
+if enabling one, assign its own unused ports. The client Data API exposes no
+application schemas. Mail verification stays enabled and uses local Inbucket.
+
+Start each selected workdir using the native CLI:
+
+```bash
+supabase start --workdir /private/tmp/stackos-dev-a
+supabase start --workdir /private/tmp/stackos-dev-b
+```
+
+If Docker's automatic address pool is exhausted, choose an unused private subnet
+with `docker network create --subnet ...` for each owned network, then pass its
+name through `supabase start --network-id ...`. Preserve other workloads and
+networks. Supabase CLI 2.84.2 publishes on all host interfaces; Docker Desktop
+can ignore a network's default loopback binding option. These are disposable
+local development instances with synthetic data, not public services. Stop
+them when proof is complete. StackOS server/runtime listeners remain loopback.
+Keep CLI status/start output private: it contains test keys.
+Stop an environment with `supabase stop --workdir /private/tmp/stackos-dev-a`;
+native stop preserves its data volume. Restart with the same explicit workdir
+and any selected network. Do not use all-project stop or volume-prune commands.
+
+`Settings` remains the configuration owner. Select exactly one private file with
+`STACKOS_ENV_FILE=/private/tmp/stackos-dev-a/server.env` (or `runtime.env`) in
+a process with no other `STACKOS_` field overrides. Selection ignores the cwd
+`.env` and installed settings; missing files, missing fields and mixed overrides
+refuse. Server configuration checks its project ID, Auth/API/DB ports, issuer,
+keys and private data/state roots against that workdir's native CLI config.
+Runtime configuration carries only the expected environment ID, StackOS server
+URL and separate local listener/data/state settings; it rejects Supabase/DB
+credentials. Clients use the StackOS URL, never Supabase directly. Runtime
+connection must verify the expected server environment before admitting work.
+
+These settings are the handoff to Postgres, Auth and runtime startup owners.
+Selecting a server/runtime role refuses the standalone SQLite path; it cannot
+start the old daemon against a fallback database. Existing standalone settings
+remain available for the current installation and isolated source test fixtures.
+No install, launchd, host registration or installed-app change is part of this
+preparation. Main owns later consolidation and installed-product proof.
+
 ## Package Or Operator Setup
 
 Build the StackOS wheel and let the installer resolve its pinned connector
