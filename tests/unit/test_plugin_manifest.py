@@ -32,8 +32,18 @@ def _auth_field_keys(provider: ProviderManifest, method_key: str | None = None) 
 
 @pytest.mark.parametrize(
     "slug",
-    ["agency", "branding", "communications", "engineering", "gtm", "marketing",
-     "media-buying", "publishing", "seo", "support"],
+    [
+        "agency",
+        "branding",
+        "communications",
+        "engineering",
+        "gtm",
+        "marketing",
+        "media-buying",
+        "publishing",
+        "seo",
+        "support",
+    ],
 )
 def test_domain_page_sections_match_packaged_capabilities(slug: str) -> None:
     root = Path(__file__).resolve().parents[2] / "plugins" / slug
