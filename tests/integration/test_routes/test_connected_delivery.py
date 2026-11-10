@@ -11,10 +11,24 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from sqlmodel import Session
 
-from stackos.local_runtime.exchange import InvocationExchange
+from stackos.local_runtime.exchange import InvocationExchange, InvocationReport
 from stackos.repositories.tracker import TrackerRepository
 
 pytest_plugins = ["tests.integration.test_routes.test_local_runtime_exchange"]
+
+
+def test_finished_known_report_waits_for_controller_release(connected):
+    from tests.integration.test_routes.test_local_runtime_exchange import offer, terminal
+
+    exchange, connection, invocation, _, _ = offer(connected)
+    exchange.poll(connection, None)
+    exchange.report(connection, InvocationReport.model_validate(terminal(invocation)))
+    invocation.finished = True
+    observed = exchange.poll(connection, invocation.invocation_id)
+    assert observed["state"] == "completed"
+    assert observed["needs_attention"] is False
+    assert "launch" not in observed
+    exchange.release(connection, invocation)
 
 
 def prepare(connected, monkeypatch):

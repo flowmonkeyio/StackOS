@@ -176,7 +176,11 @@ class InvocationExchange:
             call = handoff.call
             if invocation_id is not None and invocation_id != call.invocation_id:
                 return {"state": "unknown", "needs_attention": True}
-            if call.cancelled.is_set() or call.retired.is_set() or call.finished:
+            if (
+                call.cancelled.is_set()
+                or call.retired.is_set()
+                or (call.finished and handoff.state != "completed")
+            ):
                 return {"state": "unknown", "needs_attention": True}
             response = {
                 "invocation_id": call.invocation_id,
