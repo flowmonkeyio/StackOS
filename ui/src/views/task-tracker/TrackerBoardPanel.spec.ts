@@ -13,6 +13,19 @@ const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
 const automaticMetadata = { delivery: { status: 'running', job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent } }
 
 describe('Work board presentation', () => {
+  it('hides only empty projected columns when requested and restores all columns when cleared', async () => {
+    const rows = buildTaskProgressRows([task('in-progress')], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
+    const wrapper = mount(TrackerBoardPanel, { props: { rows } })
+    expect(wrapper.findAll('.tracker-board__column')).toHaveLength(7)
+    await wrapper.setProps({ hideEmptyColumns: true })
+    expect(wrapper.findAll('.tracker-board__column')).toHaveLength(1)
+    expect(wrapper.get('.tracker-board__column').attributes('aria-label')).toBe('In Progress')
+    await wrapper.setProps({ rows: [] })
+    expect(wrapper.findAll('.tracker-board__column')).toHaveLength(0)
+    await wrapper.setProps({ hideEmptyColumns: false })
+    expect(wrapper.findAll('.tracker-board__column')).toHaveLength(7)
+    wrapper.unmount()
+  })
   it('shows persisted item elapsed for completed manual cards without an owner or token eligibility', () => {
     const record = { ...task('complete'), owner: null, started_at: '2026-11-08T01:00:00', completed_at: '2026-11-09T05:00:00' }
     const rows = buildTaskProgressRows([record], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })

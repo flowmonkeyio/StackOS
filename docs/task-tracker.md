@@ -1704,11 +1704,49 @@ theme changes and device pixel ratio changes. Its observers and listeners are
 released on unmount. The compact summary adds no fit-based visibility gate or
 refresh timer.
 
+## Board URL state
+
+`TaskTrackerView` owns Board filter and display state through the current URL.
+The pure `task-tracker/boardFilters.ts` parser, serializer and update/remove/clear
+commands provide one typed clause model to the controls and Board projection.
+There is no saved filter store. History and reload read the same query state;
+changing filters preserves the open detail identity and its draft.
+
+| Query | Meaning |
+| --- | --- |
+| `search` | Text substring across task and ticket/index search fields, case insensitive |
+| `status`, `priority` | Comma-separated or repeated values; OR within a field, AND between clauses |
+| `status_op`, `priority_op` | `is` (default) or `is-not`; priorities are `p0` through `p3` |
+| `workflow`, `assignee` | One workflow key or assignee; corresponding `_op` accepts `is` or `is-not` |
+| `ticket_status`, `focus=blocked` | Legacy Home restrictions represented as removable clauses |
+| `completed` | `all`, `past-day`, `past-week`, `past-month`, or `none` |
+| `hide_empty=1` | Hide columns without any projected tasks |
+
+Missing status/completed choices default to Status is not Aborted and Completed
+Past week. Explicit `status=all&completed=all` keeps Clear all unrestricted on
+reload; clearing filters retains the empty-column display choice. Invalid
+enum values are ignored, with missing/invalid status and completion choices
+using the same defaults. Complete selected explicitly with Completed None
+reconciles to All in the control state and subsequent URL writes.
+
+Completion windows apply only to tasks whose actual status is `complete`,
+using `completed_at` and the existing StackOS UTC timestamp parser. Windows
+include their lower boundary and exclude future or unknown/invalid timestamps;
+Past month means 30 rolling days. All includes unknown dates. Other statuses,
+including reopened tasks, are unaffected by completion dates.
+
+Board rows sort by persisted `order_index`, then newest `created_at` and
+descending ID, matching the reorder repository. Graph's picker retains its
+unfiltered newest-first order. Project switching preserves view, status,
+priority, completion/display choices and portable legacy restrictions, and
+clears text, workflow, assignee and task/ticket selections.
+
 ## UI
 
 The Work UI provides two views, Board and Graph. It renders:
 
-- Board by default, with seven fixed columns for the current task statuses:
+- Board by default, with seven columns for the current task statuses (empty
+  columns can be hidden through the display choice):
   `not-started`, `in-progress`, `complete`, `deferred`, `aborted`, `failed`,
   and `skipped`. Cards cannot be dragged between columns or change status.
 - a Board / Graph switch in the same shared desktop toolbar as the

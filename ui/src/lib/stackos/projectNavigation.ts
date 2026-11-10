@@ -10,7 +10,7 @@ const PORTABLE_QUERY_KEYS_BY_SURFACE: Readonly<Record<string, readonly string[]>
   operations: ['operation'],
   'action-calls': ['plugin_slug', 'action_ref'],
   'agent-requests': ['attention_status'],
-  tasks: ['view', 'status', 'focus'],
+  tasks: ['view', 'status', 'status_op', 'priority', 'priority_op', 'completed', 'hide_empty', 'focus', 'ticket_status'],
   'workflow-templates': ['plugin_slug'],
   data: ['tab'],
   resources: ['plugin_slug'],

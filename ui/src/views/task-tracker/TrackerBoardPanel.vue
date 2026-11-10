@@ -11,12 +11,12 @@ import { isAutomaticDeliveryTask, taskDeliveryState } from '@/lib/task-tracker/d
 import { activeExecutionTitle, executionStatus } from '@/lib/task-tracker/execution'
 import type { TaskProgressRow } from './viewTypes'
 
-const props = defineProps<{ rows: TaskProgressRow[]; selectedTaskKey?: string }>()
+const props = defineProps<{ rows: TaskProgressRow[]; selectedTaskKey?: string; hideEmptyColumns?: boolean }>()
 defineEmits<{ (e: 'openTask', key: string): void; (e: 'refresh'): void }>()
 const columns = computed(() => (Object.keys(trackerStatus) as TrackerStatus[]).map((status) => ({
   status,
   rows: props.rows.filter((row) => row.task.status === status),
-})))
+})).filter(column => !props.hideEmptyColumns || column.rows.length))
 
 function state(row: TaskProgressRow) {
   return executionStatus(row.task.status, row.task.active_execution, taskDeliveryState(row.task))
@@ -31,6 +31,7 @@ function blocker(row: TaskProgressRow): string | null {
 <template>
   <section
     class="tracker-board focus-ring"
+    :style="{ gridTemplateColumns: `repeat(${Math.max(columns.length, 1)}, minmax(300px, 1fr))` }"
     aria-label="Task board"
     tabindex="0"
   >

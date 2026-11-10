@@ -2,12 +2,12 @@
 import { computed, provide, ref } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter, type LocationQueryRaw } from 'vue-router'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
-import { UiBadge, UiButton, UiCallout, UiEmptyState, UiLoadingState, UiPageShell } from '@/components/ui'
+import { UiButton, UiCallout, UiEmptyState, UiLoadingState, UiPageShell } from '@/components/ui'
 import { callOperation } from '@/lib/operations'
 import { patchUsageSnapshot, patchUsageAfter, usageCheckpoint } from '@/lib/usageUpdates'
 import type { UsageProjection } from '@/lib/usageUpdates'
-import { resolveStatus, trackerStatus } from '@/design/status'
-import type { TrackerSnapshot, TrackerStatus, TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
+import { resolveStatus } from '@/design/status'
+import type { TrackerSnapshot, TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
 import { isAutomaticDeliveryTask, taskDeliveryState } from '@/lib/task-tracker/delivery'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { usageFeedKey } from '@/composables/useUsageFeed'
@@ -22,8 +22,10 @@ import TrackerTicketDetailPanel from './task-tracker/TrackerTicketDetailPanel.vu
 import TrackerWarningSummary from './task-tracker/TrackerWarningSummary.vue'
 import { useTrackerExecutionContexts } from './task-tracker/useTrackerExecutionContexts'
 import { useTrackerGraphSession } from './task-tracker/useTrackerGraphSession'
-import type { StatusFilter, ViewMode } from './task-tracker/viewTypes'
-import { buildAssigneeOptions, buildTaskProgressRows, buildWorkflowOptions, groupTicketsByTask, mergeFocusedTrackerSnapshot } from './task-tracker/viewModel'
+import type { ViewMode } from './task-tracker/viewTypes'
+import { buildAssigneeOptions, buildTaskProgressRows, buildWorkflowOptions, groupTicketsByTask, mergeFocusedTrackerSnapshot, projectBoardRows } from './task-tracker/viewModel'
+import { boardFilterLabel, boardFilterQuery, clearBoardFilters, parseBoardFilters, removeBoardFilter, updateBoardDisplay, updateBoardFilter } from './task-tracker/boardFilters'
+import type { BoardFilterClause, BoardFilterField, BoardFilterState } from './task-tracker/boardFilters'
 
 const route = useRoute()
 const router = useRouter()
@@ -36,12 +38,11 @@ const error = ref<string | null>(null)
 const mapTaskStorageKey = `stackos:work-map-task:${projectId.value}`
 const mapTaskKey = ref(queryText(route.query.task) || rememberedMapTask())
 const viewMode = computed<ViewMode>(() => route.query.view === 'graph' ? 'graph' : 'board')
-const search = computed(() => queryText(route.query.search))
-const statusFilter = computed(() => statusFromQuery(route.query.status))
-const ticketStatusFilter = computed(() => statusFromQuery(route.query.ticket_status))
-const workflowFilter = computed(() => queryText(route.query.workflow))
-const assigneeFilter = computed(() => queryText(route.query.assignee))
-const blockedFilter = computed(() => route.query.focus === 'blocked')
+const boardFilters = computed(() => parseBoardFilters(route.query))
+const search = computed(() => boardFilters.value.clauses.find(clause => clause.field === 'text')?.value ?? '')
+const workflowFilter = computed(() => boardFilters.value.clauses.find(clause => clause.field === 'workflow')?.value ?? '')
+const assigneeFilter = computed(() => boardFilters.value.clauses.find(clause => clause.field === 'assignee')?.value ?? '')
+const contextualClauses = computed(() => boardFilters.value.clauses.filter(clause => ['status', 'priority', 'ticket-status', 'blocked'].includes(clause.field)))
 const detailTaskKey = computed(() => queryText(route.query.detail))
 const detailTicketKey = computed(() => queryText(route.query.ticket))
 const detailSnapshot = ref<TrackerSnapshot | null>(null)
@@ -54,10 +55,7 @@ const detailTicket = computed(() => detailTickets.value.find((ticket) => ticket.
 const tasks = computed(() => snapshot.value?.tasks ?? [])
 const ticketsByTask = computed(() => groupTicketsByTask(snapshot.value?.tickets ?? []))
 const allTaskRows = computed(() => buildTaskProgressRows(tasks.value, ticketsByTask.value, { search: '', status: 'all', workflow: '', assignee: '' }))
-const taskRows = computed(() => buildTaskProgressRows(tasks.value, ticketsByTask.value, {
-  search: search.value, status: statusFilter.value, workflow: workflowFilter.value, assignee: assigneeFilter.value,
-  ticketStatus: ticketStatusFilter.value, blocked: blockedFilter.value,
-}))
+const taskRows = computed(() => projectBoardRows(allTaskRows.value, boardFilters.value))
 const activeTaskRow = computed(() => allTaskRows.value.find((row) => row.key === mapTaskKey.value) ?? null)
 const taskSelectOptions = computed(() => allTaskRows.value.map((row) => ({
   value: row.key, label: `#${row.id} ${row.task.title}`,
@@ -67,7 +65,7 @@ const taskSelectOptions = computed(() => allTaskRows.value.map((row) => ({
 })))
 const workflowOptions = computed(() => buildWorkflowOptions(tasks.value))
 const assigneeOptions = computed(() => buildAssigneeOptions(tasks.value, snapshot.value?.tickets ?? []))
-const filtersActive = computed(() => Boolean(search.value || workflowFilter.value || assigneeFilter.value || statusFilter.value !== 'all' || ticketStatusFilter.value !== 'all' || blockedFilter.value))
+const filtersActive = computed(() => boardFilters.value.clauses.length > 0 || boardFilters.value.completed !== 'all')
 const liveTaskKey = computed(() => viewMode.value === 'graph' ? mapTaskKey.value : '')
 const graph = useTrackerGraphSession({
   projectId, activeTaskKey: mapTaskKey, liveTaskKey, activeTaskRow, snapshot, routeError: error,
@@ -239,7 +237,16 @@ function viewDependencies(taskKey: string): void {
   navigate({ view: 'graph', task: taskKey, detail: undefined, ticket: undefined })
 }
 function clearFilters(): void {
-  navigate({ search: undefined, status: undefined, ticket_status: undefined, workflow: undefined, assignee: undefined, focus: undefined })
+  navigate(boardFilterQuery(clearBoardFilters(boardFilters.value)))
+}
+function updateFilter(clause: BoardFilterClause, replace = false): void {
+  navigate(boardFilterQuery(updateBoardFilter(boardFilters.value, clause)), replace)
+}
+function removeFilter(field: BoardFilterField): void {
+  navigate(boardFilterQuery(removeBoardFilter(boardFilters.value, field)))
+}
+function updateDisplay(changes: Partial<Pick<BoardFilterState, 'completed' | 'hideEmptyColumns'>>): void {
+  navigate(boardFilterQuery(updateBoardDisplay(boardFilters.value, changes)))
 }
 function queryText(value: unknown): string { return typeof value === 'string' ? value : '' }
 function rememberedMapTask(): string {
@@ -258,10 +265,6 @@ function resolveMapTaskKey(): string {
 function mapNeedsCanonicalRoute(): boolean {
   return viewMode.value === 'graph' && Boolean(activeTaskRow.value) && queryText(route.query.task) !== mapTaskKey.value
 }
-function statusFromQuery(value: unknown): StatusFilter {
-  return typeof value === 'string' && Object.hasOwn(trackerStatus, value) ? value as TrackerStatus : 'all'
-}
-
 const removeRouteListener = router.afterEach(async (to, from, failure) => {
   if (failure || to.path !== from.path || !currentScope() || !snapshot.value) return
   const mapChanged = to.query.view !== from.query.view || to.query.task !== from.query.task
@@ -337,6 +340,7 @@ useProjectScopedLoader({
       :task-options="taskSelectOptions"
       :view-mode="viewMode"
       :filters-active="filtersActive"
+      :board-filters="boardFilters"
       :search="search"
       :workflow-filter="workflowFilter"
       :workflow-options="workflowOptions"
@@ -357,28 +361,30 @@ useProjectScopedLoader({
       @refresh="load()"
       @task-select="selectMapTask"
       @update:view-mode="setViewMode"
-      @update:search="navigate({ search: $event }, true)"
-      @update:workflow-filter="navigate({ workflow: $event })"
-      @update:assignee-filter="navigate({ assignee: $event })"
+      @update:search="updateFilter({ field: 'text', value: $event }, true)"
+      @update:workflow-filter="updateFilter({ field: 'workflow', operator: 'is', value: $event })"
+      @update:assignee-filter="updateFilter({ field: 'assignee', operator: 'is', value: $event })"
+      @update:filter="updateFilter($event)"
+      @remove-filter="removeFilter"
+      @update:display="updateDisplay"
       @clear="clearFilters"
       @open-task-detail="openTaskDetail(mapTaskKey)"
     />
     <div
-      v-if="viewMode === 'board' && (ticketStatusFilter !== 'all' || statusFilter !== 'all' || blockedFilter)"
+      v-if="viewMode === 'board' && contextualClauses.length"
       class="flex flex-wrap items-center gap-2"
     >
-      <UiBadge v-if="ticketStatusFilter !== 'all'">
-        Contains tickets: {{ trackerStatus[ticketStatusFilter].label }}
-      </UiBadge>
-      <UiBadge v-if="statusFilter !== 'all'">
-        Task status: {{ trackerStatus[statusFilter].label }}
-      </UiBadge>
-      <UiBadge
-        v-if="blockedFilter"
-        tone="warning"
+      <UiButton
+        v-for="clause in contextualClauses"
+        :key="clause.field"
+        variant="ghost"
+        size="sm"
+        icon-right="close"
+        :aria-label="`Remove ${boardFilterLabel(clause)}`"
+        @click="removeFilter(clause.field)"
       >
-        Has blocked tickets
-      </UiBadge>
+        {{ boardFilterLabel(clause) }}
+      </UiButton>
     </div>
     <UiLoadingState
       v-if="loading && !snapshot"
@@ -402,6 +408,7 @@ useProjectScopedLoader({
       </p>
       <TrackerBoardPanel
         :rows="taskRows"
+        :hide-empty-columns="boardFilters.hideEmptyColumns"
         :selected-task-key="detailTaskKey"
         @open-task="openTaskDetail"
         @refresh="load()"

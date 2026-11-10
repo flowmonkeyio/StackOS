@@ -11,7 +11,7 @@ const HOUR = 60 * MINUTE
 const DAY = 24 * HOUR
 const WEEK = 7 * DAY
 
-function parseStackOsDate(value: string): Date {
+export function parseStackOsDate(value: string): Date {
   const normalized = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(value)
     ? `${value}Z`
     : value

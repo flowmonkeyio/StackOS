@@ -10,6 +10,7 @@ import type { ActiveExecution } from '@/lib/task-tracker/types'
 import type { TaskDeliveryState } from '@/lib/task-tracker/delivery'
 import type { AgentStatsMetrics } from '@/lib/agentActivity'
 import type { TrackerSelectOption, TrackerTaskSelectOption, ViewMode } from './viewTypes'
+import type { BoardFilterClause, BoardFilterField, BoardFilterState } from './boardFilters'
 
 const props = defineProps<{
   viewMode: ViewMode
@@ -23,6 +24,7 @@ const props = defineProps<{
   taskRowsCount: number
   tasksCount: number
   filtersActive: boolean
+  boardFilters?: BoardFilterState
   taskAvailable: boolean
   taskId?: number
   taskStatus?: string
@@ -40,6 +42,9 @@ defineEmits<{
   (e: 'update:search', value: string): void
   (e: 'update:workflowFilter', value: string): void
   (e: 'update:assigneeFilter', value: string): void
+  (e: 'update:filter', value: BoardFilterClause): void
+  (e: 'removeFilter', field: BoardFilterField): void
+  (e: 'update:display', changes: Partial<Pick<BoardFilterState, 'completed' | 'hideEmptyColumns'>>): void
   (e: 'openTaskDetail'): void
   (e: 'clear'): void
   (e: 'refresh'): void

@@ -11,7 +11,7 @@ vi.mock('@/lib/operations', () => ({ callOperation: mocks.callOperation }))
 vi.mock('@/lib/task-tracker/liveEvents', () => ({ openTrackerStatusStream: mocks.stream }))
 
 const taskA = trackerTask({ title: 'Alpha task' })
-const taskB = trackerTask({ id: 2, key: 'task-b', title: 'Beta task', status: 'complete' })
+const taskB = trackerTask({ id: 2, key: 'task-b', title: 'Beta task', status: 'complete', completed_at: '2026-11-09T12:00:00Z' })
 const ticketA = trackerTicket()
 const ticketB = trackerTicket({ id: 12, key: 'ticket-b', title: 'Beta ticket', task_id: 2, task_key: 'task-b', status: 'complete' })
 
@@ -51,8 +51,8 @@ async function render(url = '/projects/7/tasks', realDialogs = false) {
     attachTo: realDialogs ? document.body : undefined,
     global: { plugins: [router, createPinia()], stubs: {
       ProjectPageHeader: { template: '<header><slot name="actions" /></header>' },
-      TaskTrackerCommandPanel: { name: 'TaskTrackerCommandPanel', props: ['viewMode','activeTaskKey','taskOptions','search','filtersActive','taskAgentStats','taskAutomated','taskDelivery','abortTarget'], template: '<nav />' },
-      TrackerBoardPanel: { name: 'TrackerBoardPanel', props: ['rows'], template: '<section data-test="board" />' },
+      TaskTrackerCommandPanel: { name: 'TaskTrackerCommandPanel', props: ['viewMode','activeTaskKey','taskOptions','search','filtersActive','boardFilters','taskAgentStats','taskAutomated','taskDelivery','abortTarget'], template: '<nav />' },
+      TrackerBoardPanel: { name: 'TrackerBoardPanel', props: ['rows','hideEmptyColumns'], template: '<section data-test="board" />' },
       TrackerGraphPanel: { name: 'TrackerGraphPanel', props: ['loading','activeTaskTitle','selectedTicket','selectionVisible','selectionLabel','flow'], template: '<section data-test="graph" />' },
       TrackerWarningSummary: true,
       TrackerTaskDetailDialog: realDialogs ? false : { name: 'TrackerTaskDetailDialog', props: ['modelValue','task','tickets','loading','error','contexts','ticket','ticketKey'], template: '<aside />' },
@@ -173,6 +173,8 @@ describe('Work board navigation', () => {
   })
 
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-10T12:00:00Z'))
     setActivePinia(createPinia())
     sessionStorage.clear()
     mocks.callOperation.mockReset()
@@ -180,7 +182,75 @@ describe('Work board navigation', () => {
     mocks.stream.mockReset().mockReturnValue({ close: mocks.close })
     dataMock()
   })
-  afterEach(() => vi.restoreAllMocks())
+  afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
+
+  it('uses URL clauses for filters/display, history and reload without changing Graph picker order', async () => {
+    dataMock([
+      { ...taskA, priority_key: 'p0', order_index: 1, source_json: { template_key: 'engineering.delivery' }, owner: 'Operator' },
+      { ...taskB, priority_key: 'p2', order_index: 0, created_at: '2026-11-01T12:00:00Z' },
+      trackerTask({ id: 3, key: 'aborted', title: 'Aborted task', status: 'aborted', priority_key: 'p0' }),
+    ], [ticketA, ticketB])
+    const { wrapper, router, controls, board } = await render()
+    const keys = () => board().props('rows').map((row: { key: string }) => row.key)
+    expect(keys()).toEqual(['task-b', 'task-a'])
+    expect(controls().props('boardFilters').completed).toBe('past-week')
+    expect(controls().props('taskOptions').map((option: { value: string }) => option.value)).toEqual(['task-b', 'aborted', 'task-a'])
+    controls().vm.$emit('update:filter', { field: 'priority', operator: 'is', values: ['p0'] })
+    await flushPromises()
+    expect(keys()).toEqual(['task-a'])
+    controls().vm.$emit('update:filter', { field: 'workflow', operator: 'is', value: 'engineering.delivery' })
+    await flushPromises()
+    controls().vm.$emit('update:filter', { field: 'assignee', operator: 'is', value: 'Operator' })
+    await flushPromises()
+    controls().vm.$emit('update:filter', { field: 'text', value: 'Alpha' })
+    await flushPromises()
+    controls().vm.$emit('update:display', { hideEmptyColumns: true, completed: 'none' })
+    await flushPromises()
+    expect(board().props('hideEmptyColumns')).toBe(true)
+    expect(router.currentRoute.value.query).toMatchObject({ search: 'Alpha', priority: 'p0', workflow: 'engineering.delivery', assignee: 'Operator', completed: 'none', hide_empty: '1' })
+    controls().vm.$emit('clear')
+    await flushPromises()
+    expect(keys()).toEqual(['task-b', 'aborted', 'task-a'])
+    expect(controls().props('filtersActive')).toBe(false)
+    expect(router.currentRoute.value.query).toEqual({ status: 'all', completed: 'all', hide_empty: '1' })
+    router.back()
+    await flushPromises()
+    expect(keys()).toEqual(['task-a'])
+    expect(controls().props('boardFilters').completed).toBe('none')
+    router.forward()
+    await flushPromises()
+    const url = router.currentRoute.value.fullPath
+    wrapper.unmount()
+    const reloaded = await render(url)
+    expect(reloaded.controls().props('filtersActive')).toBe(false)
+    expect(reloaded.board().props('rows')).toHaveLength(3)
+    reloaded.wrapper.unmount()
+  })
+
+  it('removes legacy restrictions and reconciles Complete plus None in the route consumer', async () => {
+    const { wrapper, router, controls } = await render('/projects/7/tasks?ticket_status=complete&focus=blocked&completed=none')
+    await wrapper.get('[aria-label="Remove Contains tickets: Complete"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.ticket_status).toBeUndefined()
+    expect(router.currentRoute.value.query.focus).toBe('blocked')
+    await wrapper.get('[aria-label="Remove Has blocked tickets"]').trigger('click')
+    await flushPromises()
+    controls().vm.$emit('update:filter', { field: 'status', operator: 'is', values: ['complete'] })
+    await flushPromises()
+    expect(router.currentRoute.value.query.completed).toBe('all')
+    expect(controls().props('boardFilters').completed).toBe('all')
+    wrapper.unmount()
+  })
+
+  it('retains the open task and draft when a new filter excludes it', async () => {
+    const { wrapper, router, dialog } = await render('/projects/7/tasks?detail=task-a', true)
+    await popup().get('textarea').setValue('Keep my draft')
+    await router.push({ query: { ...router.currentRoute.value.query, search: 'Beta' } })
+    await flushPromises()
+    expect(dialog().props('task')?.key).toBe('task-a')
+    expect(popup().get('textarea').element.value).toBe('Keep my draft')
+    wrapper.unmount()
+  })
 
   it('opens the complete task index on Board without selecting a task or fetching all tickets', async () => {
     const { wrapper, router, controls, board } = await render()
@@ -542,7 +612,7 @@ describe('Work board navigation', () => {
   it('refreshes the board for project events without a selected task', async () => {
     const { wrapper, board } = await render()
     const onEvent = mocks.stream.mock.calls.at(-1)![0].onEvent
-    dataMock([{ ...taskA, status: 'complete' }, taskB], [ticketA, ticketB])
+    dataMock([{ ...taskA, status: 'complete', completed_at: '2026-11-10T11:00:00Z' }, taskB], [ticketA, ticketB])
     onEvent({ id: 9301, event_type: 'tracker.task.status_changed', metadata_json: { task_key: 'task-a' } })
     await flushPromises()
     expect(board().props('rows').find((row: {key: string}) => row.key === 'task-a').task.status).toBe('complete')
