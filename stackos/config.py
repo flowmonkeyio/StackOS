@@ -424,7 +424,10 @@ class Settings(_StateSettings):
         wider on a default-umask system. Re-running adjusts the mode of an
         existing dir, which is what we want.
         """
-        for d in (self.data_dir, self.state_dir, self.generated_assets_dir):
+        directories: tuple[Path, ...] = (self.data_dir, self.state_dir)
+        if self.process_role != "runtime":
+            directories += (self.generated_assets_dir,)
+        for d in directories:
             d.mkdir(parents=True, exist_ok=True)
             os.chmod(d, 0o700)
 

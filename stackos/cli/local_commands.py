@@ -43,9 +43,11 @@ def init(
 
     settings = get_settings()
     settings.ensure_dirs()
-    ensure_seed_file(settings.seed_path)
+    if settings.process_role != "runtime":
+        ensure_seed_file(settings.seed_path)
     ensure_token(settings.token_path)
-    typer.echo(f"init: state dir at {settings.state_dir}; seed + auth.token present (mode 0600).")
+    files = "auth.token" if settings.process_role == "runtime" else "seed + auth.token"
+    typer.echo(f"init: state dir at {settings.state_dir}; {files} present (mode 0600).")
 
 
 @app.command()
@@ -175,11 +177,19 @@ def install(
     from stackos.auth import ensure_token
     from stackos.crypto.seed import ensure_seed_file
 
-    ensure_seed_file(settings.seed_path)
+    if settings.process_role != "runtime":
+        ensure_seed_file(settings.seed_path)
     ensure_token(settings.token_path)
     typer.echo(f"==> Bootstrap state ready: {settings.state_dir}")
 
-    if not (skills_only or mcp_only or plugins_only or browser_launcher_only):
+    if settings.process_role == "runtime":
+        # Keep native subscription/tool setup local and intact. Connected app
+        # repair owns only service wiring and its StackOS MCP registration.
+        do_skills = do_plugins = do_browser_launcher = False
+
+    if settings.process_role != "runtime" and not (
+        skills_only or mcp_only or plugins_only or browser_launcher_only
+    ):
         from stackos.db.migrate import upgrade_to_head
 
         migration_result = upgrade_to_head(settings)

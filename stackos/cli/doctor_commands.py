@@ -6,6 +6,7 @@ import hashlib
 import json
 import stat
 from collections import Counter
+from contextlib import suppress
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -681,6 +682,45 @@ def doctor(
             )
         return
     settings = get_settings()
+
+    if settings.process_role == "runtime":
+        import httpx
+
+        from stackos.local_runtime.service import connection_state
+
+        state = "needs_attention"
+        with suppress(ValueError, OSError, httpx.HTTPError):
+            state = connection_state(settings)
+        daemon_up = daemon_processes._daemon_health_ok(settings.host, settings.port)
+        checks = {
+            "daemon_up": daemon_up,
+            "connection_configuration_valid": state != "needs_attention",
+        }
+        code = 0 if all(checks.values()) else 1
+        payload = {
+            "ok": code == 0,
+            "code": code,
+            "checks": checks,
+            "info": {
+                "process_role": "runtime",
+                "environment_id": settings.environment_id,
+                "server_url": settings.server_url,
+                "connection_state": state,
+                "application_database": False,
+                "workflow_scheduler": False,
+            },
+        }
+        typer.echo(
+            json.dumps(payload)
+            if json_output
+            else (
+                f"stackos doctor: {'OK' if code == 0 else 'ISSUES'}; "
+                f"runtime={daemon_up}; connection={state}. "
+                "Connect this computer to an owned project before native work."
+            )
+        )
+        _exit(code)
+        return
 
     daemon_up = daemon_processes._tcp_can_connect(settings.host, settings.port)
 

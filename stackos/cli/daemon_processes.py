@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import signal
@@ -11,7 +12,7 @@ import sys
 import time
 from pathlib import Path
 
-from stackos.config import Settings
+from stackos.config import Settings, get_settings
 
 from .constants import _LOOPBACK_HOSTS
 
@@ -53,8 +54,24 @@ def _daemon_health_ok(host: str, port: int, *, timeout: float = 0.5) -> bool:
     request = Request(f"http://{host}:{port}/api/v1/health", method="GET")
     try:
         with urlopen(request, timeout=timeout) as response:
+            if (
+                os.environ.get("STACKOS_ENV_FILE")
+                or os.environ.get("STACKOS_PROCESS_ROLE") == "runtime"
+            ):
+                settings = get_settings()
+                if settings.process_role == "runtime":
+                    body = json.load(response)
+                    return (
+                        200 <= response.status < 300
+                        and (host, port) == (settings.host, settings.port)
+                        and isinstance(body, dict)
+                        and all(
+                            body.get(key) == getattr(settings, key)
+                            for key in ("process_role", "environment_id", "server_url")
+                        )
+                    )
             return 200 <= response.status < 300
-    except (HTTPError, OSError, URLError, TimeoutError):
+    except (HTTPError, OSError, URLError, TimeoutError, ValueError):
         return False
 
 
@@ -84,15 +101,18 @@ def _spawn_detached_daemon(
     ready_timeout: float = 20.0,
 ) -> tuple[bool, str]:
     if _tcp_can_connect(host, port, timeout=0.25):
+        if settings.process_role == "runtime" and not _daemon_health_ok(host, port):
+            return False, "selected runtime listener is occupied or belongs to another target"
         return True, "daemon already running"
     if not _is_loopback_host(host):
         return False, f"refusing to start non-loopback daemon host {host!r}"
 
     settings.ensure_dirs()
     env = os.environ.copy()
-    env["STACKOS_HOST"] = host
-    env["STACKOS_PORT"] = str(port)
-    env["STACKOS_LOG_LEVEL"] = log_level
+    if not env.get("STACKOS_ENV_FILE"):
+        env["STACKOS_HOST"] = host
+        env["STACKOS_PORT"] = str(port)
+        env["STACKOS_LOG_LEVEL"] = log_level
     args = _daemon_args(host, port, log_level)
     try:
         with log_path.open("ab", buffering=0) as log:

@@ -36,4 +36,78 @@ async function checkAdmission() {
   }
   console.log("Desktop selected-origin auth checks passed");
 }
-checkAdmission().catch((error) => { console.error(error); process.exitCode = 1; });
+async function checkRuntimeStartup() {
+  const childProcess = require("node:child_process");
+  const http = require("node:http");
+  const { EventEmitter } = require("node:events");
+  const originalSpawn = childProcess.spawn;
+  const originalGet = http.get;
+  const commands = [];
+  const config = {
+    process_role: "runtime", environment_id: "desktop-startup-proof",
+    server_url: "http://127.0.0.1:19950", host: "127.0.0.1", port: 19951,
+    state_dir: "/private/tmp/stackos-desktop-startup-proof/state"
+  };
+  delete process.env.STACKOS_SERVER_URL;
+  process.env.STACKOS_ENV_FILE = "/private/tmp/stackos-desktop-startup-proof/runtime.env";
+  let failConfig = false;
+  let healthCalls = 0;
+  let wrongTarget = false;
+  try {
+    childProcess.spawn = (_command, args, options) => {
+      const cliArgs = args.slice(args.indexOf("stackos") + 1);
+      // Repo Python uses -m stackos; packaged commands have no prefix.
+      const actual = args.includes("-m") ? cliArgs : args;
+      commands.push(actual);
+      assert.equal(options.env.STACKOS_ENV_FILE, process.env.STACKOS_ENV_FILE);
+      const child = new EventEmitter();
+      child.stdout = new EventEmitter();
+      child.stderr = new EventEmitter();
+      child.kill = () => {};
+      process.nextTick(() => {
+        if (actual[0] === "runtime-config" && !failConfig) {
+          child.stdout.emit("data", Buffer.from(JSON.stringify(config)));
+        }
+        child.emit("close", failConfig ? 1 : 0, null);
+      });
+      return child;
+    };
+    http.get = (url, callback) => {
+      assert.equal(url, "http://127.0.0.1:19951/api/v1/health");
+      const request = new EventEmitter();
+      request.setTimeout = () => {};
+      request.destroy = () => {};
+      process.nextTick(() => {
+        const response = new EventEmitter();
+        response.statusCode = healthCalls++ === 0 ? 503 : 200;
+        response.setEncoding = () => {};
+        callback(response);
+        response.emit("data", JSON.stringify({ ...config,
+          environment_id: wrongTarget ? "foreign" : config.environment_id }));
+        response.emit("end");
+      });
+      return request;
+    };
+    await service.configureSelectedRuntime();
+    assert.equal(service.APP_URL, `${config.server_url}/`);
+    assert.equal(service.DAEMON_URL, "http://127.0.0.1:19951/");
+    assert.equal(service.daemonLogPath(), `${config.state_dir}/daemon.log`);
+    assert.equal(service.isAppUrl(selected), false);
+    const ready = await service.prepareConnectedRuntime();
+    assert.equal(ready.ok, true);
+    assert.deepEqual(commands.map((args) => args[0]), ["runtime-config", "install", "start"]);
+    assert.deepEqual(commands[1], ["install", "--mcp-only", "--skip-doctor"]);
+    wrongTarget = true;
+    assert.equal((await service.checkHealth()).ok, false);
+    failConfig = true;
+    await assert.rejects(service.configureSelectedRuntime(), /private runtime environment/);
+    assert.equal(commands.at(-1)[0], "runtime-config");
+    console.log("Desktop runtime startup and wrong-target refusal checks passed");
+  } finally {
+    childProcess.spawn = originalSpawn;
+    http.get = originalGet;
+    delete process.env.STACKOS_ENV_FILE;
+  }
+}
+checkAdmission().then(checkRuntimeStartup)
+  .catch((error) => { console.error(error); process.exitCode = 1; });

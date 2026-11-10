@@ -415,6 +415,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     production, callers pass `None` and we resolve the global Settings.
     """
     settings = settings or get_settings()
+    if settings.process_role == "runtime":
+        from stackos.local_runtime.service import create_app as create_runtime_app
+
+        return create_runtime_app(settings)
     # Pre-flight ensure so the token exists before middleware reads it.
     settings.ensure_dirs()
     _ensure_seed(settings.seed_path)

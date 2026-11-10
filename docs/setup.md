@@ -187,6 +187,46 @@ HttpOnly and bound by the server to environment and exact origin; neither
 loopback aliases nor another port are interchangeable navigation targets.
 The Overview can create and open private projects before a computer connects.
 
+### Connected execution service startup
+
+Select the environment's private `runtime.env` with `STACKOS_ENV_FILE` for
+`stackos serve`, `start`, `stop`, `restart`, `install`, and `doctor`. The same
+selection must accompany every lifecycle command; conflicting listener flags
+are refused. Background startup retains that file selection. Runtime health
+identifies the role, environment and selected server so another local server
+cannot satisfy readiness. An unconnected service reports `not_connected`;
+that is service liveness, not authorization to execute work.
+
+The runtime service exposes local health only. It creates no application
+database, migrations, workflow scheduler, provider seed or fallback UI/server.
+The existing local connection file retains the computer credential and exact
+owner/environment/project/folder binding; startup validates a saved binding
+with its selected server. Missing connection setup permits service startup;
+stale, foreign or changed-folder setup refuses execution readiness. Native
+invocations remain owned by the existing outbound worker and host runner.
+
+Runtime install/repair preserves native subscriptions, tools, skills and plugin
+configuration. It repairs StackOS host registration through `stackos.host_mcp`
+and can generate autostart through the existing launchd owner. Generated jobs
+retain only `STACKOS_ENV_FILE` plus ordinary process context, without copying
+server/database keys. Host MCP commands remain local stdio `mcp-bridge`, with
+`--env-file` and the host-specific `--runtime`; the next client-routing layer
+owns authenticated operation forwarding. Never put credential contents in host
+config or synchronize native configuration with the server.
+
+For a source desktop connected-service launch, set `STACKOS_ENV_FILE` to that
+same private runtime file before starting Electron. The desktop asks the CLI's
+`runtime-config` command for safe endpoint/listener settings, starts the local
+runtime through the normal service owner and opens the selected server login.
+It skips full standalone installation and leaves server browsing available
+when local execution needs attention. `STACKOS_SERVER_URL` alone continues to
+select server browsing without starting an executor. Missing/invalid selected
+files stop startup; they never open the installed standalone console.
+
+These are source startup contracts. Main owns consolidation and later packaged
+install/repair and installed-app restart proof; this source delivery does not
+replace or restart the current installation.
+
 ## Package Or Operator Setup
 
 Build the StackOS wheel and let the installer resolve its pinned connector

@@ -439,6 +439,10 @@ async function prepareAndLoadStackOS({ forceInstall = false } = {}) {
       await loadFailure("Selected StackOS server unavailable", "User sign-in could not be reached.");
       return;
     }
+    const runtime = await service.prepareConnectedRuntime({ onProgress: showStartupProgress });
+    if (!runtime.ok) {
+      console.warn("Selected execution runtime needs attention; server browsing remains available.");
+    }
     await mainWindow.loadURL(service.APP_URL);
     if (pendingDeepLink) {
       const candidate = pendingDeepLink;
@@ -784,6 +788,16 @@ app.on("before-quit", () => {
 app.whenReady().then(async () => {
   app.setName("StackOS");
   service.setPackagedRuntime(app.isPackaged);
+  try {
+    await service.configureSelectedRuntime();
+  } catch {
+    createWindow();
+    await loadFailure("Selected runtime configuration unavailable", {
+      summary: "The selected runtime environment could not be loaded.",
+      repair: "Check STACKOS_ENV_FILE and reopen StackOS."
+    });
+    return;
+  }
   availabilityController = createAvailabilityController({ app, powerMonitor, service });
   app.setAsDefaultProtocolClient("stackos");
   updateController = createUpdateController();
