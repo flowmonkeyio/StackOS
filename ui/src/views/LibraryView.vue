@@ -27,6 +27,10 @@ const list = ref<HTMLElement | null>(null)
 const root = ref<HTMLElement | null>(null)
 let generation = 0
 const lastRead = new Map<string, 'refresh' | 'more'>()
+type ReadingState = { item: string; listScroll: number; detailScroll: number; detailsOpen: boolean }
+// Only recovery metadata lives here; canonical readers retain all rows and cursors.
+const recoveries = new Map<string, { targetCount: number; reading: ReadingState }>()
+let recoveryScope = ''
 
 watch(() => route.query, value => { query.value = parseLibraryQuery(value) })
 function updateQuery(patch: Partial<LibraryQuery>) {
@@ -38,7 +42,7 @@ function setTab(tab: string) {
   updateQuery({ tab: tab === 'files' ? 'files' : 'saved', type: '', item: '' })
 }
 
-const schemas = computed(() => resources.currentProjectId === projectId.value ? resources.resources : [])
+const schemas = computed(() => query.value.tab === 'saved' && resources.currentProjectId === projectId.value ? resources.resources : [])
 const sources = computed<LibrarySource[]>(() => {
   if (!isValid.value) return []
   if (query.value.tab === 'files') return resources.currentProjectId === projectId.value
@@ -113,36 +117,65 @@ function listViewport() {
   return desktop?.clientHeight ? desktop : list.value
 }
 
+function readingState(): ReadingState {
+  return {
+    item: query.value.item,
+    listScroll: listViewport()?.scrollTop ?? 0,
+    detailScroll: root.value?.querySelector('[data-library-detail]')?.scrollTop ?? 0,
+    detailsOpen: root.value?.querySelector<HTMLDetailsElement>('[data-library-detail] details')?.open ?? false,
+  }
+}
+async function restoreReading(reading: ReadingState, current: number) {
+  await nextTick()
+  if (current !== generation || reading.item !== query.value.item) return
+  const viewport = listViewport()
+  if (viewport) viewport.scrollTop = reading.listScroll
+  const detail = root.value?.querySelector('[data-library-detail]')
+  if (detail) {
+    const disclosure = detail.querySelector('details')
+    if (disclosure) disclosure.open = reading.detailsOpen
+    detail.scrollTop = reading.detailScroll
+  }
+}
+
 async function load(initial = false) {
   const current = ++generation
   const id = projectId.value
+  const scope = `${id}:${query.value.tab}`
+  if (recoveryScope !== scope) {
+    recoveries.clear()
+    lastRead.clear()
+    recoveryScope = scope
+  }
   if (!isValid.value) return
-  const scroll = listViewport()?.scrollTop ?? 0
-  const detailScroll = root.value?.querySelector('[data-library-detail]')?.scrollTop ?? 0
+  const reading = [...recoveries.values()].find(recovery => recovery.reading.item === query.value.item)?.reading ?? readingState()
   refreshing.value = true
   const active = readers.value
   await Promise.all([
-    ...(query.value.tab === 'saved' && (!initial || resources.currentProjectId !== id || !schemas.value.length) ? [resources.refreshSchemas(id)] : []),
+    ...(query.value.tab === 'saved' ? [resources.refreshSchemas(id)] : []),
     ...active.map(async reader => {
-      if (initial && (reader.key === 'records' || reader.key === 'artifacts' ? resources.currentProjectId === id : data.currentProjectId === id) && reader.page.loaded && !reader.page.error) return
+      // Another consumer may have loaded a filtered query. Establish full Library scope before reuse.
+      const recovery = { targetCount: Math.max(reader.count(), recoveries.get(reader.key)?.targetCount ?? 0), reading }
+      recoveries.set(reader.key, recovery)
       lastRead.set(reader.key, 'refresh')
-      await refreshLoadedPages(reader, () => current === generation)
+      await refreshLoadedPages(reader, () => current === generation, recovery.targetCount)
+      if (current === generation && !reader.page.error) recoveries.delete(reader.key)
     }),
   ])
   if (current !== generation) return
   refreshing.value = false
   if (!initial && query.value.item && !selected.value && !failed.value) updateQuery({ item: '' })
-  await nextTick()
-  const viewport = listViewport()
-  if (viewport) viewport.scrollTop = scroll
-  const detail = root.value?.querySelector('[data-library-detail]')
-  if (detail) detail.scrollTop = detailScroll
+  await restoreReading(reading, current)
 }
 async function read(reader: LibraryReader & { key: string }, retry = false) {
   const action = retry ? lastRead.get(reader.key) ?? 'refresh' : 'more'
   lastRead.set(reader.key, action)
   const current = generation
-  await (action === 'more' ? reader.more() : refreshLoadedPages(reader, () => current === generation))
+  const recovery = recoveries.get(reader.key)
+  await (action === 'more' ? reader.more() : refreshLoadedPages(reader, () => current === generation, recovery?.targetCount))
+  if (current !== generation || reader.page.error || !recovery) return
+  recoveries.delete(reader.key)
+  await restoreReading(recovery.reading, current)
 }
 watch([projectId, () => query.value.tab], () => { search.value = ''; void load(true) }, { immediate: true, flush: 'sync' })
 watch([search, () => query.value.plugin, () => query.value.type], () => {

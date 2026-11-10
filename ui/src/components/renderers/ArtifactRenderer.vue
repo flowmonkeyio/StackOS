@@ -49,14 +49,21 @@ watch(() => [props.artifact.id, props.artifact.project_id, props.artifact.uri], 
               {{ artifact.mime_type }}
             </p>
           </div>
-          <div class="flex flex-wrap items-center gap-1.5">
+          <div class="flex min-w-0 max-w-full flex-wrap items-center gap-1.5">
             <UiBadge
               v-if="pluginSlug"
               tone="accent"
+              truncate
+              :title="pluginSlug"
             >
               {{ pluginSlug }}
             </UiBadge>
-            <UiBadge>{{ artifact.kind }}</UiBadge>
+            <UiBadge
+              truncate
+              :title="artifact.kind"
+            >
+              {{ artifact.kind }}
+            </UiBadge>
           </div>
         </div>
         <slot name="actions" />

@@ -47,10 +47,9 @@ export interface LibraryReader {
 }
 
 /** Restore reached depth through the canonical pager, without keeping a row cache. */
-export async function refreshLoadedPages(reader: LibraryReader, isCurrent: () => boolean) {
-  const count = reader.count()
+export async function refreshLoadedPages(reader: LibraryReader, isCurrent: () => boolean, targetCount = reader.count()) {
   await reader.refresh()
-  while (isCurrent() && !reader.page.error && reader.page.next_cursor !== null && reader.count() < count) {
+  while (isCurrent() && !reader.page.error && reader.page.next_cursor !== null && reader.count() < targetCount) {
     const cursor = reader.page.next_cursor
     await reader.more()
     if (reader.page.next_cursor === cursor) break
