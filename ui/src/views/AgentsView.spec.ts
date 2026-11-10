@@ -11,8 +11,8 @@ let wrapper: VueWrapper | undefined
 const row = { project_id: 1, project_dir: '/fixture/project', source_ref: { host_key: 'codex', native_name: 'seo_keyword_research', source_path: '.codex/agents/seo-keyword-research.toml' }, digest: 'a'.repeat(64), registration_digest: null, fields: { ...blankAgent(), name: 'seo_keyword_research', description: 'Find opportunities', developer_instructions: 'Full native instructions' }, capabilities: { edit: true }, inherited_fields: ['model'], unsupported_fields: ['future_native'] }
 function setup(items = [row]) {
   vi.mocked(callOperation).mockImplementation(async (operation, args) => {
-    if (operation === 'workspace.listBindings') return [{ project_id: 1, last_known_root: '/fixture/project' }]
-    if (operation === 'projectAgent.list') return { project_id: 1, project_dir: '/fixture/project', items }
+    if (operation === 'workspace.listBindings') return { items: [{ project_id: 1, last_known_root: '/fixture/project' }] }
+    if (operation === 'projectAgent.list') return { data: { project_id: 1, project_dir: '/fixture/project', items } }
     return items.find(item => item.source_ref.native_name === (args.source_ref as typeof row.source_ref)?.native_name) ?? row
   })
   wrapper = mount(ProjectAgents, { props: { projectId: 1 }, global: { stubs: { teleport: true } } })
@@ -20,6 +20,28 @@ function setup(items = [row]) {
 }
 afterEach(() => { wrapper?.unmount(); vi.resetAllMocks() })
 describe('Agents list and native editor', () => {
+  it('uses the raw binding envelope and reads only the unique root belonging to this project', async () => {
+    vi.mocked(callOperation).mockImplementation(async operation => operation === 'workspace.listBindings'
+      ? { items: [{ project_id: 2, last_known_root: '/other' }, { project_id: 1, last_known_root: null }, { project_id: 1, last_known_root: '/fixture/project' }, { project_id: 1, last_known_root: '/fixture/project' }] }
+      : { data: { project_id: 1, project_dir: '/fixture/project', items: [row] } })
+    wrapper = mount(ProjectAgents, { props: { projectId: 1 } }); await flushPromises()
+    expect(callOperation).toHaveBeenCalledWith('projectAgent.list', expect.objectContaining({ project_id: 1, project_dir: '/fixture/project' }))
+    expect(wrapper.text()).not.toContain('/other')
+    expect(wrapper.text()).not.toContain('result.filter')
+    expect(wrapper.findAllComponents(UiFormField).some(field => field.props('label') === 'Project folder')).toBe(false)
+    const add = wrapper.findAll('button').find(button => button.text() === 'Add agent')!
+    expect(add.attributes('disabled')).toBeUndefined()
+    await add.trigger('click')
+    expect(wrapper.get('[aria-label="Agent editor"]').text()).toContain('Add agent')
+    expect(vi.mocked(callOperation).mock.calls.map(([name]) => name)).toEqual(['workspace.listBindings', 'projectAgent.list'])
+  })
+  it('shows an unbound folder state for an empty raw envelope without reading or writing agent files', async () => {
+    vi.mocked(callOperation).mockResolvedValue({ items: [] })
+    wrapper = mount(ProjectAgents, { props: { projectId: 1 } }); await flushPromises()
+    expect(wrapper.text()).toContain('No project folder is available')
+    expect(wrapper.findAll('button').find(button => button.text() === 'Add agent')!.attributes('disabled')).toBeDefined()
+    expect(callOperation).toHaveBeenCalledTimes(1)
+  })
   it('lists actual domains, opens full instructions and protects dirty drafts from refresh', async () => {
     const w = setup(); await flushPromises()
     expect(w.text()).toContain('/fixture/project')
@@ -114,8 +136,8 @@ describe('Agents list and native editor', () => {
   it('protects a dirty folder switch and loads the chosen folder explicitly after discard', async () => {
     const w = setup(); await flushPromises()
     vi.mocked(callOperation).mockImplementation(async (operation, args) => operation === 'workspace.listBindings'
-      ? [{ project_id: 1, last_known_root: '/first' }, { project_id: 1, last_known_root: '/second' }]
-      : operation === 'projectAgent.list' ? { project_id: 1, project_dir: args.project_dir, items: [row] }
+      ? { items: [{ project_id: 1, last_known_root: '/first' }, { project_id: 1, last_known_root: '/second' }] }
+      : operation === 'projectAgent.list' ? { data: { project_id: 1, project_dir: args.project_dir, items: [row] } }
         : { ...row, project_dir: args.project_dir })
     // Re-enter through a new project instance to discover both explicit roots.
     w.unmount()
@@ -136,11 +158,11 @@ describe('Agents list and native editor', () => {
   it('loads a changed project before rendering and ignores its predecessor’s late folder lookup', async () => {
     let resolveOld!: (value: unknown) => void
     vi.mocked(callOperation).mockImplementation(async (operation, args) => operation === 'workspace.listBindings'
-      ? args.project_id === 1 ? new Promise(resolve => { resolveOld = resolve }) : [{ project_id: 2, last_known_root: '/second' }]
-      : { project_id: 2, project_dir: '/second', items: [] })
+      ? args.project_id === 1 ? new Promise(resolve => { resolveOld = resolve }) : { items: [{ project_id: 2, last_known_root: '/second' }] }
+      : { data: { project_id: 2, project_dir: '/second', items: [] } })
     wrapper = mount(ProjectAgents, { props: { projectId: 1 } })
     await wrapper.setProps({ projectId: 2 }); await flushPromises()
-    resolveOld([{ project_id: 1, last_known_root: '/first' }]); await flushPromises()
+    resolveOld({ items: [{ project_id: 1, last_known_root: '/first' }] }); await flushPromises()
     expect(wrapper.text()).toContain('/second')
     expect(wrapper.text()).not.toContain('/first')
     expect(callOperation).toHaveBeenCalledWith('projectAgent.list', expect.objectContaining({ project_id: 2, project_dir: '/second' }))
@@ -151,7 +173,7 @@ describe('Agents list and native editor', () => {
     vi.mocked(callOperation).mockReturnValueOnce(new Promise(done => { resolve = done }))
     wrapper = mount(ProjectAgents, { props: { projectId: 1 } })
     wrapper.unmount(); wrapper = undefined
-    resolve([{ project_id: 1, last_known_root: '/fixture/project' }]); await flushPromises()
+    resolve({ items: [{ project_id: 1, last_known_root: '/fixture/project' }] }); await flushPromises()
     expect(callOperation).toHaveBeenCalledTimes(1)
   })
 })

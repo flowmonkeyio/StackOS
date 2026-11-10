@@ -16,7 +16,7 @@ const source = { host_key: 'codex' as const, native_name: 'research', source_pat
 function setup(roleCount = 1, missing = false) {
   setActivePinia(createPinia())
   const roles = ['researcher', 'writer', 'auditor'].slice(0, roleCount)
-  vi.mocked(callOperation).mockResolvedValue({ project_id: 1, project_dir: '/fixture', items: missing ? [] : [{ project_id: 1, source_ref: source, fields: { ...blankAgent(), name: 'research' } }] })
+  vi.mocked(callOperation).mockResolvedValue({ data: { project_id: 1, project_dir: '/fixture', items: missing ? [] : [{ project_id: 1, source_ref: source, fields: { ...blankAgent(), name: 'research' } }] } })
   vi.mocked(apiFetch).mockImplementation(async path => path.endsWith('/workflow-templates') ? { templates: [{ key: 'fixture', name: 'Fixture workflow' }] } : { spec: { agent_requirements: roles.map(role => ({ role, purpose: `Work as ${role}`, requirement: 'required' })), steps: [{ id: 'work', title: 'Work', extensions_json: {} }] } })
   wrapper = mount(ScheduleEditor, { props: { projectId: 1, job: { kind: 'fixture', name: 'Fixture', template_key: 'fixture', cron_expr: '* * * * *', timezone: 'UTC', enabled: false, execution_json: { project_dir: '/fixture', agents: missing ? { researcher: { source_ref: source } } : {}, host_key: 'codex' } } as never }, global: { stubs: { teleport: true } } })
   return wrapper
@@ -24,7 +24,7 @@ function setup(roleCount = 1, missing = false) {
 const namedSource = (name: string) => ({ ...source, native_name: name, source_path: `.codex/agents/${name}.toml` })
 function legacySchedule(execution: object) {
   setActivePinia(createPinia())
-  vi.mocked(callOperation).mockResolvedValue({ project_id: 1, project_dir: '/fixture', items: ['mapped', 'legacy', 'new'].map(name => ({ project_id: 1, source_ref: namedSource(name), fields: { ...blankAgent(), name } })) })
+  vi.mocked(callOperation).mockResolvedValue({ data: { project_id: 1, project_dir: '/fixture', items: ['mapped', 'legacy', 'new'].map(name => ({ project_id: 1, source_ref: namedSource(name), fields: { ...blankAgent(), name } })) } })
   vi.mocked(apiFetch).mockImplementation(async path => path.endsWith('/workflow-templates') ? { templates: [{ key: 'fixture', name: 'Fixture' }] } : { spec: { agent_requirements: ['delivery_agent', 'review_agent'].map(role => ({ role, requirement: 'required' })), steps: [] } })
   wrapper = mount(ScheduleEditor, { props: { projectId: 1, job: { kind: 'fixture', name: 'Fixture', template_key: 'fixture', cron_expr: '* * * * *', timezone: 'UTC', enabled: false, execution_json: { project_dir: '/fixture', host_key: 'codex', ...execution } } as never }, global: { stubs: { teleport: true } } })
   return wrapper
@@ -35,7 +35,7 @@ describe('workflow-specific schedule agents', () => {
     let resolveOld!: (value: unknown) => void
     vi.mocked(apiFetch).mockImplementation(async path => path.endsWith('/old') ? new Promise(resolve => { resolveOld = resolve })
       : { spec: { agent_requirements: [{ role: 'current_role' }], steps: [] } })
-    vi.mocked(callOperation).mockImplementation(async (_operation, args) => ({ project_id: args.project_id, project_dir: args.project_dir, items: [{ source_ref: source, fields: blankAgent() }] }))
+    vi.mocked(callOperation).mockImplementation(async (_operation, args) => ({ data: { project_id: args.project_id, project_dir: args.project_dir, items: [{ source_ref: source, fields: blankAgent() }] } }))
     wrapper = mount(ScheduleAgentSelectors, { props: { projectId: 1, projectDir: '/fixture', templateKey: 'old', hostKey: 'codex', agents: {}, assignments: {} } })
     await wrapper.setProps({ projectId: 2, projectDir: '/second', templateKey: 'current' }); await flushPromises()
     resolveOld({ spec: { agent_requirements: [{ role: 'stale_role' }], steps: [] } }); await flushPromises()
@@ -48,7 +48,7 @@ describe('workflow-specific schedule agents', () => {
   it('clears workflow roles when the selection is cleared while an earlier read is pending', async () => {
     let resolve!: (value: unknown) => void
     vi.mocked(apiFetch).mockReturnValueOnce(new Promise(done => { resolve = done }))
-    vi.mocked(callOperation).mockResolvedValue({ project_id: 1, project_dir: '/fixture', items: [] })
+    vi.mocked(callOperation).mockResolvedValue({ data: { project_id: 1, project_dir: '/fixture', items: [] } })
     wrapper = mount(ScheduleAgentSelectors, { props: { projectId: 1, projectDir: '/fixture', templateKey: 'old', hostKey: 'codex', agents: {}, assignments: {} } })
     await wrapper.setProps({ templateKey: '' }); await flushPromises()
     resolve({ spec: { agent_requirements: [{ role: 'stale_role' }], steps: [] } }); await flushPromises()

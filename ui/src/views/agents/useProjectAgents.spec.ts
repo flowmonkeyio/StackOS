@@ -17,14 +17,15 @@ function setup(onDraftReplaced?: (fields: AgentFields | null) => void) {
   return { agents, id, dir }
 }
 describe('native project agents', () => {
-  beforeEach(() => { vi.mocked(callOperation).mockImplementation(async (operation) => operation === 'projectAgent.list' ? { project_id: 1, project_dir: '/fixture', items: [definition()] } : definition()) })
+  beforeEach(() => { vi.mocked(callOperation).mockImplementation(async (operation) => operation === 'projectAgent.list' ? { data: { project_id: 1, project_dir: '/fixture', items: [definition()] } } : definition()) })
   afterEach(() => { cleanup?.(); vi.resetAllMocks() })
   it('reads full source and sends only changed fields with both preconditions, never dispatching', async () => {
     const { agents } = setup(); await flushPromises(); await agents.edit(definition())
     expect(callOperation).toHaveBeenCalledWith('projectAgent.list', expect.objectContaining({ response_mode: 'compact' }))
+    expect(agents.items.value).toEqual([definition()])
     expect(agents.draft.value?.developer_instructions).toBe(definition().fields!.developer_instructions)
     agents.draft.value!.description = 'Changed'
-    vi.mocked(callOperation).mockImplementation(async operation => operation === 'projectAgent.update' ? { project_id: 1, data: { ...definition(), fields: { ...definition().fields, description: 'Changed' } } } : { project_id: 1, project_dir: '/fixture', items: [definition()] })
+    vi.mocked(callOperation).mockImplementation(async operation => operation === 'projectAgent.update' ? { project_id: 1, data: { ...definition(), fields: { ...definition().fields, description: 'Changed' } } } : { data: { project_id: 1, project_dir: '/fixture', items: [definition()] } })
     await agents.save()
     expect(callOperation).toHaveBeenCalledWith('projectAgent.update', expect.objectContaining({ expected_digest: 'a'.repeat(64), expected_registration_digest: null, patch: { description: 'Changed' } }))
     expect(agents.dirty.value).toBe(false)
@@ -140,10 +141,10 @@ describe('native project agents', () => {
     let resolveOld!: (value: unknown) => void
     const next = { ...definition('next'), project_dir: '/second' }
     vi.mocked(callOperation).mockImplementation(async (_operation, args) => args.project_dir === '/fixture'
-      ? new Promise(resolve => { resolveOld = resolve }) : { project_id: 1, project_dir: '/second', items: [next] })
+      ? new Promise(resolve => { resolveOld = resolve }) : { data: { project_id: 1, project_dir: '/second', items: [next] } })
     const { agents, dir } = setup()
     dir.value = '/second'; await agents.refresh()
-    resolveOld({ project_id: 1, project_dir: '/fixture', items: [definition()] }); await flushPromises()
+    resolveOld({ data: { project_id: 1, project_dir: '/fixture', items: [definition()] } }); await flushPromises()
     expect(agents.items.value).toEqual([next]); expect(agents.error.value).toBe('')
   })
   it('ignores pending reads after cleanup without starting another scoped request', async () => {
@@ -151,7 +152,7 @@ describe('native project agents', () => {
     vi.mocked(callOperation).mockReturnValueOnce(new Promise(done => { resolve = done }))
     const { agents, dir } = setup()
     cleanup?.(); cleanup = undefined; dir.value = '/second'
-    resolve({ project_id: 1, project_dir: '/fixture', items: [definition()] }); await flushPromises()
+    resolve({ data: { project_id: 1, project_dir: '/fixture', items: [definition()] } }); await flushPromises()
     expect(agents.items.value).toEqual([])
     expect(vi.mocked(callOperation).mock.calls).toEqual([['projectAgent.list', expect.objectContaining({ project_dir: '/fixture' })]])
   })

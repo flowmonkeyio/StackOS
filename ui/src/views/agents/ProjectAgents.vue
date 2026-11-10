@@ -78,9 +78,9 @@ async function loadFolders() {
   const request = ++generation
   folderLoading.value = true; folderError.value = ''; selectFolder(''); folders.value = []
   try {
-    const result = await callOperation<{ project_id: number; last_known_root: string | null }[]>('workspace.listBindings', { project_id: id })
+    const result = await callOperation<{ items: { project_id: number; last_known_root: string | null }[] }>('workspace.listBindings', { project_id: id })
     if (request !== generation || id !== props.projectId) return
-    folders.value = [...new Set(result.filter(row => row.project_id === id && row.last_known_root).map(row => row.last_known_root!))]
+    folders.value = [...new Set(result.items.filter(row => row.project_id === id && row.last_known_root).map(row => row.last_known_root!))]
     if (folders.value.length === 1) selectFolder(folders.value[0]!)
   } catch (cause) { if (request === generation && id === props.projectId) folderError.value = agentError(cause) }
   finally { if (request === generation && id === props.projectId) folderLoading.value = false }

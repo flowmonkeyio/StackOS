@@ -73,7 +73,7 @@ export function useProjectAgents(projectId: Ref<number>, projectDir: Ref<string>
     if (!projectDir.value) { items.value = []; diagnostics.value = []; loading.value = false; return }
     loading.value = true
     try {
-      const result = await callOperation<Omit<components['schemas']['AgentList'], 'items'> & { items?: AgentSummary[] }>('projectAgent.list', { ...input, response_mode: 'compact' })
+      const { data: result } = await callOperation<{ data: Omit<components['schemas']['AgentList'], 'items'> & { items?: AgentSummary[] } }>('projectAgent.list', { ...input, response_mode: 'compact' })
       if (!ownsScope(input) || request !== generation) return
       if (result.project_id !== projectId.value || result.project_dir !== projectDir.value) throw new Error('Agent sources belong to a different project folder.')
       items.value = result.items ?? []
