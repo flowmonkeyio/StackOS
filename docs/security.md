@@ -67,7 +67,12 @@ and [local sign-out scope](https://supabase.com/docs/guides/auth/signout).
 A provider-verified `UserPrincipal` is carried on request state and into operation
 context through the server-owned session; caller arguments cannot assert that
 identity. Unadapted consumers return `owner_boundary_required`. Native runtime
-admission, desktop login UI and installed-product proof are separate work.
+admission and installed-product proof are separate work. Browser and desktop
+render the same server login UI; server-selected desktop pages receive no local
+maintenance/backup IPC. Desktop navigation and UI requests use the exact app
+origin, refusing alternate hosts, ports, schemes and credential-bearing URLs.
+Private-request 401s remove the authenticated shell; sign-in/sign-out use a fresh
+document so a previous user's project stores and streams cannot carry over.
 
 ## Local Daemon Auth Posture
 

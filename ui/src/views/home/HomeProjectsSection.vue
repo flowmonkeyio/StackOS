@@ -14,6 +14,7 @@ import {
 } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
 import { GETTING_STARTED_URL } from '@/lib/externalLinks'
+import { useAuthStore } from '@/stores/auth'
 import { trackerStatus } from '@/design/status'
 import { ticketStatuses, ticketWorkUrl, type PortfolioProject } from './ticketOverview'
 import type { PortfolioFilters } from './useHomePortfolioInsights'
@@ -32,6 +33,7 @@ const emit = defineEmits<{
   clearStatus: []
 }>()
 const router = useRouter()
+const auth = useAuthStore()
 const search = ref('')
 const sort = ref<'recent' | 'name'>('recent')
 const columns: DataTableColumn<PortfolioProject>[] = [
@@ -121,7 +123,7 @@ function changeSort(value: string | number | null): void {
     <UiEmptyState
       v-if="!loading && !error && !items.length && !search && filters.is_active === true && !filters.ticket_status"
       title="Ready for your first project"
-      description="Open a project in your AI tool and ask the agent to connect it to StackOS."
+      :description="auth.mode === 'server' ? 'Create a private project to get started. You can browse it before connecting a computer.' : 'Open a project in your AI tool and ask the agent to connect it to StackOS.'"
       icon="folder"
       class="mt-3"
     >

@@ -28,17 +28,7 @@ function escapeHtml(value) {
 }
 
 function isStackosUrl(candidate) {
-  try {
-    const parsed = new URL(candidate);
-    const allowed = new URL(service.DAEMON_URL);
-    return (
-      parsed.protocol === allowed.protocol &&
-      ["127.0.0.1", "localhost", "[::1]"].includes(parsed.hostname) &&
-      String(parsed.port || "80") === String(allowed.port || "80")
-    );
-  } catch (_error) {
-    return false;
-  }
+  return service.isAppUrl(candidate);
 }
 
 function openExternalUrl(candidate) {
@@ -53,7 +43,7 @@ function openExternalUrl(candidate) {
 }
 
 function loadStackosDeepLink(candidate) {
-  const targetUrl = resolveStackosDeepLink(candidate, service.DAEMON_URL);
+  const targetUrl = resolveStackosDeepLink(candidate, service.APP_URL);
   if (!targetUrl) {
     return false;
   }
@@ -372,6 +362,12 @@ function commandError(result) {
 }
 
 function failureCopy(title, payload) {
+  if (service.SERVER_URL) {
+    return {
+      summary: "The selected StackOS server is unavailable or does not support user sign-in.",
+      repair: "Check STACKOS_SERVER_URL and the selected server, then reopen StackOS."
+    };
+  }
   if (!payload || typeof payload !== "object") {
     return {
       summary: typeof payload === "string" && payload.trim() ? payload.trim() : title,
@@ -437,6 +433,20 @@ async function loadFailure(title, payload) {
 }
 
 async function prepareAndLoadStackOS({ forceInstall = false } = {}) {
+  if (service.SERVER_URL) {
+    loadingPageActive = false;
+    if (!await service.checkSelectedServer()) {
+      await loadFailure("Selected StackOS server unavailable", "User sign-in could not be reached.");
+      return;
+    }
+    await mainWindow.loadURL(service.APP_URL);
+    if (pendingDeepLink) {
+      const candidate = pendingDeepLink;
+      pendingDeepLink = null;
+      loadStackosDeepLink(candidate);
+    }
+    return;
+  }
   if (!loadingPageActive) {
     lastLoadingProgress = 0;
   }
@@ -500,12 +510,14 @@ function createWindow() {
     return { action: "deny" };
   });
 
-  mainWindow.webContents.on("will-navigate", (event, url) => {
+  const guardNavigation = (event, url) => {
     if (!isStackosUrl(url)) {
       event.preventDefault();
       openExternalUrl(url);
     }
-  });
+  };
+  mainWindow.webContents.on("will-navigate", guardNavigation);
+  mainWindow.webContents.on("will-redirect", guardNavigation);
 
   loadingPageActive = false;
   lastLoadingProgress = 0;
@@ -694,6 +706,8 @@ function createMenu() {
 }
 
 function registerIpc() {
+  // Online pages receive no local installation/credential/backup capabilities.
+  if (service.SERVER_URL) return;
   registerBackupIpc({
     ipcMain,
     controller: createBackupController({
@@ -727,6 +741,7 @@ function registerIpc() {
 }
 
 async function startNotifications() {
+  if (service.SERVER_URL) return;
   if (!notificationController) {
     return;
   }

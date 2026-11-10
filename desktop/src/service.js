@@ -10,6 +10,44 @@ const DAEMON_HOST = process.env.STACKOS_DESKTOP_DAEMON_HOST || "127.0.0.1";
 const DAEMON_PORT = Number.parseInt(process.env.STACKOS_DESKTOP_DAEMON_PORT || "5180", 10);
 const DAEMON_URL = `http://${DAEMON_HOST}:${DAEMON_PORT}/`;
 const HEALTH_URL = `http://${DAEMON_HOST}:${DAEMON_PORT}/api/v1/health`;
+// An explicitly selected server is the app's sole navigation/session origin.
+// Local runtime setup is a separate concern and must not be a login prerequisite.
+const SERVER_URL = process.env.STACKOS_SERVER_URL === undefined
+  ? null : selectedServerUrl(process.env.STACKOS_SERVER_URL);
+const APP_URL = SERVER_URL || DAEMON_URL;
+
+function selectedServerUrl(value) {
+  const parsed = new URL(value);
+  const loopback = ["127.0.0.1", "localhost", "[::1]"].includes(parsed.hostname);
+  if (!(parsed.protocol === "https:" || (parsed.protocol === "http:" && loopback)) ||
+      parsed.username || parsed.password || parsed.pathname !== "/" || parsed.search || parsed.hash) {
+    throw new Error("STACKOS_SERVER_URL must be an exact HTTPS origin or an isolated loopback HTTP origin");
+  }
+  return `${parsed.origin}/`;
+}
+
+function isAppUrl(candidate) {
+  try {
+    const parsed = new URL(candidate);
+    return parsed.origin === new URL(APP_URL).origin && !parsed.username && !parsed.password;
+  } catch {
+    return false;
+  }
+}
+
+async function checkSelectedServer() {
+  try {
+    const response = await fetch(new URL("/api/v1/auth/session", APP_URL), {
+      credentials: "omit", redirect: "error", signal: AbortSignal.timeout(5000)
+    });
+    const body = await response.json();
+    // No cookie is sent by the main process. A selected server must request
+    // user sign-in, never offer the standalone console-token fallback.
+    return response.status === 401 && body?.detail?.code === "session_expired_or_invalid";
+  } catch {
+    return false;
+  }
+}
 const INSTALL_STATE_FILE = "install-state.json";
 const PAYLOAD_BUILD_INFO_FILE = "build-info.json";
 const STACKOS_STATE_DIR =
@@ -874,6 +912,10 @@ function daemonLogPath() {
 }
 
 module.exports = {
+  APP_URL,
+  SERVER_URL,
+  isAppUrl,
+  checkSelectedServer,
   DAEMON_URL,
   HEALTH_URL,
   authenticatedJsonGet,

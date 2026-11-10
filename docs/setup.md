@@ -169,6 +169,24 @@ source test fixtures.
 No install, launchd, host registration or installed-app change is part of this
 preparation. Main owns later consolidation and installed-product proof.
 
+### Browser and desktop server sign-in
+
+Open the selected StackOS server origin in a browser. For a source desktop
+launch, set `STACKOS_SERVER_URL` to that same exact origin before starting
+Electron. It accepts HTTPS or isolated loopback HTTP, with no path, credentials,
+query or fragment. A selected server opens directly without local install,
+database, daemon availability or notification startup. Its renderer receives no
+local maintenance or backup IPC. Connected runtime setup remains separate.
+
+Both clients use the same StackOS registration, email confirmation, sign-in,
+sign-out and password recovery endpoints. Open the email link on its selected
+server and explicitly confirm it; recovery opens the password reset screen.
+Expired links require another email, and expired sessions require sign-in.
+The UI keeps only safe session identity and CSRF in memory. Cookies remain
+HttpOnly and bound by the server to environment and exact origin; neither
+loopback aliases nor another port are interchangeable navigation targets.
+The Overview can create and open private projects before a computer connects.
+
 ## Package Or Operator Setup
 
 Build the StackOS wheel and let the installer resolve its pinned connector

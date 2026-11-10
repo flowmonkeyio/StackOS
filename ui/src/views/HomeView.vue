@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { UiButton, UiConfirmDialog, UiPageHeader, UiPageShell } from '@/components/ui'
+import { UiButton, UiCallout, UiConfirmDialog, UiDialog, UiFormField, UiInput, UiPageHeader, UiPageShell } from '@/components/ui'
+import { useRouter } from 'vue-router'
+import { useAuthStore } from '@/stores/auth'
+import { useProjectsStore } from '@/stores/projects'
+import { formatApiError } from '@/lib/client'
 import { isDesktopShell } from '@/lib/desktop'
 import { GETTING_STARTED_URL } from '@/lib/externalLinks'
 import { usePolling } from '@/composables/usePolling'
@@ -16,6 +20,14 @@ import AgentActivitySection from './home/AgentActivitySection.vue'
 import { useAgentStats } from './home/useAgentStats'
 
 const isShell = isDesktopShell()
+const auth = useAuthStore()
+const projects = useProjectsStore()
+const router = useRouter()
+const createOpen = ref(false)
+const projectName = ref('')
+const projectSlug = ref('')
+const projectDomain = ref('')
+const createError = ref('')
 const repairOpen = ref(false)
 const portfolio = useHomePortfolioInsights()
 const { items, loading: projectsLoading, error: projectsError, nextCursor, total, filters } = portfolio
@@ -28,16 +40,29 @@ const { hostStatuses, hostStatusSummary, loadHostStatuses, applyHostStatuses } =
 const { health, systemBusy, statusTone, statusLabel, systemFacts, loadHealth, runSystemAction } =
   useHomeSystemStatus({ onDoctorResult: applyHostStatuses, onRepairComplete: loadHostStatuses })
 
-usePolling(async () => { await tickets.load() }, { intervalMs: 30_000 })
+usePolling(async () => { if (auth.mode !== 'server') await tickets.load() }, { intervalMs: 30_000 })
 onMounted(() => {
-  void agents.load()
-  void loadHealth()
-  void loadHostStatuses()
+  if (auth.mode !== 'server') {
+    void agents.load()
+    void loadHealth()
+    void loadHostStatuses()
+  }
   void portfolio.load()
 })
 
 async function refresh(): Promise<void> {
+  if (auth.mode === 'server') { await portfolio.load(); return }
   await Promise.all([portfolio.load(), tickets.load(), agents.load(), loadHealth(), loadHostStatuses()])
+}
+async function createProject(): Promise<void> {
+  createError.value = ''
+  try {
+    const project = await projects.createProject({ name: projectName.value.trim(), slug: projectSlug.value.trim(), domain: projectDomain.value.trim(), locale: 'en-US' })
+    createOpen.value = false
+    await router.push(`/projects/${project.id}`)
+  } catch (err) {
+    createError.value = formatApiError(err, 'Could not create project.')
+  }
 }
 function confirmRepair(): void {
   repairOpen.value = false
@@ -60,9 +85,16 @@ function selectStatus(status: TrackerStatus | null): void {
   <UiPageShell>
     <UiPageHeader
       title="Overview"
-      description="Your local runtime and projects"
+      :description="auth.mode === 'server' ? 'Your private projects' : 'Your local runtime and projects'"
     >
       <template #actions>
+        <UiButton
+          v-if="auth.mode === 'server'"
+          variant="primary"
+          @click="createOpen = true"
+        >
+          Create project
+        </UiButton>
         <UiButton
           variant="secondary"
           size="sm"
@@ -86,6 +118,7 @@ function selectStatus(status: TrackerStatus | null): void {
       </template>
     </UiPageHeader>
     <HomeSystemStatusCard
+      v-if="auth.mode !== 'server'"
       :health="health"
       :is-shell="isShell"
       :status-tone="statusTone"
@@ -100,6 +133,7 @@ function selectStatus(status: TrackerStatus | null): void {
       @refresh-hosts="loadHostStatuses"
     />
     <HomePortfolioOverview
+      v-if="auth.mode !== 'server'"
       :summary="summary"
       :visibility="visibility"
       :selected-status="filters.ticket_status"
@@ -109,6 +143,7 @@ function selectStatus(status: TrackerStatus | null): void {
       @select="selectStatus"
     />
     <AgentActivitySection
+      v-if="auth.mode !== 'server'"
       :summary="agentSummary"
       :loading="agentsLoading"
       :error="agentsError"
@@ -127,6 +162,61 @@ function selectStatus(status: TrackerStatus | null): void {
       @more="portfolio.loadMore"
       @clear-status="selectStatus(null)"
     />
+    <UiDialog
+      v-model="createOpen"
+      title="Create private project"
+    >
+      <form
+        class="flex flex-col gap-4"
+        @submit.prevent="createProject"
+      >
+        <UiCallout
+          v-if="createError"
+          tone="danger"
+        >
+          {{ createError }}
+        </UiCallout>
+        <UiFormField
+          label="Project name"
+          required
+        >
+          <UiInput
+            v-model="projectName"
+            required
+            :disabled="projects.loading"
+          />
+        </UiFormField>
+        <UiFormField
+          label="Project slug"
+          help="Use lowercase letters, numbers and hyphens."
+          required
+        >
+          <UiInput
+            v-model="projectSlug"
+            pattern="[a-z0-9]+(-[a-z0-9]+)*"
+            required
+            :disabled="projects.loading"
+          />
+        </UiFormField>
+        <UiFormField
+          label="Domain"
+          required
+        >
+          <UiInput
+            v-model="projectDomain"
+            required
+            :disabled="projects.loading"
+          />
+        </UiFormField>
+        <UiButton
+          type="submit"
+          variant="primary"
+          :loading="projects.loading"
+        >
+          Create project
+        </UiButton>
+      </form>
+    </UiDialog>
     <UiConfirmDialog
       v-model="repairOpen"
       title="Install or repair StackOS?"

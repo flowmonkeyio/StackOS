@@ -13,7 +13,7 @@ import router from './router'
 
 import './design/colors_and_type.css'
 import './style.css'
-import { ApiError, clearAuthStore } from '@/lib/client'
+import { ApiError } from '@/lib/client'
 import { registerAuthStoreWithClient, useAuthStore } from '@/stores/auth'
 import { useToastsStore } from '@/stores/toasts'
 import { useProjectsStore } from '@/stores/projects'
@@ -22,11 +22,15 @@ async function start(): Promise<void> {
   const app = createApp(App)
   const pinia = createPinia()
   app.use(pinia)
-  app.use(router)
-
   const auth = useAuthStore()
   registerAuthStoreWithClient(auth)
   await auth.bootstrap()
+  router.beforeEach((to) => {
+    if (auth.mode === 'server' && !auth.ready && to.name !== 'sign-in') return '/sign-in'
+    if (auth.ready && to.name === 'sign-in') return '/'
+  })
+  app.use(router)
+  await router.isReady()
 
   const shouldResolveProjectRoute =
     router.currentRoute.value.path === '/' || router.currentRoute.value.path === '/projects'
@@ -42,8 +46,8 @@ async function start(): Promise<void> {
   app.config.errorHandler = (err: unknown) => {
     if (err instanceof ApiError) {
       if (err.status === 401) {
-        clearAuthStore()
-        void router.replace('/auth-error')
+        auth.expire()
+        void router.replace(auth.mode === 'server' ? '/sign-in' : '/auth-error')
       } else {
         toasts.error('Request failed', err.message)
       }
@@ -52,7 +56,7 @@ async function start(): Promise<void> {
     }
   }
 
-  if (!auth.ready && router.currentRoute.value.name !== 'auth-error') {
+  if (!auth.ready && auth.mode !== 'server' && router.currentRoute.value.name !== 'auth-error') {
     await router.replace('/auth-error')
   }
 
