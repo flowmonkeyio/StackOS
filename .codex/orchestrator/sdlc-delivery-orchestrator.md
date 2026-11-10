@@ -201,7 +201,7 @@ Choose terminal-managed delegation or explicit `tracker.startDelivery` handoff.
 For automatic delivery, resolve agent identity, instructions, harness and model
 from `TaskTracker.config_json.delivery` defaults and task overrides
 by role into one task snapshot. Defaults use local-admin REST-only `tracker.configureDelivery`;
-no ticket settings or required `.codex` folder. The shared host capability/model
+no ticket settings or source fallback. Fresh Codex uses exact project sources. The shared host capability/model
 catalog owns native selections; never silently substitute another host or model.
 Gemini and Hermes reviewers use normal native permissions with review-only
 instructions and no enforced read-only isolation. The shared capability owner selects test-capable native review permissions
@@ -228,8 +228,9 @@ or rejection after the third repair stops the same task without fresh-session,
 host or model fallback.
 Observation may cite unchanged HEAD; non-Git work needs no fabricated commit.
 Automatic delivery traverses all remaining dependency-ready task work, including
-workflow mirrors. Frozen step extensions.agent_assignment select existing
-delivery_agent/review_agent roles; explicit task agent_assignments win. No phase
+workflow mirrors. Explicit task agent_assignments win over frozen step
+extensions.agent_assignment, then uniquely applicable selected declared roles.
+Ambiguity requires selection; ordinary work retains independent review. No phase
 roles, model settings in extensions or phase-name dispatch logic. The running
 step_id is entry context only. Mirrors execute remaining frozen contracts once
 after accepted descendants; groups never launch. Only RunPlanRepository records
@@ -401,24 +402,22 @@ nonblocking; exclusions, authority/ownership conflicts and materially different
 outcomes require main reconciliation. Source edits do not activate this method on
 unsupported frozen/live jobs; manual reviewed adoption remains separate.
 
-## Manual Current-Project Instruction Refresh
+## Explicit Current-Project Source Adoption
 
-After independent source/local candidate approval, explicitly map parsed
-`developer_instructions` from `.codex/agents/sdlc-delivery.toml` to
-`delivery.delivery_agent.instructions` and from
-`.codex/agents/sdlc-delivery-reviewer.toml` to
-`delivery.review_agent.instructions` in this project only. Read the existing
-tracker configuration through its local-admin setup owner and copy
-the complete delivery object before replacing only those two strings through
-`tracker.configureDelivery`; a supplied delivery object replaces the key. Preserve names,
-hosts, models, provider/profile and every other setting. Read back exact equality
-of instructions using canonical whitespace normalization and exact equality of
-all preserved settings, retaining approved source refs/versions
-and candidate identity. Prove the subsequent new rehearsal task snapshot and
-actual prompt include the new method and scoped feedback, excluding followups.
+Preserve provider/profile, names, hosts, model fallback choices and absent/null
+fields exactly. Read back saved defaults and prove the subsequent disposable
+handoff. No synchronizer, watcher or cross-project rollout is authorized.
 
-Source edits alone update neither saved instructions nor active/historical task
-snapshots. After independent source/local approval, explicitly authorized
+Fresh Codex admission selects exact project source_ref bindings in agents by role; resolve source instructions/model/effort/supported restrictions once, with omitted values inheriting task then project then host settings. Source fields never increase authority. Non-Codex inline contracts remain supported. Explicit task agent_assignments win over frozen step assignments, then uniquely applicable selected declared roles; ambiguity requires selection. Ordinary tickets retain a distinct reviewer. Queued/running and resumed native snapshots stay frozen; future admissions read current sources. Use tracker.configureDelivery adopt_sources preview/write with expected digests for explicit current-project adoption, preserving unrelated settings and history; retain references instead of editable copied Codex instructions after readback.
+
+For this project select .codex/agents/sdlc-delivery.toml and
+.codex/agents/sdlc-delivery-reviewer.toml deliberately, retaining exact refs and
+source digests from projectAgent.get. Review preview differences before writing.
+Prove a subsequent disposable task snapshot and actual prompt, preserving
+independent review, scoped feedback and native restrictions.
+
+Codex source edits affect future admissions, never active/historical task
+snapshots or resumed native sessions. Other-host inline defaults remain explicit. After independent source/local approval, explicitly authorized
 instruction-only saved-default adoption may occur during a running task.
 Preserve absent/null fields as well as all other configuration. Queued/running
 snapshots stay frozen. Explicit rehandoff after

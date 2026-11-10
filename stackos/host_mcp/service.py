@@ -383,6 +383,7 @@ def run_agent(
     on_execution_change: Callable[[ActiveInvocation, bool], None] | None = None,
     previous_usage: Any = None,
     mcp_config_ref: dict[str, str] | None = None,
+    native_settings: dict[str, Any] | None = None,
     launch_allowed: Callable[[], bool] | None = None,
 ) -> AgentRunResult:
     """Run a project agent through the same host registry used by Overview."""
@@ -390,6 +391,8 @@ def run_agent(
         return AgentRunResult(None, error="Project-agent instructions must not be empty.")
     if mcp_config_ref is not None and host_key != "codex":
         return AgentRunResult(None, error="Task MCP configuration is unsupported by this host.")
+    if native_settings is not None and host_key != "codex":
+        return AgentRunResult(None, error="Native project settings are unsupported by this host.")
     if resume_thread_id is not None and (
         not isinstance(resume_thread_id, str)
         or not resume_thread_id.strip()
@@ -425,6 +428,8 @@ def run_agent(
         else None
     )
     progress_kwargs: dict[str, Any] = {}
+    if native_settings is not None:
+        progress_kwargs["native_settings"] = native_settings
     if mcp_config_ref is not None:
         progress_kwargs["mcp_config_ref"] = mcp_config_ref
     result: AgentRunResult | None = None

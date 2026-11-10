@@ -2337,6 +2337,169 @@ export interface components {
             /** Ticket Key */
             ticket_key: string;
         };
+        /** AgentDefinition */
+        AgentDefinition: {
+            /** Capabilities */
+            capabilities?: {
+                [key: string]: boolean;
+            };
+            /** Diagnostics */
+            diagnostics?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Digest
+             * @default null
+             */
+            digest: string | null;
+            /** @default null */
+            fields: components["schemas"]["AgentFields"] | null;
+            /** Inherited Fields */
+            inherited_fields?: string[];
+            /** Native Settings */
+            native_settings?: {
+                [key: string]: unknown;
+            };
+            /** Project Dir */
+            project_dir: string;
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Registration Digest
+             * @default null
+             */
+            registration_digest: string | null;
+            /** Registration Keys */
+            registration_keys?: string[];
+            source_ref: components["schemas"]["AgentSourceRef"];
+            /** Unsupported Fields */
+            unsupported_fields?: string[];
+        };
+        /** AgentFields */
+        AgentFields: {
+            /** Description */
+            description: string;
+            /** Developer Instructions */
+            developer_instructions: string;
+            /**
+             * Features
+             * @default null
+             */
+            features: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Model
+             * @default null
+             */
+            model: string | null;
+            /**
+             * Model Reasoning Effort
+             * @default null
+             */
+            model_reasoning_effort: string | null;
+            /**
+             * Model Reasoning Summary
+             * @default null
+             */
+            model_reasoning_summary: string | null;
+            /**
+             * Model Verbosity
+             * @default null
+             */
+            model_verbosity: string | null;
+            /** Name */
+            name: string;
+            /**
+             * Skills
+             * @default null
+             */
+            skills: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** AgentList */
+        AgentList: {
+            /** Diagnostics */
+            diagnostics?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Host Key
+             * @default codex
+             * @constant
+             */
+            host_key: "codex";
+            /** Items */
+            items?: components["schemas"]["AgentDefinition"][];
+            /** Project Dir */
+            project_dir: string;
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Registration Digest
+             * @default null
+             */
+            registration_digest: string | null;
+        };
+        /** AgentPatch */
+        AgentPatch: {
+            /**
+             * Description
+             * @default null
+             */
+            description: string | null;
+            /**
+             * Developer Instructions
+             * @default null
+             */
+            developer_instructions: string | null;
+            /**
+             * Features
+             * @default null
+             */
+            features: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Model
+             * @default null
+             */
+            model: string | null;
+            /**
+             * Model Reasoning Effort
+             * @default null
+             */
+            model_reasoning_effort: string | null;
+            /**
+             * Model Reasoning Summary
+             * @default null
+             */
+            model_reasoning_summary: string | null;
+            /**
+             * Model Verbosity
+             * @default null
+             */
+            model_verbosity: string | null;
+            /**
+             * Name
+             * @default null
+             */
+            name: string | null;
+            /**
+             * Skills
+             * @default null
+             */
+            skills: {
+                [key: string]: unknown;
+            } | null;
+        };
         /**
          * AgentRequestAttentionStatus
          * @description Persists to ``agent_requests.attention_status`` for local inbox state.
@@ -2402,6 +2565,25 @@ export interface components {
          * @enum {string}
          */
         AgentRequestStatus: AgentRequestStatus;
+        /** AgentSourceAdoption */
+        AgentSourceAdoption: {
+            /** Expected Digest */
+            expected_digest: string;
+            source_ref: components["schemas"]["AgentSourceRef"];
+        };
+        /** AgentSourceRef */
+        AgentSourceRef: {
+            /**
+             * Host Key
+             * @default codex
+             * @constant
+             */
+            host_key: "codex";
+            /** Native Name */
+            native_name: string;
+            /** Source Path */
+            source_path: string;
+        };
         /** AgentStatsCoverageOut */
         AgentStatsCoverageOut: {
             /** Classification Known Attempts */
@@ -2526,7 +2708,7 @@ export interface components {
             /** Samples */
             samples?: components["schemas"]["UsageSampleOut"][];
             /** Selected Role */
-            selected_role: AgentStatsRowOutSelected_roleAnyOf0 | null;
+            selected_role: string | null;
         };
         /** AgentStatsUsageOut */
         AgentStatsUsageOut: {
@@ -5499,6 +5681,153 @@ export interface components {
              */
             kind: string;
         };
+        /** ProjectAgentCreateInput */
+        ProjectAgentCreateInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            fields: components["schemas"]["AgentFields"];
+            /**
+             * Host Key
+             * @default codex
+             * @constant
+             */
+            host_key: "codex";
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Dir */
+            project_dir: string;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default raw
+             * @enum {string}
+             */
+            response_mode: ProjectAgentCreateInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** ProjectAgentGetInput */
+        ProjectAgentGetInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Host Key
+             * @default codex
+             * @constant
+             */
+            host_key: "codex";
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Dir */
+            project_dir: string;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: ProjectAgentGetInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            source_ref: components["schemas"]["AgentSourceRef"];
+        };
+        /** ProjectAgentScope */
+        ProjectAgentScope: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Host Key
+             * @default codex
+             * @constant
+             */
+            host_key: "codex";
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Dir */
+            project_dir: string;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: ProjectAgentScopeResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** ProjectAgentUpdateInput */
+        ProjectAgentUpdateInput: {
+            /** Expected Digest */
+            expected_digest: string;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Expected Registration Digest
+             * @default null
+             */
+            expected_registration_digest: string | null;
+            /**
+             * Host Key
+             * @default codex
+             * @constant
+             */
+            host_key: "codex";
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            patch: components["schemas"]["AgentPatch"];
+            /** Project Dir */
+            project_dir: string;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default raw
+             * @enum {string}
+             */
+            response_mode: ProjectAgentUpdateInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            source_ref: components["schemas"]["AgentSourceRef"];
+        };
         /**
          * ProjectCreateRequest
          * @example {
@@ -6215,6 +6544,10 @@ export interface components {
          * @description Existing handoff settings, without occurrence-specific lifecycle arguments.
          */
         ScheduleExecution: {
+            /** Agents */
+            agents?: {
+                [key: string]: components["schemas"]["TaskDeliveryAgentOverride"];
+            } | null;
             delivery_agent?: components["schemas"]["TaskDeliveryAgentOverride"] | null;
             /** Host Key */
             host_key?: string | null;
@@ -6222,6 +6555,10 @@ export interface components {
             /** Project Dir */
             project_dir: string;
             review_agent?: components["schemas"]["TaskDeliveryAgentOverride"] | null;
+            /** Step Agent Assignments */
+            step_agent_assignments?: {
+                [key: string]: string;
+            } | null;
         };
         /**
          * ScheduleListInput
@@ -6562,6 +6899,74 @@ export interface components {
             /** Sha256 */
             sha256: string;
         };
+        /** TaskActivityItem */
+        TaskActivityItem: {
+            /** Details */
+            details?: {
+                [key: string]: unknown;
+            };
+            /** Kind */
+            kind: string;
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /**
+             * Phase
+             * @default null
+             */
+            phase: string | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+            /**
+             * Run Plan Id
+             * @default null
+             */
+            run_plan_id: number | null;
+            /** Source Id */
+            source_id: number;
+            /**
+             * Source Kind
+             * @enum {string}
+             */
+            source_kind: TaskActivityItemSource_kind;
+            /** Summary */
+            summary: string;
+            /** Task Key */
+            task_key: string;
+            /**
+             * Ticket Key
+             * @default null
+             */
+            ticket_key: string | null;
+        };
+        /** TaskActivityOut */
+        TaskActivityOut: {
+            /**
+             * Coverage
+             * @default Persisted linked project events and structured delivery lifecycle revisions; not a complete internal audit.
+             */
+            coverage: string;
+            /** Items */
+            items: components["schemas"]["TaskActivityItem"][];
+            /**
+             * Next Cursor
+             * @default null
+             */
+            next_cursor: string | null;
+            /** Project Id */
+            project_id: number;
+            /** Task Id */
+            task_id: number;
+            /** Task Key */
+            task_key: string;
+            /** Warnings */
+            warnings?: string[];
+        };
         /**
          * TaskDeliveryAgentOverride
          * @description Task choices may omit fields supplied by project defaults.
@@ -6573,18 +6978,28 @@ export interface components {
             instructions?: string | null;
             /** Model */
             model?: string | null;
+            /** Model Reasoning Effort */
+            model_reasoning_effort?: string | null;
             /** Name */
             name?: string | null;
             /** Profile */
             profile?: string | null;
             /** Provider */
             provider?: string | null;
+            source_ref?: components["schemas"]["AgentSourceRef"] | null;
         };
         /**
          * TaskDeliveryDefaults
          * @description Project defaults; task handoff validates the complete resolved roles.
          */
         TaskDeliveryDefaults: {
+            /**
+             * Agents
+             * @default null
+             */
+            agents: {
+                [key: string]: components["schemas"]["TaskDeliveryAgentOverride"];
+            } | null;
             /** @default null */
             delivery_agent: components["schemas"]["TaskDeliveryAgentOverride"] | null;
             /**
@@ -6604,6 +7019,62 @@ export interface components {
             path: string;
             /** Sha256 */
             sha256: string;
+        };
+        /** TaskResultAssociation */
+        TaskResultAssociation: {
+            /** Kind */
+            kind: string;
+            /** Path */
+            path: string;
+            /** Ref */
+            ref: string;
+        };
+        /** TaskResultItem */
+        TaskResultItem: {
+            /** Associations */
+            associations: components["schemas"]["TaskResultAssociation"][];
+            /** Data */
+            data: components["schemas"]["ResourceRecordOut"] | components["schemas"]["ArtifactOut"] | components["schemas"]["LearningOut"] | components["schemas"]["DecisionOut"] | components["schemas"]["ExperimentOut"];
+            /**
+             * Occurred At
+             * Format: date-time
+             */
+            occurred_at: string;
+            /** Source Id */
+            source_id: number;
+            /**
+             * Source Kind
+             * @enum {string}
+             */
+            source_kind: TaskResultItemSource_kind;
+        };
+        /** TaskResultsOut */
+        TaskResultsOut: {
+            /**
+             * Coverage
+             * @default Explicit tracker, run, historical execution-context and typed provenance associations only; association does not imply approval or exclusive production. Unlinked content remains in Library.
+             */
+            coverage: string;
+            /** Items */
+            items: components["schemas"]["TaskResultItem"][];
+            /**
+             * Next Cursor
+             * @default null
+             */
+            next_cursor: string | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Source Kind
+             * @default null
+             */
+            source_kind: TaskResultsOutSource_kindAnyOf0 | null;
+            /** Task Id */
+            task_id: number;
+            /** Task Key */
+            task_key: string;
+            /** Warnings */
+            warnings?: string[];
         };
         /** TelegramApplicationStatusOut */
         TelegramApplicationStatusOut: {
@@ -6805,7 +7276,15 @@ export interface components {
         };
         /** TrackerConfigureDeliveryInput */
         TrackerConfigureDeliveryInput: {
-            delivery: components["schemas"]["TaskDeliveryDefaults"];
+            /**
+             * Adopt Sources
+             * @default null
+             */
+            adopt_sources: {
+                [key: string]: components["schemas"]["AgentSourceAdoption"];
+            } | null;
+            /** @default null */
+            delivery: components["schemas"]["TaskDeliveryDefaults"] | null;
             /**
              * Expected Etag
              * @default null
@@ -6816,6 +7295,16 @@ export interface components {
              * @default null
              */
             idempotency_key: string | null;
+            /**
+             * Preview
+             * @default false
+             */
+            preview: boolean;
+            /**
+             * Project Dir
+             * @default null
+             */
+            project_dir: string | null;
             /** Project Id */
             project_id: number;
             /**
@@ -7154,6 +7643,44 @@ export interface components {
              */
             updated_at: string;
         };
+        /** TrackerTaskActivityInput */
+        TrackerTaskActivityInput: {
+            /**
+             * Cursor
+             * @default null
+             */
+            cursor: string | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Limit
+             * @default 50
+             */
+            limit: number;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: TrackerTaskActivityInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /** Task Key */
+            task_key: string;
+        };
         /** TrackerTaskContentOut */
         TrackerTaskContentOut: {
             /** Idempotency Key */
@@ -7260,6 +7787,49 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** TrackerTaskResultsInput */
+        TrackerTaskResultsInput: {
+            /**
+             * Cursor
+             * @default null
+             */
+            cursor: string | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Limit
+             * @default 50
+             */
+            limit: number;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: TrackerTaskResultsInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Source Kind
+             * @default null
+             */
+            source_kind: TrackerTaskResultsInputSource_kindAnyOf0 | null;
+            /** Task Key */
+            task_key: string;
         };
         /**
          * TrackerTaskTicketSummaryOut
@@ -8008,6 +8578,20 @@ export interface components {
             /** Version Id */
             version_id?: number | null;
         };
+        /** WriteEnvelope[AgentDefinition] */
+        WriteEnvelope_AgentDefinition_: {
+            data: components["schemas"]["AgentDefinition"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
         /** WriteEnvelope[DurableActionJobOut] */
         WriteEnvelope_DurableActionJobOut_: {
             data: components["schemas"]["DurableActionJobOut"];
@@ -8092,20 +8676,6 @@ export interface components {
              */
             run_id: number | null;
         };
-        /** WriteEnvelope[TrackerSummaryOut] */
-        WriteEnvelope_TrackerSummaryOut_: {
-            data: components["schemas"]["TrackerSummaryOut"];
-            /**
-             * Project Id
-             * @default null
-             */
-            project_id: number | null;
-            /**
-             * Run Id
-             * @default null
-             */
-            run_id: number | null;
-        };
         /** WriteEnvelope[TrackerTaskContentOut] */
         WriteEnvelope_TrackerTaskContentOut_: {
             data: components["schemas"]["TrackerTaskContentOut"];
@@ -8135,6 +8705,23 @@ export interface components {
             project_id?: number | null;
             /** Run Id */
             run_id?: number | null;
+        };
+        /** WriteEnvelope[dict[str, Any]] */
+        WriteEnvelope_dict_str__Any__: {
+            /** Data */
+            data: {
+                [key: string]: unknown;
+            };
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
         };
         /**
          * WriteResponse[AccountAuthStatusOut]
@@ -8422,7 +9009,13 @@ export type SchemaActionExposureNextActionOut = components['schemas']['ActionExp
 export type SchemaActionExposureOut = components['schemas']['ActionExposureOut'];
 export type SchemaActionOut = components['schemas']['ActionOut'];
 export type SchemaActiveExecutionOut = components['schemas']['ActiveExecutionOut'];
+export type SchemaAgentDefinition = components['schemas']['AgentDefinition'];
+export type SchemaAgentFields = components['schemas']['AgentFields'];
+export type SchemaAgentList = components['schemas']['AgentList'];
+export type SchemaAgentPatch = components['schemas']['AgentPatch'];
 export type SchemaAgentRequestOut = components['schemas']['AgentRequestOut'];
+export type SchemaAgentSourceAdoption = components['schemas']['AgentSourceAdoption'];
+export type SchemaAgentSourceRef = components['schemas']['AgentSourceRef'];
 export type SchemaAgentStatsCoverageOut = components['schemas']['AgentStatsCoverageOut'];
 export type SchemaAgentStatsDayOut = components['schemas']['AgentStatsDayOut'];
 export type SchemaAgentStatsFieldCoverageOut = components['schemas']['AgentStatsFieldCoverageOut'];
@@ -8533,6 +9126,10 @@ export type SchemaPluginCatalogOut = components['schemas']['PluginCatalogOut'];
 export type SchemaPluginEnableRequest = components['schemas']['PluginEnableRequest'];
 export type SchemaPluginOut = components['schemas']['PluginOut'];
 export type SchemaPolicySpec = components['schemas']['PolicySpec'];
+export type SchemaProjectAgentCreateInput = components['schemas']['ProjectAgentCreateInput'];
+export type SchemaProjectAgentGetInput = components['schemas']['ProjectAgentGetInput'];
+export type SchemaProjectAgentScope = components['schemas']['ProjectAgentScope'];
+export type SchemaProjectAgentUpdateInput = components['schemas']['ProjectAgentUpdateInput'];
 export type SchemaProjectCreateRequest = components['schemas']['ProjectCreateRequest'];
 export type SchemaProjectEventOut = components['schemas']['ProjectEventOut'];
 export type SchemaProjectOut = components['schemas']['ProjectOut'];
@@ -8565,9 +9162,14 @@ export type SchemaScheduledRunOut = components['schemas']['ScheduledRunOut'];
 export type SchemaSitemapFetchRequest = components['schemas']['SitemapFetchRequest'];
 export type SchemaSitemapFetchResponse = components['schemas']['SitemapFetchResponse'];
 export type SchemaSnapshotRef = components['schemas']['SnapshotRef'];
+export type SchemaTaskActivityItem = components['schemas']['TaskActivityItem'];
+export type SchemaTaskActivityOut = components['schemas']['TaskActivityOut'];
 export type SchemaTaskDeliveryAgentOverride = components['schemas']['TaskDeliveryAgentOverride'];
 export type SchemaTaskDeliveryDefaults = components['schemas']['TaskDeliveryDefaults'];
 export type SchemaTaskMcpConfigRef = components['schemas']['TaskMcpConfigRef'];
+export type SchemaTaskResultAssociation = components['schemas']['TaskResultAssociation'];
+export type SchemaTaskResultItem = components['schemas']['TaskResultItem'];
+export type SchemaTaskResultsOut = components['schemas']['TaskResultsOut'];
 export type SchemaTelegramApplicationStatusOut = components['schemas']['TelegramApplicationStatusOut'];
 export type SchemaTemplateBaseSpec = components['schemas']['TemplateBaseSpec'];
 export type SchemaTemplateIoSpec = components['schemas']['TemplateIOSpec'];
@@ -8586,9 +9188,11 @@ export type SchemaTrackerLinkOut = components['schemas']['TrackerLinkOut'];
 export type SchemaTrackerPriorityOut = components['schemas']['TrackerPriorityOut'];
 export type SchemaTrackerSnapshotOut = components['schemas']['TrackerSnapshotOut'];
 export type SchemaTrackerSummaryOut = components['schemas']['TrackerSummaryOut'];
+export type SchemaTrackerTaskActivityInput = components['schemas']['TrackerTaskActivityInput'];
 export type SchemaTrackerTaskContentOut = components['schemas']['TrackerTaskContentOut'];
 export type SchemaTrackerTaskInputOut = components['schemas']['TrackerTaskInputOut'];
 export type SchemaTrackerTaskOut = components['schemas']['TrackerTaskOut'];
+export type SchemaTrackerTaskResultsInput = components['schemas']['TrackerTaskResultsInput'];
 export type SchemaTrackerTaskTicketSummaryOut = components['schemas']['TrackerTaskTicketSummaryOut'];
 export type SchemaTrackerTicketOut = components['schemas']['TrackerTicketOut'];
 export type SchemaTrackerUpdateTaskContentInput = components['schemas']['TrackerUpdateTaskContentInput'];
@@ -8612,16 +9216,17 @@ export type SchemaWorkflowTemplateIssue = components['schemas']['WorkflowTemplat
 export type SchemaWorkflowTemplateListOut = components['schemas']['WorkflowTemplateListOut'];
 export type SchemaWorkflowTemplateSpec = components['schemas']['WorkflowTemplateSpec'];
 export type SchemaWorkflowTemplateSummaryOut = components['schemas']['WorkflowTemplateSummaryOut'];
+export type SchemaWriteEnvelopeAgentDefinition = components['schemas']['WriteEnvelope_AgentDefinition_'];
 export type SchemaWriteEnvelopeDurableActionJobOut = components['schemas']['WriteEnvelope_DurableActionJobOut_'];
 export type SchemaWriteEnvelopeFinanceCommitOut = components['schemas']['WriteEnvelope_FinanceCommitOut_'];
 export type SchemaWriteEnvelopeFinanceStatusOut = components['schemas']['WriteEnvelope_FinanceStatusOut_'];
 export type SchemaWriteEnvelopeLocalAgentChatMessageOut = components['schemas']['WriteEnvelope_LocalAgentChatMessageOut_'];
 export type SchemaWriteEnvelopeScheduleRemovalOut = components['schemas']['WriteEnvelope_ScheduleRemovalOut_'];
 export type SchemaWriteEnvelopeScheduledJobOut = components['schemas']['WriteEnvelope_ScheduledJobOut_'];
-export type SchemaWriteEnvelopeTrackerSummaryOut = components['schemas']['WriteEnvelope_TrackerSummaryOut_'];
 export type SchemaWriteEnvelopeTrackerTaskContentOut = components['schemas']['WriteEnvelope_TrackerTaskContentOut_'];
 export type SchemaWriteEnvelopeWorkflowTemplateExtensionDeleteOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionDeleteOut_'];
 export type SchemaWriteEnvelopeWorkflowTemplateExtensionUpsertOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionUpsertOut_'];
+export type SchemaWriteEnvelopeDictStrAny = components['schemas']['WriteEnvelope_dict_str__Any__'];
 export type SchemaWriteResponseAccountAuthStatusOut = components['schemas']['WriteResponse_AccountAuthStatusOut_'];
 export type SchemaWriteResponseAccountOut = components['schemas']['WriteResponse_AccountOut_'];
 export type SchemaWriteResponseAccountSessionOut = components['schemas']['WriteResponse_AccountSessionOut_'];
@@ -11890,10 +12495,6 @@ export enum AgentStatsFieldCoverageOutStatus {
     partial = "partial",
     unavailable = "unavailable"
 }
-export enum AgentStatsRowOutSelected_roleAnyOf0 {
-    delivery_agent = "delivery_agent",
-    review_agent = "review_agent"
-}
 export enum ApprovalRequestStatus {
     pending = "pending",
     approved = "approved",
@@ -12106,6 +12707,28 @@ export enum PluginSource {
     project = "project",
     user = "user"
 }
+export enum ProjectAgentCreateInputResponse_mode {
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectAgentGetInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectAgentScopeResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectAgentUpdateInputResponse_mode {
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
 export enum RunKind {
     run_plan = "run-plan",
     skill_run = "skill-run",
@@ -12177,6 +12800,24 @@ export enum ScheduleToggleInputResponse_modeAnyOf0 {
     ack = "ack",
     standard = "standard",
     verbose = "verbose"
+}
+export enum TaskActivityItemSource_kind {
+    project_event = "project_event",
+    tracker_revision = "tracker_revision"
+}
+export enum TaskResultItemSource_kind {
+    resource_record = "resource_record",
+    artifact = "artifact",
+    learning = "learning",
+    decision = "decision",
+    experiment = "experiment"
+}
+export enum TaskResultsOutSource_kindAnyOf0 {
+    resource_record = "resource_record",
+    artifact = "artifact",
+    learning = "learning",
+    decision = "decision",
+    experiment = "experiment"
 }
 export enum TrackerAgentStatsAllInputGroup_by {
     agent = "agent",
@@ -12258,6 +12899,25 @@ export enum TrackerSourceKind {
     agent_request = "agent-request",
     external = "external",
     system = "system"
+}
+export enum TrackerTaskActivityInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum TrackerTaskResultsInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum TrackerTaskResultsInputSource_kindAnyOf0 {
+    resource_record = "resource_record",
+    artifact = "artifact",
+    learning = "learning",
+    decision = "decision",
+    experiment = "experiment"
 }
 export enum TrackerTicketKind {
     ticket = "ticket",

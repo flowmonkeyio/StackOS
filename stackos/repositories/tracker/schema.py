@@ -353,7 +353,7 @@ class AgentStatsRowOut(AgentStatsMetricsOut):
     project_name: str | None
     project_slug: str | None
     agent_name: str | None
-    selected_role: Literal["delivery_agent", "review_agent"] | None
+    selected_role: str | None
     host_key: str | None
     model: str | None
 

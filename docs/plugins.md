@@ -185,6 +185,16 @@ sanitized connector envelope as non-authoritative transport evidence.
 
 ## Workflow Templates
 
+Domain pages declare their supported sections in `ui.page.sections`, using
+`workflows`, `saved`, and `files`. The generic page retains declared sections
+when empty and omits undeclared sections. It uses the effective workflow loader
+and shared resource/artifact readers; a declaration does not create records,
+workflow templates, readiness, or execution controls. `ui.page.description` is
+optional operator-facing page copy. Publishing declares saved information and
+files only; Finance keeps its existing console. Library links retain the exact
+project, plugin, source type and tab. Navigation contributions use `to` and
+`plugin_slug` query parameters, including Agency and Support.
+
 Plugins can ship workflow templates under `plugins/<slug>/workflows/`. These
 templates should define reusable setup and context requirements, not one-off run
 state. Agents create concrete run plans from them.

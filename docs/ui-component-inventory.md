@@ -229,12 +229,13 @@ same contract. A feature composable should receive explicit refs/callbacks,
 return its public state/actions, and keep one mutation/reload policy. The route
 view remains responsible for coordinating multiple composables.
 
-`project-detail/AgentDefaultsTab` composes the project scope with
-`agent-defaults/AgentDefaultsForm`; `useAgentDefaults` owns its load/save/readback
-lifecycle through `useProjectScopedLoader`. The tab keys the form by project so
-scope changes reset local drafts and selection state and invalidate pending requests.
-The form uses shared input, textarea, select and form-field
-primitives over existing tracker setup and safe host capabilities.
+`AgentsView` composes `agents/ProjectAgents` and `agents/useProjectAgents`.
+They read and edit actual project-local native definitions through the canonical
+source operations. Saved task defaults are adopted explicitly with digest
+readback; editing a definition does not execute work or rewrite frozen runs.
+Generic presets remain reusable guidance, separate from the live project list.
+The shared shell uses direct primary, Setup and enabled-domain links; see the
+[route and wrapper map](./ui-page-layout-map.md).
 
 Connections is the reference implementation:
 
@@ -264,13 +265,15 @@ search and sorting; focused plugin/provider card components own presentation.
 Both Plugins and Connections use the shared `ProviderMark` so website catalog
 logos and operator UI logos cannot drift.
 
-Graph surfaces intentionally have two different sizing contracts. Workflow
-guide journeys are document previews: their canvas grows to the complete stage
-layout and leaves wheel/pinch gestures to the containing page. The task tracker
-dependency map is a bounded, page-sized exploration canvas: node geometry and
-spacing may extend beyond the viewport, while pan, wheel/pinch zoom, minimap,
-and controls expose that off-canvas context. Do not share viewport behavior
-between these surfaces merely because both render with Vue Flow.
+Workflow details use `TemplateRenderer`'s compact stage list, declared inputs,
+outputs and approval gates, with the sanitized effective contract in Details.
+`WorkflowDetailView` owns both plugin-scoped details and Home's exact configured
+project/repository/user workflow inspection. Non-plugin workflows read the same
+effective-template API directly and return to Home; no global list store remains.
+They use ordinary page scrolling. The task tracker dependency map remains a
+bounded, page-sized exploration canvas: node geometry and spacing may extend
+beyond the viewport, while pan, wheel/pinch zoom, minimap and controls expose
+that off-canvas context.
 
 Partition integration tests by user flow before moving risky async ownership.
 Use focused unit tests for pure view models/composables and keep one route-level
@@ -295,7 +298,7 @@ test for cross-feature wiring, loading, and error-state truthfulness.
 | `views/TaskTrackerView.vue` | Owns Board/map route history, independent map-task and popup identities, task-index loading and focused detail dispatch. `TrackerBoardPanel` renders seven fixed status columns, 224px anchored-footer cards and API-projected whole-task usage; `TaskTrackerCommandPanel` groups task identity/Automated, status/completion, inline shared usage and Task details below the view switch. `TicketGraphNode` renders its own projected ticket usage; `graphModel.ts` owns its 328 × 224 geometry and prerequisite-title resolution. `TrackerTaskDetailDialog` owns one persistent `UiDialog layout="detail"` for task/ticket inspection and a six-row scrolling ticket list. `TrackerTicketDetailContent` is shared with the map's `TrackerTicketDetailPanel` side inspector. `useTrackerExecutionContexts` owns context/artifact pagination; `useTrackerGraphSession` composes focused graph loading, viewport and the existing project/task event stream. Pure projections and filters remain in `task-tracker/viewModel.ts`. | Keep Board filters independent from map selection. Task state and ticket-status containment filters have separate meanings. Graph visibility never changes whole-task values/trends. The task-index rollup supplies actual prerequisite titles only when all open work waits on dependencies; active execution suppresses the Board badge. No per-card requests or receipt summing. Shared current/Last identity stays independent of lifecycle status. Preserve task drafts, disclosure state and scroll during ticket inspection. No standalone Stories or Tickets modes. |
 | `views/connections/credentialPresentation.ts` | Provider/auth grouping, labels, connection status, and account presentation. | Keep provider catalog knowledge here; do not mix in communication topology facets. |
 | `views/connections/formatters.ts` | Communication profile, route, surface, Slack, ingress, and shared Account presentation exports. | Split another provider-specific facet only when it gains a distinct contract or test lifecycle. |
-| `views/AgentRequestsView.vue` | One cohesive queue/master-detail flow. | Extract the request detail region only if it gains independent mutation/loading state. |
+| `views/finance/FinanceRequestDialog.vue` | Contextual safe request read, original source and status at the Finance origin. | Preserve exact request/project/workspace identity, stale-read rejection and explicit unavailable/retry states. Never infer a tracker task or execute recovery from inspection. |
 
 Large generated catalogs, API types, and declarative plugin manifests are not
 decomposition targets. Change their generators or source manifests instead of

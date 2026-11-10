@@ -1,5 +1,9 @@
 # StackOS Desktop Operational Reference Frames
 
+Historical reference frames. Use [the current route and wrapper
+map](./ui-page-layout-map.md) and the approved Library/domain/Agents concepts for
+implementation. Earlier category navigation in these frames is superseded.
+
 Status: implementation reference for the approved desktop product contract
 
 These low-fidelity frames translate

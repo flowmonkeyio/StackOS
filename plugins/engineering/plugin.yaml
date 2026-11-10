@@ -289,15 +289,15 @@ resources:
       record_kind: engineering-evidence
       agent_guidance: Use authored mode for decisions, reviews, limitations, and other claims. Executed mode always needs a receipt; set repository_bound true and include repository_state only when the proof covers a repository candidate. scope.covered_paths is the canonical path owner. Treat pre-v2 records as historical context and invalidate or supersede stale proof.
 ui:
+  page:
+    description: Workflows and saved information for software delivery.
+    sections: [workflows, saved, files]
   nav:
     section: Engineering
     items:
-      - key: engineering.resources
-        label: Data
-        to: resources?plugin_slug=engineering
+      - key: engineering.domain
+        label: Engineering
+        to: plugins/engineering
         matchPrefix: true
-      - key: engineering.templates
-        label: Workflows
-        to: workflow-templates?plugin_slug=engineering
 config:
   schema_version: stackos.plugin.v1

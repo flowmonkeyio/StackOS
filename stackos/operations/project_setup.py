@@ -188,6 +188,10 @@ def operation_specs():
                 "Use a stable kind/key; set replaces the complete configuration.",
                 "Enabling requires name, IANA timezone, existing workflow, concrete inputs "
                 "and execution_json with an existing project_dir and configured suitable roles.",
+                "Use agents to bind declared workflow roles to project source_ref selections; "
+                "step_agent_assignments maps template step IDs to roles when selection "
+                "is ambiguous. "
+                "Codex schedules store references, never copied source instructions.",
                 "Strict preflight is read-only; it creates no request, run plan or task. "
                 "Disabled incomplete drafts remain inert. Normal grants and approvals still apply.",
             ),
@@ -202,7 +206,18 @@ def operation_specs():
                         "timezone": "America/Los_Angeles",
                         "template_key": "core.project-memory-review",
                         "inputs_json": {},
-                        "execution_json": {"project_dir": "/work/project"},
+                        "execution_json": {
+                            "project_dir": "/work/project",
+                            "agents": {
+                                "project-memory-review": {
+                                    "source_ref": {
+                                        "host_key": "codex",
+                                        "native_name": "memory-reviewer",
+                                        "source_path": ".codex/agents/memory-reviewer.toml",
+                                    }
+                                }
+                            },
+                        },
                         "enabled": False,
                     },
                 ),

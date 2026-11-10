@@ -51,7 +51,7 @@ def test_delivery_operation_has_one_contract_and_no_ack():
         )
 
 
-def test_assignment_map_accepts_only_existing_two_roles():
+def test_assignment_map_accepts_arbitrary_safe_role_keys():
     spec = build_operation_registry().get("tracker.startDelivery")
     arguments = {
         "project_id": 1,
@@ -63,10 +63,30 @@ def test_assignment_map_accepts_only_existing_two_roles():
         spec.input_model.model_validate(arguments).agent_assignments
         == arguments["agent_assignments"]
     )
+    assert spec.input_model.model_validate(
+        {**arguments, "agent_assignments": {"workflow-42-check": "new_phase_role"}}
+    ).agent_assignments == {"workflow-42-check": "new_phase_role"}
     with pytest.raises(ValueError):
         spec.input_model.model_validate(
-            {**arguments, "agent_assignments": {"workflow-42-check": "new_phase_role"}}
+            {**arguments, "agent_assignments": {"workflow-42-check": "../../unsafe"}}
         )
+
+
+@pytest.mark.parametrize("operation", ["tracker.startDelivery", "schedule.set"])
+def test_resolved_preflight_settings_are_not_an_operation_input(operation):
+    spec = build_operation_registry().get(operation)
+    arguments = (
+        {"project_id": 1, "task_key": "prepared", "project_dir": "/tmp", "_resolved_settings": {}}
+        if operation == "tracker.startDelivery"
+        else {
+            "project_id": 1,
+            "kind": "prepared",
+            "cron_expr": "* * * * *",
+            "execution_json": {"project_dir": "/tmp", "_resolved_settings": {}},
+        }
+    )
+    with pytest.raises(ValueError, match="Extra inputs"):
+        spec.input_model.model_validate(arguments)
 
 
 def test_native_route_is_a_bounded_task_only_reference():

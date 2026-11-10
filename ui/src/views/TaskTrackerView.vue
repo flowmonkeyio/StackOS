@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, provide, ref } from 'vue'
+import { computed, provide, reactive, ref } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter, type LocationQueryRaw } from 'vue-router'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import { UiBadge, UiButton, UiCallout, UiEmptyState, UiLoadingState, UiPageShell } from '@/components/ui'
@@ -22,6 +22,10 @@ import TrackerTicketDetailPanel from './task-tracker/TrackerTicketDetailPanel.vu
 import TrackerWarningSummary from './task-tracker/TrackerWarningSummary.vue'
 import { useTrackerExecutionContexts } from './task-tracker/useTrackerExecutionContexts'
 import { useTrackerGraphSession } from './task-tracker/useTrackerGraphSession'
+import { useTaskActivity } from './task-tracker/useTaskActivity'
+import { useTaskResults } from './task-tracker/useTaskResults'
+import { useStackOsResourcesStore } from '@/stores/stackosResources'
+import type { LibrarySource } from '@/lib/librarySources'
 import type { StatusFilter, ViewMode } from './task-tracker/viewTypes'
 import { buildAssigneeOptions, buildTaskProgressRows, buildWorkflowOptions, groupTicketsByTask, mergeFocusedTrackerSnapshot } from './task-tracker/viewModel'
 
@@ -51,6 +55,13 @@ const taskDialog = ref<{ confirmLeave: () => boolean; syncTask: (task: TrackerTa
 const detailTask = computed(() => detailSnapshot.value?.tasks.find((task) => task.key === detailTaskKey.value) ?? null)
 const detailTickets = computed(() => detailSnapshot.value?.tickets.filter((ticket) => ticket.task_key === detailTaskKey.value) ?? [])
 const detailTicket = computed(() => detailTickets.value.find((ticket) => ticket.key === detailTicketKey.value) ?? null)
+const inspectionTaskKey = computed(() => detailTask.value?.project_id === projectId.value ? detailTask.value.key : '')
+const activity = reactive(useTaskActivity({ projectId, taskKey: inspectionTaskKey }))
+const results = reactive(useTaskResults({ projectId, taskKey: inspectionTaskKey }))
+const resultResources = useStackOsResourcesStore()
+function inspectResult(source: LibrarySource): void {
+  if (source.source_kind === 'resource_record') void resultResources.refreshSchemas(projectId.value)
+}
 const tasks = computed(() => snapshot.value?.tasks ?? [])
 const ticketsByTask = computed(() => groupTicketsByTask(snapshot.value?.tickets ?? []))
 const allTaskRows = computed(() => buildTaskProgressRows(tasks.value, ticketsByTask.value, { search: '', status: 'all', workflow: '', assignee: '' }))
@@ -156,6 +167,8 @@ async function loadDetail(taskKey: string): Promise<void> {
   if (detailSnapshot.value?.tasks[0]?.key !== taskKey) {
     detailSnapshot.value = null
     taskDialog.value?.syncTask?.(null)
+    results.reset()
+    activity.reset()
     void contexts.load(null)
   }
   try {
@@ -170,6 +183,8 @@ async function loadDetail(taskKey: string): Promise<void> {
     taskDialog.value?.syncTask?.(task)
     if (snapshot.value) snapshot.value = mergeFocusedTrackerSnapshot(snapshot.value, next)
     void contexts.load(task)
+    void results.refresh()
+    void activity.refresh()
   } catch (cause) {
     if (currentScope() && sequence === detailSequence) {
       detailError.value = cause instanceof Error ? cause.message : 'Could not load task details.'
@@ -283,6 +298,8 @@ const removeRouteListener = router.afterEach(async (to, from, failure) => {
       taskDialog.value?.syncTask?.(null)
       detailError.value = null
       detailLoading.value = false
+      results.reset()
+      activity.reset()
       void contexts.load(null)
     }
   }
@@ -293,6 +310,9 @@ useProjectScopedLoader({
     alive = false
     loadSequence += 1
     detailSequence += 1
+    results.reset()
+    activity.reset()
+    void contexts.load(null)
     graph.stopStatusStream()
     removeRouteListener()
   },
@@ -300,7 +320,11 @@ useProjectScopedLoader({
 </script>
 
 <template>
-  <UiPageShell class="tracker-page-shell">
+  <UiPageShell
+    class="tracker-page-shell"
+    :inert="detailTaskKey || detailTicketKey ? true : undefined"
+    :aria-hidden="detailTaskKey || detailTicketKey ? true : undefined"
+  >
     <RunAbortDialog />
     <ProjectPageHeader
       :project-id="projectId"
@@ -472,11 +496,21 @@ useProjectScopedLoader({
       :context-artifact-page-info="taskContextArtifactPageInfo"
       :context-loading="taskContextLoading"
       :context-error="taskContextError"
+      :activity="activity"
+      :results="results"
+      :result-resources="resultResources.resources"
+      :result-schema-loading="resultResources.schemaLoading"
+      :result-schema-error="resultResources.schemaError"
       @update:model-value="!$event && navigate({ detail: undefined, ticket: undefined })"
       @view-dependencies="viewDependencies"
       @open-ticket="openTicket"
       @back-to-task="navigate({ ticket: undefined })"
       @retry="loadDetail(detailTaskKey)"
+      @more-results="results.more"
+      @retry-results="results.retry"
+      @more-history="activity.more"
+      @retry-history="activity.retry"
+      @inspect-result="inspectResult"
     />
     <TrackerTicketDetailPanel
       :model-value="viewMode === 'graph' && graphDetailPanelOpen && !detailTaskKey && !detailTicketKey"

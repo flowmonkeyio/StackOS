@@ -14,7 +14,7 @@ from stackos.db.models import (
     TaskTrackerLane,
     TaskTrackerPriority,
 )
-from stackos.repositories.base import NotFoundError
+from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.tracker.schema import (
     TrackerLaneOut,
     TrackerPriorityOut,
@@ -28,12 +28,96 @@ from stackos.repositories.tracker.utils import (
 )
 
 
+def _delivery_role_defaults(defaults: dict[str, Any], role: str) -> dict[str, Any]:
+    """Merge saved role fields across legacy and source-mapped configuration."""
+    mapped = defaults.get("agents")
+    if mapped is not None and not isinstance(mapped, dict):
+        raise ValidationError("Task delivery agents must be an object")
+    legacy = defaults.get(role) if role in {"delivery_agent", "review_agent"} else None
+    selected = (mapped or {}).get(role)
+    if any(value is not None and not isinstance(value, dict) for value in (legacy, selected)):
+        raise ValidationError(f"Task delivery {role} must be an object")
+    return {**(legacy or {}), **(selected or {})}
+
+
 class TrackerSetupMixin:
     """Tracker setup and default catalogue helpers."""
 
     def delivery_defaults(self, *, project_id: int) -> dict[str, Any]:
         tracker = self._tracker_or_none(project_id=project_id)
         return deepcopy((tracker.config_json or {}).get("delivery", {})) if tracker else {}
+
+    def adopt_delivery_sources(
+        self, *, project_id: int, project_dir: str, sources: dict[str, Any], preview: bool
+    ) -> dict[str, Any]:
+        """Explicit local setup only: compare before replacing selected editable owners."""
+        from pathlib import Path
+
+        from stackos.task_delivery import _project_agent_source, resolve_delivery_settings
+
+        current = self.delivery_defaults(project_id=project_id)
+        proposed = deepcopy(current)
+        roles = deepcopy(proposed.get("agents") or {})
+        differences = {}
+        for role, selection in sources.items():
+            source = _project_agent_source(
+                self._s,
+                project_id,
+                Path(project_dir).expanduser().resolve(),
+                selection["source_ref"],
+            )
+            if source.digest != selection["expected_digest"]:
+                raise ConflictError(
+                    "Project agent stale_source",
+                    data={"code": "stale_source", "source_ref": selection["source_ref"]},
+                )
+            if source.fields is None:
+                raise ValidationError("Project agent unsupported_setting")
+            before = _delivery_role_defaults(current, role)
+            differences[role] = {
+                key: {"saved": before.get(key), "source": value}
+                for key, value in {
+                    "name": source.source_ref.native_name,
+                    "instructions": source.fields.developer_instructions,
+                    **source.native_settings,
+                }.items()
+                if before.get(key) != value
+            }
+            after = {**before, "source_ref": source.source_ref.model_dump()}
+            after.pop("instructions", None)
+            roles[role] = after
+            proposed.pop(role, None)
+        proposed["agents"] = roles
+        # Validate only migrated selections; unrelated hosts/settings are preserved verbatim.
+        effective = resolve_delivery_settings(
+            self._s,
+            project_id=project_id,
+            project_dir=project_dir,
+            agents={role: roles[role] for role in sources},
+            role_keys=set(sources),
+        )
+        adoption = {
+            "preview": preview,
+            "differences": differences,
+            "delivery": proposed,
+            "agents": effective["agents"],
+        }
+        if preview:
+            return {"adoption": adoption}
+        # Re-read sources after comparison, before any durable replacement.
+        for selection in sources.values():
+            source = _project_agent_source(
+                self._s,
+                project_id,
+                Path(project_dir).expanduser().resolve(),
+                selection["source_ref"],
+            )
+            if source.digest != selection["expected_digest"]:
+                raise ConflictError("Project agent stale_source")
+        result = self.configure_delivery(project_id=project_id, delivery=proposed)
+        if self.delivery_defaults(project_id=project_id) != proposed:
+            raise ValidationError("Delivery adoption readback failed")
+        return {**result.model_dump(mode="json"), "adoption": adoption}
 
     def configure_delivery(self, *, project_id: int, delivery: dict[str, Any]) -> TrackerSummaryOut:
         """Replace only delivery defaults; preserve unrelated tracker configuration."""

@@ -110,6 +110,58 @@ Pass `status` to query a specific state or `include_inactive=true` to include
 Metadata and provenance are deep-redacted for secret-looking keys such as
 tokens, API keys, passwords, authorization headers, and credentials.
 
+## Shared UI readers
+
+`stackosResources` owns resource schemas, resource records and the only UI
+artifact list/cache. `projectData` reads core decisions, learnings and
+experiments and exposes a project-checked view of that same artifact owner;
+RunDetail also consumes it. New Library, domain and Work consumers must reuse
+these owners rather than fetching a second artifact inventory.
+RunDetail links artifacts only through explicit top-level `run_id` in metadata
+or provenance within the same project; unrelated nested numbers are not links.
+
+`toLibrarySource` in `ui/src/lib/librarySources.ts` wraps the original row with
+`source_kind`, `source_id`, `project_id`, `plugin_slug`, `resource_key`, a typed
+identity and a canonical REST `read_ref`. Resource records and artifacts have
+individual read endpoints. Core decisions/learnings/experiments use their
+project list endpoint; select the exact `source_id` from its pages, never add an
+unsupported ID query filter or match a title. Payloads retain their native
+schemas and explicit links. Resource decisions, core decisions and engineering
+evidence remain distinct even when titles match. No task/run link or current
+evidence verdict is derived from a title or arbitrary metadata.
+
+Primary saved information consists of resource records, core decisions,
+learnings and experiments (which carry the recorded hypothesis, variants and
+status). Files consist of artifacts, including historical/unlinked rows.
+Snapshots, events, experiment observations and metrics retain their APIs and
+contextual readers, but are not primary Library sources. Nothing is deleted or
+backfilled. Plugin filtering applies only to sources with an actual plugin
+owner; core `domain` is not treated as a plugin relationship.
+
+Each source exposes independent `items`, `next_cursor`, `total_estimate`,
+`loaded`, `loading` and `error` state. Resource readers expose `recordPage` /
+`artifactPage`, `refreshRecords` / `refreshArtifacts`, and `loadMoreRecords` /
+`loadMoreArtifacts`. Core readers expose `pages`, `refreshSource` and `loadMore`.
+Use the current source's retry; successful sources survive a partial failure.
+REST paging uses `limit=50` and `after=<next_cursor>`; artifacts explicitly
+include inactive rows. Null estimates remain unknown. Counts/search describe
+loaded rows until every applicable cursor is exhausted. Scope changes clear
+incompatible rows immediately and invalidate late reads; same-scope refresh
+keeps the current rows during the read and replaces them with the first page
+on success. Page consumers own selection and reading position using typed IDs.
+
+`SourceDetailRenderer` is the shared inner detail composition for resource,
+artifact and core source adapters. Resources use only matching schema
+`summary_fields`, `table_columns` and `detail_sections`; unknown hints fall
+back to sanitized Details. Core adapters show actual recorded fields. Full
+sanitized native payloads and identity follow readable fields in Details.
+Reference actions accept credential-free HTTP(S) URLs only. Raster image
+preview is opt-in, sends no referrer and reports load failure; neither a URL
+nor MIME metadata asserts availability. Unsupported/local/missing references
+stay metadata only. Finance artifacts suppress reference actions and private
+URI/metadata/provenance; Finance retains original-file custody and retrieval.
+No universal download or filesystem/proxy endpoint is added.
+
 ## File-Backed Action Outputs
 
 External provider actions executed through `action.run` or `action.execute`

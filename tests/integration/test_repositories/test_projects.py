@@ -256,8 +256,13 @@ def test_schedule_enable_preflight_and_settings_are_read_only(
 
     monkeypatch.setattr("stackos.repositories.projects.datetime", FixedClock)
     roles = {
-        role: {"name": role, "instructions": "Perform the prepared review workflow."}
-        for role in ("delivery_agent", "review_agent")
+        "agents": {
+            "project-memory-review": {
+                "host_key": "claude-code",
+                "name": "project-memory-review",
+                "instructions": "Perform the prepared review workflow.",
+            }
+        }
     }
     TrackerRepository(session).configure_delivery(project_id=project_id, delivery=roles)
     repo = ScheduledJobRepository(session)

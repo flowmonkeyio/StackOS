@@ -182,7 +182,7 @@ it.each([null, 7])(
       expect(wrapper.text()).toContain('Connect your first project to see its navigation here.')
     } else {
       expect(projectNav.find(`a[href="/projects/${projectId}/setup"]`).exists()).toBe(false)
-      expect(projectNav.text()).toContain('Configure')
+      expect(projectNav.text()).toContain('Setup')
       for (const surface of ['connections', 'schedules', 'cost-budget', 'plugins']) {
         expect(projectNav.find(`a[href="/projects/${projectId}/${surface}"]`).exists()).toBe(true)
       }

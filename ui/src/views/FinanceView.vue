@@ -25,6 +25,7 @@ import FinanceFilters from '@/components/finance/FinanceFilters.vue'
 import FinanceRecordPanel from '@/components/finance/FinanceRecordPanel.vue'
 import FinanceOverview from './finance/FinanceOverview.vue'
 import FinanceOverviewInsights from './finance/FinanceOverviewInsights.vue'
+import FinanceRequestDialog from './finance/FinanceRequestDialog.vue'
 import { aiCategory, insightsModel } from './finance/insightsViewModel'
 import {
   UiButton,
@@ -74,6 +75,7 @@ const report = ref<SchemaFinanceContentOut | null>(null),
   reportLoading = ref(false)
 const requests = ref<Record<string, unknown>[]>([]),
   selectedRequest = ref<Record<string, unknown> | null>(null)
+const requestOpen = ref(false)
 const analysis = ref<SchemaFinanceContentOut | null>(null),
   analysisLoading = ref(false),
   analysisKind = ref('opportunities')
@@ -199,6 +201,7 @@ function clearScope() {
   projection.value = null
   requests.value = []
   selectedRequest.value = null
+  requestOpen.value = false
   analysis.value = null
   analysisLoading.value = false
   panelOpen.value = false
@@ -449,7 +452,7 @@ async function loadRequests() {
       : undefined
     if (verified) {
       analysisSubmissions.delete(projectId.value)
-      message.value = `Original analysis request ${verified.id} verified in Agent requests. It retains its original project, window and source.`
+      message.value = `Original analysis request ${verified.id} verified in Finance. It retains its original project, window and source.`
     }
     requests.value = page.items.filter(
       (row) =>
@@ -457,6 +460,16 @@ async function loadRequests() {
         access.value?.workspace_ref,
     )
     const requestedId = text(route.query.analysis)
+    // Contextual deep links may be older than this bounded queue page.
+    // Read the actual request; never infer a tracker task from its identity.
+    if (/^[1-9]\d*$/.test(requestedId) && !requests.value.some(row => String(row.id) === requestedId)) {
+      const requested = await callOperation<Record<string, unknown>>('agentRequest.get', {
+        project_id: projectId.value, request_id: Number(requestedId), response_mode: 'raw',
+      })
+      if (!active || sequence !== analysisSequence || identity !== JSON.stringify(base())) return
+      if (String(requested.id) === requestedId && object(object(requested.metadata_json).metadata_json).workspace_ref === access.value?.workspace_ref)
+        requests.value.push(requested)
+    }
     const requested =
       (verified && requests.value.find((row) => row.id === verified.id)) ||
       requests.value.find((row) => String(row.id) === requestedId)
@@ -467,7 +480,7 @@ async function loadRequests() {
   } catch {
     if (active && sequence === analysisSequence)
       message.value =
-        'Agent queue unavailable. Existing request links remain inspectable in Agent requests.'
+        'Agent queue unavailable. Retry Refresh in Finance to inspect the original request.'
   }
 }
 function canonicalJson(value: unknown): string {
@@ -484,7 +497,7 @@ async function requestAnalysis() {
   if (submission) {
     if (!retryAllowed.value) {
       error.value =
-        'The original submission is still unverified and its project data identity has changed. Refresh to reconcile it in Agent requests before retrying.'
+        'The original submission is still unverified and its project data identity has changed. Refresh Finance to reconcile it before retrying.'
       return
     }
   } else {
@@ -546,7 +559,7 @@ async function requestAnalysis() {
     analysisSubmissions.delete(id)
     if (!active || id !== projectId.value) return
     if (identity !== JSON.stringify(base())) {
-      message.value = `Original analysis request ${request.id} saved. Inspect Agent requests for its original project, window and source.`
+      message.value = `Original analysis request ${request.id} saved. Inspect Finance requests for its original project, window and source.`
       return
     }
     selectedRequest.value = request as unknown as Record<string, unknown>
@@ -567,7 +580,7 @@ async function requestAnalysis() {
   } catch {
     if (active && id === projectId.value && analysisSubmissions.get(id) === submission)
       error.value =
-        'Analysis request could not be verified. Retry the retained original request or inspect Agent requests; a new request is paused until this submission is verified.'
+        'Analysis request could not be verified. Retry the retained original request or inspect Finance requests; a new request is paused until this submission is verified.'
   } finally {
     submission.inFlight = false
   }
@@ -632,6 +645,17 @@ onBeforeUnmount(() => {
       Loading project Finance data…
     </p>
     <p v-if="message" role="status" class="text-sm text-fg-muted">{{ message }}</p>
+    <UiButton v-if="selectedRequest" data-test="inspect-finance-request" :data-request-id="selectedRequest.id" @click="requestOpen = true">Inspect analysis request</UiButton>
+    <FinanceRequestDialog
+      v-if="access && requestOpen"
+      :key="`${projectId}:${selectedRequest?.id ?? 'queue'}`"
+      :project-id="projectId"
+      :workspace-ref="access.workspace_ref"
+      :request-id="selectedRequest ? Number(selectedRequest.id) : null"
+      :requests="requests"
+      @close="requestOpen = false"
+      @refresh="loadRequests"
+    />
     <UiCallout v-if="pendingAnalysis" variant="warning" role="status">
       <p>
         {{ pendingAnalysis.inFlight ? 'Submitting' : 'Unverified submission for' }}
@@ -645,12 +669,10 @@ onBeforeUnmount(() => {
       <UiButton :disabled="pendingAnalysis.inFlight || !retryAllowed" @click="requestAnalysis"
         >Retry original analysis request</UiButton
       >
-      <RouterLink :to="`/projects/${projectId}/agent-requests`" class="focus-ring text-fg-link"
-        >Inspect Agent requests</RouterLink
-      >
+      <UiButton @click="requestOpen = true">Inspect Finance requests</UiButton>
       <p v-if="!retryAllowed" class="text-sm">
         The original project data identity has changed. Refresh to reconcile its persisted request
-        in Agent requests before retrying.
+        in Finance before retrying.
       </p>
     </UiCallout>
     <template v-if="access">
@@ -889,10 +911,7 @@ onBeforeUnmount(() => {
                     )
                   }}
                 </p>
-                <RouterLink
-                  :to="`/projects/${projectId}/agent-requests?request=${selectedRequest.id}`"
-                  class="focus-ring text-fg-link"
-                  >Inspect agent request and linked run</RouterLink
+                <UiButton @click="requestOpen = true">Inspect analysis request</UiButton
                 ><UiButton
                   :loading="analysisLoading"
                   :disabled="!reportAllowed"

@@ -41,11 +41,12 @@ from stackos.host_mcp.service import (
     cancel_task_invocations,
     run_agent,
 )
-from stackos.operations.tracker.schemas import TaskDeliveryAgent
+from stackos.operations.tracker.schemas import TaskDeliveryAgent, TaskDeliveryAgentOverride
 from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
 from stackos.repositories.tracker.events import record_execution_change
+from stackos.repositories.tracker.setup import _delivery_role_defaults
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
 
 LAUNCH_AUTHORITY_BOUNDARY = (
@@ -800,6 +801,24 @@ def _save_evidence(repo, project_id, ticket_key, evidence, **patch) -> None:
     )
 
 
+def _project_agent_source(session: Session, project_id: int, directory: Path, ref):
+    """Explicit handoff/setup authorizes this bounded read in its bound workspace."""
+    from stackos.host_mcp.project_agents import ProjectAgentError, ProjectAgentService
+    from stackos.repositories.workspaces import WorkspaceRepository
+
+    matching = {
+        binding.project_id
+        for binding in WorkspaceRepository(session).list_bindings()
+        if binding.last_known_root and Path(binding.last_known_root).resolve() == directory
+    }
+    if matching != {project_id}:
+        raise ValidationError("Project agent missing_scope", data={"code": "missing_scope"})
+    try:
+        return ProjectAgentService(directory).get(ref)
+    except ProjectAgentError as error:
+        raise ValidationError(f"Project agent {error.data['code']}", data=error.data) from None
+
+
 def resolve_delivery_settings(
     session: Session,
     *,
@@ -808,7 +827,9 @@ def resolve_delivery_settings(
     host_key: str | None = None,
     delivery_agent: dict[str, Any] | None = None,
     review_agent: dict[str, Any] | None = None,
+    agents: Mapping[str, dict[str, Any]] | None = None,
     mcp_config_ref: dict[str, str] | None = None,
+    role_keys: set[str] | None = None,
 ) -> dict[str, Any]:
     """Read-only execution preflight shared by handoff and schedule setup.
 
@@ -823,18 +844,124 @@ def resolve_delivery_settings(
     host_key = host_key or defaults.get("host_key") or "codex"
     if not isinstance(host_key, str):
         raise ValidationError("Task delivery host_key must be a string")
-    resolved = {}
+    mapped = agents is not None or defaults.get("agents") is not None
+    default_roles = (
+        defaults.get("agents") or {}
+        if mapped
+        else {role: defaults.get(role, {}) for role in ("delivery_agent", "review_agent")}
+    )
+    if not isinstance(default_roles, dict):
+        raise ValidationError("Task delivery agents must be an object")
+    if mapped and agents is None:
+        default_roles = {
+            **{
+                role: defaults[role]
+                for role in ("delivery_agent", "review_agent")
+                if defaults.get(role)
+            },
+            **default_roles,
+        }
+    overrides = dict(agents or {})
     for role, override in (("delivery_agent", delivery_agent), ("review_agent", review_agent)):
-        default_agent = defaults.get(role, {})
-        if not isinstance(default_agent, dict):
-            raise ValidationError(f"Task delivery {role} must be an object")
+        if override is not None:
+            overrides[role] = override
+    resolved = {}
+    for role in sorted(
+        role_keys if role_keys is not None else default_roles.keys() | overrides.keys()
+    ):
+        if not isinstance(role, str) or not re.fullmatch(r"[a-zA-Z0-9_][a-zA-Z0-9_-]{0,159}", role):
+            raise ValidationError("Invalid selected agent role")
+        default_agent = _delivery_role_defaults(defaults, role)
+        override = overrides.get(role, {})
+        values = {**default_agent, **override}
+        if values.get("source_ref") is not None and "instructions" not in override:
+            # Selected sources replace inherited instructions, never execution fallbacks.
+            values.pop("instructions", None)
         try:
-            agent = TaskDeliveryAgent.model_validate(
-                {**default_agent, **(override or {})}
-            ).model_dump(exclude_none=True)
+            choice = TaskDeliveryAgentOverride.model_validate(values).model_dump(exclude_none=True)
         except SchemaValidationError as schema_error:
             raise ValidationError(f"Resolved {role} is invalid: {schema_error}") from schema_error
-        agent["host_key"] = agent.get("host_key") or host_key
+        choice["host_key"] = choice.get("host_key") or host_key
+        if choice["host_key"] == "codex":
+            if not choice.get("source_ref"):
+                raise ValidationError(
+                    f"Codex {role} adoption_required: select an exact project source_ref",
+                    data={"code": "adoption_required", "role": role},
+                )
+            source = _project_agent_source(session, project_id, directory, choice["source_ref"])
+            execution_fields = {
+                "model",
+                "model_reasoning_effort",
+                "model_reasoning_summary",
+                "model_verbosity",
+                "features",
+                "skills",
+                "approval_policy",
+                "sandbox_mode",
+                "model_provider",
+                "profile",
+                "mcp_servers",
+            }
+            if any(
+                field.split(".", 1)[0] in execution_fields for field in source.unsupported_fields
+            ):
+                raise ValidationError(
+                    "Project agent unsupported_setting",
+                    data={
+                        "code": "unsupported_setting",
+                        "source_ref": choice["source_ref"],
+                        "fields": source.unsupported_fields,
+                    },
+                )
+            assert source.fields is not None
+            native = deepcopy(source.native_settings)
+            model = native.pop("model", choice.get("model"))
+            effort = native.get("model_reasoning_effort", choice.get("model_reasoning_effort"))
+            if effort is not None:
+                native["model_reasoning_effort"] = effort
+            from stackos.host_mcp.adapters.codex import native_agent_overrides
+
+            try:
+                native_agent_overrides(native)
+            except ValueError as native_error:
+                raise ValidationError(str(native_error)) from None
+            agent = {
+                **choice,
+                "name": source.source_ref.native_name,
+                "instructions": source.fields.developer_instructions,
+                "source_digest": source.digest,
+                "native_settings": native,
+                "setting_sources": {
+                    key: "source"
+                    if key in source.native_settings
+                    else "host"
+                    if choice.get(key) is None
+                    else "task"
+                    if key in override
+                    else "project"
+                    for key in ("model", "model_reasoning_effort")
+                },
+                **(
+                    {"ignored_source_fields": source.unsupported_fields}
+                    if source.unsupported_fields
+                    else {}
+                ),
+            }
+            agent.pop("model_reasoning_effort", None)
+            if model is not None:
+                agent["model"] = model
+            else:
+                agent.pop("model", None)
+        else:
+            if (
+                choice.get("source_ref") is not None
+                or choice.get("model_reasoning_effort") is not None
+            ):
+                raise ValidationError("Native project settings are unsupported by this host")
+            try:
+                agent = TaskDeliveryAgent.model_validate(choice).model_dump(exclude_none=True)
+            except SchemaValidationError as schema_error:
+                raise ValidationError(f"Resolved {role} is invalid: {schema_error}") from None
         sandbox: AgentSandbox = (
             agent_review_sandbox(agent["host_key"]) if role == "review_agent" else "workspace-write"
         )
@@ -860,9 +987,48 @@ def resolve_delivery_settings(
     return {
         "project_dir": str(directory),
         "host_key": host_key,
-        **resolved,
+        "agents": resolved,
+        **{
+            role: agent
+            for role, agent in resolved.items()
+            if role in {"delivery_agent", "review_agent"}
+        },
         **({"mcp_config_ref": mcp_config_ref} if mcp_config_ref is not None else {}),
     }
+
+
+def workflow_agent_assignments(
+    *,
+    requirements: list[dict[str, Any]],
+    steps: Mapping[str, str | None],
+    selected_roles: set[str],
+    assignments: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Resolve explicit/frozen/declared workflow roles for preflight and handoff."""
+    explicit = dict(assignments or {})
+    if explicit.keys() - steps.keys():
+        raise ValidationError("Agent assignments must reference existing workflow steps")
+    result = {}
+    for key, frozen_role in steps.items():
+        role = explicit.get(key) or frozen_role
+        if role is None and requirements:
+            applicable = {
+                req["role"]
+                for req in requirements
+                if not req.get("applies_to_steps") or key in req["applies_to_steps"]
+            }
+            if any(
+                req.get("requirement") == "required" and req["role"] not in selected_roles
+                for req in requirements
+                if req["role"] in applicable
+            ):
+                raise ValidationError("Required declared workflow role has no selected agent")
+            applicable &= selected_roles
+            if len(applicable) != 1:
+                raise ValidationError("Ambiguous workflow roles require explicit agent_assignments")
+            role = applicable.pop()
+        result[key] = role or "delivery_agent"
+    return result
 
 
 def start_delivery(
@@ -881,7 +1047,14 @@ def start_delivery(
     agent_assignments: Mapping[str, str] | None = None,
     controller_run_id: int | None = None,
     mcp_config_ref: dict[str, str] | None = None,
+    agents: Mapping[str, dict[str, Any]] | None = None,
+    _resolved_settings: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """Freeze handoff settings; schedules may retain their internal preflight snapshot.
+
+    _resolved_settings is daemon-internal and absent from operation input schemas.
+    It carries source settings already validated for this project and directory.
+    """
     repo = TrackerRepository(session)
     task = _task(repo, project_id, task_key)
     _workflow_scope(repo, project_id, task, run_plan_id, step_id)
@@ -918,28 +1091,128 @@ def start_delivery(
     _workflow_scope(repo, project_id, task, run_plan_id, step_id, starting=True)
     if task.status not in {TrackerItemStatus.NOT_STARTED, TrackerItemStatus.IN_PROGRESS}:
         raise ValidationError("Task must be open before starting delivery")
-    settings = resolve_delivery_settings(
-        session,
-        project_id=project_id,
-        project_dir=str(directory),
-        host_key=host_key,
-        delivery_agent=delivery_agent,
-        review_agent=review_agent,
-        mcp_config_ref=mcp_config_ref,
+    snapshot = repo.get(project_id=project_id, task_key=task_key, include_graph=False)
+    mirror_keys = (
+        {workflow_step_ticket_key(plan.id, step.step_id) for step in plan.steps} if plan else set()
     )
+    ordinary = [
+        ticket
+        for ticket in snapshot.tickets
+        if ticket.key not in mirror_keys
+        and ticket.kind == TrackerTicketKind.TICKET
+        and ticket.status != TrackerItemStatus.COMPLETE
+    ]
+    assignments = dict(agent_assignments or {})
+    declared = (plan.template_snapshot_json or {}).get("agent_requirements", []) if plan else []
+    selected_roles = None
+    defaults = repo.delivery_defaults(project_id=project_id)
+    if declared:
+        assert plan is not None
+        declared_roles = {requirement["role"] for requirement in declared}
+        if agents and set(agents) - declared_roles - {"delivery_agent", "review_agent"}:
+            raise ValidationError("Selected agents must bind declared workflow roles")
+    if ordinary or declared:
+        # Resolve the roles admitted work needs, independent of selection argument form.
+        selected_roles = set(assignments.values())
+        if ordinary:
+            if any(
+                (
+                    _delivery_role_defaults(defaults, "review_agent"),
+                    review_agent,
+                    (agents or {}).get("review_agent"),
+                )
+            ):
+                selected_roles.add("review_agent")
+            # Missing reviewer bindings still reject at the independent-review guard below.
+            selected_roles.update(
+                assignments.get(ticket.key, "delivery_agent") for ticket in ordinary
+            )
+        if plan:
+            available_roles = set(defaults.get("agents") or {}) | set(agents or {})
+            for step in plan.steps:
+                if step.status in {RunPlanStepStatus.SUCCESS, RunPlanStepStatus.SKIPPED}:
+                    continue
+                key = workflow_step_ticket_key(plan.id, step.step_id)
+                explicit = assignments.get(key) or (step.metadata_json or {}).get(
+                    "agent_assignment"
+                )
+                if explicit:
+                    selected_roles.add(explicit)
+                elif declared:
+                    selected_roles.update(
+                        req["role"]
+                        for req in declared
+                        if (req.get("requirement") == "required" or req["role"] in available_roles)
+                        and (
+                            not req.get("applies_to_steps")
+                            or step.step_id in req["applies_to_steps"]
+                        )
+                    )
+                else:
+                    selected_roles.add("delivery_agent")
+    if _resolved_settings is None:
+        settings = resolve_delivery_settings(
+            session,
+            project_id=project_id,
+            project_dir=str(directory),
+            host_key=host_key,
+            delivery_agent=delivery_agent,
+            review_agent=review_agent,
+            agents=agents,
+            role_keys=selected_roles,
+            mcp_config_ref=mcp_config_ref,
+        )
+    else:
+        if _resolved_settings.get("project_id") != project_id or _resolved_settings.get(
+            "project_dir"
+        ) != str(directory):
+            raise ValidationError("Preflight settings must match the handoff project and directory")
+        settings = deepcopy(_resolved_settings)
+        if selected_roles is not None:
+            if selected_roles - settings["agents"].keys():
+                raise ValidationError("Preflight settings have no selected workflow role binding")
+            settings["agents"] = {
+                role: agent for role, agent in settings["agents"].items() if role in selected_roles
+            }
     host_key = settings["host_key"]
     mcp_config_ref = settings.get("mcp_config_ref")
-    resolved = {role: settings[role] for role in ("delivery_agent", "review_agent")}
-    assignments = {}
+    resolved = settings["agents"]
+    if ordinary:
+        if "review_agent" not in resolved:
+            raise ValidationError("Ordinary tickets require an independent review_agent binding")
+        for role, agent in resolved.items():
+            if role != "review_agent" and (agent["host_key"], agent["name"]) == (
+                resolved["review_agent"]["host_key"],
+                resolved["review_agent"]["name"],
+            ):
+                raise ValidationError("Ordinary delivery and review identities must be independent")
     if plan:
-        for step in plan.steps:
-            role = (step.metadata_json or {}).get("agent_assignment", "delivery_agent")
-            assignments[workflow_step_ticket_key(plan.id, step.step_id)] = role
-    assignments.update(agent_assignments or {})
-    keys = {
-        t.key
-        for t in repo.get(project_id=project_id, task_key=task_key, include_graph=False).tickets
-    }
+        declared_roles = {requirement["role"] for requirement in declared}
+        if declared_roles and set(resolved) - declared_roles - {"delivery_agent", "review_agent"}:
+            raise ValidationError("Selected agents must bind declared workflow roles")
+        pending_steps = {
+            step.step_id: (step.metadata_json or {}).get("agent_assignment")
+            for step in plan.steps
+            if step.status not in {RunPlanStepStatus.SUCCESS, RunPlanStepStatus.SKIPPED}
+        }
+        selected_steps = workflow_agent_assignments(
+            requirements=declared,
+            steps=pending_steps,
+            selected_roles=set(resolved),
+            assignments={
+                step: assignments[key]
+                for step in pending_steps
+                if (key := workflow_step_ticket_key(plan.id, step)) in assignments
+            },
+        )
+        assignments.update(
+            (workflow_step_ticket_key(plan.id, step), role) for step, role in selected_steps.items()
+        )
+    for ticket in ordinary:
+        assignments.setdefault(ticket.key, "delivery_agent")
+        if assignments[ticket.key] == "review_agent":
+            raise ValidationError("An ordinary ticket cannot be delivered by its reviewer")
+    keys = {ticket.key for ticket in snapshot.tickets}
     if any(key not in keys or role not in resolved for key, role in assignments.items()):
         raise ValidationError("agent_assignments must map task ticket keys to existing roles")
     state, queued = _queue_delivery(
@@ -953,8 +1226,12 @@ def start_delivery(
         project_dir=str(directory),
         **({"mcp_config_ref": mcp_config_ref} if mcp_config_ref is not None else {}),
         host_key=host_key,
-        delivery_agent=resolved["delivery_agent"],
-        review_agent=resolved["review_agent"],
+        agents=resolved,
+        **{
+            role: agent
+            for role, agent in resolved.items()
+            if role in {"delivery_agent", "review_agent"}
+        },
         run_plan_id=run_plan_id,
         step_id=step_id,
         agent_assignments=assignments,
@@ -1132,7 +1409,7 @@ def run_delivery(
                         ticket_key=ticket_key,
                         patch_json={
                             "status": "in-progress",
-                            "assignee": state[role]["name"],
+                            "assignee": state.get("agents", state)[role]["name"],
                         },
                         actor=ACTOR,
                     )
@@ -1140,11 +1417,20 @@ def run_delivery(
                     repo, project_id, task_key, status="running", ticket_key=ticket_key
                 )
 
-            phase = role.removesuffix("_agent") if workflow_step is not None else "delivery"
+            phase = "review" if workflow_step is not None and role == "review_agent" else "delivery"
             while True:
                 schema = RESULT_SCHEMA
-                selected_role = role if phase == "delivery" else "review_agent"
-                agent = state[selected_role]
+                selected_role = (
+                    role if workflow_step is not None or phase == "delivery" else "review_agent"
+                )
+                agent = state.get("agents", state)[selected_role]
+                sessions = evidence.setdefault("sessions", {})
+                native_session = sessions.get(phase)
+                if native_session and native_session.get("agent_snapshot"):
+                    frozen = native_session["agent_snapshot"]
+                    if agent.get("source_ref") != frozen.get("source_ref"):
+                        raise ValidationError("Ticket source selection changed; cannot resume")
+                    agent = frozen
                 host_key = agent.get("host_key") or state["host_key"]
                 sandbox: AgentSandbox = (
                     "workspace-write" if phase == "delivery" else agent_review_sandbox(host_key)
@@ -1160,17 +1446,26 @@ def run_delivery(
                     "project_dir": state["project_dir"],
                     **selection,
                     **(
+                        {
+                            "source_ref": agent["source_ref"],
+                            "source_digest": agent["source_digest"],
+                            "native_settings": agent["native_settings"],
+                        }
+                        if agent.get("source_ref")
+                        else {}
+                    ),
+                    **(
                         {"mcp_config_ref": state["mcp_config_ref"]}
                         if state.get("mcp_config_ref") is not None
                         else {}
                     ),
                 }
-                sessions = evidence.setdefault("sessions", {})
-                native_session = sessions.get(phase)
                 resume_thread_id = None
                 if native_session is not None:
                     if {
-                        key: value for key, value in native_session.items() if key != "thread_id"
+                        key: value
+                        for key, value in native_session.items()
+                        if key not in {"thread_id", "agent_snapshot"}
                     } != identity:
                         raise ValidationError(
                             "Ticket role session selection changed; cannot resume"
@@ -1344,6 +1639,11 @@ def run_delivery(
                     ),
                     **({"previous_usage": previous} if previous is not None else {}),
                     **selection,
+                    **(
+                        {"native_settings": agent["native_settings"]}
+                        if agent.get("source_ref")
+                        else {}
+                    ),
                     **({"resume_thread_id": resume_thread_id} if resume_thread_id else {}),
                 )
                 # The shared schema owner also protects controlled/injected harnesses.
@@ -1392,7 +1692,11 @@ def run_delivery(
                             raise ValidationError(
                                 "Delivery and review require distinct native sessions"
                             )
-                        sessions[phase] = {**identity, "thread_id": thread_id}
+                        sessions[phase] = {
+                            **identity,
+                            "thread_id": thread_id,
+                            **({"agent_snapshot": agent} if agent.get("source_ref") else {}),
+                        }
                         outputs = json.loads(value["outputs"])
                         if not isinstance(outputs, dict):
                             raise ValidationError("outputs must encode a JSON object")
@@ -1448,13 +1752,22 @@ def run_delivery(
                         valid = False
                 # Error receipts can still identify the exact native session for explicit requeue.
                 elif native_session is None and result.thread_id:
-                    sessions[phase] = {**identity, "thread_id": result.thread_id}
+                    sessions[phase] = {
+                        **identity,
+                        "thread_id": result.thread_id,
+                        **({"agent_snapshot": agent} if agent.get("source_ref") else {}),
+                    }
 
                 if (
                     phase == "delivery"
                     and not (valid and decision in {"success", "repair"})
                     and result.thread_id
-                    and sessions.get("delivery") == {**identity, "thread_id": result.thread_id}
+                    and {
+                        key: value
+                        for key, value in sessions.get("delivery", {}).items()
+                        if key != "agent_snapshot"
+                    }
+                    == {**identity, "thread_id": result.thread_id}
                 ):
                     receipt = _owned_work_receipt(
                         state["project_dir"], ticket_key, evidence, baseline_clean=baseline_clean

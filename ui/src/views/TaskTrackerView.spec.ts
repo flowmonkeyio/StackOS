@@ -17,6 +17,9 @@ const ticketB = trackerTicket({ id: 12, key: 'ticket-b', title: 'Beta ticket', t
 
 function dataMock(tasks = [taskA, taskB], tickets = [ticketA, ticketB], graphNodes = false) {
   mocks.callOperation.mockImplementation(async (operation: string, args: Record<string, unknown>) => {
+    if (operation === 'tracker.taskActivity' || operation === 'tracker.taskResults') return {
+      project_id: args.project_id, task_key: args.task_key, items: [], next_cursor: null, warnings: [], coverage: 'Recorded sources',
+    }
     if (operation === 'executionContext.list') return { items: [], total_estimate: 0, next_cursor: null }
     if (operation !== 'tracker.get') throw new Error(`Unexpected operation ${operation}`)
     if (args.task_key) {
@@ -52,10 +55,10 @@ async function render(url = '/projects/7/tasks', realDialogs = false) {
     global: { plugins: [router, createPinia()], stubs: {
       ProjectPageHeader: { template: '<header><slot name="actions" /></header>' },
       TaskTrackerCommandPanel: { name: 'TaskTrackerCommandPanel', props: ['viewMode','activeTaskKey','taskOptions','search','filtersActive','taskAgentStats','taskAutomated','taskDelivery','abortTarget'], template: '<nav />' },
-      TrackerBoardPanel: { name: 'TrackerBoardPanel', props: ['rows'], template: '<section data-test="board" />' },
+      TrackerBoardPanel: { name: 'TrackerBoardPanel', props: ['rows'], template: '<section data-test="board"><button v-for="row in rows" :key="row.key" @click="$emit(\'openTask\', row.key)">{{ row.task.title }}</button></section>' },
       TrackerGraphPanel: { name: 'TrackerGraphPanel', props: ['loading','activeTaskTitle','selectedTicket','selectionVisible','selectionLabel','flow'], template: '<section data-test="graph" />' },
       TrackerWarningSummary: true,
-      TrackerTaskDetailDialog: realDialogs ? false : { name: 'TrackerTaskDetailDialog', props: ['modelValue','task','tickets','loading','error','contexts','ticket','ticketKey'], template: '<aside />' },
+      TrackerTaskDetailDialog: realDialogs ? false : { name: 'TrackerTaskDetailDialog', props: ['modelValue','task','tickets','loading','error','contexts','ticket','ticketKey','results','activity'], template: '<aside />' },
       TrackerTicketDetailPanel: realDialogs ? false : { name: 'TrackerTicketDetailPanel', props: ['modelValue','ticket','parentTask','error','presentation'], template: '<aside />' },
     }},
   })
@@ -66,6 +69,66 @@ async function render(url = '/projects/7/tasks', realDialogs = false) {
 const popup = () => new DOMWrapper(document.body)
 
 describe('Work board navigation', () => {
+  it('owns initial inspection reads, task-switch invalidation, live refresh and close cleanup', async () => {
+    const fallback = mocks.callOperation.getMockImplementation()!
+    const late: Array<(value: unknown) => void> = []
+    let revision = 1
+    const page = (taskKey: string, sourceId: number) => ({
+      project_id: 7, task_key: taskKey,
+      items: [{ source_kind: 'project_event', source_id: sourceId }],
+      next_cursor: null, coverage: 'Recorded sources', warnings: [],
+    })
+    mocks.callOperation.mockImplementation((operation: string, args: Record<string, unknown>) => {
+      if (operation !== 'tracker.taskActivity' && operation !== 'tracker.taskResults') return fallback(operation, args)
+      if (args.task_key === taskA.key) return new Promise(resolve => { late.push(resolve) })
+      return Promise.resolve(page(taskB.key, revision))
+    })
+    const { wrapper, router, dialog } = await render('/projects/7/tasks?detail=task-a')
+    expect(late).toHaveLength(2)
+    expect(dialog().props('results')).toMatchObject({ items: [], loading: true })
+    await router.push({ query: { detail: taskB.key } })
+    await flushPromises()
+    expect(dialog().props('results').items[0].source_id).toBe(1)
+    expect(dialog().props('activity').items[0].source_id).toBe(1)
+    for (const resolve of late) resolve(page(taskA.key, 99))
+    await flushPromises()
+    expect(dialog().props('results').items[0].source_id).toBe(1)
+    expect(dialog().props('activity').items[0].source_id).toBe(1)
+    revision = 2
+    mocks.stream.mock.calls.at(-1)![0].onEvent({ id: 9910, event_type: 'tracker.task.updated', metadata_json: { task_key: taskB.key } })
+    await flushPromises()
+    expect(dialog().props('results').items[0].source_id).toBe(2)
+    expect(dialog().props('activity').items[0].source_id).toBe(2)
+    await router.push({ query: {} })
+    await flushPromises()
+    expect(dialog().props('results')).toMatchObject({ items: [], loaded: false, loading: false })
+    expect(dialog().props('activity')).toMatchObject({ items: [], loaded: false, loading: false })
+    wrapper.unmount()
+  })
+
+  it('retains visible inert Board content, filter and scroll while the popup pages real reads, then restores its opener on Escape', async () => {
+    const { wrapper, board, router } = await render('/projects/7/tasks?search=Alpha', true)
+    const instance = board().vm
+    const workspace = wrapper.get<HTMLElement>('.tracker-board-workspace').element
+    workspace.scrollTop = 123
+    const opener = board().get('button')
+    ;(opener.element as HTMLElement).focus()
+    await opener.trigger('click')
+    await flushPromises()
+    expect(board().vm).toBe(instance)
+    expect(wrapper.get('.tracker-board-workspace').attributes('style')).not.toContain('display: none')
+    expect(wrapper.get('.tracker-page-shell').attributes('inert')).toBeDefined()
+    expect(mocks.callOperation).toHaveBeenCalledWith('tracker.taskResults', expect.objectContaining({ project_id: 7, task_key: taskA.key }))
+    expect(mocks.callOperation).toHaveBeenCalledWith('tracker.taskActivity', expect.objectContaining({ project_id: 7, task_key: taskA.key }))
+    await popup().get('[role="dialog"]').trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ search: 'Alpha' })
+    expect(wrapper.get('.tracker-page-shell').attributes('inert')).toBeUndefined()
+    expect(workspace.scrollTop).toBe(123)
+    expect(document.activeElement).toBe(opener.element)
+    wrapper.unmount()
+  })
+
   it('passes the actual selected workflow link to the Graph header abort action and refreshes the existing projection', async () => {
     dataMock([{ ...taskA, source_kind: 'workflow', source_json: { run_plan_id: 321 } }], [ticketA])
     const { wrapper, controls } = await render('/projects/7/tasks?view=graph&task=task-a')

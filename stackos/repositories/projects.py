@@ -22,7 +22,11 @@ from stackos.db.models import (
     ScheduledJob,
     TrackerItemStatus,
 )
-from stackos.operations.tracker.schemas import TaskDeliveryAgentOverride, TaskMcpConfigRef
+from stackos.operations.tracker.schemas import (
+    AgentRole,
+    TaskDeliveryAgentOverride,
+    TaskMcpConfigRef,
+)
 from stackos.repositories.base import (
     BudgetExceededError,
     ConflictError,
@@ -109,6 +113,8 @@ class ScheduleExecution(BaseModel):
     host_key: str | None = Field(default=None, min_length=1)
     delivery_agent: TaskDeliveryAgentOverride | None = None
     review_agent: TaskDeliveryAgentOverride | None = None
+    agents: dict[AgentRole, TaskDeliveryAgentOverride] | None = None
+    step_agent_assignments: dict[str, AgentRole] | None = None
     mcp_config_ref: TaskMcpConfigRef | None = None
 
 
@@ -697,29 +703,76 @@ class ScheduledJobRepository:
             CronTrigger.from_crontab(config["cron_expr"], timezone=zone)
         except (ValueError, ZoneInfoNotFoundError) as exc:
             raise ValidationError(f"Invalid schedule cron/timezone: {exc}") from None
-        if not config.get("enabled"):
-            return None
+        from stackos.repositories.tracker import TrackerRepository
+        from stackos.task_delivery import resolve_delivery_settings, workflow_agent_assignments
+        from stackos.workflows.template_loader import WorkflowTemplateLoader
+
+        execution = (
+            ScheduleExecution.model_validate(config["execution_json"]).model_dump(
+                exclude_unset=True
+            )
+            if config.get("execution_json")
+            else {}
+        )
+        explicit = execution.pop("step_agent_assignments", None)
+        sources = {
+            **(execution.get("agents") or {}),
+            **{
+                role: execution[role]
+                for role in ("delivery_agent", "review_agent")
+                if execution.get(role)
+            },
+        }
         missing = [
             key
             for key in ("name", "timezone", "template_key", "execution_json")
             if not config.get(key)
         ]
+        incomplete_draft = not config.get("enabled") and (
+            missing or (not execution.get("agents") and explicit is None)
+        )
+        # Legacy role arguments replace matching mapped choices at execution, but
+        # both forms remain stored. Validate the shadowed choices before merging.
+        shadowed = {
+            role: choice
+            for role, choice in (execution.get("agents") or {}).items()
+            if role in {"delivery_agent", "review_agent"}
+            and execution.get(role) is not None
+            and (not incomplete_draft or choice.get("source_ref") or choice.get("instructions"))
+        }
+        if shadowed:
+            resolve_delivery_settings(
+                self._s,
+                project_id=project_id,
+                project_dir=execution["project_dir"],
+                host_key=execution.get("host_key"),
+                agents=shadowed,
+                role_keys=set(shadowed),
+            )
+        if incomplete_draft:
+            # Incomplete drafts stay inert, but supplied source identities must be current.
+            source_roles = {
+                role
+                for role, choice in sources.items()
+                if choice.get("source_ref") or choice.get("instructions")
+            }
+            if source_roles:
+                resolve_delivery_settings(
+                    self._s, project_id=project_id, role_keys=source_roles, **execution
+                )
+            return None
         if missing:
             raise ValidationError(
                 "Schedule needs setup: " + ", ".join(missing), data={"missing_fields": missing}
             )
         from stackos.repositories.run_plans import RunPlanRepository
-        from stackos.task_delivery import resolve_delivery_settings
 
-        execution = ScheduleExecution.model_validate(config["execution_json"]).model_dump(
-            exclude_unset=True
-        )
         validation = RunPlanRepository(self._s).validate_plan(
             template_key=config["template_key"],
             project_id=project_id,
             repo_root=execution["project_dir"],
             inputs_json=config.get("inputs_json"),
-            enforce_required_inputs=True,
+            enforce_required_inputs=bool(config.get("enabled")),
         )
         if not validation.valid:
             raise ValidationError(
@@ -728,8 +781,52 @@ class ScheduledJobRepository:
                     "errors": [issue.model_dump() for issue in validation.errors],
                 },
             )
-        resolve_delivery_settings(self._s, project_id=project_id, **execution)
-        return execution
+        assert validation.plan is not None
+        template = WorkflowTemplateLoader(self._s).describe_template(
+            key=config["template_key"], project_id=project_id, repo_root=execution["project_dir"]
+        )
+        requirements = [req.model_dump() for req in template.spec.agent_requirements]
+        declared = {req["role"] for req in requirements}
+        if declared and set(execution.get("agents") or {}) - declared - {
+            "delivery_agent",
+            "review_agent",
+        }:
+            raise ValidationError("Selected agents must bind declared workflow roles")
+        defaults = TrackerRepository(self._s).delivery_defaults(project_id=project_id)
+        available = set(defaults.get("agents") or {}) | set(execution.get("agents") or {})
+        available.update(
+            role
+            for role in ("delivery_agent", "review_agent")
+            if defaults.get(role) or execution.get(role)
+        )
+        assignments = workflow_agent_assignments(
+            requirements=requirements,
+            steps={
+                step.id: (step.metadata_json or {}).get("agent_assignment")
+                for step in validation.plan.steps
+            },
+            selected_roles=available,
+            assignments=explicit,
+        )
+        if declared and set(assignments.values()) - declared - {"delivery_agent", "review_agent"}:
+            raise ValidationError("Selected agents must bind declared workflow roles")
+        # Validate every supplied choice before persistence, even an unassigned role.
+        # Unrelated project defaults remain outside this selection.
+        resolved = resolve_delivery_settings(
+            self._s,
+            project_id=project_id,
+            role_keys=set(assignments.values()) | sources.keys(),
+            **execution,
+        )
+        return (
+            {
+                **execution,
+                "step_agent_assignments": assignments,
+                "_resolved_settings": {"project_id": project_id, **resolved},
+            }
+            if config.get("enabled")
+            else None
+        )
 
     def _out(self, row: ScheduledJob) -> ScheduledJobOut:
         out = ScheduledJobOut.model_validate(row)
@@ -751,6 +848,12 @@ class ScheduledJobRepository:
             except ValidationError as exc:
                 errors = exc.data.get("errors", [])
                 messages = [issue.get("message", "") for issue in errors if isinstance(issue, dict)]
+                source_ref = exc.data.get("source_ref")
+                if isinstance(source_ref, dict):
+                    messages.append(
+                        f"{source_ref.get('native_name')} ({source_ref.get('source_path')})"
+                    )
+                    messages.append(exc.data.get("repair", "Repair the selected project source."))
                 out.setup_issue = ": ".join([exc.detail, *filter(None, messages)])
         return out
 

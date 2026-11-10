@@ -29,7 +29,14 @@ def main() -> int:
         if (
             spec.name.startswith("actionCall.")
             or spec.name.startswith("schedule.")
-            or spec.name in {"tracker.agentStats", "tracker.agentStatsAll", "tracker.get"}
+            or spec.name
+            in {
+                "tracker.agentStats",
+                "tracker.agentStatsAll",
+                "tracker.get",
+                "tracker.taskActivity",
+                "tracker.taskResults",
+            }
             or spec.grant_policy in {"local-admin-console-read", "local-admin-console-write"}
             or spec.name == "localAgentChat.createMessage"
         )

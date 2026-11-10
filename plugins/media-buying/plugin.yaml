@@ -1573,16 +1573,15 @@ resources:
     description: Paid media experiment setup, variants, metric targets, observations, and decision refs.
     schema: *object_schema
 ui:
+  page:
+    sections: [workflows, saved, files]
   nav:
     section: Media Buying
     items:
-      - key: media-buying.resources
-        label: Data
-        to: resources?plugin_slug=media-buying
+      - key: media-buying.domain
+        label: Media Buying
+        to: plugins/media-buying
         matchPrefix: true
-      - key: media-buying.templates
-        label: Workflows
-        to: workflow-templates?plugin_slug=media-buying
 config:
   schema_version: stackos.plugin.v1
   provider_connectors:

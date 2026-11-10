@@ -55,10 +55,10 @@ describe('useProjectNavigation', () => {
     harness.wrapper.unmount()
   })
 
-  it('remounts agent defaults in the selected project scope', async () => {
-    const harness = await setupNavigation('/projects/1/agent-defaults')
+  it('remounts Agents in the selected project scope', async () => {
+    const harness = await setupNavigation('/projects/1/agents')
     await expect(harness.navigation.selectProject(2)).resolves.toBe(true)
-    expect(harness.router.currentRoute.value.path).toBe('/projects/2/agent-defaults')
+    expect(harness.router.currentRoute.value.path).toBe('/projects/2/agents')
     expect(harness.navigation.routeViewKey.value).toBe('project:2')
     harness.wrapper.unmount()
   })
@@ -152,9 +152,7 @@ async function setupNavigation(
       { path: '/accounts', component: { template: '<div />' } },
       { path: '/projects/:id', component: { template: '<div />' } },
       { path: '/projects/:id/connections', component: { template: '<div />' } },
-      { path: '/projects/:id/agent-defaults', component: { template: '<div />' } },
-      { path: '/projects/:id/runs', component: { template: '<div />' } },
-      { path: '/projects/:id/runs/:run_id', component: { template: '<div />' } },
+      { path: '/projects/:id/agents', component: { template: '<div />' } },
     ],
   })
   await router.push(path)

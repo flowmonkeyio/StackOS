@@ -6,6 +6,7 @@ import RunAbortDialog from './RunAbortDialog.vue'
 import { taskRunAbortTarget, useRunAbort, type RunAbortTarget } from '@/composables/useRunAbort'
 import type { TrackerTask } from '@/lib/task-tracker/types'
 import { ApiError } from '@/lib/client'
+import type { UiDropdownMenuProps } from '@/components/ui/UiDropdownMenu.vue'
 
 const call = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/operations', () => ({ callOperation: call }))
@@ -14,23 +15,34 @@ const popup = () => new DOMWrapper(document.body)
 let dispose = () => {}
 afterEach(() => { dispose(); useRunAbort().close(); document.body.innerHTML = ''; call.mockReset() })
 
-async function render(automated = false) {
+async function render(automated = false, placement?: UiDropdownMenuProps['placement'], keyboard = false) {
   const selected = ref({ ...target, automated })
   const refresh = vi.fn(() => { selected.value.status = 'aborted' })
   const wrapper = mount(defineComponent({
     components: { RunAbortAction, RunAbortDialog },
-    setup: () => ({ selected, refresh }),
-    template: '<RunAbortAction :target="selected" @refresh="refresh" /><RunAbortDialog />',
+    setup: () => ({ selected, refresh, placement }),
+    template: '<RunAbortAction :target="selected" :placement="placement" @refresh="refresh" /><RunAbortDialog />',
   }), { attachTo: document.body })
   dispose = () => wrapper.unmount()
   await wrapper.get('button[aria-label^="Run actions"]').trigger('click')
-  await wrapper.get('[role="menuitem"]').trigger('click')
+  if (keyboard) await wrapper.get('[role="menu"]').trigger('keydown', { key: 'Enter' })
+  else await wrapper.get('[role="menuitem"]').trigger('click')
   return { wrapper, selected, refresh }
 }
 
 function confirm() { return popup().findAll('button').find(button => button.text() === 'Abort run')! }
 
 describe('shared Abort run action', () => {
+  it.each([undefined, 'top-end'] as const)('retains the canonical confirmation and keyboard selection for placement %s', async (placement) => {
+    const { wrapper } = await render(false, placement, true)
+    expect(wrapper.getComponent(RunAbortAction).props('placement')).toBe(placement ?? 'bottom-end')
+    expect(popup().get('[role="dialog"]').text()).toContain('Abort run?')
+    expect(useRunAbort().selected.value).toMatchObject(target)
+    await popup().get('[role="dialog"]').trigger('keydown', { key: 'Escape' })
+    expect(useRunAbort().open.value).toBe(false)
+    expect(call).not.toHaveBeenCalled()
+  })
+
   it.each([true, false])('names the selected run, prevents repeat/close while pending and retains the truthful result after refresh (automated=%s)', async (automated) => {
     let resolve!: (value: unknown) => void
     call.mockImplementation(() => new Promise(done => { resolve = done }))

@@ -25,6 +25,8 @@ from stackos.operations.tracker.read_handlers import (
     tracker_next,
     tracker_search,
     tracker_status,
+    tracker_task_activity,
+    tracker_task_results,
     tracker_ticket_counts,
     tracker_ticket_counts_all,
     tracker_verify,
@@ -49,6 +51,8 @@ from stackos.operations.tracker.schemas import (
     TrackerReopenInput,
     TrackerSearchInput,
     TrackerStartDeliveryInput,
+    TrackerTaskActivityInput,
+    TrackerTaskResultsInput,
     TrackerTicketCountsAllInput,
     TrackerTicketCountsInput,
     TrackerTicketInput,
@@ -90,7 +94,8 @@ from stackos.repositories.tracker import (
     TrackerTicketCountsOut,
     TrackerVerifyOut,
 )
-from stackos.repositories.tracker.schema import TrackerAgentStatsOut, TrackerSummaryOut
+from stackos.repositories.tracker.inspection_schema import TaskActivityOut, TaskResultsOut
+from stackos.repositories.tracker.schema import TrackerAgentStatsOut
 
 _AGENT_STATS_RESPONSE_POLICY = OperationResponsePolicy(
     default_mode="compact",
@@ -116,7 +121,7 @@ def operation_specs() -> list[OperationSpec]:
             name="tracker.configureDelivery",
             summary="Save project task delivery defaults through local-admin setup.",
             input_model=TrackerConfigureDeliveryInput,
-            output_model=WriteEnvelope[TrackerSummaryOut],
+            output_model=WriteEnvelope[dict[str, Any]],
             handler=tracker_configure_delivery,
             surfaces=OperationSurfaces(
                 mcp=OperationSurface(enabled=False),
@@ -153,12 +158,18 @@ def operation_specs() -> list[OperationSpec]:
                         "delivery": {
                             "host_key": "codex",
                             "delivery_agent": {
-                                "name": "builder",
-                                "instructions": "Build and check.",
+                                "source_ref": {
+                                    "host_key": "codex",
+                                    "native_name": "builder",
+                                    "source_path": ".codex/agents/builder.toml",
+                                },
                             },
                             "review_agent": {
-                                "name": "reviewer",
-                                "instructions": "Review independently.",
+                                "source_ref": {
+                                    "host_key": "codex",
+                                    "native_name": "reviewer",
+                                    "source_path": ".codex/agents/reviewer.toml",
+                                },
                             },
                         },
                     },
@@ -206,9 +217,12 @@ def operation_specs() -> list[OperationSpec]:
                 "For a workflow task, supply run_plan_id and step_id for its running step; "
                 "this is entry context, not a traversal limit. The daemon retains the bound "
                 "controller run internally and claims/records mirrors through RunPlanRepository.",
-                "Optional agent_assignments maps canonical ticket keys to delivery_agent or "
-                "review_agent. Frozen step metadata agent_assignment supplies mirror defaults; "
-                "explicit handoff entries win. No workflow/step-name routing or ticket settings.",
+                "agents maps safe declared role keys to exact source_ref selections. Fresh Codex "
+                "admission requires sources in the bound workspace; unsupported native settings "
+                "reject. Non-Codex hosts keep inline contracts. agent_assignments maps canonical "
+                "ticket keys to selected roles, overriding frozen step metadata; otherwise use "
+                "the unique applicable declared role. Ambiguity requires selection. Ordinary "
+                "tickets require a separate reviewer. No workflow/step-name routing.",
                 "Supply the project directory. Role fields may be omitted when saved in "
                 "TaskTracker.config_json.delivery through local-admin tracker.configureDelivery. "
                 "Task choices merge by role into one execution snapshot. An explicit handoff "
@@ -252,12 +266,18 @@ def operation_specs() -> list[OperationSpec]:
                         "step_id": "verify-delivery",
                         "project_dir": "/work/project",
                         "delivery_agent": {
-                            "name": "builder",
-                            "instructions": "Implement, check and commit this ticket.",
+                            "source_ref": {
+                                "host_key": "codex",
+                                "native_name": "builder",
+                                "source_path": ".codex/agents/builder.toml",
+                            },
                         },
                         "review_agent": {
-                            "name": "reviewer",
-                            "instructions": "Independently check the exact commit read-only.",
+                            "source_ref": {
+                                "host_key": "codex",
+                                "native_name": "reviewer",
+                                "source_path": ".codex/agents/reviewer.toml",
+                            },
                         },
                     },
                 ),
@@ -274,8 +294,11 @@ def operation_specs() -> list[OperationSpec]:
                             "model": "claude-sonnet-5-5",
                         },
                         "review_agent": {
-                            "name": "reviewer",
-                            "instructions": "Independently verify the ticket acceptance criteria.",
+                            "source_ref": {
+                                "host_key": "codex",
+                                "native_name": "reviewer",
+                                "source_path": ".codex/agents/reviewer.toml",
+                            },
                             "host_key": "codex",
                             "model": "gpt-6.1-sol",
                         },
@@ -554,6 +577,45 @@ def operation_specs() -> list[OperationSpec]:
                 OperationExample(
                     title="Read recent tracker history",
                     arguments={"project_id": 1, "limit": 20, "response_mode": "compact"},
+                ),
+            ),
+        ),
+        _read_spec(
+            name="tracker.taskActivity",
+            summary="Read persisted task-scoped history with stable cursor paging.",
+            input_model=TrackerTaskActivityInput,
+            output_model=TaskActivityOut,
+            handler=tracker_task_activity,
+            purpose=(
+                "Inspect linked events and structured delivery lifecycle revisions. "
+                "Coverage is not a complete internal audit; reads never write history."
+            ),
+            examples=(
+                OperationExample(
+                    title="Read older task history",
+                    arguments={"project_id": 1, "task_key": "manual-work", "limit": 50},
+                ),
+            ),
+        ),
+        _read_spec(
+            name="tracker.taskResults",
+            summary="Read canonical results associated through explicit task provenance.",
+            input_model=TrackerTaskResultsInput,
+            output_model=TaskResultsOut,
+            handler=tracker_task_results,
+            purpose=(
+                "Open shared Library details using canonical source identities and every explicit "
+                "association reason. Historical execution contexts are included; "
+                "association does not imply approval."
+            ),
+            examples=(
+                OperationExample(
+                    title="Read task files",
+                    arguments={
+                        "project_id": 1,
+                        "task_key": "manual-work",
+                        "source_kind": "artifact",
+                    },
                 ),
             ),
         ),

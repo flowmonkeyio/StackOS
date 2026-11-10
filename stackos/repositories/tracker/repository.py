@@ -12,9 +12,13 @@ from stackos.repositories.tracker.mutations import TrackerMutationMixin
 from stackos.repositories.tracker.queries import TrackerQueryMixin
 from stackos.repositories.tracker.relations import TrackerRelationsMixin
 from stackos.repositories.tracker.setup import TrackerSetupMixin
+from stackos.repositories.tracker.task_activity import TaskActivityMixin
+from stackos.repositories.tracker.task_results import TaskResultsMixin
 
 
 class TrackerRepository(
+    TaskActivityMixin,
+    TaskResultsMixin,
     TrackerMirrorMixin,
     TrackerBulkMixin,
     TrackerMutationMixin,
