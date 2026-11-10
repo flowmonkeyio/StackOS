@@ -4383,6 +4383,8 @@ resources:
       record_kind: crm-export
       agent_guidance: Keep one compact index per export intent. Store safe job and generated-asset refs, action evidence, retention, and repair state; never store signed download URLs, raw HubSpot ids, or exported customer rows.
 ui:
+  page:
+    sections: [workflows, saved, files]
   nav:
     section: GTM
     items:

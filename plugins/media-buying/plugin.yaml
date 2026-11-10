@@ -1573,6 +1573,8 @@ resources:
     description: Paid media experiment setup, variants, metric targets, observations, and decision refs.
     schema: *object_schema
 ui:
+  page:
+    sections: [workflows, saved, files]
   nav:
     section: Media Buying
     items:

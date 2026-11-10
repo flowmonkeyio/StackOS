@@ -31,6 +31,34 @@ def _auth_field_keys(provider: ProviderManifest, method_key: str | None = None) 
 
 
 @pytest.mark.parametrize(
+    "slug",
+    ["agency", "branding", "communications", "engineering", "gtm", "marketing",
+     "media-buying", "publishing", "seo", "support"],
+)
+def test_domain_page_sections_match_packaged_capabilities(slug: str) -> None:
+    root = Path(__file__).resolve().parents[2] / "plugins" / slug
+    manifest = load_plugin_manifest_file(root / "plugin.yaml")
+    assert manifest.ui is not None
+    sections = manifest.ui["page"]["sections"]
+    assert len(sections) == len(set(sections))
+    assert set(sections) <= {"workflows", "saved", "files"}
+    assert ("workflows" in sections) == bool(list((root / "workflows").glob("*.yaml")))
+    assert "saved" in sections
+    assert "files" in sections
+    for item in manifest.ui["nav"].get("items", []):
+        assert "route" not in item
+        assert item["to"]
+
+
+def test_finance_keeps_its_existing_console_owner() -> None:
+    root = Path(__file__).resolve().parents[2] / "plugins" / "finance"
+    manifest = load_plugin_manifest_file(root / "plugin.yaml")
+    assert manifest.ui is not None
+    assert "page" not in manifest.ui
+    assert manifest.ui["nav"]["items"][0]["to"] == "finance"
+
+
+@pytest.mark.parametrize(
     ("evidence_source", "enforcement"),
     [
         ("oauth_response", "local_required"),

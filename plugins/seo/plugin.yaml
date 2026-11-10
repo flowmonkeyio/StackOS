@@ -2453,6 +2453,8 @@ resources:
       record_kind: website-seo-analysis
       agent_guidance: Keep this record compact and evidence-led. Use the typed evidence index and review summary as the durable claim trail; temporary response-file paths are not evidence refs. Store bulky URL inventories, claim-supporting raw exports, the canonical finding register, and the final report as artifacts; never turn unavailable provider data into invented measurements.
 ui:
+  page:
+    sections: [workflows, saved, files]
   nav:
     section: SEO
     items:

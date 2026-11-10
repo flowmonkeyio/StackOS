@@ -48,12 +48,28 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
   const connectionProjectId = ref<number | null>(null)
   let accountRefreshSequence = 0
   const projectRequests = createProjectRequestGate()
+  let pendingPlugins: { projectId: number; promise: Promise<boolean> } | null = null
 
   const enabledPlugins = computed(() =>
     plugins.value.filter((plugin) => plugin.enabled_for_project !== false),
   )
 
-  async function refreshPlugins(
+  function refreshPlugins(
+    projectId: number,
+    options: { silent?: boolean } = {},
+  ): Promise<boolean> {
+    // The shell and a domain detail can mount together. Share their read so
+    // neither consumer cancels the other's project discovery.
+    if (pendingPlugins?.projectId === projectId) return pendingPlugins.promise
+    const promise = readPlugins(projectId, options)
+    pendingPlugins = { projectId, promise }
+    void promise.finally(() => {
+      if (pendingPlugins?.promise === promise) pendingPlugins = null
+    })
+    return promise
+  }
+
+  async function readPlugins(
     projectId: number,
     options: { silent?: boolean } = {},
   ): Promise<boolean> {

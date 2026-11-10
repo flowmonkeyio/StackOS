@@ -264,13 +264,12 @@ search and sorting; focused plugin/provider card components own presentation.
 Both Plugins and Connections use the shared `ProviderMark` so website catalog
 logos and operator UI logos cannot drift.
 
-Graph surfaces intentionally have two different sizing contracts. Workflow
-guide journeys are document previews: their canvas grows to the complete stage
-layout and leaves wheel/pinch gestures to the containing page. The task tracker
-dependency map is a bounded, page-sized exploration canvas: node geometry and
-spacing may extend beyond the viewport, while pan, wheel/pinch zoom, minimap,
-and controls expose that off-canvas context. Do not share viewport behavior
-between these surfaces merely because both render with Vue Flow.
+Workflow details use `TemplateRenderer`'s compact stage list, declared inputs,
+outputs and approval gates, with the sanitized effective contract in Details.
+They use ordinary page scrolling. The task tracker dependency map remains a
+bounded, page-sized exploration canvas: node geometry and spacing may extend
+beyond the viewport, while pan, wheel/pinch zoom, minimap and controls expose
+that off-canvas context.
 
 Partition integration tests by user flow before moving risky async ownership.
 Use focused unit tests for pure view models/composables and keep one route-level

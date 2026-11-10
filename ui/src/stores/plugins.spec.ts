@@ -17,6 +17,19 @@ describe('StackOS catalog store auth controls', () => {
     vi.restoreAllMocks()
   })
 
+  it('shares concurrent plugin discovery between the shell and a domain view', async () => {
+    let resolve!: (response: Response) => void
+    globalThis.fetch = vi.fn(() => new Promise<Response>(value => { resolve = value })) as typeof fetch
+    const store = useStackOsCatalogStore()
+    const first = store.refreshPlugins(1)
+    const second = store.refreshPlugins(1)
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+    resolve(json([{ slug: 'engineering', enabled_for_project: true }]))
+    expect(await first).toBe(true)
+    expect(await second).toBe(true)
+    expect(store.plugins[0].slug).toBe('engineering')
+  })
+
   it('stores credentials through the local-admin endpoint and refreshes sanitized auth state', async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
     globalThis.fetch = vi.fn(async (input, init) => {

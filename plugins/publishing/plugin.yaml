@@ -224,6 +224,8 @@ resources:
     description: Safe metadata for a configured CMS target or destination.
     schema: *object_schema
 ui:
+  page:
+    sections: [saved, files]
   nav:
     section: Publishing
     items:

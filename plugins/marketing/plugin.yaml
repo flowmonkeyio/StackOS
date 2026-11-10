@@ -360,6 +360,8 @@ resources:
       record_kind: campaign-evidence
       agent_guidance: Record one verdict per reviewed manifest entry or page with rendered evidence refs; separate blocking findings from notes explicitly.
 ui:
+  page:
+    sections: [workflows, saved, files]
   nav:
     section: Marketing
     items:

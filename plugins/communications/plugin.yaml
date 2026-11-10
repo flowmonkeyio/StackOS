@@ -5242,6 +5242,8 @@ resources:
     events.
   schema: *id011
 ui:
+  page:
+    sections: [workflows, saved, files]
   nav:
     section: Communications
     items:
