@@ -345,6 +345,16 @@ lifecycle contract.
 
 ## UI Token Bootstrap Trade-Off
 
+The console bearer permits the exact POST route
+`/api/v1/projects/{positive_numeric_id}/plugins/{installed_slug}/enable`
+as local setup. Its body must be absent or an empty JSON object. Middleware
+rejects all configuration fields (including `config_json: null`), unknown keys,
+and other bodies before repository mutation. Normal project/plugin validation
+still applies. Enabling preserves existing configuration and does not provision,
+reset, or reconcile Finance files. This does not permit disable/install routes,
+`plugin.enable` operation calls, MCP, or changes to agent grants. The daemon
+admin token retains its existing configuration-write authority.
+
 Adding `/api/v1/auth/ui-token` accepts a reduction in defence depth.
 
 **What's gained.** The browser-based UI works without prompting the user

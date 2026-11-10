@@ -220,6 +220,8 @@ def test_unconfigured_finance_requires_explicit_enable_without_provisioning(
 def test_reenable_adopts_and_reuses_existing_finance_without_reset(
     api, project_id, settings, legacy
 ):
+    # Exercise the shipped browser credential through the real bearer middleware.
+    ui_headers = {"Authorization": f"Bearer {api.get('/api/v1/auth/ui-token').json()['token']}"}
     _original(legacy["root"])
     before = {
         p.relative_to(legacy["root"]): p.read_bytes()
@@ -229,7 +231,9 @@ def test_reenable_adopts_and_reuses_existing_finance_without_reset(
     config_before = legacy["config"].read_bytes()
     for _ in range(2):
         assert api.post(f"/api/v1/projects/{project_id}/plugins/finance/disable").status_code == 200
-        assert api.post(f"/api/v1/projects/{project_id}/plugins/finance/enable").status_code == 200
+        assert api.post(
+            f"/api/v1/projects/{project_id}/plugins/finance/enable", headers=ui_headers
+        ).status_code == 200
     assert legacy["config"].read_bytes() == config_before
     assert not (settings.data_dir / "projects").exists()
     first = call(api, "finance.status", {"project_id": project_id})
@@ -238,7 +242,9 @@ def test_reenable_adopts_and_reuses_existing_finance_without_reset(
     target = settings.data_dir / "projects" / str(project_id) / "finance"
     assert api.post(f"/api/v1/projects/{project_id}/plugins/finance/disable").status_code == 200
     assert call(api, "finance.status", {"project_id": project_id}).status_code == 403
-    assert api.post(f"/api/v1/projects/{project_id}/plugins/finance/enable").status_code == 200
+    assert api.post(
+        f"/api/v1/projects/{project_id}/plugins/finance/enable", headers=ui_headers
+    ).status_code == 200
     again = call(api, "finance.status", {"project_id": project_id})
     assert again.status_code == 200, again.text
     assert again.json()["data"]["access"][0]["generation"] == access["generation"]
