@@ -130,6 +130,39 @@ describe('PluginsView directory', () => {
     wrapper.unmount()
   })
 
+  it('enables an available plugin through the registered project endpoint and reloads its status', async () => {
+    let enabled = false
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = String(input)
+      if (url === '/api/v1/projects/1/plugins/finance/enable') {
+        expect(init?.method).toBe('POST')
+        expect(init?.body).toBeUndefined()
+        enabled = true
+        return json({ data: { project_id: 1, enabled: true } })
+      }
+      if (url === '/api/v1/plugins?project_id=1') return json([{
+        id: 1, slug: 'finance', name: 'Finance Operations', description: 'Finance tools',
+        enabled_for_project: enabled ? true : null, source: 'builtin', version: '1.0.0',
+      }])
+      if (url === '/api/v1/operations/integration.list/call') return json({ project_id: 1, items: [] })
+      return json([])
+    }) as typeof fetch
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/projects/:id/plugins', component: PluginsView }],
+    })
+    await router.push('/projects/1/plugins')
+    await router.isReady()
+    const wrapper = mount(PluginsView, { global: { plugins: [router, createPinia()] } })
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Finance Operations'))
+    expect(wrapper.text()).not.toContain('Enabled')
+    await wrapper.get('button[aria-label="Enable Finance Operations for this project"]').trigger('click')
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Finance Operations is enabled for this project.'))
+    await vi.waitFor(() => expect(wrapper.text()).toContain('Enabled'))
+    expect(wrapper.find('button[aria-label="Enable Finance Operations for this project"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it.each(['failed', 'empty'])('keeps catalog browsing usable when the inventory is %s', async (result) => {
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)

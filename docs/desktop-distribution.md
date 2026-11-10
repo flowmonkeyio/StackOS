@@ -96,23 +96,74 @@ make desktop-dev
 
 ### Obtain the pinned TDLib build input
 
+Normal builds now fetch a versioned, checksum-pinned npm distribution automatically:
+[`@prebuilt-tdlib/darwin-arm64@0.1008067.0`](https://www.npmjs.com/package/@prebuilt-tdlib/darwin-arm64/v/0.1008067.0),
+published by the [tdl project](https://github.com/eilvelia/tdl), not Telegram itself.
+Its package metadata identifies TDLib **1.8.67** and upstream commit
+`d1085f9cebc5a62379991ae1652673954f229c1f`. This is a separately reviewed
+distribution, **not** the previously retained local proof artifact below.
+During input review, `npm audit signatures` cryptographically verified its npm
+registry signature and provenance attestation. The attested tdl workflow revision
+is `34f1b868f64eb5c4952b357db8094da218ab8ba9`. Future builds verify the exact
+reviewed bytes against committed pins rather than resolving a mutable latest
+version or claiming that npm provenance independently proves Telegram source
+reproducibility.
+
+```bash
+# Optional prefetch; ordinary payload/build commands do this automatically.
+python3 desktop/scripts/fetch-tdlib-input.py
+pnpm --dir desktop run dist:mac:dev
+```
+
+The fixed input URL is
+`https://registry.npmjs.org/@prebuilt-tdlib/darwin-arm64/-/darwin-arm64-0.1008067.0.tgz`.
+The downloader pins both the registry SHA-512 integrity and archive SHA-256
+`84aac79ec7b8892798744963aad4590750f3f4c21c5976503d5b47202882f89a`,
+then verifies the extracted library SHA-256
+`67ea9d6f0494ca88c57b97f4d779977b764465773ef137d10099c8c75f555303`.
+It reads only the exact expected regular-file archive entries, checks package
+identity/platform/source metadata, and never executes npm install scripts.
+The builder additionally verifies ARM64, system-only dependencies and native
+JSON ABI/version before activation. App signing subsequently changes the staged
+library digest; the manifest retains the original input digest separately.
+
+Verified input is cached in
+`${XDG_CACHE_HOME:-$HOME/.cache}/stackos/build-inputs/tdlib-npm-0.1008067.0/`,
+outside payload directories deleted by rebuilds. Every reuse revalidates the
+archive. Corrupt archives are downloaded again and only replaced atomically
+after verification; missing/corrupt extracted libraries are repaired from the
+verified archive. A verified cache supports offline builds. If the registry is
+unavailable and the cache is invalid, the build fails rather than substituting
+an arbitrary library. To preseed another machine, copy the verified `package.tgz`
+to the same cache directory and run the prefetch command, which rechecks it.
+
+The npm manifest uses `input_variant=npm-prebuilt-0.1008067.0` and
+`source_verification=registry-integrity-pinned`, retaining package URL, version,
+integrity and input digest. It does not claim a locally reconstructed source
+archive. For this distribution there is no need to install OpenSSL or compile
+TDLib. Explicit `TDLIB_LIBRARY_PATH` without a variant retains the legacy
+`original` contract; to supply this exact registry library explicitly, also set
+`TDLIB_INPUT_VARIANT=npm-prebuilt-0.1008067.0`. No checksum override is supported.
+
+#### Legacy retained proof inputs (not the default build path)
+
 The upstream source is [TDLib at commit
 `d1085f9cebc5a62379991ae1652673954f229c1f`](https://github.com/tdlib/td/tree/d1085f9cebc5a62379991ae1652673954f229c1f),
 version **1.8.67**. That source link is not a download of the exact binary
-required by the StackOS payload builder. The builder pins this SHA-256 for the
-ARM64 library before StackOS app signing:
+required by the legacy `original` input variant. For that variant, the builder
+pins this SHA-256 for the ARM64 library before StackOS app signing:
 
 ```text
 c397db26e7596eaf4a37ffb6d9400f2a34d764a26f388e4f4b9bfd41b070d5af
 ```
 
 **There is currently no recorded, verified download URL for that exact build
-input.** The existing build setup relies on a retained local proof artifact.
+input.** The legacy `original` variant relies on a retained local proof artifact.
 The retained library contains local StackOS build paths, consistent with a
-local source build. A fresh build machine needs a copy of this exact artifact
+local source build. A machine explicitly using this variant needs this artifact
 from a release/build owner, verified against the hash above. Publishing a
 versioned build-input archive with provenance and checksums remains an open
-distribution requirement.
+requirement for this legacy variant, not a blocker for the automatic npm path.
 
 Do not substitute a package merely because it reports TDLib 1.8.67. The
 `@prebuilt-tdlib/darwin-arm64@0.1008067.0` npm package and the
@@ -138,7 +189,7 @@ copy that file into the same input directory instead and run the same check.
 Keep the input outside both `desktop/payload/stackos` and
 `desktop/payload-build`: the payload builder deletes both before staging TDLib.
 An installed or packaged app's library may have a different hash after signing
-and does not replace this original build input for default or release builds.
+and does not replace the pinned input for the legacy `original` variant.
 
 #### Explicit local reuse of the existing 2.1.38 runtime
 
@@ -156,8 +207,10 @@ TDLIB_INPUT_VARIANT=stackos-2.1.38-packaged-local \
 
 This variant requires `STACKOS_UNSIGNED_DEV=1` (set by `dist:mac:dev`) and
 rejects signing/update release requirements and any update URL, even when
-unsigned-release bypass flags are present. The default still requires the
-original `c397db26…` input. No caller-supplied checksum override is supported.
+unsigned-release bypass flags are present. Normal builds default to the pinned
+npm input described above. An explicit `TDLIB_LIBRARY_PATH` without a variant
+selects `original` and requires the `c397db26…` input. No caller-supplied checksum
+override is supported.
 
 The builder checks the exact packaged input digest before inspecting or loading
 it, preserves the supplied file, and ad hoc signs and verifies only its staged
@@ -171,22 +224,23 @@ release provenance or fix the source-build reproducibility gap.
 
 ### Build the payload
 
-With `TDLIB_LIBRARY_PATH` set to the verified input above, build the Python
-payload for the app resources:
+Build the Python payload using the automatic registry input (or an explicitly
+selected, verified legacy input):
 
 ```bash
 make desktop-payload
 ```
 
-`desktop/scripts/build-tdlib-runtime-mac.sh` stages only the pinned proof
+`desktop/scripts/build-tdlib-runtime-mac.sh` stages only the selected pinned
 artifact with its expected SHA-256, ARM64-only slice, system-library-only
 dependencies, and TDLib JSON ABI smoke. It writes the pinned source identity
-and source archive digest into the
-payload-local `telegram-tdlib-runtime/manifest.json` beside the verified
-library. Prebuilt staging does not download or independently rebuild that
-source. The native asset remains outside the pure-Python wheel.
+into the payload-local `telegram-tdlib-runtime/manifest.json` beside the verified
+library. The registry variant records package integrity and input digest; only
+legacy proof variants record the inherited source archive digest. Prebuilt
+staging does not download or independently rebuild that source. The native asset
+remains outside the pure-Python wheel.
 
-The script also has a source-build branch requiring `git`, CMake, and an
+The legacy `TDLIB_INPUT_VARIANT=original` source-build branch requires `git`, CMake, and an
 explicit static OpenSSL root. It checks a `git archive` digest before compiling
 and still requires the exact library hash above afterward. A clean fetch of
 the pinned commit checked on 2026-10-23 with Git 2.49.0 produced archive SHA-256

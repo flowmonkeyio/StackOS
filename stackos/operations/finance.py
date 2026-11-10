@@ -266,6 +266,12 @@ class FinanceStatusOut(BaseModel):
 
 
 class FinanceMoneyOut(BaseModel):
+    precision_basis: str | None = Field(
+        default_factory=lambda: None, exclude_if=lambda value: value is None
+    )
+    precision_warning: str | None = Field(
+        default_factory=lambda: None, exclude_if=lambda value: value is None
+    )
     minor: str
     currency: str
     exponent: int | None = None
@@ -283,6 +289,8 @@ class FinanceProjectionOut(BaseModel):
     coverage: dict[str, Any]
     exclusions: list[dict[str, Any]]
     undated_or_period_only: list[str]
+    reporting_defaults: dict[str, str] | None = Field(default_factory=lambda: None)
+    record_labels: dict[str, str] = Field(default_factory=dict)
     warnings: list[str]
     comparison: dict[str, Any] | None = None
 

@@ -263,6 +263,12 @@ def _display_amount(
     if not amount:
         return None, None
     exponent, issue = _precision(current, settings, record, reporting)
+    if exponent is None and issue is None and amount["currency"] == "USD":
+        return {
+            **_money(amount["amount_minor"], amount["currency"], 2),
+            "precision_basis": "currency-convention",
+            "precision_warning": "Display units only; record precision has not been reviewed.",
+        }, None
     return _money(amount["amount_minor"], amount["currency"], exponent), issue
 
 
@@ -680,6 +686,61 @@ def _document_projection(
     return documents, summary
 
 
+def _record_label(row: dict[str, Any]) -> str:
+    # Display-only selected facts; never substitute account identifiers or paths.
+    title = (
+        row["counterparty"]
+        or row["business_purpose"]
+        or {"receipts": "Receipt", "bookkeeping": "Bookkeeping entry", "billing_versions": "Bill"}[
+            row["collection"]
+        ]
+    )
+    title = " ".join(str(title).split())[:160]
+    if not row["date"]:
+        filenames = sorted(
+            {
+                _document_filename(document["filename"])
+                for document in row.get("documents", [])
+                if document.get("filename")
+                and _document_filename(document["filename"]) != "Unnamed original"
+            }
+        )
+        if filenames:
+            title = f"{title} · {filenames[0]}"
+    return f"{title} · {row['date'] or 'Date not recorded'}"
+
+
+def _receipt_merchant(current: CurrentRecords, record: dict[str, Any]) -> str:
+    refs = record.get("receipt_refs", [])
+    if not refs:
+        return ""
+    merchants = set()
+    for ref in refs:
+        if current.collections.get(ref) != "receipts":
+            return ""
+        receipt = current.records[current.resolve(ref)]
+        merchant = receipt.get("merchant", "").strip()
+        if not merchant or receipt["status"] in {"superseded", "rejected", "withdrawn"}:
+            return ""
+        merchants.add(merchant)
+    return next(iter(merchants)) if len(merchants) == 1 else ""
+
+
+def _reporting_defaults(
+    current: CurrentRecords, settings: dict[str, list[dict[str, Any]]]
+) -> dict[str, str] | None:
+    """Suggest presentation basis only from unanimous, valid approved metadata."""
+    pairs = set()
+    for record in current.active("bookkeeping"):
+        reporting, issue = _reporting(current, settings, record, {}, check_basis=False)
+        if reporting is not None and issue is None:
+            pairs.add((reporting["recognition_basis"], reporting["date_basis"]))
+    if len(pairs) != 1:
+        return None
+    basis, date_basis = next(iter(pairs))
+    return {"recognition_basis": basis, "date_basis": date_basis}
+
+
 def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
     """One filtered population supplies rows, totals, groups, trends and reports."""
     q = normalize_query(filters)
@@ -791,6 +852,13 @@ def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
                     reason
                     or record.get("gaps")
                     or category.get("state") in {"unresolved", "proposed"}
+                    or (
+                        display_amount
+                        and (
+                            display_amount.get("exponent") is None
+                            or display_amount.get("precision_basis") == "currency-convention"
+                        )
+                    )
                 )
                 row = {
                     "record_ref": ref,
@@ -802,7 +870,7 @@ def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
                     "business_purpose": record.get("business_purpose", ""),
                     "counterparty": reporting.get("counterparty_label", "")
                     if reporting
-                    else record.get("merchant", ""),
+                    else record.get("merchant", "") or _receipt_merchant(current, record),
                     "counterparty_ref": reporting.get("counterparty_ref") if reporting else None,
                     "account_ref": record.get("account_ref"),
                     "category_ref": category.get("category_ref"),
@@ -1093,6 +1161,8 @@ def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
         "coverage": coverage,
         "exclusions": excluded,
         "undated_or_period_only": undated,
+        "reporting_defaults": _reporting_defaults(current, settings),
+        "record_labels": {row["record_ref"]: _record_label(row) for row in rows},
         "warnings": ["prepared/unposted; supported operating result, not posted books"],
     }
     if q.get("comparison"):

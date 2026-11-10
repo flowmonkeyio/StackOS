@@ -33,6 +33,18 @@ Keep the same period/basis/filter selection across views. Amounts retain exact
 minor-unit strings and currency precision, including values beyond JavaScript's
 integer precision. Currencies stay separate; missing revenue or incomplete
 coverage produces unavailable/partial profit, never invented zero or implicit FX.
+Legacy USD amounts without reviewed precision use two decimal places for display
+only, marked `precision_basis: currency-convention` with an explicit unreviewed
+warning. Stale or conflicting precision never uses this fallback. It does not
+contribute to financial recognition, and it remains unreviewed precision. Undated
+labels include a sanitized original document filename when linked, without
+inferring a date from the filename.
+
+The query's `record_labels` supplies human-readable labels for the complete
+filtered population so undated and drill-down links remain useful across
+pagination. These labels do not approve policy, infer dates/treatment or change
+ledger records. See [invoice reporting and verification](../../docs/finance-reporting-readiness.md)
+for the current behavior, evidence requirements and remaining limits.
 Business-wide views include shared/unassigned costs. Optional verified project
 labels do not infer allocation from customer names or require agency setup.
 

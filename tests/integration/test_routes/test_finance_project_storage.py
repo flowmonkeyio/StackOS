@@ -205,6 +205,60 @@ def test_managed_store_initializes_once_without_selection(api, project_id, setti
     assert (root / ".writer.lock").is_file()
 
 
+def test_unconfigured_finance_requires_explicit_enable_without_provisioning(
+    api, project_id, settings
+):
+    denied = call(api, "finance.status", {"project_id": project_id})
+    assert denied.status_code == 403
+    assert "plugin_not_enabled" in denied.text
+    assert not (settings.data_dir / "projects").exists()
+    assert api.post(f"/api/v1/projects/{project_id}/plugins/finance/enable").status_code == 200
+    # Setup changes enablement only. Opening Finance owns provisioning.
+    assert not (settings.data_dir / "projects").exists()
+
+
+def test_reenable_adopts_and_reuses_existing_finance_without_reset(
+    api, project_id, settings, legacy
+):
+    # Exercise the shipped browser credential through the real bearer middleware.
+    ui_headers = {"Authorization": f"Bearer {api.get('/api/v1/auth/ui-token').json()['token']}"}
+    _original(legacy["root"])
+    before = {
+        p.relative_to(legacy["root"]): p.read_bytes()
+        for p in legacy["root"].rglob("*")
+        if p.is_file() and p.name != ".writer.lock"
+    }
+    config_before = legacy["config"].read_bytes()
+    for _ in range(2):
+        assert api.post(f"/api/v1/projects/{project_id}/plugins/finance/disable").status_code == 200
+        assert (
+            api.post(
+                f"/api/v1/projects/{project_id}/plugins/finance/enable", headers=ui_headers
+            ).status_code
+            == 200
+        )
+    assert legacy["config"].read_bytes() == config_before
+    assert not (settings.data_dir / "projects").exists()
+    first = call(api, "finance.status", {"project_id": project_id})
+    assert first.status_code == 200, first.text
+    access = first.json()["data"]["access"][0]
+    target = settings.data_dir / "projects" / str(project_id) / "finance"
+    assert api.post(f"/api/v1/projects/{project_id}/plugins/finance/disable").status_code == 200
+    assert call(api, "finance.status", {"project_id": project_id}).status_code == 403
+    assert (
+        api.post(
+            f"/api/v1/projects/{project_id}/plugins/finance/enable", headers=ui_headers
+        ).status_code
+        == 200
+    )
+    again = call(api, "finance.status", {"project_id": project_id})
+    assert again.status_code == 200, again.text
+    assert again.json()["data"]["access"][0]["generation"] == access["generation"]
+    for relative, content in before.items():
+        assert (target / relative).read_bytes() == content
+        assert (legacy["root"] / relative).read_bytes() == content
+
+
 def test_reads_and_denied_status_do_not_create_a_store(api, project_id, settings):
     api.post(f"/api/v1/projects/{project_id}/plugins/finance/enable")
     arguments = {
@@ -579,6 +633,14 @@ def test_publication_marker_is_durable_until_completed_reconciliation(
     monkeypatch.setattr(FinanceConsole, "_clear_publication", clear)
     monkeypatch.setattr(builtin_finance, "_publish_directory", publish)
     resumed = call(api, "finance.status", {"project_id": project_id})
+    if boundary == "journal":
+        # A marker without custody metadata is ambiguous. Do not silently
+        # restart initialization and risk substituting an empty ledger.
+        assert resumed.status_code == 422
+        assert "storage_publication_incomplete" in resumed.text
+        assert marker.exists()
+        assert not (parent / "finance").exists()
+        return
     assert resumed.status_code == 200, resumed.text
     assert not marker.exists()
     assert json.loads((parent / "finance-state.json").read_text())["phase"] == "ready"

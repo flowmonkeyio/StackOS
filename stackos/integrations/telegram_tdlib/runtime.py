@@ -27,6 +27,19 @@ TDLIB_SOURCE_REPOSITORY = "https://github.com/tdlib/td.git"
 TDLIB_SOURCE_COMMIT = "d1085f9cebc5a62379991ae1652673954f229c1f"
 TDLIB_SOURCE_ARCHIVE_SHA256 = "5f5ebdb7f658b1a71ba6cb4f823017ad6649352427ce2a274cebc4b0dd2216e9"
 TDLIB_BUILD_MANIFEST_VERSION = 1
+TDLIB_REGISTRY_INPUT = {
+    "input_variant": "npm-prebuilt-0.1008067.0",
+    "mode": "verified-registry-prebuilt",
+    "source_verification": "registry-integrity-pinned",
+    "package": "@prebuilt-tdlib/darwin-arm64",
+    "package_version": "0.1008067.0",
+    "package_url": "https://registry.npmjs.org/@prebuilt-tdlib/darwin-arm64/-/darwin-arm64-0.1008067.0.tgz",
+    "package_integrity": (
+        "sha512-dFefumR1NX2SSYf9p6fXyeLxw1+EL00Qe86ECqbtllWdP476gseScqU34hSzaR4RYsIuQZJDjaYGt1v2YiI7HA=="
+    ),
+    "package_sha256": "84aac79ec7b8892798744963aad4590750f3f4c21c5976503d5b47202882f89a",
+    "input_sha256": "67ea9d6f0494ca88c57b97f4d779977b764465773ef137d10099c8c75f555303",
+}
 TDLIB_VERSION = "1.8.67"
 TDLIB_RUNTIME_REPAIR = (
     "Telegram delivery is unavailable because the managed TDLib runtime is missing or invalid. "
@@ -142,16 +155,22 @@ def verify_tdlib_runtime(*, runtime_root: Path) -> TelegramTdlibRuntime:
         raise TelegramTdlibRuntimeError(
             "Telegram runtime manifest has an unexpected source commit."
         )
-    try:
-        source_archive_sha256 = _require_string(manifest, "source", "archive_sha256")
-    except TelegramTdlibRuntimeError as exc:
-        raise TelegramTdlibRuntimeError(
-            "Telegram runtime manifest has an unexpected source archive digest."
-        ) from exc
-    if source_archive_sha256 != TDLIB_SOURCE_ARCHIVE_SHA256:
-        raise TelegramTdlibRuntimeError(
-            "Telegram runtime manifest has an unexpected source archive digest."
-        )
+    registry_input = (
+        _manifest_value(manifest, "build", "input_variant") == TDLIB_REGISTRY_INPUT["input_variant"]
+    )
+    if registry_input:
+        # Registry artifacts have their own pinned provenance. Do not claim that
+        # a third-party published binary was rebuilt from our legacy git archive.
+        for key, expected in TDLIB_REGISTRY_INPUT.items():
+            if _manifest_value(manifest, "build", key) != expected:
+                raise TelegramTdlibRuntimeError(
+                    "Telegram runtime manifest has unexpected registry provenance."
+                )
+    else:
+        if _manifest_value(manifest, "source", "archive_sha256") != TDLIB_SOURCE_ARCHIVE_SHA256:
+            raise TelegramTdlibRuntimeError(
+                "Telegram runtime manifest has an unexpected source archive digest."
+            )
     if _require_integer(manifest, "build", "manifest_version") != TDLIB_BUILD_MANIFEST_VERSION:
         raise TelegramTdlibRuntimeError(
             "Telegram runtime manifest has an unsupported build manifest version."
@@ -160,13 +179,9 @@ def verify_tdlib_runtime(*, runtime_root: Path) -> TelegramTdlibRuntime:
         raise TelegramTdlibRuntimeError(
             "Telegram runtime manifest has an unsupported native dependency policy."
         )
-    try:
-        build_source_archive_sha256 = _require_string(manifest, "build", "source_archive_sha256")
-    except TelegramTdlibRuntimeError as exc:
-        raise TelegramTdlibRuntimeError(
-            "Telegram runtime manifest has an unexpected build source archive digest."
-        ) from exc
-    if build_source_archive_sha256 != TDLIB_SOURCE_ARCHIVE_SHA256:
+    if not registry_input and (
+        _manifest_value(manifest, "build", "source_archive_sha256") != TDLIB_SOURCE_ARCHIVE_SHA256
+    ):
         raise TelegramTdlibRuntimeError(
             "Telegram runtime manifest has an unexpected build source archive digest."
         )

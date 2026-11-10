@@ -1,5 +1,55 @@
 # Plugins
 
+## Recovering an unmapped historical Finance directory
+
+The local operator command `stackos finance-recover` is for a historical ledger
+that has no legacy access mapping and has never been initialized in managed
+storage. It is not an agent permission workaround and is not exposed through
+MCP or REST. It does not enable Finance, change grants, or fabricate a mapping.
+
+First obtain an inert preview:
+
+```bash
+stackos finance-recover --project-id PROJECT_ID --source /absolute/workspace/finance
+```
+
+Review the permanent project ID, workspace binding, source root identity, master
+hash and revision, all record counts, verified attachments, and destination.
+The source must be a dedicated directory below a uniquely most-specific workspace
+bound to that project. Generic ancestor bindings do not override a nearer binding;
+equal-root conflicts and another project's binding nested inside the source block
+recovery. Every original must pass custody checks. Symlinks, ambiguous
+bindings, existing target stores and any legacy mappings block this recovery.
+
+After reviewing the preview, stop StackOS (including its desktop app) and apply
+using the exact `confirmation_sha256` returned by the preview:
+
+```bash
+stackos stop
+stackos finance-recover --project-id PROJECT_ID --source /absolute/workspace/finance \
+  --apply --confirmation-sha256 REVIEWED_PREVIEW_SHA256
+stackos start
+```
+
+The command refuses apply while the daemon port is active. It pins the source
+under its existing writer lock, validates and copies the complete tree into
+private managed storage, checks bytes/counts again, and atomically publishes
+standard project custody metadata. Original files and their permissions are
+unchanged. New copies use private permissions. No financial record is rewritten
+and no empty ledger is initialized. Recovery provenance remains in project
+storage metadata; the database is opened read-only.
+
+An exact repeat verifies and returns the already-applied result without replacing
+anything. A stopped publication with saved custody metadata can be resumed with the same command;
+changed sources, altered copies or another target's metadata block retry. Never
+delete a publication marker to bypass a blocked recovery. An interruption before
+custody metadata is saved leaves a marker-only state and requires operator repair;
+both normal Finance startup and this command fail closed rather than initialize
+an empty ledger. The source and staged copy remain available for inspection.
+Keep the preview and
+originals until the installed Finance view is verified. After successful recovery,
+use the existing Plugins enable control and verify the original record counts.
+
 Plugins are StackOS domain packages. They let the core stay generic while each
 domain brings its own capabilities, providers, resources, actions, workflow
 templates, and optional navigation.
@@ -8,6 +58,24 @@ Read the canonical
 [`Product Contract`](./product-direction.md#product-contract) before adding a
 plugin or moving behavior between plugin and core. Domain method belongs here;
 only reusable, domain-agnostic product primitives belong in core.
+
+## Project enablement
+
+The project Plugins page distinguishes **Available** (not explicitly configured),
+**Disabled**, and **Enabled** (explicitly enabled). Use **Enable for project** to
+persist enablement through the existing local-admin plugin operation. This does
+not grant agent tools, connect credentials or execute plugin workflows. Failures
+stay visible and may be retried; switching projects cannot apply a delayed result
+to the new project.
+
+Finance requires explicit enablement. Enabling or re-enabling Finance does not
+create or reset financial records. Opening Finance resolves its managed store,
+or adopts a uniquely mapped legacy store through the existing custody-checked
+migration. That process retains original files and refuses ambiguous/revoked
+legacy mappings. Before opening Finance after an upgrade, verify that historical
+host-owned files have their valid legacy access mapping; do not delete a mapping
+or manually create an empty master to clear a recovery error. Unmapped files
+outside managed storage are not automatically discovered or imported.
 
 ## Manifest
 

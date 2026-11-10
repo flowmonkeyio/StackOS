@@ -5,6 +5,22 @@ import PluginDirectoryCard from './PluginDirectoryCard.vue'
 import type { PluginDirectoryItem } from './viewModel'
 
 describe('PluginDirectoryCard', () => {
+  it.each([null, false, true])('renders explicit enablement %s truthfully', async (enabled) => {
+    const item = directoryItem(0)
+    item.plugin.enabled_for_project = enabled
+    const wrapper = mount(PluginDirectoryCard, { props: { item } })
+    expect(wrapper.text()).toContain(enabled === true ? 'Enabled' : enabled === false ? 'Disabled' : 'Available')
+    const button = wrapper.find('button[aria-label="Enable SEO for this project"]')
+    expect(button.exists()).toBe(enabled !== true)
+    if (button.exists()) {
+      await button.trigger('click')
+      expect(wrapper.emitted('enable')).toHaveLength(1)
+      await wrapper.setProps({ enabling: true })
+      expect(button.attributes('disabled')).toBeDefined()
+      expect(button.attributes('aria-busy')).toBe('true')
+    }
+  })
+
   it('keeps description and provider content in stable card tracks', () => {
     const wrapper = mount(PluginDirectoryCard, { props: { item: directoryItem(5) } })
 
