@@ -37,6 +37,12 @@ prepared/unposted entries are not posted books. Missing income is not zero.
   cover selection-wide counts, prior-period charts, detail markers, precision review,
   filename labels, and safe linked-merchant fallback.
 - Independent review found no remaining blocker in this diff.
+- Installed development build `20261110T211726Z` (`2.1.44`) after preserving the
+  previous app. Actual installed-app verification confirmed Running, the readiness
+  explanation, readable undated document labels, a single analysis-request control,
+  and decimal display-only USD amounts in Expenses & income. `stackos doctor --json`
+  returned `ok: true`; the installed runtime's read-only `finance.query` succeeded.
+  Existing managed/original Finance file hashes and modes remained unchanged.
 - Repository-wide `make signoff` remains blocked by existing lint errors in retained
   release/report scripts; this patch does not claim complete repository signoff.
 - Recognition totals still require evidence-backed reporting setup and confirmed
