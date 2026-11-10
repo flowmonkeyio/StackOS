@@ -434,6 +434,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         openapi_url="/api/openapi.json",
     )
     app.state.ui_token = ui_token
+    app.state.settings = settings
     app.dependency_overrides[get_settings] = lambda: settings
 
     # Middleware order — Starlette runs the *last-added* first on the

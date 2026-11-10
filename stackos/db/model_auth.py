@@ -18,6 +18,22 @@ from sqlmodel import Field, SQLModel
 from stackos.db.model_base import _utcnow
 
 
+class UserSession(SQLModel, table=True):
+    """Opaque browser sessions; Supabase credentials never leave the server."""
+
+    __tablename__ = "user_sessions"
+
+    token_digest: str = Field(primary_key=True, max_length=64)
+    environment_id: str = Field(max_length=63)
+    server_origin: str = Field(max_length=200)
+    user_id: str = Field(max_length=36)
+    csrf_digest: str = Field(max_length=64)
+    encrypted_payload: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
+    nonce: bytes = Field(sa_column=Column(LargeBinary, nullable=False))
+    expires_at: int
+    recovery: bool = False
+
+
 class AuthProvider(SQLModel, table=True):
     """Auth provider metadata derived from plugin provider declarations."""
 

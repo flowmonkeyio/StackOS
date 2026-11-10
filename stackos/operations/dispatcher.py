@@ -75,6 +75,8 @@ class OperationDispatcher:
         ctx.extras["auth_scope"] = auth_scope
         if settings is not None:
             ctx.extras["settings"] = settings
+            if settings.process_role == "server" and ctx.principal is None:
+                raise ToolNotGrantedError("server operations require a verified user principal")
         with bind_context(ctx):
             if (
                 ctx.run is not None

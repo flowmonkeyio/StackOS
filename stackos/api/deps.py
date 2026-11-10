@@ -59,6 +59,7 @@ def get_session(request: Request, engine: Engine = Depends(get_engine)) -> Itera
     """
     with Session(engine) as session:
         session.info["operation_services"] = getattr(request.app.state, "operation_services", {})
+        session.info["user_principal"] = getattr(request.state, "principal", None)
         yield session
 
 

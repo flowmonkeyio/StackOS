@@ -218,6 +218,22 @@ class Settings(_StateSettings):
                 raise ValueError("local Auth requires its own private signing_keys.json")
             if api.get("enabled") is not True or auth.get("enabled") is not True:
                 raise ValueError("selected Supabase API and Auth must be enabled")
+            if auth.get("email", {}).get("enable_confirmations") is not True:
+                raise ValueError("selected Auth must require email confirmation")
+            for template, kind in (("confirmation", "signup"), ("recovery", "recovery")):
+                relative = f"./supabase/templates/{template}.html"
+                template_path = root / relative
+                if (
+                    auth["email"]["template"][template]["content_path"] != relative
+                    or root not in template_path.resolve().parents
+                    or template_path.stat().st_mode & 0o077
+                    or template_path.read_text()
+                    != (
+                        '<p><a href="{{ .SiteURL }}/api/v1/auth/callback?token_hash='
+                        "{{ .TokenHash }}&amp;type=" + kind + '">Confirm your StackOS email</a></p>'
+                    )
+                ):
+                    raise ValueError("selected Auth email templates must use the StackOS callback")
             ports = [self.port, api["port"], db["port"], db["shadow_port"]]
             for section in ("studio", "inbucket", "analytics", "edge_runtime"):
                 service = config.get(section, {})

@@ -29,6 +29,7 @@ from stackos.db.model_auth import (
     OAuthState,
     ProjectCredential,
     TelegramApplication,
+    UserSession,
 )
 from stackos.db.model_browser import BrowserActionReceipt, BrowserProfile, BrowserSession
 from stackos.db.model_context import (
@@ -228,6 +229,7 @@ __all__ = [
     "TrackerTicketLink",
     "TrackerTicketReference",
     "TrackerTombstone",
+    "UserSession",
     "WorkItemOwnership",
     "WorkflowTemplate",
     "WorkflowTemplateExtension",

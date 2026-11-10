@@ -77,7 +77,7 @@ def test_postgres_migrate_cli_reports_safe_success(postgres_settings: Settings) 
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "migrate: alembic upgraded to head (Postgres)."
-    assert current_alembic_version(postgres_settings) == "0037_schedule_id_nonreuse"
+    assert current_alembic_version(postgres_settings) == "0038_user_sessions"
     assert postgres_settings.database_url is not None
     url = postgres_settings.database_url.get_secret_value()
     password = sa.engine.make_url(url).password
@@ -98,7 +98,7 @@ def test_postgres_migration_repositories_and_private_schema(postgres_settings: S
 
     selected = postgres_settings
     assert upgrade_to_head(selected).stamped_existing_schema is False
-    assert current_alembic_version(selected) == "0037_schedule_id_nonreuse"
+    assert current_alembic_version(selected) == "0038_user_sessions"
     engine = make_settings_engine(selected)
     assert engine.dialect.name == "postgresql"
     try:
@@ -307,6 +307,7 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "approval_requests",
         "artifacts",
         "auth_providers",
+        "user_sessions",
         "browser_action_receipts",
         "browser_profiles",
         "browser_sessions",
@@ -892,7 +893,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0037_schedule_id_nonreuse",
+            "0038_user_sessions",
         )
     finally:
         conn.close()
@@ -2181,8 +2182,8 @@ def test_workflow_schedule_migration_preserves_history_and_disarms_legacy(
             .data
         )
     engine.dispose()
-    _run_alembic(["upgrade", "head"])
-    _run_alembic(["upgrade", "head"])
+    _run_alembic(["upgrade", "0037_schedule_id_nonreuse"])
+    _run_alembic(["upgrade", "0037_schedule_id_nonreuse"])
     engine = make_engine(isolated_alembic)
     with Session(engine) as session:
         row = session.get(ScheduledJob, 41)
@@ -2316,8 +2317,8 @@ def test_schedule_id_upgrade_retains_removed_history_and_sequence(
         if not keep_live_schedule:
             schedules.remove(live.id, project_id=1)
     engine.dispose()
-    _run_alembic(["upgrade", "head"])
-    _run_alembic(["upgrade", "head"])
+    _run_alembic(["upgrade", "0037_schedule_id_nonreuse"])
+    _run_alembic(["upgrade", "0037_schedule_id_nonreuse"])
     engine = make_engine(isolated_alembic)
     with Session(engine) as session:
         schedules = ScheduledJobRepository(session)
@@ -2510,7 +2511,7 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
         tables_before = _list_tables(isolated_alembic)
     _run_alembic(["upgrade", "head"])
     with sqlite3.connect(isolated_alembic) as conn:
-        assert _list_tables(isolated_alembic) == tables_before
+        assert _list_tables(isolated_alembic) == tables_before | {"user_sessions"}
         for table, rows in before.items():
             assert conn.execute(f"SELECT * FROM {table}").fetchall() == rows
         configs = {

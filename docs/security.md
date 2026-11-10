@@ -4,6 +4,58 @@ This document records security trade-offs and threat-model decisions that
 deviate from the simplest "lock everything down" posture. Each section
 explains *what* is loosened, *why*, and *what* still defends the surface.
 
+## Selected online server authentication
+
+An explicit `process_role=server` uses Supabase Auth through StackOS alone.
+The standalone daemon posture below does not authorize an online request:
+neither the disk daemon bearer nor `/api/v1/auth/ui-token` grants server access.
+Fresh environments prepared by `scripts/prepare-local-supabase.py` require
+email confirmation and private confirmation/recovery templates pointing to
+StackOS. Settings validates those templates and their selected origin. No
+registration path assigns ownership to existing projects or Accounts.
+
+The REST contract under `/api/v1/auth` is:
+
+| Route | Behavior |
+| --- | --- |
+| `POST /register` | Email/password registration; returns `verification_pending`. |
+| `POST /resend`, `POST /recover` | Request another confirmation or recovery email. Provider throttling returns `retry_later`; unavailable Auth returns retryable 503. |
+| `GET /callback` | Display an explicit email confirmation form without consuming the code. |
+| `POST /callback`, `POST /verify` | Exchange the one-time `token_hash` and `type=signup/recovery` server-side. Expired/consumed codes fail; request another email to retry. Callback redirects only to the same StackOS root. |
+| `POST /login` | Password sign-in, followed by provider verification of the confirmed user. |
+| `GET /session` | Safe user/environment identity, state and CSRF token. |
+| `POST /refresh` | Rotate server-held Supabase credentials under a row lock; contention returns retryable `session_busy` (409). |
+| `POST /logout` | Revoke the local session immediately; report whether provider revocation succeeded. |
+| `POST /password` | Recovery-session password reset; invalidate all StackOS sessions for that user/environment and require sign-in. |
+
+Browser credentials are random opaque HttpOnly, SameSite=Strict, host-only
+cookies. Their names include a digest of environment and exact origin because
+cookies ignore ports. The persisted session also binds user, environment and
+origin; renaming a cookie cannot replay it into another environment. Supabase
+access/refresh tokens remain encrypted in `user_sessions` with the server seed
+and authenticated session/environment/origin identity. They never appear in
+browser JSON or URLs. Normal sessions expire after seven days; recovery sessions
+expire after fifteen minutes and permit only session inspection, reset and logout.
+Provider `/user` verification protects authenticated requests. Access-token expiry
+requires an explicit refresh; invalid/expired server sessions require sign-in.
+
+Every online write requires the exact selected `Origin`, including sign-in,
+registration and verification. Session writes also require `X-CSRF-Token` from
+the same-origin session response. Online auth responses disable caching; email
+callbacks suppress query-bearing referrers and framing. HTTPS uses Secure cookies; the approved
+isolated loopback HTTP topology cannot use that flag. The confirmation form
+avoids consuming links on email-scanner GETs. See Supabase's
+[email template contract](https://supabase.com/docs/guides/local-development/customizing-email-templates)
+and [local sign-out scope](https://supabase.com/docs/guides/auth/signout).
+
+Private consumers currently fail closed with `owner_boundary_required` pending
+the dependent project-privacy delivery. It must enforce persisted ownership plus
+existing grants before admitting those routes. A provider-verified `UserPrincipal`
+is carried on request state and into operation context through the server-owned
+session; caller arguments cannot assert that identity. Native runtime admission
+is separate subsequent work. This auth ticket does not claim project privacy,
+desktop login UI, native execution, or installed-product proof.
+
 ## Local Daemon Auth Posture
 
 Google service-account JSON keys use the existing encrypted Account backing.

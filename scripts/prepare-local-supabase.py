@@ -146,6 +146,12 @@ minimum_password_length = 8
 [auth.email]
 enable_signup = true
 enable_confirmations = true
+[auth.email.template.confirmation]
+subject = "Confirm your StackOS email"
+content_path = "./supabase/templates/confirmation.html"
+[auth.email.template.recovery]
+subject = "Recover your StackOS access"
+content_path = "./supabase/templates/recovery.html"
 [realtime]
 enabled = false
 [storage]
@@ -157,6 +163,13 @@ enabled = false
 '''
     _write_private(workdir / "supabase/config.toml", config)
     _write_private(workdir / "supabase/signing_keys.json", _signing_key())
+    (workdir / "supabase/templates").mkdir(mode=0o700)
+    for template, kind in (("confirmation", "signup"), ("recovery", "recovery")):
+        _write_private(
+            workdir / f"supabase/templates/{template}.html",
+            '<p><a href="{{ .SiteURL }}/api/v1/auth/callback?token_hash='
+            "{{ .TokenHash }}&amp;type=" + kind + '">Confirm your StackOS email</a></p>',
+        )
     common = {
         "STACKOS_ENVIRONMENT_ID": environment_id,
         "STACKOS_SERVER_URL": server_url,

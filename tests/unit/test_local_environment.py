@@ -72,6 +72,20 @@ def test_server_and_runtime_share_only_explicit_target(prepared: Path) -> None:
     assert prepared.stat().st_mode & 0o777 == 0o700
 
 
+@pytest.mark.parametrize("tamper", ["disable_confirmation", "direct_provider_link"])
+def test_auth_templates_cannot_bypass_stackos(prepared: Path, tamper: str) -> None:
+    if tamper == "disable_confirmation":
+        path = prepared / "supabase/config.toml"
+        path.write_text(
+            path.read_text().replace("enable_confirmations = true", "enable_confirmations = false")
+        )
+    else:
+        path = prepared / "supabase/templates/confirmation.html"
+        path.write_text('<a href="http://127.0.0.1:18521/auth/v1/verify">Confirm</a>')
+    with pytest.raises(ValidationError):
+        _settings(prepared)
+
+
 @pytest.mark.parametrize(
     "changes",
     [

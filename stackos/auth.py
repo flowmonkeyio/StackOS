@@ -1,9 +1,9 @@
-"""Per-install bearer-token authentication.
+"""Standalone bearer authentication and selected-server user sessions.
 
-Single token at `state_dir/auth.token`. Generated on first daemon start.
-Required on every REST and MCP request. The `/api/v1/health` endpoint is
-explicitly whitelisted so `doctor` can probe liveness *before* it has the
-token resolved (e.g., when diagnosing token-related failures).
+Standalone uses a token at `state_dir/auth.token`, generated on first start.
+Selected servers use provider-verified, environment-bound opaque sessions and
+never accept standalone bootstrap/admin authority. Public health probes need
+neither credential.
 """
 
 from __future__ import annotations
@@ -11,15 +11,27 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import json
 import os
 import secrets
 import stat
+import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+from uuid import UUID
 
-from fastapi import Request
+import httpx
+from fastapi import HTTPException, Request
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import OperationalError
+from sqlmodel import Session, col, select
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
+
+from stackos.config import Settings
+from stackos.crypto import CryptoError, decrypt, encrypt, load_seed
+from stackos.db.model_auth import UserSession
 
 # Bearer-token enforcement is scoped to API surfaces only. The browser must
 # be able to load the static UI bundle (`/`, `/assets/*`, `/favicon.ico`)
@@ -280,6 +292,9 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
         call_next: RequestResponseEndpoint,
     ) -> Response:
         """Compare the bearer token in constant time before forwarding."""
+        settings = getattr(request.app.state, "settings", None)
+        if settings is not None and settings.process_role == "server":
+            return await _server_dispatch(request, call_next, settings)
         if request.method == "GET" and request.url.path == _OAUTH_CALLBACK_PATH:
             # This exact route is authorized by the short-lived, bound,
             # one-time OAuth transaction. No other method/path inherits it.
@@ -319,4 +334,281 @@ class BearerTokenMiddleware(BaseHTTPMiddleware):
             {"detail": "invalid bearer token"},
             status_code=401,
             headers={"www-authenticate": 'Bearer realm="stackos"'},
+        )
+
+
+@dataclass(frozen=True)
+class UserPrincipal:
+    """Provider-verified identity, never a caller-supplied owner ID."""
+
+    user_id: str
+    environment_id: str
+
+
+def _digest(value: str) -> str:
+    return hashlib.sha256(value.encode()).hexdigest()
+
+
+def session_cookie_name(settings: Settings) -> str:
+    # Cookies ignore ports. Bind both the name and persisted credential to the
+    # exact selected origin, even when two environments share 127.0.0.1.
+    return "stackos_session_" + _digest(f"{settings.environment_id}:{settings.server_url}")[:24]
+
+
+class ServerAuth:
+    """Supabase transport and minimal server session ownership."""
+
+    def __init__(self, settings: Settings, session: Session) -> None:
+        if settings.process_role != "server":
+            raise HTTPException(404, "user authentication requires the selected server")
+        self.settings = settings
+        self.session = session
+
+    async def call(
+        self,
+        method: str,
+        path: str,
+        *,
+        payload: dict[str, Any] | None = None,
+        access_token: str | None = None,
+    ) -> dict[str, Any]:
+        assert self.settings.supabase_anon_key is not None
+        headers = {"apikey": self.settings.supabase_anon_key.get_secret_value()}
+        if access_token:
+            headers["Authorization"] = f"Bearer {access_token}"
+        try:
+            async with httpx.AsyncClient(
+                timeout=10, follow_redirects=False, trust_env=False
+            ) as client:
+                response = await client.request(
+                    method,
+                    f"{self.settings.supabase_url}/auth/v1/{path}",
+                    headers=headers,
+                    json=payload,
+                )
+            if not response.is_success:
+                code = "authentication_failed"
+                if response.status_code == 429:
+                    raise HTTPException(429, {"code": "retry_later", "retryable": True})
+                if response.status_code >= 500:
+                    raise HTTPException(503, {"code": "auth_unavailable", "retryable": True})
+                if path.startswith("token"):
+                    code = "sign_in_failed_or_email_unverified"
+                if path == "verify":
+                    code = "verification_expired_or_invalid"
+                raise HTTPException(401, {"code": code, "retryable": False})
+            result = response.json() if response.content else {}
+            if not isinstance(result, dict):
+                raise ValueError("unexpected Auth response")
+            return result
+        except (httpx.HTTPError, ValueError) as exc:
+            raise HTTPException(503, {"code": "auth_unavailable", "retryable": True}) from exc
+
+    async def principal(self, access_token: str) -> UserPrincipal:
+        user = await self.call("GET", "user", access_token=access_token)
+        try:
+            user_id = str(UUID(user["id"]))
+            if not user.get("email_confirmed_at"):
+                raise ValueError("email not verified")
+        except (KeyError, ValueError, TypeError) as exc:
+            raise HTTPException(401, {"code": "email_verification_required"}) from exc
+        return UserPrincipal(user_id, self.settings.environment_id or "")
+
+    def tokens(self, row: UserSession) -> dict[str, Any]:
+        try:
+            return json.loads(
+                decrypt(
+                    row.encrypted_payload,
+                    nonce=row.nonce,
+                    project_id=None,
+                    kind=f"user-session:{row.environment_id}:{row.server_origin}:{row.token_digest}",
+                    seed=load_seed(self.settings.seed_path),
+                )
+            )
+        except (CryptoError, ValueError) as exc:
+            raise HTTPException(401, {"code": "session_invalid_sign_in_required"}) from exc
+
+    def save_tokens(self, row: UserSession, tokens: dict[str, Any]) -> None:
+        row.encrypted_payload, row.nonce = encrypt(
+            json.dumps(tokens).encode(),
+            project_id=None,
+            kind=f"user-session:{row.environment_id}:{row.server_origin}:{row.token_digest}",
+            seed=load_seed(self.settings.seed_path),
+        )
+        self.session.add(row)
+        self.session.commit()
+
+    async def create(
+        self,
+        tokens: dict[str, Any],
+        response: Response,
+        *,
+        recovery: bool = False,
+        previous_cookie: str | None = None,
+    ) -> dict[str, Any]:
+        principal = await self.principal(tokens.get("access_token", ""))
+        if not tokens.get("refresh_token"):
+            raise HTTPException(401, {"code": "session_missing"})
+        opaque, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+        row = UserSession(
+            token_digest=_digest(opaque),
+            environment_id=principal.environment_id,
+            server_origin=self.settings.server_url or "",
+            user_id=principal.user_id,
+            csrf_digest=_digest(csrf),
+            encrypted_payload=b"",
+            nonce=b"",
+            expires_at=int(time.time()) + (900 if recovery else 604800),
+            recovery=recovery,
+        )
+        if previous_cookie:
+            for previous in self.lock_rows(
+                select(UserSession).where(
+                    col(UserSession.token_digest) == _digest(previous_cookie),
+                    col(UserSession.environment_id) == principal.environment_id,
+                    col(UserSession.server_origin) == row.server_origin,
+                )
+            ):
+                self.session.delete(previous)
+        self.save_tokens(
+            row,
+            {
+                "access_token": tokens["access_token"],
+                "refresh_token": tokens["refresh_token"],
+                "csrf": csrf,
+            },
+        )
+        response.set_cookie(
+            session_cookie_name(self.settings),
+            opaque,
+            httponly=True,
+            secure=(self.settings.server_url or "").startswith("https:"),
+            samesite="strict",
+            max_age=900 if recovery else 604800,
+            path="/",
+        )
+        return {
+            "status": "recovery_required" if recovery else "authenticated",
+            "user_id": principal.user_id,
+            "environment_id": principal.environment_id,
+            "csrf_token": csrf,
+        }
+
+    def resolve(self, request: Request, *, lock: bool = False) -> UserSession:
+        value = request.cookies.get(session_cookie_name(self.settings), "")
+        query = select(UserSession).where(UserSession.token_digest == _digest(value))
+        rows = self.lock_rows(query) if lock else list(self.session.exec(query).all())
+        row = rows[0] if rows else None
+        if (
+            row is None
+            or row.environment_id != self.settings.environment_id
+            or row.server_origin != self.settings.server_url
+            or row.expires_at <= time.time()
+        ):
+            raise HTTPException(401, {"code": "session_expired_or_invalid"})
+        return row
+
+    def lock_rows(self, query: Any) -> list[UserSession]:
+        # No synchronous lock wait while this async caller holds a lock over a
+        # provider await. The same rule covers refresh, logout, login replacement
+        # and recovery revocation, rather than only the first observed caller.
+        try:
+            return list(self.session.exec(query.with_for_update(nowait=True)).all())
+        except OperationalError as exc:
+            self.session.rollback()
+            if getattr(exc.orig, "sqlstate", None) == "55P03":
+                raise HTTPException(409, {"code": "session_busy", "retryable": True}) from exc
+            raise
+
+    def csrf(self, request: Request, row: UserSession) -> None:
+        check_server_origin(request, self.settings, required=True)
+        if not secrets.compare_digest(
+            _digest(request.headers.get("x-csrf-token", "")), row.csrf_digest
+        ):
+            raise HTTPException(403, {"code": "csrf_failed"})
+
+
+def check_server_origin(request: Request, settings: Settings, *, required: bool) -> None:
+    origin = request.headers.get("origin")
+    if (
+        (required or origin is not None) and origin != settings.server_url
+    ) or f"{request.url.scheme}://{request.url.netloc}" != settings.server_url:
+        raise HTTPException(403, {"code": "origin_failed"})
+
+
+async def _server_dispatch(
+    request: Request,
+    call_next: RequestResponseEndpoint,
+    settings: Settings,
+) -> Response:
+    """No local-admin/bootstrap fallback in a selected online environment."""
+    path, method = request.url.path, request.method
+    if not (path.startswith(("/api/", "/mcp", "/generated-assets"))):
+        return await call_next(request)
+    try:
+        check_server_origin(request, settings, required=method not in {"GET", "HEAD", "OPTIONS"})
+        public = {("GET", "/api/v1/health"), ("GET", "/api/v1/auth/callback")}
+        public.update(
+            ("POST", f"/api/v1/auth/{name}")
+            for name in (
+                "register",
+                "login",
+                "verify",
+                "callback",
+                "resend",
+                "recover",
+            )
+        )
+        if (method, path) in public:
+            response = await call_next(request)
+        else:
+            if path == "/api/v1/auth/ui-token":
+                raise HTTPException(401, {"code": "sign_in_required"})
+            with Session(request.app.state.engine) as session:
+                auth = ServerAuth(settings, session)
+                row = auth.resolve(request)
+                if method not in {"GET", "HEAD", "OPTIONS"}:
+                    auth.csrf(request, row)
+                # Refresh/logout must remain usable after the access JWT expires.
+                if path not in {"/api/v1/auth/refresh", "/api/v1/auth/logout"}:
+                    request.state.principal = await auth.principal(auth.tokens(row)["access_token"])
+                    if request.state.principal.user_id != row.user_id:
+                        raise HTTPException(401, {"code": "session_invalid"})
+                request.state.auth_scope = "verified-user"
+                if row.recovery and path not in {
+                    "/api/v1/auth/password",
+                    "/api/v1/auth/logout",
+                    "/api/v1/auth/session",
+                }:
+                    raise HTTPException(403, {"code": "password_reset_required"})
+                # The dependent privacy ticket adapts private consumers to persisted
+                # ownership. Until then no global/project/admin route is admitted.
+                if path not in {
+                    f"/api/v1/auth/{name}"
+                    for name in (
+                        "session",
+                        "refresh",
+                        "logout",
+                        "password",
+                    )
+                }:
+                    raise HTTPException(403, {"code": "owner_boundary_required"})
+            response = await call_next(request)
+        if path.startswith("/api/v1/auth/"):
+            response.headers.update(
+                {
+                    "Cache-Control": "no-store",
+                    # Chromium makes form Origin null under no-referrer. Sending
+                    # only the origin preserves CSRF enforcement without the code.
+                    "Referrer-Policy": "strict-origin"
+                    if (method, path) == ("GET", "/api/v1/auth/callback")
+                    else "no-referrer",
+                }
+            )
+        return response
+    except HTTPException as exc:
+        return JSONResponse(
+            {"detail": exc.detail},
+            status_code=exc.status_code,
+            headers={"Cache-Control": "no-store"},
         )
