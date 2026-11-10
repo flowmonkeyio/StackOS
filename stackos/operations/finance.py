@@ -290,6 +290,7 @@ class FinanceProjectionOut(BaseModel):
     exclusions: list[dict[str, Any]]
     undated_or_period_only: list[str]
     reporting_readiness: dict[str, Any] = Field(default_factory=dict)
+    reporting_defaults: dict[str, str] | None = Field(default_factory=lambda: None)
     record_labels: dict[str, str] = Field(default_factory=dict)
     warnings: list[str]
     comparison: dict[str, Any] | None = None

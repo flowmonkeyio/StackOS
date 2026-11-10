@@ -6,7 +6,13 @@ import json
 import pytest
 
 from tests.helpers.finance_workspace import money, record
-from tests.unit.test_finance_management import QUERY, fixture_document, management, snapshot
+from tests.unit.test_finance_management import (
+    QUERY,
+    fixture_document,
+    management,
+    metadata,
+    snapshot,
+)
 
 
 def test_legacy_readiness_is_full_population_without_adopting_metadata():
@@ -159,3 +165,25 @@ def test_linked_receipt_merchant_requires_unanimous_active_labels():
     assert module._receipt_merchant(module.CurrentRecords(document), bookkeeping) == ""
     document["receipts"][-1]["merchant"] = ""
     assert module._receipt_merchant(module.CurrentRecords(document), bookkeeping) == ""
+
+
+def test_reporting_defaults_use_only_unanimous_valid_metadata_without_changing_query():
+    document = fixture_document()
+    document["operating_settings"] = []
+    document["reviews"] = []
+    assert management().query(snapshot(document), QUERY)["reporting_defaults"] is None
+    first = document["bookkeeping"][0]
+    metadata(document, first, recognition_basis="accrual", date_basis="issue")
+    result = management().query(snapshot(document), QUERY)
+    assert result["reporting_defaults"] == {"recognition_basis": "accrual", "date_basis": "issue"}
+    assert result["query"]["recognition_basis"] == "cash"
+    assert result["query"]["date_basis"] == "transaction"
+    assert result["reporting_readiness"]["supported_bookkeeping_count"] == 0
+    metadata(document, document["bookkeeping"][1])
+    assert management().query(snapshot(document), QUERY)["reporting_defaults"] is None
+    document["bookkeeping"][1]["date"] = "2026-09-04"  # stale second metadata cannot set defaults
+    assert (
+        management().query(snapshot(document), QUERY)["reporting_defaults"]["date_basis"] == "issue"
+    )
+    document["operating_settings"][0]["status"] = "proposed"
+    assert management().query(snapshot(document), QUERY)["reporting_defaults"] is None

@@ -144,6 +144,41 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 describe('Finance management', () => {
+  it('uses approved invoice basis once without resetting an explicit filter selection', async () => {
+    const original = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name === 'finance.query')
+        return {
+          data: {
+            ...projection(args),
+            reporting_defaults: { recognition_basis: 'accrual', date_basis: 'issue' },
+          },
+        }
+      return original(name, args)
+    })
+    const { wrapper } = await mounted()
+    const queries = () =>
+      vi.mocked(callOperation).mock.calls.filter((call) => call[0] === 'finance.query')
+    expect(queries()).toHaveLength(2)
+    expect(queries().at(-1)![1]).toMatchObject({
+      recognition_basis: 'accrual',
+      date_basis: 'issue',
+    })
+    expect(wrapper.text()).toContain('Invoice amounts are incomplete')
+    expect(wrapper.text()).not.toContain('Reporting setup needed')
+    const filters = wrapper.findComponent({ name: 'FinanceFilters' })
+    filters.vm.$emit('apply', {
+      ...queries().at(-1)![1],
+      recognition_basis: 'cash',
+      date_basis: 'cash',
+    })
+    await flushPromises()
+    await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+    await flushPromises()
+    expect(queries().at(-1)![1]).toMatchObject({ recognition_basis: 'cash', date_basis: 'cash' })
+    expect(queries()).toHaveLength(4)
+    wrapper.unmount()
+  })
   it('loads the complete calendar year, applies shortcuts once and restores the default on project remount', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-14T12:00:00Z'))

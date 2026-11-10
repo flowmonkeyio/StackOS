@@ -3987,6 +3987,10 @@ export interface components {
             record_labels?: {
                 [key: string]: string;
             };
+            /** Reporting Defaults */
+            reporting_defaults?: {
+                [key: string]: string;
+            } | null;
             /** Reporting Readiness */
             reporting_readiness?: {
                 [key: string]: unknown;

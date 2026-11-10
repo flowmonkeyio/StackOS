@@ -774,6 +774,21 @@ def _receipt_merchant(current: CurrentRecords, record: dict[str, Any]) -> str:
     return next(iter(merchants)) if len(merchants) == 1 else ""
 
 
+def _reporting_defaults(
+    current: CurrentRecords, settings: dict[str, list[dict[str, Any]]]
+) -> dict[str, str] | None:
+    """Suggest presentation basis only from unanimous, valid approved metadata."""
+    pairs = set()
+    for record in current.active("bookkeeping"):
+        reporting, issue = _reporting(current, settings, record, {}, check_basis=False)
+        if reporting is not None and issue is None:
+            pairs.add((reporting["recognition_basis"], reporting["date_basis"]))
+    if len(pairs) != 1:
+        return None
+    basis, date_basis = next(iter(pairs))
+    return {"recognition_basis": basis, "date_basis": date_basis}
+
+
 def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
     """One filtered population supplies rows, totals, groups, trends and reports."""
     q = normalize_query(filters)
@@ -1195,6 +1210,7 @@ def query(snapshot: dict[str, Any], filters: dict[str, Any]) -> dict[str, Any]:
         "exclusions": excluded,
         "undated_or_period_only": undated,
         "reporting_readiness": _reporting_readiness(rows, recognized, coverage),
+        "reporting_defaults": _reporting_defaults(current, settings),
         "record_labels": {row["record_ref"]: _record_label(row) for row in rows},
         "warnings": ["prepared/unposted; supported operating result, not posted books"],
     }

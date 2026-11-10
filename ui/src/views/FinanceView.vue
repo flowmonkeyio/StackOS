@@ -79,6 +79,7 @@ const analysis = ref<SchemaFinanceContentOut | null>(null),
   analysisLoading = ref(false),
   analysisKind = ref('opportunities')
 let active = true,
+  basisInitialized = false,
   scopeSequence = 0,
   querySequence = 0,
   reportSequence = 0,
@@ -309,7 +310,7 @@ async function loadStatus() {
       error.value = financeStatusMessage(readiness)
       return
     }
-    await loadQuery(query.value)
+    await loadQuery(query.value, !basisInitialized)
     if (active && sequence === scopeSequence) await loadRequests()
   } catch (cause) {
     if (active && sequence === scopeSequence) {
@@ -322,7 +323,7 @@ async function loadStatus() {
     if (active && sequence === scopeSequence) loading.value = false
   }
 }
-async function loadQuery(value: FinanceQuery) {
+async function loadQuery(value: FinanceQuery, applyApprovedDefault = false) {
   if (!access.value) return
   const sequence = ++querySequence,
     identity = JSON.stringify(base())
@@ -350,6 +351,24 @@ async function loadQuery(value: FinanceQuery) {
       argumentsJson,
     )
     if (!active || sequence !== querySequence || identity !== JSON.stringify(base())) return
+    if (applyApprovedDefault) {
+      basisInitialized = true
+      const defaults = object(response.data.reporting_defaults)
+      if (
+        ['cash', 'accrual'].includes(text(defaults.recognition_basis)) &&
+        ['transaction', 'posting', 'issue', 'cash'].includes(text(defaults.date_basis)) &&
+        (defaults.recognition_basis !== value.recognition_basis ||
+          defaults.date_basis !== value.date_basis)
+      ) {
+        await loadQuery({
+          ...value,
+          recognition_basis: defaults.recognition_basis as FinanceQuery['recognition_basis'],
+          date_basis: defaults.date_basis as FinanceQuery['date_basis'],
+          offset: 0,
+        })
+        return
+      }
+    }
     projection.value = response.data
   } catch {
     if (active && sequence === querySequence)
@@ -678,6 +697,16 @@ onBeforeUnmount(() => {
               {{ query.start }} through {{ query.end }} · {{ query.recognition_basis }} recognition
               · {{ query.date_basis }} dates · {{ query.timezone }} · prepared/unposted · coverage
               {{ text(projection.coverage.state) }}
+              <template
+                v-if="
+                  query.recognition_basis === 'accrual' &&
+                  query.date_basis === 'issue' &&
+                  projection.coverage.state !== 'complete'
+                "
+              >
+                · Invoice amounts are incomplete. Add missing invoice dates and confirm source
+                coverage; payment matching and posting remain separate.
+              </template>
             </p>
             <details class="text-xs text-fg-muted">
               <summary class="focus-ring cursor-pointer">Source and reporting gaps</summary>
