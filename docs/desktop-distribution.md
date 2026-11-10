@@ -150,20 +150,20 @@ TDLib. Explicit `TDLIB_LIBRARY_PATH` without a variant retains the legacy
 The upstream source is [TDLib at commit
 `d1085f9cebc5a62379991ae1652673954f229c1f`](https://github.com/tdlib/td/tree/d1085f9cebc5a62379991ae1652673954f229c1f),
 version **1.8.67**. That source link is not a download of the exact binary
-required by the StackOS payload builder. The builder pins this SHA-256 for the
-ARM64 library before StackOS app signing:
+required by the legacy `original` input variant. For that variant, the builder
+pins this SHA-256 for the ARM64 library before StackOS app signing:
 
 ```text
 c397db26e7596eaf4a37ffb6d9400f2a34d764a26f388e4f4b9bfd41b070d5af
 ```
 
 **There is currently no recorded, verified download URL for that exact build
-input.** The existing build setup relies on a retained local proof artifact.
+input.** The legacy `original` variant relies on a retained local proof artifact.
 The retained library contains local StackOS build paths, consistent with a
-local source build. A fresh build machine needs a copy of this exact artifact
+local source build. A machine explicitly using this variant needs this artifact
 from a release/build owner, verified against the hash above. Publishing a
 versioned build-input archive with provenance and checksums remains an open
-distribution requirement.
+requirement for this legacy variant, not a blocker for the automatic npm path.
 
 Do not substitute a package merely because it reports TDLib 1.8.67. The
 `@prebuilt-tdlib/darwin-arm64@0.1008067.0` npm package and the
@@ -189,7 +189,7 @@ copy that file into the same input directory instead and run the same check.
 Keep the input outside both `desktop/payload/stackos` and
 `desktop/payload-build`: the payload builder deletes both before staging TDLib.
 An installed or packaged app's library may have a different hash after signing
-and does not replace this original build input for default or release builds.
+and does not replace the pinned input for the legacy `original` variant.
 
 #### Explicit local reuse of the existing 2.1.38 runtime
 
@@ -207,8 +207,10 @@ TDLIB_INPUT_VARIANT=stackos-2.1.38-packaged-local \
 
 This variant requires `STACKOS_UNSIGNED_DEV=1` (set by `dist:mac:dev`) and
 rejects signing/update release requirements and any update URL, even when
-unsigned-release bypass flags are present. The default still requires the
-original `c397db26…` input. No caller-supplied checksum override is supported.
+unsigned-release bypass flags are present. Normal builds default to the pinned
+npm input described above. An explicit `TDLIB_LIBRARY_PATH` without a variant
+selects `original` and requires the `c397db26…` input. No caller-supplied checksum
+override is supported.
 
 The builder checks the exact packaged input digest before inspecting or loading
 it, preserves the supplied file, and ad hoc signs and verifies only its staged
