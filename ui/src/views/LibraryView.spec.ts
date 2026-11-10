@@ -135,6 +135,50 @@ describe('Library', () => {
     expect(wrapper.find('a[target="_blank"]').exists()).toBe(false)
   })
 
+  it('synchronizes successful history navigation, tab reads, search and external filters', async () => {
+    client.apiFetch.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/v1/resources?')) return []
+      if (url.includes('/decisions?')) return page([decision(1)])
+      if (url.includes('/artifacts?')) return page([{ id: 2, project_id: 1, name: 'Saved file', kind: 'document', uri: 'https://example.test/file' }])
+      return page([])
+    })
+    const { wrapper, router } = await open('/projects/1/library?item=decision:1')
+    await wrapper.get('input[type="search"]').setValue('Decision')
+    await router.push('/projects/1/library?tab=files&item=artifact:2')
+    await flushPromises()
+    expect(wrapper.get<HTMLInputElement>('input[type="search"]').element.value).toBe('')
+    expect(wrapper.get('[data-library-detail]').text()).toContain('Saved file')
+
+    router.back()
+    await flushPromises()
+    expect(wrapper.get('[data-library-detail]').text()).toContain('Saved decision 1')
+    router.forward()
+    await flushPromises()
+    expect(wrapper.get('[data-library-detail]').text()).toContain('Saved file')
+    const reads = client.apiFetch.mock.calls.length
+    await router.push('/projects/1/library?tab=files&item=artifact:2&plugin=absent')
+    await flushPromises()
+    expect(wrapper.find('[data-library-detail]').exists()).toBe(false)
+    expect(router.currentRoute.value.query.item).toBeUndefined()
+    expect(client.apiFetch.mock.calls).toHaveLength(reads)
+  })
+
+  it('ignores cancelled navigation and removes its route listener on unmount', async () => {
+    client.apiFetch.mockImplementation(async (url: string) => url.startsWith('/api/v1/resources?') ? [] : url.includes('/decisions?') ? page([decision(1)]) : page([]))
+    const { wrapper, router } = await open('/projects/1/library?item=decision:1')
+    const reads = client.apiFetch.mock.calls.length
+    const removeGuard = router.beforeEach(() => false)
+    await router.push('/projects/2/library?tab=files')
+    await flushPromises()
+    expect(wrapper.get('[data-library-detail]').text()).toContain('Saved decision 1')
+    expect(client.apiFetch.mock.calls).toHaveLength(reads)
+    removeGuard()
+    wrapper.unmount()
+    await router.push('/projects/2/library?tab=files')
+    await flushPromises()
+    expect(client.apiFetch.mock.calls).toHaveLength(reads)
+  })
+
   it('filters loaded plugin/type rows, retains compatible selection, and clears incompatible details', async () => {
     client.apiFetch.mockImplementation(async (url: string) => {
       if (url.startsWith('/api/v1/resources?')) return []

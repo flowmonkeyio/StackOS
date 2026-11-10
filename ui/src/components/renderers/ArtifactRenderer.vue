@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUpdate, ref } from 'vue'
 
 import type { SchemaArtifactOut } from '@/api'
 import { UiBadge, UiButton, UiCard, UiDescriptionList } from '@/components/ui'
@@ -18,7 +18,12 @@ const reference = computed(() => artifactReference(props.artifact))
 const previewing = ref(false)
 const previewFailed = ref(false)
 const title = computed(() => String(sanitizeForDisplay(props.artifact.name || `Artifact #${props.artifact.id}`)))
-watch(() => [props.artifact.id, props.artifact.project_id, props.artifact.uri], () => {
+const referenceIdentity = () => JSON.stringify([props.artifact.id, props.artifact.project_id, props.artifact.uri])
+let renderedReference = referenceIdentity()
+onBeforeUpdate(() => {
+  const next = referenceIdentity()
+  if (next === renderedReference) return
+  renderedReference = next
   previewing.value = false
   previewFailed.value = false
 })

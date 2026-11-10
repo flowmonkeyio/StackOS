@@ -24,6 +24,30 @@ describe('ArtifactRenderer reference capabilities', () => {
     expect(w.text()).toContain('Preview unavailable')
   })
 
+  it.each([
+    { id: 2 },
+    { project_id: 2 },
+    { uri: 'https://example.com/replacement.png' },
+  ])('resets preview consent and failure when the reference identity changes: %s', async (change) => {
+    const original = artifact('https://example.com/image.png')
+    const w = mount(ArtifactRenderer, { props: { artifact: original } })
+    await w.get('button').trigger('click')
+    await w.setProps({ artifact: { ...original, name: 'Updated description' } })
+    expect(w.find('img').exists()).toBe(true)
+
+    await w.setProps({ artifact: { ...original, ...change } })
+    expect(w.find('img').exists()).toBe(false)
+    await w.get('button').trigger('click')
+    await w.get('img').trigger('error')
+    expect(w.text()).toContain('Preview unavailable')
+
+    await w.setProps({ artifact: original })
+    expect(w.text()).not.toContain('Preview unavailable')
+    expect(w.find('img').exists()).toBe(false)
+    await w.get('button').trigger('click')
+    expect(w.get('img').attributes('src')).toBe(original.uri)
+  })
+
   it.each(['javascript:alert(1)', 'file:///private/secret.png', 's3://bucket/file', '', 'https://user:pass@example.com/x', 'https://example.com/?token=secret'])('retains metadata without unsafe actions for %s', (uri) => {
     const w = mount(ArtifactRenderer, { props: { artifact: artifact(uri) } })
     expect(w.find('a').exists()).toBe(false)

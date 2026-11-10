@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import DataTable from '@/components/DataTable.vue'
 import TabBar from '@/components/TabBar.vue'
@@ -32,10 +32,19 @@ type ReadingState = { item: string; listScroll: number; detailScroll: number; de
 const recoveries = new Map<string, { targetCount: number; reading: ReadingState }>()
 let recoveryScope = ''
 
-watch(() => route.query, value => { query.value = parseLibraryQuery(value) })
+function applyQuery(next: LibraryQuery) {
+  const filtersChanged = next.plugin !== query.value.plugin || next.type !== query.value.type
+  query.value = next
+  synchronizeScope()
+  if (filtersChanged && query.value.item && !selected.value) query.value = { ...query.value, item: '' }
+}
 function updateQuery(patch: Partial<LibraryQuery>) {
-  query.value = { ...query.value, ...patch }
+  applyQuery({ ...query.value, ...patch })
   void router.replace(libraryLocation(projectId.value, query.value))
+}
+function setSearch(value: string | number | null) {
+  search.value = String(value ?? '')
+  if (query.value.item && !selected.value) updateQuery({ item: '' })
 }
 function setTab(tab: string) {
   search.value = ''
@@ -177,11 +186,21 @@ async function read(reader: LibraryReader & { key: string }, retry = false) {
   recoveries.delete(reader.key)
   await restoreReading(recovery.reading, current)
 }
-watch([projectId, () => query.value.tab], () => { search.value = ''; void load(true) }, { immediate: true, flush: 'sync' })
-watch([search, () => query.value.plugin, () => query.value.type], () => {
-  if (query.value.item && !selected.value) updateQuery({ item: '' })
+function synchronizeScope() {
+  if (recoveryScope === `${projectId.value}:${query.value.tab}`) return
+  search.value = ''
+  void load(true)
+}
+const libraryRoute = route.matched[route.matched.length - 1]
+const removeRouteListener = router.afterEach((to, _from, failure) => {
+  if (failure) return
+  if (!libraryRoute || !to.matched.includes(libraryRoute)) { generation++; return }
+  const next = parseLibraryQuery(to.query)
+  applyQuery(next)
+  if (query.value.item !== next.item) void router.replace(libraryLocation(projectId.value, query.value))
 })
-onBeforeUnmount(() => { generation++ })
+synchronizeScope()
+onBeforeUnmount(() => { generation++; removeRouteListener() })
 function select(row: ListRow) { updateQuery({ item: row.id }) }
 async function closeDetails() {
   const identity = query.value.item
@@ -230,11 +249,12 @@ async function closeDetails() {
       >
         <div class="library-filters">
           <UiInput
-            v-model="search"
+            :model-value="search"
             type="search"
             placeholder="Search this list"
             aria-label="Search this list"
             clearable
+            @update:model-value="setSearch"
           >
             <template #prefix>
               <UiIcon
