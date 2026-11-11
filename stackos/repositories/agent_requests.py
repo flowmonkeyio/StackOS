@@ -19,7 +19,6 @@ from stackos.db.models import (
     AgentRequest,
     AgentRequestAttentionStatus,
     AgentRequestStatus,
-    Project,
     ResourceRecord,
     RunPlan,
 )
@@ -605,8 +604,9 @@ class AgentRequestRepository:
         )
 
     def _require_project(self, project_id: int) -> None:
-        if self._s.get(Project, project_id) is None:
-            raise NotFoundError(f"project {project_id} not found")
+        from stackos.repositories.projects import ProjectRepository
+
+        ProjectRepository(self._s).require_available(project_id)
 
     def _validate_source_record(
         self,

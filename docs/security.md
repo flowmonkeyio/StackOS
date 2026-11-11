@@ -92,6 +92,78 @@ exact-path exception so no sibling route inherits it. Currently:
 | `/api/v1/ingress/slack/*` | Slack Events API and Interactivity requests cannot carry the daemon bearer token. The route verifies `X-Slack-Signature` against the encrypted Slack signing secret using the raw body and timestamp before writing communication resources or agent requests. | A caller with the Slack signing secret can submit Slack-shaped events for that profile. This path also bypasses loopback-only Host checks so deployed/tunnel hosts work; all non-ingress API paths remain loopback-host guarded. |
 | `/api/v1/ingress/hubspot/*` | HubSpot webhook and custom workflow-action requests cannot carry the daemon bearer token. The route verifies the provider-documented v3 timestamped HMAC against the daemon-held app client secret and configured public HTTPS URI before parsing or writing. v2 verification is unsupported. | A caller with the app client secret can submit HubSpot-shaped events for the one configured app/account profile. Exact portal/app checks and event/definition allowlists gate agent-request creation. This path bypasses loopback-only Host checks; the signed URI is derived from the configured ingress endpoint, never the incoming `Host` header. |
 
+## Internal project cleanup
+
+`ProjectCleanupService` is the permanent-cleanup owner behind `project.delete`.
+It requires `permanent=true`, the exact project ID and its immutable slug before
+mutation; it never resolves the target by display name. All admitted adapters
+delegate to this owner. The unconfirmed archive route and raw `hard=true` route
+are removed. Bound MCP calls retain injected-project scope; global calls require
+an explicit existing ID; the browser-safe generic REST call requires catalog
+scope. Deletion revalidates retries without keeping a replay row or deleted
+project history. Compact and raw preserve the complete typed receipt; ack rejects.
+
+Cleanup rejects actual native invocations, admitted delivery, running actions,
+durable work/leases, active request claims, owned browser processes (including
+unhealthy processes) and busy managed-file writers. It does not stop work or
+terminate external agents. The existing native launch lock, browser profile
+locks, managed-file writer locks and SQLite admission transactions coordinate
+with a project-local `cleanup_json` state. Fresh admission rechecks that state;
+an old Session object or inactive project flag does not authorize a new writer.
+Future project schedules are disabled and reconciled when cleanup is admitted.
+
+The project row and source records remain while managed files are removed.
+Pending/incomplete projects remain discoverable through the full catalog and
+cannot admit new work. Retry uses the same ID, slug and cleanup operation ID,
+including after restart; some files may already be gone. Only after file cleanup
+succeeds does one database transaction remove durable artifact pins, explicit
+session/OAuth/auth-event exceptions and the cascading project records. No
+deleted-project history or tombstone is retained. SQLite's project ID high-water
+mark remains intact.
+
+Only derived managed roots and individual files with private producer custody
+are cleanup candidates. Editable artifact URI/provenance/metadata cannot grant
+that custody. Media, Telegram download and HubSpot export owners register the
+actual regular file, managed root and filesystem identity through the artifact
+owner; public artifact create/update cannot set that internal record. Cleanup
+does not traverse artifact-referenced directories or remove replaced files.
+Legacy files can recover custody from successful daemon-owned action receipts
+for the demonstrated media, Telegram download and HubSpot export producers.
+Recovery correlates the project, artifact ID, creation before completion and
+producer output URI. File-backed receipts must match their stored digest and envelope
+identity; recovery is committed before those receipt files are removed.
+Ambiguous legacy generated references retain their source rows and return
+`ownership_required_artifact_ids` in an incomplete cleanup. Editable provenance
+alone never establishes ownership. The admin REST/CLI-only
+`project.reconcileFileOwnership` operation delegates to the existing artifact
+reconciliation method. It requires trusted local-admin context and an exact project
+ID/slug, artifact ID/URI and current content SHA-256 ownership decision. It is
+limited to the stopped cleanup's reported gaps; retry retains its operation ID.
+It is unavailable to MCP and browser-console callers and grants no automatic
+agent authority. The authenticated exact registered REST path owns its trusted
+context; headers, run tokens and caller fields cannot grant it.
+Shared references preserve bytes, including the original private file reference
+when public metadata is later edited. During final purge, verified file custody
+passes to surviving artifact references in the same database transaction. The
+last referencing project's cleanup removes those files; a rollback retains the
+original owner and rolls back the handoff. This includes shared action-response
+files and other leaves owned through derived project directories without a
+source Artifact. Cleanup inventories those remaining roots through no-follow
+directory descriptors; a reference never selects an additional inventory root.
+Transferred custody retains the original project-root boundary and leaf type,
+device and inode. Final-reference cleanup removes the matching leaf and prunes
+only empty parents inside that original root, preserving unrelated files and
+symlink targets. A durable pin or project-template
+binding owned by another project blocks deletion rather than deleting that
+owner's dependency. Repository folders, external exports,
+shared Accounts/catalog/browser runtimes and whole-instance backup archives are
+preserved. Arbitrary artifact URIs and request paths never grant file ownership.
+Cleanup errors retain a safe error class and truthful incomplete/retry status;
+they do not claim rollback or secure erasure of historical copies.
+Finance publication cleanup may recreate a lock already removed by the same
+cleanup only after project admission is fenced and the parent writer locks are
+held. Existing busy locks, symlinks and unsafe aliases remain failures.
+
 ## Generated asset and IMAP staging boundary
 
 Ordinary generated media remains available from the loopback-local
@@ -247,6 +319,15 @@ namespace. Mutating operation calls are allowed only when the operation's REST
 surface declares `browser_safe=True` for explicit local setup, the bounded
 human finance console contract described below, the task-content contract, or
 the bounded run abort control.
+`project.update` and `project.move` are browser-safe only for the bounded
+project management contract: explicit `scope: "catalog"`, display-name-only
+patches and single-project moves. Catalog scope requires authenticated REST
+console/admin authority and is rejected through MCP. Bound agents retain the
+existing project-ID injection and may rename/move only their own target;
+move anchors must be active visible projects. `project.delete` separately permits
+only explicit permanent confirmation under that same target/catalog boundary.
+File ownership reconciliation remains admin REST/CLI only. This grants no
+general cross-project bridge access.
 The explicit project automation setup operations `schedule.set`,
 `schedule.toggle` and `schedule.remove` are browser-safe. They validate the
 selected project and saved setup without granting workflow action approvals;

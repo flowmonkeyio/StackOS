@@ -527,7 +527,11 @@ def test_project_rename_and_deletion_cannot_reassign_retained_data(api, project_
     )
     with Session(api.app.state.engine) as session:
         repo = ProjectRepository(session)
-        repo.delete(project_id, hard=True)
+        # Historical orphan fixture; confirmed cleanup would remove these files.
+        from stackos.db.models import Project
+
+        session.delete(session.get(Project, project_id))
+        session.commit()
         replacement = repo.create(
             slug="betsage", name="Replacement", domain="replacement.example"
         ).data.id

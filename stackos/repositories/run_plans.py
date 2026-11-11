@@ -18,7 +18,6 @@ from stackos.db.models import (
     ApprovalRequest,
     ApprovalRequestStatus,
     ContextSnapshot,
-    Project,
     Run,
     RunKind,
     RunPlan,
@@ -1102,8 +1101,9 @@ class RunPlanRepository:
         )
 
     def _require_project(self, project_id: int) -> None:
-        if self._s.get(Project, project_id) is None:
-            raise NotFoundError(f"project {project_id} not found")
+        from stackos.repositories.projects import ProjectRepository
+
+        ProjectRepository(self._s).require_available(project_id)
 
     @staticmethod
     def _require_plan_project(plan: RunPlan, project_id: int | None) -> None:

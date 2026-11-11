@@ -11,7 +11,12 @@ import pytest
 
 from stackos.actions.repository.durable import DurableActionItemOut, DurableActionJobOut
 from stackos.config import Settings
-from stackos.mcp.tools.projects import ScheduleRunsInput, ScheduleSetInput
+from stackos.mcp.tools.projects import (
+    ProjectDeleteConfirmation,
+    ProjectDeleteInput,
+    ScheduleRunsInput,
+    ScheduleSetInput,
+)
 from stackos.operations.actions.schemas import (
     ActionCallDurableItemsOut,
     ActionCallResumeInput,
@@ -28,6 +33,7 @@ from stackos.operations.finance import (
     FinanceRecordOut,
     FinanceStatusInput,
 )
+from stackos.operations.project_setup import ProjectFileOwnershipInput, ProjectFileOwnershipResult
 from stackos.operations.tracker.schemas import (
     TrackerAgentStatsAllInput,
     TrackerAgentStatsInput,
@@ -35,6 +41,7 @@ from stackos.operations.tracker.schemas import (
     TrackerTaskActivityInput,
     TrackerTaskResultsInput,
 )
+from stackos.project_cleanup import ProjectCleanupResult
 from stackos.repositories.projects import ScheduledJobOut, ScheduledRunOut, ScheduleRemovalOut
 from stackos.repositories.tracker.inspection_schema import (
     TaskActivityItem,
@@ -102,6 +109,11 @@ def test_ui_generation_includes_registry_owned_durable_contracts(
     schemas = json.loads(target.read_text())["components"]["schemas"]
     generated = API_TS.read_text()
     for model in (
+        ProjectDeleteConfirmation,
+        ProjectDeleteInput,
+        ProjectCleanupResult,
+        ProjectFileOwnershipInput,
+        ProjectFileOwnershipResult,
         ActionCallDurableItemsOut,
         DurableActionJobOut,
         DurableActionItemOut,

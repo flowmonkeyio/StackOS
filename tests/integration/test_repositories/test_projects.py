@@ -10,7 +10,7 @@ import pytest
 from sqlmodel import Session, SQLModel, select
 
 from stackos.db.connection import make_engine
-from stackos.db.models import Credential, ProjectCredential
+from stackos.db.models import Credential, Project, ProjectCredential
 from stackos.repositories.base import (
     BudgetExceededError,
     ConflictError,
@@ -40,7 +40,7 @@ def test_project_crud_live_projects_and_pagination(session: Session) -> None:
     ]
 
 
-def test_project_validation_and_soft_delete(session: Session) -> None:
+def test_project_validation_and_inactive_metadata(session: Session) -> None:
     repo = ProjectRepository(session)
     env = repo.create(slug="immut", name="Immutable", domain="example.com", locale="en-US")
 
@@ -51,23 +51,8 @@ def test_project_validation_and_soft_delete(session: Session) -> None:
     with pytest.raises(NotFoundError):
         repo.get("missing")
 
-    repo.delete(env.data.id)
+    repo.update(env.data.id, is_active=False)
     assert repo.get(env.data.id).is_active is False
-
-
-def test_project_hard_delete_removes_row(session: Session) -> None:
-    repo = ProjectRepository(session)
-    env = repo.create(
-        slug="hard-delete",
-        name="Hard Delete",
-        domain="hard-delete.example",
-        locale="en-US",
-    )
-
-    repo.delete(env.data.id, hard=True)
-
-    with pytest.raises(NotFoundError):
-        repo.get(env.data.id)
 
 
 @pytest.mark.parametrize("replacement_slug", ["saved-target", "other-target"])
@@ -76,7 +61,9 @@ def test_deleted_highest_project_id_is_not_reused(session: Session, replacement_
     saved_id = repo.create(
         slug="saved-target", name="Saved target", domain="saved.example", locale="en-US"
     ).data.id
-    repo.delete(saved_id, hard=True)
+    # Simulate historical row removal; cleanup adapters have real-service proof.
+    session.delete(session.get(Project, saved_id))
+    session.commit()
     replacement = repo.create(
         slug=replacement_slug, name="Replacement", domain="new.example", locale="en-US"
     ).data.id
@@ -94,7 +81,8 @@ def test_project_id_nonreuse_after_reopen_and_concurrent_allocations(tmp_path: P
         saved_id = repo.create(
             slug="saved", name="Saved", domain="saved.local", locale="en-US"
         ).data.id
-        repo.delete(saved_id, hard=True)
+        session.delete(session.get(Project, saved_id))
+        session.commit()
     engine.dispose()
     engine = make_engine(db)
 

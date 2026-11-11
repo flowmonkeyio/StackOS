@@ -499,6 +499,7 @@ class BrowserRuntime:
         profile_dir: Path,
         state_file: Path,
         data_dir: Path | None = None,
+        admit: Callable[[], None] | None = None,
     ) -> NativeSessionState:
         root = self._resolve_data_dir(data_dir)
         async with _profile_lock(profile_dir):
@@ -532,6 +533,8 @@ class BrowserRuntime:
                         "repair": _PROFILE_OWNER_REPAIR,
                     },
                 )
+            if admit is not None:
+                admit()
             self._require_runtime(root)
             self._prepare_owned_paths(profile_dir=profile_dir, state_file=state_file)
             process = await self._command_runner(
@@ -642,6 +645,15 @@ class BrowserRuntime:
                         },
                     )
                 await asyncio.sleep(_STOP_POLL_SECONDS)
+
+    def project_busy(self, *, project_id: int, data_dir: Path) -> bool:
+        """Include launches/stops awaiting native I/O, before state-file publication."""
+        root = (
+            data_dir / "browser-profiles" / BROWSER_PROFILE_DIRNAME / f"project-{project_id}"
+        ).resolve()
+        return any(
+            lock.locked() and Path(key).is_relative_to(root) for key, lock in _PROFILE_LOCKS.items()
+        )
 
     async def discover_sessions(
         self, *, project_id: int, data_dir: Path | None = None

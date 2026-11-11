@@ -750,6 +750,9 @@ def _compact_operation_summary(item: dict[str, Any]) -> dict[str, Any]:
 def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
     if not isinstance(data, dict):
         return {"value": data}
+    if operation_name in {"project.delete", "project.reconcileFileOwnership"}:
+        # These typed bounded receipts are already the complete repair contract.
+        return copy.deepcopy(data)
     if operation_name in {"projectAgent.list", "projectAgent.get"}:
         out = copy.deepcopy(data)
         rows = out.get("items", [out])

@@ -563,6 +563,9 @@ class DurableActionMixin:
         overlap_account_leases: bool = False,
     ) -> list[DurableActionItemOut]:
         """Persist item attempt UUIDs and rate leases before connector dispatch."""
+        from stackos.repositories.projects import ProjectRepository
+
+        ProjectRepository(self._s).require_available(project_id, reserve=True)
 
         if limit < 1:
             raise ValidationError("durable action item claim limit must be positive")

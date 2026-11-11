@@ -141,7 +141,9 @@ async def _browser_session_start(
         profile_ref=profile.profile_ref,
         profile_key=profile.profile_key,
     )
-    state = await runtime.start_session(**native_args)
+    state = await runtime.start_session(
+        **native_args, admit=lambda: repo.require_project(inp.project_id)
+    )
     repo.create_or_update_session(
         project_id=inp.project_id,
         profile=profile,

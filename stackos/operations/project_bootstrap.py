@@ -135,7 +135,8 @@ def operation_specs() -> list[OperationSpec]:
             ),
             returns=(
                 "Safe project metadata only: id, slug, name, domain, locale, active flag, "
-                "and timestamps.",
+                "stored order_index and timestamps. Lists and ID cursors follow (order_index, id); "
+                "new projects append. Refresh pagination after a concurrent catalog move.",
             ),
             examples=(OperationExample(title="List projects", arguments={"limit": 20}),),
             mutating=False,

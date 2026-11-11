@@ -15,6 +15,7 @@ from stackos.api.pagination import PageResponse, page_response, pagination_param
 from stackos.repositories.projects import (
     IntegrationBudgetOut,
     IntegrationBudgetRepository,
+    ProjectName,
     ProjectOut,
     ProjectRepository,
     ScheduleConfiguration,
@@ -40,7 +41,7 @@ class ProjectCreateRequest(BaseModel):
     )
 
     slug: str = Field(min_length=1, max_length=80)
-    name: str = Field(min_length=1, max_length=200)
+    name: ProjectName
     domain: str = Field(min_length=1, max_length=255)
     niche: str | None = Field(default=None, max_length=200)
     locale: str = Field(default="en-US", max_length=16)
@@ -50,7 +51,7 @@ class ProjectCreateRequest(BaseModel):
 class ProjectUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    name: str | None = Field(default=None, max_length=200)
+    name: ProjectName | None = None
     domain: str | None = Field(default=None, max_length=255)
     niche: str | None = Field(default=None, max_length=200)
     locale: str | None = Field(default=None, max_length=16)
@@ -127,15 +128,6 @@ async def update_project(
 ) -> WriteResponse[ProjectOut]:
     patch = body.model_dump(exclude_unset=True)
     return write_response(ProjectRepository(session).update(project_id, **patch))
-
-
-@router.delete("/{project_id}", response_model=WriteResponse[ProjectOut])
-async def delete_project(
-    project_id: int,
-    hard: bool = Query(default=False),
-    session: Session = Depends(get_session),
-) -> WriteResponse[ProjectOut]:
-    return write_response(ProjectRepository(session).delete(project_id, hard=hard))
 
 
 @router.get("/{project_id}/schedules", response_model=list[ScheduledJobOut])

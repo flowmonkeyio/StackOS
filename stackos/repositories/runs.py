@@ -810,6 +810,10 @@ class RunRepository:
         _commit: bool = True,
     ) -> Envelope[RunOut]:
         """Insert a new ``status='running'`` row."""
+        if project_id is not None:
+            from stackos.repositories.projects import ProjectRepository
+
+            ProjectRepository(self._s).require_available(project_id, reserve=True)
         self._validate_run_annotation_owner(metadata_json)
         now = _utcnow()
         row = Run(

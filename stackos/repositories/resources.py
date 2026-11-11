@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
+import os
+import stat
+from contextlib import ExitStack
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field
-from sqlalchemy import func
+from sqlalchemy import func, update
 from sqlalchemy import select as sa_select
 from sqlmodel import Session, col, select
 
@@ -480,8 +485,9 @@ class ResourceRepository:
         )
 
     def _require_project(self, project_id: int) -> None:
-        if self._s.get(Project, project_id) is None:
-            raise NotFoundError(f"project {project_id} not found")
+        from stackos.repositories.projects import ProjectRepository
+
+        ProjectRepository(self._s).require_available(project_id)
 
     def _sync_catalog(self) -> None:
         from stackos.repositories.plugins import PluginRepository
@@ -521,6 +527,136 @@ class ArtifactRepository:
     def __init__(self, session: Session) -> None:
         self._s = session
 
+    def create_generated_file(
+        self, *, asset_root: Path, path: Path, project_id: int, **artifact: Any
+    ) -> Envelope[ArtifactOut]:
+        """Producer-only custody for one regular file, never inferred from provenance.
+
+        Public artifact create/update keep their existing metadata-only contract.
+        A custom output root is recorded as such; cleanup never treats it as the
+        daemon's managed root. This record is immutable through artifact tools.
+        """
+        custody = self._generated_file_custody(
+            asset_root=asset_root, path=path, project_id=project_id, uri=artifact.get("uri")
+        )
+        return self._create(project_id=project_id, _managed_file_json=custody, **artifact)
+
+    @staticmethod
+    def _generated_file_custody(
+        *, asset_root: Path, path: Path, project_id: int, uri: str | None
+    ) -> dict[str, Any]:
+        root = asset_root.resolve()
+        if path.is_symlink() or path.resolve() != path.absolute():
+            raise ValidationError("generated file must not use filesystem aliases")
+        relative = path.relative_to(root)
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise ValidationError("generated artifact must identify one regular file")
+        if uri != "/generated-assets/" + relative.as_posix():
+            raise ValidationError("generated artifact URI must identify its actual file")
+        parts = relative.parts
+        if parts[0] in {"action-outputs", "imap-transfers", "stripe-invoice-transfers"} and (
+            len(parts) < 3 or parts[1] != f"project-{project_id}"
+        ):
+            raise ValidationError("generated file belongs to another project root")
+        if parts[0] == "telegram" and (len(parts) < 3 or parts[1] != str(project_id)):
+            raise ValidationError("generated Telegram file belongs to another project root")
+        return {
+            "root": str(root),
+            "path": relative.as_posix(),
+            "device": info.st_dev,
+            "inode": info.st_ino,
+        }
+
+    def reconcile_generated_file(
+        self,
+        *,
+        project_id: int,
+        project_slug: str,
+        artifact_id: int,
+        expected_uri: str,
+        expected_sha256: str,
+        confirm_ownership: bool,
+        asset_root: Path,
+    ) -> Envelope[ArtifactOut]:
+        """Internal local-admin reconciliation for an unaudited legacy file.
+
+        The admin-only project.reconcileFileOwnership operation publishes this
+        method. A trusted REST handler context and an exact operator decision
+        are required; ordinary artifact metadata cannot
+        establish custody. It remains available for an incomplete cleanup.
+        """
+        from stackos.mcp.context import current_context
+        from stackos.repositories.projects import ProjectRepository
+
+        ctx = current_context()
+        if (
+            ctx is None
+            or ctx.session is not self._s
+            or ctx.project_id != project_id
+            or ctx.extras.get("surface") != "rest"
+            or ctx.extras.get("trusted_local_admin") is not True
+            or ctx.extras.get("auth_scope") != "daemon-admin"
+        ):
+            raise ConflictError("legacy file reconciliation requires trusted local-admin authority")
+        # Reserve the same project row as cleanup/admission before inspecting
+        # its state. Reconciliation is allowed only after cleanup has stopped
+        # for this exact ownership gap, never during its filesystem phase.
+        self._s.exec(update(Project).where(col(Project.id) == project_id).values(id=Project.id))
+        project = ProjectRepository(self._s).get(project_id)
+        cleanup = project.cleanup_json or {}
+        if (
+            cleanup.get("status") != "incomplete"
+            or cleanup.get("error_code") != "ProjectFileOwnershipRequired"
+            or artifact_id not in cleanup.get("ownership_required_artifact_ids", [])
+        ):
+            raise ConflictError("artifact has no stopped cleanup ownership gap to reconcile")
+        row = self._artifact_row(artifact_id, project_id=project_id)
+        if (
+            confirm_ownership is not True
+            or project.slug != project_slug
+            or row.uri != expected_uri
+            or not expected_uri.startswith("/generated-assets/")
+        ):
+            raise ValidationError("exact project and artifact ownership confirmation is required")
+        if row.managed_file_json is not None:
+            raise ConflictError("artifact already has verified file custody")
+        root = asset_root.resolve()
+        path = root / expected_uri.removeprefix("/generated-assets/")
+        custody = self._generated_file_custody(
+            asset_root=root, path=path, project_id=project_id, uri=expected_uri
+        )
+        digest = hashlib.sha256()
+        with ExitStack() as opened:
+            parent = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            opened.callback(os.close, parent)
+            for part in path.relative_to(root).parts[:-1]:
+                parent = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+                opened.callback(os.close, parent)
+            fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+            with os.fdopen(fd, "rb") as stream:
+                before = os.fstat(stream.fileno())
+                if (before.st_dev, before.st_ino) != (custody["device"], custody["inode"]):
+                    raise ConflictError("legacy file identity changed")
+                while chunk := stream.read(1024 * 1024):
+                    digest.update(chunk)
+                after = os.fstat(stream.fileno())
+        if (before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
+            after.st_size,
+            after.st_mtime_ns,
+            after.st_ctime_ns,
+        ) or digest.hexdigest() != expected_sha256:
+            raise ConflictError("legacy file does not match the reviewed content hash")
+        custody["evidence"] = {
+            "basis": "local-admin-reconciliation",
+            "request_id": ctx.request_id,
+            "sha256": expected_sha256,
+        }
+        row.managed_file_json = custody
+        self._s.add(row)
+        self._s.commit()
+        return Envelope(data=self.get(artifact_id), project_id=project_id)
+
     def create(
         self,
         *,
@@ -535,6 +671,36 @@ class ArtifactRepository:
         size_bytes: int | None = None,
         metadata_json: dict[str, Any] | None = None,
         provenance_json: dict[str, Any] | None = None,
+    ) -> Envelope[ArtifactOut]:
+        return self._create(
+            kind=kind,
+            uri=uri,
+            project_id=project_id,
+            plugin_slug=plugin_slug,
+            resource_record_id=resource_record_id,
+            status=status,
+            name=name,
+            mime_type=mime_type,
+            size_bytes=size_bytes,
+            metadata_json=metadata_json,
+            provenance_json=provenance_json,
+        )
+
+    def _create(
+        self,
+        *,
+        kind: str,
+        uri: str,
+        project_id: int | None = None,
+        plugin_slug: str | None = None,
+        resource_record_id: int | None = None,
+        status: str = "draft",
+        name: str | None = None,
+        mime_type: str | None = None,
+        size_bytes: int | None = None,
+        metadata_json: dict[str, Any] | None = None,
+        provenance_json: dict[str, Any] | None = None,
+        _managed_file_json: dict[str, Any] | None = None,
     ) -> Envelope[ArtifactOut]:
         self._sync_catalog()
         if not kind:
@@ -570,6 +736,7 @@ class ArtifactRepository:
             provenance_json=(
                 redact_secrets(provenance_json) if provenance_json is not None else None
             ),
+            managed_file_json=_managed_file_json,
         )
         self._s.add(row)
         self._s.commit()
@@ -890,8 +1057,9 @@ class ArtifactRepository:
         return row
 
     def _require_project(self, project_id: int) -> None:
-        if self._s.get(Project, project_id) is None:
-            raise NotFoundError(f"project {project_id} not found")
+        from stackos.repositories.projects import ProjectRepository
+
+        ProjectRepository(self._s).require_available(project_id)
 
     def _sync_catalog(self) -> None:
         from stackos.repositories.plugins import PluginRepository

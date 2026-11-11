@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlmodel import Session, col, select
 
 from stackos.browser.runtime import BROWSER_PROVIDER, NativeSessionState
-from stackos.db.models import BrowserProfile, BrowserSession, Project
+from stackos.db.models import BrowserProfile, BrowserSession
 from stackos.repositories.base import Envelope, NotFoundError, Page, ValidationError
 
 
@@ -90,8 +90,9 @@ class BrowserRepository:
         self._s = session
 
     def require_project(self, project_id: int) -> None:
-        if self._s.get(Project, project_id) is None:
-            raise NotFoundError(f"project {project_id} not found", data={"project_id": project_id})
+        from stackos.repositories.projects import ProjectRepository
+
+        ProjectRepository(self._s).require_available(project_id)
 
     def profile_ref(self, *, project_id: int, profile_key: str) -> str:
         return f"browser-profile:project-{project_id}:{profile_key}"

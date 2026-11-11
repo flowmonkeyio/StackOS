@@ -22,8 +22,9 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `UiDialog` | viewport portal; shared dialog/drawer stack; focus trap; H/B/F; optional `layout="detail"` with bounded 880px frame and scrolling body; centered 32px close target / 16px icon |
 | `UiConfirmDialog` | builds on Dialog |
 | `UiSidePanel` | left/right; 480/720 |
-| `UiDropdownMenu` | keyboard arrows; sections |
+| `UiDropdownMenu` | keyboard arrows; sections; optional `portalTarget` for viewport-clamped actions inside scrolling lists |
 | `UiPopover` | floating-ui placement |
+| `UiReorderList`, `UiReorderHandle` | neutral vertical neighbor intents, handle/menu alternatives, insertion feedback, gesture-scoped edge scroll and cleanup |
 | `UiTooltip` | hover + focus |
 | `UiCard` | density compact/comfortable; optional padding; no nested cards |
 | `UiPanel` | flat alt-surface; for sub-sections |
@@ -46,6 +47,52 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `UiMetricCard` | label + value + delta |
 | `UiDescriptionList` | label/value rows |
 | `UiFactGroups` | grouped drawer/detail metadata blocks with headings, badges, mono IDs, and wide rows |
+
+The shared reorder primitive accepts arbitrary items through `itemKey`/`itemLabel`,
+optional meaningful `itemVersion`, `scopeKey`, `disabled` and an optional
+`scrollContainer` (the list by default). Its item slot supplies the item and handle
+bindings, including dropdown actions for Move up/down/to top/to bottom. A real move
+emits only `{ itemKey, anchorKey, placement: 'before' | 'after' }`; the consumer owns
+validation, optimistic ordering, persistence and recovery. The primitive never
+imports tracker, store or API contracts. It keeps the source-sized item in place,
+uses a restrained text preview and a single insertion line, suppresses visible
+no-ops, scrolls only the supplied vertical container, and cleans up its one
+animation-frame loop and gesture listeners on every termination path. Movement
+announcements and focus/visibility restoration accompany menu and drop intents;
+there is no decorative movement animation.
+
+`ProjectSwitcher` consumes this primitive for the complete, stored project
+catalog. Its closed sidebar trigger retains its geometry; only the open menu is
+wider. Project names select through `useProjectNavigation`; separate row actions
+request rename/delete targets from that same owner. The project store owns
+display-name updates and bounded moves through the browser-safe catalog
+operations, reloading all pages after move attempts. `ProjectRenameDialog` owns
+the retained draft and saving/failure states. Home and Overview read owners
+reconcile strictly newer project metadata into the shared store using the
+canonical `updated_at`, retaining sub-millisecond precision. They update only
+metadata on already loaded IDs, preserving catalog membership, order and selection.
+Displays use shared names with portfolio fallback for unloaded IDs. Equal/older
+portfolio responses cannot undo a confirmed rename; newer Refresh results update
+the shared labels. Catalog reads and mutation responses also retain newer metadata.
+`ProjectDeleteDialog` shows the current name and immutable slug and submits the
+explicit permanent confirmation through `project.delete` in catalog scope.
+It protects in-flight cleanup from duplicate submission/close, routes blockers
+to existing Work controls, and retains incomplete/uncertain cleanup for same-ID
+retry. Legacy ownership gaps remain administrator work. Successful or missing
+targets leave the shared catalog and Overview immediately; session-local ID
+exclusions prevent late reads from restoring them. No deleted project payload
+is retained in the backend. `useProjectNavigation` alone chooses the first
+survivor in stored order or global Overview, preserves a newer selection and
+noncurrent routes, and permits navigation-only retry after cleanup succeeds.
+It rechecks route/selection ownership after survivor reads and rejects removed
+project destinations at router resolution after asynchronous leave/update guards.
+The same owner observes push/replace calls and native history events before
+component guards await, so pending direct links also retain navigation intent.
+Tracking delegates to Vue Router and is removed with the owning app lifecycle.
+The selector remains an intent emitter. Dialog titles wrap long project names;
+normal overlay focus returns to the opener, or the stable selector when a
+deleted row's opener is gone. Source tests do not claim operator pointer or
+visual acceptance.
 
 ## Shipped — domain (`ui/src/components/domain/`)
 

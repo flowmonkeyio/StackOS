@@ -16,7 +16,6 @@ from stackos.backups import (
 )
 from stackos.config import Settings
 from stackos.plugins.builtin_finance import helpers
-from stackos.repositories.projects import ProjectRepository
 from stackos.server import create_app
 from tests.helpers.finance_workspace import record
 from tests.unit.test_finance_management import QUERY, fixture_document
@@ -244,7 +243,11 @@ def test_retained_finance_can_be_backed_up_again_after_inert_restore(
     original = master.read_bytes()
     if retained == "deleted":
         with Session(api.app.state.engine) as session:
-            ProjectRepository(session).delete(project_id, hard=True)
+            # Recreate legacy orphan storage rather than invoke permanent cleanup.
+            from stackos.db.models import Project
+
+            session.delete(session.get(Project, project_id))
+            session.commit()
         expected_denial = 404
     else:
         assert api.post(f"/api/v1/projects/{project_id}/plugins/finance/disable").status_code == 200

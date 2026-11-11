@@ -28,6 +28,95 @@ behavior. Operations define the callable contract around that behavior:
 - enabled surfaces
 - agent guidance, prerequisites, return notes, and examples
 
+## Project display names and catalog order
+
+`project.update` changes display names through the existing project repository.
+Names are trimmed, nonblank strings of at most 200 characters; duplicate names
+are allowed. A same-name update is a no-op. IDs, slugs, workspace bindings and
+repository folders retain their identity. Agent and browser callers can patch
+only `name`; daemon-admin REST/CLI callers retain safe metadata administration.
+
+`project.list` and the legacy project list route use stored `(order_index, id)`
+order and matching ID cursors. Migration `0038_project_order` preserves the
+previous ID-ascending order; newly created projects append. Start pagination
+again after a concurrent catalog change. Explicit portfolio `recent`/`name`
+sorts retain their own documented projection ordering.
+
+`project.move` accepts one `project_id`, `placement` (`top`, `before`, `after`),
+and an `anchor_id` for before/after. It moves that project within the complete
+stored catalog, including records outside the caller's loaded page. It never
+accepts a replacement list. Active projects are permitted visible targets and
+anchors; missing/inactive anchors reject before mutation. Self and adjacent
+no-op moves preserve all data. A canceled interaction makes no call.
+
+Console callers explicitly supply `scope: "catalog"` to `project.update` and
+`project.move` through their browser-safe generic REST operation routes.
+Catalog scope requires authenticated local-admin/console REST authority and
+cannot be asserted through MCP. Ordinary `scope: "project"` calls keep normal
+bridge injection: a bound agent can rename/move only its own project, relative
+to an active project visible in `project.list`. No bridge scope exception exists.
+CLI uses the same registered operations via `stackos ops call project.move`.
+
+For example, move the selected catalog project before an anchor:
+
+```json
+{"project_id": 2, "scope": "catalog", "placement": "before", "anchor_id": 1}
+```
+
+## Permanent project deletion
+
+`project.delete` is the single permanent cleanup operation for MCP, REST, CLI
+and the browser console. It delegates to `ProjectCleanupService`; it does not
+archive the project. Supply the selected immutable ID and its current slug:
+
+```json
+{"project_id": 2, "confirmation": {"permanent": true, "project_id": 2, "project_slug": "acme"}}
+```
+
+Missing, false or mismatched confirmation rejects before cleanup. Display names
+never select the target. Bound agents can delete only their injected project;
+global agents must explicitly supply an existing project ID on every call.
+Console calls additionally require `scope: "catalog"` through the browser-safe
+generic REST operation route. Catalog scope remains REST-admin/console only.
+CLI uses `stackos ops call project.delete --input <json-file>`.
+The old `DELETE /api/v1/projects/{id}` route, including `hard=true`, is removed;
+old unconfirmed callers cannot become destructive.
+
+The bounded result is identical in `compact` and `raw` modes; `ack` is refused.
+Its `status` is `blocked`, `incomplete`, `deleted` or `missing`. `blockers` names
+active owners that must be stopped through their existing controls. Cleanup
+never aborts work or kills an agent. `incomplete` retains the project, the same
+`operation_id`, `retryable`, a safe `error_code`, and any
+`ownership_required_artifact_ids`. Some files may already be removed; retry the
+same confirmed operation rather than assuming rollback. Only `deleted` means
+cleanup completed. It removes live owned StackOS data and managed files while
+preserving repository folders, other projects, shared accounts/files, external
+exports and existing backup archives.
+
+Deletion handles retries by observing current state instead of storing a replay
+receipt in the deleted project. A same-key retry revalidates confirmation and
+returns `missing` after deletion. Global bridges retain existing-project
+admission and instead reject a missing saved ID with `project_unavailable`;
+they never substitute a same-named replacement. No deleted project payload,
+audit history or idempotency row is recreated.
+
+Unaudited legacy generated files can require an explicit ownership decision.
+Only an administrator using REST or CLI can call
+`project.reconcileFileOwnership`; it is unavailable to MCP and the console.
+It delegates to `ArtifactRepository.reconcile_generated_file` and accepts only
+a stopped cleanup's reported artifact gap. Review the exact identity, URI and
+current content hash, then supply:
+
+```json
+{"project_id": 2, "project_slug": "acme", "artifact_id": 42, "expected_uri": "/generated-assets/openai-images/legacy.png", "expected_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "confirm_ownership": true}
+```
+
+The managed root is daemon-derived; callers cannot supply a filesystem path.
+Wrong identity, changed content, unsafe files or absent cleanup gaps reject.
+Ordinary deletion confirmation and editable artifact metadata cannot grant
+custody. After reconciliation, retry `project.delete` with the original ID/slug;
+its operation ID is preserved, including across restart.
+
 ## Project workflow schedules
 
 `schedule.list`, `schedule.set`, `schedule.toggle`, `schedule.remove` and

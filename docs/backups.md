@@ -253,6 +253,15 @@ actual private key; backup success alone does not prove that key is available.
 
 ## Format, exclusions and existing archives
 
+Internal permanent project cleanup removes that project's live managed files
+before its final database purge. Incomplete cleanup keeps the immutable project
+identity and source records available for a same-operation retry. The cleanup
+owner takes the existing managed writer locks, so backup and cleanup cannot
+silently consume a partially changing project tree. Previously created encrypted
+whole-instance archives remain shared historical copies; project cleanup does
+not rewrite them or promise secure erasure. External enrolled folders and
+repository folders remain outside project cleanup ownership.
+
 The complete ZIP payload and manifest are encrypted using X25519 key exchange,
 HKDF-SHA256 and streaming AES-256-GCM. Each archive uses fresh key material;
 the header is authenticated and the complete authentication tag is verified

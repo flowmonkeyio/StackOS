@@ -78,12 +78,17 @@ describe('restricted UI write contract', () => {
     ])
   })
 
-  it('limits project store writes to first-project creation', () => {
+  it('limits project store direct writes to creation and management operations to the bounded contracts', () => {
     const text = readFileSync(PROJECTS_STORE, 'utf8')
 
     expect([...text.matchAll(/method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/g)]).toHaveLength(1)
     expect(text).toContain("apiFetch<SchemaWriteResponseProjectOut>('/api/v1/projects'")
     expect(text).toContain("method: 'POST'")
+    expect([...text.matchAll(/callOperation<[^\n]+>\('([^']+)'/g)].map((match) => match[1])).toEqual(['project.update', 'project.delete', 'project.move'])
+    expect(text).toContain("project_id: id, patch: { name }, scope: 'catalog'")
+    expect(text).toContain("placement: move.placement, scope: 'catalog'")
+    expect(text).toContain("project_id: target.id, scope: 'catalog'")
+    expect(text).toContain('confirmation: { permanent: true, project_id: target.id, project_slug: target.slug }')
   })
 
   it('limits operation transport writes to the generic operation-call helper', () => {

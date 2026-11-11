@@ -795,7 +795,9 @@ def test_global_scope_saved_id_survives_rename_and_refuses_natural_replacement(
     )
     assert _structured(selected)["project_id"] == saved
     with Session(engine) as session:
-        ProjectRepository(session).delete(saved, hard=True)
+        # Simulate historical absence; public cleanup has separate real-service proof.
+        session.delete(session.get(Project, saved))
+        session.commit()
     replacement = _create_project(mcp_client, replacement_slug)
     assert replacement > saved
     for bridge, http_client in ((proxy, client), _bridge(mcp_client)):
@@ -2046,17 +2048,67 @@ def test_bridge_describes_setup_tools_and_treats_removed_vendor_tools_as_unknown
     payload = _structured(envelope)
 
     assert [tool["name"] for tool in payload["described_tools"]] == [
+        "project.delete",
         "schedule.remove",
         "account.test",
     ]
     assert payload["denied_tool_names"] == [
-        "project.delete",
         "account.start",
         "connection.attach",
         "connection.detach",
     ]
     assert payload["unknown_tool_names"] == ["dataforseo.serp"]
     assert "admin_gated_tool_names" not in payload
+
+
+@pytest.mark.parametrize("global_session", [False, True])
+def test_bridge_confirmed_deletion_preserves_exact_target_scope(
+    mcp_client, mcp_settings, tmp_path, global_session
+):
+    target = _create_project(mcp_client, "disposable-bridge-delete")
+    other = _create_project(mcp_client, "disposable-bridge-survivor")
+    if global_session:
+        proxy, client = _bridge(mcp_client)
+        startup = {"global_session": True, "project_id": target}
+    else:
+        root = tmp_path / "disposable-repository"
+        root.mkdir()
+        (root / "keep").write_text("repository must survive")
+        proxy, client = _scoped_bridge(mcp_client, cwd=str(root))
+        # Bind the disposable directory to the explicit fixture project before startup.
+        _initialize(proxy, client)
+        _tool_call(proxy, client, "workspace.startSession", {"auto_bootstrap": False})
+        connected = _toolbox_call(proxy, client, "workspace.connect", {"project_id": target})
+        assert not connected["result"].get("isError"), connected
+        startup = {"auto_bootstrap": False}
+    _initialize(proxy, client)
+    _tool_call(proxy, client, "workspace.startSession", startup)
+    args = {
+        "confirmation": {
+            "permanent": True,
+            "project_id": target,
+            "project_slug": "disposable-bridge-delete",
+        },
+        "response_mode": "raw",
+    }
+    if global_session:
+        assert _is_bridge_scope_error(_toolbox_call(proxy, client, "project.delete", args))
+        args["project_id"] = target
+    else:
+        denied = _toolbox_call(proxy, client, "project.delete", {**args, "project_id": other})
+        assert _is_bridge_scope_error(denied)
+    deleted = _toolbox_call(proxy, client, "project.delete", args)
+    assert _structured(deleted)["data"]["status"] == "deleted", deleted
+    assert (
+        mcp_client.call_tool_structured("project.get", {"project_id": other})["data"]["id"] == other
+    )
+    repeated = _toolbox_call(proxy, client, "project.delete", args)
+    if global_session:
+        # Global calls retain the existing positive/existing-project admission rule.
+        assert _structured(repeated)["data"]["reason"] == "project_unavailable"
+    else:
+        assert _structured(repeated)["data"]["status"] == "missing"
+        assert (root / "keep").read_text() == "repository must survive"
 
 
 def test_bridge_toolbox_operates_setup_actions(

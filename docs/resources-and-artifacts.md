@@ -80,6 +80,19 @@ Artifact rows live in `artifacts`:
 - `superseded_by_artifact_id`: optional replacement artifact pointer.
 - `name`, `mime_type`, `size_bytes`: optional display/storage metadata.
 - `metadata_json`, `provenance_json`: sanitized metadata.
+- `managed_file_json`: private custody for actual generated files and verified
+  shared leaves from derived project directories;
+  absent from public artifact inputs/outputs and immutable through artifact tools.
+  It records the producer's root/path and filesystem identity for safe project
+  cleanup. Public provenance is descriptive metadata and cannot authorize file
+  deletion. Verified custody passes to surviving shared references during
+  project purge, so the last reference retains cleanup responsibility. Root-owned
+  leaves such as action responses retain their original project boundary and
+  filesystem identity even when there was no source Artifact. Custom
+  output roots remain external. Legacy custody can recover from successful
+  daemon-owned producer receipts; missing evidence returns exact artifact IDs
+  for explicit local-admin ownership reconciliation. See
+  [internal project cleanup](./security.md#internal-project-cleanup).
 - `created_at`, `updated_at`: lifecycle timestamps.
 
 MCP read tools:

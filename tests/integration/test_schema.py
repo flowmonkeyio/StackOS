@@ -9,6 +9,7 @@ import sqlite3
 import subprocess
 import sys
 from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,7 @@ import sqlalchemy as sa
 from alembic import command
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
+from sqlmodel import Session
 
 from stackos.browser.runtime import BROWSER_PROFILE_DIRNAME, browser_profile_dir
 from stackos.communication_surface_bindings import communication_surface_binding_external_id
@@ -677,7 +679,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0037_schedule_id_nonreuse",
+            "0040_artifact_managed_files",
         )
     finally:
         conn.close()
@@ -1553,8 +1555,37 @@ def test_global_account_migration_refuses_data_collapsing_downgrade(
         conn.close()
 
 
+@contextmanager
+def _historical_project_fixture_session(engine) -> Iterator[Session]:
+    """Use current ORM fixture builders, restoring historical DDL before upgrade.
+
+    These tests exercise earlier migrations. Only fixture setup needs the later
+    project fields; the real upgrade must still add them to the old table.
+    Project-order proof seeds its old database in SQL.
+    """
+    with engine.begin() as connection:
+        before = connection.exec_driver_sql("PRAGMA table_info(projects)").all()
+        additions = [
+            (name, ddl)
+            for name, ddl in (
+                ("order_index", "INTEGER DEFAULT 0"),
+                ("cleanup_json", "JSON"),
+            )
+            if name not in {column[1] for column in before}
+        ]
+        for name, ddl in additions:
+            connection.exec_driver_sql(f"ALTER TABLE projects ADD COLUMN {name} {ddl}")
+    try:
+        with Session(engine) as session:
+            yield session
+    finally:
+        with engine.begin() as connection:
+            for name, _ in reversed(additions):
+                connection.exec_driver_sql(f"ALTER TABLE projects DROP COLUMN {name}")
+            assert connection.exec_driver_sql("PRAGMA table_info(projects)").all() == before
+
+
 def test_telegram_cutover_retires_active_bindings_preserves_history(isolated_alembic: Path) -> None:
-    from sqlmodel import Session
 
     from stackos.db.connection import make_engine
     from stackos.db.models import (
@@ -1571,7 +1602,7 @@ def test_telegram_cutover_retires_active_bindings_preserves_history(isolated_ale
 
     _run_alembic(["upgrade", "0030_durable_action_runtime"])
     engine = make_engine(isolated_alembic)
-    with Session(engine) as session:
+    with _historical_project_fixture_session(engine) as session:
         session.add(
             Project(id=1, slug="cutover", name="Cutover", domain="example.test", locale="en-US")
         )
@@ -1944,7 +1975,7 @@ def test_workflow_schedule_migration_preserves_history_and_disarms_legacy(
             "VALUES (41, 1, 'old-review', '0 9 * * 1', 1, '2026-11-12', 'success')"
         )
     engine = make_engine(isolated_alembic)
-    with Session(engine) as session:
+    with _historical_project_fixture_session(engine) as session:
         tracker = TrackerRepository(session)
         tracker.configure_delivery(project_id=1, delivery={"host_key": "codex"})
         plan = (
@@ -2060,7 +2091,7 @@ def test_schedule_id_upgrade_retains_removed_history_and_sequence(
     with sqlite3.connect(isolated_alembic) as conn:
         _insert_legacy_project(conn, project_id=1, now="2026-11-05")
     engine = make_engine(isolated_alembic)
-    with Session(engine) as session:
+    with _historical_project_fixture_session(engine) as session:
         schedules = ScheduledJobRepository(session)
         live = schedules.set(project_id=1, kind="kept", name="Kept", cron_expr="0 9 * * mon").data
         session.add(
@@ -2200,7 +2231,6 @@ def test_schedule_id_upgrade_failure_rolls_back_and_retries(
 
 
 def test_generic_delivery_migration_preserves_settings_and_history(isolated_alembic: Path) -> None:
-    from sqlmodel import Session
 
     from stackos.db.models import Plugin, PluginSource, ProjectPlugin, RunPlan, RunPlanStatus
     from stackos.repositories.tracker import TrackerRepository
@@ -2230,7 +2260,7 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
         },
     }
     engine = make_engine(isolated_alembic)
-    with Session(engine) as session:
+    with _historical_project_fixture_session(engine) as session:
         plugin = Plugin(slug="engineering", name="Engineering", source=PluginSource.BUILTIN)
         session.add(plugin)
         session.flush()
@@ -2354,7 +2384,6 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
 def test_generic_delivery_migration_handles_null_configuration(
     isolated_alembic: Path, null_owner: str, storage: str
 ) -> None:
-    from sqlmodel import Session
 
     from stackos.db.models import Plugin, PluginSource, ProjectPlugin
     from stackos.repositories.tracker import TrackerRepository
@@ -2374,7 +2403,7 @@ def test_generic_delivery_migration_handles_null_configuration(
         "review_agent": {"name": "reviewer", "instructions": "Review", "model": "gpt-6-astra"},
     }
     engine = make_engine(isolated_alembic)
-    with Session(engine) as session:
+    with _historical_project_fixture_session(engine) as session:
         plugin = Plugin(slug="engineering", name="Engineering", source=PluginSource.BUILTIN)
         session.add(plugin)
         session.flush()

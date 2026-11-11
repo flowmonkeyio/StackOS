@@ -86,8 +86,9 @@ obvious without loading every document.
   the agent explicitly chooses an existing `workspace_alias` or supplies
   business project metadata. `workspace.resolve` remains the read-only
   diagnostic path, and `project.*` discovery is available through
-  `toolbox.call` for intentional setup while project switching and deletion
-  stay admin-only.
+  `toolbox.call` for intentional setup. Confirmed permanent deletion uses the
+  registered project operation with exact target/slug confirmation; bound agents
+  retain injected-project scope and console catalog access remains explicit.
 - Agent presets are generic role contracts for MCP/tool consumers. They must be
   adapted to project rules, stack, tracker workflow, references, and signoff
   before use. Workflow templates can recommend host-side skills such as

@@ -1,6 +1,7 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { callOperation } from '@/lib/operations'
 import { formatApiError } from '@/lib/client'
+import { useProjectsStore } from '@/stores/projects'
 import type { TrackerStatus } from '@/lib/task-tracker/types'
 import type { OverviewPage, PortfolioProject } from './ticketOverview'
 
@@ -12,11 +13,15 @@ export interface PortfolioFilters {
 }
 
 export function useHomePortfolioInsights() {
-  const items = ref<PortfolioProject[]>([])
+  const projects = useProjectsStore()
+  const rows = ref<PortfolioProject[]>([])
+  const items = computed(() => rows.value.filter((project) => !projects.isProjectDeleted(project.id)))
   const loading = ref(false)
   const error = ref<string | null>(null)
   const nextCursor = ref<number | null>(null)
-  const total = ref<number | null>(null)
+  const sourceTotal = ref<number | null>(null)
+  const total = computed(() => sourceTotal.value === null ? null
+    : Math.max(items.value.length, sourceTotal.value - rows.value.filter((project) => projects.isProjectDeleted(project.id)).length))
   const filters = ref<PortfolioFilters>({
     query: '',
     is_active: true,
@@ -36,9 +41,10 @@ export function useHomePortfolioInsights() {
         ...(append && nextCursor.value !== null ? { after_id: nextCursor.value } : {}),
       })
       if (request !== generation) return
-      items.value = append ? [...items.value, ...page.items] : page.items
+      projects.reconcileProjectMetadata(page.items)
+      rows.value = append ? [...rows.value, ...page.items] : page.items
       nextCursor.value = page.next_cursor ?? null
-      total.value = page.total_estimate ?? null
+      sourceTotal.value = page.total_estimate ?? null
     } catch (err) {
       if (request === generation)
         error.value = formatApiError(
@@ -52,9 +58,9 @@ export function useHomePortfolioInsights() {
 
   async function setFilters(next: PortfolioFilters): Promise<void> {
     filters.value = next
-    items.value = []
+    rows.value = []
     nextCursor.value = null
-    total.value = null
+    sourceTotal.value = null
     await load()
   }
 

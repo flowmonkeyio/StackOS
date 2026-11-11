@@ -328,9 +328,9 @@ class _FakeClient:
                             _tool("budget.set"),
                             _tool("resource.upsert"),
                             _tool(
-                                "project.delete",
-                                operation_name="project.delete",
-                                grant_policy="local-admin-project-write",
+                                "account.start",
+                                operation_name="account.start",
+                                grant_policy="local-admin-auth-write",
                             ),
                             _tool("runPlan.get"),
                         ]
@@ -1653,7 +1653,8 @@ def test_registered_board_operations_are_direct_and_keep_grant_denials(run_id: i
     allowed = _bridge_allowed_tool_names(run_id, allowed_by_run, catalog=catalog)
 
     assert board_operations <= allowed
-    assert {"project.update", "artifact.create"}.isdisjoint(allowed)
+    assert {"project.update", "project.move"} <= allowed
+    assert "artifact.create" not in allowed
     assert ("resource.upsert" in allowed) is (run_id is not None)
 
     response = _bridge_toolbox_describe(
@@ -1682,11 +1683,12 @@ def test_registered_board_operations_are_direct_and_keep_grant_denials(run_id: i
         assert statuses[name]["call_via"] == "toolbox.call"
         assert statuses[name]["reason_code"] == "available"
         assert statuses[name]["operation"]["grant_policy"] == "direct-tracker-write"
-    assert statuses["project.update"]["reason_code"] == "local_admin_required"
+    assert statuses["project.update"]["reason_code"] == "available"
     assert statuses["artifact.create"]["reason_code"] == (
         "run_plan_step_grant_required" if run_id is None else "not_granted_to_active_step"
     )
-    assert {"project.update", "artifact.create"}.isdisjoint(described)
+    assert "project.update" in described
+    assert "artifact.create" not in described
     assert statuses["resource.upsert"]["reason_code"] == (
         "run_plan_step_grant_required" if run_id is None else "active_step_granted"
     )
@@ -1901,7 +1903,7 @@ def test_bridge_proxy_denied_admin_tool_keeps_admin_reason_with_active_step() ->
         "params": {
             "name": "toolbox.call",
             "arguments": {
-                "tool_name": "project.delete",
+                "tool_name": "account.start",
                 "run_id": 7,
                 "arguments": {"project_id": 1},
             },

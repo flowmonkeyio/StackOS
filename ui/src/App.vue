@@ -5,12 +5,14 @@
 // holding the brand, ProjectSwitcher, primary nav, and theme toggle.
 // At < md it becomes a slide-over drawer under a scrim.
 
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { RouterView, useRoute } from 'vue-router'
 
 import DesktopUpdatePrompt from '@/components/DesktopUpdatePrompt.vue'
 import ProjectSwitcher from '@/components/ProjectSwitcher.vue'
+import ProjectRenameDialog from '@/components/ProjectRenameDialog.vue'
+import ProjectDeleteDialog from '@/components/ProjectDeleteDialog.vue'
 import PluginNavRenderer from '@/components/renderers/PluginNavRenderer.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import { useProjectNavigation } from '@/composables/useProjectNavigation'
@@ -28,10 +30,32 @@ const {
   projectNavSections,
   routeViewKey,
   selectProject,
+  projectManagementLoading,
+  projectManagementPending,
+  projectOrderReady,
+  projectManagementError,
+  loadProjectCatalog,
+  moveProject,
+  renameProjectTarget,
+  requestProjectRename,
+  requestProjectDelete,
+  closeProjectRename,
+  deleteProjectTarget,
+  closeProjectDelete,
+  finishProjectDeletion,
+  viewProjectWork,
 } = useProjectNavigation()
 
 const theme = ref<'light' | 'dark'>('light')
 const drawerOpen = ref(false)
+const projectSwitcher = ref<InstanceType<typeof ProjectSwitcher> | null>(null)
+async function onProjectDeleteClosed(): Promise<void> {
+  closeProjectDelete()
+  await nextTick()
+  // The deleted row's action opener no longer exists. Preserve the primitive's
+  // normal return focus when it does; otherwise return to the stable selector.
+  if (document.activeElement === document.body) projectSwitcher.value?.focusTrigger()
+}
 
 function applyTheme(): void {
   if (typeof document === 'undefined') return
@@ -51,7 +75,10 @@ function toggleTheme(): void {
 }
 
 function onDrawerKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape' && drawerOpen.value) closeDrawer()
+  // Nested menus consume Escape before window; management dialogs register
+  // their window listener after the shell, so retain their canonical target.
+  if (event.key === 'Escape' && !event.defaultPrevented && drawerOpen.value
+    && !renameProjectTarget.value && !deleteProjectTarget.value) closeDrawer()
 }
 
 onMounted(() => {
@@ -159,8 +186,8 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
     <aside
       id="cs-sidebar"
       :class="[
-        'bg-sb-bg md:sticky md:top-0 md:z-auto md:h-screen md:w-sidebar md:flex-shrink-0 md:translate-x-0 md:shadow-none',
-        'fixed inset-y-0 left-0 z-modal w-[280px] max-w-[85vw] transition-transform duration-base ease-standard md:static',
+        'bg-sb-bg md:sticky md:top-0 md:z-dropdown md:h-screen md:w-sidebar md:flex-shrink-0 md:translate-x-0 md:shadow-none',
+        'fixed inset-y-0 left-0 z-overlay w-[280px] max-w-[85vw] transition-transform duration-base ease-standard md:static',
         drawerOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full',
       ]"
       aria-label="Primary navigation"
@@ -191,11 +218,36 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
 
         <div class="shrink-0 px-3 py-3 pt-4 md:pt-3">
           <ProjectSwitcher
+            ref="projectSwitcher"
             :items="projectItems"
             :selected-project="currentProject"
+            :loading="projectManagementLoading"
+            :management-pending="projectManagementPending"
+            :management-open="Boolean(renameProjectTarget || deleteProjectTarget)"
+            :order-ready="projectOrderReady"
+            :error="projectManagementError"
             @select="selectProject"
+            @opened="loadProjectCatalog"
+            @move="moveProject"
+            @rename="requestProjectRename"
+            @delete="requestProjectDelete"
           />
         </div>
+
+        <ProjectRenameDialog
+          v-if="renameProjectTarget"
+          :key="renameProjectTarget.id"
+          :project="renameProjectTarget"
+          @close="closeProjectRename"
+        />
+        <ProjectDeleteDialog
+          v-if="deleteProjectTarget"
+          :key="deleteProjectTarget.id"
+          :project="deleteProjectTarget"
+          :finish="finishProjectDeletion"
+          :view-work="viewProjectWork"
+          @close="onProjectDeleteClosed"
+        />
 
         <nav
           aria-label="Project navigation"

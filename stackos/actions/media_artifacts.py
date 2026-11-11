@@ -190,7 +190,9 @@ def register_generated_media_artifacts(
         }
         if metadata_builder is not None:
             metadata.update(metadata_builder(item))
-        artifact = repository.create(
+        artifact = repository.create_generated_file(
+            asset_root=asset_dir,
+            path=path,
             project_id=request.project_id,
             plugin_slug="utils",
             kind=kind,
