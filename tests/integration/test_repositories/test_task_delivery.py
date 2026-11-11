@@ -1450,7 +1450,7 @@ class QueuedScheduler:
 
     def add_job(self, function, **options) -> None:
         assert options["jobstore"] == "memory"
-        assert options["executor"] == "long"
+        assert options["executor"] == "task-delivery"
         self.jobs.append((function, options))
 
     def run(self) -> None:
@@ -3373,7 +3373,7 @@ def test_abort_during_scheduler_registration_preserves_only_current_handoff(
 
     ready, release, lock = Event(), Event(), Lock()
     actual = BackgroundScheduler(
-        jobstores={"memory": MemoryJobStore()}, executors={"long": APSExecutor(1)}
+        jobstores={"memory": MemoryJobStore()}, executors={"task-delivery": APSExecutor(1)}
     )
     actual.start(paused=True)
     calls, old_jobs = [], []

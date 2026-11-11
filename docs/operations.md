@@ -262,6 +262,22 @@ Finish suitable role setup before enabling. The desktop admission and timer
 runtime own whether a future firing is currently available; saved enabled
 configuration alone is not evidence of a running desktop app.
 
+## Local task admission capacity
+
+`tracker.deliveryCapacity` and `tracker.setDeliveryCapacity` use the same
+registry-owned local-admin console boundary as other explicit settings controls.
+They are REST/CLI-only, browser-safe operations with compact/raw readback and no
+ack mode. Neither accepts a project selector or workflow run-token authority.
+The write accepts only a strict integer `concurrent_tasks` from 1 through 32.
+Readback preserves `scope: "local-user-daemon"`, `configured_limit`,
+`running_count`, `queued_count`, `supported_min` and `supported_max`.
+
+The existing database stores one atomic preference shared across the daemon's
+projects (default 3). A successful save affects future admission; lowering does
+not cancel running work. The bounded task executor is independent of backup
+`long` workers. See [local task capacity](./task-tracker.md#local-task-capacity)
+for count semantics, persistence, backup coverage and recovery boundaries.
+
 ## Local backup administration
 
 `backup.status`, `backup.configure` and `backup.create` share the generic

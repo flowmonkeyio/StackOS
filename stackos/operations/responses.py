@@ -516,6 +516,8 @@ def _compact_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, 
         "tracker.taskResults",
         "tracker.activeTasks",
         "tracker.activeTasksAll",
+        "tracker.deliveryCapacity",
+        "tracker.setDeliveryCapacity",
     }:
         # These pages already bound payload size and own their coverage contract.
         # Generic page/mutation shaping would discard task scope and warnings.

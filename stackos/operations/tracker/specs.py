@@ -13,6 +13,7 @@ from stackos.operations.spec import (
     OperationSurface,
     OperationSurfaces,
 )
+from stackos.operations.tracker.capacity import operation_specs as capacity_specs
 from stackos.operations.tracker.read_handlers import (
     tracker_active_tasks,
     tracker_active_tasks_all,
@@ -129,6 +130,7 @@ _TICKET_COUNTS_RESPONSE_POLICY = OperationResponsePolicy(
 
 def operation_specs() -> list[OperationSpec]:
     return [
+        *capacity_specs(),
         *[
             operation_spec(
                 name=name,

@@ -3634,6 +3634,55 @@ export interface components {
             /** Title */
             title?: string | null;
         };
+        /** DeliveryCapacityInput */
+        DeliveryCapacityInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: DeliveryCapacityInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** DeliveryCapacityOut */
+        DeliveryCapacityOut: {
+            /** Configured Limit */
+            configured_limit: number;
+            /** Queued Count */
+            queued_count: number;
+            /** Running Count */
+            running_count: number;
+            /**
+             * Scope
+             * @default local-user-daemon
+             * @constant
+             */
+            scope: "local-user-daemon";
+            /**
+             * Supported Max
+             * @default 32
+             */
+            supported_max: number;
+            /**
+             * Supported Min
+             * @default 1
+             */
+            supported_min: number;
+        };
         /** DurableActionItemOut */
         DurableActionItemOut: {
             /** Attempt Count */
@@ -7173,6 +7222,32 @@ export interface components {
             /** Workflow Title */
             workflow_title: string | null;
         };
+        /** SetDeliveryCapacityInput */
+        SetDeliveryCapacityInput: {
+            /** Concurrent Tasks */
+            concurrent_tasks: number;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: SetDeliveryCapacityInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
         /** SitemapFetchRequest */
         SitemapFetchRequest: {
             /**
@@ -9080,6 +9155,20 @@ export interface components {
              */
             run_id: number | null;
         };
+        /** WriteEnvelope[DeliveryCapacityOut] */
+        WriteEnvelope_DeliveryCapacityOut_: {
+            data: components["schemas"]["DeliveryCapacityOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
         /** WriteEnvelope[DurableActionJobOut] */
         WriteEnvelope_DurableActionJobOut_: {
             data: components["schemas"]["DurableActionJobOut"];
@@ -9600,6 +9689,8 @@ export type SchemaContextSnapshotOut = components['schemas']['ContextSnapshotOut
 export type SchemaCostResponse = components['schemas']['CostResponse'];
 export type SchemaDecisionOut = components['schemas']['DecisionOut'];
 export type SchemaDecisionRecordRequest = components['schemas']['DecisionRecordRequest'];
+export type SchemaDeliveryCapacityInput = components['schemas']['DeliveryCapacityInput'];
+export type SchemaDeliveryCapacityOut = components['schemas']['DeliveryCapacityOut'];
 export type SchemaDurableActionItemOut = components['schemas']['DurableActionItemOut'];
 export type SchemaDurableActionJobOut = components['schemas']['DurableActionJobOut'];
 export type SchemaEnumLookupResponse = components['schemas']['EnumLookupResponse'];
@@ -9713,6 +9804,7 @@ export type SchemaScheduleToggleInput = components['schemas']['ScheduleToggleInp
 export type SchemaScheduleUpsertRequest = components['schemas']['ScheduleUpsertRequest'];
 export type SchemaScheduledJobOut = components['schemas']['ScheduledJobOut'];
 export type SchemaScheduledRunOut = components['schemas']['ScheduledRunOut'];
+export type SchemaSetDeliveryCapacityInput = components['schemas']['SetDeliveryCapacityInput'];
 export type SchemaSitemapFetchRequest = components['schemas']['SitemapFetchRequest'];
 export type SchemaSitemapFetchResponse = components['schemas']['SitemapFetchResponse'];
 export type SchemaSnapshotRef = components['schemas']['SnapshotRef'];
@@ -9777,6 +9869,7 @@ export type SchemaWorkflowTemplateListOut = components['schemas']['WorkflowTempl
 export type SchemaWorkflowTemplateSpec = components['schemas']['WorkflowTemplateSpec'];
 export type SchemaWorkflowTemplateSummaryOut = components['schemas']['WorkflowTemplateSummaryOut'];
 export type SchemaWriteEnvelopeAgentDefinition = components['schemas']['WriteEnvelope_AgentDefinition_'];
+export type SchemaWriteEnvelopeDeliveryCapacityOut = components['schemas']['WriteEnvelope_DeliveryCapacityOut_'];
 export type SchemaWriteEnvelopeDurableActionJobOut = components['schemas']['WriteEnvelope_DurableActionJobOut_'];
 export type SchemaWriteEnvelopeFinanceCommitOut = components['schemas']['WriteEnvelope_FinanceCommitOut_'];
 export type SchemaWriteEnvelopeFinanceStatusOut = components['schemas']['WriteEnvelope_FinanceStatusOut_'];
@@ -13050,6 +13143,12 @@ export enum AuthStartRequestAuthorization_mode {
     phone = "phone",
     qr = "qr"
 }
+export enum DeliveryCapacityInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
 export enum DurableActionItemStatus {
     pending = "pending",
     leased = "leased",
@@ -13382,6 +13481,12 @@ export enum ScheduleToggleInputResponse_modeAnyOf0 {
     compact = "compact",
     raw = "raw",
     ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum SetDeliveryCapacityInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
     standard = "standard",
     verbose = "verbose"
 }

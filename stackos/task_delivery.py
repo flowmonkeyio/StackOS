@@ -135,11 +135,25 @@ def abort_run_plan(
         calls = cancel_task_invocations(project_id, task.key) if task else []
         if state:
             _update_delivery(
-                repo, project_id, task.key, status="stopped", reason=reason or "Run aborted."
+                repo,
+                project_id,
+                task.key,
+                status="stopped",
+                slot_reserved=False,
+                reason=reason or "Run aborted.",
             )
             if scheduler is not None and state.get("job_ref"):
-                with suppress(JobLookupError):
+                try:
                     scheduler.remove_job(state["job_ref"], jobstore="memory")
+                except JobLookupError:
+                    # A queued callback cannot cross the launch lock after the
+                    # abort fence, even if registration/dequeue is still in flight.
+                    if state.get("status") == "queued" and state.get("slot_reserved"):
+                        _update_delivery(repo, project_id, task.key, slot_reserved=False)
+                else:
+                    _update_delivery(repo, project_id, task.key, slot_reserved=False)
+    if scheduler is not None:
+        drain_delivery(session_factory=lambda: Session(session.get_bind()), scheduler=scheduler)
     outcomes = [call.process_control.stop() for call in calls]
     retired = all(
         outcome == "prevented" or call.retired.wait(2)
@@ -1046,6 +1060,185 @@ def workflow_agent_assignments(
     return result
 
 
+def _admission_id(scheduler: BaseScheduler) -> str:
+    # One runtime generation: persisted handoffs from a dead daemon never gain
+    # implicit resume authority when a new task is handed off after restart.
+    with managed_launch_lock:
+        identity = getattr(scheduler, "task_delivery_admission_id", None)
+        if identity is None:
+            identity = uuid4().hex
+            scheduler.task_delivery_admission_id = identity
+        return identity
+
+
+def delivery_capacity(session: Session, scheduler: BaseScheduler) -> dict[str, Any]:
+    from stackos.task_capacity import MAX_TASK_CAPACITY, configured_limit
+
+    with managed_launch_lock:
+        identity = _admission_id(scheduler)
+        states = session.exec(
+            select(TrackerTask.metadata_json).where(
+                func.json_extract(TrackerTask.metadata_json, "$.delivery.admission_id") == identity
+            )
+        ).all()
+        deliveries = [(metadata or {}).get("delivery", {}) for metadata in states]
+        return {
+            "scope": "local-user-daemon",
+            "configured_limit": configured_limit(session),
+            "running_count": sum(bool(state.get("slot_reserved")) for state in deliveries),
+            "queued_count": sum(
+                state.get("status") == "queued" and not state.get("slot_reserved")
+                for state in deliveries
+            ),
+            "supported_min": 1,
+            "supported_max": MAX_TASK_CAPACITY,
+        }
+
+
+def _reserve_delivery(session_factory, scheduler):
+    """Reserve one slot under the existing launch lock, before job registration."""
+    from stackos.repositories.projects import ProjectRepository
+
+    with managed_launch_lock, session_factory() as session:
+        identity = _admission_id(scheduler)
+        capacity = delivery_capacity(session, scheduler)
+        if capacity["running_count"] >= capacity["configured_limit"]:
+            return
+        tasks = session.exec(
+            select(TrackerTask)
+            .where(
+                func.json_extract(TrackerTask.metadata_json, "$.delivery.admission_id") == identity,
+                func.json_extract(TrackerTask.metadata_json, "$.delivery.status") == "queued",
+            )
+            .order_by(TrackerTask.id)
+        ).all()
+        repo = TrackerRepository(session)
+        for task in tasks:
+            state = (task.metadata_json or {})["delivery"]
+            if state.get("slot_reserved"):
+                continue
+            try:
+                ProjectRepository(session).require_available(task.project_id, reserve=True)
+            except (NotFoundError, ConflictError):
+                _update_delivery(
+                    repo, task.project_id, task.key, status="stopped", reason="Project unavailable."
+                )
+                continue
+            _update_delivery(repo, task.project_id, task.key, slot_reserved=True)
+            return task.project_id, task.key, state
+
+
+def drain_delivery(*, session_factory, scheduler: BaseScheduler) -> None:
+    """Drain the existing metadata queue; no priority policy or second queue."""
+    from apscheduler.schedulers.base import STATE_STOPPED
+
+    if getattr(scheduler, "state", None) == STATE_STOPPED and getattr(
+        scheduler, "task_delivery_started", False
+    ):
+        return
+    while reserved := _reserve_delivery(session_factory, scheduler):
+        project_id, task_key, state = reserved
+        # Keep registration outside managed_launch_lock. Abort must be able to
+        # fence a callback even while scheduler registration is blocked.
+        try:
+            scheduler.add_job(
+                run_delivery,
+                trigger="date",
+                id=state["job_ref"],
+                jobstore="memory",
+                executor="task-delivery",
+                kwargs={
+                    "session_factory": session_factory,
+                    "project_id": project_id,
+                    "task_key": task_key,
+                    "handoff_id": state["handoff_id"],
+                    "scheduler": scheduler,
+                },
+            )
+        except Exception as error:
+            with managed_launch_lock, session_factory() as session:
+                repo = TrackerRepository(session)
+                task = _task(repo, project_id, task_key)
+                if _delivery_active(task, state["handoff_id"]):
+                    current = (task.metadata_json or {})["delivery"]
+                    _update_delivery(
+                        repo,
+                        project_id,
+                        task_key,
+                        # An executor may have dequeued and started the callback
+                        # before add_job raised. It owns its slot until finally.
+                        slot_reserved=current.get("status") == "running",
+                        status="stopped",
+                        reason=str(error),
+                    )
+                with suppress(JobLookupError):
+                    scheduler.remove_job(state["job_ref"], jobstore="memory")
+            raise
+        with managed_launch_lock, session_factory() as session:
+            repo = TrackerRepository(session)
+            task = _task(repo, project_id, task_key)
+            if not _delivery_active(task, state["handoff_id"]):
+                try:
+                    scheduler.remove_job(state["job_ref"], jobstore="memory")
+                except JobLookupError:
+                    pass  # Dequeued callbacks retain their slot until retirement.
+                else:
+                    current = (task.metadata_json or {}).get("delivery", {})
+                    if current.get("handoff_id") == state["handoff_id"] and current.get(
+                        "slot_reserved"
+                    ):
+                        _update_delivery(repo, project_id, task_key, slot_reserved=False)
+
+
+def release_delivery(*, session_factory, scheduler, project_id, task_key, handoff_id):
+    with managed_launch_lock, session_factory() as session:
+        repo = TrackerRepository(session)
+        task = session.exec(
+            select(TrackerTask).where(
+                TrackerTask.project_id == project_id, TrackerTask.key == task_key
+            )
+        ).first()
+        state = (task.metadata_json or {}).get("delivery", {}) if task else {}
+        if state.get("handoff_id") == handoff_id and state.get("slot_reserved"):
+            _update_delivery(repo, project_id, task_key, slot_reserved=False)
+    _request_delivery_drain(session_factory, scheduler)
+
+
+def _request_delivery_drain(session_factory, scheduler):
+    request = getattr(scheduler, "task_delivery_drain", None)
+    if request is not None:
+        # Daemon callbacks return before its event loop performs registration.
+        # shutdown(wait=True) holds scheduler locks while waiting for workers.
+        request()
+    else:
+        drain_delivery(session_factory=session_factory, scheduler=scheduler)
+
+
+def missed_delivery_job(event, *, session_factory, scheduler):
+    """A callback rejected as late never enters run_delivery's finally block."""
+    if not event.job_id.startswith("task-delivery:"):
+        return
+    with managed_launch_lock, session_factory() as session:
+        task = session.exec(
+            select(TrackerTask).where(
+                func.json_extract(TrackerTask.metadata_json, "$.delivery.job_ref") == event.job_id,
+                func.json_extract(TrackerTask.metadata_json, "$.delivery.admission_id")
+                == _admission_id(scheduler),
+                func.json_extract(TrackerTask.metadata_json, "$.delivery.status") == "queued",
+            )
+        ).first()
+        if task:
+            _update_delivery(
+                TrackerRepository(session),
+                task.project_id,
+                task.key,
+                slot_reserved=False,
+                status="stopped",
+                reason="Task job missed its launch window.",
+            )
+    _request_delivery_drain(session_factory, scheduler)
+
+
 def start_delivery(
     *,
     session: Session,
@@ -1282,6 +1475,8 @@ def start_delivery(
         project_id,
         task_key,
         status="queued",
+        admission_id=_admission_id(scheduler),
+        slot_reserved=False,
         ticket_key=None,
         reason=None,
         project_dir=str(directory),
@@ -1304,30 +1499,7 @@ def start_delivery(
         session.expire_all()
         if not _delivery_active(_task(repo, project_id, task_key), state["handoff_id"]):
             return _receipt(task_key, {**state, "status": "stopped"})
-    try:
-        scheduler.add_job(
-            run_delivery,
-            trigger="date",
-            id=state["job_ref"],
-            jobstore="memory",
-            executor="long",
-            kwargs={
-                "session_factory": session_factory,
-                "project_id": project_id,
-                "task_key": task_key,
-                "handoff_id": state["handoff_id"],
-            },
-        )
-    except Exception as error:
-        with managed_launch_lock:
-            session.expire_all()
-            if _delivery_active(_task(repo, project_id, task_key), state["handoff_id"]):
-                _update_delivery(repo, project_id, task_key, status="stopped", reason=str(error))
-        # Registration may have inserted the job before raising. This exact ID
-        # belongs only to the original admission, never a superseding handoff.
-        with suppress(JobLookupError):
-            scheduler.remove_job(state["job_ref"], jobstore="memory")
-        raise
+    drain_delivery(session_factory=session_factory, scheduler=scheduler)
     with managed_launch_lock:
         session.expire_all()
         task = _task(repo, project_id, task_key)
@@ -1382,6 +1554,7 @@ def run_delivery(
     project_id: int,
     task_key: str,
     handoff_id: str,
+    scheduler: BaseScheduler | None = None,
 ) -> None:
     cancellation: Event | None = None
 
@@ -2047,3 +2220,12 @@ def run_delivery(
                         error=str(error),
                     )
             _update_delivery(repo, project_id, task_key, status="stopped", reason=str(error))
+    finally:
+        if scheduler is not None:
+            release_delivery(
+                session_factory=session_factory,
+                scheduler=scheduler,
+                project_id=project_id,
+                task_key=task_key,
+                handoff_id=handoff_id,
+            )

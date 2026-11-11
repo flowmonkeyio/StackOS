@@ -270,8 +270,10 @@ remains an explicit reviewed current-project action; active snapshots stay froze
 
 The call returns task/job/status refs immediately. Each task has its own memory
 scheduler job (`task-delivery:<project_id>:<task_id>`). Distinct canonical working
-directories can execute concurrently, within the existing long executor's three
-workers shared with other long jobs. Tickets and delivery/review calls within
+directories can execute concurrently, within this local daemon's persisted task
+capacity (default 3, supported range 1..32). Task jobs use the separate bounded
+`task-delivery` executor; backup and other `long` jobs do not consume task slots.
+Tickets and delivery/review calls within
 one task remain serial until all task work completes or execution stops:
 
 ```text
@@ -289,6 +291,33 @@ different projects on this daemon) from acquiring the same directory. Symlink
 and filesystem aliases conflict. Separate Git worktrees sharing repository
 metadata remain distinct; Git is optional. No worktree creation or branch merge
 is performed by the runner.
+
+### Local task capacity
+
+`tracker.deliveryCapacity` reads the effective `configured_limit`, admitted
+`running_count`, waiting `queued_count`, supported bounds and
+`scope: "local-user-daemon"`. `tracker.setDeliveryCapacity` explicitly saves
+`{"concurrent_tasks": 6}` and returns that same readback in its write envelope.
+Both are local-admin REST/CLI operations; ordinary MCP and workflow/run-token
+authority cannot use them. There is no project selector or per-project override.
+For example: `stackos ops call tracker.setDeliveryCapacity --input capacity.json`.
+
+One singleton preference row in the existing data-directory database owns this
+limit across all projects. It survives ordinary restart/install/upgrade and is
+covered by the existing encrypted database backup/export; there is no separate
+preference file or backup path. Different data directories remain independent.
+This is not account isolation for people sharing one daemon or a cross-device quota.
+
+A successful save commits before admission changes. A failed commit leaves the
+previous limit effective. Raising drains the existing queued task metadata;
+lowering keeps already admitted work and waits for slots before further admission.
+`running_count` includes admitted callbacks starting or retiring, so it can exceed
+a newly lowered limit. Backup workers and tasks merely waiting for a slot are
+excluded. The existing launch lock serializes slot reservations across projects.
+No priority policy is added; native sessions, candidate evidence and repair
+allowance are retained.
+Daemon restart does not automatically resume old handoffs; normal explicit
+recovery/rehandoff authority still applies.
 
 ### Task-local native tool routing
 
