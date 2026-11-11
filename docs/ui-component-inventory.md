@@ -84,6 +84,8 @@ exclusions prevent late reads from restoring them. No deleted project payload
 is retained in the backend. `useProjectNavigation` alone chooses the first
 survivor in stored order or global Overview, preserves a newer selection and
 noncurrent routes, and permits navigation-only retry after cleanup succeeds.
+It rechecks route/selection ownership after survivor reads and rejects removed
+project destinations at router resolution after asynchronous leave/update guards.
 The selector remains an intent emitter. Dialog titles wrap long project names;
 normal overlay focus returns to the opener, or the stable selector when a
 deleted row's opener is gone. Source tests do not claim operator pointer or

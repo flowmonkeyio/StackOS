@@ -27,6 +27,30 @@ function dialogs(): HTMLElement[] {
 }
 
 describe('UiDialog', () => {
+  it('retains Tab and Shift+Tab inside a dialog with all controls disabled and restores its opener', async () => {
+    const opener = document.createElement('button')
+    document.body.append(opener)
+    opener.focus()
+    const wrapper = mount(UiDialog, {
+      props: { modelValue: true, title: 'Removing project', hideClose: true, noEscape: true },
+      slots: { footer: '<button disabled>Cancel</button><button disabled>Deleting…</button>' },
+    })
+    await nextTick()
+    const frame = dialogs().at(-1)!
+    expect(document.activeElement).toBe(frame)
+    for (const shiftKey of [false, true]) {
+      opener.focus()
+      const tab = new KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true })
+      window.dispatchEvent(tab)
+      expect(tab.defaultPrevented).toBe(true)
+      expect(document.activeElement).toBe(frame)
+    }
+    await wrapper.setProps({ modelValue: false })
+    expect(document.activeElement).toBe(opener)
+    wrapper.unmount()
+    opener.remove()
+  })
+
   it('opens, closes and reopens with a Teleport stub without render-driven stack registration', async () => {
     const w = mount(defineComponent({
       components: { UiConfirmDialog },

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import { UiButton, UiCallout, UiDialog } from '@/components/ui'
 import { formatApiError } from '@/lib/client'
 import { useProjectsStore, type Project, type ProjectCleanupResult } from '@/stores/projects'
@@ -13,6 +13,7 @@ const props = defineProps<{
 const emit = defineEmits<{ close: [] }>()
 const projects = useProjectsStore()
 const toasts = useToastsStore()
+const dialog = ref<InstanceType<typeof UiDialog> | null>(null)
 // The keyed dialog retains immutable identity across partial cleanup/retry.
 const target = { id: props.project.id, slug: props.project.slug }
 const pending = ref(false)
@@ -47,6 +48,8 @@ async function confirm(): Promise<void> {
   pending.value = true
   pendingAction.value = removed.value ? 'navigation' : 'delete'
   failure.value = null
+  await nextTick()
+  dialog.value?.focusTitle()
   try {
     if (!removed.value) {
       result.value = await projects.deleteProject(target)
@@ -68,6 +71,8 @@ async function openWork(): Promise<void> {
   if (pending.value) return
   pending.value = true
   pendingAction.value = 'work'
+  await nextTick()
+  dialog.value?.focusTitle()
   try {
     if (await props.viewWork(target.id)) emit('close')
     else failure.value = 'Could not open active work. Try again.'
@@ -77,6 +82,7 @@ async function openWork(): Promise<void> {
 
 <template>
   <UiDialog
+    ref="dialog"
     :model-value="true"
     :title="title"
     :description="target.slug"

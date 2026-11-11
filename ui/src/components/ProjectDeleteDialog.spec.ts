@@ -53,7 +53,16 @@ describe('ProjectDeleteDialog', () => {
     let complete!: (response: Response) => void
     globalThis.fetch = vi.fn(() => new Promise<Response>((resolve) => { complete = resolve }))
     const { wrapper, projects, finish, button } = setup()
+    ;(button('Delete project').element as HTMLButtonElement).focus()
     await button('Delete project').trigger('click')
+    expect(wrapper.get('[role="dialog"]').element.contains(document.activeElement)).toBe(true)
+    expect(wrapper.findAll('button:not([disabled])')).toHaveLength(0)
+    for (const shiftKey of [false, true]) {
+      const tab = new KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true })
+      window.dispatchEvent(tab)
+      expect(tab.defaultPrevented).toBe(true)
+      expect(wrapper.get('[role="dialog"]').element.contains(document.activeElement)).toBe(true)
+    }
     expect(wrapper.text()).toContain('Deleting Clickgram…')
     expect(button('Cancel').attributes('disabled')).toBeDefined()
     expect(wrapper.find('[aria-label="Close dialog"]').exists()).toBe(false)

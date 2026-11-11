@@ -27,6 +27,7 @@ export function useProjectNavigation() {
   const { items: projectItems, activeProject } = storeToRefs(projects)
   const { enabledPlugins, pluginProjectId } = storeToRefs(catalog)
   let catalogRefresh: CatalogRefresh | null = null
+  let selectionIntent = 0
   const renameTargetId = ref<number | null>(null)
   const deleteTarget = ref<Project | null>(null)
   const renameProjectTarget = computed(() => renameTargetId.value === null ? null : projects.getById(renameTargetId.value))
@@ -93,10 +94,21 @@ export function useProjectNavigation() {
   const removeAfterEach = router.afterEach((to, _from, failure) => {
     if (!failure) synchronizeSuccessfulRoute(to)
   })
-  onBeforeUnmount(removeAfterEach)
+  // Resolve after the existing asynchronous leave/update guards, before the
+  // router commits. Suppressing store synchronization after commit is too late.
+  const removeBeforeResolve = router.beforeResolve((to) => {
+    const projectId = projectIdFromRoute(to)
+    return projectId === null || !projects.isProjectDeleted(projectId)
+  })
+  onBeforeUnmount(() => {
+    selectionIntent++
+    removeBeforeResolve()
+    removeAfterEach()
+  })
 
   async function selectProject(projectId: number): Promise<boolean> {
     if (projects.isProjectDeleted(projectId)) return false
+    selectionIntent++
     const destination = projectSwitchDestination(route, projectId)
     if (destination) {
       try {
@@ -117,19 +129,30 @@ export function useProjectNavigation() {
     // Inspect the current route/selection after cleanup: a later user choice
     // must survive a delayed deletion response.
     if (routeProjectId.value !== projectId && projects.activeProjectId !== projectId) return true
-    if (!projects.catalogComplete && !await projects.loadAll()) return false
+    const intent = selectionIntent
+    const fromPath = route.fullPath
+    const fromSelection = projects.activeProjectId
+    const loaded = projects.catalogComplete || await projects.loadAll()
+    if (selectionIntent !== intent || route.fullPath !== fromPath || projects.activeProjectId !== fromSelection) {
+      // A newer choice owns navigation, including one still waiting on a
+      // leave guard. Keep retry available if its destination has not committed.
+      const currentId = routeProjectId.value
+      return currentId === null || !projects.isProjectDeleted(currentId)
+    }
+    if (!loaded) return false
     const survivor = projects.items.find((project) => project.is_active && !project.cleanup_json)
       ?? projects.items.find((project) => !project.cleanup_json)
     if (survivor) return selectProject(survivor.id)
     try {
       const failure = await router.push('/')
       if (isNavigationFailure(failure) && route.path !== '/') return false
-      projects.setActiveProjectId(null)
+      if (selectionIntent === intent) projects.setActiveProjectId(null)
       return true
     } catch { return false }
   }
 
   async function viewProjectWork(projectId: number): Promise<boolean> {
+    selectionIntent++
     try {
       const failure = await router.push({ path: `/projects/${projectId}/tasks` })
       return !isNavigationFailure(failure) || route.path === `/projects/${projectId}/tasks`
