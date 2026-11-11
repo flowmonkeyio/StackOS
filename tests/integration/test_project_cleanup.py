@@ -26,11 +26,13 @@ from stackos.db.models import (
     Project,
     RunKind,
     TrackerTask,
+    WorkspaceBinding,
 )
 from stackos.project_cleanup import ProjectCleanupService
 from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.projects import ProjectRepository, ScheduledJobRepository
 from stackos.repositories.runs import RunRepository
+from stackos.repositories.workspaces import WorkspaceRepository
 
 
 @pytest.fixture
@@ -81,6 +83,46 @@ async def test_identity_validation_precedes_mutation_and_missing_never_resolves_
     assert ProjectRepository(s).get(replacement.id).slug == target.slug
     with pytest.raises(NotFoundError):
         ProjectRepository(s).require_available(target.id)
+
+
+@pytest.mark.asyncio
+async def test_selected_primary_folder_cleanup_preserves_source_and_other_project(
+    fixture, tmp_path
+):
+    s, settings, target, other = fixture
+    projects = ProjectRepository(s)
+    workspaces = WorkspaceRepository(s)
+    primary = put(tmp_path / "source-primary" / "keep", "primary source")
+    task = put(tmp_path / "source-task" / "keep", "task source")
+    survivor = put(tmp_path / "source-survivor" / "keep", "other source")
+    bindings = []
+    for project, path in ((target, primary), (target, task), (other, survivor)):
+        bindings.append(
+            workspaces.connect(
+                project_id=project.id,
+                repo_fingerprint=f"path:{path.parent.name}",
+                last_known_root=str(path.parent),
+            ).data
+        )
+    projects.update(target.id, primary_workspace_binding_id=bindings[0].id)
+    projects.update(other.id, primary_workspace_binding_id=bindings[2].id)
+    other_before = projects.get(other.id).model_dump()
+    binding_before = s.get(WorkspaceBinding, bindings[2].id).model_dump()
+    result = await ProjectCleanupService(s, settings).delete(
+        target.id, confirmation=confirmation(target)
+    )
+    assert result.status == "deleted"
+    s.expire_all()
+    assert s.get(Project, target.id) is None
+    assert all(s.get(WorkspaceBinding, binding.id) is None for binding in bindings[:2])
+    assert projects.get(other.id).model_dump() == other_before
+    assert s.get(WorkspaceBinding, bindings[2].id).model_dump() == binding_before
+    assert [path.read_text() for path in (primary, task, survivor)] == [
+        "primary source",
+        "task source",
+        "other source",
+    ]
+    assert s.connection().exec_driver_sql("PRAGMA foreign_key_check").all() == []
 
 
 @pytest.mark.asyncio

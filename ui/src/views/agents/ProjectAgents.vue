@@ -1,18 +1,16 @@
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, onBeforeUpdate, ref, toRef } from 'vue'
+import { computed, inject, onBeforeUnmount, ref, toRef } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, routerKey } from 'vue-router'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import { resolveAgentHostLogo } from '@/lib/stackos/agentIdentity'
 import { UiButton, UiCallout, UiConfirmDialog, UiFormField, UiIcon, UiIconButton, UiInput, UiLoadingState, UiSelect, UiTextarea } from '@/components/ui'
-import { callOperation } from '@/lib/operations'
+import { useProjectFolder } from '@/composables/useProjectFolder'
 import { agentError, agentIdentity, useProjectAgents, type AgentSummary, type AgentFields } from './useProjectAgents'
 
 const props = defineProps<{ projectId: number; standalone?: boolean }>()
 const codexLogo = resolveAgentHostLogo('codex')
-const projectDir = ref('')
-const folders = ref<string[]>([])
-const folderError = ref('')
-const folderLoading = ref(false)
+let reloadAgents = () => {}
+const { projectDir, folderIssue, folderLoading, refreshFolder } = useProjectFolder(toRef(props, 'projectId'), () => reloadAgents())
 const search = ref('')
 const features = ref('null')
 const skills = ref('null')
@@ -23,6 +21,7 @@ function resetEditorOptions(fields: AgentFields | null) {
   customModel.value = false
 }
 const { items, diagnostics, loading, reading, saving, error, message, selected, draft, dirty, refresh, edit, add, close, save } = useProjectAgents(toRef(props, 'projectId'), projectDir, resetEditorOptions)
+reloadAgents = () => { close(); void refresh() }
 const visible = computed(() => items.value.filter(item => `${item.source_ref.native_name} ${item.fields?.description ?? ''} ${item.source_ref.source_path}`.toLowerCase().includes(search.value.toLowerCase())))
 const title = (name: string) => name.replace(/[_-]/g, ' ').replace(/^./, value => value.toUpperCase()).replace(/\bseo\b/gi, 'SEO')
 const pending = ref<(() => void) | null>(null)
@@ -66,30 +65,9 @@ const settings: { key: 'model_reasoning_effort' | 'model_reasoning_summary' | 'm
   { key: 'model_reasoning_summary', label: 'Reasoning summary', values: ['auto', 'concise', 'detailed', 'none'] },
   { key: 'model_verbosity', label: 'Verbosity', values: ['low', 'medium', 'high'] },
 ]
-let generation = 0
-let folderProjectId = props.projectId
-function selectFolder(value: string) {
-  projectDir.value = value
-  void refresh()
-}
-async function loadFolders() {
-  const id = props.projectId
-  folderProjectId = id
-  const request = ++generation
-  folderLoading.value = true; folderError.value = ''; selectFolder(''); folders.value = []
-  try {
-    const result = await callOperation<{ items: { project_id: number; last_known_root: string | null }[] }>('workspace.listBindings', { project_id: id })
-    if (request !== generation || id !== props.projectId) return
-    folders.value = [...new Set(result.items.filter(row => row.project_id === id && row.last_known_root).map(row => row.last_known_root!))]
-    if (folders.value.length === 1) selectFolder(folders.value[0]!)
-  } catch (cause) { if (request === generation && id === props.projectId) folderError.value = agentError(cause) }
-  finally { if (request === generation && id === props.projectId) folderLoading.value = false }
-}
-void loadFolders()
-onBeforeUpdate(() => { if (folderProjectId !== props.projectId) void loadFolders() })
 function beforeUnload(event: BeforeUnloadEvent) { if (hasChanges.value) { event.preventDefault(); event.returnValue = '' } }
 window.addEventListener('beforeunload', beforeUnload)
-onBeforeUnmount(() => { ++generation; cancelNavigation?.(); window.removeEventListener('beforeunload', beforeUnload) })
+onBeforeUnmount(() => { cancelNavigation?.(); window.removeEventListener('beforeunload', beforeUnload) })
 function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => editor.value?.querySelector<HTMLInputElement>('input')?.focus()) }) }
 </script>
 
@@ -143,17 +121,6 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
             class="mt-0.5 h-4 w-4 shrink-0"
           />Project folder: {{ projectDir }}
         </p>
-        <UiFormField
-          v-if="folders.length > 1"
-          label="Project folder"
-        >
-          <UiSelect
-            :model-value="projectDir"
-            :options="folders.map(value => ({ value, label: value }))"
-            :disabled="saving"
-            @update:model-value="guarded(() => selectFolder(String($event ?? '')))"
-          />
-        </UiFormField>
       </div>
       <div
         v-if="!standalone"
@@ -178,19 +145,18 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
     </div>
     <UiLoadingState
       v-if="folderLoading"
-      label="Finding project folders…"
+      label="Loading project folder…"
     />
     <UiCallout
-      v-if="folderError || (!folderLoading && !projectDir)"
+      v-if="!folderLoading && folderIssue"
       tone="warning"
-      title="Choose a project folder"
+      title="Project folder needs setup"
     >
-      {{ folderError || (folders.length ? 'Select the exact folder whose agent files you want to manage.' : 'No project folder is available. Bind an accessible folder to this project before adding or editing agents.') }}
+      {{ folderIssue }}
       <UiButton
-        v-if="folderError"
-        @click="loadFolders"
+        @click="guarded(() => { void refreshFolder() })"
       >
-        Retry folders
+        Retry project folder
       </UiButton>
     </UiCallout>
     <UiCallout

@@ -51,7 +51,7 @@ from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.secrets import PayloadSecretRepository
 
-HEAD_REVISION = "0040_artifact_managed_files"
+HEAD_REVISION = "0041_ui804_consolidation"
 
 
 @pytest.fixture

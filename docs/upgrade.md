@@ -151,6 +151,14 @@ preserve it.
 
 ## Schema migrations
 
+Revision `0041_ui804_consolidation` joins the project catalog/cleanup and
+project-folder/Board-arrival migration histories. Upgrades from either prior
+head and fresh installs converge on the same schema without restamping or
+renumbering existing revisions. Saved catalog order, cleanup state, managed-file
+custody and explicit folder selections are preserved. Existing projects without
+a selected folder still require explicit setup; Board normalization retains its
+one-time audit marker and preserves saved manual order.
+
 Programmatic startup and CLI upgrades carry the selected `Settings` through
 Alembic, including the state directory used by credential migrations. An
 ambient `STACKOS_STATE_DIR` must not redirect the selected database to another

@@ -27,12 +27,18 @@ def test_project_order_migration_preserves_visible_order_and_nonorder_data(tmp_p
                 "VALUES (?,?,'Same','fixture.test','en-US',1,'2026-01-01','2026-01-01')",
                 (project_id, f"fixture-{project_id}"),
             )
-        before = connection.execute("SELECT * FROM projects ORDER BY id").fetchall()
+        project_columns = ",".join(
+            row[1] for row in connection.execute("PRAGMA table_info(projects)")
+        )
+        before = connection.execute(
+            f"SELECT {project_columns} FROM projects ORDER BY id"
+        ).fetchall()
     command.upgrade(config, "head")
     with sqlite3.connect(settings.db_path) as connection:
-        assert connection.execute("SELECT * FROM projects ORDER BY order_index,id").fetchall() == [
-            (*row, row[0], None) for row in before
-        ]
+        assert connection.execute(
+            f"SELECT {project_columns},order_index,cleanup_json,primary_workspace_binding_id "
+            "FROM projects ORDER BY order_index,id"
+        ).fetchall() == [(*row, row[0], None, None) for row in before]
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
     engine = make_engine(settings.db_path)
     with Session(engine) as session:

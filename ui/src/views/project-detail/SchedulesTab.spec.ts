@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { createMemoryHistory, createRouter } from 'vue-router'
+import { createMemoryHistory, createRouter, RouterView } from 'vue-router'
 import SchedulesTab from './SchedulesTab.vue'
 import ScheduleEditor from './ScheduleEditor.vue'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
 import RunAbortAction from '@/components/domain/RunAbortAction.vue'
+import { UiFormField, UiInput } from '@/components/ui'
 import { useSchedulesStore } from '@/stores/schedules'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 import { openTrackerStatusStream } from '@/lib/task-tracker/liveEvents'
@@ -25,13 +26,21 @@ async function mountTab() {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/projects/:id/schedules', component: SchedulesTab }, { path: '/projects/:id/tasks', component: { template: '<div>Work graph</div>' } }] })
   await router.push('/projects/1/schedules')
   await router.isReady()
-  wrapper = mount(SchedulesTab, { global: { plugins: [router], stubs: { teleport: true } } })
+  wrapper = mount(RouterView, { global: { plugins: [router], stubs: { teleport: true } } })
   await flushPromises()
   return wrapper
 }
 function json(body: unknown, status = 200) { return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }) }
 function mockFetch(jobs: unknown[] = []) {
-  globalThis.fetch = vi.fn(async (input) => String(input).includes('schedule.runs') ? json({ items: [], next_cursor: null }) : String(input).includes('workflow-templates') ? json({ templates: [{ key: 'core.review', name: 'Project review' }] }) : json(jobs)) as typeof fetch
+  globalThis.fetch = vi.fn(async (input) => {
+    const path = String(input)
+    if (path.includes('schedule.runs')) return json({ items: [], next_cursor: null })
+    if (path.includes('project.get')) return json({ id: 1, project_dir: '/synthetic/project' })
+    if (path.includes('projectAgent.list')) return json({ data: { project_id: 1, project_dir: '/synthetic/project', items: [] } })
+    if (path.includes('workflow-templates/')) return json({ spec: { inputs: [{ key: 'source', name: 'Source', type: 'string', required: true }], agent_requirements: [], steps: [] } })
+    if (path.includes('workflow-templates')) return json({ templates: [{ key: 'core.review', name: 'Project review' }] })
+    return json(jobs)
+  }) as typeof fetch
 }
 
 describe('Automations and Runs', () => {
@@ -131,16 +140,20 @@ describe('Automations and Runs', () => {
     expect(w.findComponent(ScheduleEditor).exists()).toBe(false)
   })
 
-  it('keeps invalid JSON in the editor with a useful error and makes no write', async () => {
+  it('keeps missing workflow inputs in the editor with a local field error and makes no write', async () => {
+    mockFetch([job])
     const w = await mountTab()
-    await w.findAll('button').find(button => button.text() === 'New automation')!.trigger('click')
+    await w.get('table [data-dropdown-trigger]').trigger('click')
+    await w.get('table [role="menuitem"]').trigger('click')
     await flushPromises()
     const save = vi.spyOn(useSchedulesStore(), 'save')
     const editor = w.getComponent(ScheduleEditor)
-    await editor.get('textarea').setValue('[]')
+    const source = editor.findAllComponents(UiFormField).find(field => field.props('label') === 'Source')!
+    await source.getComponent(UiInput).get('input').setValue('')
     await editor.get('form').trigger('submit')
     await flushPromises()
-    expect(editor.text()).toContain('Workflow inputs must be a JSON object.')
+    expect(source.props('error')).toContain('required')
+    expect(editor.find('textarea').exists()).toBe(false)
     expect(save).not.toHaveBeenCalled()
   })
 

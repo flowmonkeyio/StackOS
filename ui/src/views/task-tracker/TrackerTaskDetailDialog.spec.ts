@@ -20,6 +20,127 @@ vi.mock('@/lib/operations', () => ({ callOperation }))
 const popup = () => new DOMWrapper(document.body)
 
 describe('TrackerTaskDetailDialog', () => {
+  it('keeps Description, Tickets and Additional input visible in the familiar order before secondary results and history', async () => {
+    const wrapper = mount(TrackerTaskDetailDialog, {
+      props: { modelValue: true, task: taskWithFollowups(), tickets: [sourceTicket()], refreshContent: vi.fn() },
+      attachTo: document.body,
+    })
+    const pane = popup().get('.tracker-task-detail')
+    const sections = pane.findAll('section').filter(section => section.element.parentElement?.parentElement === pane.element)
+    expect(sections.map(section => section.get('h3').text())).toEqual([
+      'Description', 'Tickets 1 of 1 complete', 'Additional input', 'Followups', 'Results', 'History',
+    ])
+    for (const section of sections.slice(0, 3)) {
+      expect(section.element.closest('details')).toBeNull()
+      expect(section.isVisible()).toBe(true)
+    }
+    expect(pane.get('[aria-label="Task tickets"] button').isVisible()).toBe(true)
+    expect(pane.get('[aria-label="Additional input history"]').isVisible()).toBe(true)
+    expect(pane.get('textarea').isVisible()).toBe(true)
+    await pane.get('[data-edit-content]').trigger('click')
+    expect(pane.get('[data-description-editor]').isVisible()).toBe(true)
+    expect(document.activeElement).toBe(pane.get('[data-description-editor]').element)
+    wrapper.unmount()
+  })
+
+  it('keeps Additional input applicable to saved input or editing availability', async () => {
+    const wrapper = mount(TrackerTaskDetailDialog, { props: { modelValue: true, task: task() } })
+    expect(popup().findAll('h3').some(heading => heading.text() === 'Additional input')).toBe(false)
+    await wrapper.setProps({ task: taskWithFollowups() })
+    const inputs = popup().get('[aria-label="Additional input history"]')
+    expect(inputs.element.closest('details')).toBeNull()
+    expect(inputs.isVisible()).toBe(true)
+    expect(popup().find('textarea').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows owner once in context alongside current or last execution, and uses assignment when neither exists', async () => {
+    const record = { ...task(), owner: 'Team lead' }
+    const execution: ActiveExecution = {
+      invocation_id: 'active', agent: 'Delivery', host_key: 'codex', model: 'gpt-6.1-sol',
+      ticket_key: sourceTicket().key, started_at: '2026-11-08T01:00:00Z', live_usage: null,
+    }
+    const wrapper = mount(TrackerTaskDetailDialog, { props: { modelValue: true, task: { ...record, active_execution: execution } } })
+    const pane = popup().get('.tracker-task-detail')
+    expect(pane.text().match(/Team lead/g)).toHaveLength(1)
+    expect(pane.get('[aria-label="Task owner"]').text()).toBe('Owner Team lead')
+    expect(pane.get('.active-execution-line').text()).toContain('Delivery')
+    await wrapper.setProps({ task: { ...record, agent_stats: { ...agentStatsFixture().totals, last_execution: execution } } })
+    expect(pane.text().match(/Team lead/g)).toHaveLength(1)
+    expect(pane.get('[aria-label="Task owner"]').text()).toBe('Owner Team lead')
+    expect(pane.get('.active-execution-line').text()).toContain('Last: Delivery')
+    await wrapper.setProps({ task: record })
+    expect(pane.text().match(/Team lead/g)).toHaveLength(1)
+    expect(pane.get('.active-execution-line').text()).toContain('Assigned: Team lead')
+    expect(pane.find('.active-execution-line__logo').exists()).toBe(true)
+    await wrapper.setProps({ task: { ...record, owner: null } })
+    expect(pane.get('[aria-label="Task owner"]').text()).toBe('Owner Unassigned')
+    wrapper.unmount()
+  })
+
+  it('retains conflict, both drafts and list scroll through ticket and result inspection in the same overlay', async () => {
+    callOperation.mockRejectedValueOnce(new ApiError('stale', 409, {}))
+    const record = task()
+    const ticket = sourceTicket()
+    const artifact = { source_kind: 'artifact', source_id: 32, data: {
+      id: 32, project_id: 1, name: 'Saved summary', kind: 'document', status: 'active',
+      uri: '/tmp/summary.txt', created_at: '2026-11-05T23:00:00Z',
+    } } as SchemaTaskResultItem
+    const wrapper = mount(TrackerTaskDetailDialog, {
+      props: {
+        modelValue: true, task: record, tickets: [ticket], refreshContent: vi.fn(),
+        results: { items: [artifact], nextCursor: null, loaded: true, loading: false, error: null, warnings: [], coverage: '' },
+      },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    const shell = popup().get('[role="dialog"]').element
+    const overlay = popup().get('.ui-dialog__overlay').element
+    await popup().get('[data-edit-content]').trigger('click')
+    await popup().get('[data-description-editor]').setValue('Conflicted description')
+    await popup().findAll('textarea')[1]!.setValue('Retained input')
+    await popup().findAll('.ui-dialog__footer button').find(button => button.text() === 'Save description and input')!.trigger('click')
+    await flushPromises()
+    const body = popup().get<HTMLElement>('.ui-dialog__body').element
+    const list = popup().get<HTMLElement>('[aria-label="Task tickets"]').element
+    const row = popup().get('[aria-label="Task tickets"] button')
+    body.scrollTop = 180
+    list.scrollTop = 80
+    ;(row.element as HTMLElement).focus()
+    await row.trigger('click')
+    wrapper.vm.prepareInspection(ticket.key)
+    await wrapper.setProps({ ticketKey: ticket.key, ticket })
+    await flushPromises()
+    expect(body.scrollTop).toBe(0)
+    expect(document.activeElement).toBe(popup().get('h2').element)
+    await wrapper.setProps({ ticketKey: '', ticket: null })
+    await flushPromises()
+    expect(body.scrollTop).toBe(180)
+    expect(list.scrollTop).toBe(80)
+    expect(document.activeElement).toBe(row.element)
+    const result = popup().get('[data-result-source="artifact:32"]')
+    ;(result.element as HTMLElement).focus()
+    await result.trigger('click')
+    await flushPromises()
+    expect(body.scrollTop).toBe(0)
+    expect(document.activeElement).toBe(popup().get('h2').element)
+    await popup().findAll('button').find(button => button.text() === 'Back to task')!.trigger('click')
+    await flushPromises()
+    expect(body.scrollTop).toBe(180)
+    expect(list.scrollTop).toBe(80)
+    expect(document.activeElement).toBe(result.element)
+    expect(popup().get('[role="dialog"]').element).toBe(shell)
+    expect(popup().findAll('[role="dialog"]')).toHaveLength(1)
+    expect(popup().get('.ui-dialog__overlay').element).toBe(overlay)
+    expect(popup().findAll('.ui-dialog__overlay')).toHaveLength(1)
+    expect(popup().get<HTMLTextAreaElement>('[data-description-editor]').element.value).toBe('Conflicted description')
+    expect(popup().findAll('textarea')[1]!.element.value).toBe('Retained input')
+    expect(popup().get('.ui-dialog__footer').text()).toContain('Load latest content')
+    expect(popup().findAll('.ui-dialog__footer button').find(button => button.text() === 'Save description and input')!.attributes('disabled')).toBeDefined()
+    expect(callOperation).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
   it('refreshes the shared task priority badge while leaving the selected ticket priority unchanged', async () => {
     const wrapper = mount(TrackerTaskDetailDialog, { props: { modelValue: true, task: { ...task(), priority_key: 'p0' }, tickets: [sourceTicket()] } })
     expect(popup().get('[aria-label="Priority P0"]').classes()).toContain('text-danger-fg')

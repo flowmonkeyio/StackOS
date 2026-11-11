@@ -65,7 +65,9 @@ const tasks = computed(() => snapshot.value?.tasks ?? [])
 const ticketsByTask = computed(() => groupTicketsByTask(snapshot.value?.tickets ?? []))
 const allTaskRows = computed(() => buildTaskProgressRows(tasks.value, ticketsByTask.value, { search: '', status: 'all', workflow: '', assignee: '' }))
 const taskRows = computed(() => projectBoardRows(allTaskRows.value, boardFilters.value))
-const boardEdits = useTaskBoardEdits({ rows: taskRows, projectId, currentScope, refresh: () => load({ restartStream: false }) })
+const boardEdits = useTaskBoardEdits({ rows: taskRows, projectId, currentScope, refresh: async () => {
+  if (!await load({ restartStream: false })) throw new Error('Could not refresh the board.')
+} })
 const activeTaskRow = computed(() => allTaskRows.value.find((row) => row.key === mapTaskKey.value) ?? null)
 const taskSelectOptions = computed(() => allTaskRows.value.map((row) => ({
   value: row.key, label: `#${row.id} ${row.task.title}`,
@@ -78,7 +80,7 @@ const assigneeOptions = computed(() => buildAssigneeOptions(tasks.value, snapsho
 const liveTaskKey = computed(() => viewMode.value === 'graph' ? mapTaskKey.value : '')
 const graph = useTrackerGraphSession({
   projectId, activeTaskKey: mapTaskKey, liveTaskKey, activeTaskRow, snapshot, routeError: error,
-  reload: (options) => load(options),
+  reload: async (options) => { await load(options) },
   refreshUsage,
 })
 provide(usageFeedKey, graph.feedState)
@@ -100,6 +102,11 @@ const {
 let loadSequence = 0
 let detailSequence = 0
 let alive = true
+type LoadOptions = { refocus?: boolean; restartStream?: boolean }
+interface LoadRequest { options: LoadOptions; promise: Promise<boolean>; resolve: (result: boolean) => void }
+let activeLoad: LoadRequest | null = null
+let trailingLoad: LoadRequest | null = null
+let loadController: AbortController | null = null
 function refreshUsage(next?: UsageProjection): void {
   if (!currentScope() || !next) return
   patchUsageSnapshot(snapshot.value, next)
@@ -111,32 +118,91 @@ function currentScope(): boolean {
   return alive && projectId.value === viewProjectId && route.path === viewPath
 }
 
-async function load(options: { refocus?: boolean; restartStream?: boolean } = {}): Promise<void> {
-  if (!projectId.value || !currentScope()) return
+function load(options: LoadOptions = {}): Promise<boolean> {
+  if (!projectId.value || !currentScope()) return Promise.resolve(false)
+  if (activeLoad) {
+    // Every caller shares the current project read and one trailing latest
+    // read. A post-save refresh must not accept a read started before the save.
+    if (!trailingLoad) trailingLoad = loadRequest(options)
+    else trailingLoad.options = {
+      refocus: trailingLoad.options.refocus || options.refocus,
+      restartStream: trailingLoad.options.restartStream !== false || options.restartStream !== false,
+    }
+    return trailingLoad.promise
+  }
+  const request = loadRequest(options)
+  void runLoad(request)
+  return request.promise
+}
+
+function loadRequest(options: LoadOptions): LoadRequest {
+  let resolve!: (result: boolean) => void
+  const promise = new Promise<boolean>(done => { resolve = done })
+  return { options, promise, resolve }
+}
+
+async function runLoad(request: LoadRequest): Promise<void> {
+  activeLoad = request
+  let result = false
+  try {
+    result = await loadOnce(request.options)
+  } finally {
+    activeLoad = null
+    const next = trailingLoad
+    trailingLoad = null
+    request.resolve(result)
+    // Resolve each batch independently so continuing live activity cannot
+    // keep an acknowledged edit waiting for the stream to become quiet.
+    if (next) {
+      if (currentScope()) void runLoad(next)
+      else next.resolve(false)
+    }
+  }
+}
+
+async function loadOnce(options: LoadOptions): Promise<boolean> {
   const sequence = ++loadSequence
   const usageVersion = usageCheckpoint()
+  const controller = new AbortController()
+  loadController = controller
+  const timeout = setTimeout(() => controller.abort(new DOMException('Refresh timed out', 'TimeoutError')), 15000)
   loading.value = true
   error.value = null
   try {
     const next = await callOperation<TrackerSnapshot>('tracker.get', {
       project_id: projectId.value, task_index_only: true, include_graph: false,
-    })
-    if (!currentScope() || sequence !== loadSequence) return
+    }, { signal: controller.signal })
+    if (controller.signal.aborted || !currentScope() || sequence !== loadSequence) return false
     patchUsageAfter(next, projectId.value, usageVersion)
     snapshot.value = next
+    boardEdits.reconcile()
     if (viewMode.value === 'graph') mapTaskKey.value = resolveMapTaskKey()
     else if (!queryText(route.query.task)) mapTaskKey.value = validRememberedMapTask()
     // Start the stream while this accepted request still owns the current scope.
     // Awaited map/detail work must never restart a stream after scope disposal.
     if (options.restartStream !== false && !mapNeedsCanonicalRoute()) graph.restartStatusStream()
     const detailKey = detailTaskKey.value
-    if (viewMode.value === 'graph') await loadMap(options.refocus)
+    // Focused readers own their loading/error state. A slow inspector must
+    // not hold the project refresh queue or a completed Board edit open.
+    void refreshInspection(sequence, detailKey, options.refocus)
+    return currentScope() && sequence === loadSequence
+  } catch (cause) {
+    if (currentScope() && sequence === loadSequence) error.value = cause instanceof Error ? cause.message : 'Could not load work.'
+    return false
+  } finally {
+    clearTimeout(timeout)
+    if (loadController === controller) loadController = null
+    if (currentScope() && sequence === loadSequence) loading.value = false
+  }
+}
+
+async function refreshInspection(sequence: number, detailKey: string, refocus?: boolean): Promise<void> {
+  try {
+    if (viewMode.value === 'graph') await loadMap(refocus)
     if (!currentScope() || sequence !== loadSequence) return
     if (detailKey && detailTaskKey.value === detailKey) await loadDetail(detailKey)
   } catch (cause) {
-    if (currentScope() && sequence === loadSequence) error.value = cause instanceof Error ? cause.message : 'Could not load work.'
-  } finally {
-    if (currentScope() && sequence === loadSequence) loading.value = false
+    if (currentScope() && sequence === loadSequence) error.value = cause instanceof Error ? cause.message : 'Could not refresh task details.'
   }
 }
 
@@ -313,6 +379,11 @@ useProjectScopedLoader({
   projectId, load: () => load(),
   onScopeExit: () => {
     alive = false
+    loadController?.abort()
+    trailingLoad?.resolve(false)
+    trailingLoad = null
+    loading.value = false
+    boardEdits.stop()
     loadSequence += 1
     detailSequence += 1
     results.reset()
@@ -418,6 +489,7 @@ useProjectScopedLoader({
       <TrackerBoardPanel
         :rows="boardEdits.rows.value"
         :edit-pending="boardEdits.pending.value"
+        :edit-pending-columns="boardEdits.pendingColumns.value"
         :edit-error="boardEdits.error.value"
         :interaction-key="`${route.path}:${JSON.stringify(boardFilters)}:${viewMode}`"
         :hide-empty-columns="boardFilters.hideEmptyColumns"

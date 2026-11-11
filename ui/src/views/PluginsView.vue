@@ -42,6 +42,7 @@ const search = ref('')
 const view = ref<CatalogView>('plugins')
 const sort = ref<CatalogSort>('name')
 const servicePluginSlug = ref<string | null>(null)
+let pluginListContext: { projectId: number; search: string; sort: CatalogSort } | null = null
 
 const viewOptions = [
   { key: 'plugins', label: 'Plugins' },
@@ -77,6 +78,13 @@ const resultCount = computed(() =>
 
 function setView(value: string | number): void {
   if (value === 'plugins' || value === 'providers') {
+    if (value === 'plugins' && pluginListContext) {
+      if (pluginListContext.projectId === projectId.value) {
+        search.value = pluginListContext.search
+        sort.value = pluginListContext.sort
+      }
+      pluginListContext = null
+    }
     view.value = value
     servicePluginSlug.value = null
   }
@@ -87,6 +95,7 @@ function setSort(value: string | number | null): void {
 }
 
 function showProviders(pluginSlug: string): void {
+  pluginListContext = { projectId: projectId.value, search: search.value, sort: sort.value }
   view.value = 'providers'
   servicePluginSlug.value = pluginSlug
   search.value = ''
@@ -123,6 +132,17 @@ const { refresh } = useProjectScopedLoader({
         </UiButton>
       </template>
     </ProjectPageHeader>
+
+    <UiButton
+      v-if="view === 'providers'"
+      variant="link"
+      size="sm"
+      icon-left="chevron-left"
+      class="self-start"
+      @click="setView('plugins')"
+    >
+      Back to plugins
+    </UiButton>
 
     <UiCallout
       v-if="error"

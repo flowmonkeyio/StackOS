@@ -39,6 +39,7 @@ from stackos.repositories.base import (
     validate_transition,
 )
 from stackos.repositories.run_plan_state import TERMINAL_PLAN_STATUSES, TERMINAL_RUN_STATUSES
+from stackos.repositories.tracker.ordering import next_task_position
 from stackos.repositories.tracker.schema import (
     TrackerListItemResultOut,
     TrackerMutationOut,
@@ -166,7 +167,7 @@ class TrackerMutationMixin:
             lane_key=lane_key,
             owner=owner,
             task_type=task_type,
-            order_index=self._next_task_position(tracker.id),
+            order_index=self._next_task_position(tracker.id, status),
             source_kind=source_kind,
             source_json=redact_secrets(source_json) if source_json is not None else None,
             definition_of_done_json=definition_of_done_json or [],
@@ -1932,9 +1933,10 @@ class TrackerMutationMixin:
             )
         return True
 
-    def _next_task_position(self, tracker_id: int | None) -> int:
-        rows = self._task_rows(tracker_id)
-        return max((row.order_index for row in rows), default=-1) + 1
+    def _next_task_position(
+        self, tracker_id: int | None, status: TrackerItemStatus = TrackerItemStatus.NOT_STARTED
+    ) -> int:
+        return next_task_position(self._s, _required_id(tracker_id, "tracker"), status)
 
     def _next_ticket_position(self, task_id: int | None) -> int:
         task_id = _required_id(task_id, "task")

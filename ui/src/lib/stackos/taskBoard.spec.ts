@@ -17,8 +17,8 @@ describe('bounded Board operation client', () => {
     const move = { ...base, anchor_task_key: 'hidden-neighbor', placement: 'before' as const }
     await reorderTask(move)
     expect(vi.mocked(callOperation).mock.calls).toEqual([
-      ['tracker.updateTaskPriority', priority], ['tracker.updateTaskPriority', priority],
-      ['tracker.reorderTask', move],
+      ['tracker.updateTaskPriority', priority, undefined], ['tracker.updateTaskPriority', priority, undefined],
+      ['tracker.reorderTask', move, undefined],
     ])
   })
 
@@ -29,5 +29,13 @@ describe('bounded Board operation client', () => {
       expected_updated_at: '2026-11-10T00:00:00', idempotency_key: 'move',
       anchor_task_key: 'anchor', placement: 'after' as const })).rejects.toBe(conflict)
     expect(callOperation).toHaveBeenCalledTimes(1)
+  })
+
+  it('carries the edit lifetime signal to the existing operation client', async () => {
+    const controller = new AbortController()
+    const intent = { project_id: 2, task_key: 'task', expected_status: 'complete' as const,
+      expected_updated_at: 'revision', idempotency_key: 'once', anchor_task_key: 'anchor', placement: 'after' as const }
+    await reorderTask(intent, controller.signal)
+    expect(callOperation).toHaveBeenCalledWith('tracker.reorderTask', intent, { signal: controller.signal })
   })
 })

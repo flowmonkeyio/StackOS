@@ -242,7 +242,6 @@ const taskFacts = computed(() => {
   const task = props.task
   if (!task) return []
   return [
-    { label: 'Owner', value: task.owner ?? '-' },
     { label: 'Lane', value: task.lane_key, mono: true },
     { label: 'Type', value: task.task_type, mono: true },
     { label: 'Source', value: task.source_kind, mono: true },
@@ -363,7 +362,7 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
       </UiCallout>
       <div
         v-if="task"
-        class="space-y-4"
+        class="space-y-5"
       >
         <div class="flex flex-wrap items-center gap-3 text-sm text-fg-muted">
           <StatusBadge
@@ -376,6 +375,11 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
           >
             Automated
           </UiBadge>
+          <!-- With no execution, ActiveExecutionLine already shows the owner as the assignment. -->
+          <span
+            v-if="task.active_execution || task.agent_stats?.last_execution || !task.owner"
+            aria-label="Task owner"
+          >Owner <span class="text-fg-default">{{ task.owner ?? 'Unassigned' }}</span></span>
           <span>{{ completedCount }} of {{ tickets.length }} tickets complete</span>
         </div>
         <AgentUsageSummary
@@ -420,23 +424,71 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
             </UiButton>
           </details>
         </UiCallout>
-        <TrackerTaskResults
-          :state="results"
-          @open="openResult($event); $emit('inspectResult', $event)"
-          @more="$emit('moreResults')"
-          @retry="$emit('retryResults')"
-        />
-        <TrackerTaskHistory
-          :key="`${task.project_id}:${task.key}`"
-          :state="activity"
-          @more="$emit('moreHistory')"
-          @retry="$emit('retryHistory')"
-        />
-        <details class="space-y-3 border-t border-subtle pt-4">
-          <summary class="focus-ring cursor-pointer rounded-xs t-h3 text-fg-strong">
-            Tickets <span class="ml-2 text-xs font-normal text-fg-muted">{{ completedCount }} of {{ tickets.length }} complete</span>
-          </summary>
+        <section class="space-y-2 border-t border-subtle pt-4">
           <div class="flex items-center justify-between gap-3">
+            <h3 class="t-h3 text-fg-strong">
+              Description
+            </h3>
+            <UiButton
+              v-if="refreshContent && !content.editing"
+              variant="secondary"
+              size="sm"
+              icon-left="edit"
+              data-edit-content
+              :disabled="content.locked"
+              @click="beginEdit"
+            >
+              Edit description
+            </UiButton>
+            <UiButton
+              v-else-if="content.editing"
+              variant="ghost"
+              size="sm"
+              :disabled="content.locked"
+              @click="cancelEdit"
+            >
+              Cancel edit
+            </UiButton>
+          </div>
+          <UiFormField
+            v-if="content.editing"
+            label="Description"
+            hide-label
+            :dirty="content.description !== task.description"
+          >
+            <UiTextarea
+              v-model="content.description"
+              data-description-editor
+              resize="none"
+              :rows="4"
+              :maxlength="20000"
+              :readonly="content.locked"
+            />
+          </UiFormField>
+          <p
+            v-else
+            class="whitespace-pre-wrap break-words text-sm leading-5 text-fg-default"
+          >
+            {{ task.description || 'No description yet.' }}
+          </p>
+          <UiCallout
+            v-if="content.latestDescription !== null"
+            tone="neutral"
+            density="compact"
+          >
+            <p class="font-medium">
+              Latest saved description
+            </p>
+            <p class="mt-1 whitespace-pre-wrap break-words">
+              {{ content.latestDescription || 'No description.' }}
+            </p>
+          </UiCallout>
+        </section>
+        <section class="space-y-3 border-t border-subtle pt-4">
+          <div class="flex items-center justify-between gap-3">
+            <h3 class="t-h3 text-fg-strong">
+              Tickets <span class="ml-2 text-xs font-normal text-fg-muted">{{ completedCount }} of {{ tickets.length }} complete</span>
+            </h3>
             <UiButton
               variant="secondary"
               size="sm"
@@ -488,113 +540,46 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
           >
             No tickets yet.
           </p>
-        </details>
-        <details class="border-t border-subtle pt-4">
-          <summary class="focus-ring cursor-pointer rounded-xs text-sm font-medium text-fg-muted">
-            Description and input
-          </summary>
-          <div class="mt-3 space-y-4">
-            <section class="space-y-2 border-t border-subtle pt-4">
-              <div class="flex items-center justify-between gap-3">
-                <h3 class="t-h3 text-fg-strong">
-                  Description
-                </h3>
-                <UiButton
-                  v-if="refreshContent && !content.editing"
-                  variant="secondary"
-                  size="sm"
-                  icon-left="edit"
-                  data-edit-content
-                  :disabled="content.locked"
-                  @click="beginEdit"
-                >
-                  Edit description
-                </UiButton>
-                <UiButton
-                  v-else-if="content.editing"
-                  variant="ghost"
-                  size="sm"
-                  :disabled="content.locked"
-                  @click="cancelEdit"
-                >
-                  Cancel edit
-                </UiButton>
-              </div>
-              <UiFormField
-                v-if="content.editing"
-                label="Description"
-                hide-label
-                :dirty="content.description !== task.description"
-              >
-                <UiTextarea
-                  v-model="content.description"
-                  data-description-editor
-                  resize="none"
-                  :rows="4"
-                  :maxlength="20000"
-                  :readonly="content.locked"
-                />
-              </UiFormField>
-              <p
-                v-else
-                class="whitespace-pre-wrap break-words text-sm leading-5 text-fg-default"
-              >
-                {{ task.description || 'No description yet.' }}
-              </p>
-              <UiCallout
-                v-if="content.latestDescription !== null"
-                tone="neutral"
-                density="compact"
-              >
-                <p class="font-medium">
-                  Latest saved description
-                </p>
-                <p class="mt-1 whitespace-pre-wrap break-words">
-                  {{ content.latestDescription || 'No description.' }}
-                </p>
-              </UiCallout>
-            </section>
-            <section
-              v-if="refreshContent || operatorInputs.length"
-              class="space-y-3 border-t border-subtle pt-4"
+        </section>
+        <section
+          v-if="refreshContent || operatorInputs.length"
+          class="space-y-3 border-t border-subtle pt-4"
+        >
+          <h3 class="t-h3 text-fg-strong">
+            Additional input
+          </h3>
+          <ol
+            v-if="operatorInputs.length"
+            class="space-y-3"
+            aria-label="Additional input history"
+          >
+            <li
+              v-for="input in operatorInputs"
+              :key="input.id"
+              class="rounded-lg border border-subtle bg-bg-surface-alt px-3 py-2"
             >
-              <h3 class="t-h3 text-fg-strong">
-                Additional input
-              </h3>
-              <ol
-                v-if="operatorInputs.length"
-                class="space-y-3"
-                aria-label="Additional input history"
-              >
-                <li
-                  v-for="input in operatorInputs"
-                  :key="input.id"
-                  class="rounded-lg border border-subtle bg-bg-surface-alt px-3 py-2"
-                >
-                  <p class="text-xs text-fg-muted">
-                    Operator · {{ formatDateTime(input.created_at) }}
-                  </p>
-                  <p class="mt-1 whitespace-pre-wrap break-words text-sm leading-5 text-fg-default">
-                    {{ input.text }}
-                  </p>
-                </li>
-              </ol>
-              <UiFormField
-                v-if="refreshContent"
-                label="Add context"
-              >
-                <UiTextarea
-                  v-model="content.additionalInput"
-                  resize="none"
-                  :rows="3"
-                  :maxlength="20000"
-                  :readonly="content.locked"
-                  placeholder="Write a clarification or add a link…"
-                />
-              </UiFormField>
-            </section>
-          </div>
-        </details>
+              <p class="text-xs text-fg-muted">
+                Operator · {{ formatDateTime(input.created_at) }}
+              </p>
+              <p class="mt-1 whitespace-pre-wrap break-words text-sm leading-5 text-fg-default">
+                {{ input.text }}
+              </p>
+            </li>
+          </ol>
+          <UiFormField
+            v-if="refreshContent"
+            label="Add context"
+          >
+            <UiTextarea
+              v-model="content.additionalInput"
+              resize="none"
+              :rows="3"
+              :maxlength="20000"
+              :readonly="content.locked"
+              placeholder="Write a clarification or add a link…"
+            />
+          </UiFormField>
+        </section>
         <section
           v-if="followups.length"
           class="space-y-3 border-t border-subtle pt-4"
@@ -954,6 +939,18 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
             </details>
           </div>
         </details>
+        <TrackerTaskResults
+          :state="results"
+          @open="openResult($event); $emit('inspectResult', $event)"
+          @more="$emit('moreResults')"
+          @retry="$emit('retryResults')"
+        />
+        <TrackerTaskHistory
+          :key="`${task.project_id}:${task.key}`"
+          :state="activity"
+          @more="$emit('moreHistory')"
+          @retry="$emit('retryHistory')"
+        />
       </div>
     </div>
     <div
@@ -1079,10 +1076,3 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
     </template>
   </UiDialog>
 </template>
-
-<style scoped>
-/* Task inspection owns its reading scale; shared usage rows and canvases stay fixed. */
-:global(.ui-dialog:has(.tracker-task-detail) .ui-dialog__title) { font-size: 20px; line-height: 28px; }
-.tracker-task-detail :deep(.agent-usage-summary--compact dt) { font-size: 12px; }
-.tracker-task-detail :deep(.agent-usage-summary--compact dd) { font-size: 18px; }
-</style>

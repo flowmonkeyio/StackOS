@@ -679,7 +679,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0040_artifact_managed_files",
+            "0041_ui804_consolidation",
         )
     finally:
         conn.close()
@@ -1570,6 +1570,10 @@ def _historical_project_fixture_session(engine) -> Iterator[Session]:
             for name, ddl in (
                 ("order_index", "INTEGER DEFAULT 0"),
                 ("cleanup_json", "JSON"),
+                (
+                    "primary_workspace_binding_id",
+                    "INTEGER REFERENCES workspace_bindings(id) ON DELETE SET NULL",
+                ),
             )
             if name not in {column[1] for column in before}
         ]
@@ -1593,7 +1597,6 @@ def test_telegram_cutover_retires_active_bindings_preserves_history(isolated_ale
         ActionCall,
         Credential,
         Plugin,
-        Project,
         ProjectCredential,
         Provider,
         Resource,
@@ -1601,11 +1604,10 @@ def test_telegram_cutover_retires_active_bindings_preserves_history(isolated_ale
     )
 
     _run_alembic(["upgrade", "0030_durable_action_runtime"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        _insert_legacy_project(conn, project_id=1, now="2026-11-05")
     engine = make_engine(isolated_alembic)
     with _historical_project_fixture_session(engine) as session:
-        session.add(
-            Project(id=1, slug="cutover", name="Cutover", domain="example.test", locale="en-US")
-        )
         session.add(Plugin(id=1, slug="communications", name="Communications", source="builtin"))
         session.commit()
         session.add(Provider(id=1, plugin_id=1, key="telegram-bot", name="Old Telegram"))
@@ -1745,6 +1747,15 @@ def test_alembic_upgrade_creates_expected_stackos_tables(isolated_alembic: Path)
         f"Missing: {EXPECTED_TABLES - tables}; Extra: {tables - EXPECTED_TABLES}"
     )
     assert not (tables & LEGACY_TABLES)
+    with sqlite3.connect(isolated_alembic) as conn:
+        assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [
+            ("0041_ui804_consolidation",)
+        ]
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+    assert {"order_index", "cleanup_json", "primary_workspace_binding_id"} <= _table_columns(
+        isolated_alembic, "projects"
+    )
+    assert "managed_file_json" in _table_columns(isolated_alembic, "artifacts")
 
     credential_columns = _table_columns(isolated_alembic, "credentials")
     integration_columns = _table_columns(isolated_alembic, "integration_credentials")
@@ -1767,6 +1778,79 @@ def test_alembic_upgrade_creates_expected_stackos_tables(isolated_alembic: Path)
         "attached_at",
         "attached_by",
     }
+
+
+def test_project_folder_migration_requires_explicit_adoption_and_preserves_state(
+    isolated_alembic: Path,
+) -> None:
+    _run_alembic(["upgrade", "0037_schedule_id_nonreuse"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute(
+            "INSERT INTO projects (id,slug,name,domain,locale,is_active,created_at,updated_at) "
+            "VALUES (1,'folder-fixture','Fixture','fixture.test','en-US',1,"
+            "CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"
+        )
+        for binding_id, root in ((1, "/fixture/primary"), (2, "/fixture/task")):
+            conn.execute(
+                "INSERT INTO workspace_bindings (id,project_id,repo_fingerprint,last_known_root,"
+                "created_at,updated_at) VALUES (?,1,?,?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
+                (binding_id, f"path:{binding_id}", root),
+            )
+        conn.execute(
+            "INSERT INTO agent_sessions (project_id,workspace_binding_id,runtime,cwd,created_at,"
+            "last_seen_at) VALUES (1,2,'codex','/fixture/task',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"
+        )
+        conn.execute(
+            "INSERT INTO scheduled_jobs (project_id,kind,cron_expr,enabled,execution_json) "
+            "VALUES (1,'saved','* * * * *',0,?)",
+            (json.dumps({"project_dir": "/fixture/old", "host_key": "claude"}),),
+        )
+        before = {
+            table: conn.execute(f"SELECT * FROM {table}").fetchall()
+            for table in ("workspace_bindings", "agent_sessions", "scheduled_jobs")
+        }
+        project_columns = ",".join(row[1] for row in conn.execute("PRAGMA table_info(projects)"))
+        project_before = conn.execute(f"SELECT {project_columns} FROM projects").fetchall()
+    _run_alembic(["upgrade", "head"])
+    _run_alembic(["upgrade", "head"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        assert conn.execute("SELECT primary_workspace_binding_id FROM projects").fetchall() == [
+            (None,)
+        ]
+        assert conn.execute(f"SELECT {project_columns} FROM projects").fetchall() == project_before
+        assert {
+            table: conn.execute(f"SELECT * FROM {table}").fetchall() for table in before
+        } == before
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("UPDATE projects SET primary_workspace_binding_id=1 WHERE id=1")
+        conn.execute("UPDATE alembic_version SET version_num='0037_schedule_id_nonreuse'")
+    # A lost stamp must preserve an explicitly selected reference on retry.
+    _run_alembic(["upgrade", "head"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        assert conn.execute("SELECT primary_workspace_binding_id FROM projects").fetchone() == (1,)
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("DELETE FROM workspace_bindings WHERE id=1")
+        assert conn.execute("SELECT primary_workspace_binding_id FROM projects").fetchone() == (
+            None,
+        )
+
+
+def test_project_folder_migration_refuses_incompatible_retained_column(
+    isolated_alembic: Path,
+) -> None:
+    _run_alembic(["upgrade", "0040_artifact_managed_files"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        conn.execute("ALTER TABLE projects ADD COLUMN primary_workspace_binding_id INTEGER")
+    with pytest.raises(subprocess.CalledProcessError) as failure:
+        _run_alembic(["upgrade", "head"])
+    assert "incompatible schema" in failure.value.stderr
+    with sqlite3.connect(isolated_alembic) as conn:
+        assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
+            "0040_artifact_managed_files",
+        )
+        assert conn.execute("PRAGMA foreign_key_list(projects)").fetchall() == []
 
 
 def _project_migration_fixture(db_path: Path) -> dict:
@@ -2327,7 +2411,22 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
     with sqlite3.connect(isolated_alembic) as conn:
         assert _list_tables(isolated_alembic) == tables_before
         for table, rows in before.items():
-            assert conn.execute(f"SELECT * FROM {table}").fetchall() == rows
+            if table == "tracker_revisions":
+                # The Board data migration appends its own receipt, retaining
+                # every historical revision and frozen delivery record intact.
+                assert (
+                    conn.execute(
+                        "SELECT * FROM tracker_revisions "
+                        "WHERE change_kind != 'board-arrivals-normalization'"
+                    ).fetchall()
+                    == rows
+                )
+                assert conn.execute(
+                    "SELECT COUNT(*) FROM tracker_revisions "
+                    "WHERE change_kind = 'board-arrivals-normalization'"
+                ).fetchone() == (1,)
+            else:
+                assert conn.execute(f"SELECT * FROM {table}").fetchall() == rows
         configs = {
             project_id: json.loads(config)
             for project_id, config in conn.execute(

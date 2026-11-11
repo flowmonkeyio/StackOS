@@ -11,7 +11,7 @@ let wrapper: VueWrapper | undefined
 const row = { project_id: 1, project_dir: '/fixture/project', source_ref: { host_key: 'codex', native_name: 'seo_keyword_research', source_path: '.codex/agents/seo-keyword-research.toml' }, digest: 'a'.repeat(64), registration_digest: null, fields: { ...blankAgent(), name: 'seo_keyword_research', description: 'Find opportunities', developer_instructions: 'Full native instructions' }, capabilities: { edit: true }, inherited_fields: ['model'], unsupported_fields: ['future_native'] }
 function setup(items = [row]) {
   vi.mocked(callOperation).mockImplementation(async (operation, args) => {
-    if (operation === 'workspace.listBindings') return { items: [{ project_id: 1, last_known_root: '/fixture/project' }] }
+    if (operation === 'project.get') return { id: 1, primary_workspace_binding_id: 17, project_dir: '/fixture/project' }
     if (operation === 'projectAgent.list') return { data: { project_id: 1, project_dir: '/fixture/project', items } }
     return items.find(item => item.source_ref.native_name === (args.source_ref as typeof row.source_ref)?.native_name) ?? row
   })
@@ -20,9 +20,17 @@ function setup(items = [row]) {
 }
 afterEach(() => { wrapper?.unmount(); vi.resetAllMocks() })
 describe('Agents list and native editor', () => {
-  it('uses the raw binding envelope and reads only the unique root belonging to this project', async () => {
-    vi.mocked(callOperation).mockImplementation(async operation => operation === 'workspace.listBindings'
-      ? { items: [{ project_id: 2, last_known_root: '/other' }, { project_id: 1, last_known_root: null }, { project_id: 1, last_known_root: '/fixture/project' }, { project_id: 1, last_known_root: '/fixture/project' }] }
+  it('rejects a wrong-project folder response without exposing or editing its agents', async () => {
+    vi.mocked(callOperation).mockResolvedValue({ id: 2, project_dir: '/other-project' })
+    wrapper = mount(ProjectAgents, { props: { projectId: 1 } }); await flushPromises()
+    expect(wrapper.text()).toContain('Project folder belongs to a different project')
+    expect(wrapper.text()).not.toContain('/other-project')
+    expect(callOperation).toHaveBeenCalledTimes(1)
+    expect(wrapper.findAll('button').find(button => button.text() === 'Add agent')!.attributes('disabled')).toBeDefined()
+  })
+  it('uses the configured folder without listing or choosing task workspaces', async () => {
+    vi.mocked(callOperation).mockImplementation(async operation => operation === 'project.get'
+      ? { id: 1, primary_workspace_binding_id: 17, project_dir: '/fixture/project' }
       : { data: { project_id: 1, project_dir: '/fixture/project', items: [row] } })
     wrapper = mount(ProjectAgents, { props: { projectId: 1 } }); await flushPromises()
     expect(callOperation).toHaveBeenCalledWith('projectAgent.list', expect.objectContaining({ project_id: 1, project_dir: '/fixture/project' }))
@@ -33,12 +41,12 @@ describe('Agents list and native editor', () => {
     expect(add.attributes('disabled')).toBeUndefined()
     await add.trigger('click')
     expect(wrapper.get('[aria-label="Agent editor"]').text()).toContain('Add agent')
-    expect(vi.mocked(callOperation).mock.calls.map(([name]) => name)).toEqual(['workspace.listBindings', 'projectAgent.list'])
+    expect(vi.mocked(callOperation).mock.calls.map(([name]) => name)).toEqual(['project.get', 'projectAgent.list'])
   })
   it('shows an unbound folder state for an empty raw envelope without reading or writing agent files', async () => {
-    vi.mocked(callOperation).mockResolvedValue({ items: [] })
+    vi.mocked(callOperation).mockResolvedValue({ id: 1, project_dir: null, project_folder_issue: 'Set the project folder once in project setup.' })
     wrapper = mount(ProjectAgents, { props: { projectId: 1 } }); await flushPromises()
-    expect(wrapper.text()).toContain('No project folder is available')
+    expect(wrapper.text()).toContain('Set the project folder once in project setup')
     expect(wrapper.findAll('button').find(button => button.text() === 'Add agent')!.attributes('disabled')).toBeDefined()
     expect(callOperation).toHaveBeenCalledTimes(1)
   })
@@ -76,7 +84,7 @@ describe('Agents list and native editor', () => {
     await w.findAll('button').find(button => button.text() === 'Add agent')!.trigger('click')
     expect(w.get('aside').text()).toContain('Saving starts nothing')
     expect(w.text()).toContain('inherit task, project, then agent app settings')
-    expect(vi.mocked(callOperation).mock.calls.map(([name]) => name)).toEqual(['workspace.listBindings', 'projectAgent.list'])
+    expect(vi.mocked(callOperation).mock.calls.map(([name]) => name)).toEqual(['project.get', 'projectAgent.list'])
   })
   it('retains a dirty draft when route navigation is cancelled and leaves only after explicit discard', async () => {
     setup(); wrapper!.unmount()
@@ -133,36 +141,27 @@ describe('Agents list and native editor', () => {
     expect(w.findAllComponents(UiFormField).some(item => item.props('label') === 'Custom model')).toBe(false)
     expect(JSON.parse(String(field('Feature restrictions').getComponent(UiTextarea).props('modelValue')))).toEqual({ apps: false })
   })
-  it('protects a dirty folder switch and loads the chosen folder explicitly after discard', async () => {
+  it('clears the previous project draft and agents while the next folder is loading', async () => {
     const w = setup(); await flushPromises()
-    vi.mocked(callOperation).mockImplementation(async (operation, args) => operation === 'workspace.listBindings'
-      ? { items: [{ project_id: 1, last_known_root: '/first' }, { project_id: 1, last_known_root: '/second' }] }
-      : operation === 'projectAgent.list' ? { data: { project_id: 1, project_dir: args.project_dir, items: [row] } }
-        : { ...row, project_dir: args.project_dir })
-    // Re-enter through a new project instance to discover both explicit roots.
-    w.unmount()
-    wrapper = mount(ProjectAgents, { props: { projectId: 1 }, global: { stubs: { teleport: true } } })
-    await flushPromises()
-    const folder = wrapper.findAllComponents(UiFormField).find(item => item.props('label') === 'Project folder')!.getComponent(UiSelect)
-    folder.vm.$emit('update:modelValue', '/first'); await flushPromises()
-    await wrapper.get('.agent-row').trigger('click'); await flushPromises()
-    await wrapper.get('input[pattern]').setValue('unsaved_name')
-    folder.vm.$emit('update:modelValue', '/second'); await flushPromises()
-    await wrapper.findAll('button').find(button => button.text() === 'Cancel')!.trigger('click')
-    expect(wrapper.get<HTMLInputElement>('input[pattern]').element.value).toBe('unsaved_name')
-    folder.vm.$emit('update:modelValue', '/second'); await flushPromises()
-    await wrapper.findAll('button').find(button => button.text() === 'Discard changes')!.trigger('click'); await flushPromises()
-    expect(wrapper.find('[aria-label="Agent editor"]').exists()).toBe(false)
-    expect(callOperation).toHaveBeenLastCalledWith('projectAgent.list', expect.objectContaining({ project_dir: '/second' }))
+    await w.get('.agent-row').trigger('click'); await flushPromises()
+    let resolve!: (value: unknown) => void
+    vi.mocked(callOperation).mockImplementation(async operation => operation === 'project.get'
+      ? new Promise(done => { resolve = done }) : { data: { project_id: 2, project_dir: '/second', items: [] } })
+    await w.setProps({ projectId: 2 }); await flushPromises()
+    expect(w.find('.agent-row').exists()).toBe(false)
+    expect(w.find('[aria-label="Agent editor"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('/fixture/project')
+    resolve({ id: 2, project_dir: '/second' }); await flushPromises()
+    expect(callOperation).toHaveBeenLastCalledWith('projectAgent.list', expect.objectContaining({ project_id: 2, project_dir: '/second' }))
   })
   it('loads a changed project before rendering and ignores its predecessor’s late folder lookup', async () => {
     let resolveOld!: (value: unknown) => void
-    vi.mocked(callOperation).mockImplementation(async (operation, args) => operation === 'workspace.listBindings'
-      ? args.project_id === 1 ? new Promise(resolve => { resolveOld = resolve }) : { items: [{ project_id: 2, last_known_root: '/second' }] }
+    vi.mocked(callOperation).mockImplementation(async (operation, args) => operation === 'project.get'
+      ? args.project_id === 1 ? new Promise(resolve => { resolveOld = resolve }) : { id: 2, project_dir: '/second' }
       : { data: { project_id: 2, project_dir: '/second', items: [] } })
     wrapper = mount(ProjectAgents, { props: { projectId: 1 } })
     await wrapper.setProps({ projectId: 2 }); await flushPromises()
-    resolveOld({ items: [{ project_id: 1, last_known_root: '/first' }] }); await flushPromises()
+    resolveOld({ id: 1, project_dir: '/first' }); await flushPromises()
     expect(wrapper.text()).toContain('/second')
     expect(wrapper.text()).not.toContain('/first')
     expect(callOperation).toHaveBeenCalledWith('projectAgent.list', expect.objectContaining({ project_id: 2, project_dir: '/second' }))
@@ -173,7 +172,7 @@ describe('Agents list and native editor', () => {
     vi.mocked(callOperation).mockReturnValueOnce(new Promise(done => { resolve = done }))
     wrapper = mount(ProjectAgents, { props: { projectId: 1 } })
     wrapper.unmount(); wrapper = undefined
-    resolve({ items: [{ project_id: 1, last_known_root: '/fixture/project' }] }); await flushPromises()
+    resolve({ id: 1, project_dir: '/fixture/project' }); await flushPromises()
     expect(callOperation).toHaveBeenCalledTimes(1)
   })
 })

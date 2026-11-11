@@ -3,7 +3,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import ScheduleEditor from './ScheduleEditor.vue'
 import ScheduleAgentSelectors from './ScheduleAgentSelectors.vue'
-import { UiSelect } from '@/components/ui'
+import { UiConfirmDialog, UiSelect } from '@/components/ui'
 import { callOperation } from '@/lib/operations'
 import { apiFetch } from '@/lib/client'
 import { useSchedulesStore } from '@/stores/schedules'
@@ -16,7 +16,7 @@ const source = { host_key: 'codex' as const, native_name: 'research', source_pat
 function setup(roleCount = 1, missing = false) {
   setActivePinia(createPinia())
   const roles = ['researcher', 'writer', 'auditor'].slice(0, roleCount)
-  vi.mocked(callOperation).mockResolvedValue({ data: { project_id: 1, project_dir: '/fixture', items: missing ? [] : [{ project_id: 1, source_ref: source, fields: { ...blankAgent(), name: 'research' } }] } })
+  vi.mocked(callOperation).mockImplementation(async operation => operation === 'project.get' ? { id: 1, project_dir: '/fixture' } : { data: { project_id: 1, project_dir: '/fixture', items: missing ? [] : [{ project_id: 1, source_ref: source, fields: { ...blankAgent(), name: 'research' } }] } })
   vi.mocked(apiFetch).mockImplementation(async path => path.endsWith('/workflow-templates') ? { templates: [{ key: 'fixture', name: 'Fixture workflow' }] } : { spec: { agent_requirements: roles.map(role => ({ role, purpose: `Work as ${role}`, requirement: 'required' })), steps: [{ id: 'work', title: 'Work', extensions_json: {} }] } })
   wrapper = mount(ScheduleEditor, { props: { projectId: 1, job: { kind: 'fixture', name: 'Fixture', template_key: 'fixture', cron_expr: '* * * * *', timezone: 'UTC', enabled: false, execution_json: { project_dir: '/fixture', agents: missing ? { researcher: { source_ref: source } } : {}, host_key: 'codex' } } as never }, global: { stubs: { teleport: true } } })
   return wrapper
@@ -24,13 +24,67 @@ function setup(roleCount = 1, missing = false) {
 const namedSource = (name: string) => ({ ...source, native_name: name, source_path: `.codex/agents/${name}.toml` })
 function legacySchedule(execution: object) {
   setActivePinia(createPinia())
-  vi.mocked(callOperation).mockResolvedValue({ data: { project_id: 1, project_dir: '/fixture', items: ['mapped', 'legacy', 'new'].map(name => ({ project_id: 1, source_ref: namedSource(name), fields: { ...blankAgent(), name } })) } })
+  vi.mocked(callOperation).mockImplementation(async operation => operation === 'project.get' ? { id: 1, project_dir: '/fixture' } : { data: { project_id: 1, project_dir: '/fixture', items: ['mapped', 'legacy', 'new'].map(name => ({ project_id: 1, source_ref: namedSource(name), fields: { ...blankAgent(), name } })) } })
   vi.mocked(apiFetch).mockImplementation(async path => path.endsWith('/workflow-templates') ? { templates: [{ key: 'fixture', name: 'Fixture' }] } : { spec: { agent_requirements: ['delivery_agent', 'review_agent'].map(role => ({ role, requirement: 'required' })), steps: [] } })
   wrapper = mount(ScheduleEditor, { props: { projectId: 1, job: { kind: 'fixture', name: 'Fixture', template_key: 'fixture', cron_expr: '* * * * *', timezone: 'UTC', enabled: false, execution_json: { project_dir: '/fixture', host_key: 'codex', ...execution } } as never }, global: { stubs: { teleport: true } } })
   return wrapper
 }
 afterEach(() => { wrapper?.unmount(); vi.resetAllMocks() })
 describe('workflow-specific schedule agents', () => {
+  it('uses the configured project folder for a new automation without a directory control', async () => {
+    const w = setup(); w.unmount()
+    wrapper = mount(ScheduleEditor, { props: { projectId: 1, job: null }, global: { stubs: { teleport: true } } })
+    await flushPromises()
+    expect(wrapper.text()).toContain('Project folder: /fixture')
+    expect(wrapper.text()).not.toContain('Working directory')
+    const save = vi.spyOn(useSchedulesStore(), 'save').mockResolvedValue()
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(save).toHaveBeenCalledWith(1, expect.objectContaining({ execution_json: { project_dir: '/fixture' } }))
+  })
+  it('retains a different saved target on unrelated edits and changes it only after confirmation', async () => {
+    const w = setup(); await flushPromises()
+    vi.mocked(callOperation).mockImplementation(async (operation, args) => operation === 'project.get'
+      ? { id: 1, project_dir: '/configured' }
+      : { data: { project_id: 1, project_dir: args.project_dir, items: [] } })
+    const job = w.getComponent(ScheduleEditor).props('job'); w.unmount()
+    wrapper = mount(ScheduleEditor, { props: { projectId: 1, job }, global: { stubs: { teleport: true } } }); await flushPromises()
+    expect(wrapper.text()).toContain('Automation uses a different folder')
+    const save = vi.spyOn(useSchedulesStore(), 'save').mockResolvedValue()
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(save.mock.calls[0]![1].execution_json?.project_dir).toBe('/fixture')
+    await wrapper.findAll('button').find(button => button.text() === 'Use project folder')!.trigger('click')
+    const confirm = wrapper.getComponent(UiConfirmDialog)
+    expect(confirm.props('modelValue')).toBe(true)
+    expect(save).toHaveBeenCalledTimes(1)
+    confirm.vm.$emit('update:modelValue', false); await flushPromises()
+    expect(wrapper.text()).toContain('Project folder: /fixture')
+    await wrapper.findAll('button').find(button => button.text() === 'Use project folder')!.trigger('click')
+    confirm.vm.$emit('confirm'); await flushPromises()
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(save.mock.calls[1]![1].execution_json?.project_dir).toBe('/configured')
+    expect(wrapper.text()).not.toContain('Automation uses a different folder')
+  })
+  it('keeps folderless projects usable as disabled drafts and blocks enabling with an actionable message', async () => {
+    const w = setup(); w.unmount()
+    vi.mocked(callOperation).mockResolvedValue({ id: 1, project_dir: null, project_folder_issue: 'Select a binding once in project setup.' })
+    wrapper = mount(ScheduleEditor, { props: { projectId: 1, job: null }, global: { stubs: { teleport: true } } }); await flushPromises()
+    const save = vi.spyOn(useSchedulesStore(), 'save').mockResolvedValue()
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(save.mock.calls[0]![1].execution_json).toBeNull()
+    await wrapper.get('input[type="checkbox"]').setValue(true)
+    await wrapper.get('form').trigger('submit'); await flushPromises()
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('Select a binding once in project setup')
+  })
+  it('cannot save a prior project automation after the project changes', async () => {
+    const w = setup(); await flushPromises()
+    const save = vi.spyOn(useSchedulesStore(), 'save').mockResolvedValue()
+    await w.setProps({ projectId: 2 }); await flushPromises()
+    expect(w.find('form').exists()).toBe(false)
+    expect(w.text()).toContain('Reopen this automation from the current project')
+    expect(save).not.toHaveBeenCalled()
+    expect(w.text()).not.toContain('/fixture')
+  })
   it('reloads changed source/workflow props and rejects an earlier workflow response without repeated reads on selection', async () => {
     let resolveOld!: (value: unknown) => void
     vi.mocked(apiFetch).mockImplementation(async path => path.endsWith('/old') ? new Promise(resolve => { resolveOld = resolve })
@@ -81,13 +135,17 @@ describe('workflow-specific schedule agents', () => {
     expect(w.getComponent(ScheduleAgentSelectors).getComponent(UiSelect).props('options')).toContainEqual(expect.objectContaining({ label: expect.stringContaining('(missing or invalid)') }))
   })
   it('preserves unsupported existing host execution choices', async () => {
-    const w = setup(); await flushPromises()
-    const textareas = w.findAll('textarea')
-    await textareas.at(-1)!.setValue('{"host_key":"claude","delivery_agent":{"name":"existing","instructions":"Keep native host route","profile":"saved"}}')
+    const old = setup(); await flushPromises(); const job = old.getComponent(ScheduleEditor).props('job')!; old.unmount()
+    const execution = { project_dir: '/fixture', host_key: 'claude', delivery_agent: { name: 'existing', instructions: 'Keep native host route', profile: 'saved', provider: 'saved-provider', model: 'saved-model' }, mcp_config_ref: { path: '/fixture/routes.toml', sha256: 'a'.repeat(64) } }
+    wrapper = mount(ScheduleEditor, { props: { projectId: 1, job: { ...job, execution_json: execution } as never }, global: { stubs: { teleport: true } } }); await flushPromises()
+    const w = wrapper
     expect(w.text()).toContain('claude execution settings are preserved')
+    expect(w.findAll('textarea')).toHaveLength(0)
+    expect(w.text()).toContain('Profile saved')
+    expect(w.text()).toContain('/fixture/routes.toml')
     const save = vi.spyOn(useSchedulesStore(), 'save').mockResolvedValue()
     await w.get('form').trigger('submit'); await flushPromises()
-    expect(save).toHaveBeenCalledWith(1, expect.objectContaining({ execution_json: expect.objectContaining({ host_key: 'claude', delivery_agent: { name: 'existing', instructions: 'Keep native host route', profile: 'saved' } }) }))
+    expect(save).toHaveBeenCalledWith(1, expect.objectContaining({ execution_json: execution }))
   })
   it.each(['delivery_agent', 'review_agent'] as const)('preserves the canonical %s choice and both saved representations when unchanged', async role => {
     const execution = { project_dir: '/fixture', host_key: 'codex', agents: { [role]: { source_ref: namedSource('mapped'), model: 'mapped-model' } }, [role]: { source_ref: namedSource('legacy'), model: 'legacy-model', provider: 'saved-provider', profile: 'saved-profile' } }

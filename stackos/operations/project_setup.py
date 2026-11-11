@@ -133,7 +133,7 @@ def operation_specs():
         operation_spec(
             name="project.update",
             browser_safe=True,
-            summary="Patch safe project metadata such as display name.",
+            summary="Patch safe project metadata or explicitly select its primary folder binding.",
             input_model=ProjectUpdateInput,
             output_model=WriteEnvelope[ProjectOut],
             handler=_project_update,
@@ -152,11 +152,18 @@ def operation_specs():
                 "Display names are trimmed, nonblank and at most 200 characters; "
                 "duplicates are allowed.",
                 "Agents and console callers may patch only name. Catalog scope is REST-admin only.",
+                "primary_workspace_binding_id selects an existing same-project directory "
+                "binding; null leaves the project without a local folder. Existing schedules "
+                "and task/run execution snapshots retain their saved targets.",
             ),
             examples=(
                 OperationExample(
                     title="Rename project",
                     arguments={"project_id": 1, "patch": {"name": "Acme Pro"}},
+                ),
+                OperationExample(
+                    title="Select a previously confirmed project folder",
+                    arguments={"project_id": 1, "patch": {"primary_workspace_binding_id": 2}},
                 ),
             ),
             mutating=True,

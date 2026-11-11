@@ -54,23 +54,25 @@ def test_browser_priority_and_reorder_share_bounded_owner_and_stream(api, projec
         "/api/v1/operations/tracker.reorderTask/call",
         headers=headers,
         json={
-            "arguments": {**_arguments(second), "anchor_task_key": "first", "placement": "before"}
+            "arguments": {**_arguments(second), "anchor_task_key": "first", "placement": "after"}
         },
     )
     assert moved.status_code == 200, moved.text
     assert moved.json()["data"]["changed"]
-    assert moved.json()["data"]["task"]["order_index"] == 0
+    assert moved.json()["data"]["task"]["order_index"] == 1
     replay = api.post(
         "/api/v1/operations/tracker.reorderTask/call",
         headers=headers,
         json={
-            "arguments": {**_arguments(second), "anchor_task_key": "first", "placement": "before"}
+            "arguments": {**_arguments(second), "anchor_task_key": "first", "placement": "after"}
         },
     )
     assert replay.json()["data"]["replayed"] is True
+    # The first task already has rank zero. Priority plus the second task's
+    # changed rank emit two events; do not wait for a nonexistent third event.
     with api.stream(
         "GET",
-        f"/api/v1/projects/{project_id}/context/timeline/stream?replay=true&max_events=3",
+        f"/api/v1/projects/{project_id}/context/timeline/stream?replay=true&max_events=2",
         headers=headers,
     ) as response:
         assert response.status_code == 200

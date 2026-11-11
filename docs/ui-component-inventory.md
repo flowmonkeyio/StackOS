@@ -23,7 +23,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `UiConfirmDialog` | builds on Dialog |
 | `UiSidePanel` | left/right; 480/720 |
 | `UiDropdownMenu` | keyboard arrows; sections; optional `portalTarget` for viewport-clamped actions inside scrolling lists |
-| `UiPopover` | floating-ui placement |
+| `UiPopover` | trigger or external-element anchor; viewport flip/clamp, scroll/resize placement and focus return |
 | `UiReorderList`, `UiReorderHandle` | neutral vertical neighbor intents, handle/menu alternatives, insertion feedback, gesture-scoped edge scroll and cleanup |
 | `UiTooltip` | hover + focus |
 | `UiCard` | density compact/comfortable; optional padding; no nested cards |
@@ -114,7 +114,14 @@ Project Automations reuses this inline compact renderer in its Runs table.
 `SchedulesTab` owns exactly two shared underline tabs, Automations and Runs;
 `ScheduleEditor` uses the existing dialog/form primitives for inert drafts and
 validated activation through `schedule.set/toggle/remove`. Removing a schedule
-preserves existing runs. `ScheduledRuns` reads the paginated `schedule.runs`
+preserves existing runs. One effective workflow read supplies named input fields
+and agent roles. `ScheduleWorkflowInputs` uses the existing form primitives for
+scalar/options inputs and bounded declared properties/lists (three nested levels,
+30 properties per object, 100 displayed list items). Opaque values and unknown
+saved keys stay intact; missing required setup permits a disabled draft and blocks
+enabling. Execution settings are a readable summary with project-agent selectors.
+Workflow changes and leaving an edited form require discard confirmation.
+`ScheduledRuns` reads the paginated `schedule.runs`
 projection and links its actual `task_key` to the existing Work graph. The
 schedules store patches canonical task usage through `usageUpdates`, including
 updates received during pending history reads; it never sums receipts or polls
@@ -372,15 +379,46 @@ agent/MCP path.
 
 ## Design-system showcase
 
-Work Board card edits use `useTaskBoardEdits` for one pending bounded priority or
-same-column neighbor intent, optimistic presentation, rollback and canonical
-index refresh. `TrackerBoardPanel` supplies a six-dot draggable grip with the
-same keyboard Move up/down commands, invalidates gestures when the filter or
-task snapshot changes, and keeps the body open target separate from header
-controls. `TaskPriorityBadge` shares P0 danger / P1 warning / P2 info / P3 neutral
+Work Board card edits use `useTaskBoardEdits` for bounded priority or
+same-column neighbor intents, with one pending edit per conflicting column,
+optimistic presentation, confirmed-rejection rollback and canonical index
+reconciliation. Save errors, uncertain outcomes and saved-but-stale reads stay
+distinct. `TaskTrackerView` shares one project-index read and one trailing latest
+read across event bursts and explicit refreshes; background reads retain the
+board and leave focused loading with its existing readers. `TrackerBoardPanel`
+scopes disabled edit controls to pending columns and consumes `UiReorderList`
+with `UiReorderHandle` for each column. The shared primitive accepts arbitrary
+items through `itemKey`/`itemLabel`, optional meaningful `itemVersion`,
+`scopeKey`, `disabled` and an optional `scrollContainer` (the list by default).
+Its item slot supplies the item and handle bindings, including the existing
+dropdown action descriptors for Move up/down/to top/to bottom. A real move emits
+only `{ itemKey, anchorKey, placement: 'before' | 'after' }`; the consumer owns
+validation, optimistic ordering, persistence and recovery. The primitive never
+imports tracker, store or API contracts. It keeps the source-sized item in place,
+uses a restrained text preview and a single insertion line, suppresses visible
+no-ops, scrolls only the supplied vertical container, and cleans up its one
+animation-frame loop and gesture listeners on every termination path. Movement
+announcements and focus/visibility restoration accompany menu and drop intents;
+there is no decorative movement animation.
+
+Board supplies project/status/rank/priority eligibility revisions and the current
+project/filter context. Unrelated title, usage and `updated_at` refreshes retain
+the gesture; source/anchor eligibility changes cancel. The existing neighbor API
+preserves hidden tasks' relative order. The body open target remains separate
+from header controls. Header dropdown wrappers align on the same center line;
+run actions occupy space only when the shared action actually renders.
+`TaskPriorityBadge` shares P0 danger / P1 warning / P2 info / P3 neutral
 labels and tints across Board, task details and existing task Graph nodes;
 ticket priorities retain their own presentation. The 224px card height, usage
 slots and 56px footer stay fixed.
+
+Applied Board chips reuse `BoardFilterEditor` in a popover anchored to the clicked
+chip, including Completed's existing choices. Overflow stays mounted while its
+editor is open; responsive repartition re-anchors to the visible chip or surviving
+overflow trigger and preserves draft/focus. Filter/Display controls and the URL
+owner retain their existing commands. The primitive specs use a plain non-task
+list; pointer feel, edge-scroll feel and rendered alignment remain operator-owned
+manual checks.
 
 `RunAbortAction` provides the shared run menu trigger on Scheduled Runs, Board and
 the Graph task header. `RunAbortDialog` stays at the page composition root so a

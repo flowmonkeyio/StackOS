@@ -64,6 +64,25 @@ describe('Plugin domain', () => {
     expect(wrapper.findAll('a').filter(a => a.text().startsWith('Open in Library')).map(a => a.attributes('href'))).toEqual(['/projects/1/library?tab=saved&plugin=engineering', '/projects/1/library?tab=files&plugin=engineering'])
   })
 
+  it('uses the full workflow name as the focused link in the current project and domain', async () => {
+    const title = 'A long workflow title '.repeat(12).trim()
+    client.apiFetch.mockImplementation(async (url: string) => url.includes('/workflow-templates?')
+      ? { templates: [{ ...workflow('engineering.review / exact').summary, name: title }] } : defaults(url))
+    const { wrapper, router } = await open('/projects/2/plugins/engineering')
+    const row = wrapper.get('.domain-workflow')
+    const link = row.get('a')
+    expect(link.text()).toBe(title)
+    expect(link.attributes('title')).toBe(title)
+    expect(link.attributes('href')).toBe('/projects/2/plugins/engineering/workflows/engineering.review%20%2F%20exact')
+    expect(link.classes()).toContain('focus-ring')
+    expect(row.findAll('a')).toHaveLength(1)
+    expect(row.text()).not.toContain('View workflow')
+    ;(link.element as HTMLAnchorElement).focus()
+    expect(document.activeElement).toBe(link.element)
+    await link.trigger('click'); await flushPromises()
+    expect(router.currentRoute.value.params.templateKey).toBe('engineering.review / exact')
+  })
+
   it('retains the workflow list during a compatible delayed refresh', async () => {
     const { wrapper } = await open()
     let resolve!: (value: unknown) => void

@@ -12,6 +12,7 @@ from stackos.events import StackOSEvent, StackOSEventSource
 from stackos.host_mcp.service import ActiveInvocation
 from stackos.repositories.project_events import StackOSEventEmitter
 from stackos.repositories.tracker.agent_stats import invocation_receipts, summarize_receipts
+from stackos.repositories.tracker.ordering import next_task_position
 
 TRACKER_TASK_STATUS_CHANGED = "tracker.task.status_changed"
 TRACKER_TASK_CHANGED = "tracker.task.changed"
@@ -117,6 +118,13 @@ class TrackerEventMixin:
         new_value = _status_value(new_status)
         if old_value == new_value:
             return None
+
+        # Every canonical task status writer reaches this hook once, before
+        # recording its snapshot. Same-status writes leave manual order intact.
+        task.order_index = next_task_position(
+            self._s, task.tracker_id, task.status, exclude_task_id=task.id
+        )
+        self._s.add(task)
 
         metadata: dict[str, Any] = {
             "entity_kind": "task",
