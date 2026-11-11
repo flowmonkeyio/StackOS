@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import type { TrackerSnapshot, TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
 import { agentStatsFixture } from './home/agentStatsFixtures'
 import TaskTrackerView from './TaskTrackerView.vue'
+import { ApiError } from '@/lib/client'
 
 const mocks = vi.hoisted(() => ({ callOperation: vi.fn(), close: vi.fn(), stream: vi.fn() }))
 vi.mock('@/lib/operations', () => ({ callOperation: mocks.callOperation }))
@@ -43,7 +44,7 @@ function dataMock(tasks = [taskA, taskB], tickets = [ticketA, ticketB], graphNod
   })
 }
 
-async function render(url = '/projects/7/tasks', realDialogs = false, realControls = false) {
+async function render(url = '/projects/7/tasks', realDialogs = false, realControls = false, realBoard = false) {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/projects/:id/tasks', component: TaskTrackerView },
     { path: '/other', component: { template: '<div>Other page</div>' } },
@@ -51,11 +52,11 @@ async function render(url = '/projects/7/tasks', realDialogs = false, realContro
   await router.push(url)
   await router.isReady()
   const wrapper = mount({ template: '<RouterView :key="$route.params.id" />' }, {
-    attachTo: realDialogs ? document.body : undefined,
+    attachTo: realDialogs || realBoard ? document.body : undefined,
     global: { plugins: [router, createPinia()], stubs: {
       ProjectPageHeader: { template: '<header><slot name="actions" /></header>' },
       TaskTrackerCommandPanel: realControls ? false : { name: 'TaskTrackerCommandPanel', props: ['viewMode','activeTaskKey','taskOptions','search','filtersActive','boardFilters','taskAgentStats','taskAutomated','taskDelivery','abortTarget'], template: '<nav />' },
-      TrackerBoardPanel: { name: 'TrackerBoardPanel', props: ['rows','hideEmptyColumns','editPending','editPendingColumns','editError'], template: '<section data-test="board"><button v-for="row in rows" :key="row.key" @click="$emit(\'openTask\', row.key)">{{ row.task.title }}</button></section>' },
+      TrackerBoardPanel: realBoard ? false : { name: 'TrackerBoardPanel', props: ['rows','hideEmptyColumns','editPending','editPendingColumns','editError'], template: '<section data-test="board"><button v-for="row in rows" :key="row.key" @click="$emit(\'openTask\', row.key)">{{ row.task.title }}</button></section>' },
       TrackerGraphPanel: { name: 'TrackerGraphPanel', props: ['loading','activeTaskTitle','selectedTicket','selectionVisible','selectionLabel','flow'], template: '<section data-test="graph" />' },
       TrackerWarningSummary: true,
       TrackerTaskDetailDialog: realDialogs ? false : { name: 'TrackerTaskDetailDialog', props: ['modelValue','task','tickets','loading','error','contexts','ticket','ticketKey','results','activity'], template: '<aside />' },
@@ -69,6 +70,48 @@ async function render(url = '/projects/7/tasks', realDialogs = false, realContro
 const popup = () => new DOMWrapper(document.body)
 
 describe('Work board navigation', () => {
+  it('wires the shared list through the real Board and save owner, with one filtered intent and rejection recovery', async () => {
+    const records = [
+      trackerTask({ key: 'a', id: 1, title: 'Visible first', order_index: 0 }),
+      trackerTask({ key: 'hidden-one', id: 2, title: 'Hidden one', order_index: 1 }),
+      trackerTask({ key: 'hidden-two', id: 3, title: 'Hidden two', order_index: 2 }),
+      trackerTask({ key: 'b', id: 4, title: 'Visible second', order_index: 3 }),
+      trackerTask({ key: 'c', id: 5, title: 'Visible third', order_index: 4 }),
+    ]
+    dataMock(records, [])
+    const read = mocks.callOperation.getMockImplementation()!
+    let finish!: (value: unknown) => void
+    mocks.callOperation.mockImplementation((name, args, options) => name === 'tracker.reorderTask'
+      ? new Promise(resolve => { finish = resolve }) : read(name, args, options))
+    const { wrapper, board } = await render('/projects/7/tasks?search=Visible&completed=all', false, false, true)
+    const order = () => board().findAll('[data-task-key]').map(card => card.attributes('data-task-key'))
+    expect(order()).toEqual(['a', 'b', 'c'])
+    await board().get('[data-reorder-handle]').trigger('click')
+    await board().findAll('[role="menuitem"]').find(action => action.text() === 'Move to bottom')!.trigger('click')
+    await flushPromises()
+    expect(order()).toEqual(['b', 'c', 'a'])
+    const writes = () => mocks.callOperation.mock.calls.filter(([name]) => name === 'tracker.reorderTask')
+    expect(writes()).toHaveLength(1)
+    expect(writes()[0]![1]).toMatchObject({ project_id: 7, task_key: 'a', anchor_task_key: 'c', placement: 'after', expected_status: 'in-progress' })
+    // The existing read owner receives the canonical full-column order; hidden
+    // records were never supplied as a replacement list to the write operation.
+    records.forEach((record, i) => { record.order_index = [4, 0, 1, 2, 3][i]! })
+    finish({ data: {} })
+    await flushPromises()
+    expect(order()).toEqual(['b', 'c', 'a'])
+    expect(records.filter(record => record.key.startsWith('hidden')).map(record => record.key)).toEqual(['hidden-one', 'hidden-two'])
+    expect(document.activeElement).toBe(board().get('[data-task-key="a"] [data-reorder-handle]').element)
+    mocks.callOperation.mockImplementation((name, args, options) => name === 'tracker.reorderTask'
+      ? Promise.reject(new ApiError('conflict', 409, {})) : read(name, args, options))
+    await board().get('[data-task-key="a"] [data-reorder-handle]').trigger('click')
+    await board().findAll('[role="menuitem"]').find(action => action.text() === 'Move to top')!.trigger('click')
+    await flushPromises()
+    expect(writes()).toHaveLength(2)
+    expect(order()).toEqual(['b', 'c', 'a'])
+    expect(board().get('[role="alert"]').text()).toContain('Could not save task')
+    expect(board().findAll('[data-reorder-handle][disabled]')).toHaveLength(0)
+    wrapper.unmount()
+  })
   it('coalesces 294 rank events into an in-flight read and one latest read, retaining usable Board content', async () => {
     const { wrapper, board, controls } = await render()
     const instance = board().vm
@@ -120,7 +163,7 @@ describe('Work board navigation', () => {
   })
 
   it('discards an old project burst and pending save while the next project remains interactive', async () => {
-    dataMock([taskA, { ...taskB, status: taskA.status }], [])
+    dataMock([taskA, { ...taskB, status: taskA.status, order_index: 1 }], [])
     const { wrapper, router, board } = await render()
     const read = mocks.callOperation.getMockImplementation()!
     let finishRead!: (value: TrackerSnapshot) => void

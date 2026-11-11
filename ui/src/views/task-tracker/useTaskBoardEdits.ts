@@ -3,6 +3,7 @@ import { ApiError } from '@/lib/client'
 import { reorderTask, saveTaskPriority, type TaskPriorityIntent, type TaskReorderIntent } from '@/lib/stackos/taskBoard'
 import type { TaskProgressRow } from './viewTypes'
 import type { TaskPriority } from './taskPriority'
+import { changesOrder } from '@/components/ui/verticalReorder'
 
 export interface BoardMove { taskKey: string; anchorKey: string; placement: 'before' | 'after' }
 type BoardEdit = BoardMove | { taskKey: string; priority: TaskPriority }
@@ -62,7 +63,7 @@ export function useTaskBoardEdits(options: {
     const row = options.rows.value.find(row => row.key === edit.taskKey)
     if (!row || row.task.project_id !== options.projectId.value) return
     if (states.value.get(row.task.status)?.pending) return
-    if ('anchorKey' in edit && !options.rows.value.some(anchor => anchor.key === edit.anchorKey && anchor.task.status === row.task.status)) return
+    if ('anchorKey' in edit && !changesOrder(rows.value.filter(anchor => anchor.task.project_id === options.projectId.value && anchor.task.status === row.task.status).map(anchor => anchor.key), { itemKey: edit.taskKey, anchorKey: edit.anchorKey, placement: edit.placement })) return
     if ('priority' in edit && row.task.priority_key === edit.priority) return
     const projectId = options.projectId.value
     const base = {

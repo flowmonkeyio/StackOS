@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { UiBadge, UiDropdownMenu, UiIcon } from '@/components/ui'
+import { computed } from 'vue'
+import { UiBadge, UiDropdownMenu, UiIcon, UiReorderList, UiReorderHandle } from '@/components/ui'
 import { trackerStatus } from '@/design/status'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
 import ActiveExecutionLine from '@/components/domain/ActiveExecutionLine.vue'
@@ -37,53 +37,13 @@ function blocker(row: TaskProgressRow): string | null {
   return titles.length ? `Blocked by: ${titles.join(', ')}` : null
 }
 
-const gesture = ref<{ key: string; status: TrackerStatus; fingerprint: string; context?: string } | null>(null)
-const insertion = ref<{ anchorKey: string; placement: 'before' | 'after' } | null>(null)
-const fingerprint = computed(() => JSON.stringify(props.rows.map(row => [row.task.project_id, row.key, row.task.status, row.task.updated_at])))
 function columnPending(status: string): boolean {
   return props.editPendingColumns?.includes(status) ?? Boolean(props.editPending)
 }
-const dragging = computed(() => gesture.value && !columnPending(gesture.value.status) && gesture.value?.fingerprint === fingerprint.value
-  && gesture.value?.context === props.interactionKey ? gesture.value : null)
-
-function cancelDrag(): void { gesture.value = null; insertion.value = null }
-function onEscape(event: KeyboardEvent): void { if (event.key === 'Escape') cancelDrag() }
-onMounted(() => document.addEventListener('keydown', onEscape))
-onBeforeUnmount(() => document.removeEventListener('keydown', onEscape))
-
-function startDrag(event: DragEvent, row: TaskProgressRow): void {
-  if (columnPending(row.task.status) || !event.dataTransfer) { event.preventDefault(); return }
-  gesture.value = { key: row.key, status: row.task.status, fingerprint: fingerprint.value, context: props.interactionKey }
-  insertion.value = null
-  event.dataTransfer.effectAllowed = 'move'
-  event.dataTransfer.setData('text/plain', row.key)
-  const card = (event.target as HTMLElement).closest('.tracker-board__card')
-  if (card) event.dataTransfer.setDragImage(card, 20, 20)
-}
-function overCard(event: DragEvent, row: TaskProgressRow): void {
-  if (!dragging.value || dragging.value.status !== row.task.status || dragging.value.key === row.key) { insertion.value = null; return }
-  event.preventDefault()
-  if (event.dataTransfer) event.dataTransfer.dropEffect = 'move'
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  insertion.value = { anchorKey: row.key, placement: event.clientY < rect.top + rect.height / 2 ? 'before' : 'after' }
-}
-function drop(event: DragEvent, status: TrackerStatus): void {
-  const active = dragging.value
-  const target = insertion.value
-  if (active && target && active.status === status && props.rows.some(row => row.key === target.anchorKey && row.task.status === status)) {
-    event.preventDefault()
-    emit('move', { taskKey: active.key, ...target })
-  }
-  cancelDrag()
-}
-function moveItems(row: TaskProgressRow) {
-  const column = props.rows.filter(item => item.task.status === row.task.status)
-  const index = column.findIndex(item => item.key === row.key)
-  return [
-    { key: 'up', label: 'Move up', disabled: columnPending(row.task.status) || index === 0, onSelect: () => emit('move', { taskKey: row.key, anchorKey: column[index - 1]!.key, placement: 'before' }) },
-    { key: 'down', label: 'Move down', disabled: columnPending(row.task.status) || index === column.length - 1, onSelect: () => emit('move', { taskKey: row.key, anchorKey: column[index + 1]!.key, placement: 'after' }) },
-  ]
-}
+const rowKey = (row: TaskProgressRow) => row.key
+const rowLabel = (row: TaskProgressRow) => `task #${row.id}`
+// Titles, usage, heartbeats and their updated_at values do not change drag eligibility.
+const rowVersion = (row: TaskProgressRow) => JSON.stringify([row.task.project_id, row.task.tracker_id, row.task.status, row.task.order_index, row.task.priority_key])
 function priorityItems(row: TaskProgressRow) {
   return taskPriorities.map(priority => ({ key: priority, label: priority.toUpperCase(), disabled: columnPending(row.task.status) || row.task.priority_key === priority,
     onSelect: () => emit('priority', { taskKey: row.key, priority }) }))
@@ -107,14 +67,12 @@ function priorityItems(row: TaskProgressRow) {
     <span
       class="sr-only"
       role="status"
-    >{{ editPending ? 'Saving task…' : dragging ? 'Task lifted. Drop within this column, or press Escape to cancel.' : '' }}</span>
+    >{{ editPending ? 'Saving task…' : '' }}</span>
     <section
       v-for="column in columns"
       :key="column.status"
       class="tracker-board__column"
       :aria-label="trackerStatus[column.status].label"
-      @drop="drop($event, column.status)"
-      @dragleave="!($event.currentTarget as HTMLElement).contains($event.relatedTarget as Node) && (insertion = null)"
     >
       <header class="tracker-board__heading">
         <UiIcon
@@ -127,148 +85,129 @@ function priorityItems(row: TaskProgressRow) {
         </h2>
         <span class="text-xs tabular-nums text-fg-muted">{{ column.rows.length }}</span>
       </header>
-      <div class="tracker-board__cards">
-        <div
-          v-for="row in column.rows"
-          :key="row.key"
-          class="tracker-board__card-wrap"
-          :class="{ 'tracker-board__placeholder': dragging?.key === row.key, 'tracker-board__insert-before': dragging && insertion?.anchorKey === row.key && insertion.placement === 'before', 'tracker-board__insert-after': dragging && insertion?.anchorKey === row.key && insertion.placement === 'after' }"
-          :data-task-key="row.key"
-          @dragover="overCard($event, row)"
-        >
+      <UiReorderList
+        class="tracker-board__cards"
+        :items="column.rows"
+        :item-key="rowKey"
+        :item-label="rowLabel"
+        :item-version="rowVersion"
+        :scope-key="`${interactionKey}:${column.status}`"
+        :disabled="columnPending(column.status)"
+        @move="$emit('move', { taskKey: $event.itemKey, anchorKey: $event.anchorKey, placement: $event.placement })"
+      >
+        <template #default="{ item: row, handle }">
           <div
-            class="tracker-board__card"
-            :class="{ 'tracker-board__card--selected': selectedTaskKey === row.key, 'tracker-board__card--blocked': blocker(row) }"
-            :title="row.task.active_execution ? activeExecutionTitle(row.task.active_execution) : undefined"
-            :aria-busy="columnPending(row.task.status) || undefined"
+            class="tracker-board__card-wrap"
+            :data-task-key="row.key"
           >
-            <span class="tracker-board__identity tracker-board__identity--header">
-              <UiDropdownMenu
-                :items="moveItems(row)"
-                :aria-label="`Move task #${row.id}`"
-              >
-                <template #trigger="{ toggle, open }">
-                  <button
-                    type="button"
-                    class="tracker-board__grip focus-ring"
-                    data-dropdown-trigger
-                    :draggable="!columnPending(row.task.status)"
-                    :disabled="columnPending(row.task.status)"
-                    :aria-expanded="open"
-                    aria-haspopup="menu"
-                    :aria-label="`Move task #${row.id}`"
-                    @click="toggle"
-                    @dragstart="startDrag($event, row)"
-                    @dragend="cancelDrag"
-                  >
-                    <UiIcon
-                      name="dots-vertical"
-                      class="tracker-board__grip-dots"
-                    /><UiIcon
-                      name="dots-vertical"
-                      class="tracker-board__grip-dots"
-                    />
-                  </button>
-                </template>
-              </UiDropdownMenu>
-              <UiDropdownMenu
-                :items="priorityItems(row)"
-                :aria-label="`Priority for task #${row.id}`"
-              >
-                <template #trigger="{ toggle, open }">
-                  <button
-                    type="button"
-                    class="tracker-board__priority focus-ring"
-                    data-dropdown-trigger
-                    :disabled="columnPending(row.task.status)"
-                    :aria-expanded="open"
-                    aria-haspopup="menu"
-                    :aria-label="`Change priority for task #${row.id}: ${row.task.priority_key.toUpperCase()}`"
-                    @click="toggle"
-                  >
-                    <TaskPriorityBadge :priority="row.task.priority_key" />
-                  </button>
-                </template>
-              </UiDropdownMenu>
-              <UiBadge
-                v-if="isAutomaticDeliveryTask(row.task)"
-                class="tracker-board__automated"
-                title="Automated"
-                tone="info"
-              >
-                Automated
-              </UiBadge>
-              <span
-                v-if="row.totalCount > 0"
-                class="tracker-board__progress"
-                :title="`${row.completedCount} of ${row.totalCount} tickets complete`"
-              >
-                <UiIcon
-                  name="tasks"
-                  class="h-3.5 w-3.5 shrink-0"
-                />
-                {{ row.completedCount }}/{{ row.totalCount }}
-              </span>
-              <UiBadge
-                class="tracker-board__state"
-                :tone="state(row).tone"
-                :title="state(row).label"
-                :aria-label="state(row).label"
-                :dot="true"
-                variant="outline"
-              >{{ state(row).label }}</UiBadge>
-            </span>
-            <button
-              type="button"
-              class="tracker-board__open focus-ring"
-              :aria-label="`Open task #${row.id}: ${row.task.title}${row.task.active_execution ? `; Active now: ${activeExecutionTitle(row.task.active_execution)}` : ''}`"
-              @click="$emit('openTask', row.key)"
+            <div
+              class="tracker-board__card"
+              :class="{ 'tracker-board__card--selected': selectedTaskKey === row.key, 'tracker-board__card--blocked': blocker(row) }"
+              :title="row.task.active_execution ? activeExecutionTitle(row.task.active_execution) : undefined"
+              :aria-busy="columnPending(row.task.status) || undefined"
             >
-              <span
-                class="tracker-board__title"
-                :title="row.task.title"
-              >{{ row.task.title }}</span>
-              <span
-                class="tracker-board__subtitle"
-                :title="taskDeliveryState(row.task)?.reason ?? row.task.goal"
-              >{{ taskDeliveryState(row.task)?.reason ?? row.task.goal }}</span>
-              <AgentUsageSummary
-                v-if="isAutomaticDeliveryTask(row.task)"
-                :metrics="row.task.agent_stats"
-                :active="!!row.task.active_execution"
-                compact
-                title="Lifetime task usage"
-              />
-              <span class="tracker-board__meta">
-                <ActiveExecutionLine
-                  :item="row.task"
-                  :execution="row.task.active_execution"
-                  :last-execution="isAutomaticDeliveryTask(row.task) ? row.task.agent_stats?.last_execution : null"
-                  :owner="row.task.owner"
-                  class="tracker-board__execution"
+              <span class="tracker-board__identity tracker-board__identity--header">
+                <UiReorderHandle v-bind="handle" />
+                <UiDropdownMenu
+                  :items="priorityItems(row)"
+                  :aria-label="`Priority for task #${row.id}`"
+                >
+                  <template #trigger="{ toggle, open }">
+                    <button
+                      type="button"
+                      class="tracker-board__priority focus-ring"
+                      data-dropdown-trigger
+                      :disabled="columnPending(row.task.status)"
+                      :aria-expanded="open"
+                      aria-haspopup="menu"
+                      :aria-label="`Change priority for task #${row.id}: ${row.task.priority_key.toUpperCase()}`"
+                      @click="toggle"
+                    >
+                      <TaskPriorityBadge :priority="row.task.priority_key" />
+                    </button>
+                  </template>
+                </UiDropdownMenu>
+                <UiBadge
+                  v-if="isAutomaticDeliveryTask(row.task)"
+                  class="tracker-board__automated"
+                  title="Automated"
+                  tone="info"
+                >
+                  Automated
+                </UiBadge>
+                <span
+                  v-if="row.totalCount > 0"
+                  class="tracker-board__progress"
+                  :title="`${row.completedCount} of ${row.totalCount} tickets complete`"
+                >
+                  <UiIcon
+                    name="tasks"
+                    class="h-3.5 w-3.5 shrink-0"
+                  />
+                  {{ row.completedCount }}/{{ row.totalCount }}
+                </span>
+                <UiBadge
+                  class="tracker-board__state"
+                  :tone="state(row).tone"
+                  :title="state(row).label"
+                  :aria-label="state(row).label"
+                  :dot="true"
+                  variant="outline"
+                >{{ state(row).label }}</UiBadge>
+                <RunAbortAction
+                  class="tracker-board__actions"
+                  :target="taskRunAbortTarget(row.task)"
+                  @refresh="$emit('refresh')"
                 />
               </span>
-              <span
-                v-if="blocker(row)"
-                class="tracker-board__blocked"
-                :title="blocker(row)!"
-              >{{ blocker(row) }}</span>
-            </button>
+              <button
+                type="button"
+                class="tracker-board__open focus-ring"
+                :aria-label="`Open task #${row.id}: ${row.task.title}${row.task.active_execution ? `; Active now: ${activeExecutionTitle(row.task.active_execution)}` : ''}`"
+                @click="$emit('openTask', row.key)"
+              >
+                <span
+                  class="tracker-board__title"
+                  :title="row.task.title"
+                >{{ row.task.title }}</span>
+                <span
+                  class="tracker-board__subtitle"
+                  :title="taskDeliveryState(row.task)?.reason ?? row.task.goal"
+                >{{ taskDeliveryState(row.task)?.reason ?? row.task.goal }}</span>
+                <AgentUsageSummary
+                  v-if="isAutomaticDeliveryTask(row.task)"
+                  :metrics="row.task.agent_stats"
+                  :active="!!row.task.active_execution"
+                  compact
+                  title="Lifetime task usage"
+                />
+                <span class="tracker-board__meta">
+                  <ActiveExecutionLine
+                    :item="row.task"
+                    :execution="row.task.active_execution"
+                    :last-execution="isAutomaticDeliveryTask(row.task) ? row.task.agent_stats?.last_execution : null"
+                    :owner="row.task.owner"
+                    class="tracker-board__execution"
+                  />
+                </span>
+                <span
+                  v-if="blocker(row)"
+                  class="tracker-board__blocked"
+                  :title="blocker(row)!"
+                >{{ blocker(row) }}</span>
+              </button>
+            </div>
           </div>
-          <div class="tracker-board__actions">
-            <RunAbortAction
-              :target="taskRunAbortTarget(row.task)"
-              @refresh="$emit('refresh')"
-            />
-          </div>
-        </div>
-        <p
-          v-if="!column.rows.length"
-          class="tracker-board__empty"
-        >
-          No tasks
-        </p>
-      </div>
+        </template>
+        <template #empty>
+          <p
+            v-if="!column.rows.length"
+            class="tracker-board__empty"
+          >
+            No tasks
+          </p>
+        </template>
+      </UiReorderList>
     </section>
   </section>
 </template>
@@ -276,24 +215,15 @@ function priorityItems(row: TaskProgressRow) {
 <style scoped>
 .tracker-board__card-wrap { position: relative; min-width: 0; }
 .tracker-board__open { display: flex; flex: 1; min-height: 0; flex-direction: column; align-items: stretch; text-align: left; border-radius: var(--radius-sm); }
-.tracker-board__grip, .tracker-board__priority { display: inline-flex; align-items: center; justify-content: center; height: 20px; flex: none; border-radius: var(--radius-xs); }
-.tracker-board__grip { position: relative; cursor: grab; width: 14px; }
-.tracker-board__grip-dots { position: absolute; top: 2px; width: 16px; height: 16px; left: -4px; }
-.tracker-board__grip-dots:last-child { left: 2px; }
-.tracker-board__grip:active { cursor: grabbing; }
-.tracker-board__priority:disabled, .tracker-board__grip:disabled { cursor: wait; }
-.tracker-board__placeholder { opacity: .35; }
-.tracker-board__placeholder .tracker-board__card { border-style: dashed; }
-.tracker-board__insert-before::before, .tracker-board__insert-after::after { content: ''; position: absolute; z-index: 1; left: 0; right: 0; height: 2px; background: var(--color-border-focus); }
-.tracker-board__insert-before::before { top: -12px; }
-.tracker-board__insert-after::after { bottom: -12px; }
+.tracker-board__priority { display: inline-flex; align-items: center; justify-content: center; height: 20px; flex: none; border-radius: var(--radius-xs); }
+.tracker-board__priority:disabled { cursor: wait; }
 .tracker-board__message { position: sticky; left: 0; grid-column: 1 / -1; font-size: 12px; }
-.tracker-board__actions { position: absolute; top: 8px; right: 8px; }
-.tracker-board__card-wrap:has(.ui-dropdown) .tracker-board__identity--header { padding-right: 24px; }
+.tracker-board__identity--header :deep(.ui-dropdown) { display: inline-flex; align-items: center; flex: none; vertical-align: middle; }
+.tracker-board__actions { margin-right: -4px; }
 .tracker-board { display: grid; grid-template-columns: repeat(7, minmax(300px, 1fr)); column-gap: 12px; flex: 1 1 auto; min-width: 0; min-height: 360px; overflow: auto; overscroll-behavior: contain; }
 .tracker-board__column { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .tracker-board__heading { display: flex; flex: none; align-items: center; gap: 8px; padding: 12px 8px; }
-.tracker-board__cards { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1 1 auto; align-content: start; gap: 24px; padding: 4px 4px 16px; overflow-y: auto; min-height: 0; scrollbar-width: thin; scrollbar-gutter: stable; }
+.tracker-board__cards { --reorder-gap: 24px; flex: 1 1 auto; padding: 4px 4px 16px; scrollbar-width: thin; scrollbar-gutter: stable; }
 .tracker-board__card { position: relative; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; box-sizing: border-box; height: 224px; width: 100%; padding: 12px 12px 54px; border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); background: var(--color-bg-surface); text-align: left; scroll-margin: 4px; }
 .tracker-board__card:hover { border-color: var(--color-border-default); background: var(--color-bg-surface-alt); }
 .tracker-board__card--selected { border-color: var(--color-border-focus); }

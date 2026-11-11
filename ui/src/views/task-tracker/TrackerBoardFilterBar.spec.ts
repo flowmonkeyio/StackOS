@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import TrackerBoardFilterBar from './TrackerBoardFilterBar.vue'
 import { parseBoardFilters } from './boardFilters'
+import { UiPopover } from '@/components/ui'
 
 let available = 480
 let resize: () => void
@@ -21,7 +22,7 @@ beforeEach(() => {
 })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); disconnect.mockClear() })
 function render(query = {}) {
-  return mount(TrackerBoardFilterBar, { props: {
+  return mount(TrackerBoardFilterBar, { attachTo: document.body, props: {
     filters: parseBoardFilters(query), workflowOptions: [{ value: 'engineering', label: 'Tracked delivery' }],
     assigneeOptions: [{ value: 'Codex Main', label: 'Codex Main' }], taskRowsCount: 3, tasksCount: 12, indexAvailable: true,
   } })
@@ -33,6 +34,72 @@ function button(wrapper: ReturnType<typeof render>, text: string) {
 }
 
 describe('Board filter controls', () => {
+  it('opens and applies Completed choices through the real shared select', async () => {
+    const wrapper = render()
+    await nextTick()
+    await wrapper.get('[aria-label="Edit Completed: Past week"]').trigger('click')
+    await wrapper.get('[role="combobox"]').trigger('click')
+    await wrapper.findAll('[role="option"]').find(option => option.text() === 'None')!.trigger('click')
+    expect(wrapper.emitted('update:display')).toEqual([[{ completed: 'none' }]])
+    expect(wrapper.find('[aria-label="Edit board filter"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+  it('anchors every applied clause and Completed to its own chip', async () => {
+    available = 2000
+    const wrapper = render({ search: 'server', status: 'in-progress', priority: 'p1', workflow: 'engineering', assignee: 'Codex Main', ticket_status: 'complete', focus: 'blocked' })
+    await nextTick()
+    const chips = wrapper.findAll('.board-filter-bar__chips .board-filter-bar__edit')
+    expect(chips).toHaveLength(8)
+    for (const chip of chips) {
+      await chip.trigger('click')
+      const editor = wrapper.findAllComponents(UiPopover).find(popover => popover.props('ariaLabel') === 'Edit board filter')!
+      expect(editor.props('modelValue')).toBe(true)
+      expect(editor.props('anchor')).toBe(chip.element)
+      expect(wrapper.findAllComponents(UiPopover).filter(popover => popover.props('modelValue'))).toHaveLength(1)
+    }
+    wrapper.unmount()
+  })
+  it('keeps an overflow editor anchored and returns focus after resize moves its chip', async () => {
+    available = 80
+    const wrapper = render({ search: 'server', completed: 'all' })
+    await nextTick()
+    await button(wrapper, '+2 filters').trigger('click')
+    const chip = wrapper.get('[aria-label="Edit Text: server"]')
+    await chip.trigger('click')
+    const editor = wrapper.findAllComponents(UiPopover).find(popover => popover.props('ariaLabel') === 'Edit board filter')!
+    expect(editor.props('anchor')).toBe(chip.element)
+    available = 2000; resize(); await flushPromises()
+    const movedChip = wrapper.get('.board-filter-bar__chips [aria-label="Edit Text: server"]')
+    expect(editor.props('anchor')).toBe(movedChip.element)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await nextTick()
+    expect(document.activeElement).toBe(movedChip.element)
+    wrapper.unmount()
+  })
+  it('uses the surviving overflow trigger when a visible chip moves into closed overflow', async () => {
+    const wrapper = render({ search: 'server', completed: 'all' })
+    await nextTick()
+    await wrapper.get('[aria-label="Edit Text: server"]').trigger('click')
+    await wrapper.get('input[type="search"]').setValue('retained draft')
+    available = 80; resize(); await flushPromises()
+    const overflow = button(wrapper, '+2 filters')
+    const editor = wrapper.findAllComponents(UiPopover).find(popover => popover.props('ariaLabel') === 'Edit board filter')!
+    expect(editor.props('anchor')).toBe(overflow.element)
+    expect((wrapper.get('input[type="search"]').element as HTMLInputElement).value).toBe('retained draft')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await nextTick()
+    expect(document.activeElement).toBe(overflow.element)
+    wrapper.unmount()
+  })
+  it('anchors an applied editor at the clicked chip instead of the Filter button', async () => {
+    const wrapper = render({ search: 'server', completed: 'all' })
+    await nextTick()
+    const chip = wrapper.get('[aria-label="Edit Text: server"]')
+    await chip.trigger('click')
+    const editor = wrapper.findAllComponents(UiPopover).find(popover => popover.props('modelValue'))!
+    expect(editor.props()).toHaveProperty('anchor', chip.element)
+    wrapper.unmount()
+  })
   it('uses Text as a filter, edits the existing clause and removes blank text', async () => {
     const wrapper = render()
     expect(wrapper.find('input[type="search"]').exists()).toBe(false)
@@ -87,7 +154,9 @@ describe('Board filter controls', () => {
     await wrapper.get('[aria-label="Remove Has blocked tickets"]').trigger('click')
     expect(wrapper.emitted('removeFilter')?.[0]).toEqual(['blocked'])
     await wrapper.get('[aria-label="Edit Workflow is: engineering"]').trigger('click')
-    expect(wrapper.find('[aria-label="More filters"]').exists()).toBe(false)
+    expect(wrapper.find('[aria-label="More filters"]').exists()).toBe(true)
+    const clicked = wrapper.get('[aria-label="Edit Workflow is: engineering"]').element
+    expect(wrapper.findAllComponents(UiPopover).find(popover => popover.props('ariaLabel') === 'Edit board filter')!.props('anchor')).toBe(clicked)
     expect(wrapper.get('[aria-label="Workflow value"]').text()).toContain('Tracked delivery')
     available = 2000; resize(); await nextTick()
     expect(wrapper.findAll('.board-filter-bar__chips > .board-filter-bar__chip')).toHaveLength(7)
@@ -106,6 +175,7 @@ describe('Board filter controls', () => {
     ])
     select.vm.$emit('change', 'none')
     expect(wrapper.emitted('update:display')?.[0]).toEqual([{ completed: 'none' }])
+    await button(wrapper, 'Display').trigger('click')
     await wrapper.get('[aria-label="Hide empty columns"]').trigger('click')
     expect(wrapper.emitted('update:display')?.[1]).toEqual([{ hideEmptyColumns: true }])
     await wrapper.get('[aria-label="Remove Completed: Past week"]').trigger('click')

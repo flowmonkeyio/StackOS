@@ -32,6 +32,19 @@ const chips = computed(() => [
 const filterOpen = ref(false)
 const overflowOpen = ref(false)
 const displayOpen = ref(false)
+const chipOpen = ref(false)
+const chipField = ref<ChipField | null>(null)
+const chipAnchor = ref<HTMLElement | null>(null)
+const filterTrigger = ref<{ $el: HTMLElement } | null>(null)
+const overflowTrigger = ref<{ $el: HTMLElement } | null>(null)
+const chipClause = computed(() => props.filters.clauses.find(clause => clause.field === chipField.value))
+const chipReturnFocus = computed(() => {
+  // Reading the partition makes the fallback refresh after responsive overflow changes.
+  const isVisible = visible.value.some(chip => chip.field === chipField.value)
+  return chipAnchor.value?.isConnected ? chipAnchor.value
+    : isVisible ? region.value?.querySelector<HTMLElement>(`[data-chip-field="${chipField.value}"]`) ?? filterTrigger.value?.$el
+      : overflowTrigger.value?.$el ?? filterTrigger.value?.$el
+})
 const editing = ref<BoardFilterField | null>(null)
 const editingClause = computed(() => props.filters.clauses.find(clause => clause.field === editing.value))
 const region = ref<HTMLElement | null>(null)
@@ -60,21 +73,36 @@ onMounted(() => {
   }
   measure()
 })
-onUpdated(measure)
+function syncChipAnchor(): void {
+  if (chipOpen.value && !chips.value.some(chip => chip.field === chipField.value)) chipOpen.value = false
+  if (chipOpen.value) {
+    const selector = `[data-chip-field="${chipField.value}"]`
+    const current = region.value?.querySelector<HTMLElement>(selector)
+      ?? (overflowOpen.value ? overflowTrigger.value?.$el.closest('.ui-popover')?.querySelector<HTMLElement>(selector) : null)
+      ?? overflowTrigger.value?.$el ?? filterTrigger.value?.$el ?? null
+    if (current !== chipAnchor.value) chipAnchor.value = current
+  }
+}
+onUpdated(() => { measure(); syncChipAnchor() })
 onBeforeUnmount(() => observer?.disconnect())
 
-function edit(field: ChipField): void {
-  overflowOpen.value = false
-  if (field === 'completed') displayOpen.value = true
-  else { editing.value = field; filterOpen.value = true }
+function edit(field: ChipField, event: MouseEvent): void {
+  filterOpen.value = false
+  displayOpen.value = false
+  chipField.value = field
+  overflowOpen.value = Boolean((event.currentTarget as HTMLElement).closest('.board-filter-bar__chip--overflow'))
+  chipAnchor.value = event.currentTarget as HTMLElement
+  chipOpen.value = true
 }
 function remove(field: ChipField): void {
+  if (chipField.value === field) chipOpen.value = false
   if (field === 'completed') emit('update:display', { completed: 'all' })
   else emit('removeFilter', field)
 }
 function apply(clause: BoardFilterClause): void {
   emit('update:filter', clause)
   filterOpen.value = false
+  chipOpen.value = false
 }
 </script>
 
@@ -91,11 +119,12 @@ function apply(clause: BoardFilterClause): void {
     >
       <template #trigger="{ toggle, open }">
         <UiButton
+          ref="filterTrigger"
           size="sm"
           icon-left="filter"
           data-popover-trigger
           :aria-expanded="open"
-          @click="editing = null; toggle()"
+          @click="chipOpen = false; displayOpen = false; overflowOpen = false; editing = null; toggle()"
         >
           Filter
         </UiButton>
@@ -143,6 +172,7 @@ function apply(clause: BoardFilterClause): void {
     <div
       ref="region"
       class="board-filter-bar__chips"
+      @vue:updated="syncChipAnchor"
     >
       <div
         v-for="chip in visible"
@@ -155,7 +185,8 @@ function apply(clause: BoardFilterClause): void {
           size="sm"
           :title="chip.label"
           :aria-label="`Edit ${chip.label}`"
-          @click="edit(chip.field)"
+          :data-chip-field="chip.field"
+          @click="edit(chip.field, $event)"
         >
           {{ chip.label }}
         </UiButton>
@@ -179,9 +210,12 @@ function apply(clause: BoardFilterClause): void {
         placement="bottom-end"
         aria-label="More filters"
         :width="300"
+        :close-on-click-outside="!chipOpen"
+        :close-on-esc="!chipOpen"
       >
         <template #trigger="{ toggle, open }">
           <UiButton
+            ref="overflowTrigger"
             size="sm"
             variant="ghost"
             data-popover-trigger
@@ -203,7 +237,8 @@ function apply(clause: BoardFilterClause): void {
               size="sm"
               :title="chip.label"
               :aria-label="`Edit ${chip.label}`"
-              @click="edit(chip.field)"
+              :data-chip-field="chip.field"
+              @click="edit(chip.field, $event)"
             >
               {{ chip.label }}
             </UiButton>
@@ -222,6 +257,37 @@ function apply(clause: BoardFilterClause): void {
         </div>
       </UiPopover>
     </div>
+    <UiPopover
+      v-model="chipOpen"
+      class="board-filter-bar__editor"
+      :anchor="chipAnchor"
+      :return-focus="chipReturnFocus"
+      aria-label="Edit board filter"
+      :width="280"
+    >
+      <div
+        v-if="chipField === 'completed'"
+        class="p-3"
+      >
+        <UiFormField label="Completed tasks">
+          <UiSelect
+            :model-value="filters.completed"
+            :options="completedOptions"
+            size="sm"
+            @change="$emit('update:display', { completed: $event as BoardFilterState['completed'] }); chipOpen = false"
+          />
+        </UiFormField>
+      </div>
+      <BoardFilterEditor
+        v-else-if="chipField"
+        :key="chipField"
+        :field="chipField"
+        :clause="chipClause"
+        :workflow-options="workflowOptions"
+        :assignee-options="assigneeOptions"
+        @apply="apply"
+      />
+    </UiPopover>
     <template #right>
       <UiButton
         variant="ghost"
@@ -250,7 +316,7 @@ function apply(clause: BoardFilterClause): void {
             icon-right="chevron-down"
             data-popover-trigger
             :aria-expanded="open"
-            @click="toggle"
+            @click="chipOpen = false; filterOpen = false; overflowOpen = false; toggle()"
           >
             Display
           </UiButton>
@@ -304,6 +370,7 @@ function apply(clause: BoardFilterClause): void {
 .board-filter-bar__chip--overflow { width: 100%; max-width: 100%; }
 .board-filter-bar__chip--overflow :deep(.board-filter-bar__edit) { flex: 1; text-align: left; }
 .board-filter-bar__overflow { flex: 0 0 92px; }
+.board-filter-bar__editor { position: absolute; }
 .board-filter-bar__count { display: inline-block; min-width: 90px; text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .board-filter-bar__probe { position: absolute; visibility: hidden; pointer-events: none; display: flex; gap: 6px; height: 0; overflow: hidden; max-width: 100%; }
 .board-filter-bar__measure { display: inline-block; flex: none; max-width: 240px; padding: 0 44px 0 8px; border: 1px solid transparent; font-size: 12px; font-weight: var(--fw-medium); white-space: nowrap; }

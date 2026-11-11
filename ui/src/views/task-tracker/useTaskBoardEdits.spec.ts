@@ -18,6 +18,22 @@ function setup() {
 describe('Board save lifecycle', () => {
   beforeEach(() => { vi.resetAllMocks() })
   afterEach(() => { vi.useRealTimers() })
+  it('does not save or refresh self, same-position, cross-column, cross-project or missing-anchor moves', async () => {
+    const { edits, refresh, source } = setup()
+    source.value.push({ key: 'other-status', task: { ...source.value[0]!.task, key: 'other-status', status: 'complete' } } as TaskProgressRow)
+    source.value.push({ key: 'other-project', task: { ...source.value[0]!.task, key: 'other-project', project_id: 2 } } as TaskProgressRow)
+    for (const move of [
+      { taskKey: 'a', anchorKey: 'a', placement: 'before' },
+      { taskKey: 'a', anchorKey: 'b', placement: 'before' },
+      { taskKey: 'b', anchorKey: 'a', placement: 'after' },
+      { taskKey: 'a', anchorKey: 'other-status', placement: 'after' },
+      { taskKey: 'a', anchorKey: 'other-project', placement: 'after' },
+      { taskKey: 'a', anchorKey: 'missing', placement: 'after' },
+    ] as const) await edits.move(move)
+    expect(reorderTask).not.toHaveBeenCalled()
+    expect(refresh).not.toHaveBeenCalled()
+    expect(edits.pending.value).toBe(false)
+  })
   it('optimistically moves, submits only the bounded snapshot/anchor intent, then refreshes canonical ranks', async () => {
     const { edits, refresh } = setup()
     let finish!: (value: never) => void
@@ -65,6 +81,15 @@ describe('Board save lifecycle', () => {
     expect(edits.pending.value).toBe(false)
     expect(edits.rows.value.map(row => row.key)).toEqual(['b', 'c', 'a'])
     expect(edits.error.value).toContain('Task saved')
+  })
+  it('evaluates a subsequent explicit move against retained optimistic order rather than the stale read', async () => {
+    const { edits, refresh } = setup()
+    refresh.mockRejectedValueOnce(new Error('offline'))
+    await edits.move({ taskKey: 'a', anchorKey: 'c', placement: 'after' })
+    expect(edits.rows.value.map(row => row.key)).toEqual(['b', 'c', 'a'])
+    await edits.move({ taskKey: 'a', anchorKey: 'b', placement: 'before' })
+    expect(reorderTask).toHaveBeenCalledTimes(2)
+    expect(edits.rows.value.map(row => row.key)).toEqual(['a', 'b', 'c'])
   })
   it('reconciles an uncertain transport outcome by reading once, with no mutation retry', async () => {
     const { edits, refresh, source } = setup()
