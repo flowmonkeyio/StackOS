@@ -110,7 +110,8 @@ const fullText = computed(() => `${props.global ? `${props.task.project.name} ·
 <style scoped>
 .active-task-row + .active-task-row { border-top: 1px solid var(--color-border-subtle); }
 .active-task-row__tooltip { display: block; width: 100%; }
-.active-task-row__tooltip :deep(.ui-tooltip__bubble) { white-space: normal; width: max-content; max-width: min(32rem, calc(100vw - 32px)); overflow-wrap: anywhere; }
+.active-task-row__tooltip > :deep(.ui-tooltip__bubble) { white-space: normal; width: max-content; max-width: min(32rem, calc(100vw - 32px)); overflow-wrap: anywhere; }
+.active-task-row__tooltip:has(.active-execution-line:hover, .active-execution-line:focus) > :deep(.ui-tooltip__bubble) { display: none; }
 .active-task-row__link { display: grid; grid-template-columns: minmax(0, 1fr) 240px 270px 16px; gap: 24px; align-items: center; min-height: 112px; padding: 12px 8px; color: var(--color-fg-default); text-decoration: none; }
 .active-task-row__link:hover { background: var(--color-bg-surface-alt); }
 .active-task-row__identity { min-width: 0; display: grid; grid-template-rows: 20px 20px 28px; align-content: center; }

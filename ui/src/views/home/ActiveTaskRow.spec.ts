@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { computed, ref } from 'vue'
 import { TaskDeliveryStateOutStatus } from '@/api'
@@ -8,9 +8,39 @@ import type { UsageFeedState } from '@/lib/usageUpdates'
 import { activeTaskFixture } from './activeTaskFixtures'
 import ActiveTaskRow from './ActiveTaskRow.vue'
 
-afterEach(() => { document.body.innerHTML = '' })
+afterEach(() => { document.body.innerHTML = ''; vi.useRealTimers() })
 
 describe('continuous Home task rows', () => {
+  it('discloses the full execution identity and owner on focus without navigating or showing the row tooltip', async () => {
+    vi.useFakeTimers()
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
+    await router.push('/')
+    const model = 'exact-recorded-model-with-a-very-long-identity-and-effort-suffix'
+    const agent = 'sdlc_delivery_reviewer_with_a_very_long_role'
+    const owner = 'Manual owner with a very long assignment identity'
+    const task = activeTaskFixture({ active_execution: { invocation_id: 'fixture', ticket_key: 'child', agent, host_key: 'codex', model, started_at: '2026-11-11T19:00:00Z', live_usage: null } })
+    const wrapper = mount(ActiveTaskRow, { attachTo: document.body, props: { task, global: true }, global: { plugins: [router] } })
+    try {
+      const focus = async (selector: string) => {
+        wrapper.get<HTMLElement>(selector).element.focus()
+        await vi.advanceTimersByTimeAsync(350)
+      }
+      await focus('a')
+      expect(wrapper.get('[role="tooltip"]').text()).toContain(task.title)
+      await focus('.active-execution-line')
+      expect(wrapper.findAll('[role="tooltip"]')).toHaveLength(1)
+      expect(wrapper.get('[role="tooltip"]').text()).toContain(model)
+      expect(wrapper.get('[role="tooltip"]').text()).toContain(agent)
+      expect(wrapper.get('[role="tooltip"]').text()).not.toContain(task.title)
+      expect(router.currentRoute.value.fullPath).toBe('/')
+      await wrapper.setProps({ task: activeTaskFixture({ delivery: null, agent_stats: null, owner }) })
+      expect(wrapper.get('[role="tooltip"]').text()).toBe(`Assigned: ${owner}`)
+      await focus('a')
+      expect(wrapper.findAll('[role="tooltip"]')).toHaveLength(1)
+      expect(wrapper.get('[role="tooltip"]').text()).toContain(task.title)
+    } finally { wrapper.unmount() }
+  })
+
   it('uses canonical status, current and Last identities, measured zero and unknown values', async () => {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
     await router.push('/')

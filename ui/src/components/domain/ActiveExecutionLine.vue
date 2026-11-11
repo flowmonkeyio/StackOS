@@ -7,7 +7,7 @@ import { resolveAgentHostLogo, resolveAgentOwnerLogo } from '@/lib/stackos/agent
 import { formatElapsedTime } from '@/lib/stackos/time'
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
 import { useUsageFeed } from '@/composables/useUsageFeed'
-import { UiIcon } from '@/components/ui'
+import { UiIcon, UiTooltip } from '@/components/ui'
 import UsageLiveIndicator from './UsageLiveIndicator.vue'
 
 const props = defineProps<{ item?: Pick<TrackerTask, 'status' | 'started_at' | 'completed_at'> | null; execution?: ActiveExecution | null; lastExecution?: SchemaExecutionIdentityOut | null; owner?: string | null; detailed?: boolean; focusable?: boolean }>()
@@ -26,8 +26,10 @@ const full = computed(() => identity.value ? activeExecutionTitle(identity.value
 </script>
 
 <template>
-  <span
+  <UiTooltip
     v-if="item || identity || owner"
+    :content="full"
+    :disabled="!focusable"
     class="active-execution-line focus-ring"
     :class="{ 'active-execution-line--detailed': detailed, 'active-execution-line--last': !execution && identity }"
     :title="full"
@@ -35,6 +37,8 @@ const full = computed(() => identity.value ? activeExecutionTitle(identity.value
     :tabindex="focusable ? 0 : undefined"
     :data-active-execution="execution ? '' : undefined"
     :data-last-execution="!execution && identity ? '' : undefined"
+    @focusin.stop
+    @focusout.stop
   >
     <img
       v-if="logo"
@@ -72,11 +76,12 @@ const full = computed(() => identity.value ? activeExecutionTitle(identity.value
         :active="true"
       />
     </span>
-  </span>
+  </UiTooltip>
 </template>
 
 <style scoped>
 .active-execution-line { display: flex; min-width: 0; max-width: 100%; align-items: center; gap: 8px; color: var(--color-fg-default); font-size: 11px; line-height: 16px; white-space: nowrap; }
+.active-execution-line :deep(.ui-tooltip__bubble) { left: auto; right: 0; transform: none; width: max-content; max-width: min(32rem, 100%); white-space: normal; overflow-wrap: anywhere; }
 .active-execution-line__logo { width: 32px; height: 32px; object-fit: contain; flex: none; }
 img.active-execution-line__logo { border-radius: var(--radius-sm); box-shadow: var(--shadow-sm); }
 .active-execution-line__identity { flex: 1; min-width: 0; display: grid; }

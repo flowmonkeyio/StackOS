@@ -143,8 +143,7 @@ test('synthetic receipts reconcile through both actual Home views and existing p
   await region.getByLabel('Through', { exact: true }).press('Tab')
   await metrics(region, projectStats)
   await expect(page.getByRole('heading', { name: 'Active tasks', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Project connections', exact: true })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Configured workflows', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Connected tools', exact: true })).toBeVisible()
   await page.screenshot({ path: testInfo.outputPath('project-agent-activity.png'), fullPage: true })
 
   await page.goto('/')
