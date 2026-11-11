@@ -36,10 +36,24 @@ user's environment-owned projects. Other state operations require one owned
 project scope, explicitly or through an admitted persisted child. Resolved
 implicit scope is passed into the validated query input before pagination and
 counting; operations that cannot carry that project scope are refused. Payload
-JSON does not select authority. Unadapted Account, file, action, runtime and
-global consumers remain denied until their owning implementation supplies its boundary.
-Verified browser sessions retain the existing read/browser-safe surface policy;
-they never receive local-admin authority. See [security](security.md).
+JSON does not select authority. The finite setup boundary admits owned tracker
+preparation, run-plan validation/creation/start and granted step calls, workflow
+catalog/extension and preset discovery, and action discovery/validation/execution.
+Nested tracker list targets, workflow provenance and plan snapshot IDs are
+checked before mutation. Workflow tasks are created by `runPlan.create` through
+its existing mirror owner; direct `tracker.createTask` prepares manual work.
+Catalog calls cannot select a server `repo_root`;
+repository overlays stay local. Global administration and unadapted operations
+remain denied.
+
+Selected-server REST/CLI clients use these existing preparation operations and
+`action.run`/`action.execute` with the same owner and grant checks as MCP. Direct
+actions still need their existing confirmation/intent policy; workflow actions
+need the exact running step grant. Account attachment, payload-secret resolution,
+private output download and computer-credential restrictions retain their owning
+checks. `secret.set` remains write-only and MCP-only. Local browser tokens retain
+their existing read/browser-safe surface policy; verified users never receive
+local-admin authority. See [security](security.md).
 
 ## Computer connection setup
 

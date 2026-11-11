@@ -20,8 +20,11 @@ from stackos.db.models import (
     ResourceRecord,
     Run,
     RunPlan,
+    RunPlanStep,
     RunStep,
     ScheduledJob,
+    TrackerTask,
+    TrackerTicket,
 )
 from stackos.mcp.errors import ToolNotGrantedError
 from stackos.repositories.base import NotFoundError, ValidationError
@@ -83,6 +86,9 @@ _CHILD_MODELS: dict[str, type[Any]] = {
     "supersedes_learning_id": Learning,
     "source_snapshot_id": ContextSnapshot,
     "snapshot_id": ContextSnapshot,
+    "context_snapshot_id": ContextSnapshot,
+    "task_id": TrackerTask,
+    "ticket_id": TrackerTicket,
 }
 
 
@@ -117,12 +123,27 @@ def authorize_project_refs(
             if row is None or row.project_id is None:
                 raise NotFoundError("project or child not found")
             projects.add(row.project_id)
-        elif key == "run_step_id":
-            step = session.get(RunStep, _identifier(value))
-            parent = session.get(Run, step.run_id) if step is not None else None
-            if parent is None or parent.project_id is None:
+        elif key in {"run_step_id", "run_plan_step_id"}:
+            model, parent_model, parent_key = (
+                (RunStep, Run, "run_id")
+                if key == "run_step_id"
+                else (RunPlanStep, RunPlan, "run_plan_id")
+            )
+            step = session.get(model, _identifier(value))
+            parent_id = getattr(step, parent_key) if step is not None else None
+            parent = session.get(parent_model, parent_id) if parent_id is not None else None
+            parent_project_id = getattr(parent, "project_id", None)
+            if parent_project_id is None:
                 raise NotFoundError("project or child not found")
-            projects.add(parent.project_id)
+            if values.get(parent_key) is not None and _identifier(values[parent_key]) != parent_id:
+                raise NotFoundError("project or child not found")
+            projects.add(parent_project_id)
+        elif key == "ticket_ids":
+            for ticket_id in value:
+                ticket = session.get(TrackerTicket, _identifier(ticket_id))
+                if ticket is None:
+                    raise NotFoundError("project or child not found")
+                projects.add(ticket.project_id)
         elif key.endswith("_id"):
             raise ToolNotGrantedError("identifier requires an adapted owner boundary")
     if not projects:
@@ -149,7 +170,58 @@ def _identifier(value: Any) -> int:
 # Only audited state consumers are enabled here. Account/file/runtime/action
 # owners add their own authorization before their routes can be admitted.
 _PROJECT_DISCOVERY = {"project.list", "project.portfolio", "project.get", "project.create"}
-_PROJECT_OPERATIONS = {
+# Finite write entry points for selected-server REST/CLI clients. Admission is
+# followed by this same owner check and the unchanged operation grant policy;
+# standalone browser-token and local-admin surface policies are unaffected.
+PROJECT_PREPARATION_OPERATIONS = frozenset(
+    {
+        "tracker.createTask",
+        "tracker.createTicket",
+        "tracker.updateTask",
+        "tracker.updateTicket",
+        "tracker.patch",
+        "tracker.linkRunPlan",
+        "runPlan.validate",
+        "runPlan.create",
+        "runPlan.start",
+        "runPlan.update",
+        "runPlan.claimStep",
+        "runPlan.recordStep",
+        "workflowExtension.validate",
+        "workflowExtension.upsert",
+        "workflowTemplate.validate",
+        "action.validate",
+        "action.run",
+        "action.execute",
+    }
+)
+_PROJECT_OPERATIONS = PROJECT_PREPARATION_OPERATIONS | {
+    # Existing setup/discovery and execution owners retain their own grants,
+    # Account attachments, payload-secret resolution and direct-action policy.
+    "action.list",
+    "action.describe",
+    "actionCall.get",
+    "actionCall.query",
+    "actionCall.items",
+    "secret.set",
+    "plugin.list",
+    "catalog.list",
+    "catalog.describe",
+    "capability.list",
+    "provider.list",
+    "integration.list",
+    "toolProfile.resolve",
+    "workflowTemplate.list",
+    "workflowTemplate.describe",
+    "workflowExtension.list",
+    "workflowExtension.get",
+    "agentPreset.list",
+    "agentPreset.describe",
+    "agentPreset.resolveForWorkflow",
+    "skillPreset.list",
+    "skillPreset.describe",
+    "skillPreset.resolveForWorkflow",
+    "readiness.check",
     "schedule.list",
     "schedule.set",
     "schedule.toggle",
@@ -181,6 +253,8 @@ _PROJECT_OPERATIONS = {
     "runPlan.get",
     "runPlan.list",
     "runPlan.abort",
+    "runPlan.getStep",
+    "runPlan.checkConsistency",
     "resource.get",
     "resource.query",
     "resource.upsert",
@@ -209,6 +283,64 @@ _PROJECT_OPERATIONS = {
     "tracker.agentStats",
     "tracker.startDelivery",
 }
+
+
+def _authorize_setup_refs(
+    session: Session, name: str, values: dict[str, Any], project_id: int
+) -> None:
+    """Preflight the actual nested control fields, never arbitrary business JSON.
+
+    Tracker bulk producers may commit entries individually. Check every target
+    before the first mutation, including source_json.run_plan_id, which the
+    tracker consumes as a workflow binding. Other JSON remains inert data.
+    """
+
+    def check(control: dict[str, Any]) -> None:
+        authorize_project_refs(session, {**control, "project_id": project_id})
+
+    def source(record: dict[str, Any]) -> None:
+        provenance = record.get("source_json")
+        if isinstance(provenance, dict) and provenance.get("run_plan_id") is not None:
+            check({"run_plan_id": provenance["run_plan_id"]})
+
+    if name in {"runPlan.create", "runPlan.validate"}:
+        plan = values.get("run_plan_json")
+        if isinstance(plan, dict) and plan.get("context_snapshot_id") is not None:
+            check({"context_snapshot_id": plan["context_snapshot_id"]})
+    if not name.startswith("tracker."):
+        return
+    if name == "tracker.createTask" and values.get("source_kind") == "workflow":
+        # Workflow task keys/provenance are interpreted as plan bindings by
+        # tracker lifecycle consumers. Their sole writer is RunPlanRepository,
+        # which creates mirrors internally after validating the owned plan.
+        raise ToolNotGrantedError("workflow tasks are created by runPlan.create")
+    source(values)
+    patch = values.get("patch_json")
+    if isinstance(patch, dict):
+        source(patch)
+        if name == "tracker.patch":
+            for kind in ("tasks", "tickets"):
+                collection = patch.get(kind)
+                if not isinstance(collection, dict):
+                    continue  # Preserve the producer's malformed-patch error.
+                for item in collection.values():
+                    if isinstance(item, dict):
+                        source(item)
+    for field in ("tickets_json", "updates_json"):
+        for item in values.get(field) or []:
+            if not isinstance(item, dict):
+                continue  # The existing producer reports malformed entries.
+            check(
+                {
+                    key: item[key]
+                    for key in ("ticket_id", "run_plan_id", "run_plan_step_id")
+                    if key in item
+                }
+            )
+            source(item)
+            update = item.get("patch_json", item.get("patch"))
+            if isinstance(update, dict):
+                source(update)
 
 
 def authorize_operation(
@@ -251,7 +383,12 @@ def authorize_operation(
         return authorize_project_refs(
             session, {k: v for k, v in values.items() if k != "connection_id"}, run=run
         )
-    if name in {"operation.list", "operation.describe", "schema.get"}:
+    if name in {
+        "operation.list",
+        "operation.describe",
+        "schema.get",
+        "workflowTemplate.authoringGuide",
+    }:
         return None  # Public contract metadata; no project state or execution authority.
     if name not in _PROJECT_DISCOVERY | _PROJECT_OPERATIONS:
         raise ToolNotGrantedError("operation requires an adapted owner boundary")
@@ -275,4 +412,10 @@ def authorize_operation(
                 raise NotFoundError("project or child not found")
             return project_id
         return None
-    return authorize_project_refs(session, values, run=run)
+    project_id = authorize_project_refs(session, values, run=run)
+    # These catalog/setup operations support local repository overlays only in
+    # standalone mode. An online caller cannot select a server filesystem root.
+    if values.get("repo_root") is not None:
+        raise ToolNotGrantedError("repo_root is local-only; use the server project catalog")
+    _authorize_setup_refs(session, name, values, project_id)
+    return project_id

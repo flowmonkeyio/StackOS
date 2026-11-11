@@ -486,6 +486,15 @@ lifecycle contract.
 
 ## UI Token Bootstrap Trade-Off
 
+Selected-server verified sessions have a separate, finite project preparation
+surface: tracker task/ticket setup, run-plan preparation and granted step calls,
+workflow extension setup, and direct or granted private actions. Shared owner
+checks resolve persisted project/child references, including nested bulk targets,
+before the existing operation grants run. This does not grant local-admin
+authority or expand standalone UI-token permissions. Provider Accounts remain
+private and project-attached; separate payload secrets enter only through MCP
+`secret.set`. Computer credentials cannot use these preparation/action paths.
+
 Adding `/api/v1/auth/ui-token` accepts a reduction in defence depth.
 
 **What's gained.** The browser-based UI works without prompting the user
