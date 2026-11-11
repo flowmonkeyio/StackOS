@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.13
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.14
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Workflow: `engineering.tracked-delivery` v0.8.2 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -376,6 +376,40 @@ Use canonical evidence refs rather than duplicate ledgers or review matrices.
 Preserve existing JSON evidence/history when patching: fields replace rather
 than deep-merge. Quality determines proof depth; reuse current evidence and
 stop repeating checks once they answer the relevant risk.
+
+## Cross-Owner Findings And Accepted Sources
+
+A required finding against another owner needs an actionable handoff in the
+existing review receipt: source and target task/ticket/owner, source attempt,
+exact inspected candidates, failed criterion/check and evidence, blocking reason,
+required correction, affected recheck, next actor/action and pending or accepted
+resolution refs. An ordinary reviewer returns these facts without sibling writes.
+Keep required findings in existing feedback or task/ticket context, outside
+nonblocking followups, which are excluded from actionable prompts. Full-read/merge
+only the owned handoff field; preserve unrelated context, receipts, native sessions,
+attempts and repair allowances. Reuse the actual owning work rather than creating
+a duplicate correction ticket or another handoff subsystem. The assigned same-task
+automatic correction exception below retains its existing limits.
+
+At handoff/resume, main consumes unresolved handoffs, reconciles affected
+executions and authority, and reopens or re-admits the existing owner through its
+normal lifecycle. Do not compete with a running automatic lifecycle writer.
+An available accepted cross-task prerequisite also needs exact source and
+independent acceptance refs, applicability and verified presence in the consumer
+tree. Main owns explicit source admission/integration and affected recheck;
+acceptance alone proves neither source presence nor merge authority. Never
+automatically merge a sibling branch or give its reviewer sibling-write authority.
+Retain the blocker until the required correction/admission is proven, then link
+the accepted resolution candidate, admission and recheck evidence in the same
+handoff. Name any remaining next actor/action and keep unrelated work moving.
+
+Exercise the existing writer and raw brief/prompt reader before proposing code.
+If they preserve these facts, deliver guidance and bounded behavior proof. Use a
+disposable fixture for an accepted owner A, a finding from B and an accepted
+cross-task source: return/persist/read the exact handoff, preserve histories and
+unrelated context, and link its resolution. Fixture source admission and resolution
+must be labelled as simulated; actual integration and affected proof remain with
+main. Source edits alone do not adopt guidance or refresh frozen native sessions.
 
 ## Agent-Owned Automatic Corrections
 
