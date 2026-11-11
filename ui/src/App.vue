@@ -75,7 +75,10 @@ function toggleTheme(): void {
 }
 
 function onDrawerKeydown(event: KeyboardEvent): void {
-  if (event.key === 'Escape' && drawerOpen.value) closeDrawer()
+  // Nested menus consume Escape before window; management dialogs register
+  // their window listener after the shell, so retain their canonical target.
+  if (event.key === 'Escape' && !event.defaultPrevented && drawerOpen.value
+    && !renameProjectTarget.value && !deleteProjectTarget.value) closeDrawer()
 }
 
 onMounted(() => {

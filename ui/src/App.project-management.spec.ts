@@ -22,6 +22,47 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
+it.each(['Rename project…', 'Delete project…'])('dismisses %s before the mobile drawer and its selector', async (label) => {
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const projects = useProjectsStore()
+  projects.items = [{
+    id: 1, order_index: 1, name: 'Alpha', slug: 'alpha', domain: 'alpha.test',
+    niche: null, locale: 'en-US', is_active: true,
+    schedule_json: null, created_at: '', updated_at: '',
+  }]
+  projects.activeProjectId = 1
+  globalThis.fetch = vi.fn(async (input) => String(input).startsWith('/api/v1/projects?')
+    ? json({ items: projects.items, next_cursor: null, total_estimate: 1 }) : json([]))
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: { template: '<div />' } }] })
+  await router.push('/')
+  const app = mount(App, { attachTo: document.body, global: { plugins: [pinia, router], stubs: { DesktopUpdatePrompt: true } } })
+  await flushPromises()
+  await app.get('[aria-label="Toggle navigation"]').trigger('click')
+  const switcher = app.getComponent(ProjectSwitcher)
+  await switcher.get('button').trigger('click')
+  await flushPromises()
+  const actions = () => switcher.get('[aria-label="Actions for Alpha"]')
+  await actions().trigger('click')
+  await switcher.get('[role="menu"]').findAll('button').find((button) => button.text() === label)!.trigger('click')
+  await flushPromises()
+  const escape = async () => {
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await flushPromises()
+  }
+  await escape()
+  expect(document.querySelector('[role="dialog"]')).toBeNull()
+  expect(app.get('#cs-sidebar').classes()).toContain('translate-x-0')
+  expect(switcher.find('[aria-label="Projects"]').exists()).toBe(true)
+  await actions().trigger('click')
+  await escape()
+  expect(switcher.find('[role="menu"]').exists()).toBe(false)
+  expect(app.get('#cs-sidebar').classes()).toContain('translate-x-0')
+  await escape()
+  expect(switcher.find('[aria-label="Projects"]').exists()).toBe(false)
+  expect(app.get('#cs-sidebar').classes()).toContain('-translate-x-full')
+})
+
 it('routes menu intents through the real shell, shared store and canonical operations without changing selection', async () => {
   const pinia = createPinia()
   setActivePinia(pinia)
