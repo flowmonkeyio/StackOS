@@ -145,10 +145,14 @@ announces it, so a later daemon crash does not erase that identity.
 `active_request_execution(project_id, request_id)` reads that
 transient lifetime. Request counters are excluded from task/ticket provisional
 statistics. The existing five-second collector verifies the exact registered
-owner and renews its repository lease only near expiry. Cancellation and exit
-fence renewal and late session callbacks. An admitted request cannot be reclaimed,
-released or prepared by a different runner even after its lease expires; an
-interrupted occurrence remains unresolved for explicit inspection, with no replay.
+owner and renews its repository lease only near expiry. Renewal and native exit
+share the launch lock, acquired before the registry lock; a collector observation
+cannot become stale between its ownership check and renewal. A live renewal
+failure records cancellation before completion, with process stopping outside the
+locks. Cancellation and exit fence renewal and late session callbacks. An admitted
+request cannot be reclaimed, released or prepared by a different runner even after
+its lease expires; an interrupted occurrence remains unresolved for explicit
+inspection, with no replay.
 
 At native exit the service persists one final native result, identity, measured
 usage and bounded samples through the same repository owner before retiring the

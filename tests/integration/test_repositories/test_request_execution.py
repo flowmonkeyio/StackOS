@@ -5,7 +5,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from threading import Event
+from threading import Event, Thread, current_thread
 from types import SimpleNamespace
 
 import pytest
@@ -371,3 +371,101 @@ def test_crash_remains_unresolved_and_cannot_be_reclaimed(
         )
     with pytest.raises(ConflictError):
         repo.complete(project_id=project_id, request_id=request.id, claim_token=claim.claim_token)
+
+
+@pytest.mark.parametrize("renewal_rejected", [False, True])
+def test_collector_and_completion_preserve_native_outcome(
+    threaded_session, project_id, monkeypatch, tmp_path, renewal_rejected
+):
+    repo, request, claim, execution = owner(threaded_session, project_id)
+    inspected = Event()
+    finish_boundary = Event()
+    may_renew = Event()
+    launch_lock = service.managed_launch_lock
+    owns = service.owns_request_invocation
+    finish = service._finish
+    renew = AgentRequestRepository._renew_execution
+    collectors = []
+
+    class CompletionBoundary:
+        def __enter__(self):
+            if current_thread().name.startswith("request-native") and inspected.is_set():
+                # Let the collector proceed when completion reaches its lock,
+                # without requiring completion to run through a held launch lock.
+                finish_boundary.set()
+            return launch_lock.__enter__()
+
+        def __exit__(self, *args):
+            return launch_lock.__exit__(*args)
+
+    def pause_after_live_check(call, *, finished=False):
+        owned = owns(call, finished=finished)
+        if current_thread().name == "request-collector" and owned:
+            inspected.set()
+            assert may_renew.wait(5)
+        return owned
+
+    def checked_renew(repository, owner, call):
+        if current_thread().name == "request-collector" and renewal_rejected:
+            raise ConflictError("synthetic live ownership rejection")
+        renew(repository, owner, call)
+
+    def finish_during_collection(call, result, resume_thread_id=None):
+        collector = Thread(target=service._sample_invocations, name="request-collector")
+        collectors.append(collector)
+        collector.start()
+        assert inspected.wait(5)
+        try:
+            finish(call, result, resume_thread_id)
+        finally:
+            # On the rejected implementation completion has already marked the
+            # call finished without waiting for the paused renewal.
+            finish_boundary.set()
+
+    monkeypatch.setattr(service, "managed_launch_lock", CompletionBoundary())
+    monkeypatch.setattr(service, "owns_request_invocation", pause_after_live_check)
+    monkeypatch.setattr(service, "_finish", finish_during_collection)
+    monkeypatch.setattr(AgentRequestRepository, "_renew_execution", checked_renew)
+
+    def runner(*args, on_session, **kwargs):
+        on_session("collector-race-thread")
+        return AgentRunResult(
+            0,
+            thread_id="collector-race-thread",
+            result={"status": "success"},
+            usage=usage_snapshot("fixture", "invocation", 40, 3),
+        )
+
+    try:
+        with ThreadPoolExecutor(thread_name_prefix="request-native") as workers:
+            pending = workers.submit(launch, monkeypatch, tmp_path, execution, runner)
+            try:
+                assert finish_boundary.wait(5)
+            finally:
+                may_renew.set()
+            result = pending.result(timeout=5)
+    finally:
+        may_renew.set()
+        for collector in collectors:
+            collector.join(5)
+            assert not collector.is_alive()
+
+    evidence = repo.get(project_id=project_id, request_id=request.id).metadata_json[
+        "native_execution"
+    ]
+    assert result.ok is not renewal_rejected
+    assert evidence["exit_code"] == 0
+    assert evidence["cancelled"] is renewal_rejected
+    assert evidence["usage"]["measured"]["total"] == 43
+    if renewal_rejected:
+        with pytest.raises(ConflictError, match="no successful terminal evidence"):
+            repo.complete(
+                project_id=project_id, request_id=request.id, claim_token=claim.claim_token
+            )
+    repo.complete(
+        project_id=project_id,
+        request_id=request.id,
+        claim_token=claim.claim_token,
+        status=AgentRequestStatus.FAILED if renewal_rejected else AgentRequestStatus.RESOLVED,
+    )
+    assert service.active_request_execution(project_id, request.id) is None

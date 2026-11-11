@@ -202,17 +202,22 @@ def _sample_invocations(now: datetime | None = None) -> None:
             and not call.cancelled.is_set()
         ]
     for call in requests:
-        try:
-            with managed_launch_lock:
-                if not owns_request_invocation(call) or call.cancelled.is_set():
-                    continue
+        stop = False
+        with managed_launch_lock:
+            if not owns_request_invocation(call) or call.cancelled.is_set():
+                continue
+            try:
                 assert call.request_execution is not None
                 call.request_execution.renew(call)
-        except Exception:
-            # Losing durable ownership must fence launch/result acceptance.
-            call.cancelled.set()
+            except Exception:
+                # Fence ownership loss before completion can cross this boundary.
+                call.cancelled.set()
+                call.process_control.cancelled.set()
+                stop = True
+                logging.getLogger(__name__).exception("Could not renew native request ownership")
+        if stop:
+            # Native I/O must not hold the launch or registry lock.
             call.process_control.stop()
-            logging.getLogger(__name__).exception("Could not renew native request ownership")
     cutoff = (now or datetime.now(UTC)).timestamp() - 600
     with _active_invocations_lock:
         for call in _active_invocations.values():
@@ -290,7 +295,7 @@ def _finish(
     call: ActiveInvocation, result: AgentRunResult | None, resume_thread_id: str | None = None
 ) -> None:
     """End native observation; hold only its snapshot for the synchronous receipt handoff."""
-    with _active_invocations_lock:
+    with managed_launch_lock, _active_invocations_lock:
         if result is not None and (
             resume_thread_id is None or result.thread_id == resume_thread_id
         ):
