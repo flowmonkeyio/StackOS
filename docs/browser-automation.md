@@ -27,6 +27,15 @@ If the supported browser route cannot exercise a required boundary, identify the
 actual unsupported boundary and missing evidence as blocked. Computer Use absence
 alone is not a blocker, and it grants no waiver or permission bypass.
 
+Main chooses and verifies this route before dispatch or resume, passing current
+profile/session refs, ticket-tab ownership and login prerequisites. Remove stale
+Computer Use or native Chrome-permission prerequisites; do not retry native
+control. An explicit operator-owned drag-and-drop check transfers only that named
+check. Other required proof, including email-link -> browser -> desktop-return
+and normal app authentication when assigned, remains agent-owned. If a required
+boundary cannot be exercised, keep its precise missing evidence blocked rather
+than transfer the remaining verification to the operator.
+
 1. Use `browser.session.list` to discover project sessions. Select the intended
    session or call `browser.session.start` with stable `profile_key` and
    `session_key` values to create/reuse it.

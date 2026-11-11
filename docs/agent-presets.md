@@ -474,12 +474,24 @@ across affected retained consumers and implicated neighboring transitions within
 the original outcome and existing authority. Evidence determines breadth; fixed
 edit counts, universal matrices and unrelated cleanup do not.
 
-Delivery, review and test design use [StackOS browser lifecycle and native CLI](browser-automation.md#client-flow)
+Main chooses and verifies the [StackOS browser lifecycle and native CLI](browser-automation.md#client-flow)
+route before dispatch or resume and supplies current profile/session, tab ownership
+and login prerequisites. Delivery, review and test design use that route
 for browser work, with the installed skill/cookbook, authorized profile and pinned
 ticket tab. Computer Use/native desktop control will not be enabled and must not
 be requested or planned as a prerequisite. Preserve required outcome proof and
 explicit scoped manual ownership; identify any actual unsupported boundary and
 missing evidence truthfully rather than inventing a waiver.
+
+Orchestration reuses complete current proof with its covered scope, candidate,
+accepted prerequisites and environment basis. Changed or contradictory evidence
+and never-covered obligations need focused proof; retain one final mandatory
+project signoff at the existing gate. Diagnose stop prerequisites before repeating
+dependent checks, route required work to existing owners, and clear only proven
+resolved blockers. An explicitly authorized resume requires readback of runnable
+pending owned work, with receipts, native sessions and repair allowance preserved;
+an in-progress ticket alone is insufficient. No automatic reset/retry or broader
+worker lifecycle authority follows from this guidance.
 
 For visual changes, delivery and review compare the candidate with the approved
 design and current amendments: exact wording, content applicability, hierarchy,
@@ -513,6 +525,10 @@ must demonstrate actual-caller/lifetime gap discovery, exact-payload revalidatio
 readback before uncertain retry, justified proof reuse, exclusive setup and restraint
 on unrelated cleanup. Retain consumed candidate/hashes and observed actions outside
 Git. Phrase assertions alone establish availability, not effectiveness or adoption.
+The orchestration revision rechecked [Codex review rules](https://developers.openai.com/blog/custom-code-review-rules-for-codex)
+on 2026-11-11 for scoped invariants, safe alternatives and unrelated-change
+restraint. Its bounded recovery/browser exercise is source-use evidence, not
+measured production prevention or installed activation.
 
 The bounded automated planning permission was reviewed on 2026-11-09 against
 [Codex instruction discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md)

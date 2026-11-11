@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.12
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.13
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Workflow: `engineering.tracked-delivery` v0.8.2 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -333,8 +333,19 @@ red-first proof when behavior/contract risk warrants it. Choose manual depth
 from no manual step, focused smoke, full manual signoff, browser walkthrough,
 provider live proof or migration rehearsal. Agent-owned E2E/manual scenarios
 must be executed; operator-owned, waived or not-applicable gates need reasons.
-Login-dependent proof uses the planned stable StackOS browser `profile_key`,
-with operator-login prerequisites and cookie/session reuse made explicit.
+For browser work, choose and verify the StackOS browser route before dispatch or
+resume. Read the installed StackOS skill and browser cookbook plus
+`docs/browser-automation.md`; discover with `browser.session.list`, reuse the
+authorized session or use `browser.session.start`, then verify the returned
+`cli_argv` (`stackos.browser --session <full-ref>`) against the intended
+session/tab/page. Supply current profile/session refs, tab ownership and
+login/cookie reuse prerequisites in the assignment. Computer Use/native desktop
+control will not be enabled; do not request it, wait for it or plan it as a
+prerequisite, and remove stale native-control or Chrome-permission prerequisites.
+Retain required outcome proof and normal authentication; honor only explicit
+scoped operator/manual exceptions, leaving all other verification agent-owned.
+Report any genuinely unsupported required boundary and missing evidence as
+blocked; no blind native-access retry, permission bypass or proof waiver.
 Plan one live browser session per `profile_key`. Discover and reuse the authorized
 same-profile session with a ticket-owned tab; confirm its identity, use `--tab-id`
 on tab-targeted commands and preserve other tabs. A separate session needs a
@@ -433,8 +444,17 @@ adoption, isolated native consumption or installed activation complete.
 
 ## Recovery And Closeout
 
-Ordinary scoped repairs stay in the active step. For terminal-managed recovery,
-before parking, reassignment
+Ordinary scoped repairs stay in the active step. On a stop use concrete
+command/tool results and prerequisite state to distinguish a repairable owner
+defect, unavailable prerequisite/capability, ordinary approval need, actual denial
+and explicit cancellation; do not infer cancellation from an unexplained signal.
+Diagnose the prerequisite before repeating dependent suites. Route required
+findings and ready external dependencies to their existing owners; same-outcome
+repairs include demonstrated omitted consumers, not unrelated cleanup. An ordinary
+approval need may use normal approval review; an actual denial stops that action
+and dependent work, never a retry through another route.
+
+For terminal-managed recovery, before parking, reassignment
 or a material rewind, quiesce affected agents and processes; before resetting
 workflow steps, quiesce all concurrent agents/processes/in-flight actions.
 Preserve receipts outside step `result_json`, then use `tracker.reopen` at the
@@ -444,12 +464,27 @@ retain blockers/resume conditions, reclaim the step and rebuild assignments.
 Re-evaluate authority and approval freshness. Late receipts from superseded
 attempts remain historical and cannot satisfy the current acceptance gate.
 
+On resume, rehydrate effective guidance, the frozen run, current operator contract,
+assignments, candidates, reservations, blockers and evidence. After stopped
+execution and affected processes are quiescent, use explicit resolution/requeue
+authority to clear only proven resolved blockers and restore affected ordinary
+work to `not-started`, preserving receipts, native sessions, attempts and consumed
+repair allowance. Read back the pending ticket, no remaining blocker, accepted
+dependencies and actual next owned action before an explicitly authorized resume;
+in-progress alone is not runnable pending work. An unresolved blocker, denial or
+cancellation supplies no resume authority. This is main-owned reconciliation of
+stopped work, not automatic reset/retry, cross-task merge or broader worker
+lifecycle authority. After automatic handoff, StackOS retains lifecycle ownership;
+the supported assigned automatic correction method remains bounded as above.
+
 Integrated verification/review reuses ticket proof with an explicit covered-scope,
 candidate, accepted-prerequisite and environment basis. Reuse requires complete
-coverage as well as freshness. Distinguish valid unchanged evidence, invalidated
-changed-consumer proof and required never-executed checks.
-Execute affected, remaining cross-ticket and mandatory signoff checks at their
-existing gates. Keep dependency-mutating setup exclusive against checks consuming that
+coverage as well as freshness. Do not repeat unchanged covered checks merely for
+another gate; changed inputs/consumers, contradictory results, new failures and
+required never-executed checks need focused proof. Freshness alone cannot supply
+missing coverage. Execute affected and remaining cross-ticket obligations at
+their existing gates, retaining one mandatory final project signoff; later gates
+reuse it while its basis remains valid. Keep dependency-mutating setup exclusive against checks consuming that
 environment; run readiness checks after the relevant transition. Agents choose and
 execute concrete project commands
 from local guidance; core supplies no command policy. A single unchanged ticket's

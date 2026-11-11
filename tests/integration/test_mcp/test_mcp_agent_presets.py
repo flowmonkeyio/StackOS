@@ -342,7 +342,7 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     compact_skill_binding = compact["required_skill_presets"][0]
     compact_skill = compact_skill_binding["preset"]
     full_skill = raw["required_skill_presets"][0]["preset"]
-    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.12"
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.13"
     full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
     # Skill lists are bounded navigation; raw retains the full contract.
     assert len(compact_skill["must_do"]) == 25
@@ -363,6 +363,12 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     assert described_skill["preset"] == full_skill
     # Adoption rules may fall beyond the compact list; targeted raw retrieval keeps them complete.
     for requirement in (
+        "Diagnose the prerequisite before repeating dependent suites",
+        "Read back the pending ticket",
+        "in-progress alone is not runnable pending work",
+        "retaining one mandatory final project signoff",
+        "choose and verify the StackOS browser route before dispatch or resume",
+        "leaving all other verification agent-owned",
         "Fresh Codex admission selects exact project source_ref bindings",
         "Adopt Codex source references explicitly",
         "tracker.configureDelivery adopt_sources preview/write with expected digests",

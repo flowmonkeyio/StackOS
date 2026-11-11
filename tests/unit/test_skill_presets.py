@@ -71,7 +71,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     contract = loaded.preset.operating_contract
     action = loaded.preset.project_adaptation.required_agent_action.lower()
 
-    assert loaded.preset.version == "0.8.12"
+    assert loaded.preset.version == "0.8.13"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "canonical owner" in action
@@ -231,6 +231,15 @@ def test_sdlc_orchestrator_manual_adoption_and_bounded_repair() -> None:
     )
     for text in (source, local):
         for requirement in (
+            "choose and verify the StackOS browser route before dispatch or resume",
+            "browser.session.list",
+            "browser.session.start",
+            "stackos.browser --session <full-ref>",
+            "current profile/session refs",
+            "Computer Use/native desktop control will not be enabled",
+            "remove stale native-control or Chrome-permission prerequisites",
+            "leaving all other verification agent-owned",
+            "genuinely unsupported required boundary",
             "one live browser session per",
             "ticket-owned tab",
             "--tab-id",
@@ -277,6 +286,17 @@ def test_sdlc_orchestrator_manual_adoption_and_bounded_repair() -> None:
             "temporary safeguard, owner and resume condition",
             "dependency-mutating setup",
             "required never-executed checks",
+            "Diagnose the prerequisite before repeating dependent suites",
+            "ordinary approval need, actual denial and explicit cancellation",
+            "ready external dependencies to their existing owners",
+            "clear only proven resolved blockers",
+            "Read back the pending ticket",
+            "in-progress alone is not runnable pending work",
+            "An unresolved blocker, denial or cancellation supplies no resume authority",
+            "not automatic reset/retry, cross-task merge or broader worker lifecycle authority",
+            "Do not repeat unchanged covered checks merely for another gate",
+            "contradictory results, new failures",
+            "retaining one mandatory final project signoff",
             "no fourth ordinary repair",
         ):
             assert requirement.lower() in text.lower(), requirement
@@ -290,6 +310,8 @@ def test_sdlc_orchestrator_manual_adoption_and_bounded_repair() -> None:
     assert "without a main-agent message relay" in " ".join(
         preset.operating_contract.responsibilities
     )
+    # Manual exceptions are occurrence-scoped; no universal drag-and-drop waiver.
+    assert "drag-and-drop" not in source
 
 
 def test_sdlc_closeout_links_reviewed_changes_without_claiming_later_outcomes() -> None:
