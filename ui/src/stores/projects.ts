@@ -207,7 +207,8 @@ export const useProjectsStore = defineStore('projects', () => {
         project_id: target.id, scope: 'catalog',
         confirmation: { permanent: true, project_id: target.id, project_slug: target.slug },
       })
-      const result = response.data
+      const result = response?.data
+      if (!result) throw new Error('Could not confirm deletion. Retry cleanup to check this project.')
       if (result.project_id !== target.id) throw new Error('Could not confirm the deletion target.')
       if (result.status === 'deleted' || result.status === 'missing') {
         removedIds.value.add(target.id)

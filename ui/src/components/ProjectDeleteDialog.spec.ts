@@ -131,6 +131,25 @@ describe('ProjectDeleteDialog', () => {
     expect(projects.managementPending).toBe(false)
   })
 
+  it('keeps a null deletion result uncertain and releases the dialog without an automatic retry', async () => {
+    globalThis.fetch = vi.fn(async () => json(null))
+    const { wrapper, button, projects, finish } = setup()
+    await button('Delete project').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.get('[role="alert"]').text()).toBe('Could not confirm deletion. Retry cleanup to check this project.')
+    expect(wrapper.text()).toContain('Some project data may already be removed.')
+    expect(button('Retry cleanup').attributes('disabled')).toBeUndefined()
+    expect(button('Close').attributes('disabled')).toBeUndefined()
+    expect(projects.managementPending).toBe(false)
+    expect(projects.getById(2)).not.toBeNull()
+    expect(finish).not.toHaveBeenCalled()
+    expect(useToastsStore().items).toHaveLength(0)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    await button('Close').trigger('click')
+    expect(wrapper.emitted('close')).toEqual([[]])
+  })
+
   it('keeps missing identity and retries failed navigation without redispatching deletion', async () => {
     globalThis.fetch = vi.fn(async () => json({ data: { project_id: 2, status: 'missing', blockers: [] } }))
     const { wrapper, button, finish } = setup()

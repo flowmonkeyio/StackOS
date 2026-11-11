@@ -444,6 +444,21 @@ describe('projects store', () => {
     expect(store.getById(1)).not.toBeNull()
   })
 
+  it.each(['null', '{"data":null}', '{}', '{'])('keeps deletion uncertain when a successful response has no result: %s', async (body) => {
+    const store = useProjectsStore()
+    store.items = PAGE.items
+    store.activeProjectId = 1
+    globalThis.fetch = vi.fn(async () => new Response(body, { headers: { 'content-type': 'application/json' } }))
+
+    await expect(store.deleteProject(PAGE.items[0])).rejects.toThrow('Could not confirm deletion. Retry cleanup to check this project.')
+
+    expect(store.items).toEqual(PAGE.items)
+    expect(store.activeProjectId).toBe(1)
+    expect(store.isProjectDeleted(1)).toBe(false)
+    expect(store.managementPending).toBe(false)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
   it('does not let reads that began before incomplete cleanup reactivate the retained target', async () => {
     const store = useProjectsStore()
     store.items = PAGE.items
