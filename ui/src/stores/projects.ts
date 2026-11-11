@@ -26,7 +26,10 @@ export const useProjectsStore = defineStore('projects', () => {
   })
 
   function _ingestPage(page: ProjectsPage, append: boolean): void {
-    items.value = append ? [...items.value, ...page.items] : [...page.items]
+    const rows = append ? [...items.value, ...page.items] : page.items
+    items.value = [...new Map(rows.map((project) => [project.id, project])).values()].sort(
+      (left, right) => left.order_index - right.order_index || left.id - right.id,
+    )
     nextCursor.value = page.next_cursor ?? null
     totalEstimate.value = page.total_estimate ?? items.value.length
     if (activeProjectId.value === null) {
@@ -91,10 +94,10 @@ export const useProjectsStore = defineStore('projects', () => {
         body: JSON.stringify(body),
       })
       items.value = [
-        response.data,
         ...items.value.filter((project) => project.id !== response.data.id),
+        response.data,
       ]
-      totalEstimate.value = Math.max(totalEstimate.value, items.value.length)
+      totalEstimate.value = Math.max(totalEstimate.value + 1, items.value.length)
       activeProjectId.value = response.data.id
       return response.data
     } catch (err) {

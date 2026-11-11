@@ -7,6 +7,7 @@ import type { Project } from '@/stores/projects'
 const sample: Project[] = [
   {
     id: 1,
+    order_index: 1,
     name: 'Alpha',
     slug: 'alpha',
     domain: 'alpha.test',
@@ -19,6 +20,7 @@ const sample: Project[] = [
   },
   {
     id: 2,
+    order_index: 2,
     name: 'Beta',
     slug: 'beta',
     domain: 'beta.test',

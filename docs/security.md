@@ -247,6 +247,13 @@ namespace. Mutating operation calls are allowed only when the operation's REST
 surface declares `browser_safe=True` for explicit local setup, the bounded
 human finance console contract described below, the task-content contract, or
 the bounded run abort control.
+`project.update` and `project.move` are browser-safe only for the bounded
+project management contract: explicit `scope: "catalog"`, display-name-only
+patches and single-project moves. Catalog scope requires authenticated REST
+console/admin authority and is rejected through MCP. Bound agents retain the
+existing project-ID injection and may rename/move only their own target;
+move anchors must be active visible projects. This grants no project deletion
+or general cross-project bridge access.
 The explicit project automation setup operations `schedule.set`,
 `schedule.toggle` and `schedule.remove` are browser-safe. They validate the
 selected project and saved setup without granting workflow action approvals;

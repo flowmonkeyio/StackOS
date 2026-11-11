@@ -28,6 +28,41 @@ behavior. Operations define the callable contract around that behavior:
 - enabled surfaces
 - agent guidance, prerequisites, return notes, and examples
 
+## Project display names and catalog order
+
+`project.update` changes display names through the existing project repository.
+Names are trimmed, nonblank strings of at most 200 characters; duplicate names
+are allowed. A same-name update is a no-op. IDs, slugs, workspace bindings and
+repository folders retain their identity. Agent and browser callers can patch
+only `name`; daemon-admin REST/CLI callers retain safe metadata administration.
+
+`project.list` and the legacy project list route use stored `(order_index, id)`
+order and matching ID cursors. Migration `0038_project_order` preserves the
+previous ID-ascending order; newly created projects append. Start pagination
+again after a concurrent catalog change. Explicit portfolio `recent`/`name`
+sorts retain their own documented projection ordering.
+
+`project.move` accepts one `project_id`, `placement` (`top`, `before`, `after`),
+and an `anchor_id` for before/after. It moves that project within the complete
+stored catalog, including records outside the caller's loaded page. It never
+accepts a replacement list. Active projects are permitted visible targets and
+anchors; missing/inactive anchors reject before mutation. Self and adjacent
+no-op moves preserve all data. A canceled interaction makes no call.
+
+Console callers explicitly supply `scope: "catalog"` to `project.update` and
+`project.move` through their browser-safe generic REST operation routes.
+Catalog scope requires authenticated local-admin/console REST authority and
+cannot be asserted through MCP. Ordinary `scope: "project"` calls keep normal
+bridge injection: a bound agent can rename/move only its own project, relative
+to an active project visible in `project.list`. No bridge scope exception exists.
+CLI uses the same registered operations via `stackos ops call project.move`.
+
+For example, move the selected catalog project before an anchor:
+
+```json
+{"project_id": 2, "scope": "catalog", "placement": "before", "anchor_id": 1}
+```
+
 ## Project workflow schedules
 
 `schedule.list`, `schedule.set`, `schedule.toggle`, `schedule.remove` and

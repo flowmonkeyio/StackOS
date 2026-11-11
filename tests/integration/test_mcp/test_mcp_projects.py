@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from .conftest import MCPClient
 
 
@@ -50,6 +52,42 @@ def test_project_update_returns_envelope(mcp_client: MCPClient, seeded_project: 
         "project.update", {"project_id": pid, "patch": {"name": "Renamed"}}
     )
     assert env["data"]["name"] == "Renamed"
+
+
+@pytest.mark.parametrize("name", ["", "  ", "x" * 201, None, 7])
+def test_project_name_rejects_through_mcp(mcp_client, seeded_project, name):
+    pid = seeded_project["data"]["id"]
+    original = mcp_client.call_tool_structured("project.get", {"project_id": pid})
+    error = mcp_client.call_tool_error(
+        "project.update", {"project_id": pid, "patch": {"name": name}}
+    )
+    assert error["code"] == -32602
+    assert mcp_client.call_tool_structured("project.get", {"project_id": pid}) == original
+
+
+def test_project_move_and_name_use_same_mcp_owner(mcp_client, seeded_project):
+    pid = seeded_project["data"]["id"]
+    other = mcp_client.call_tool_structured(
+        "project.create", {"slug": "other-order", "name": "Other", "domain": "test"}
+    )["data"]["id"]
+    updated = mcp_client.call_tool_structured(
+        "project.update", {"project_id": pid, "patch": {"name": "  Renamed  "}}
+    )
+    assert updated["data"]["name"] == "Renamed"
+    moved = mcp_client.call_tool_structured(
+        "project.move", {"project_id": other, "placement": "before", "anchor_id": pid}
+    )
+    assert moved["data"]["id"] == other
+    assert [p["id"] for p in mcp_client.call_tool_structured("project.list", {})["items"]] == [
+        other,
+        pid,
+    ]
+    assert (
+        mcp_client.call_tool_error(
+            "project.move", {"project_id": pid, "placement": "top", "scope": "catalog"}
+        )["code"]
+        == -32007
+    )
 
 
 def test_project_update_preserves_workspace_binding(mcp_client: MCPClient) -> None:

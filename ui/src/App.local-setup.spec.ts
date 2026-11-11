@@ -33,6 +33,7 @@ it.each([null, 7])(
         : [
             {
               id: projectId,
+              order_index: projectId,
               name: 'Synthetic project',
               slug: 'synthetic',
               domain: 'example.test',

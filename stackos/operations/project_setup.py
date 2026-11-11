@@ -9,6 +9,7 @@ from stackos.mcp.tools.projects import (
     BudgetSetInput,
     BudgetUpdateInput,
     ProjectIdInput,
+    ProjectMoveInput,
     ProjectUpdateInput,
     ScheduleListInput,
     ScheduleRemoveInput,
@@ -20,6 +21,7 @@ from stackos.mcp.tools.projects import (
     _budget_set,
     _budget_update,
     _project_delete,
+    _project_move,
     _project_update,
     _schedule_list,
     _schedule_remove,
@@ -43,6 +45,7 @@ def operation_specs():
     return [
         operation_spec(
             name="project.update",
+            browser_safe=True,
             summary="Patch safe project metadata such as display name.",
             input_model=ProjectUpdateInput,
             output_model=WriteEnvelope[ProjectOut],
@@ -52,13 +55,16 @@ def operation_specs():
                 "renaming a project that was created with a poor inferred name."
             ),
             when_to_use=(
-                "A local admin needs to change safe project fields.",
+                "An operator wants to rename the bound/selected project.",
                 "The operator wants to correct the business-facing project name without "
                 "changing the workspace folder binding.",
             ),
             prerequisites=(
                 "Requires an existing project_id and an explicit patch.",
                 "Changing project metadata does not move or rebind workspace folders.",
+                "Display names are trimmed, nonblank and at most 200 characters; "
+                "duplicates are allowed.",
+                "Agents and console callers may patch only name. Catalog scope is REST-admin only.",
             ),
             examples=(
                 OperationExample(
@@ -67,7 +73,43 @@ def operation_specs():
                 ),
             ),
             mutating=True,
-            grant_policy="local-admin-project-write",
+            grant_policy="direct-setup-write",
+        ),
+        operation_spec(
+            name="project.move",
+            browser_safe=True,
+            summary="Move one visible project to the top or before/after a visible anchor.",
+            input_model=ProjectMoveInput,
+            output_model=WriteEnvelope[ProjectOut],
+            handler=_project_move,
+            purpose="Persist one bounded project move without replacing a paginated catalog.",
+            prerequisites=(
+                "Use project_id as the target; names and slugs never select the move target.",
+                "top omits anchor_id; before/after require an active visible anchor_id.",
+                "Bound agents can move only their injected project; "
+                "catalog scope requires local-admin REST authority.",
+            ),
+            returns=(
+                "The moved project, including its stored order_index; "
+                "no-op moves preserve all data.",
+            ),
+            examples=(
+                OperationExample(
+                    title="Move bound project to top",
+                    arguments={"project_id": 1, "placement": "top"},
+                ),
+                OperationExample(
+                    title="Move selected catalog project",
+                    arguments={
+                        "project_id": 2,
+                        "placement": "after",
+                        "anchor_id": 1,
+                        "scope": "catalog",
+                    },
+                ),
+            ),
+            mutating=True,
+            grant_policy="direct-setup-write",
         ),
         operation_spec(
             name="project.delete",

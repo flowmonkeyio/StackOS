@@ -13,6 +13,7 @@ const PAGE = {
       id: 1,
       slug: 'alpha',
       name: 'Alpha',
+      order_index: 1,
       domain: 'alpha.test',
       niche: 'a',
       locale: 'en-US',
@@ -123,5 +124,29 @@ describe('projects store', () => {
     store.items = PAGE.items as never
     store.activeProjectId = 1
     expect(store.activeProject?.name).toBe('Alpha')
+  })
+
+  it('appends new projects and retains persisted order/selection while loading unseen pages', async () => {
+    const row = (id: number, order_index: number) => ({ ...PAGE.items[0], id, order_index })
+    const first = Array.from({ length: 50 }, (_, i) => row(i + 1, i + 1))
+    const unseen = Array.from({ length: 25 }, (_, i) => row(i + 51, i + 51))
+    const created = row(76, 76)
+    const responses = [
+      { items: first, next_cursor: 50, total_estimate: 75 },
+      { data: created, run_id: null, project_id: 76 },
+      { items: [...unseen, created], next_cursor: null, total_estimate: 76 },
+    ]
+    globalThis.fetch = vi.fn(async () => new Response(JSON.stringify(responses.shift()), {
+      headers: { 'content-type': 'application/json' },
+    }))
+    const store = useProjectsStore()
+    await store.refresh()
+    await store.createProject({ slug: 'new', name: 'New', domain: 'new.test', locale: 'en-US' })
+    expect(store.totalEstimate).toBe(76)
+    expect(store.items.map((p) => p.id)).toEqual([...first.map((p) => p.id), 76])
+    await store.loadMore()
+    expect(store.items.map((p) => p.id)).toEqual(Array.from({ length: 76 }, (_, i) => i + 1))
+    expect(store.activeProjectId).toBe(76)
+    expect(store.activeProject?.id).toBe(76)
   })
 })

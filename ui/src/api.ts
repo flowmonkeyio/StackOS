@@ -5891,6 +5891,48 @@ export interface components {
             /** Title */
             title: string | null;
         };
+        /** ProjectMoveInput */
+        ProjectMoveInput: {
+            /**
+             * Anchor Id
+             * @default null
+             */
+            anchor_id: number | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Placement
+             * @enum {string}
+             */
+            placement: ProjectMoveInputPlacement;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ProjectMoveInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Scope
+             * @default project
+             * @enum {string}
+             */
+            scope: ProjectMoveInputScope;
+        };
         /** ProjectOut */
         ProjectOut: {
             /**
@@ -5910,6 +5952,8 @@ export interface components {
             name: string;
             /** Niche */
             niche: string | null;
+            /** Order Index */
+            order_index: number;
             /** Schedule Json */
             schedule_json: {
                 [key: string]: unknown;
@@ -5952,6 +5996,50 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * ProjectUpdateInput
+         * @example {
+         *       "patch": {
+         *         "name": "Acme Pro"
+         *       },
+         *       "project_id": 1
+         *     }
+         */
+        ProjectUpdateInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Patch */
+            patch: {
+                [key: string]: unknown;
+            };
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ProjectUpdateInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Scope
+             * @default project
+             * @enum {string}
+             */
+            scope: ProjectUpdateInputScope;
         };
         /** ProjectUpdateRequest */
         ProjectUpdateRequest: {
@@ -8741,6 +8829,20 @@ export interface components {
              */
             run_id: number | null;
         };
+        /** WriteEnvelope[ProjectOut] */
+        WriteEnvelope_ProjectOut_: {
+            data: components["schemas"]["ProjectOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
         /** WriteEnvelope[ScheduleRemovalOut] */
         WriteEnvelope_ScheduleRemovalOut_: {
             data: components["schemas"]["ScheduleRemovalOut"];
@@ -9239,8 +9341,10 @@ export type SchemaProjectAgentScope = components['schemas']['ProjectAgentScope']
 export type SchemaProjectAgentUpdateInput = components['schemas']['ProjectAgentUpdateInput'];
 export type SchemaProjectCreateRequest = components['schemas']['ProjectCreateRequest'];
 export type SchemaProjectEventOut = components['schemas']['ProjectEventOut'];
+export type SchemaProjectMoveInput = components['schemas']['ProjectMoveInput'];
 export type SchemaProjectOut = components['schemas']['ProjectOut'];
 export type SchemaProjectPluginOut = components['schemas']['ProjectPluginOut'];
+export type SchemaProjectUpdateInput = components['schemas']['ProjectUpdateInput'];
 export type SchemaProjectUpdateRequest = components['schemas']['ProjectUpdateRequest'];
 export type SchemaProviderOut = components['schemas']['ProviderOut'];
 export type SchemaProviderSetupOut = components['schemas']['ProviderSetupOut'];
@@ -9331,6 +9435,7 @@ export type SchemaWriteEnvelopeDurableActionJobOut = components['schemas']['Writ
 export type SchemaWriteEnvelopeFinanceCommitOut = components['schemas']['WriteEnvelope_FinanceCommitOut_'];
 export type SchemaWriteEnvelopeFinanceStatusOut = components['schemas']['WriteEnvelope_FinanceStatusOut_'];
 export type SchemaWriteEnvelopeLocalAgentChatMessageOut = components['schemas']['WriteEnvelope_LocalAgentChatMessageOut_'];
+export type SchemaWriteEnvelopeProjectOut = components['schemas']['WriteEnvelope_ProjectOut_'];
 export type SchemaWriteEnvelopeScheduleRemovalOut = components['schemas']['WriteEnvelope_ScheduleRemovalOut_'];
 export type SchemaWriteEnvelopeScheduledJobOut = components['schemas']['WriteEnvelope_ScheduledJobOut_'];
 export type SchemaWriteEnvelopeTrackerTaskBoardOut = components['schemas']['WriteEnvelope_TrackerTaskBoardOut_'];
@@ -12839,6 +12944,33 @@ export enum ProjectAgentUpdateInputResponse_mode {
     raw = "raw",
     standard = "standard",
     verbose = "verbose"
+}
+export enum ProjectMoveInputPlacement {
+    top = "top",
+    before = "before",
+    after = "after"
+}
+export enum ProjectMoveInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectMoveInputScope {
+    project = "project",
+    catalog = "catalog"
+}
+export enum ProjectUpdateInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectUpdateInputScope {
+    project = "project",
+    catalog = "catalog"
 }
 export enum RunKind {
     run_plan = "run-plan",

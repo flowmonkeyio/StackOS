@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import ConfigDict, Field, model_validator
 
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
+from stackos.mcp.errors import ToolNotGrantedError
 from stackos.mcp.server import ToolRegistry
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.repositories.base import Page
 from stackos.repositories.projects import (
     IntegrationBudgetOut,
     IntegrationBudgetRepository,
+    ProjectName,
     ProjectOut,
     ProjectRepository,
     ScheduleConfiguration,
@@ -49,7 +51,7 @@ class ProjectCreateInput(MCPInput):
     )
 
     slug: str = Field(min_length=1, max_length=80)
-    name: str = Field(min_length=1, max_length=200)
+    name: ProjectName
     domain: str = Field(min_length=1, max_length=255)
     niche: str | None = None
     locale: str = Field(default="en-US", max_length=16)
@@ -87,6 +89,22 @@ class ProjectUpdateInput(MCPInput):
 
     project_id: int
     patch: dict[str, Any]
+    scope: Literal["project", "catalog"] = "project"
+
+
+class ProjectMoveInput(MCPInput):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: int = Field(ge=1)
+    placement: Literal["top", "before", "after"]
+    anchor_id: int | None = Field(default=None, ge=1)
+    scope: Literal["project", "catalog"] = "project"
+
+    @model_validator(mode="after")
+    def _anchor_shape(self) -> ProjectMoveInput:
+        if (self.placement == "top") != (self.anchor_id is None):
+            raise ValueError("top requires no anchor; before/after require an anchor_id")
+        return self
 
 
 class ProjectIdInput(MCPInput):
@@ -213,7 +231,34 @@ async def _project_get(inp: ProjectGetInput, ctx: MCPContext, _emit: ProgressEmi
 async def _project_update(
     inp: ProjectUpdateInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[ProjectOut]:
+    _project_management_scope(inp.scope, ctx)
+    if ctx.extras.get("auth_scope") != "daemon-admin" and set(inp.patch) != {"name"}:
+        raise ToolNotGrantedError(
+            "project.update permits only display name outside local administration"
+        )
     env = ProjectRepository(ctx.session).update(inp.project_id, **inp.patch)
+    return WriteEnvelope[ProjectOut](data=env.data, run_id=ctx.run_id, project_id=env.project_id)
+
+
+def _project_management_scope(scope: str, ctx: MCPContext) -> None:
+    if ctx.extras.get("auth_scope") == "ui-console-operation" and scope != "catalog":
+        raise ToolNotGrantedError("console project management requires explicit catalog scope")
+    if scope == "catalog" and not (
+        ctx.extras.get("surface") == "rest"
+        and ctx.extras.get("auth_scope") in {"daemon-admin", "ui-console-operation"}
+    ):
+        raise ToolNotGrantedError(
+            "catalog project management requires explicit local-admin REST authority"
+        )
+
+
+async def _project_move(
+    inp: ProjectMoveInput, ctx: MCPContext, _emit: ProgressEmitter
+) -> WriteEnvelope[ProjectOut]:
+    _project_management_scope(inp.scope, ctx)
+    env = ProjectRepository(ctx.session).move(
+        inp.project_id, placement=inp.placement, anchor_id=inp.anchor_id
+    )
     return WriteEnvelope[ProjectOut](data=env.data, run_id=ctx.run_id, project_id=env.project_id)
 
 
@@ -332,6 +377,7 @@ def register(registry: ToolRegistry) -> None:
             "project.create",
             "project.get",
             "project.update",
+            "project.move",
             "project.delete",
             "budget.list",
             "budget.set",

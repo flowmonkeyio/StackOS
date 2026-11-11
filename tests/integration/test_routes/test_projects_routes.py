@@ -66,6 +66,93 @@ def test_list_projects_pagination_and_missing(api: TestClient) -> None:
     assert missing.status_code == 404
 
 
+@pytest.mark.parametrize("name", ["", " \t\n", "x" * 201, None, 7])
+@pytest.mark.parametrize("surface", ["legacy", "operation", "console"])
+def test_project_name_validation_is_shared(api, project_id, surface, name):
+    original = api.get(f"/api/v1/projects/{project_id}").json()
+    headers = {}
+    if surface == "console":
+        headers = {"Authorization": "Bearer " + api.get("/api/v1/auth/ui-token").json()["token"]}
+    if surface == "legacy":
+        response = api.patch(f"/api/v1/projects/{project_id}", json={"name": name})
+    else:
+        response = api.post(
+            "/api/v1/operations/project.update/call",
+            headers=headers,
+            json={
+                "arguments": {"project_id": project_id, "scope": "catalog", "patch": {"name": name}}
+            },
+        )
+    assert response.status_code == 422, response.text
+    assert api.get(f"/api/v1/projects/{project_id}").json() == original
+
+
+def test_project_catalog_console_and_cli_use_shared_operations(api, project_id, monkeypatch):
+    other = api.post(
+        "/api/v1/projects", json={"slug": "other", "name": "Other", "domain": "test"}
+    ).json()["data"]
+    browser = {"Authorization": "Bearer " + api.get("/api/v1/auth/ui-token").json()["token"]}
+
+    def call(name, arguments, headers=browser):
+        return api.post(
+            f"/api/v1/operations/{name}/call", headers=headers, json={"arguments": arguments}
+        )
+
+    renamed = call(
+        "project.update",
+        {"project_id": other["id"], "scope": "catalog", "patch": {"name": "  Selected  "}},
+    )
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["data"]["name"] == "Selected"
+    moved = call(
+        "project.move",
+        {
+            "project_id": other["id"],
+            "scope": "catalog",
+            "placement": "before",
+            "anchor_id": project_id,
+        },
+    )
+    assert moved.status_code == 200, moved.text
+    assert [p["id"] for p in api.get("/api/v1/projects").json()["items"]] == [
+        other["id"],
+        project_id,
+    ]
+    for name, arguments in (
+        (
+            "project.update",
+            {"project_id": other["id"], "scope": "catalog", "patch": {"is_active": False}},
+        ),
+        ("project.move", {"project_id": other["id"], "placement": "top"}),
+        ("project.delete", {"project_id": other["id"]}),
+    ):
+        assert call(name, arguments).status_code == 403
+
+    def request(method, path, *, body=None, **kwargs):
+        response = api.request(method, path, json=body)
+        response.raise_for_status()
+        return response.json()
+
+    monkeypatch.setattr(operation_cli, "_api_request", request)
+    for name, arguments in (
+        ("project.update", {"project_id": project_id, "patch": {"name": "  CLI renamed  "}}),
+        ("project.move", {"project_id": project_id, "placement": "top"}),
+    ):
+        result = CliRunner().invoke(
+            cli_app,
+            ["ops", "call", name, "--input", "-"],
+            input=json.dumps(arguments),
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0, result.stdout
+        assert json.loads(result.stdout)["data"]["id"] == project_id
+    listed = call("project.list", {"limit": 1}).json()
+    assert listed["items"][0]["id"] == project_id
+    assert listed["items"][0]["name"] == "CLI renamed"
+    assert listed["next_cursor"] == project_id
+    assert call("project.list", {"after_id": project_id}).json()["items"][0]["id"] == other["id"]
+
+
 def test_schedule_create_then_remove(api: TestClient, project_id: int) -> None:
     created = api.post(
         f"/api/v1/projects/{project_id}/schedules",

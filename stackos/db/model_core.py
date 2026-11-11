@@ -34,6 +34,7 @@ class Project(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     slug: str = Field(max_length=80, unique=True, index=True)
     name: str = Field(max_length=200)
+    order_index: int = Field(default=0, nullable=False, index=True)
     domain: str = Field(max_length=255)
     niche: str | None = Field(default=None, max_length=200)
     locale: str = Field(max_length=16)

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.triggers.cron import CronTrigger
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter
 from pydantic import ValidationError as SchemaValidationError
+from sqlalchemy import and_, func, or_
 from sqlmodel import Session, col, select
 
 from stackos.db.models import (
@@ -34,7 +35,7 @@ from stackos.repositories.base import (
     NotFoundError,
     Page,
     ValidationError,
-    cursor_paginate,
+    _normalise_limit,
     cursor_paginate_desc,
 )
 from stackos.repositories.tracker.schema import ActiveExecutionOut, AgentStatsMetricsOut
@@ -44,12 +45,26 @@ def _utcnow() -> datetime:
     return datetime.now(tz=UTC).replace(tzinfo=None)
 
 
+ProjectName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+_project_name = TypeAdapter(ProjectName)
+
+
+def validate_project_name(value: Any) -> str:
+    try:
+        return _project_name.validate_python(value)
+    except SchemaValidationError as exc:
+        raise ValidationError(
+            "project name must be a nonblank string of at most 200 characters"
+        ) from exc
+
+
 class ProjectOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     slug: str
     name: str
+    order_index: int
     domain: str
     niche: str | None
     locale: str
@@ -191,12 +206,15 @@ class ProjectRepository:
         locale: str = "en-US",
         schedule_json: dict[str, Any] | None = None,
     ) -> Envelope[ProjectOut]:
+        name = validate_project_name(name)
+        self._lock_order()
         now = _utcnow()
         if self._s.exec(select(Project.id).where(Project.slug == slug)).first() is not None:
             raise ConflictError(f"project slug {slug!r} already exists")
         row = Project(
             slug=slug,
             name=name,
+            order_index=(self._s.exec(select(func.max(Project.order_index))).one() or 0) + 1,
             domain=domain,
             niche=niche,
             locale=locale,
@@ -247,13 +265,30 @@ class ProjectRepository:
         stmt = select(Project)
         if active_only:
             stmt = stmt.where(col(Project.is_active).is_(True))
-        return cursor_paginate(
-            self._s,
-            stmt,
-            id_col=Project.id,
-            limit=limit,
-            after_id=after_id,
-            converter=lambda row: ProjectOut.model_validate(row),
+        size = _normalise_limit(limit)
+        total = self._s.exec(select(func.count()).select_from(stmt.subquery())).one()
+        if after_id is not None:
+            anchor = self._s.exec(stmt.where(Project.id == after_id)).first()
+            if anchor is None:
+                raise ValidationError(
+                    "project cursor no longer matches the list; refresh the first page"
+                )
+            stmt = stmt.where(
+                or_(
+                    col(Project.order_index) > anchor.order_index,
+                    and_(
+                        col(Project.order_index) == anchor.order_index, col(Project.id) > after_id
+                    ),
+                )
+            )
+        rows = self._s.exec(
+            stmt.order_by(col(Project.order_index), col(Project.id)).limit(size + 1)
+        ).all()
+        items = [ProjectOut.model_validate(row) for row in rows[:size]]
+        return Page(
+            items=items,
+            next_cursor=items[-1].id if len(rows) > size else None,
+            total_estimate=total,
         )
 
     def portfolio(
@@ -283,10 +318,14 @@ class ProjectRepository:
         )
 
     def update(self, project_id: int, **patch: Any) -> Envelope[ProjectOut]:
+        if "name" in patch:
+            patch["name"] = validate_project_name(patch["name"])
         row = self._fetch_row(project_id)
         if "slug" in patch and patch["slug"] != row.slug:
             raise ValidationError("project slug is immutable")
         allowed = {"name", "domain", "niche", "locale", "schedule_json", "is_active"}
+        if all(getattr(row, key) == value for key, value in patch.items() if key in allowed):
+            return Envelope(data=ProjectOut.model_validate(row), project_id=row.id)
         for key, value in patch.items():
             if key in allowed:
                 setattr(row, key, value)
@@ -295,6 +334,51 @@ class ProjectRepository:
         self._s.commit()
         self._s.refresh(row)
         return Envelope(data=ProjectOut.model_validate(row), project_id=row.id)
+
+    def move(
+        self,
+        project_id: int,
+        *,
+        placement: Literal["top", "before", "after"],
+        anchor_id: int | None = None,
+    ) -> Envelope[ProjectOut]:
+        """Move one visible project, retaining every unseen/inactive catalog row."""
+        if placement not in {"top", "before", "after"} or (
+            (placement == "top") != (anchor_id is None)
+        ):
+            raise ValidationError("top requires no anchor; before/after require an anchor_id")
+        self._lock_order()
+        rows = list(
+            self._s.exec(select(Project).order_by(col(Project.order_index), col(Project.id))).all()
+        )
+        target = next((row for row in rows if row.id == project_id and row.is_active), None)
+        if target is None:
+            raise NotFoundError("visible project not found")
+        anchor = next((row for row in rows if row.id == anchor_id and row.is_active), None)
+        if anchor_id is not None and anchor is None:
+            raise NotFoundError("visible anchor project not found; refresh the project list")
+        original = [row.id for row in rows]
+        if anchor_id != project_id:
+            rows.remove(target)
+            position = 0 if anchor is None else rows.index(anchor) + (placement == "after")
+            rows.insert(position, target)
+        if original != [row.id for row in rows]:
+            for position, row in enumerate(rows, start=1):
+                if row.order_index != position:
+                    row.order_index = position
+                    self._s.add(row)
+            self._s.commit()
+        return Envelope(data=ProjectOut.model_validate(target), project_id=project_id)
+
+    def _lock_order(self) -> None:
+        # Serialize read/modify/write with moves and appends, including callers
+        # whose dispatcher already owns a write transaction for idempotency.
+        connection = self._s.connection()
+        driver = connection.connection.driver_connection
+        assert driver is not None
+        if not driver.in_transaction:
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
+        self._s.expire_all()
 
     def delete(self, project_id: int, *, hard: bool = False) -> Envelope[ProjectOut]:
         row = self._fetch_row(project_id)

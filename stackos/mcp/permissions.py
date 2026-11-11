@@ -210,6 +210,7 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "project.delete",
         "project.get",
         "project.list",
+        "project.move",
         "project.update",
         "run.abort",
         "run.children",
