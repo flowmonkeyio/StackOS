@@ -316,6 +316,12 @@ a newly lowered limit. Backup workers and tasks merely waiting for a slot are
 excluded. The existing launch lock serializes slot reservations across projects.
 No priority policy is added; native sessions, candidate evidence and repair
 allowance are retained.
+Abort keeps its reservation until native termination/prevention is confirmed or
+the original callback retires. Queue registration failures cannot skip native
+cancellation. A stopped handoff with an outstanding reservation in this daemon
+cannot be replaced or share its working directory; inspect its delivery state
+and retry after that reservation is released. Retired handoffs release only
+their own reservation, so a late return cannot release a replacement's slot.
 Daemon restart does not automatically resume old handoffs; normal explicit
 recovery/rehandoff authority still applies.
 

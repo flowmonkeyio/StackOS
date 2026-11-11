@@ -19,7 +19,7 @@ from uuid import uuid4
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.base import BaseScheduler
 from pydantic import ValidationError as SchemaValidationError
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlmodel import Session, select
 
 from stackos.db.models import (
@@ -139,21 +139,8 @@ def abort_run_plan(
                 project_id,
                 task.key,
                 status="stopped",
-                slot_reserved=False,
                 reason=reason or "Run aborted.",
             )
-            if scheduler is not None and state.get("job_ref"):
-                try:
-                    scheduler.remove_job(state["job_ref"], jobstore="memory")
-                except JobLookupError:
-                    # A queued callback cannot cross the launch lock after the
-                    # abort fence, even if registration/dequeue is still in flight.
-                    if state.get("status") == "queued" and state.get("slot_reserved"):
-                        _update_delivery(repo, project_id, task.key, slot_reserved=False)
-                else:
-                    _update_delivery(repo, project_id, task.key, slot_reserved=False)
-    if scheduler is not None:
-        drain_delivery(session_factory=lambda: Session(session.get_bind()), scheduler=scheduler)
     outcomes = [call.process_control.stop() for call in calls]
     retired = all(
         outcome == "prevented" or call.retired.wait(2)
@@ -182,6 +169,21 @@ def abort_run_plan(
                 "next_operations": ["runPlan.get", "runPlan.abort"],
             },
         )
+    if scheduler is not None and state.get("job_ref"):
+        with suppress(JobLookupError):
+            scheduler.remove_job(state["job_ref"], jobstore="memory")
+    if task and state.get("slot_reserved") and state.get("handoff_id"):
+        # Only confirmed termination/prevention can free an aborted handoff's
+        # slot. Native I/O stays outside the launch lock, and a newer handoff
+        # must never be released by this abort's late confirmation.
+        _release_delivery_slot(
+            session_factory=lambda: Session(session.get_bind()),
+            project_id=project_id,
+            task_key=task.key,
+            handoff_id=state["handoff_id"],
+        )
+    if scheduler is not None:
+        _request_delivery_drain(lambda: Session(session.get_bind()), scheduler)
     return env, cancellation
 
 
@@ -494,6 +496,20 @@ def _retain_mcp_config(state: dict[str, Any], reference: dict[str, str] | None) 
         raise ValidationError("Task delivery must retain its accepted MCP configuration identity")
 
 
+def _retain_reservation(previous: dict[str, Any], admission_id: str) -> None:
+    if previous.get("slot_reserved") and previous.get("admission_id") == admission_id:
+        raise ValidationError(
+            "The previous delivery callback is still retiring; "
+            "retry after its capacity is released.",
+            data={
+                "code": "delivery-handoff-retiring",
+                "handoff_id": previous.get("handoff_id"),
+                "job_ref": previous.get("job_ref"),
+                "next_operations": ["tracker.get"],
+            },
+        )
+
+
 def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_key, **changes):
     """Reserve a directory in the existing snapshot before scheduling its task job."""
     from stackos.repositories.projects import ProjectRepository
@@ -519,6 +535,7 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
                 raise ValidationError("Task already has automatic delivery for a different scope")
             session.rollback()
             return previous, False
+        _retain_reservation(previous, changes["admission_id"])
         _workflow_scope(
             repo,
             project_id,
@@ -534,8 +551,16 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
         active_directories = session.exec(
             select(func.json_extract(TrackerTask.metadata_json, "$.delivery.project_dir")).where(
                 TrackerTask.id != task.id,
-                func.json_extract(TrackerTask.metadata_json, "$.delivery.status").in_(
-                    ("queued", "running")
+                or_(
+                    func.json_extract(TrackerTask.metadata_json, "$.delivery.status").in_(
+                        ("queued", "running")
+                    ),
+                    and_(
+                        func.json_extract(TrackerTask.metadata_json, "$.delivery.slot_reserved")
+                        == 1,
+                        func.json_extract(TrackerTask.metadata_json, "$.delivery.admission_id")
+                        == changes["admission_id"],
+                    ),
                 ),
             )
         ).all()
@@ -1190,7 +1215,7 @@ def drain_delivery(*, session_factory, scheduler: BaseScheduler) -> None:
                         _update_delivery(repo, project_id, task_key, slot_reserved=False)
 
 
-def release_delivery(*, session_factory, scheduler, project_id, task_key, handoff_id):
+def _release_delivery_slot(*, session_factory, project_id, task_key, handoff_id):
     with managed_launch_lock, session_factory() as session:
         repo = TrackerRepository(session)
         task = session.exec(
@@ -1201,17 +1226,33 @@ def release_delivery(*, session_factory, scheduler, project_id, task_key, handof
         state = (task.metadata_json or {}).get("delivery", {}) if task else {}
         if state.get("handoff_id") == handoff_id and state.get("slot_reserved"):
             _update_delivery(repo, project_id, task_key, slot_reserved=False)
+
+
+def release_delivery(*, session_factory, scheduler, project_id, task_key, handoff_id):
+    _release_delivery_slot(
+        session_factory=session_factory,
+        project_id=project_id,
+        task_key=task_key,
+        handoff_id=handoff_id,
+    )
     _request_delivery_drain(session_factory, scheduler)
 
 
 def _request_delivery_drain(session_factory, scheduler):
-    request = getattr(scheduler, "task_delivery_drain", None)
-    if request is not None:
-        # Daemon callbacks return before its event loop performs registration.
-        # shutdown(wait=True) holds scheduler locks while waiting for workers.
-        request()
-    else:
-        drain_delivery(session_factory=session_factory, scheduler=scheduler)
+    try:
+        request = getattr(scheduler, "task_delivery_drain", None)
+        if request is not None:
+            # Daemon callbacks return before its event loop performs registration.
+            # shutdown(wait=True) holds scheduler locks while waiting for workers.
+            request()
+        else:
+            drain_delivery(session_factory=session_factory, scheduler=scheduler)
+    except Exception:
+        # Registration failure is already persisted on the waiting task. It
+        # cannot invalidate the caller's completed retirement/cancellation.
+        import logging
+
+        logging.getLogger(__name__).exception("Queued task registration failed after retirement")
 
 
 def missed_delivery_job(event, *, session_factory, scheduler):
@@ -1296,6 +1337,7 @@ def start_delivery(
         if (previous.get("run_plan_id"), previous.get("step_id")) != (run_plan_id, step_id):
             raise ValidationError("Task already has automatic delivery for a different scope")
         return _receipt(task_key, previous)
+    _retain_reservation(previous, _admission_id(scheduler))
     _workflow_scope(repo, project_id, task, run_plan_id, step_id, starting=True)
     if task.status not in {TrackerItemStatus.NOT_STARTED, TrackerItemStatus.IN_PROGRESS}:
         raise ValidationError("Task must be open before starting delivery")

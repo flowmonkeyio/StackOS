@@ -4,8 +4,10 @@
 # ruff: noqa: F811
 
 import asyncio
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from dataclasses import replace
 from threading import Barrier, Event, Lock
 from types import SimpleNamespace
 
@@ -15,9 +17,12 @@ from sqlmodel import Session, select
 from stackos import task_delivery
 from stackos.config import Settings
 from stackos.db.models import Project, TrackerTask
+from stackos.host_mcp import service
+from stackos.host_mcp.result import AgentRunResult
 from stackos.jobs.scheduler import build_scheduler
 from stackos.mcp.context import MCPContext
 from stackos.operations.tracker.capacity import SetDeliveryCapacityInput, set_capacity
+from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.tracker import TrackerRepository
 from stackos.task_capacity import configured_limit, save_limit
@@ -28,6 +33,7 @@ from tests.integration.test_repositories.test_task_delivery import (
     native_source_fixtures,  # noqa: F401
     prepared_task,
     submit,
+    workflow_task,
 )
 
 
@@ -403,3 +409,235 @@ def test_retiring_callback_does_not_drain_during_scheduler_shutdown(
     assert len(scheduler.jobs) == 1  # No add_job while shutdown waits on this callback.
     assert capacity(session, scheduler)["running_count"] == 0
     assert capacity(session, scheduler)["queued_count"] == 2
+
+
+@pytest.mark.parametrize("registration_failure", [False, True])
+def test_abort_stops_owned_process_before_admitting_waiting_work(
+    delivery_engine, project_id, tmp_path, monkeypatch, registration_failure
+):
+    ready = Event()
+    native, observations = [], []
+    definition = service._definition_by_key("codex")
+
+    def execute(*args, process_control, **kwargs):
+        process = process_control.spawn([sys.executable, "-c", "import time; time.sleep(30)"])
+        native.append(process)
+        ready.set()
+        process.wait(timeout=10)
+        return AgentRunResult(process.returncode, thread_id="inert-capacity-fixture")
+
+    monkeypatch.setattr(
+        service, "_definition_by_key", lambda _: replace(definition, run_agent=execute)
+    )
+
+    class ObservedScheduler(QueuedScheduler):
+        def add_job(self, function, **options):
+            if options["kwargs"]["task_key"] == "waiting":
+                observations.append(native[0].poll() is None)
+                if registration_failure:
+                    raise RuntimeError("Waiting-job fixture registration failure")
+            super().add_job(function, **options)
+
+    scheduler = ObservedScheduler()
+    try:
+        with Session(delivery_engine) as session:
+            save_limit(session, 1)
+            plan_id = workflow_task(session, project_id)
+            submit(
+                session,
+                project_id,
+                tmp_path,
+                scheduler,
+                task_key=f"workflow-{plan_id}",
+                run_plan_id=plan_id,
+                step_id="deliver",
+            )
+            TrackerRepository(session).create_task(
+                project_id=project_id, key="waiting", title="Wait"
+            )
+            waiting = tmp_path / "waiting"
+            waiting.mkdir()
+            submit(session, project_id, waiting, scheduler, task_key="waiting")
+            with ThreadPoolExecutor() as workers:
+                running = workers.submit(scheduler.run)
+                try:
+                    assert ready.wait(5)
+                    _, cancellation = task_delivery.abort_run_plan(
+                        session, run_plan_id=plan_id, project_id=project_id, scheduler=scheduler
+                    )
+                    assert cancellation["status"] == "managed_stopped"
+                    assert native[0].poll() is not None
+                finally:
+                    for process in native:
+                        if process.poll() is None:
+                            process.kill()
+                    running.result(timeout=5)
+            assert observations == [False]
+            if registration_failure:
+                state = task_rows(session)[(project_id, "waiting")]["delivery"]
+                assert state["status"] == "stopped"
+                assert state["reason"] == "Waiting-job fixture registration failure"
+    finally:
+        for process in native:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=3)
+        service.shutdown_usage()
+
+
+def test_unconfirmed_stop_retains_slot_until_callback_retirement(
+    delivery_engine, project_id, tmp_path, monkeypatch
+):
+    ready = Event()
+    native, controls = [], []
+    definition = service._definition_by_key("codex")
+
+    def execute(*args, process_control, **kwargs):
+        process = process_control.spawn([sys.executable, "-c", "import time; time.sleep(30)"])
+        native.append(process)
+        controls.append(process_control)
+        ready.set()
+        process.wait(timeout=10)
+        return AgentRunResult(process.returncode, thread_id="unconfirmed-capacity-fixture")
+
+    monkeypatch.setattr(
+        service, "_definition_by_key", lambda _: replace(definition, run_agent=execute)
+    )
+    scheduler = QueuedScheduler()
+    try:
+        with Session(delivery_engine) as session:
+            save_limit(session, 1)
+            plan_id = workflow_task(session, project_id)
+            task_key = f"workflow-{plan_id}"
+            submit(
+                session,
+                project_id,
+                tmp_path,
+                scheduler,
+                task_key=task_key,
+                run_plan_id=plan_id,
+                step_id="deliver",
+            )
+            TrackerRepository(session).create_task(
+                project_id=project_id, key="waiting", title="Wait"
+            )
+            waiting = tmp_path / "waiting"
+            waiting.mkdir()
+            submit(session, project_id, waiting, scheduler, task_key="waiting")
+            with ThreadPoolExecutor() as workers:
+                running = workers.submit(scheduler.run)
+                try:
+                    assert ready.wait(5)
+                    monkeypatch.setattr(controls[0], "stop", lambda: "unconfirmed")
+                    with pytest.raises(ConflictError) as error:
+                        task_delivery.abort_run_plan(
+                            session, run_plan_id=plan_id, project_id=project_id, scheduler=scheduler
+                        )
+                    assert error.value.data["cancellation"]["status"] == "stop_unconfirmed"
+                    assert native[0].poll() is None
+                    assert capacity(session, scheduler)["running_count"] == 1
+                    assert task_rows(session)[(project_id, task_key)]["delivery"]["slot_reserved"]
+                    assert scheduler.jobs == []
+                finally:
+                    for process in native:
+                        if process.poll() is None:
+                            process.kill()
+                    running.result(timeout=5)
+            assert len(scheduler.jobs) == 1  # Retirement, rather than abort, frees the slot.
+    finally:
+        for process in native:
+            if process.poll() is None:
+                process.kill()
+            process.wait(timeout=3)
+        service.shutdown_usage()
+
+
+@pytest.mark.parametrize("same_runtime", [True, False])
+def test_rehandoff_retains_owned_reservation_and_exact_handoff_release(
+    session, project_id, tmp_path, same_runtime
+):
+    save_limit(session, 1)
+    prepared_task(session, project_id)
+    repo = TrackerRepository(session)
+    evidence = {
+        "automatic_delivery": {
+            "repair_count": 2,
+            "sessions": {"delivery": {"thread_id": "retained"}},
+            "candidate": {"commit_sha": "a" * 40},
+        }
+    }
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="first",
+        patch_json={
+            "completion_evidence_json": evidence,
+        },
+    )
+
+    class StartedThenError(QueuedScheduler):
+        failed = False
+
+        def add_job(self, function, **options):
+            if not self.failed:
+                self.failed = True
+                task_delivery._update_delivery(repo, project_id, "deliver", status="running")
+                raise RuntimeError("Registration failed after callback started")
+            super().add_job(function, **options)
+
+    original = StartedThenError()
+    with pytest.raises(RuntimeError, match="after callback started"):
+        submit(session, project_id, tmp_path, original)
+    prior = task_rows(session)[(project_id, "deliver")]
+    scheduler = original if same_runtime else QueuedScheduler()
+    if same_runtime:
+        with pytest.raises(ValidationError, match="still retiring"):
+            submit(session, project_id, tmp_path, scheduler)
+        assert task_rows(session)[(project_id, "deliver")] == prior
+        assert scheduler.jobs == []
+        task_delivery.release_delivery(
+            session_factory=lambda: Session(session.get_bind()),
+            scheduler=scheduler,
+            project_id=project_id,
+            task_key="deliver",
+            handoff_id=prior["delivery"]["handoff_id"],
+        )
+    submit(session, project_id, tmp_path, scheduler)
+    replacement = task_rows(session)[(project_id, "deliver")]
+    assert replacement["delivery"]["handoff_id"] != prior["delivery"]["handoff_id"]
+    assert capacity(session, scheduler)["running_count"] == 1
+    task_delivery.release_delivery(
+        session_factory=lambda: Session(session.get_bind()),
+        scheduler=original,
+        project_id=project_id,
+        task_key="deliver",
+        handoff_id=prior["delivery"]["handoff_id"],
+    )
+    assert task_rows(session)[(project_id, "deliver")] == replacement
+    assert (
+        repo.brief(project_id=project_id, ticket_key="first").ticket.completion_evidence_json
+        == evidence
+    )
+
+
+def test_retiring_reservation_still_owns_its_working_directory(session, project_id, tmp_path):
+    save_limit(session, 2)
+    prepared_task(session, project_id)
+    repo = TrackerRepository(session)
+
+    class StartedThenError(QueuedScheduler):
+        failed = False
+
+        def add_job(self, function, **options):
+            if not self.failed:
+                self.failed = True
+                task_delivery._update_delivery(repo, project_id, "deliver", status="running")
+                raise RuntimeError("Registration failed after callback started")
+            super().add_job(function, **options)
+
+    scheduler = StartedThenError()
+    with pytest.raises(RuntimeError, match="after callback started"):
+        submit(session, project_id, tmp_path, scheduler)
+    with pytest.raises(ValidationError, match="directory is already owned"):
+        submit(session, project_id, tmp_path, scheduler, task_key="unrelated")
+    assert scheduler.jobs == []
+    assert capacity(session, scheduler)["running_count"] == 1
