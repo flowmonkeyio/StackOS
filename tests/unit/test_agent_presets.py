@@ -826,7 +826,7 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
     assert "producer or writer" in delivery_text
     assert "do not copy logic" in delivery_text
     assert "actual imports, call paths, writers, readers, and consumers" in reviewer_text
-    assert "only when evidence indicates" in reviewer_text
+    assert "bound breadth by concrete evidence" in reviewer_text
 
     test_designer = AgentPresetLoader().describe_preset(key="stackos.sdlc.test-designer")
     test_designer_text = " ".join(
@@ -870,9 +870,9 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
         "codebase-explorer": "0.6.4",
         "planning": "0.7.12",
         "architecture": "0.6.4",
-        "test-designer": "0.6.6",
-        "delivery": "0.7.11",
-        "delivery-reviewer": "0.6.10",
+        "test-designer": "0.6.7",
+        "delivery": "0.7.12",
+        "delivery-reviewer": "0.6.11",
     }
     presets = {
         key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset for key in expected_versions
@@ -1062,7 +1062,7 @@ def test_sdlc_source_and_local_verification_repair_contracts() -> None:
 
 
 def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
-    # Availability/assembly only; the assigned independent G1 exercise owns behavior proof.
+    # Availability/assembly only; the assigned bounded use exercise owns behavior proof.
     loader = AgentPresetLoader()
     prefixes = {
         "delivery": (
@@ -1072,6 +1072,8 @@ def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
             "For visual changes,",
             "Explicitly assigned proof may authorize",
             "Prove the changed boundary through the real caller,",
+            "Complete necessary omitted",
+            "For browser work,",
         ),
         "delivery-reviewer": (
             "Own the assigned review outcome.",
@@ -1079,6 +1081,15 @@ def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
             "For visual changes,",
             "Explicitly assigned proof may authorize",
             "Keep dependency-mutating setup exclusive",
+            "Verify project alignment",
+            "Use a concise rule-by-rule",
+            "Order findings by severity",
+            "For browser work,",
+        ),
+        "test-designer": (
+            "Trace each material claim",
+            "For asynchronous changes",
+            "For browser work,",
         ),
     }
     texts = {}
@@ -1092,7 +1103,30 @@ def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
         # Incident-specific checks belong in this project, not the reusable preset.
         assert "Ruff" not in texts[role]
         assert "task-filtered SSE" not in texts[role]
-        assert "Ruff" in local["developer_instructions"]
+        if role != "test-designer":
+            assert "Ruff" in local["developer_instructions"]
+        for text in (texts[role], local["developer_instructions"]):
+            for obligation in (
+                "distinct applicable obligation",
+                "affected retained consumer",
+                "matching",
+                "mocked array",
+                "real API envelope",
+                "neighboring transitions",
+                "fixed edit count",
+                "browser.session.list",
+                "browser.session.start",
+                "stackos.browser --session <full-ref>",
+                "Computer Use/native desktop control will not be enabled",
+                "do not request it, wait for it or plan it as a prerequisite",
+                "Retain required outcome proof and normal authentication",
+                "explicit scoped operator/manual exceptions",
+                "missing evidence as blocked",
+                "profile_key",
+                "--tab-id",
+            ):
+                assert obligation in text, (role, obligation)
+        assert "drag-and-drop" not in texts[role]  # Manual exceptions remain run-scoped.
 
     for obligation in (
         "EXECUTE relevant tests, lint and area checks",
@@ -1111,7 +1145,8 @@ def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
         "never-executed required checks",
     ):
         assert obligation in texts["delivery-reviewer"]
-    for text in texts.values():
+    for role in ("delivery", "delivery-reviewer"):
+        text = texts[role]
         for obligation in (
             "approved design and current amendments",
             "exact wording, content applicability, hierarchy and actual consumer widths",

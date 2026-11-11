@@ -465,6 +465,22 @@ requiring rerun, and never-executed required checks. A repair-only slice cannot
 inherit an incomplete original review. Preserve failed proof as history; identify
 original omissions separately from later operator amendments.
 
+Each material claim needs its distinct applicable obligation, actual
+producer/consumer boundary and matching evidence or explicit gap in that receipt
+or proof plan. A mocked array cannot establish the real API envelope; a broad
+green suite or unrelated check cannot cover a required unexecuted obligation.
+A reproduced defect calls for proportionate repair and proof of the same invariant
+across affected retained consumers and implicated neighboring transitions within
+the original outcome and existing authority. Evidence determines breadth; fixed
+edit counts, universal matrices and unrelated cleanup do not.
+
+Delivery, review and test design use [StackOS browser lifecycle and native CLI](browser-automation.md#client-flow)
+for browser work, with the installed skill/cookbook, authorized profile and pinned
+ticket tab. Computer Use/native desktop control will not be enabled and must not
+be requested or planned as a prerequisite. Preserve required outcome proof and
+explicit scoped manual ownership; identify any actual unsupported boundary and
+missing evidence truthfully rather than inventing a waiver.
+
 For visual changes, delivery and review compare the candidate with the approved
 design and current amendments: exact wording, content applicability, hierarchy,
 actual consumer widths and the reported interaction and relevant states. Record

@@ -19,6 +19,14 @@ session. Session discovery returns `cli_argv`, a ready command prefix:
 
 ## Client Flow
 
+Browser work uses StackOS lifecycle and the returned native CLI. Computer Use
+and native desktop control will not be enabled: do not request access, wait for
+it or plan it as a verification prerequisite. Retain the required outcome proof,
+normal app authentication and any explicitly scoped operator/manual exception.
+If the supported browser route cannot exercise a required boundary, identify the
+actual unsupported boundary and missing evidence as blocked. Computer Use absence
+alone is not a blocker, and it grants no waiver or permission bypass.
+
 1. Use `browser.session.list` to discover project sessions. Select the intended
    session or call `browser.session.start` with stable `profile_key` and
    `session_key` values to create/reuse it.
