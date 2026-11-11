@@ -2,14 +2,10 @@
 import { computed, inject, onBeforeUnmount, ref, toRef } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, routerKey } from 'vue-router'
 import type { SchemaWorkflowTemplateListOut } from '@/api'
-import { UiButton, UiCallout, UiCheckbox, UiConfirmDialog, UiDialog, UiFormField, UiInput, UiLoadingState, UiSelect } from '@/components/ui'
+import { UiButton, UiCallout, UiCheckbox, UiConfirmDialog, UiDialog, UiFormField, UiInput, UiLoadingState, UiRadioGroup, UiSelect, UiTextarea } from '@/components/ui'
 import { useProjectFolder } from '@/composables/useProjectFolder'
 import { apiFetch, formatApiError } from '@/lib/client'
 import { useSchedulesStore, type ScheduledJob, type ScheduleConfiguration } from '@/stores/schedules'
-import ScheduleAgentSelectors from './ScheduleAgentSelectors.vue'
-import ScheduleWorkflowInputs from './ScheduleWorkflowInputs.vue'
-import { effectiveInputs, fieldError, workflowFields, type InputValues } from './scheduleInputs'
-import { useScheduleWorkflow } from './useScheduleWorkflow'
 
 const props = defineProps<{ projectId: number; job: ScheduledJob | null }>()
 const emit = defineEmits<{ close: []; saved: [] }>()
@@ -21,6 +17,8 @@ const job = props.job
 const kind = job?.kind ?? `automation-${crypto.randomUUID()}`
 const name = ref(job?.name ?? '')
 const templateKey = ref(job?.template_key ?? '')
+const mode = ref(job?.template_key ? 'workflow' : 'prompt')
+const goal = ref(job?.goal ?? '')
 const cron = ref(job?.cron_expr ?? '0 9 * * *')
 const timezone = ref(job?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone)
 const savedTarget = ref(job?.execution_json?.project_dir ?? null)
@@ -32,72 +30,16 @@ function reconcileTarget() {
   confirmTargetChange.value = false
 }
 const enabled = ref(job?.enabled ?? false)
-const inputOverrides = ref<InputValues>({ ...job?.inputs_json })
-const { state: workflowState, refresh: refreshWorkflow } = useScheduleWorkflow(toRef(props, 'projectId'), templateKey, () => !scopeChanged.value)
-const inputs = computed(() => effectiveInputs(workflowState.value.workflow, inputOverrides.value))
-function updateInput(key: string, value: unknown) { inputOverrides.value = { ...inputOverrides.value, [key]: value } }
+// Saved inputs are context for the main agent, independent of workflow schemas.
+const inputs = job?.inputs_json ?? null
 const submitted = ref(false)
-const pendingTemplate = ref<string | null>(null)
-function changeWorkflow(value: string | number | null) {
-  const next = String(value ?? '')
-  if (next === templateKey.value) return
-  if (Object.keys(inputs.value).length) pendingTemplate.value = next
-  else selectWorkflow(next)
+function changeMode(value: string | number) {
+  mode.value = String(value)
+  if (mode.value === 'prompt') templateKey.value = ''
 }
-function selectWorkflow(next: string) {
-  templateKey.value = next
-  inputOverrides.value = {}
-  submitted.value = false
-  error.value = null
-  pendingTemplate.value = null
-  void refreshWorkflow()
-}
-const existingOptions = { ...job?.execution_json }
-delete existingOptions.project_dir
-delete existingOptions.agents
-delete existingOptions.step_agent_assignments
-type AgentBindings = NonNullable<NonNullable<ScheduleConfiguration['execution_json']>['agents']>
-const savedAgents = ref<AgentBindings>({ ...job?.execution_json?.agents })
-const legacyRoles = ['delivery_agent', 'review_agent'] as const
-const assignments = ref({ ...job?.execution_json?.step_agent_assignments })
-const selectors = ref<InstanceType<typeof ScheduleAgentSelectors> | null>(null)
-const executionOptions = ref(existingOptions)
+const executionOptions = { ...job?.execution_json }
+delete executionOptions.project_dir
 const error = ref<string | null>(null)
-const agents = computed<AgentBindings>({
-  get() {
-    const effective = { ...savedAgents.value }
-    const options = executionOptions.value
-    // Match schedule admission: a nonempty legacy role replaces its mapped choice.
-    for (const role of legacyRoles) {
-      const legacy = options[role] as AgentBindings[string] | null | undefined
-      if (legacy && Object.keys(legacy).length) effective[role] = legacy
-    }
-    return effective
-  },
-  set(next) {
-    const options = { ...executionOptions.value }
-    const current = agents.value
-    const updated = { ...savedAgents.value }
-    let changedLegacy = false
-    for (const role of new Set([...Object.keys(current), ...Object.keys(next)])) {
-      if (JSON.stringify(current[role]) === JSON.stringify(next[role])) continue
-      if (next[role]) updated[role] = next[role]; else delete updated[role]
-      const legacyRole = legacyRoles.find(key => key === role)
-      if (legacyRole && legacyRole in options) {
-        delete options[legacyRole]
-        changedLegacy = true
-      }
-    }
-    savedAgents.value = updated
-    if (changedLegacy) executionOptions.value = options
-  },
-})
-const hostKey = computed(() => executionOptions.value.host_key ?? 'codex')
-const executionSummary = computed(() => [
-  `Agent app: ${hostKey.value}`,
-  ...Object.entries(agents.value).map(([role, agent]) => `${role}: ${[['App', agent.host_key], ['Model', agent.model], ['Effort', agent.model_reasoning_effort], ['Provider', agent.provider], ['Profile', agent.profile]].filter(([, value]) => value != null).map(([label, value]) => `${label} ${value}`).join(' · ') || 'project defaults'}`),
-  ...(executionOptions.value.mcp_config_ref ? [`MCP configuration: ${executionOptions.value.mcp_config_ref.path} (${executionOptions.value.mcp_config_ref.sha256})`] : []),
-])
 const workflows = ref<SchemaWorkflowTemplateListOut['templates']>([])
 const workflowError = ref<string | null>(null)
 const workflowOptions = computed(() => {
@@ -105,13 +47,24 @@ const workflowOptions = computed(() => {
   if (templateKey.value && !options.some(item => item.value === templateKey.value)) options.push({ value: templateKey.value, label: templateKey.value })
   return options
 })
+const workflowsLoading = ref(false)
 let disposed = false
 onBeforeUnmount(() => { disposed = true })
-void apiFetch<SchemaWorkflowTemplateListOut>(`/api/v1/projects/${editorProjectId}/workflow-templates`)
-  .then(result => { if (!disposed && !scopeChanged.value) workflows.value = result.templates ?? [] })
-  .catch(cause => { if (!disposed && !scopeChanged.value) workflowError.value = formatApiError(cause) })
+async function refreshWorkflows() {
+  workflowsLoading.value = true
+  workflowError.value = null
+  try {
+    const result = await apiFetch<SchemaWorkflowTemplateListOut>(`/api/v1/projects/${editorProjectId}/workflow-templates`)
+    if (!disposed && !scopeChanged.value) workflows.value = result.templates ?? []
+  } catch (cause) {
+    if (!disposed && !scopeChanged.value) workflowError.value = formatApiError(cause)
+  } finally { if (!disposed) workflowsLoading.value = false }
+}
+void refreshWorkflows()
+const goalError = computed(() => submitted.value && enabled.value && !goal.value.trim() ? 'Enter a goal before enabling this automation.' : undefined)
+const templateError = computed(() => submitted.value && mode.value === 'workflow' && !templateKey.value ? 'Choose a workflow or switch to Prompt.' : undefined)
 
-const draftIdentity = () => JSON.stringify([name.value, templateKey.value, cron.value, timezone.value, enabled.value, savedTarget.value, inputOverrides.value, savedAgents.value, assignments.value, executionOptions.value])
+const draftIdentity = () => JSON.stringify([name.value, mode.value, templateKey.value, goal.value, cron.value, timezone.value, enabled.value, savedTarget.value])
 const baseline = ref(draftIdentity())
 const dirty = computed(() => draftIdentity() !== baseline.value)
 const discardAction = ref<(() => void) | null>(null)
@@ -150,26 +103,18 @@ async function save(): Promise<void> {
   submitted.value = true
   try {
     if (scopeChanged.value || disposed) throw new Error('Project changed. Reopen this automation from the current project.')
-    if (folderLoading.value && !savedTarget.value) throw new Error('Wait for the project folder to load.')
+    if (enabled.value && folderLoading.value) throw new Error('Wait for the project folder to load.')
     if (enabled.value && !projectDir.value) throw new Error(folderIssue.value || 'Set the project folder once in project setup before enabling this automation.')
-    if (workflowState.value.loading) throw new Error('Wait for the workflow to load.')
-    if (workflowState.value.error) throw new Error(workflowState.value.error)
-    if (enabled.value && !templateKey.value) throw new Error('Choose a workflow before enabling this automation.')
-    const invalid = workflowState.value.workflow && workflowFields(workflowState.value.workflow).some(field => fieldError(field, inputs.value[field.key], enabled.value))
-    if (invalid) return
-    const options = executionOptions.value
-    const selectionError = selectors.value?.validate()
-    if (selectionError) throw new Error(selectionError)
+    if (goalError.value || templateError.value) return
     const configuration: ScheduleConfiguration = {
       kind,
       name: name.value.trim() || null,
       template_key: templateKey.value || null,
+      goal: goal.value.trim() || null,
       cron_expr: cron.value.trim(), timezone: timezone.value.trim(), enabled: enabled.value,
-      inputs_json: inputs.value,
-      execution_json: projectDir.value.trim() || Object.keys(options).length || Object.keys(savedAgents.value).length || Object.keys(assignments.value).length ? {
-        ...options, project_dir: projectDir.value.trim(),
-        ...(Object.keys(savedAgents.value).length ? { agents: savedAgents.value } : {}),
-        ...(Object.keys(assignments.value).length ? { step_agent_assignments: assignments.value } : {}),
+      inputs_json: inputs,
+      execution_json: savedTarget.value || Object.keys(executionOptions).length ? {
+        ...executionOptions, ...(savedTarget.value ? { project_dir: savedTarget.value } : {}),
       } : null,
     }
     await store.save(editorProjectId, configuration)
@@ -215,17 +160,54 @@ async function save(): Promise<void> {
           :disabled="store.saving"
         />
       </UiFormField>
+      <UiRadioGroup
+        :model-value="mode"
+        name="automation-mode"
+        aria-label="Automation type"
+        orientation="horizontal"
+        :options="[{ value: 'workflow', label: 'Workflow' }, { value: 'prompt', label: 'Prompt' }]"
+        :disabled="store.saving"
+        @update:model-value="changeMode"
+      />
       <UiFormField
+        v-if="mode === 'workflow'"
         label="Workflow"
-        :error="workflowError ?? undefined"
+        :error="templateError"
       >
         <UiSelect
-          :model-value="templateKey"
+          v-model="templateKey"
           :options="workflowOptions"
           placeholder="Choose a workflow"
           searchable
+          :disabled="store.saving || workflowsLoading"
+        />
+        <UiLoadingState
+          v-if="workflowsLoading"
+          label="Loading workflows…"
+        />
+        <UiCallout
+          v-else-if="workflowError"
+          tone="warning"
+          title="Workflows unavailable"
+        >
+          {{ workflowError }}
+          <UiButton
+            :disabled="store.saving"
+            @click="refreshWorkflows"
+          >
+            Retry workflows
+          </UiButton>
+        </UiCallout>
+      </UiFormField>
+      <UiFormField
+        label="Goal / instructions"
+        :error="goalError"
+        help="Describe what the project agent should accomplish."
+      >
+        <UiTextarea
+          v-model="goal"
+          :rows="5"
           :disabled="store.saving"
-          @update:model-value="changeWorkflow"
         />
       </UiFormField>
       <div class="grid grid-cols-2 gap-4">
@@ -263,13 +245,20 @@ async function save(): Promise<void> {
         <UiButton @click="refreshFolder">
           Retry project folder
         </UiButton>
+        <RouterLink
+          to="/setup"
+          class="focus-ring rounded-sm text-accent-fg"
+        >
+          Open setup
+        </RouterLink>
+        Ask your agent to select this project's existing workspace binding.
       </UiCallout>
       <UiCallout
         v-else-if="targetMismatch"
         tone="warning"
         title="Automation uses a different folder"
       >
-        This automation keeps its saved folder, {{ savedTarget }}. The configured project folder is {{ configuredDir }}. Other edits keep the saved folder.
+        Confirm the selected project's folder before enabling this automation. Other edits keep its saved context.
         <UiButton
           :disabled="store.saving"
           @click="confirmTargetChange = true"
@@ -277,69 +266,13 @@ async function save(): Promise<void> {
           Use project folder
         </UiButton>
       </UiCallout>
-      <p
-        v-if="projectDir"
-        class="text-sm text-fg-muted break-all"
-      >
-        Project folder: {{ projectDir }}
-      </p>
-      <UiLoadingState
-        v-if="workflowState.loading"
-        label="Loading workflow fields…"
-      />
-      <UiCallout
-        v-else-if="workflowState.error"
-        tone="warning"
-        title="Workflow unavailable"
-      >
-        {{ workflowState.error }}
-        <UiButton @click="refreshWorkflow">
-          Retry workflow
-        </UiButton>
-      </UiCallout>
-      <ScheduleWorkflowInputs
-        v-else-if="workflowState.workflow"
-        :model-value="inputs"
-        :workflow="workflowState.workflow"
-        :enabling="enabled"
-        :submitted="submitted"
-        :disabled="store.saving"
-        @change="updateInput"
-      />
-      <ScheduleAgentSelectors
-        ref="selectors"
-        v-model:agents="agents"
-        v-model:assignments="assignments"
-        :project-id="projectId"
-        :project-dir="projectDir.trim()"
-        :template-key="templateKey"
-        :host-key="hostKey"
-        :workflow-state="workflowState"
-        :disabled="store.saving"
-      />
-      <details v-if="Object.keys(executionOptions).length || Object.keys(agents).length">
-        <summary class="focus-ring cursor-pointer rounded-sm text-sm text-fg-muted">
-          Execution options
-        </summary>
-        <ul class="mt-3 space-y-1 text-sm text-fg-muted break-all">
-          <li
-            v-for="line in executionSummary"
-            :key="line"
-          >
-            {{ line }}
-          </li>
-        </ul>
-        <p class="mt-2 text-xs text-fg-muted">
-          Saved execution settings are preserved. Use project setup to change advanced choices.
-        </p>
-      </details>
       <UiCheckbox
         v-model="enabled"
         label="Enabled"
         :disabled="store.saving"
       />
       <p class="text-xs text-fg-muted">
-        Disabled drafts stay saved. Enabling checks workflow inputs and execution setup. Existing approvals still apply.
+        Uses the selected project's context. Disabled drafts stay saved. Existing approvals still apply.
       </p>
     </form>
     <template #footer>
@@ -355,7 +288,7 @@ async function save(): Promise<void> {
         form="schedule-editor"
         variant="primary"
         :loading="store.saving"
-        :disabled="scopeChanged || (folderLoading && !savedTarget)"
+        :disabled="scopeChanged"
       >
         Save automation
       </UiButton>
@@ -364,18 +297,10 @@ async function save(): Promise<void> {
   <UiConfirmDialog
     :model-value="confirmTargetChange && !scopeChanged"
     title="Use the configured project folder?"
-    :description="`Change this automation from ${savedTarget} to ${configuredDir}. Its saved agent selections will be checked in that folder when you save.`"
+    description="Use the selected project's folder for future runs when you save. Existing runs keep their original context."
     confirm-label="Use project folder"
     @confirm="reconcileTarget"
     @update:model-value="confirmTargetChange = $event"
-  />
-  <UiConfirmDialog
-    :model-value="pendingTemplate !== null && !scopeChanged"
-    title="Change workflow?"
-    description="Saved and edited workflow input values will be cleared. Agent choices will be checked against the selected workflow."
-    confirm-label="Change workflow"
-    @confirm="selectWorkflow(pendingTemplate ?? '')"
-    @update:model-value="!$event && (pendingTemplate = null)"
   />
   <UiConfirmDialog
     :model-value="!!discardAction"

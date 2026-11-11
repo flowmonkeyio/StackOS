@@ -110,22 +110,27 @@ header: labels stay above fixed number/canvas columns in the same shared rendere
 This changes arrangement only; reporting intervals, scope and chart ownership
 remain unchanged.
 
-Project Automations reuses this inline compact renderer in its Runs table.
+Project Automations reuses this inline compact renderer for historical task runs.
 `SchedulesTab` owns exactly two shared underline tabs, Automations and Runs;
 `ScheduleEditor` uses the existing dialog/form primitives for inert drafts and
 validated activation through `schedule.set/toggle/remove`. Removing a schedule
-preserves existing runs. One effective workflow read supplies named input fields
-and agent roles. `ScheduleWorkflowInputs` uses the existing form primitives for
-scalar/options inputs and bounded declared properties/lists (three nested levels,
-30 properties per object, 100 displayed list items). Opaque values and unknown
-saved keys stay intact; missing required setup permits a disabled draft and blocks
-enabling. Execution settings are a readable summary with project-agent selectors.
-Workflow changes and leaving an edited form require discard confirmation.
+preserves existing runs. The editor offers Workflow / Prompt, a workflow selector
+only in Workflow mode, one Goal / instructions textarea, schedule/timezone and
+Enabled. Switching to Prompt clears only the workflow reference; goal and saved
+input context remain. Saved input context and native settings survive unrelated
+edits without schema fields or role selectors. The selected project supplies the
+folder; a missing-folder setup link and explicit legacy-folder reconciliation
+remain actionable without displaying directories. Incomplete disabled drafts
+stay saveable. Leaving an edited form requires discard confirmation.
 `ScheduledRuns` reads the paginated `schedule.runs`
-projection and links its actual `task_key` to the existing Work graph. The
-schedules store patches canonical task usage through `usageUpdates`, including
-updates received during pending history reads; it never sums receipts or polls
-rows. Table geometry is fixed across empty, measured, unknown and retained usage.
+request-first projection, displaying actual request state, result, duration and
+native session identity. Native usage is measured main-thread Input (including
+cache), Cache and Output; absent counters show Not reported. Only actual
+`task_key` values link to the Work graph, and only actual plans offer run actions.
+The schedules store patches canonical historical task usage through
+`usageUpdates`, including updates received during pending history reads, while
+keeping native main-thread evidence separate from linked task totals. It never
+sums receipts or polls rows.
 
 ## Shipped — app-level primitives (`ui/src/components/`)
 
