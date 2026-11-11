@@ -2398,10 +2398,13 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
             if table == "tracker_revisions":
                 # The Board data migration appends its own receipt, retaining
                 # every historical revision and frozen delivery record intact.
-                assert conn.execute(
-                    "SELECT * FROM tracker_revisions "
-                    "WHERE change_kind != 'board-arrivals-normalization'"
-                ).fetchall() == rows
+                assert (
+                    conn.execute(
+                        "SELECT * FROM tracker_revisions "
+                        "WHERE change_kind != 'board-arrivals-normalization'"
+                    ).fetchall()
+                    == rows
+                )
                 assert conn.execute(
                     "SELECT COUNT(*) FROM tracker_revisions "
                     "WHERE change_kind = 'board-arrivals-normalization'"
