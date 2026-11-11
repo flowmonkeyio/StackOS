@@ -308,7 +308,12 @@ class FinanceConsole:
                 _error("publication_metadata_corrupt")
             stage = helpers().workspace.checked_path(self.config_dir / "staging" / token)
             if stage.exists():
-                with self._lock(stage / ".writer.lock", retiring=True):
+                # Cleanup already fenced this project and holds its parent writer
+                # locks. An earlier partial removal may have unlinked this lock;
+                # recreate it through the same no-follow/exclusive lock owner.
+                if project.cleanup_json is None:
+                    _deny("cleanup_not_admitted")
+                with self._lock(stage / ".writer.lock", create=True, retiring=True):
                     remove_managed(stage)
         if self.config_path.exists():
             with self._lock(self.config_dir / ".access.lock", create=True):

@@ -85,6 +85,8 @@ async def test_identity_validation_precedes_mutation_and_missing_never_resolves_
 
 @pytest.mark.asyncio
 async def test_owned_files_removed_shared_and_external_bytes_preserved(fixture, tmp_path):
+    from stackos.actions.media_artifacts import register_generated_media_artifacts
+
     s, settings, target, other = fixture
     service = ProjectCleanupService(s, settings)
     roots = service._roots(target.id)
@@ -95,9 +97,21 @@ async def test_owned_files_removed_shared_and_external_bytes_preserved(fixture, 
     media = put(settings.generated_assets_dir / "provider" / "owned.png")
     shared = put(settings.generated_assets_dir / "provider" / "shared.png")
     arbitrary = put(settings.generated_assets_dir / "provider" / "unproven.png")
+    request = SimpleNamespace(
+        session=s,
+        asset_dir=settings.generated_assets_dir,
+        project_id=target.id,
+        operation="fixture",
+        action_ref="fixture",
+    )
+    register_generated_media_artifacts(
+        request,
+        {"data": [{"url": "/generated-assets/provider/" + p.name} for p in (media, shared)]},
+        kind="image",
+        provider_key="aignc",
+        source="aignc-action",
+    )
     for pid, path, provenance in (
-        (target.id, media, {"source": "aignc-action"}),
-        (target.id, shared, {"source": "aignc-action"}),
         (other.id, shared, None),
         (target.id, arbitrary, None),
     ):

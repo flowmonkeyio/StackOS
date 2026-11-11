@@ -2171,12 +2171,16 @@ async def test_live_navigation_uses_normal_action_audit_without_storing_message_
 async def test_native_download_registers_artifact_without_exposing_session_path(
     session: Session, project_id: int, tmp_path: Path
 ) -> None:
+    from stackos.config import Settings
+    from stackos.project_cleanup import ProjectCleanupService
+
+    settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
+    settings.ensure_dirs()
     account_ref = _account(session, project_id)
     files = tmp_path / "private-account-files"
     files.mkdir()
     (files / "test.txt").write_text("downloaded content")
-    assets = tmp_path / "generated-assets"
-    assets.mkdir()
+    assets = settings.generated_assets_dir
     resolved = await AuthRepository(session).resolve_for_execution(
         project_id=project_id, provider_key="telegram", credential_ref=account_ref, operation="test"
     )
@@ -2206,6 +2210,19 @@ async def test_native_download_registers_artifact_without_exposing_session_path(
         assets / output["artifact_ref"].removeprefix("/generated-assets/")
     ).read_text() == "downloaded content"
     assert str(files) not in str(output)
+    foreign = assets / "telegram" / "999999" / "keep.txt"
+    foreign.parent.mkdir(parents=True)
+    foreign.write_text("other project")
+    target = ProjectRepository(session).get(project_id)
+    cleanup = await ProjectCleanupService(session, settings).delete(
+        project_id,
+        confirmation={"permanent": True, "project_id": project_id, "project_slug": target.slug},
+    )
+    assert cleanup.status == "deleted"
+    assert not (assets / "telegram" / str(project_id)).exists()
+    assert (files / "test.txt").read_text() == "downloaded content"  # Shared Account custody.
+    assert foreign.read_text() == "other project"
+    assert session.exec(select(Credential).where(Credential.credential_ref == account_ref)).first()
 
 
 @pytest.mark.asyncio

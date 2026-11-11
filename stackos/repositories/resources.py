@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import stat
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from jsonschema import Draft202012Validator
@@ -521,6 +523,42 @@ class ArtifactRepository:
     def __init__(self, session: Session) -> None:
         self._s = session
 
+    def create_generated_file(
+        self, *, asset_root: Path, path: Path, project_id: int, **artifact: Any
+    ) -> Envelope[ArtifactOut]:
+        """Producer-only custody for one regular file, never inferred from provenance.
+
+        Public artifact create/update keep their existing metadata-only contract.
+        A custom output root is recorded as such; cleanup never treats it as the
+        daemon's managed root. This record is immutable through artifact tools.
+        """
+        root = asset_root.resolve()
+        if path.is_symlink() or path.resolve() != path.absolute():
+            raise ValidationError("generated file must not use filesystem aliases")
+        relative = path.relative_to(root)
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise ValidationError("generated artifact must identify one regular file")
+        if artifact.get("uri") != "/generated-assets/" + relative.as_posix():
+            raise ValidationError("generated artifact URI must identify its actual file")
+        parts = relative.parts
+        if parts[0] in {"action-outputs", "imap-transfers", "stripe-invoice-transfers"} and (
+            len(parts) < 3 or parts[1] != f"project-{project_id}"
+        ):
+            raise ValidationError("generated file belongs to another project root")
+        if parts[0] == "telegram" and (len(parts) < 3 or parts[1] != str(project_id)):
+            raise ValidationError("generated Telegram file belongs to another project root")
+        return self._create(
+            project_id=project_id,
+            _managed_file_json={
+                "root": str(root),
+                "path": relative.as_posix(),
+                "device": info.st_dev,
+                "inode": info.st_ino,
+            },
+            **artifact,
+        )
+
     def create(
         self,
         *,
@@ -535,6 +573,36 @@ class ArtifactRepository:
         size_bytes: int | None = None,
         metadata_json: dict[str, Any] | None = None,
         provenance_json: dict[str, Any] | None = None,
+    ) -> Envelope[ArtifactOut]:
+        return self._create(
+            kind=kind,
+            uri=uri,
+            project_id=project_id,
+            plugin_slug=plugin_slug,
+            resource_record_id=resource_record_id,
+            status=status,
+            name=name,
+            mime_type=mime_type,
+            size_bytes=size_bytes,
+            metadata_json=metadata_json,
+            provenance_json=provenance_json,
+        )
+
+    def _create(
+        self,
+        *,
+        kind: str,
+        uri: str,
+        project_id: int | None = None,
+        plugin_slug: str | None = None,
+        resource_record_id: int | None = None,
+        status: str = "draft",
+        name: str | None = None,
+        mime_type: str | None = None,
+        size_bytes: int | None = None,
+        metadata_json: dict[str, Any] | None = None,
+        provenance_json: dict[str, Any] | None = None,
+        _managed_file_json: dict[str, Any] | None = None,
     ) -> Envelope[ArtifactOut]:
         self._sync_catalog()
         if not kind:
@@ -570,6 +638,7 @@ class ArtifactRepository:
             provenance_json=(
                 redact_secrets(provenance_json) if provenance_json is not None else None
             ),
+            managed_file_json=_managed_file_json,
         )
         self._s.add(row)
         self._s.commit()

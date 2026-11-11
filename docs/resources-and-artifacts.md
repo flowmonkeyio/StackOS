@@ -80,6 +80,12 @@ Artifact rows live in `artifacts`:
 - `superseded_by_artifact_id`: optional replacement artifact pointer.
 - `name`, `mime_type`, `size_bytes`: optional display/storage metadata.
 - `metadata_json`, `provenance_json`: sanitized metadata.
+- `managed_file_json`: private producer custody for one actual generated file;
+  absent from public artifact inputs/outputs and immutable through artifact tools.
+  It records the producer's root/path and filesystem identity for safe project
+  cleanup. Public provenance is descriptive metadata and cannot authorize file
+  deletion. Custom output roots remain external; unverified legacy references
+  are retained as incomplete-cleanup evidence rather than guessed ownership.
 - `created_at`, `updated_at`: lifecycle timestamps.
 
 MCP read tools:

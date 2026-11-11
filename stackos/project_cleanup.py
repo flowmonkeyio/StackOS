@@ -261,6 +261,7 @@ class ProjectCleanupService:
             data / "projects" / str(project_id),
             data / "browser-profiles" / BROWSER_PROFILE_DIRNAME / f"project-{project_id}",
             data / "browser-state" / "gstack" / f"project-{project_id}",
+            assets / "telegram" / str(project_id),
             *[
                 assets / kind / f"project-{project_id}"
                 for kind in ("action-outputs", "imap-transfers", "stripe-invoice-transfers")
@@ -298,6 +299,16 @@ class ProjectCleanupService:
             return None
         return path if path.is_absolute() and path.is_relative_to(self.settings.data_dir) else None
 
+    def _managed_path(self, custody: dict[str, Any] | None) -> Path | None:
+        if custody is None or custody.get("root") != str(
+            self.settings.generated_assets_dir.resolve()
+        ):
+            return None  # User-selected external output roots are not managed storage.
+        relative = Path(custody["path"])
+        if relative.is_absolute() or ".." in relative.parts or not relative.parts:
+            raise ValueError("invalid producer file custody")
+        return self.settings.generated_assets_dir / relative
+
     def _clean_files(self, project_id: int) -> None:
         from stackos.plugins.builtin_finance import FinanceConsole
 
@@ -308,6 +319,12 @@ class ProjectCleanupService:
             if a.project_id != project_id
             if (path := self._reference_path(a.uri)) is not None
         }
+        protected.update(
+            path
+            for a in artifacts
+            if a.project_id != project_id
+            if (path := self._managed_path(a.managed_file_json)) is not None
+        )
         for pin in self.session.exec(
             select(DurableActionArtifact)
             .join(DurableActionJob)
@@ -322,28 +339,49 @@ class ProjectCleanupService:
             _check_ancestors(path, self.settings.data_dir)
             _remove_owned(path, protected, self.settings.data_dir)
 
-        # Finance owns its publication/source metadata outside data/projects.
-        # Retire it before the source identity is removed from the project tree.
-        FinanceConsole(self.session, self.settings).cleanup_sources(
-            self._project(project_id), remove_managed
-        )
         paths = self._roots(project_id)
+        files = []
         for artifact in artifacts:
             if artifact.project_id != project_id:
                 continue
-            # URI alone never proves ownership of a shared generated directory.
-            source = (artifact.provenance_json or {}).get("source")
-            if source in {
+            custody = artifact.managed_file_json
+            if custody is not None:
+                path = self._managed_path(custody)
+                if path is not None:
+                    files.append((path, (custody["device"], custody["inode"])))
+            elif (artifact.provenance_json or {}).get("source") in {
                 "aignc-action",
                 "alibaba-wan-action",
                 "google-veo-action",
                 "byteplus-seedance-action",
                 "kling-video-action",
                 "xai-imagine-action",
+                "openai-images-action",
+                "google-gemini-image-action",
+                "ideogram-action",
+                "byteplus-seedream-action",
+                "reve-action",
+                "telegram.file.download",
+                "hubspot-export-action",
             }:
+                # Old provenance is editable, so it cannot authorize removal.
+                # Keep ambiguous legacy source rows for recovery rather than
+                # deleting bytes or claiming a completed cleanup with files left.
                 path = self._asset_path(artifact.uri)
-                if path is not None:
-                    paths.append(path)
+                if (
+                    path is not None
+                    and (path.exists() or path.is_symlink())
+                    and not any(path.is_relative_to(root) for root in paths)
+                ):
+                    raise ValueError("generated file has no trusted producer custody")
+        # Finance owns its publication/source metadata outside data/projects.
+        # Retire it before the source identity is removed from the project tree.
+        FinanceConsole(self.session, self.settings).cleanup_sources(
+            self._project(project_id), remove_managed
+        )
+        for path, identity in files:
+            _check_ancestors(path, self.settings.data_dir)
+            _remove_owned(path, protected, self.settings.data_dir, identity=identity)
         for path in paths:
             _check_ancestors(path, self.settings.data_dir)
             _remove_owned(path, protected, self.settings.data_dir)
@@ -374,7 +412,9 @@ def _check_ancestors(path: Path, root: Path) -> None:
             raise ValueError("cleanup ancestor is a symlink")
 
 
-def _remove_owned(path: Path, protected: set[Path], root: Path) -> None:
+def _remove_owned(
+    path: Path, protected: set[Path], root: Path, *, identity: tuple[int, int] | None = None
+) -> None:
     """Walk by held descriptors, never following a replaced directory or parent."""
     relative = path.relative_to(root)
     with ExitStack() as opened:
@@ -386,16 +426,27 @@ def _remove_owned(path: Path, protected: set[Path], root: Path) -> None:
                 opened.callback(os.close, parent)
         except FileNotFoundError:
             return
-        _remove_at(parent, relative.name, path, protected)
+        _remove_at(parent, relative.name, path, protected, identity=identity)
 
 
-def _remove_at(parent: int, name: str, path: Path, protected: set[Path]) -> None:
-    if path in protected:
+def _remove_at(
+    parent: int,
+    name: str,
+    path: Path,
+    protected: set[Path],
+    *,
+    identity: tuple[int, int] | None = None,
+) -> None:
+    if any(path.is_relative_to(shared) for shared in protected):
         return
     try:
         info = os.stat(name, dir_fd=parent, follow_symlinks=False)
     except FileNotFoundError:
         return
+    if identity is not None and (
+        not stat.S_ISREG(info.st_mode) or (info.st_dev, info.st_ino) != identity
+    ):
+        raise ValueError("producer-owned file was replaced")
     if stat.S_ISDIR(info.st_mode):
         directory = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
         try:

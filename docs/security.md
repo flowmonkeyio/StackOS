@@ -118,14 +118,25 @@ session/OAuth/auth-event exceptions and the cascading project records. No
 deleted-project history or tombstone is retained. SQLite's project ID high-water
 mark remains intact.
 
-Only derived managed roots and registered generated media with known producer
-provenance are cleanup candidates. Shared references preserve bytes. A durable
-pin or project-template binding owned by another project blocks deletion rather
+Only derived managed roots and individual files with private producer custody
+are cleanup candidates. Editable artifact URI/provenance/metadata cannot grant
+that custody. Media, Telegram download and HubSpot export owners register the
+actual regular file, managed root and filesystem identity through the artifact
+owner; public artifact create/update cannot set that internal record. Cleanup
+does not traverse artifact-referenced directories or remove replaced files.
+Ambiguous legacy generated references retain their source rows in an incomplete
+cleanup instead of inferring ownership or reporting success with files left.
+Shared references preserve bytes, including the original private file reference
+when public metadata is later edited. A durable pin or project-template binding
+owned by another project blocks deletion rather
 than deleting that owner's dependency. Repository folders, external exports,
 shared Accounts/catalog/browser runtimes and whole-instance backup archives are
 preserved. Arbitrary artifact URIs and request paths never grant file ownership.
 Cleanup errors retain a safe error class and truthful incomplete/retry status;
 they do not claim rollback or secure erasure of historical copies.
+Finance publication cleanup may recreate a lock already removed by the same
+cleanup only after project admission is fenced and the parent writer locks are
+held. Existing busy locks, symlinks and unsafe aliases remain failures.
 
 ## Generated asset and IMAP staging boundary
 
