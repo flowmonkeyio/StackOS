@@ -42,6 +42,11 @@ are unique per provider within the owner/environment. Missing, foreign and
 ownerless legacy Accounts are unavailable to signed-in users. Signup never
 adopts local Accounts. Standalone local administration keeps its existing scope.
 
+Attachment validation errors retain the caller's `credential_ref`, `project_id`
+and requested `provider_key` with repair guidance. Missing, foreign and ownerless
+Accounts return the same not-found message and context shape; this context comes
+from the request and contains no stored Account identity or secret material.
+
 Account setup remains a direct human REST operation: an authenticated owner may
 manage their Accounts without receiving local-admin authority or run grants.
 Agent tests still require an owned project attachment and existing grants.

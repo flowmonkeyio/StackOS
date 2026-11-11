@@ -5,6 +5,7 @@ from sqlmodel import Session, select
 
 from stackos.auth import UserPrincipal
 from stackos.auth_providers import AuthRepository
+from stackos.communications.profiles import validate_communication_profile_account_bindings
 from stackos.db.models import Credential, ProjectCredential
 from stackos.repositories.base import NotFoundError
 from stackos.repositories.projects import IntegrationCredentialRepository, ProjectRepository
@@ -68,6 +69,33 @@ def test_foreign_and_legacy_accounts_are_invisible(session: Session) -> None:
     assert repo.status(project_id=None).accounts == []
     with pytest.raises(NotFoundError):
         repo.get_account(credential_ref=ref)
+
+
+def test_communication_profile_account_denial_keeps_safe_caller_context(session: Session) -> None:
+    legacy_ref = account(session, "Legacy")
+    identify(session, "user-a")
+    foreign_ref = account(session)
+    identify(session, "user-b", "another-environment")
+    wrong_environment_ref = account(session)
+    identify(session, "user-b")
+    owned_project = project(session, "caller")
+
+    for supplied_ref in ("cred_missing", foreign_ref, legacy_ref, wrong_environment_ref):
+        with pytest.raises(NotFoundError) as denied:
+            validate_communication_profile_account_bindings(
+                session,
+                project_id=owned_project,
+                profile_ref="communications/profile/caller",
+                provider_facets={"telegram": {"credential_ref": supplied_ref}},
+            )
+        assert denied.value.code == -32004
+        assert denied.value.detail == "Account not found"
+        assert denied.value.data == {
+            "project_id": owned_project,
+            "credential_ref": supplied_ref,
+            "provider_key": "telegram",
+            "next_action": "Select an existing Account or create one in Accounts setup.",
+        }
 
 
 @pytest.mark.asyncio

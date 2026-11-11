@@ -51,7 +51,20 @@ class CredentialResolutionMixin:
         ).first()
         from .access import require_account_owner
 
-        credential = require_account_owner(self._s, credential)
+        try:
+            credential = require_account_owner(self._s, credential)
+        except NotFoundError:
+            # Preserve attachment callers' repair context without exposing
+            # whether the supplied ref exists for another owner/environment.
+            raise NotFoundError(
+                "Account not found",
+                data={
+                    "project_id": project_id,
+                    "credential_ref": credential_ref,
+                    "provider_key": provider_key,
+                    "next_action": "Select an existing Account or create one in Accounts setup.",
+                },
+            ) from None
         assert credential.id is not None
         attachment = self._s.exec(
             select(ProjectCredential).where(
