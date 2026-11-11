@@ -98,6 +98,9 @@ When pending work disables every control, the dialog frame remains a
 programmatic focus target and contains Tab/Shift+Tab. The owning flow can move
 focus to the retained title when disabling the focused action; it does not
 enable close or another submission to keep keyboard focus inside.
+The top dialog also recovers focus to its frame after content disables or
+removes the active control. Tab and Shift+Tab recover into its
+enabled controls, preserving nested overlay ownership and final opener return.
 
 Use `layout="detail"` for stable reading/editing dialogs. This opt-in preset has height `min(880px, 100dvh - 48px)`, fixed header/footer regions and one flexible, vertically scrolling body with `min-height: 0`. Width still follows `size` (`lg` is 672px) and the viewport clamp. Long headings wrap to two lines with their full text available as the title; the body wraps long content and prevents horizontal overflow. The default content-sized dialog remains unchanged. A detail flow keeps one shell mounted while switching its internal content; the flow owns identity, retained reading/draft state and intentional focus, never the primitive.
 

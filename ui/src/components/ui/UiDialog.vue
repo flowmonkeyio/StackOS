@@ -55,6 +55,7 @@ const dialogRef = ref<HTMLDivElement | null>(null);
 const overlayRef = ref<HTMLDivElement | null>(null);
 const bodyRef = ref<HTMLDivElement | null>(null);
 let overlayEntry: OverlayEntry | null = null;
+let focusObserver: MutationObserver | null = null;
 
 function close() {
   emit('update:modelValue', false);
@@ -62,6 +63,8 @@ function close() {
 }
 
 function removeFromStack() {
+  focusObserver?.disconnect();
+  focusObserver = null;
   closeOverlay(overlayEntry);
   overlayEntry = null;
 }
@@ -101,9 +104,20 @@ function trapFocus(ev: KeyboardEvent) {
   if (ev.shiftKey && (document.activeElement === first || !focusables.includes(document.activeElement as HTMLElement))) {
     last.focus();
     ev.preventDefault();
-  } else if (!ev.shiftKey && document.activeElement === last) {
+  } else if (!ev.shiftKey && (document.activeElement === last || !focusables.includes(document.activeElement as HTMLElement))) {
     first.focus();
     ev.preventDefault();
+  }
+}
+
+function retainFocus() {
+  if (!props.modelValue || !isTopOverlay(overlayEntry)) return;
+  const node = dialogRef.value;
+  const active = document.activeElement;
+  // Disabling the active action can send native focus to BODY. Keep the
+  // mounted frame as a safe target without enabling pending controls.
+  if (node && (!node.contains(active) || (active instanceof HTMLElement && active.matches(':disabled')))) {
+    node.focus({ preventScroll: true });
   }
 }
 
@@ -120,6 +134,10 @@ async function onDialogOpened() {
     ?? dialogRef.value?.querySelector<HTMLElement>('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')
     ?? dialogRef.value;
   target?.focus();
+  if (dialogRef.value) {
+    focusObserver = new MutationObserver(retainFocus);
+    focusObserver.observe(dialogRef.value, { subtree: true, childList: true, attributes: true, attributeFilter: ['disabled'] });
+  }
 }
 
 function onDialogClosed() {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { DOMWrapper, mount, type VueWrapper } from '@vue/test-utils'
-import { nextTick } from 'vue'
+import { DOMWrapper, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { defineComponent, nextTick, ref } from 'vue'
 import UiConfirmDialog from './UiConfirmDialog.vue'
 
 let wrapper: VueWrapper | undefined
@@ -8,6 +8,33 @@ afterEach(() => { wrapper?.unmount(); wrapper = undefined })
 function dialog() { return new DOMWrapper(document.querySelector<HTMLElement>('[role="dialog"]')!) }
 
 describe('UiConfirmDialog', () => {
+  it('contains focus when the active confirmation action becomes disabled, including outside Tab recovery', async () => {
+    wrapper = mount(defineComponent({
+      components: { UiConfirmDialog },
+      setup: () => ({ open: ref(false), pending: ref(false) }),
+      template: '<button id="pending-opener" @click="open = true">Open</button><UiConfirmDialog v-model="open" title="Remove?" :loading="pending" @confirm="pending = true" />',
+    }), { attachTo: document.body })
+    const opener = wrapper.get<HTMLButtonElement>('#pending-opener').element
+    opener.focus(); opener.click(); await flushPromises()
+    const frame = dialog()
+    const confirm = frame.get<HTMLButtonElement>('.ui-dialog__footer button:last-child').element
+    confirm.focus(); confirm.click(); await flushPromises()
+    expect(confirm.disabled).toBe(true)
+    expect(document.activeElement).toBe(frame.element)
+    const close = frame.get('[aria-label="Close dialog"]').element
+    for (const shiftKey of [false, true]) {
+      // Native browsers can move focus to BODY when a focused action disables.
+      opener.focus()
+      const tab = new KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true })
+      window.dispatchEvent(tab)
+      expect(tab.defaultPrevented).toBe(true)
+      expect(document.activeElement).toBe(close)
+    }
+    await frame.get('[aria-label="Close dialog"]').trigger('click')
+    await flushPromises()
+    expect(document.activeElement).toBe(opener)
+  })
+
   it('places the accessible explanation and supplemental content between title and actions', async () => {
     wrapper = mount(UiConfirmDialog, {
       props: { modelValue: true, title: 'Remove automation?', description: 'Future runs stop; history is retained.', tone: 'danger', confirmLabel: 'Remove', cancelLabel: 'Keep' },
