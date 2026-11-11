@@ -3,6 +3,8 @@ import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import UiReorderList from './UiReorderList.vue'
 import UiReorderHandle from './UiReorderHandle.vue'
+import reorderSource from './UiReorderList.vue?raw'
+import boardSource from '@/views/task-tracker/TrackerBoardPanel.vue?raw'
 
 // Deliberately no task, status, store or API types: the future consumer supplies
 // its own eligibility revisions and persists the neutral neighbor intent.
@@ -19,12 +21,30 @@ const Fixture = defineComponent({
 let callbacks: Map<number, FrameRequestCallback>
 let nextFrame: number
 const wrappers: ReturnType<typeof mount>[] = []
+const styles: HTMLStyleElement[] = []
 beforeEach(() => {
   callbacks = new Map(); nextFrame = 0
   vi.stubGlobal('requestAnimationFrame', vi.fn((callback: FrameRequestCallback) => { callbacks.set(++nextFrame, callback); return nextFrame }))
   vi.stubGlobal('cancelAnimationFrame', vi.fn((id: number) => callbacks.delete(id)))
 })
-afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); vi.restoreAllMocks(); vi.unstubAllGlobals() })
+afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); styles.splice(0).forEach(style => style.remove()); vi.restoreAllMocks(); vi.unstubAllGlobals() })
+
+// JSDOM does not lay out pseudo-elements. Resolve the actual source CSS rules
+// against the live insertion target, then calculate its clipping range using
+// the real generic/Board gap and padding. This is source geometry, not browser proof.
+function markerProperty(node: HTMLElement, pseudo: 'before' | 'after', property: string, sheet: CSSStyleSheet): string {
+  let value = ''
+  for (const rule of Array.from(sheet.cssRules) as CSSStyleRule[]) {
+    if (rule.selectorText?.split(',').some(selector => selector.trim().endsWith(`::${pseudo}`)
+      && node.matches(selector.trim().replace(`::${pseudo}`, '')))) value = rule.style.getPropertyValue(property) || value
+  }
+  return value
+}
+function markerOffset(value: string, gap: number): number {
+  if (value === 'calc(var(--reorder-gap, 8px) / -2)') return -gap / 2
+  expect(value).toMatch(/^-?\d+(?:px)?$/)
+  return parseFloat(value)
+}
 function render(count = 3) {
   const wrapper = mount(Fixture, { attachTo: document.body, props: { items: entries(count) } })
   wrappers.push(wrapper)
@@ -48,6 +68,47 @@ async function tick(time: number) {
 }
 
 describe('neutral vertical list reorder', () => {
+  it.each(['generic', 'Board'] as const)('keeps %s boundary markers inside the scroll viewport without moving the items', async consumer => {
+    const style = document.createElement('style')
+    style.textContent = [reorderSource, ...(consumer === 'Board' ? [boardSource] : [])]
+      .map(source => source.match(/<style scoped>([\s\S]*?)<\/style>/)![1]).join('\n')
+    document.head.append(style); styles.push(style)
+    const { wrapper, list, transfer, lift } = render()
+    if (consumer === 'Board') list.element.classList.add('tracker-board__cards')
+    const computed = getComputedStyle(list.element)
+    const gap = parseFloat(computed.getPropertyValue('--reorder-gap')) || 8
+    const top = parseFloat(computed.paddingTop) || 0
+    const bottom = parseFloat(computed.paddingBottom) || 0
+    const height = consumer === 'Board' ? 224 : 100
+    const scrollHeight = top + 3 * height + 2 * gap + bottom
+    Object.defineProperty(list.element, 'scrollHeight', { value: scrollHeight, configurable: true })
+    const nodes = wrapper.findAll<HTMLElement>('[data-reorder-key]')
+    nodes.forEach((node, i) => vi.mocked(node.element.getBoundingClientRect).mockImplementation(() => ({
+      top: top + i * (height + gap) - list.element.scrollTop,
+      bottom: top + i * (height + gap) + height - list.element.scrollTop,
+      left: 0, right: 300, width: 300, height,
+    } as DOMRect)))
+    await lift(2)
+    await list.trigger('dragover', { dataTransfer: transfer, clientY: top })
+    const first = wrapper.get<HTMLElement>('.ui-reorder-list__before').element
+    const firstY = first.getBoundingClientRect().top + markerOffset(markerProperty(first, 'before', 'top', style.sheet!), gap)
+    const lineHeight = parseFloat(markerProperty(first, 'before', 'height', style.sheet!))
+    expect(markerProperty(first, 'before', 'position', style.sheet!)).toBe('absolute')
+    expect(firstY).toBeGreaterThanOrEqual(0)
+    expect(firstY + lineHeight).toBeLessThanOrEqual(list.element.clientHeight)
+    await list.trigger('dragover', { dataTransfer: transfer, clientY: nodes[1]!.element.getBoundingClientRect().top + 1 })
+    const middle = wrapper.get<HTMLElement>('.ui-reorder-list__before').element
+    expect(markerOffset(markerProperty(middle, 'before', 'top', style.sheet!), gap)).toBe(-gap / 2)
+    list.element.scrollTop = scrollHeight - list.element.clientHeight
+    await lift(0)
+    await list.trigger('dragover', { dataTransfer: transfer, clientY: 299 })
+    const last = wrapper.get<HTMLElement>('.ui-reorder-list__after').element
+    const lastY = last.getBoundingClientRect().bottom - markerOffset(markerProperty(last, 'after', 'bottom', style.sheet!), gap)
+    expect(lastY - lineHeight).toBeGreaterThanOrEqual(0)
+    expect(lastY).toBeLessThanOrEqual(list.element.clientHeight)
+    expect(nodes.map(node => node.element.getBoundingClientRect().height)).toEqual([height, height, height])
+    expect(list.element.scrollHeight).toBe(scrollHeight)
+  })
   it('lifts only through the shared handle, retains source dimensions and emits one neutral move', async () => {
     const { wrapper, list, transfer, lift } = render()
     const bodyDrag = new Event('dragstart', { bubbles: true, cancelable: true })

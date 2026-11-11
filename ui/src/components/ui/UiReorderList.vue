@@ -233,12 +233,12 @@ onBeforeUnmount(() => { finish(false); focusKey = null })
     @dragstart="guardStart"
   >
     <div
-      v-for="value in items"
+      v-for="(value, index) in items"
       :key="itemKey(value)"
       :data-reorder-key="itemKey(value)"
       tabindex="-1"
       class="ui-reorder-list__item focus-ring"
-      :class="{ 'ui-reorder-list__placeholder': gesture?.key === itemKey(value), 'ui-reorder-list__before': insertion?.key === itemKey(value) && insertion.placement === 'before', 'ui-reorder-list__after': insertion?.key === itemKey(value) && insertion.placement === 'after' }"
+      :class="{ 'ui-reorder-list__first': index === 0, 'ui-reorder-list__last': index === items.length - 1, 'ui-reorder-list__placeholder': gesture?.key === itemKey(value), 'ui-reorder-list__before': insertion?.key === itemKey(value) && insertion.placement === 'before', 'ui-reorder-list__after': insertion?.key === itemKey(value) && insertion.placement === 'after' }"
       :style="gesture?.key === itemKey(value) && gesture.height ? { height: `${gesture.height}px` } : undefined"
     >
       <slot
@@ -269,5 +269,8 @@ onBeforeUnmount(() => { finish(false); focusKey = null })
 .ui-reorder-list__before::before, .ui-reorder-list__after::after { content: ''; position: absolute; z-index: 1; left: 0; right: 0; height: 2px; background: var(--color-border-focus); pointer-events: none; }
 .ui-reorder-list__before::before { top: calc(var(--reorder-gap, 8px) / -2); }
 .ui-reorder-list__after::after { bottom: calc(var(--reorder-gap, 8px) / -2); }
+/* Boundary lines stay inside the items so the scroll viewport cannot clip them. */
+.ui-reorder-list__first.ui-reorder-list__before::before { top: 0; }
+.ui-reorder-list__last.ui-reorder-list__after::after { bottom: 0; }
 .ui-reorder-list__preview { position: fixed; left: -10000px; top: 0; max-width: 280px; padding: 8px 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-fg-strong); background: var(--color-bg-surface); border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); pointer-events: none; }
 </style>
