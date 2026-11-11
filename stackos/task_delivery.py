@@ -1900,7 +1900,13 @@ def run_delivery(
                                 f"Automatic repair limit reached ({MAX_REPAIR_PASSES} passes): "
                                 f"{reason}"
                             )
-                        patch.update(status="failed", outcome=reason)
+                        if valid and workflow_step is None and decision == "blocked":
+                            reason = value["summary"].strip() or f"{phase} blocked"
+                            patch.update(
+                                status="in-progress", blocker_reason=reason, outcome=reason
+                            )
+                        else:
+                            patch.update(status="failed", outcome=reason)
                     elif accepted and phase == "review":
                         patch.update(status="complete", outcome=value["summary"])
                     if workflow_step is not None:

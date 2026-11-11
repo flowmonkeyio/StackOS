@@ -391,6 +391,24 @@ without that persisted progress, blocked/failed, malformed output and native
 failure stop the same task.
 No ready work with unfinished tickets is stopped, never reported complete.
 
+After native, session, schema and applicable candidate validation, an ordinary
+delivery or review `blocked` result keeps the ticket `in-progress`, with a safe
+summary (or a phase-specific reason for a blank summary) in `blocker_reason`
+and `outcome` and no terminal
+`completed_at`. Its receipt retains `validated_outcome=blocked`, outputs,
+candidate, followups, attempts, native sessions and consumed repair allowance;
+task delivery stops. Existing blocked counts and Work/detail views read these
+canonical ticket fields. Native, malformed-result, candidate-integrity and
+explicit `failed` outcomes retain failure behavior; exhausted ordinary repair
+allowance still stops delivery. Historical attempts are not rewritten.
+
+There is no automatic retry or blocker clearing. Main must resolve the actual
+prerequisite, explicitly clear `blocker_reason` through `tracker.updateTicket`,
+requeue the ordinary ticket as `not-started`, then explicitly hand off delivery
+again. Neither an unresolved blocker nor an `in-progress` ordinary ticket can
+launch. This resumes the saved role sessions and preserves the counted repair
+pass; an interrupted repair does not consume another pass merely on requeue.
+
 ```json
 {"status":"success","summary":"Executed checks.","outputs":"{\"report\":{\"count\":2}}","followups":[]}
 ```

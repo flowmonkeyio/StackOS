@@ -1531,7 +1531,9 @@ def test_task_mcp_route_frozen_through_rehandoff_and_role_resume(
     session.expire_all()
     for status in ("in-progress", "not-started"):
         TrackerRepository(session).update_ticket(
-            project_id=project_id, ticket_key="first", patch_json={"status": status}
+            project_id=project_id,
+            ticket_key="first",
+            patch_json={"status": status, "blocker_reason": None},
         )
     # Omission keeps the route and resumes the exact delivery session.
     submit(session, project_id, tmp_path, scheduler)
@@ -1938,7 +1940,9 @@ def test_parallel_task_jobs_stop_and_resume_independently(
         ).ticket.completion_evidence_json["automatic_delivery"]
         for status in ("in-progress", "not-started"):
             repo.update_ticket(
-                project_id=project_id, ticket_key="first", patch_json={"status": status}
+                project_id=project_id,
+                ticket_key="first",
+                patch_json={"status": status, "blocker_reason": None},
             )
         resumed = QueuedScheduler()
         receipt = submit(session, project_id, paths["deliver"], resumed)
@@ -2048,7 +2052,7 @@ def test_dirty_delivery_requeue_requires_unchanged_owned_work_and_saved_session(
     scheduler.run()
     session.expire_all()
     ticket = repo.brief(project_id=project_id, ticket_key="first").ticket
-    assert ticket.status == "failed"
+    assert ticket.status == ("in-progress" if failure == "blocked" else "failed")
     evidence = ticket.completion_evidence_json["automatic_delivery"]
     receipt = evidence["owned_work"]
     assert receipt["base_commit_sha"] == base
@@ -2088,7 +2092,9 @@ def test_dirty_delivery_requeue_requires_unchanged_owned_work_and_saved_session(
         project_id=project_id, ticket_key="first", patch_json={"status": "in-progress"}
     )
     repo.update_ticket(
-        project_id=project_id, ticket_key="first", patch_json={"status": "not-started"}
+        project_id=project_id,
+        ticket_key="first",
+        patch_json={"status": "not-started", "blocker_reason": None},
     )
     submit(session, project_id, tmp_path, scheduler)
     scheduler.run()
@@ -2151,7 +2157,9 @@ def test_fresh_dirty_noncoding_delivery_preserves_unowned_work(
     session.expire_all()
     snapshot = TrackerRepository(session).get(project_id=project_id, task_key="deliver")
     assert [ticket.status for ticket in snapshot.tickets] == (
-        ["complete", "complete"] if outcome == "success" else ["failed", "not-started"]
+        ["complete", "complete"]
+        if outcome == "success"
+        else ["in-progress" if outcome == "blocked" else "failed", "not-started"]
     )
     assert calls == (
         [(key, phase) for key in ("first", "second") for phase in ("delivery", "review")]
@@ -2245,11 +2253,15 @@ def test_interrupted_noncoding_report_resumes_without_candidate_contract(
     session.expire_all()
     repo = TrackerRepository(session)
     failed = repo.brief(project_id=project_id, ticket_key="first").ticket
-    assert failed.status == "failed"
+    assert failed.status == ("in-progress" if interruption == "blocked" else "failed")
     receipt = failed.completion_evidence_json["automatic_delivery"]["owned_work"]
     assert receipt["snapshot"]["paths"] == ["business-report.txt"]
     for status in ("in-progress", "not-started"):
-        repo.update_ticket(project_id=project_id, ticket_key="first", patch_json={"status": status})
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="first",
+            patch_json={"status": status, "blocker_reason": None},
+        )
     submit(session, project_id, tmp_path, scheduler)
     scheduler.run()
     session.expire_all()
@@ -2835,7 +2847,10 @@ def test_failure_stops_before_next_ticket(
     scheduler.run()
     session.expire_all()
     snapshot = TrackerRepository(session).get(project_id=project_id, task_key="deliver")
-    assert [ticket.status for ticket in snapshot.tickets] == ["failed", "not-started"]
+    assert [ticket.status for ticket in snapshot.tickets] == [
+        "in-progress" if failure == "blocked" else "failed",
+        "not-started",
+    ]
     assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "stopped"
     assert len(calls) == (1 if failure in {"delivery", "blocked"} else 2)
 
@@ -4022,7 +4037,7 @@ def test_feedback_reject_repair_approve_preserves_sessions_attempts_and_notes(
     assert len(snapshot.tickets) == 2 and second.dependency_keys == ["first"]
 
 
-@pytest.mark.parametrize("decision", ["approve", "blocked", "reject"])
+@pytest.mark.parametrize("decision", ["approve", "blocked", "reject", "failed"])
 def test_feedback_followup_only_blocked_and_fourth_reject(
     session, project_id, tmp_path, monkeypatch, decision
 ):
@@ -4034,25 +4049,44 @@ def test_feedback_followup_only_blocked_and_fourth_reject(
     scheduler.run()
     session.expire_all()
     snapshot = TrackerRepository(session).get(project_id=project_id, task_key="deliver")
-    assert snapshot.tickets[0].status == ("complete" if decision == "approve" else "failed")
+    assert (
+        snapshot.tickets[0].status
+        == {
+            "approve": "complete",
+            "blocked": "in-progress",
+            "reject": "failed",
+            "failed": "failed",
+        }[decision]
+    )
     assert snapshot.tasks[0].metadata_json["delivery"]["status"] == (
         "complete" if decision == "approve" else "stopped"
     )
-    assert len(calls) == {"blocked": 2, "approve": 4, "reject": 8}[decision]
+    assert len(calls) == {"blocked": 2, "approve": 4, "reject": 8, "failed": 2}[decision]
     if decision != "approve":
         assert snapshot.tickets[1].status == "not-started"
     context = snapshot.tasks[0].context_json
     assert context["operator_inputs"] == ["Keep input"] and context["other"] == "preserved"
     notes = context["followups"]
-    assert len(notes) == {"blocked": 2, "approve": 3, "reject": 5}[decision]
+    assert len(notes) == {"blocked": 2, "approve": 3, "reject": 5, "failed": 2}[decision]
     assert notes[1]["text"] == "SIDE NOTE first 2"
     assert notes[1]["source_ticket_key"] == "first"
     assert notes[1]["source_attempt"] == 1
     assert notes[1]["created_at"]
     if decision == "blocked":
-        evidence = snapshot.tickets[0].completion_evidence_json["automatic_delivery"]
+        ticket = snapshot.tickets[0]
+        assert ticket.blocker_reason == ticket.outcome == "Scoped repair"
+        assert ticket.completed_at is None
+        evidence = ticket.completion_evidence_json["automatic_delivery"]
         assert evidence["repair_count"] == 0
         assert evidence["review"]["result"]["status"] == "blocked"
+        assert evidence["review"]["validated_outcome"] == "blocked"
+    elif decision == "failed":
+        ticket = snapshot.tickets[0]
+        assert ticket.blocker_reason is None
+        assert ticket.completed_at is not None
+        evidence = ticket.completion_evidence_json["automatic_delivery"]
+        assert evidence["repair_count"] == 0
+        assert evidence["review"]["validated_outcome"] == "failed"
 
 
 @pytest.mark.parametrize("invalid_location", ["result", "followup"])
@@ -4117,7 +4151,8 @@ def test_feedback_schema_error_requeue_excludes_serialized_followups(
     assert [call["phase"] for call in calls] == ["delivery", "review", "delivery", "review"]
     session.expire_all()
     stopped = repo.get(project_id=project_id, task_key="deliver")
-    assert [ticket.status for ticket in stopped.tickets] == ["failed", "not-started"]
+    assert [ticket.status for ticket in stopped.tickets] == ["in-progress", "not-started"]
+    assert stopped.tickets[0].blocker_reason == "Required check unavailable"
     evidence = stopped.tickets[0].completion_evidence_json["automatic_delivery"]
     assert evidence["attempts"][0]["review"]["error"] == error
     assert evidence["repair_count"] == 0
@@ -4140,6 +4175,10 @@ def test_feedback_schema_error_requeue_excludes_serialized_followups(
         ("schema", "approve", 2),
         ("native", "approve", 2),
         ("native-final", "reject", 2),
+        ("missing-review-id", "blocked", 2),
+        ("shared-id", "blocked", 2),
+        ("schema", "blocked", 2),
+        ("native-final", "blocked", 2),
     ],
 )
 def test_feedback_identity_schema_and_check_failures_stop(
@@ -4163,7 +4202,9 @@ def test_feedback_identity_schema_and_check_failures_stop(
     assert evidence[phase]["validated_outcome"] is None
     assert evidence[phase]["usage"]["measured"]["total"] in {150, 230}
     if fault == "native-final":
-        assert evidence["review"]["result"]["status"] == "repair"
+        assert evidence["review"]["result"]["status"] == (
+            "blocked" if decision == "blocked" else "repair"
+        )
         assert evidence["review"]["error"] == "Required check unavailable"
         assert evidence["repair_count"] == 0
 
@@ -4290,6 +4331,120 @@ def test_pending_legacy_rejection_requeue_consumes_next_repair(
     assert len(calls) == (consumed + 1) * 2 + 4
 
 
+@pytest.mark.parametrize(
+    ("blocked_phase", "summary", "blocker"),
+    [
+        ("delivery", "Required fixture unavailable", "Required fixture unavailable"),
+        (
+            "review",
+            "Required fixture unavailable; api_key=synthetic-value",
+            "Required fixture unavailable; api_key=[redacted]",
+        ),
+        ("delivery", "", "delivery blocked"),
+        ("review", " \t ", "review blocked"),
+    ],
+)
+def test_ordinary_blocked_result_requires_explicit_resolution_and_requeue(
+    session, project_id, tmp_path, monkeypatch, blocked_phase, summary, blocker
+):
+    from copy import deepcopy
+
+    from stackos import task_delivery
+
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="deliver", title="Deliver")
+    repo.create_ticket(project_id=project_id, task_key="deliver", key="first", title="First")
+    calls = []
+
+    def launch(*args, **selection):
+        phase = json.loads(args[3])["phase"]
+        previous = phase in calls
+        assert selection.get("resume_thread_id") == (f"first-{phase}" if previous else None)
+        calls.append(phase)
+        sha = (
+            commit(tmp_path, f"candidate-{len(calls)}")
+            if phase == "delivery"
+            else git(tmp_path, "rev-parse", "HEAD")
+        )
+        blocked = phase == blocked_phase and not previous
+        return scenario_result(
+            0,
+            thread_id=f"first-{phase}",
+            result=generic_result(
+                "blocked" if blocked else "success",
+                {"commit_sha": sha, "fixture": "required"},
+                summary if blocked else "Checked",
+                [{"text": "Unrelated followup"}] if blocked else [],
+            ),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    ticket = repo.brief(project_id=project_id, ticket_key="first").ticket
+    assert ticket.status == "in-progress"
+    assert ticket.blocker_reason == ticket.outcome == blocker
+    assert ticket.completed_at is None
+    state = repo.get(project_id=project_id, task_key="deliver").tasks[0].metadata_json["delivery"]
+    assert state["status"] == "stopped" and state["reason"] == blocker
+    assert repo.status(project_id=project_id).blocked_ticket_count == 1
+    assert [t.key for t in repo.blockers(project_id=project_id).blocked] == ["first"]
+    assert repo.delivery_ready(project_id=project_id, task_key="deliver") == []
+    evidence = deepcopy(ticket.completion_evidence_json["automatic_delivery"])
+    assert evidence[blocked_phase]["validated_outcome"] == "blocked"
+    assert json.loads(evidence[blocked_phase]["result"]["outputs"])["fixture"] == "required"
+    assert evidence["repair_count"] == 0
+    assert evidence["sessions"][blocked_phase]["thread_id"] == f"first-{blocked_phase}"
+    assert "synthetic-value" not in json.dumps(evidence)
+    index = repo.get(
+        project_id=project_id, task_key="deliver", include_graph=False, task_index_only=True
+    )
+    assert index.tasks[0].ticket_summary.blocked_count == 1
+    assert index.tasks[0].ticket_summary.in_progress_count == 1
+    assert index.tasks[0].ticket_summary.terminal_count == 0
+
+    # Neither a new handoff nor requeue alone resolves the explicit blocker.
+    # Clearing the blocker alone also leaves in-progress work non-dispatchable.
+    stopped_calls = list(calls)
+    for patch in ({}, {"status": "not-started"}, {"status": "in-progress", "blocker_reason": None}):
+        if patch:
+            repo.update_ticket(project_id=project_id, ticket_key="first", patch_json=patch)
+        submit(session, project_id, tmp_path, scheduler)
+        scheduler.run()
+        session.expire_all()
+        snapshot = repo.get(project_id=project_id, task_key="deliver")
+        assert calls == stopped_calls
+        assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "stopped"
+        assert snapshot.tickets[0].completion_evidence_json["automatic_delivery"] == evidence
+        assert len(snapshot.tasks[0].context_json["followups"]) == 1
+
+    repo.update_ticket(
+        project_id=project_id, ticket_key="first", patch_json={"status": "not-started"}
+    )
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    final = repo.brief(project_id=project_id, ticket_key="first").ticket
+    assert final.status == "complete"
+    assert final.blocker_reason is None
+    assert repo.status(project_id=project_id).blocked_ticket_count == 0
+    current = final.completion_evidence_json["automatic_delivery"]
+    assert current["attempts"] == [
+        {
+            key: evidence[key]
+            for key in ("attempt", "candidate", "delivery", "review", "repair_count")
+            if key in evidence
+        }
+    ]
+    assert current["repair_count"] == 0
+    assert current["sessions"]["delivery"] == evidence["sessions"]["delivery"]
+    if blocked_phase == "review":
+        assert current["sessions"]["review"] == evidence["sessions"]["review"]
+    assert calls == [*stopped_calls, "delivery", "review"]
+
+
 @pytest.mark.parametrize("fault", ["native", "blocked", "candidate"])
 def test_failed_repair_resumes_same_counted_pass(session, project_id, tmp_path, monkeypatch, fault):
     from stackos import task_delivery
@@ -4337,7 +4492,10 @@ def test_failed_repair_resumes_same_counted_pass(session, project_id, tmp_path, 
     scheduler.run()
     session.expire_all()
     stopped = repo.get(project_id=project_id, task_key="deliver")
-    assert stopped.tickets[0].status == "failed"
+    ticket = stopped.tickets[0]
+    assert ticket.status == ("in-progress" if fault == "blocked" else "failed")
+    assert ticket.blocker_reason == ("Repair interrupted" if fault == "blocked" else None)
+    assert (ticket.completed_at is None) == (fault == "blocked")
     assert stopped.tasks[0].metadata_json["delivery"]["status"] == "stopped"
     assert calls == ["delivery", "review", "delivery"]
     evidence = stopped.tickets[0].completion_evidence_json["automatic_delivery"]
@@ -4347,7 +4505,9 @@ def test_failed_repair_resumes_same_counted_pass(session, project_id, tmp_path, 
         project_id=project_id, ticket_key="first", patch_json={"status": "in-progress"}
     )
     repo.update_ticket(
-        project_id=project_id, ticket_key="first", patch_json={"status": "not-started"}
+        project_id=project_id,
+        ticket_key="first",
+        patch_json={"status": "not-started", "blocker_reason": None},
     )
     submit(session, project_id, tmp_path, scheduler)
     scheduler.run()
@@ -4431,7 +4591,9 @@ def test_cumulative_receipt_requeue_retains_unknown_and_redaction_boundary(
         patch_json={"completion_evidence_json": evidence, "status": "in-progress"},
     )
     repo.update_ticket(
-        project_id=project_id, ticket_key="first", patch_json={"status": "not-started"}
+        project_id=project_id,
+        ticket_key="first",
+        patch_json={"status": "not-started", "blocker_reason": None},
     )
     submit(session, project_id, tmp_path, scheduler)
     scheduler.run()
