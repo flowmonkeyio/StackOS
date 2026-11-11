@@ -12,33 +12,27 @@ function source(relativePath: string): string {
 }
 
 describe('desktop screen composition contract', () => {
-  it('makes project Home a current ticket overview rather than live-agent claims', () => {
+  it('composes project Home from active work, retained Usage and connected tools', () => {
     const text = source('views/HomeConsoleView.vue')
 
-    expect(text).toContain('Tickets by status')
+    expect(text).toContain('<ActiveTaskList')
     expect(text).not.toContain('Latest action calls')
-    expect(text).toContain('Project connections')
-    expect(text).toContain('Configured workflows')
-    expect(text).toContain('Tracked work')
+    expect(text).toContain('<HomeConnectionsSection')
+    expect(text).toContain('<AgentActivitySection')
+    expect(text).not.toContain('Configured workflows')
     expect(text).not.toContain('Agents are working')
     expect(text).not.toContain('status=running')
     expect(text).not.toContain('AttentionItemRow')
   })
 
-  it('makes Portfolio a cross-project operating overview before the directory', () => {
+  it('preserves Local service before the shared active list and Usage', () => {
     const home = source('views/HomeView.vue')
-    const overview = source('views/home/HomePortfolioOverview.vue')
-    const directory = source('views/home/HomeProjectsSection.vue')
-
-    expect(home).toContain('<HomePortfolioOverview')
-    expect(overview).toContain('Tickets by status')
-    expect(overview).not.toContain('summary-aside')
-    expect(overview).toContain('Current snapshot')
-    expect(overview).not.toContain('Portfolio completion')
-    expect(overview).toContain('Project visibility')
-    expect(directory).toContain('Latest tracked work')
-    expect(directory).toContain('Ticket status')
-    expect(directory).toContain('Load more projects')
+    expect(home.indexOf('<HomeSystemStatusCard')).toBeLessThan(home.indexOf('<ActiveTaskList'))
+    expect(home.indexOf('<ActiveTaskList')).toBeLessThan(home.indexOf('<AgentActivitySection'))
+    expect(home.indexOf('<AgentActivitySection')).toBeLessThan(home.indexOf('<HomeConnectionsSection'))
+    expect(home).toContain('Project visibility')
+    expect(home).not.toContain('<HomePortfolioOverview')
+    expect(home).not.toContain('<HomeProjectsSection')
   })
 
   it('opens Work on a task Board with bounded card edits, focused map and centered detail inspection', () => {

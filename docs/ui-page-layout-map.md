@@ -21,9 +21,9 @@ not become narrower when its data or selected mode changes.
 
 | Route | Human surface | Page-shell owner | Inner layout |
 | --- | --- | --- | --- |
-| `/` | Overview | `HomeView` | full local service and host status, tickets by current status, shared Agent activity with project identity and Active/Archived/All visibility, project directory with tracked work and ticket counts |
+| `/` | Overview | `HomeView` | entire local service and host status, continuous active-task list across accessible projects, existing Agent usage with date/group and Active/Archived/All controls, Connected tools |
 | `/auth-error` | Authentication recovery | `AuthErrorView` | centered recovery content within the full shell |
-| `/projects/:id` | Project Home | `HomeConsoleView` | tickets by current status, project connections and configured workflows, shared scoped Agent activity and coverage, links to filtered Work |
+| `/projects/:id` | Project Home | `HomeConsoleView` | scoped active-task list, existing scoped Agent usage and coverage, Connected tools; task rows open the selected graph directly |
 | `/setup` | Backups | `LocalSetupView` | installation-wide backup settings and coverage |
 | `/projects/:id/schedules` | Automations | `ProjectDetailView` | shared project-detail header and schedules panel |
 | `/projects/:id/cost-budget` | Spend | `ProjectDetailView` | shared project-detail header and budget panel |
@@ -66,7 +66,7 @@ surfaces pair each activity bar with a wrapping group identity and exact count.
 Library URLs preserve `tab=saved|files`, `plugin`, `type` and
 `item=<source-kind>:<id>`. Switching projects preserves reusable filters and
 domain/workflow identity, clearing selected record/file/task/ticket/request IDs.
-Home configured-workflow links carry the exact template key. Plugin workflows
+Contextual configured-workflow links carry the exact template key. Plugin workflows
 retain their plugin slug and domain route; project/repository/user workflows
 without a plugin use the contextual `/projects/:id/workflows/:templateKey`
 detail route. This route has no catalog/list owner. The plugin catalog remains

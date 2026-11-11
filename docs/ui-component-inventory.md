@@ -157,6 +157,17 @@ exception is signed off.
 
 ## View decomposition pattern
 
+Both Home pages mount `views/home/ActiveTaskList.vue`, whose single
+`useActiveTasks` scope supplies the lifecycle projection and feed to
+`ActiveTaskRow.vue`. Continuous rows use shared lifetime usage, execution,
+priority and elapsed renderers, fixed list-wide zones and container breakpoints.
+Manual rows reserve the same geometry without automated usage; current/Last
+identity and Live retain the canonical feed semantics. Each row links directly
+to the selected task graph. Global rows include canonical project names;
+project rows omit redundant names. `HomeConnectionsSection.vue` retains the
+existing account-row presentation after Usage and uses the existing scoped
+account owners; it does not probe providers.
+
 Both Home pages share `views/home/AgentActivitySection.vue`: Input / Cache /
 Output headlines, date controls, daily chart with input detail, and an accessible
 Agent / Model / Agent+model `DataTable`. `useAgentStats.ts` owns one dated,
@@ -220,9 +231,11 @@ retain the same column widths in browsers with classic scrollbars.
 Home and Overview receive usage updates through the shared `usageUpdates`
 SSE transport. `useAgentStats` owns statistics requests, date/group/scope filters
 and stale-response protections, including manual and filter refreshes. Their
-30-second page polls retain ticket counts and, on project Home, overview data;
-they do not refresh usage. Work consumers retain lifetime task/ticket projections,
-independent of these Home date filters.
+30-second project Home polling retains overview metadata and accounts; it does
+not refresh usage. The removed ticket/portfolio summaries no longer poll.
+Global Active/Archived/All visibility remains an aggregate Usage control beside
+the date controls. Active-task membership and lifetime figures do not depend on
+these filters. Work consumers retain the same lifetime task/ticket projections.
 
 Work reuses the compact `AgentUsageSummary` on Board cards, the graph task
 header, individual ticket nodes, task details, and `TrackerTicketDetailContent`
