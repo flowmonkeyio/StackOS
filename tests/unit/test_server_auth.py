@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import time
+from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
 import httpx
@@ -47,7 +48,13 @@ def online(client: TestClient, settings: Settings, monkeypatch: pytest.MonkeyPat
         assert request.headers["apikey"] == "test-anon"
         state["calls"].append((request.method, request.url.path, request.url.query))
         if state["error"]:
-            return httpx.Response(state["error"], json={"message": "provider-secret-error"})
+            return httpx.Response(
+                state["error"],
+                json={
+                    "error_code": state.get("error_code", "validation_failed"),
+                    "message": "provider-secret-error",
+                },
+            )
         if request.url.path.endswith("/user"):
             return httpx.Response(
                 200,
@@ -239,14 +246,14 @@ def test_recovery_callback_pending_invalid_retry_and_reset(online):
     )
     callback = "/api/v1/auth/callback?token_hash=test-hash&type=recovery"
     before = len(state["calls"])
-    response = client.get(callback)
-    assert response.status_code == 200 and len(state["calls"]) == before
+    response = client.get(callback, follow_redirects=False)
+    assert response.status_code == 303 and len(state["calls"]) == before
     assert response.headers["referrer-policy"] == "strict-origin"
     assert (
         not client.cookies
         and "frame-ancestors 'none'" in response.headers["content-security-policy"]
     )
-    state["error"] = 403
+    state["error"], state["error_code"] = 403, "otp_expired"
     response = client.post(
         "/api/v1/auth/verify", json={"token_hash": "expired", "type": "recovery"}
     )
@@ -274,6 +281,106 @@ def test_recovery_callback_pending_invalid_retry_and_reset(online):
     assert not client.cookies
     with Session(client.app.state.engine) as session:
         assert session.exec(select(UserSession)).all() == []
+
+
+def callback_query(response):
+    assert response.status_code == 303, response.text
+    location = urlsplit(response.headers["location"])
+    assert not location.scheme and not location.netloc and location.path == "/sign-in"
+    return {key: value[0] for key, value in parse_qs(location.query).items()}
+
+
+@pytest.mark.parametrize("purpose", ["signup", "recovery"])
+def test_callback_pending_uses_shared_ui_and_never_consumes_link(online, purpose):
+    client, _selected, state = online
+    response = client.get(
+        "/api/v1/auth/callback",
+        params={"token_hash": "pending-hash", "type": purpose},
+        follow_redirects=False,
+    )
+    assert callback_query(response) == {
+        "auth": "callback",
+        "purpose": purpose,
+        "outcome": "pending",
+        "token_hash": "pending-hash",
+    }
+    assert not client.cookies and state["calls"] == []
+    assert response.headers["cache-control"] == "no-store"
+    assert response.headers["referrer-policy"] == "strict-origin"
+    shared = client.get(response.headers["location"])
+    assert shared.headers["referrer-policy"] == "strict-origin"
+    assert shared.headers["cache-control"] == "no-store"
+    assert shared.headers["content-security-policy"] == "frame-ancestors 'none'"
+    assert state["calls"] == []
+
+
+@pytest.mark.parametrize("purpose", ["signup", "recovery"])
+@pytest.mark.parametrize(
+    "status,code,outcome",
+    [
+        (403, "otp_expired", "expired_or_used"),
+        (422, "validation_failed", "invalid"),
+        (429, "over_email_send_rate_limit", "retry"),
+        (503, "unexpected_failure", "retry"),
+    ],
+)
+def test_callback_errors_reach_shared_ui_and_api_with_safe_actions(
+    online, purpose, status, code, outcome
+):
+    client, _selected, state = online
+    state["error"], state["error_code"] = status, code
+    form = client.post(
+        "/api/v1/auth/callback",
+        data={"token_hash": "private-code", "type": purpose},
+        follow_redirects=False,
+    )
+    query = callback_query(form)
+    assert query["purpose"] == purpose and query["outcome"] == outcome
+    assert ("token_hash" in query) == (outcome == "retry")
+    assert "provider-secret-error" not in form.text + form.headers["location"]
+    response = client.post(
+        "/api/v1/auth/verify", json={"token_hash": "private-code", "type": purpose}
+    )
+    expected_action = (
+        "retry_verification"
+        if outcome == "retry"
+        else ("resend_verification" if purpose == "signup" else "request_recovery")
+    )
+    assert response.status_code == (status if status in {429, 503} else 401)
+    assert response.json()["detail"]["callback"] == {
+        "purpose": purpose,
+        "outcome": outcome,
+        "next_action": expected_action,
+        "retryable": outcome == "retry",
+    }
+    assert "private-code" not in response.text and "provider-secret-error" not in response.text
+    assert not client.cookies
+
+
+@pytest.mark.parametrize("purpose", ["signup", "recovery"])
+def test_callback_success_keeps_purpose_and_normal_session_contract(online, purpose):
+    client, _selected, _state = online
+    response = client.post("/api/v1/auth/verify", json={"token_hash": "valid", "type": purpose})
+    assert response.status_code == 200
+    assert response.json()["callback"] == {
+        "purpose": purpose,
+        "outcome": "success",
+        "next_action": "continue" if purpose == "signup" else "set_password",
+        "retryable": False,
+    }
+    assert response.json()["csrf_token"] and client.cookies
+
+
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_malformed_callback_has_actionable_shared_ui_result(online, method):
+    client, _selected, state = online
+    response = client.request(method, "/api/v1/auth/callback", follow_redirects=False)
+    assert callback_query(response) == {
+        "auth": "callback",
+        "purpose": "unknown",
+        "outcome": "invalid",
+    }
+    assert not client.cookies and state["calls"] == []
 
 
 def test_provider_values_never_in_response(online):

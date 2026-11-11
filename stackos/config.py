@@ -222,6 +222,11 @@ class Settings(_StateSettings):
             if auth.get("email", {}).get("enable_confirmations") is not True:
                 raise ValueError("selected Auth must require email confirmation")
             for template, kind in (("confirmation", "signup"), ("recovery", "recovery")):
+                label = (
+                    "Confirm your StackOS email"
+                    if kind == "signup"
+                    else "Reset your StackOS password"
+                )
                 relative = f"./supabase/templates/{template}.html"
                 template_path = root / relative
                 if (
@@ -231,7 +236,7 @@ class Settings(_StateSettings):
                     or template_path.read_text()
                     != (
                         '<p><a href="{{ .SiteURL }}/api/v1/auth/callback?token_hash='
-                        "{{ .TokenHash }}&amp;type=" + kind + '">Confirm your StackOS email</a></p>'
+                        "{{ .TokenHash }}&amp;type=" + kind + '">' + label + "</a></p>"
                     )
                 ):
                     raise ValueError("selected Auth email templates must use the StackOS callback")

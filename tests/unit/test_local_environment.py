@@ -70,6 +70,11 @@ def test_server_and_runtime_share_only_explicit_target(prepared: Path) -> None:
     second = json.loads(prepare_module._signing_key())[0]
     assert first["kid"] != second["kid"] and first["x"] != second["x"]
     assert prepared.stat().st_mode & 0o777 == 0o700
+    recovery = (prepared / "supabase/templates/recovery.html").read_text()
+    assert "Reset your StackOS password" in recovery and "Confirm your" not in recovery
+    assert (
+        'subject = "Reset your StackOS password"' in (prepared / "supabase/config.toml").read_text()
+    )
 
 
 @pytest.mark.parametrize("tamper", ["disable_confirmation", "direct_provider_link"])

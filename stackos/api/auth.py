@@ -35,12 +35,11 @@ remains the agent/MCP token for all other mutations.
 
 from __future__ import annotations
 
-from html import escape
-from typing import Annotated, Literal
-from urllib.parse import parse_qs
+from typing import Annotated, Any, Literal
+from urllib.parse import parse_qs, urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from sqlalchemy import delete
 from sqlmodel import Session, col, select
@@ -98,6 +97,60 @@ class VerificationInput(BaseModel):
     type: Literal["signup", "recovery"]
 
 
+CallbackPurpose = Literal["signup", "recovery", "unknown"]
+CallbackOutcome = Literal["pending", "success", "expired_or_used", "invalid", "retry"]
+
+
+def _callback_result(purpose: CallbackPurpose, outcome: CallbackOutcome) -> dict:
+    """Safe presentation facts; the shared client owns rendering and app return."""
+    if outcome == "success":
+        action = "set_password" if purpose == "recovery" else "continue"
+    elif outcome == "pending":
+        action = "continue_reset" if purpose == "recovery" else "confirm_email"
+    elif outcome == "retry":
+        action = "retry_verification"
+    else:
+        action = {
+            "signup": "resend_verification",
+            "recovery": "request_recovery",
+            "unknown": "sign_in",
+        }[purpose]
+    return {
+        "purpose": purpose,
+        "outcome": outcome,
+        "next_action": action,
+        "retryable": outcome == "retry",
+    }
+
+
+def _callback_redirect(
+    purpose: CallbackPurpose,
+    outcome: CallbackOutcome,
+    token: str = "",
+) -> RedirectResponse:
+    query = {"auth": "callback", "purpose": purpose, "outcome": outcome}
+    if token and outcome in {"pending", "retry"}:
+        query["token_hash"] = token
+    # No caller-controlled destination or credential handoff to another app.
+    return RedirectResponse(
+        "/sign-in?" + urlencode(query),
+        status_code=303,
+        headers={"Cache-Control": "no-store", "Content-Security-Policy": "frame-ancestors 'none'"},
+    )
+
+
+def _callback_error(exc: HTTPException, purpose: CallbackPurpose) -> dict:
+    code = exc.detail.get("code") if isinstance(exc.detail, dict) else None
+    outcome: CallbackOutcome = "invalid"
+    if code == "verification_expired_or_invalid":
+        # GoTrue's otp_expired covers expiration and replay; do not invent a
+        # separate token ledger or probe accounts to guess which happened.
+        outcome = "expired_or_used"
+    elif exc.status_code in {409, 429, 503}:
+        outcome = "retry"
+    return _callback_result(purpose, outcome)
+
+
 class PasswordInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     password: SecretStr
@@ -149,43 +202,49 @@ async def recover(body: EmailInput, auth: Auth) -> dict:
 
 @router.post("/verify")
 async def verify(body: VerificationInput, request: Request, response: Response, auth: Auth) -> dict:
-    tokens = await auth.call(
-        "POST",
-        "verify",
-        payload={
-            "token_hash": body.token_hash.get_secret_value(),
-            "type": body.type,
-        },
-    )
-    return await auth.create(
-        tokens,
-        response,
-        recovery=body.type == "recovery",
-        previous_cookie=request.cookies.get(session_cookie_name(auth.settings)),
-    )
+    try:
+        if not 1 <= len(body.token_hash.get_secret_value()) <= 1024:
+            raise HTTPException(400, {"code": "verification_invalid"})
+        tokens = await auth.call(
+            "POST",
+            "verify",
+            payload={
+                "token_hash": body.token_hash.get_secret_value(),
+                "type": body.type,
+            },
+        )
+        result = await auth.create(
+            tokens,
+            response,
+            recovery=body.type == "recovery",
+            previous_cookie=request.cookies.get(session_cookie_name(auth.settings)),
+        )
+    except HTTPException as exc:
+        detail: dict[str, Any] = (
+            dict(exc.detail) if isinstance(exc.detail, dict) else {"code": "verification_invalid"}
+        )
+        detail["callback"] = _callback_error(exc, body.type)
+        raise HTTPException(exc.status_code, detail) from exc
+    return {**result, "callback": _callback_result(body.type, "success")}
 
 
-@router.get("/callback", response_class=HTMLResponse)
-async def verification_callback(request: Request, auth: Auth) -> HTMLResponse:
-    # Email links only display a confirmation form. A scanner or cross-origin
-    # navigation cannot consume the one-time code or replace a browser login.
+@router.get("/callback", response_class=RedirectResponse, status_code=303)
+async def verification_callback(request: Request, auth: Auth) -> RedirectResponse:
+    # A scanner may follow this redirect and load the shared UI, but GET never
+    # exchanges the one-time code, creates a session or performs a password reset.
     token = request.query_params.get("token_hash", "")
     kind = request.query_params.get("type", "")
-    if not token or len(token) > 1024 or kind not in {"signup", "recovery"}:
-        raise HTTPException(400, {"code": "verification_invalid"})
-    return HTMLResponse(
-        "<!doctype html><html><head><title>Confirm email</title></head><body>"
-        "<h1>Confirm your StackOS email</h1>"
-        '<form method="post" action="/api/v1/auth/callback">'
-        f'<input type="hidden" name="token_hash" value="{escape(token, quote=True)}">'
-        f'<input type="hidden" name="type" value="{escape(kind, quote=True)}">'
-        '<button type="submit">Confirm email</button></form></body></html>',
-        headers={
-            "Content-Security-Policy": (
-                "default-src 'none'; form-action 'self'; frame-ancestors 'none'"
-            )
-        },
-    )
+    if kind not in {"signup", "recovery"}:
+        return _callback_redirect("unknown", "invalid")
+    purpose: Literal["signup", "recovery"] = "signup" if kind == "signup" else "recovery"
+    if (
+        not token
+        or len(token) > 1024
+        or len(request.query_params.getlist("type")) != 1
+        or len(request.query_params.getlist("token_hash")) != 1
+    ):
+        return _callback_redirect(purpose, "invalid")
+    return _callback_redirect(purpose, "pending", token)
 
 
 @router.post("/callback")
@@ -193,21 +252,27 @@ async def consume_callback(request: Request, auth: Auth) -> Response:
     check_server_origin(request, auth.settings, required=True)
     raw = await request.body()
     if len(raw) > 4096:
-        raise HTTPException(400, {"code": "verification_invalid"})
+        return _callback_redirect("unknown", "invalid")
     values = parse_qs(raw.decode("utf-8", errors="replace"))
     token, kind = values.get("token_hash", [""])[0], values.get("type", [""])[0]
-    if not token or len(token) > 1024 or kind not in {"signup", "recovery"}:
-        raise HTTPException(400, {"code": "verification_invalid"})
-    response = RedirectResponse(
-        f"/?auth={'recovery' if kind == 'recovery' else 'verified'}", status_code=303
-    )
-    tokens = await auth.call("POST", "verify", payload={"token_hash": token, "type": kind})
-    await auth.create(
-        tokens,
-        response,
-        recovery=kind == "recovery",
-        previous_cookie=request.cookies.get(session_cookie_name(auth.settings)),
-    )
+    if kind not in {"signup", "recovery"}:
+        return _callback_redirect("unknown", "invalid")
+    purpose: Literal["signup", "recovery"] = "signup" if kind == "signup" else "recovery"
+    if (
+        not token
+        or len(token) > 1024
+        or len(values.get("token_hash", [])) != 1
+        or len(values.get("type", [])) != 1
+    ):
+        return _callback_redirect(purpose, "invalid")
+    response = _callback_redirect(purpose, "success")
+    try:
+        await verify(
+            VerificationInput(token_hash=SecretStr(token), type=purpose), request, response, auth
+        )
+    except HTTPException as exc:
+        result = _callback_error(exc, purpose)
+        return _callback_redirect(purpose, result["outcome"], token)
     return response
 
 

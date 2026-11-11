@@ -36,8 +36,8 @@ The REST contract under `/api/v1/auth` is:
 | --- | --- |
 | `POST /register` | Email/password registration; returns `verification_pending`. |
 | `POST /resend`, `POST /recover` | Request another confirmation or recovery email. Provider throttling returns `retry_later`; unavailable Auth returns retryable 503. |
-| `GET /callback` | Display an explicit email confirmation form without consuming the code. |
-| `POST /callback`, `POST /verify` | Exchange the one-time `token_hash` and `type=signup/recovery` server-side. Expired/consumed codes fail; request another email to retry. Callback redirects only to the same StackOS root. |
+| `GET /callback` | Redirect to the shared `/sign-in` UI with a pending purpose-specific callback; never consume the code. |
+| `POST /callback`, `POST /verify` | Exchange the one-time `token_hash` and `type=signup/recovery` server-side. Form callbacks redirect to the shared UI on success or ordinary failure; API errors expose the same safe callback outcome and next action. |
 | `POST /login` | Password sign-in, followed by provider verification of the confirmed user. |
 | `GET /session` | Safe user/environment identity, state and CSRF token. |
 | `POST /refresh` | Rotate server-held Supabase credentials under a row lock; contention returns retryable `session_busy` (409). |
@@ -59,10 +59,57 @@ Every online write requires the exact selected `Origin`, including sign-in,
 registration and verification. Session writes also require `X-CSRF-Token` from
 the same-origin session response. Online auth responses disable caching; email
 callbacks suppress query-bearing referrers and framing. HTTPS uses Secure cookies; the approved
-isolated loopback HTTP topology cannot use that flag. The confirmation form
+isolated loopback HTTP topology cannot use that flag. Explicit confirmation
 avoids consuming links on email-scanner GETs. See Supabase's
 [email template contract](https://supabase.com/docs/guides/local-development/customizing-email-templates)
 and [local sign-out scope](https://supabase.com/docs/guides/auth/signout).
+
+### Email callback contract
+
+Email links carry the standard Supabase `token_hash` and `type` to StackOS.
+`GET /api/v1/auth/callback` redirects only to
+`/sign-in?auth=callback&purpose=signup|recovery&outcome=pending&token_hash=...`.
+Missing or unsupported purposes become `purpose=unknown&outcome=invalid`; other
+malformed links retain their known purpose. No GET verifies a link or creates a
+session, even if a scanner follows the redirect. The shared client must retain
+the one-time hash only in memory, remove it from URL/history before subsequent
+work, and wait for an explicit user action before posting to StackOS.
+
+The client sends `POST /verify` with `{token_hash, type}`. Success preserves the
+existing session/CSRF response and adds `callback`; failure preserves the safe
+HTTP error and adds `detail.callback`. That object has `purpose`, `outcome`,
+`next_action` and `retryable`. The form-compatible `POST /callback` accepts the
+same fields and redirects to `/sign-in?auth=callback&purpose=...&outcome=...`.
+Its pending/retry destinations retain the hash for an explicit retry; success,
+invalid and expired/used destinations contain no hash or provider error text.
+Caller-selected return URLs are ignored. Browser redirects are presentation
+facts; the session endpoint remains the authority for authenticated access.
+
+| Outcome | Signup next action | Recovery next action |
+| --- | --- | --- |
+| `pending` | `confirm_email` | `continue_reset` |
+| `success` | `continue` | `set_password` |
+| `expired_or_used` | `resend_verification` | `request_recovery` |
+| `invalid` | `resend_verification` | `request_recovery` |
+| `retry` | `retry_verification` | `retry_verification` |
+
+Unknown-purpose invalid links use `sign_in`. Only `retry` sets `retryable=true`;
+rate limits (429), provider unavailability (503) and session contention (409)
+remain explicit. Supabase's `otp_expired` can represent an expired, consumed or
+unusable code; StackOS returns the combined `expired_or_used` renewal state
+without claiming to distinguish causes or creating another token ledger.
+Malformed links and other provider verification rejections use `invalid`.
+Origin/CSRF denials retain their 403 boundary and do not consume a link.
+
+Fresh environment recovery emails say “Reset your StackOS password” in their
+subject and action; signup emails retain confirmation wording. Older disposable
+configurations need their recovery template refreshed before Settings accepts
+them. No live template or installed configuration is updated implicitly.
+The provider's [password reset sequence](https://supabase.com/docs/guides/auth/passwords)
+and [scanner-safe email link guidance](https://supabase.com/docs/guides/auth/auth-email-templates#email-prefetching)
+inform this contract. Shared UI rendering, URL cleanup, accessible controls and
+mail-to-desktop return remain with `online-796-clients` and final verification;
+opening the desktop app alone does not establish its authenticated session.
 
 A provider-verified `UserPrincipal` is carried on request state and into operation
 context through the server-owned session; caller arguments cannot assert that

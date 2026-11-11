@@ -395,7 +395,15 @@ class ServerAuth:
                 if path.startswith("token"):
                     code = "sign_in_failed_or_email_unverified"
                 if path == "verify":
-                    code = "verification_expired_or_invalid"
+                    try:
+                        error = response.json()
+                    except ValueError:
+                        error = {}
+                    code = (
+                        "verification_expired_or_invalid"
+                        if (isinstance(error, dict) and error.get("error_code") == "otp_expired")
+                        else "verification_invalid"
+                    )
                 raise HTTPException(401, {"code": code, "retryable": False})
             result = response.json() if response.content else {}
             if not isinstance(result, dict):
@@ -544,7 +552,18 @@ async def _server_dispatch(
     """No local-admin/bootstrap fallback in a selected online environment."""
     path, method = request.url.path, request.method
     if not (path.startswith(("/api/", "/mcp", "/generated-assets"))):
-        return await call_next(request)
+        response = await call_next(request)
+        if path == "/sign-in":
+            # The shared callback UI inherits the old confirmation page's
+            # framing and query-referrer boundaries without separate HTML.
+            response.headers.update(
+                {
+                    "Cache-Control": "no-store",
+                    "Referrer-Policy": "strict-origin",
+                    "Content-Security-Policy": "frame-ancestors 'none'",
+                }
+            )
+        return response
     try:
         check_server_origin(request, settings, required=method not in {"GET", "HEAD", "OPTIONS"})
         public = {

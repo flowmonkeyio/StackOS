@@ -150,7 +150,7 @@ enable_confirmations = true
 subject = "Confirm your StackOS email"
 content_path = "./supabase/templates/confirmation.html"
 [auth.email.template.recovery]
-subject = "Recover your StackOS access"
+subject = "Reset your StackOS password"
 content_path = "./supabase/templates/recovery.html"
 [realtime]
 enabled = false
@@ -165,10 +165,11 @@ enabled = false
     _write_private(workdir / "supabase/signing_keys.json", _signing_key())
     (workdir / "supabase/templates").mkdir(mode=0o700)
     for template, kind in (("confirmation", "signup"), ("recovery", "recovery")):
+        label = "Confirm your StackOS email" if kind == "signup" else "Reset your StackOS password"
         _write_private(
             workdir / f"supabase/templates/{template}.html",
             '<p><a href="{{ .SiteURL }}/api/v1/auth/callback?token_hash='
-            "{{ .TokenHash }}&amp;type=" + kind + '">Confirm your StackOS email</a></p>',
+            "{{ .TokenHash }}&amp;type=" + kind + '">' + label + "</a></p>",
         )
     common = {
         "STACKOS_ENVIRONMENT_ID": environment_id,
