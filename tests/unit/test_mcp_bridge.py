@@ -328,9 +328,9 @@ class _FakeClient:
                             _tool("budget.set"),
                             _tool("resource.upsert"),
                             _tool(
-                                "project.delete",
-                                operation_name="project.delete",
-                                grant_policy="local-admin-project-write",
+                                "account.start",
+                                operation_name="account.start",
+                                grant_policy="local-admin-auth-write",
                             ),
                             _tool("runPlan.get"),
                         ]
@@ -1903,7 +1903,7 @@ def test_bridge_proxy_denied_admin_tool_keeps_admin_reason_with_active_step() ->
         "params": {
             "name": "toolbox.call",
             "arguments": {
-                "tool_name": "project.delete",
+                "tool_name": "account.start",
                 "run_id": 7,
                 "arguments": {"project_id": 1},
             },

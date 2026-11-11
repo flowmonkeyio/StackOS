@@ -40,6 +40,8 @@ def main() -> int:
                 "tracker.reorderTask",
                 "project.move",
                 "project.update",
+                "project.delete",
+                "project.reconcileFileOwnership",
             }
             or spec.grant_policy in {"local-admin-console-read", "local-admin-console-write"}
             or spec.name == "localAgentChat.createMessage"

@@ -2,13 +2,21 @@
 
 from __future__ import annotations
 
-from stackos.mcp.contract import WriteEnvelope
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field
+
+from stackos.config import Settings
+from stackos.mcp.context import MCPContext
+from stackos.mcp.contract import MCPInput, WriteEnvelope
+from stackos.mcp.errors import ToolNotGrantedError
+from stackos.mcp.streaming import ProgressEmitter
 from stackos.mcp.tools.projects import (
     BudgetListInput,
     BudgetQueryProjectInput,
     BudgetSetInput,
     BudgetUpdateInput,
-    ProjectIdInput,
+    ProjectDeleteInput,
     ProjectMoveInput,
     ProjectUpdateInput,
     ScheduleListInput,
@@ -30,15 +38,94 @@ from stackos.mcp.tools.projects import (
     _schedule_toggle,
 )
 from stackos.operations._helpers import operation_spec
-from stackos.operations.spec import OperationExample
-from stackos.repositories.base import Page
+from stackos.operations.spec import (
+    OperationExample,
+    OperationResponsePolicy,
+    OperationSpec,
+    OperationSurface,
+    OperationSurfaces,
+)
+from stackos.project_cleanup import ProjectCleanupResult
+from stackos.repositories.base import Page, RepositoryError, ValidationError
 from stackos.repositories.projects import (
     IntegrationBudgetOut,
     ProjectOut,
+    ProjectRepository,
     ScheduledJobOut,
     ScheduledRunOut,
     ScheduleRemovalOut,
 )
+from stackos.repositories.resources import ArtifactRepository
+
+
+class ProjectFileOwnershipInput(MCPInput):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: int = Field(strict=True, ge=1)
+    project_slug: str = Field(min_length=1, max_length=80)
+    artifact_id: int = Field(strict=True, ge=1)
+    expected_uri: str = Field(min_length=1)
+    expected_sha256: str = Field(pattern="^[0-9a-f]{64}$")
+    confirm_ownership: bool = Field(strict=True)
+    response_mode: Literal["compact", "raw", "standard", "verbose"] | None = None
+
+
+class ProjectFileOwnershipResult(BaseModel):
+    project_id: int
+    artifact_id: int
+    operation_id: str
+    reconciled: bool
+
+
+async def _project_reconcile_file_ownership(
+    inp: ProjectFileOwnershipInput, ctx: MCPContext, _emit: ProgressEmitter
+) -> WriteEnvelope[ProjectFileOwnershipResult]:
+    if not (
+        ctx.extras.get("surface") == "rest"
+        and ctx.extras.get("trusted_local_admin") is True
+        and ctx.extras.get("auth_scope") == "daemon-admin"
+    ):
+        raise ToolNotGrantedError(
+            "file ownership reconciliation requires local-admin REST authority"
+        )
+    settings = ctx.extras.get("settings")
+    if not isinstance(settings, Settings):
+        raise ValidationError("project cleanup settings are unavailable")
+    try:
+        ArtifactRepository(ctx.session).reconcile_generated_file(
+            **inp.model_dump(
+                include={
+                    "project_id",
+                    "project_slug",
+                    "artifact_id",
+                    "expected_uri",
+                    "expected_sha256",
+                    "confirm_ownership",
+                }
+            ),
+            asset_root=settings.generated_assets_dir,
+        )
+    except RepositoryError:
+        raise
+    except Exception as exc:
+        raise RepositoryError(
+            "file ownership reconciliation could not complete",
+            data={
+                "project_id": inp.project_id,
+                "artifact_id": inp.artifact_id,
+                "error_code": type(exc).__name__,
+            },
+        ) from None
+    project = ProjectRepository(ctx.session).get(inp.project_id)
+    return WriteEnvelope[ProjectFileOwnershipResult](
+        data=ProjectFileOwnershipResult(
+            project_id=inp.project_id,
+            artifact_id=inp.artifact_id,
+            operation_id=(project.cleanup_json or {})["operation_id"],
+            reconciled=True,
+        ),
+        project_id=inp.project_id,
+    )
 
 
 def operation_specs():
@@ -111,18 +198,98 @@ def operation_specs():
             mutating=True,
             grant_policy="direct-setup-write",
         ),
-        operation_spec(
+        OperationSpec(
             name="project.delete",
-            summary="Archive one project.",
-            input_model=ProjectIdInput,
-            output_model=WriteEnvelope[ProjectOut],
+            summary="Permanently delete a confirmed project and its owned StackOS data.",
+            input_model=ProjectDeleteInput,
+            output_model=WriteEnvelope[ProjectCleanupResult],
             handler=_project_delete,
-            purpose="Use this only for explicit local-admin project cleanup.",
-            when_to_use=("An operator explicitly asks to archive a project.",),
-            prerequisites=("Confirm the project identity before deleting.",),
-            examples=(OperationExample(title="Archive project", arguments={"project_id": 2}),),
+            purpose="Delete live project-owned state through the canonical cleanup service.",
+            when_to_use=("An operator explicitly authorizes permanent project deletion.",),
+            prerequisites=(
+                "Confirm permanent=true, exact project_id and immutable project_slug.",
+                "Stop owned work using its existing controls; deletion never aborts or kills work.",
+                "Console requires catalog scope; bound agents can target only their project.",
+            ),
+            returns=(
+                "Typed blocked/incomplete/deleted/missing outcome, blockers and retry context.",
+                "Incomplete retains project ID and operation_id; retry this same operation.",
+                "Ownership gaps require admin project.reconcileFileOwnership before retry.",
+                "Repositories, shared data, external exports and existing backups are preserved.",
+                "Retries revalidate confirmation and observe current state, including missing.",
+            ),
+            examples=(
+                OperationExample(
+                    title="Permanently delete confirmed project",
+                    arguments={
+                        "project_id": 2,
+                        "confirmation": {
+                            "permanent": True,
+                            "project_id": 2,
+                            "project_slug": "acme",
+                        },
+                    },
+                ),
+            ),
+            surfaces=OperationSurfaces(
+                mcp=OperationSurface(enabled=True),
+                rest=OperationSurface(
+                    enabled=True, browser_safe=True, path="/api/v1/operations/project.delete/call"
+                ),
+                cli=OperationSurface(enabled=True, command="ops call project.delete"),
+            ),
+            response_policy=OperationResponsePolicy(
+                allowed_modes=("compact", "raw"),
+                ack_safe=False,
+                compact_notes=(
+                    "Keep the bounded cleanup result, including blockers and ownership gaps.",
+                ),
+            ),
+            mutating=True,
+            grant_policy="direct-setup-write",
+            idempotency_policy="handler",
+        ),
+        OperationSpec(
+            name="project.reconcileFileOwnership",
+            summary="Confirm exact ownership of a legacy file blocking project cleanup.",
+            input_model=ProjectFileOwnershipInput,
+            output_model=WriteEnvelope[ProjectFileOwnershipResult],
+            handler=_project_reconcile_file_ownership,
+            purpose="Resolve a stopped-cleanup ownership gap through ArtifactRepository.",
+            prerequisites=(
+                "Requires daemon-admin REST/CLI authority; unavailable to MCP and browser console.",
+                "Review exact project ID/slug, artifact ID/URI and current file SHA-256; "
+                "then set confirm_ownership=true.",
+                "Deletion confirmation and editable artifact metadata do not prove file ownership.",
+            ),
+            returns=(
+                "Reconciled artifact and cleanup operation ID; retry project.delete separately.",
+            ),
+            examples=(
+                OperationExample(
+                    title="Reconcile reviewed legacy file",
+                    arguments={
+                        "project_id": 2,
+                        "project_slug": "acme",
+                        "artifact_id": 42,
+                        "expected_uri": "/generated-assets/openai-images/legacy.png",
+                        "expected_sha256": "0123456789abcdef" * 4,
+                        "confirm_ownership": True,
+                    },
+                ),
+            ),
+            surfaces=OperationSurfaces(
+                rest=OperationSurface(
+                    enabled=True, path="/api/v1/operations/project.reconcileFileOwnership/call"
+                ),
+                cli=OperationSurface(
+                    enabled=True, command="ops call project.reconcileFileOwnership"
+                ),
+            ),
             mutating=True,
             grant_policy="local-admin-project-write",
+            idempotency_policy="handler",
+            response_policy=OperationResponsePolicy(allowed_modes=("compact", "raw")),
         ),
         operation_spec(
             name="budget.list",

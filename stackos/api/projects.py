@@ -130,15 +130,6 @@ async def update_project(
     return write_response(ProjectRepository(session).update(project_id, **patch))
 
 
-@router.delete("/{project_id}", response_model=WriteResponse[ProjectOut])
-async def delete_project(
-    project_id: int,
-    hard: bool = Query(default=False),
-    session: Session = Depends(get_session),
-) -> WriteResponse[ProjectOut]:
-    return write_response(ProjectRepository(session).delete(project_id, hard=hard))
-
-
 @router.get("/{project_id}/schedules", response_model=list[ScheduledJobOut])
 async def list_schedules(
     project_id: int,

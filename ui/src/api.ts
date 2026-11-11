@@ -633,8 +633,7 @@ export interface paths {
         get: operations["get_project_api_v1_projects__project_id__get"];
         put?: never;
         post?: never;
-        /** Delete Project */
-        delete: operations["delete_project_api_v1_projects__project_id__delete"];
+        delete?: never;
         options?: never;
         head?: never;
         /** Update Project */
@@ -5828,6 +5827,41 @@ export interface components {
             run_token: string | null;
             source_ref: components["schemas"]["AgentSourceRef"];
         };
+        /** ProjectCleanupResult */
+        ProjectCleanupResult: {
+            /**
+             * Blockers
+             * @default []
+             */
+            blockers: string[];
+            /**
+             * Error Code
+             * @default null
+             */
+            error_code: string | null;
+            /**
+             * Operation Id
+             * @default null
+             */
+            operation_id: string | null;
+            /**
+             * Ownership Required Artifact Ids
+             * @default []
+             */
+            ownership_required_artifact_ids: number[];
+            /** Project Id */
+            project_id: number;
+            /**
+             * Retryable
+             * @default false
+             */
+            retryable: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: ProjectCleanupResultStatus;
+        };
         /**
          * ProjectCreateRequest
          * @example {
@@ -5855,6 +5889,50 @@ export interface components {
             } | null;
             /** Slug */
             slug: string;
+        };
+        /** ProjectDeleteConfirmation */
+        ProjectDeleteConfirmation: {
+            /**
+             * Permanent
+             * @constant
+             */
+            permanent: true;
+            /** Project Id */
+            project_id: number;
+            /** Project Slug */
+            project_slug: string;
+        };
+        /** ProjectDeleteInput */
+        ProjectDeleteInput: {
+            confirmation: components["schemas"]["ProjectDeleteConfirmation"];
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default null
+             */
+            response_mode: ProjectDeleteInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Scope
+             * @default project
+             * @enum {string}
+             */
+            scope: ProjectDeleteInputScope;
         };
         /** ProjectEventOut */
         ProjectEventOut: {
@@ -5890,6 +5968,52 @@ export interface components {
             tags: string[];
             /** Title */
             title: string | null;
+        };
+        /** ProjectFileOwnershipInput */
+        ProjectFileOwnershipInput: {
+            /** Artifact Id */
+            artifact_id: number;
+            /** Confirm Ownership */
+            confirm_ownership: boolean;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /** Expected Sha256 */
+            expected_sha256: string;
+            /** Expected Uri */
+            expected_uri: string;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Id */
+            project_id: number;
+            /** Project Slug */
+            project_slug: string;
+            /**
+             * Response Mode
+             * @default null
+             */
+            response_mode: ProjectFileOwnershipInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** ProjectFileOwnershipResult */
+        ProjectFileOwnershipResult: {
+            /** Artifact Id */
+            artifact_id: number;
+            /** Operation Id */
+            operation_id: string;
+            /** Project Id */
+            project_id: number;
+            /** Reconciled */
+            reconciled: boolean;
         };
         /** ProjectMoveInput */
         ProjectMoveInput: {
@@ -8833,6 +8957,34 @@ export interface components {
              */
             run_id: number | null;
         };
+        /** WriteEnvelope[ProjectCleanupResult] */
+        WriteEnvelope_ProjectCleanupResult_: {
+            data: components["schemas"]["ProjectCleanupResult"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
+        /** WriteEnvelope[ProjectFileOwnershipResult] */
+        WriteEnvelope_ProjectFileOwnershipResult_: {
+            data: components["schemas"]["ProjectFileOwnershipResult"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
         /** WriteEnvelope[ProjectOut] */
         WriteEnvelope_ProjectOut_: {
             data: components["schemas"]["ProjectOut"];
@@ -9343,8 +9495,13 @@ export type SchemaProjectAgentCreateInput = components['schemas']['ProjectAgentC
 export type SchemaProjectAgentGetInput = components['schemas']['ProjectAgentGetInput'];
 export type SchemaProjectAgentScope = components['schemas']['ProjectAgentScope'];
 export type SchemaProjectAgentUpdateInput = components['schemas']['ProjectAgentUpdateInput'];
+export type SchemaProjectCleanupResult = components['schemas']['ProjectCleanupResult'];
 export type SchemaProjectCreateRequest = components['schemas']['ProjectCreateRequest'];
+export type SchemaProjectDeleteConfirmation = components['schemas']['ProjectDeleteConfirmation'];
+export type SchemaProjectDeleteInput = components['schemas']['ProjectDeleteInput'];
 export type SchemaProjectEventOut = components['schemas']['ProjectEventOut'];
+export type SchemaProjectFileOwnershipInput = components['schemas']['ProjectFileOwnershipInput'];
+export type SchemaProjectFileOwnershipResult = components['schemas']['ProjectFileOwnershipResult'];
 export type SchemaProjectMoveInput = components['schemas']['ProjectMoveInput'];
 export type SchemaProjectOut = components['schemas']['ProjectOut'];
 export type SchemaProjectPluginOut = components['schemas']['ProjectPluginOut'];
@@ -9439,6 +9596,8 @@ export type SchemaWriteEnvelopeDurableActionJobOut = components['schemas']['Writ
 export type SchemaWriteEnvelopeFinanceCommitOut = components['schemas']['WriteEnvelope_FinanceCommitOut_'];
 export type SchemaWriteEnvelopeFinanceStatusOut = components['schemas']['WriteEnvelope_FinanceStatusOut_'];
 export type SchemaWriteEnvelopeLocalAgentChatMessageOut = components['schemas']['WriteEnvelope_LocalAgentChatMessageOut_'];
+export type SchemaWriteEnvelopeProjectCleanupResult = components['schemas']['WriteEnvelope_ProjectCleanupResult_'];
+export type SchemaWriteEnvelopeProjectFileOwnershipResult = components['schemas']['WriteEnvelope_ProjectFileOwnershipResult_'];
 export type SchemaWriteEnvelopeProjectOut = components['schemas']['WriteEnvelope_ProjectOut_'];
 export type SchemaWriteEnvelopeScheduleRemovalOut = components['schemas']['WriteEnvelope_ScheduleRemovalOut_'];
 export type SchemaWriteEnvelopeScheduledJobOut = components['schemas']['WriteEnvelope_ScheduledJobOut_'];
@@ -10545,39 +10704,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectOut"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_project_api_v1_projects__project_id__delete: {
-        parameters: {
-            query?: {
-                hard?: boolean;
-            };
-            header?: never;
-            path: {
-                project_id: number;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["WriteResponse_ProjectOut_"];
                 };
             };
             /** @description Validation Error */
@@ -12945,6 +13071,28 @@ export enum ProjectAgentScopeResponse_mode {
     verbose = "verbose"
 }
 export enum ProjectAgentUpdateInputResponse_mode {
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectCleanupResultStatus {
+    blocked = "blocked",
+    incomplete = "incomplete",
+    deleted = "deleted",
+    missing = "missing"
+}
+export enum ProjectDeleteInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectDeleteInputScope {
+    project = "project",
+    catalog = "catalog"
+}
+export enum ProjectFileOwnershipInputResponse_modeAnyOf0 {
+    compact = "compact",
     raw = "raw",
     standard = "standard",
     verbose = "verbose"

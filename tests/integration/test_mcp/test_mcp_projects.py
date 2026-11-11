@@ -7,6 +7,44 @@ import pytest
 from .conftest import MCPClient
 
 
+@pytest.mark.parametrize("mode", ["compact", "raw"])
+def test_confirmed_delete_through_mcp_uses_cleanup_and_truthful_retry(
+    mcp_client, seeded_project, mcp_settings, mode
+):
+    project = seeded_project["data"]
+    names = {tool["name"] for tool in mcp_client.list_tools()}
+    assert "project.reconcileFileOwnership" not in names
+    root = mcp_settings.data_dir / "projects" / str(project["id"])
+    root.mkdir(parents=True)
+    (root / "fixture.txt").write_text("disposable")
+    args = {
+        "project_id": project["id"],
+        "response_mode": mode,
+        "idempotency_key": "mcp-delete",
+        "confirmation": {
+            "project_id": project["id"],
+            "project_slug": project["slug"],
+            "permanent": True,
+        },
+    }
+    for invalid in (
+        {"project_id": project["id"]},
+        {**args, "hard": True},
+        {**args, "confirmation": {**args["confirmation"], "project_slug": "wrong"}},
+    ):
+        assert mcp_client.call_tool_error("project.delete", invalid)["code"] == -32602
+        assert root.exists()
+    assert (
+        mcp_client.call_tool_error("project.delete", {**args, "scope": "catalog"})["code"] == -32007
+    )
+    result = mcp_client.call_tool_structured("project.delete", args)
+    assert result["data"]["status"] == "deleted", result
+    assert not root.exists()
+    repeated = mcp_client.call_tool_structured("project.delete", args)
+    assert repeated["data"]["status"] == "missing"
+    assert not root.exists()
+
+
 def test_project_create_returns_envelope(mcp_client: MCPClient) -> None:
     """project.create returns ``{data, run_id, project_id}`` envelope."""
     env = mcp_client.call_tool_structured(

@@ -581,8 +581,9 @@ class ArtifactRepository:
     ) -> Envelope[ArtifactOut]:
         """Internal local-admin reconciliation for an unaudited legacy file.
 
-        No tool publishes this method. A trusted REST handler context and an
-        exact operator decision are required; ordinary artifact metadata cannot
+        The admin-only project.reconcileFileOwnership operation publishes this
+        method. A trusted REST handler context and an exact operator decision
+        are required; ordinary artifact metadata cannot
         establish custody. It remains available for an incomplete cleanup.
         """
         from stackos.mcp.context import current_context

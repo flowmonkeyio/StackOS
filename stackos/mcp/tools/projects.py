@@ -4,14 +4,16 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from stackos.config import Settings
 from stackos.mcp.context import MCPContext
 from stackos.mcp.contract import MCPInput, WriteEnvelope
 from stackos.mcp.errors import ToolNotGrantedError
 from stackos.mcp.server import ToolRegistry
 from stackos.mcp.streaming import ProgressEmitter
-from stackos.repositories.base import Page
+from stackos.project_cleanup import ProjectCleanupResult, ProjectCleanupService
+from stackos.repositories.base import Page, RepositoryError, ValidationError
 from stackos.repositories.projects import (
     IntegrationBudgetOut,
     IntegrationBudgetRepository,
@@ -107,10 +109,28 @@ class ProjectMoveInput(MCPInput):
         return self
 
 
-class ProjectIdInput(MCPInput):
-    model_config = ConfigDict(extra="forbid", json_schema_extra={"example": {"project_id": 1}})
+class ProjectDeleteConfirmation(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
 
-    project_id: int
+    permanent: Literal[True]
+    project_id: int = Field(ge=1)
+    project_slug: str = Field(min_length=1, max_length=80)
+
+    @field_validator("permanent", mode="before")
+    @classmethod
+    def _permanent(cls, value: Any) -> Literal[True]:
+        if value is not True:
+            raise ValueError("permanent deletion requires permanent=true")
+        return True
+
+
+class ProjectDeleteInput(MCPInput):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: int = Field(strict=True, ge=1)
+    confirmation: ProjectDeleteConfirmation
+    scope: Literal["project", "catalog"] = "project"
+    response_mode: Literal["compact", "raw", "standard", "verbose"] | None = None
 
 
 class BudgetListInput(MCPInput):
@@ -263,10 +283,26 @@ async def _project_move(
 
 
 async def _project_delete(
-    inp: ProjectIdInput, ctx: MCPContext, _emit: ProgressEmitter
-) -> WriteEnvelope[ProjectOut]:
-    env = ProjectRepository(ctx.session).delete(inp.project_id)
-    return WriteEnvelope[ProjectOut](data=env.data, run_id=ctx.run_id, project_id=env.project_id)
+    inp: ProjectDeleteInput, ctx: MCPContext, _emit: ProgressEmitter
+) -> WriteEnvelope[ProjectCleanupResult]:
+    _project_management_scope(inp.scope, ctx)
+    settings = ctx.extras.get("settings")
+    if not isinstance(settings, Settings):
+        raise ValidationError("project cleanup settings are unavailable")
+    try:
+        result = await ProjectCleanupService(ctx.session, settings).delete(
+            inp.project_id, confirmation=inp.confirmation.model_dump()
+        )
+    except RepositoryError:
+        raise
+    except Exception as exc:
+        # Never expose filesystem paths or provider/process error text.
+        raise RepositoryError(
+            "project cleanup could not complete; inspect the target before retrying",
+            data={"project_id": inp.project_id, "error_code": type(exc).__name__},
+        ) from None
+    # Do not dereference an expired ORM Project/Run after the final purge.
+    return WriteEnvelope[ProjectCleanupResult](data=result, run_id=None, project_id=inp.project_id)
 
 
 async def _budget_list(

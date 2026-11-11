@@ -11,7 +11,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 245
+    assert len(names) == 246
     assert not names.intersection(
         {"actionCall.aggregate", "actionCall.aggregateAll", "actionCall.queryAll"}
     )
@@ -33,6 +33,8 @@ def test_operation_registry_documents_core_operations() -> None:
         "tracker.configureDelivery",
         "hostMcp.status",
         "project.portfolio",
+        "project.delete",
+        "project.reconcileFileOwnership",
         "secret.set",
         "schema.get",
         "account.list",

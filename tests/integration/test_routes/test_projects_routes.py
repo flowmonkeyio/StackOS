@@ -34,27 +34,9 @@ def test_project_crud_routes(api: TestClient, project_id: int) -> None:
     assert patch.status_code == 200
     assert patch.json()["data"]["name"] == "New Name"
 
-    deleted = api.delete(f"/api/v1/projects/{project_id}")
-    assert deleted.status_code == 200
-    assert deleted.json()["data"]["is_active"] is False
-
-
-def test_project_hard_delete_route_removes_row(api: TestClient) -> None:
-    created = api.post(
-        "/api/v1/projects",
-        json={
-            "slug": "hard-delete-route",
-            "name": "Hard Delete Route",
-            "domain": "hard-delete-route.example",
-            "locale": "en-US",
-        },
-    )
-    assert created.status_code == 201
-    project_id = created.json()["data"]["id"]
-
-    deleted = api.delete(f"/api/v1/projects/{project_id}", params={"hard": "true"})
-    assert deleted.status_code == 200
-    assert api.get(f"/api/v1/projects/{project_id}").status_code == 404
+    # Unconfirmed archive/hard-delete routes are retired.
+    assert api.delete(f"/api/v1/projects/{project_id}").status_code == 405
+    assert api.get(f"/api/v1/projects/{project_id}").json()["name"] == "New Name"
 
 
 def test_list_projects_pagination_and_missing(api: TestClient) -> None:
@@ -124,7 +106,6 @@ def test_project_catalog_console_and_cli_use_shared_operations(api, project_id, 
             {"project_id": other["id"], "scope": "catalog", "patch": {"is_active": False}},
         ),
         ("project.move", {"project_id": other["id"], "placement": "top"}),
-        ("project.delete", {"project_id": other["id"]}),
     ):
         assert call(name, arguments).status_code == 403
 

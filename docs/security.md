@@ -94,11 +94,14 @@ exact-path exception so no sibling route inherits it. Currently:
 
 ## Internal project cleanup
 
-`ProjectCleanupService` is the internal permanent-cleanup owner. It requires
-`permanent=true`, the exact project ID and its immutable slug before mutation;
-it never resolves the target by display name. Public deletion adapters are a
-separate integration surface and must delegate to this owner with that explicit
-confirmation.
+`ProjectCleanupService` is the permanent-cleanup owner behind `project.delete`.
+It requires `permanent=true`, the exact project ID and its immutable slug before
+mutation; it never resolves the target by display name. All admitted adapters
+delegate to this owner. The unconfirmed archive route and raw `hard=true` route
+are removed. Bound MCP calls retain injected-project scope; global calls require
+an explicit existing ID; the browser-safe generic REST call requires catalog
+scope. Deletion revalidates retries without keeping a replay row or deleted
+project history. Compact and raw preserve the complete typed receipt; ack rejects.
 
 Cleanup rejects actual native invocations, admitted delivery, running actions,
 durable work/leases, active request claims, owned browser processes (including
@@ -131,11 +134,14 @@ producer output URI. File-backed receipts must match their stored digest and env
 identity; recovery is committed before those receipt files are removed.
 Ambiguous legacy generated references retain their source rows and return
 `ownership_required_artifact_ids` in an incomplete cleanup. Editable provenance
-alone never establishes ownership. An internal, unpublished reconciliation
-method requires trusted local-admin context and an explicit exact project
+alone never establishes ownership. The admin REST/CLI-only
+`project.reconcileFileOwnership` operation delegates to the existing artifact
+reconciliation method. It requires trusted local-admin context and an exact project
 ID/slug, artifact ID/URI and current content SHA-256 ownership decision. It is
 limited to the stopped cleanup's reported gaps; retry retains its operation ID.
-This method grants no public operation or automatic agent authority.
+It is unavailable to MCP and browser-console callers and grants no automatic
+agent authority. The authenticated exact registered REST path owns its trusted
+context; headers, run tokens and caller fields cannot grant it.
 Shared references preserve bytes, including the original private file reference
 when public metadata is later edited. During final purge, verified file custody
 passes to surviving artifact references in the same database transaction. The
@@ -318,8 +324,10 @@ project management contract: explicit `scope: "catalog"`, display-name-only
 patches and single-project moves. Catalog scope requires authenticated REST
 console/admin authority and is rejected through MCP. Bound agents retain the
 existing project-ID injection and may rename/move only their own target;
-move anchors must be active visible projects. This grants no project deletion
-or general cross-project bridge access.
+move anchors must be active visible projects. `project.delete` separately permits
+only explicit permanent confirmation under that same target/catalog boundary.
+File ownership reconciliation remains admin REST/CLI only. This grants no
+general cross-project bridge access.
 The explicit project automation setup operations `schedule.set`,
 `schedule.toggle` and `schedule.remove` are browser-safe. They validate the
 selected project and saved setup without granting workflow action approvals;
