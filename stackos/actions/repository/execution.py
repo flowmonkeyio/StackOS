@@ -570,7 +570,10 @@ class ActionExecutionMixin:
                 run_id=run_id,
             )
 
-        row, transient_output = await self._execute_prepared(prepared)
+        with BACKGROUND_ACTION_TASKS.foreground(
+            project_id, lambda: self._require_project(project_id)
+        ):
+            row, transient_output = await self._execute_prepared(prepared)
         return Envelope(
             data=ActionExecutionOut(
                 action_call=self._call_audit_out(row),

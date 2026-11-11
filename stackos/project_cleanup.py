@@ -19,6 +19,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete, update
 from sqlmodel import Session, col, select
 
+from stackos.actions.repository.background import BACKGROUND_ACTION_TASKS
 from stackos.browser.runtime import BROWSER_PROFILE_DIRNAME, BrowserRuntime, get_browser_runtime
 from stackos.config import Settings
 from stackos.db.models import (
@@ -172,6 +173,8 @@ class ProjectCleanupService:
         blockers = []
         if usage_executions(project_id):
             blockers.append("native_invocation")
+        if BACKGROUND_ACTION_TASKS.foreground_active(project_id):
+            blockers.append("foreground_action")
         tasks = s.exec(select(TrackerTask).where(TrackerTask.project_id == project_id)).all()
         if any(
             (t.metadata_json or {}).get("delivery", {}).get("status") in {"queued", "running"}
