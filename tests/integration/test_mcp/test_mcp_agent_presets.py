@@ -113,7 +113,9 @@ def test_agent_preset_tools_are_callable(mcp_client: MCPClient) -> None:
     assert described["preset"]["summary"]["key"] == "stackos.sdlc.planning"
     assert described["preset"]["summary"]["plugin_slug"] == "engineering"
     planning_contract = described["preset"]["preset"]["prompt_contract"]
-    assert "workflow graph check" in " ".join(planning_contract["responsibilities"])
+    assert "actual attachments and runner eligibility" in " ".join(
+        planning_contract["responsibilities"]
+    )
     planning_text = " ".join(planning_contract["must_do"])
     assert "attachment/provenance only" in planning_text
     assert "tracker.updateTicket" in planning_text
@@ -247,7 +249,7 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     )
     expected_versions = {
         "stackos.sdlc.requirements-flow-definer": "0.6.4",
-        "stackos.sdlc.planning": "0.7.12",
+        "stackos.sdlc.planning": "0.7.13",
         "stackos.sdlc.delivery": "0.7.12",
         "stackos.sdlc.delivery-reviewer": "0.6.11",
     }
