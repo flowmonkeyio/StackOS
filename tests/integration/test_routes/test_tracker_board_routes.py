@@ -68,9 +68,11 @@ def test_browser_priority_and_reorder_share_bounded_owner_and_stream(api, projec
         },
     )
     assert replay.json()["data"]["replayed"] is True
+    # The first task already has rank zero. Priority plus the second task's
+    # changed rank emit two events; do not wait for a nonexistent third event.
     with api.stream(
         "GET",
-        f"/api/v1/projects/{project_id}/context/timeline/stream?replay=true&max_events=3",
+        f"/api/v1/projects/{project_id}/context/timeline/stream?replay=true&max_events=2",
         headers=headers,
     ) as response:
         assert response.status_code == 200
