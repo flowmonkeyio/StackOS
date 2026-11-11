@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { UiButton, UiFormField, UiIcon, UiInput } from '@/components/ui'
 import { ApiError } from '@/lib/client'
@@ -79,6 +79,7 @@ function choose(value: Screen): void {
   screen.value = value
   password.value = error.value = feedback.value = ''
   reveal.value = false
+  void nextTick(() => { heading.value?.focus() })
 }
 async function submit(): Promise<void> {
   if (busy.value) return
@@ -88,6 +89,7 @@ async function submit(): Promise<void> {
     return
   }
   if (screen.value === 'link-error' && purpose.value === 'unknown') { choose('login'); return }
+  const previousScreen = screen.value
   busy.value = true
   error.value = feedback.value = ''
   const selected = screen.value === 'login' ? 'login' : screen.value === 'register' ? 'register' : screen.value === 'password' ? 'password' : screen.value === 'confirm' ? 'verify' : purpose.value === 'recovery' || screen.value === 'recover' ? 'recover' : 'resend'
@@ -125,6 +127,7 @@ async function submit(): Promise<void> {
     password.value = ''; reveal.value = false; busy.value = false
     await nextTick()
     if (error.value) document.getElementById(needsPassword.value ? 'account-password' : needsEmail.value ? 'account-email' : 'account-error')?.focus()
+    else if (screen.value !== previousScreen) heading.value?.focus()
   }
 }
 function clearReturnIntent(): void {
@@ -136,11 +139,15 @@ function continueBrowser(): void {
 }
 async function reconnect(): Promise<void> {
   busy.value = true
-  try { if (auth.csrfToken) await auth.refreshSession(); else await auth.bootstrap() }
-  finally { busy.value = false }
+  try {
+    if (auth.csrfToken) await auth.refreshSession(); else await auth.bootstrap()
+    if (auth.state.kind === 'recovery') screen.value = 'password'
+  } finally {
+    busy.value = false
+    await nextTick()
+    heading.value?.focus()
+  }
 }
-watch(screen, async () => { await nextTick(); heading.value?.focus() })
-watch(() => auth.state.kind, kind => { if (kind === 'recovery') screen.value = 'password' })
 onMounted(() => { heading.value?.focus() })
 </script>
 
