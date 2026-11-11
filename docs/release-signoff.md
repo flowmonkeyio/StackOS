@@ -60,6 +60,16 @@ transition. Select concrete commands here and in affected local docs, not core
 runtime policy. A bounded guidance exercise records explicit source consumption
 and observed actions; phrase checks or hashes alone do not establish behavior.
 
+For affected authorization boundaries, prove the legitimate owner call and the
+denied foreign call through the real caller, including the response envelope and
+absence of unauthorized mutation. A reproduced invariant failure requires a
+bounded check of other active producers, retained consumers and implicated recovery
+transitions. Keep distinct rules separate: formatter or transport checks cannot
+establish the Vue watcher prohibition, and passing UI tests cannot establish Python
+lint. An absent required check stays not reviewed until executed. Record why a
+reject or rerun was needed; useful rejects, changed evidence and newly covered
+obligations are not token waste merely because attempts or totals increased.
+
 ## Test Runtime And Maintenance
 
 The complete automated signoff should stay below ten minutes on a prepared
