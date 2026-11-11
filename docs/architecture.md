@@ -93,8 +93,12 @@ spec.
 `tracker.startDelivery` hands an independently prepared tracker task to the
 existing daemon scheduler. Its generic dependency scan traverses all remaining
 ready work without workflow phase-name routing. Ordinary tickets use delivery
-and independent exact-candidate review; a valid scoped rejection permits one
-same-session repair with a separate descendant source commit. Workflow mirrors
+and independent exact-candidate review; valid scoped ordinary rejections permit
+up to three repair passes after the initial delivery, using the same native
+delivery/review sessions and a separate descendant source commit for each pass.
+Explicit requeue preserves the consumed repair count and historical sessions;
+integration-origin corrections follow the existing
+[repair-budget contract](task-tracker.md#automated-task-delivery). Workflow mirrors
 execute frozen contracts through existing selected roles after accepted children;
 RunPlanRepository alone records mirror/plan/run lifecycle. Child approval never
 substitutes for integration proof.
