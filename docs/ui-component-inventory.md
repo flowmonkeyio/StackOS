@@ -22,7 +22,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `UiDialog` | viewport portal; shared dialog/drawer stack; focus trap; H/B/F; optional `layout="detail"` with bounded 880px frame and scrolling body; centered 32px close target / 16px icon |
 | `UiConfirmDialog` | builds on Dialog |
 | `UiSidePanel` | left/right; 480/720 |
-| `UiDropdownMenu` | keyboard arrows; sections |
+| `UiDropdownMenu` | keyboard arrows; sections; optional `portalTarget` for viewport-clamped actions inside scrolling lists |
 | `UiPopover` | floating-ui placement |
 | `UiReorderList`, `UiReorderHandle` | neutral vertical neighbor intents, handle/menu alternatives, insertion feedback, gesture-scoped edge scroll and cleanup |
 | `UiTooltip` | hover + focus |
@@ -60,6 +60,15 @@ no-ops, scrolls only the supplied vertical container, and cleans up its one
 animation-frame loop and gesture listeners on every termination path. Movement
 announcements and focus/visibility restoration accompany menu and drop intents;
 there is no decorative movement animation.
+
+`ProjectSwitcher` consumes this primitive for the complete, stored project
+catalog. Its closed sidebar trigger retains its geometry; only the open menu is
+wider. Project names select through `useProjectNavigation`; separate row actions
+request rename/delete targets from that same owner. The project store owns
+display-name updates and bounded moves through the browser-safe catalog
+operations, reloading all pages after move attempts. `ProjectRenameDialog` owns
+the retained draft and saving/failure states. The confirmed-delete consumer owns
+the subsequent confirmation, cleanup and navigation, not the selector.
 
 ## Shipped — domain (`ui/src/components/domain/`)
 

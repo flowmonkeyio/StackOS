@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, onMounted } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { isNavigationFailure, useRoute, useRouter, type RouteLocationNormalized } from 'vue-router'
 
@@ -27,6 +27,20 @@ export function useProjectNavigation() {
   const { items: projectItems, activeProject } = storeToRefs(projects)
   const { enabledPlugins, pluginProjectId } = storeToRefs(catalog)
   let catalogRefresh: CatalogRefresh | null = null
+  const renameTargetId = ref<number | null>(null)
+  const deleteTargetId = ref<number | null>(null)
+  const renameProjectTarget = computed(() => renameTargetId.value === null ? null : projects.getById(renameTargetId.value))
+  // Selected management target, independent of the currently navigated project.
+  // The confirmed-delete consumer owns confirmation, cleanup and subsequent routing.
+  const deleteProjectTarget = computed(() => deleteTargetId.value === null ? null : projects.getById(deleteTargetId.value))
+  function requestProjectRename(id: number): void {
+    if (projects.getById(id)) renameTargetId.value = id
+  }
+  function requestProjectDelete(id: number): void {
+    if (projects.getById(id)) deleteTargetId.value = id
+  }
+  function closeProjectRename(): void { renameTargetId.value = null }
+  function closeProjectDelete(): void { deleteTargetId.value = null }
 
   const { routeProjectId, isProjectRoute, scopeKey: routeViewKey } =
     useProjectRouteScope(route)
@@ -102,5 +116,17 @@ export function useProjectNavigation() {
     projectNavSections,
     routeViewKey,
     selectProject,
+    projectManagementLoading: computed(() => projects.loading),
+    projectManagementPending: computed(() => projects.managementPending),
+    projectOrderReady: computed(() => projects.catalogComplete),
+    projectManagementError: computed(() => projects.error),
+    loadProjectCatalog: projects.loadAll,
+    moveProject: projects.moveProject,
+    renameProjectTarget,
+    deleteProjectTarget,
+    requestProjectRename,
+    requestProjectDelete,
+    closeProjectRename,
+    closeProjectDelete,
   }
 }

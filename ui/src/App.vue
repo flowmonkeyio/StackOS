@@ -11,6 +11,7 @@ import { RouterView, useRoute } from 'vue-router'
 
 import DesktopUpdatePrompt from '@/components/DesktopUpdatePrompt.vue'
 import ProjectSwitcher from '@/components/ProjectSwitcher.vue'
+import ProjectRenameDialog from '@/components/ProjectRenameDialog.vue'
 import PluginNavRenderer from '@/components/renderers/PluginNavRenderer.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import { useProjectNavigation } from '@/composables/useProjectNavigation'
@@ -28,6 +29,16 @@ const {
   projectNavSections,
   routeViewKey,
   selectProject,
+  projectManagementLoading,
+  projectManagementPending,
+  projectOrderReady,
+  projectManagementError,
+  loadProjectCatalog,
+  moveProject,
+  renameProjectTarget,
+  requestProjectRename,
+  requestProjectDelete,
+  closeProjectRename,
 } = useProjectNavigation()
 
 const theme = ref<'light' | 'dark'>('light')
@@ -193,9 +204,25 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
           <ProjectSwitcher
             :items="projectItems"
             :selected-project="currentProject"
+            :loading="projectManagementLoading"
+            :management-pending="projectManagementPending"
+            :management-open="Boolean(renameProjectTarget)"
+            :order-ready="projectOrderReady"
+            :error="projectManagementError"
             @select="selectProject"
+            @opened="loadProjectCatalog"
+            @move="moveProject"
+            @rename="requestProjectRename"
+            @delete="requestProjectDelete"
           />
         </div>
+
+        <ProjectRenameDialog
+          v-if="renameProjectTarget"
+          :key="renameProjectTarget.id"
+          :project="renameProjectTarget"
+          @close="closeProjectRename"
+        />
 
         <nav
           aria-label="Project navigation"

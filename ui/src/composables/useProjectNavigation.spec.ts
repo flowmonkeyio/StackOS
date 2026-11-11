@@ -122,6 +122,27 @@ describe('useProjectNavigation', () => {
 
     harness.wrapper.unmount()
   })
+
+  it('hands exact management target IDs to rename/delete without selecting, routing or writing', async () => {
+    const harness = await setupNavigation('/projects/1/connections')
+    vi.mocked(fetch).mockClear()
+    harness.navigation.requestProjectRename(2)
+    harness.navigation.requestProjectDelete(2)
+    expect(harness.navigation.renameProjectTarget.value?.id).toBe(2)
+    expect(harness.navigation.deleteProjectTarget.value?.id).toBe(2)
+    expect(harness.projects.activeProjectId).toBe(1)
+    expect(harness.router.currentRoute.value.fullPath).toBe('/projects/1/connections')
+    harness.projects.items = harness.projects.items.map((p) => p.id === 2 ? { ...p, name: 'Beta renamed' } : p)
+    expect(harness.navigation.deleteProjectTarget.value?.name).toBe('Beta renamed')
+    harness.navigation.requestProjectDelete(999)
+    expect(harness.navigation.deleteProjectTarget.value?.id).toBe(2)
+    harness.navigation.closeProjectDelete()
+    harness.navigation.closeProjectRename()
+    expect(harness.navigation.deleteProjectTarget.value).toBeNull()
+    expect(harness.navigation.renameProjectTarget.value).toBeNull()
+    expect(fetch).not.toHaveBeenCalled()
+    harness.wrapper.unmount()
+  })
 })
 
 interface NavigationHarness {

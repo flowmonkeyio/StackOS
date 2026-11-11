@@ -32,12 +32,15 @@ export interface UiDropdownMenuProps {
   ariaLabel?: string
   /** Width — fits content by default. */
   width?: number | string
+  /** Opt-in escape from a scrolling ancestor; default inline placement is unchanged. */
+  portalTarget?: HTMLElement
 }
 
 const props = withDefaults(defineProps<UiDropdownMenuProps>(), {
   placement: 'bottom-start',
   ariaLabel: undefined,
   width: undefined,
+  portalTarget: undefined,
 })
 
 const emit = defineEmits<{
@@ -48,6 +51,23 @@ const open = ref(false)
 const root = ref<HTMLElement | null>(null)
 const panel = ref<HTMLElement | null>(null)
 const activeIndex = ref(-1)
+const portalStyle = ref<Record<string, string>>({})
+
+function positionPortal() {
+  if (!props.portalTarget || !root.value || !panel.value) return
+  const anchor = root.value.getBoundingClientRect()
+  const bounds = panel.value.getBoundingClientRect()
+  const width = Math.min(bounds.width, window.innerWidth - 24)
+  const height = Math.min(bounds.height, window.innerHeight - 24)
+  const end = props.placement.endsWith('end')
+  const above = props.placement.startsWith('top') || (anchor.bottom + 4 + height > window.innerHeight - 12 && anchor.top > height + 16)
+  portalStyle.value = {
+    position: 'fixed', margin: '0', right: 'auto', bottom: 'auto',
+    left: `${Math.max(12, Math.min(end ? anchor.right - width : anchor.left, window.innerWidth - width - 12))}px`,
+    top: `${Math.max(12, Math.min(above ? anchor.top - height - 4 : anchor.bottom + 4, window.innerHeight - height - 12))}px`,
+    maxWidth: 'calc(100vw - 24px)', maxHeight: 'calc(100dvh - 24px)', overflowY: 'auto',
+  }
+}
 
 const focusableItems = computed(() =>
   props.items
@@ -59,6 +79,11 @@ function setOpen(v: boolean) {
   open.value = v
   if (v) {
     activeIndex.value = focusableItems.value[0]?.i ?? -1
+    window.addEventListener('resize', positionPortal)
+    window.addEventListener('scroll', positionPortal, true)
+  } else {
+    window.removeEventListener('resize', positionPortal)
+    window.removeEventListener('scroll', positionPortal, true)
   }
 }
 
@@ -115,7 +140,8 @@ function onKey(ev: KeyboardEvent) {
 }
 
 function onDocClick(ev: MouseEvent) {
-  if (open.value && root.value && !root.value.contains(ev.target as Node)) setOpen(false)
+  if (open.value && root.value && !root.value.contains(ev.target as Node)
+    && !panel.value?.contains(ev.target as Node)) setOpen(false)
 }
 
 onMounted(() => {
@@ -125,9 +151,12 @@ onMounted(() => {
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKey)
   document.removeEventListener('mousedown', onDocClick)
+  window.removeEventListener('resize', positionPortal)
+  window.removeEventListener('scroll', positionPortal, true)
 })
 
 function onPanelMounted() {
+  positionPortal()
   panel.value?.focus()
 }
 
@@ -152,88 +181,93 @@ const placementClass = computed(
       :open="open"
       :toggle="onTriggerClick"
     />
-    <transition
-      enter-active-class="transition duration-fast ease-enter"
-      enter-from-class="opacity-0 scale-[0.98]"
-      leave-active-class="transition duration-fast ease-exit"
-      leave-to-class="opacity-0 scale-[0.98]"
+    <Teleport
+      :to="portalTarget ?? 'body'"
+      :disabled="!portalTarget"
     >
-      <div
-        v-if="open"
-        ref="panel"
-        tabindex="-1"
-        role="menu"
-        :aria-label="ariaLabel"
-        :class="[
-          'ui-dropdown__panel absolute z-dropdown min-w-[180px] p-1 rounded-lg border border-default bg-bg-surface shadow-md focus:outline-none',
-          placementClass,
-        ]"
-        :style="{ width: typeof width === 'number' ? width + 'px' : width }"
-        @vue:mounted="onPanelMounted"
+      <transition
+        enter-active-class="transition duration-fast ease-enter"
+        enter-from-class="opacity-0 scale-[0.98]"
+        leave-active-class="transition duration-fast ease-exit"
+        leave-to-class="opacity-0 scale-[0.98]"
       >
-        <template
-          v-for="(item, i) in items"
-          :key="item.key"
+        <div
+          v-if="open"
+          ref="panel"
+          tabindex="-1"
+          role="menu"
+          :aria-label="ariaLabel"
+          :class="[
+            'ui-dropdown__panel absolute z-dropdown min-w-[180px] p-1 rounded-lg border border-default bg-bg-surface shadow-md focus:outline-none',
+            placementClass,
+          ]"
+          :style="[{ width: typeof width === 'number' ? width + 'px' : width }, portalTarget ? portalStyle : {}]"
+          @vue:mounted="onPanelMounted"
         >
-          <div
-            v-if="item.as === 'separator'"
-            role="separator"
-            class="my-1 -mx-1 border-t border-subtle"
-          />
-          <div
-            v-else-if="item.as === 'header'"
-            role="presentation"
-            class="t-overline text-fg-subtle px-2 pt-2 pb-1"
+          <template
+            v-for="(item, i) in items"
+            :key="item.key"
           >
-            {{ item.label }}
-          </div>
-          <component
-            :is="item.as === 'link' ? 'a' : 'button'"
-            v-else
-            :type="item.as === 'link' ? undefined : 'button'"
-            :href="item.as === 'link' ? item.href : undefined"
-            role="menuitem"
-            :tabindex="-1"
-            :disabled="item.disabled || undefined"
-            :aria-disabled="item.disabled || undefined"
-            :class="[
-              'ui-dropdown__item w-full flex items-center gap-2 rounded-sm px-2 h-8 text-sm text-left transition-colors duration-fast ease-standard',
-              item.disabled
-                ? 'text-fg-disabled cursor-not-allowed'
-                : item.tone === 'danger'
-                  ? 'text-danger-fg hover:bg-danger-subtle cursor-pointer'
-                  : 'text-fg-default hover:bg-bg-surface-alt cursor-pointer',
-              activeIndex === i
-                && !item.disabled
-                && (item.tone === 'danger' ? 'bg-danger-subtle' : 'bg-bg-surface-alt'),
-            ]"
-            @click="select(item)"
-            @mouseenter="!item.disabled && (activeIndex = i)"
-          >
-            <span
-              v-if="$slots.icon || hasIcon(item.icon)"
-              :class="['shrink-0', item.tone !== 'danger' && !item.disabled && 'text-fg-muted']"
+            <div
+              v-if="item.as === 'separator'"
+              role="separator"
+              class="my-1 -mx-1 border-t border-subtle"
+            />
+            <div
+              v-else-if="item.as === 'header'"
+              role="presentation"
+              class="t-overline text-fg-subtle px-2 pt-2 pb-1"
             >
-              <slot
-                name="icon"
-                :item="item"
+              {{ item.label }}
+            </div>
+            <component
+              :is="item.as === 'link' ? 'a' : 'button'"
+              v-else
+              :type="item.as === 'link' ? undefined : 'button'"
+              :href="item.as === 'link' ? item.href : undefined"
+              role="menuitem"
+              :tabindex="-1"
+              :disabled="item.disabled || undefined"
+              :aria-disabled="item.disabled || undefined"
+              :class="[
+                'ui-dropdown__item w-full flex items-center gap-2 rounded-sm px-2 h-8 text-sm text-left transition-colors duration-fast ease-standard',
+                item.disabled
+                  ? 'text-fg-disabled cursor-not-allowed'
+                  : item.tone === 'danger'
+                    ? 'text-danger-fg hover:bg-danger-subtle cursor-pointer'
+                    : 'text-fg-default hover:bg-bg-surface-alt cursor-pointer',
+                activeIndex === i
+                  && !item.disabled
+                  && (item.tone === 'danger' ? 'bg-danger-subtle' : 'bg-bg-surface-alt'),
+              ]"
+              @click="select(item)"
+              @mouseenter="!item.disabled && (activeIndex = i)"
+            >
+              <span
+                v-if="$slots.icon || hasIcon(item.icon)"
+                :class="['shrink-0', item.tone !== 'danger' && !item.disabled && 'text-fg-muted']"
               >
-                <UiIcon
-                  :name="item.icon"
-                  class="ui-dropdown__icon h-4 w-4"
-                />
-              </slot>
-            </span>
-            <span class="flex-1 truncate">{{ item.label }}</span>
-            <span
-              v-if="item.shortcut"
-              class="text-2xs text-fg-subtle font-mono"
-            >{{
-              item.shortcut
-            }}</span>
-          </component>
-        </template>
-      </div>
-    </transition>
+                <slot
+                  name="icon"
+                  :item="item"
+                >
+                  <UiIcon
+                    :name="item.icon"
+                    class="ui-dropdown__icon h-4 w-4"
+                  />
+                </slot>
+              </span>
+              <span class="flex-1 truncate">{{ item.label }}</span>
+              <span
+                v-if="item.shortcut"
+                class="text-2xs text-fg-subtle font-mono"
+              >{{
+                item.shortcut
+              }}</span>
+            </component>
+          </template>
+        </div>
+      </transition>
+    </Teleport>
   </div>
 </template>
