@@ -1346,6 +1346,7 @@ def start_delivery(
 def _record_execution_transition(
     session_factory: Callable[[], Session], call: ActiveInvocation, active: bool
 ) -> None:
+    assert call.scope.ticket_key is not None  # This callback belongs only to task delivery.
     with session_factory() as session:
         if call.scope.phase is not None:
             repo = TrackerRepository(session)

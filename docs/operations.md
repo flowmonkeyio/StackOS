@@ -1305,6 +1305,17 @@ Use `action.execute` when the action belongs to a workflow:
    run-plan step explicitly grants `agentRequest.create`.
 6. Agent request operations never call Telegram, SMTP, IMAP, or any provider API.
 
+Native request execution has an additional ownership fence: expired requests with
+admitted `native_execution` evidence are excluded from claimable reads and cannot
+be reclaimed, released, ignored or prepared by a replacement runner. Only the
+native host service writes that metadata through `AgentRequestRepository`; callers
+cannot supply it through request create/complete metadata. Completion uses the
+original claim token and retained terminal evidence, including after lease expiry.
+Resolving requires an actual successful native exit and identity, with no
+cancellation. Crashed or interrupted work remains unresolved for explicit handling.
+See [request-owned native execution](architecture.md#request-owned-native-execution)
+for the internal lease, usage, liveness and final-persistence boundary.
+
 `localAgentChat.createMessage` stores local human/agent chat messages as
 communications resources and may create a generic `agent_request` for inbound
 human messages. It does not run a model, choose a workflow, call a provider, or

@@ -12,7 +12,7 @@ from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Event, RLock, Thread
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 from uuid import uuid4
 
 from stackos.host_mcp.adapters import claude_code, claude_desktop, codex, gemini_cli, grok, hermes
@@ -33,6 +33,8 @@ from stackos.host_mcp.result import (
 )
 
 Action = Literal["inspect", "register", "repair", "remove"]
+if TYPE_CHECKING:
+    from stackos.repositories.agent_requests import AgentRequestExecution
 AdapterFn = Callable[[Path], HostMcpResult]
 ForceAdapterFn = Callable[[Path, bool], HostMcpResult]
 ProfileAdapterFn = Callable[[Path, str | None], HostMcpResult]
@@ -43,11 +45,26 @@ class AgentExecutionScope:
     """Safe attribution supplied by the caller, never inferred from tracker status."""
 
     project_id: int
-    task_key: str
-    ticket_key: str
-    agent: str
+    task_key: str | None = None
+    ticket_key: str | None = None
+    agent: str = ""
     attempt: int | None = None
     phase: str | None = None
+    request_id: int | None = None
+
+    def __post_init__(self) -> None:
+        if type(self.project_id) is not int or self.project_id <= 0 or not self.agent.strip():
+            raise ValueError("Execution requires a project and agent")
+        if self.request_id is not None:
+            if (
+                type(self.request_id) is not int
+                or self.request_id <= 0
+                or self.task_key is not None
+                or self.ticket_key is not None
+            ):
+                raise ValueError("Request attribution must be exclusive of task/ticket attribution")
+        elif not self.task_key or not self.ticket_key:
+            raise ValueError("Execution requires task/ticket or request attribution")
 
 
 @dataclass
@@ -60,6 +77,8 @@ class ActiveInvocation:
     previous_usage: Any = None
     resumed: bool = False
     session_id: str | None = None
+    thread_id: str | None = None
+    request_execution: AgentRequestExecution | None = None
     reader: CodexCounterReader | None = None
     usage: dict[str, Any] | None = None
     samples: deque = field(default_factory=lambda: deque(maxlen=120))
@@ -78,6 +97,11 @@ class ActiveInvocation:
             "model": self.model,
             "started_at": self.started_at,
             "ticket_key": self.scope.ticket_key,
+            **(
+                {"request_id": self.scope.request_id, "thread_id": self.thread_id}
+                if self.scope.request_id is not None
+                else {}
+            ),
             "live_usage": {
                 "usage": {
                     "unit": "tokens",
@@ -116,7 +140,79 @@ def cancel_task_invocations(project_id: int, task_key: str) -> list[ActiveInvoca
         return calls
 
 
+def cancel_request_invocations(project_id: int, request_id: int) -> list[ActiveInvocation]:
+    """Fence only the exact request owner; callers stop the returned managed handles."""
+    with managed_launch_lock, _active_invocations_lock:
+        calls = [
+            call
+            for call in _active_invocations.values()
+            if call.scope.project_id == project_id
+            and call.scope.request_id == request_id
+            and not call.finished
+        ]
+        for call in calls:
+            call.cancelled.set()
+            call.process_control.cancelled.set()
+        return calls
+
+
+def owns_request_invocation(call: ActiveInvocation, *, finished: bool = False) -> bool:
+    """Exact registered object ownership, including the synchronous exit handoff."""
+    with _active_invocations_lock:
+        return (
+            _active_invocations.get(call.invocation_id) is call
+            and call.scope.request_id is not None
+            and call.finished == finished
+        )
+
+
+def active_request_execution(
+    project_id: int,
+    request_id: int,
+    *,
+    include_handoff: bool = False,
+) -> dict[str, Any] | None:
+    """Copy request observation before SQL, including the bounded exit handoff if requested."""
+    with _active_invocations_lock:
+        for call in _active_invocations.values():
+            if (
+                call.scope.project_id == project_id
+                and call.scope.request_id == request_id
+                and (include_handoff or not call.finished)
+            ):
+                return {
+                    **call.projection(),
+                    **(
+                        {"finished": call.finished, "usage": deepcopy(call.usage)}
+                        if include_handoff
+                        else {}
+                    ),
+                }
+    return None
+
+
 def _sample_invocations(now: datetime | None = None) -> None:
+    # Reuse the native collector. Never hold its registry lock during SQL.
+    with _active_invocations_lock:
+        requests = [
+            call
+            for call in _active_invocations.values()
+            if call.request_execution is not None
+            and not call.finished
+            and not call.cancelled.is_set()
+        ]
+    for call in requests:
+        try:
+            with managed_launch_lock:
+                if not owns_request_invocation(call) or call.cancelled.is_set():
+                    continue
+                assert call.request_execution is not None
+                call.request_execution.renew(call)
+        except Exception:
+            # Losing durable ownership must fence launch/result acceptance.
+            call.cancelled.set()
+            call.process_control.stop()
+            logging.getLogger(__name__).exception("Could not renew native request ownership")
     cutoff = (now or datetime.now(UTC)).timestamp() - 600
     with _active_invocations_lock:
         for call in _active_invocations.values():
@@ -183,6 +279,7 @@ def _unregister(call: ActiveInvocation) -> None:
         call.samples.clear()
         call.usage = None
         call.previous_usage = None
+        call.request_execution = None
         call.session_id = None
         if not _active_invocations:
             _collector_wake.set()
@@ -197,6 +294,7 @@ def _finish(
         if result is not None and (
             resume_thread_id is None or result.thread_id == resume_thread_id
         ):
+            call.thread_id = call.thread_id or result.thread_id
             final = normalize_usage(
                 result.usage,
                 session_id=result.thread_id,
@@ -225,9 +323,22 @@ def _finish(
 
 
 def shutdown_usage() -> None:
+    # Stop only request processes here; task controllers retain their own stop lifecycle.
+    with managed_launch_lock, _active_invocations_lock:
+        requests = [
+            call
+            for call in _active_invocations.values()
+            if call.scope.request_id is not None and not call.finished
+        ]
+        for call in requests:
+            call.cancelled.set()
+            call.process_control.cancelled.set()
+    for call in requests:
+        call.process_control.stop()
     with _active_invocations_lock:
         for call in list(_active_invocations.values()):
-            _unregister(call)
+            if call.scope.request_id is None or call.retired.is_set():
+                _unregister(call)
 
 
 atexit.register(shutdown_usage)
@@ -255,8 +366,10 @@ def provisional_usage(project_id: int | None = None) -> ProvisionalUsage:
     with _active_invocations_lock:
         snapshot: ProvisionalUsage = {}
         for call in _active_invocations.values():
-            if call.usage is not None and (
-                project_id is None or call.scope.project_id == project_id
+            if (
+                call.scope.ticket_key is not None
+                and call.usage is not None
+                and (project_id is None or call.scope.project_id == project_id)
             ):
                 snapshot.setdefault((call.scope.project_id, call.scope.ticket_key), []).append(
                     (
@@ -385,10 +498,21 @@ def run_agent(
     mcp_config_ref: dict[str, str] | None = None,
     native_settings: dict[str, Any] | None = None,
     launch_allowed: Callable[[], bool] | None = None,
+    request_execution: AgentRequestExecution | None = None,
 ) -> AgentRunResult:
     """Run a project agent through the same host registry used by Overview."""
     if not instructions.strip():
         return AgentRunResult(None, error="Project-agent instructions must not be empty.")
+    request_id = execution_scope.request_id if execution_scope else None
+    if (request_id is not None) != (request_execution is not None) or (
+        request_execution is not None
+        and execution_scope is not None
+        and (
+            request_execution.project_id != execution_scope.project_id
+            or request_execution.request_id != request_id
+        )
+    ):
+        return AgentRunResult(None, error="Request execution requires its exact repository owner.")
     if mcp_config_ref is not None and host_key != "codex":
         return AgentRunResult(None, error="Task MCP configuration is unsupported by this host.")
     if native_settings is not None and host_key != "codex":
@@ -434,6 +558,7 @@ def run_agent(
         progress_kwargs["mcp_config_ref"] = mcp_config_ref
     result: AgentRunResult | None = None
     registered = False
+    request_admitted = False
     if call is not None and host_key == "codex":
         progress_kwargs["on_session"] = lambda session_id: _attach_session(
             call, session_id, Path(project_dir), resume_thread_id
@@ -447,6 +572,26 @@ def run_agent(
                     return AgentRunResult(None, error="Invocation cancelled before registration")
                 _register(call)
                 registered = True
+                if request_execution is not None:
+                    request_execution.admit(
+                        call,
+                        {
+                            "host_key": host_key,
+                            "project_dir": str(Path(project_dir).expanduser().resolve()),
+                            "instructions": instructions,
+                            "prompt": prompt,
+                            "output_schema": output_schema,
+                            "sandbox": sandbox,
+                            "model": model,
+                            "provider": provider,
+                            "profile": profile,
+                            "resume_thread_id": resume_thread_id,
+                            "mcp_config_ref": mcp_config_ref,
+                            "native_settings": native_settings,
+                        },
+                    )
+                    request_admitted = True
+                    call.request_execution = request_execution
                 _notify_execution(on_execution_change, call, True)
         result = definition.run_agent(
             Path(project_dir).expanduser().resolve(),
@@ -466,11 +611,20 @@ def run_agent(
                 if value is not None
             },
         )
+        if (
+            request_id is not None
+            and call is not None
+            and call.thread_id is not None
+            and (result.thread_id != call.thread_id)
+        ):
+            result = replace(result, error="Native request session identity mismatch", usage=None)
     finally:
         if call is not None and registered:
             try:
                 _sample_invocations()
                 _finish(call, result, resume_thread_id)
+                if request_execution is not None and request_admitted:
+                    request_execution.finish(call, result)
                 # The caller may persist usage after native exit. During that
                 # short handoff reads still have the snapshot, never a live
                 # identity/reader. Cleanup also runs if the callback fails.
@@ -478,6 +632,8 @@ def run_agent(
             finally:
                 _unregister(call)
     assert result is not None
+    if request_id is not None and call is not None and call.cancelled.is_set():
+        return replace(result, error="Native request invocation cancelled")
     if resume_thread_id is not None and result.thread_id != resume_thread_id:
         return AgentRunResult(
             result.exit_code,
@@ -498,6 +654,7 @@ def _attach_session(
         if (
             call.invocation_id not in _active_invocations
             or call.finished
+            or call.cancelled.is_set()
             or call.session_id is not None
         ):
             return
@@ -510,7 +667,18 @@ def _attach_session(
         ):
             return
         call.session_id = session_id
+        call.thread_id = session_id
         call.reader = CodexCounterReader(session_id, project_dir, resumed=call.resumed)
+    # Retain native identity as soon as the host announces it, including if the
+    # daemon later crashes before terminal handoff. Never perform SQL under the
+    # registry lock.
+    if call.request_execution is not None:
+        try:
+            call.request_execution.renew(call)
+        except Exception:
+            call.cancelled.set()
+            call.process_control.stop()
+            raise
 
 
 def agent_review_sandbox(host_key: str) -> AgentSandbox:

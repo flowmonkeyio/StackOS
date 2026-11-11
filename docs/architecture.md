@@ -128,6 +128,46 @@ edits do not update saved instructions, installed runtimes or frozen jobs. No
 synchronizer or cross-project rollout exists. Main retains scope admission and
 final claims; terminal-managed delivery keeps its sole-writer contract.
 
+## Request-Owned Native Execution
+
+`host_mcp.service.run_agent` accepts either project/task/ticket attribution or
+project/request attribution, exclusively. Request-only execution uses
+`AgentRequestExecution` with a daemon-held claim token and session factory; it
+creates no tracker records or run plan. The service records the actual admitted
+launch options and caller context in `AgentRequest.metadata_json.native_execution`
+through `AgentRequestRepository` before invoking the native adapter. Claim tokens
+are never part of that snapshot. Missing ownership or failed admission prevents
+native launch.
+
+The existing active invocation registry owns live thread identity, process control
+and counters. The repository retains the thread ID when the native host first
+announces it, so a later daemon crash does not erase that identity.
+`active_request_execution(project_id, request_id)` reads that
+transient lifetime. Request counters are excluded from task/ticket provisional
+statistics. The existing five-second collector verifies the exact registered
+owner and renews its repository lease only near expiry. Cancellation and exit
+fence renewal and late session callbacks. An admitted request cannot be reclaimed,
+released or prepared by a different runner even after its lease expires; an
+interrupted occurrence remains unresolved for explicit inspection, with no replay.
+
+At native exit the service persists one final native result, identity, measured
+usage and bounded samples through the same repository owner before retiring the
+registry snapshot. `AgentRequestRepository.execution_evidence` copies registry
+observation before reading SQL, covering the native-exit handoff without reporting
+a finished process as live; committed final evidence wins over an older copy.
+Counters come from the adapter, never the agent's result body;
+repeated checkpoints replace the invocation contribution. The controller still
+interprets the domain result and calls the existing request `complete` operation.
+Resolution requires successful native terminal evidence; cancellation, missing
+identity or an unobserved exit cannot become success. Failed work can be explicitly
+completed as failed with the original claim. A persistence failure propagates and
+leaves the request unresolved rather than reporting success.
+
+Request cancellation returns only the exact project/request's managed handles for
+the caller to stop. Daemon shutdown stops owned request processes and retains the
+registry until their final handoff. Project cleanup's existing native-invocation
+blocker also covers these calls. No second process registry or polling loop exists.
+
 ## Native Desktop Schedule Admission
 
 Electron main owns one authenticated availability stream through
