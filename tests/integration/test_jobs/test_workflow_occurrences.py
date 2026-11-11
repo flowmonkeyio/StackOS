@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import sys
 from datetime import UTC, datetime, timedelta
 from threading import Event
 from types import SimpleNamespace
@@ -221,7 +222,7 @@ async def test_failures_are_truthful_no_replay_and_blocked_remains_open(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mutation", ["disable", "delete", "edit", "disconnect"])
+@pytest.mark.parametrize("mutation", ["disable", "delete", "edit", "disconnect", "folder"])
 async def test_native_spawn_guard_fences_changes_after_admission(occurrence, monkeypatch, mutation):
     row_id, _project_id, runtime, _, engine, _ = occurrence
     spawned = []
@@ -229,6 +230,14 @@ async def test_native_spawn_guard_fences_changes_after_admission(occurrence, mon
     def runner(*args, process_control, **kwargs):
         if mutation == "disconnect":
             runtime.disconnect(runtime.connection)
+        elif mutation == "folder":
+            with Session(engine) as session:
+                project = ProjectRepository(session).get(_project_id)
+                from pathlib import Path
+
+                changed = Path(project.project_dir) / "changed-folder"
+                changed.mkdir()
+                bind_folder(session, _project_id, changed)
         else:
             with Session(engine) as session:
                 row = session.get(ScheduledJob, row_id)
@@ -239,8 +248,6 @@ async def test_native_spawn_guard_fences_changes_after_admission(occurrence, mon
                     row.goal = "Changed"
                     session.add(row)
                 session.commit()
-        import sys
-
         with pytest.raises(InvocationCancelled, match="cancelled"):
             process_control.spawn([sys.executable, "-c", "print('must not run')"])
             spawned.append(True)
@@ -251,6 +258,50 @@ async def test_native_spawn_guard_fences_changes_after_admission(occurrence, mon
     assert not spawned
     with Session(engine) as session:
         assert session.exec(select(AgentRequest)).one().status == "failed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("delay_boundary", ["registration", "spawn"])
+async def test_admitted_occurrence_survives_native_preparation_delay(
+    occurrence, monkeypatch, delay_boundary
+):
+    row_id, _project_id, runtime, clock, engine, _calls = occurrence
+    spawned = []
+    run_agent = service.run_agent
+
+    def delayed_registration(*args, **kwargs):
+        if delay_boundary == "registration":
+            clock[0] += timedelta(seconds=2)
+        return run_agent(*args, **kwargs)
+
+    def runner(*args, process_control, on_session, **kwargs):
+        if delay_boundary == "spawn":
+            clock[0] += timedelta(seconds=2)
+        process = process_control.spawn([sys.executable, "-c", "pass"])
+        assert process.wait(timeout=10) == 0
+        spawned.append(True)
+        on_session("delayed-native-ready")
+        return AgentRunResult(
+            0,
+            thread_id="delayed-native-ready",
+            result={"status": "success", "summary": "Completed", "run_plan_id": None},
+            usage=usage_snapshot("proof", "invocation", 37, 6),
+        )
+
+    monkeypatch.setattr(service, "run_agent", delayed_registration)
+    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    due = runtime.registrations[row_id].due
+    await fire(occurrence)
+    with Session(engine) as session:
+        request = session.exec(select(AgentRequest)).one()
+        assert request.status == "resolved", request.metadata_json
+        native = request.metadata_json["native_execution"]
+        assert native["execution"]["thread_id"] == "delayed-native-ready"
+        assert native["usage"]["measured"]["total"] == 43
+        assert not native["cancelled"]
+        await runtime._launch(session.get(ScheduledJob, row_id), due, lambda: True)
+        assert len(session.exec(select(AgentRequest)).all()) == 1
+    assert spawned == [True]
 
 
 @pytest.mark.asyncio

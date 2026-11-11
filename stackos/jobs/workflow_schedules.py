@@ -1,6 +1,6 @@
 """Transient desktop admission and future-only timers on the daemon scheduler.
 
-All mutations and admission checks run on the daemon event loop. The launch
+Timer mutations and request admission run on the daemon event loop. The launch
 consumer must call the supplied guard after async preflight, immediately before
 creating work. Nothing here owns an admitted workflow's lifecycle.
 """
@@ -196,6 +196,8 @@ class WorkflowScheduleRuntime:
 
     async def _launch(self, row: ScheduledJob, due: datetime, admit: Callable[[], bool]) -> None:
         """One admitted request, one native project-main conversation, no workflow dispatch."""
+        row_id = row.id
+        assert row_id is not None
         request_id = None
         claim_token = None
         try:
@@ -221,6 +223,14 @@ class WorkflowScheduleRuntime:
                 assert settings is not None
                 if not admit():
                     return
+                # The due-time window ends at admission. Retain the existing
+                # generation/configuration identity for later native preparation.
+                admitted_registration = Registration(
+                    self.generation,
+                    self.revisions.get(row_id),
+                    due,
+                    self._config(current),
+                )
                 context = {
                     "project_id": row.project_id,
                     "schedule_id": row.id,
@@ -258,7 +268,7 @@ class WorkflowScheduleRuntime:
             # Native service invokes this fence at registry admission and process spawn.
             # Disconnect/remove never cancels an already spawned occurrence.
             def launch_allowed() -> bool:
-                if not admit():
+                if self._current(row_id, admitted_registration) is None:
                     return False
                 from stackos.repositories.projects import ProjectRepository
 

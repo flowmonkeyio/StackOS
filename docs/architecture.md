@@ -195,6 +195,9 @@ The occurrence-launch consumer receives `(row, due_utc, admit)`. It must call
 `admit()` after any awaited readiness checks, immediately before creating work,
 without an intervening await. Each occurrence creates and claims one AgentRequest
 and calls the shared native host service once for a project main-agent thread.
+The one-second due-time window applies through initial request admission only.
+Native registration and spawn retain the admitted generation/configuration and
+project-folder fences without expiring valid work during native preparation.
 Goal and optional workflow are context for that agent, which reads current project
 and effective workflow guidance and decides how to use ordinary tools/approvals.
 The scheduler does not create or advance plans or dispatch task-delivery roles.

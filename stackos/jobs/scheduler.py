@@ -5,8 +5,9 @@ The scheduler is built once at daemon startup and held on
 
 1. **Background ops jobs** — the runs reaper is registered explicitly in
    the lifespan hook.
-2. **Future workflow schedules** — scheduled project work should start
-   native StackOS run plans, not a separate workflow engine.
+2. **Future project automations** — each admitted occurrence creates one
+   request-owned native main-agent thread. The agent may explicitly create an
+   applicable run plan through ordinary tools and approvals.
 
 The two jobstore tables are deliberately distinct:
 
@@ -14,9 +15,9 @@ The two jobstore tables are deliberately distinct:
   end-to-end by SQLAlchemyJobStore. Schema is *not* tracked by Alembic;
   the SDK creates it idempotently on first use. We never query this
   table from application code.
-- ``scheduled_jobs`` — operator-facing per-project cron metadata. The UI's
-  "Schedules" tab toggles ``enabled``; workflow-specific scheduling must
-  create native run-plan starts.
+- ``scheduled_jobs`` — operator-facing per-project goal, optional workflow and
+  cron configuration. Its runtime owns future-only request admission, while
+  request/native owners retain admitted execution and history.
 
 Per audit MAJOR-23 the executor map is:
 

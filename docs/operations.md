@@ -177,6 +177,9 @@ continues. Reconnection arms future instants only. The existing memory scheduler
 uses exact next cron instants, one-second jitter tolerance, and generation/config
 guards; edits/removal are checked again at native process spawn. No missed ticks
 are replayed.
+The one-second jitter window gates request admission. Once admitted, native
+preparation may take longer; generation, configuration, presence and project-folder
+checks still fence registration and spawn.
 
 Each eligible instant creates and claims one existing AgentRequest under
 `schedule:<id>:<due-UTC-ISO8601>`, then calls shared
