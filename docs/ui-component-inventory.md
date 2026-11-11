@@ -86,6 +86,9 @@ survivor in stored order or global Overview, preserves a newer selection and
 noncurrent routes, and permits navigation-only retry after cleanup succeeds.
 It rechecks route/selection ownership after survivor reads and rejects removed
 project destinations at router resolution after asynchronous leave/update guards.
+The same owner observes push/replace calls and native history events before
+component guards await, so pending direct links also retain navigation intent.
+Tracking delegates to Vue Router and is removed with the owning app lifecycle.
 The selector remains an intent emitter. Dialog titles wrap long project names;
 normal overlay focus returns to the opener, or the stable selector when a
 deleted row's opener is gone. Source tests do not claim operator pointer or

@@ -91,6 +91,24 @@ export function useProjectNavigation() {
   }
 
   onMounted(() => synchronizeSuccessfulRoute(route))
+  // Observe native entry points before component leave guards can await.
+  // A global beforeEach hook runs after those guards and misses that interval.
+  // Delegate unchanged so Vue Router still owns guards, cancellation and history.
+  const originalPush = router.push
+  const originalReplace = router.replace
+  const pushWithIntent: typeof router.push = (to) => {
+    selectionIntent++
+    return originalPush.call(router, to)
+  }
+  const replaceWithIntent: typeof router.replace = (to) => {
+    selectionIntent++
+    return originalReplace.call(router, to)
+  }
+  router.push = pushWithIntent
+  router.replace = replaceWithIntent
+  const removeHistoryIntent = router.options.history.listen(() => {
+    if (router.listening) selectionIntent++
+  })
   const removeAfterEach = router.afterEach((to, _from, failure) => {
     if (!failure) synchronizeSuccessfulRoute(to)
   })
@@ -102,13 +120,15 @@ export function useProjectNavigation() {
   })
   onBeforeUnmount(() => {
     selectionIntent++
+    removeHistoryIntent()
+    if (router.push === pushWithIntent) router.push = originalPush
+    if (router.replace === replaceWithIntent) router.replace = originalReplace
     removeBeforeResolve()
     removeAfterEach()
   })
 
   async function selectProject(projectId: number): Promise<boolean> {
     if (projects.isProjectDeleted(projectId)) return false
-    selectionIntent++
     const destination = projectSwitchDestination(route, projectId)
     if (destination) {
       try {
@@ -119,6 +139,7 @@ export function useProjectNavigation() {
       }
     }
 
+    selectionIntent++
     projects.setActiveProjectId(projectId)
     await refreshNavigationCatalog(projectId)
     return true
@@ -144,15 +165,16 @@ export function useProjectNavigation() {
       ?? projects.items.find((project) => !project.cleanup_json)
     if (survivor) return selectProject(survivor.id)
     try {
-      const failure = await router.push('/')
+      const navigating = router.push('/')
+      const overviewIntent = selectionIntent
+      const failure = await navigating
       if (isNavigationFailure(failure) && route.path !== '/') return false
-      if (selectionIntent === intent) projects.setActiveProjectId(null)
+      if (selectionIntent === overviewIntent) projects.setActiveProjectId(null)
       return true
     } catch { return false }
   }
 
   async function viewProjectWork(projectId: number): Promise<boolean> {
-    selectionIntent++
     try {
       const failure = await router.push({ path: `/projects/${projectId}/tasks` })
       return !isNavigationFailure(failure) || route.path === `/projects/${projectId}/tasks`

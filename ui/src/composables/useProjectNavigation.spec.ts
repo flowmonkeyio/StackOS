@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia, type Pinia } from 'pinia'
 import { defineComponent, h } from 'vue'
-import { createMemoryHistory, createRouter, type Router } from 'vue-router'
+import { createMemoryHistory, createRouter, RouterView, type NavigationGuard, type Router } from 'vue-router'
 
 import { useProjectNavigation } from './useProjectNavigation'
 import { useStackOsCatalogStore } from '@/stores/plugins'
@@ -295,6 +295,83 @@ describe('useProjectNavigation', () => {
     expect(harness.navigation.currentProject.value?.id).toBe(1)
     harness.wrapper.unmount()
   })
+
+  it('preserves a newer direct router selection waiting on a global guard during survivor loading', async () => {
+    const harness = await setupNavigation('/projects/1/agents', [
+      projectFixture(1, 'Alpha'), projectFixture(2, 'Beta'), projectFixture(3, 'Gamma'),
+    ])
+    mockDelete(1)
+    await harness.projects.deleteProject(harness.projects.getById(1)!)
+    let finishCatalog!: (response: Response) => void
+    globalThis.fetch = vi.fn((input) => String(input).includes('/projects?')
+      ? new Promise<Response>((resolve) => { finishCatalog = resolve }) : Promise.resolve(json([])))
+    const finishing = harness.navigation.finishProjectDeletion(1)
+    let resumeGuard!: (allowed: boolean) => void
+    harness.router.beforeEach((to) => to.params.id === '3'
+      ? new Promise<boolean>((resolve) => { resumeGuard = resolve }) : true)
+    const selecting = harness.router.push('/projects/3/agents')
+    await flushPromises()
+    finishCatalog(json({ items: [projectFixture(2, 'Beta'), projectFixture(3, 'Gamma')], next_cursor: null }))
+    expect(await finishing).toBe(false)
+    resumeGuard(true)
+    await selecting
+    expect(harness.router.currentRoute.value.path).toBe('/projects/3/agents')
+    expect(harness.projects.activeProjectId).toBe(3)
+    harness.wrapper.unmount()
+  })
+
+  it.each(['push', 'replace', 'back'] as const)(
+    'preserves newer %s navigation waiting on a component leave guard before global guards', async (method) => {
+      let protect = false
+      let resumeGuard!: (allowed: boolean) => void
+      const leaveGuard: NavigationGuard = () => protect
+        ? new Promise<boolean>((resolve) => { resumeGuard = resolve }) : true
+      const harness = await setupNavigation('/projects/1/agents', [
+        projectFixture(1, 'Alpha'), projectFixture(2, 'Beta'),
+      ], 1, leaveGuard)
+      // Seed a real history destination without intercepting the tested attempt.
+      await harness.router.push('/accounts?account=keep')
+      await harness.router.push('/projects/1/agents')
+      protect = true
+      mockDelete(1)
+      await harness.projects.deleteProject(harness.projects.getById(1)!)
+      let finishCatalog!: (response: Response) => void
+      globalThis.fetch = vi.fn((input) => String(input).includes('/projects?')
+        ? new Promise<Response>((resolve) => { finishCatalog = resolve }) : Promise.resolve(json([])))
+      const finishing = harness.navigation.finishProjectDeletion(1)
+      let globalGuards = 0
+      harness.router.beforeEach(() => { globalGuards++; return true })
+      const selecting = method === 'back' ? harness.router.back()
+        : harness.router[method]('/accounts?account=keep')
+      await flushPromises()
+      expect(resumeGuard).toBeTypeOf('function')
+      expect(globalGuards).toBe(0)
+      finishCatalog(json({ items: [projectFixture(2, 'Beta')], next_cursor: null }))
+      expect(await finishing).toBe(false)
+      resumeGuard(true)
+      await selecting
+      await flushPromises()
+      expect(harness.router.currentRoute.value.fullPath).toBe('/accounts?account=keep')
+      expect(harness.navigation.projectNavSections.value).toEqual([])
+      harness.wrapper.unmount()
+    },
+  )
+
+  it('releases navigation intent tracking on unmount without letting a retained catalog read navigate', async () => {
+    const harness = await setupNavigation('/projects/1/agents')
+    mockDelete(1)
+    await harness.projects.deleteProject(harness.projects.getById(1)!)
+    let finishCatalog!: (response: Response) => void
+    globalThis.fetch = vi.fn(() => new Promise<Response>((resolve) => { finishCatalog = resolve }))
+    const finishing = harness.navigation.finishProjectDeletion(1)
+    harness.wrapper.unmount()
+    expect(harness.router.push).toBe(harness.originalPush)
+    expect(harness.router.replace).toBe(harness.originalReplace)
+    const routeAfterUnmount = harness.router.currentRoute.value
+    finishCatalog(json({ items: [projectFixture(2, 'Beta')], next_cursor: null }))
+    await finishing
+    expect(harness.router.currentRoute.value).toBe(routeAfterUnmount)
+  })
 })
 
 function mockDelete(id: number): void {
@@ -309,12 +386,15 @@ interface NavigationHarness {
   catalog: ReturnType<typeof useStackOsCatalogStore>
   navigation: ReturnType<typeof useProjectNavigation>
   wrapper: VueWrapper
+  originalPush: Router['push']
+  originalReplace: Router['replace']
 }
 
 async function setupNavigation(
   path: string,
   projectsList = [projectFixture(1, 'Alpha'), projectFixture(2, 'Beta')],
   activeProjectId = 1,
+  leaveGuard?: NavigationGuard,
 ): Promise<NavigationHarness> {
   const pinia = createPinia()
   setActivePinia(pinia)
@@ -330,26 +410,28 @@ async function setupNavigation(
       { path: '/accounts', component: { template: '<div />' } },
       { path: '/projects/:id', component: { template: '<div />' } },
       { path: '/projects/:id/connections', component: { template: '<div />' } },
-      { path: '/projects/:id/agents', component: { template: '<div />' } },
+      { path: '/projects/:id/agents', component: { beforeRouteLeave: leaveGuard, render: () => h('div') } },
       { path: '/projects/:id/tasks', component: { template: '<div />' } },
     ],
   })
   await router.push(path)
   await router.isReady()
+  const originalPush = router.push
+  const originalReplace = router.replace
 
   let navigation!: ReturnType<typeof useProjectNavigation>
   const wrapper = mount(
     defineComponent({
       setup() {
         navigation = useProjectNavigation()
-        return () => h('div')
+        return () => h(RouterView)
       },
     }),
     { global: { plugins: [pinia, router] } },
   )
   await flushPromises()
 
-  return { pinia, router, projects, catalog, navigation, wrapper }
+  return { pinia, router, projects, catalog, navigation, wrapper, originalPush, originalReplace }
 }
 
 function requestedPluginProjects(): number[] {
