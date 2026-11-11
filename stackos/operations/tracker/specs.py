@@ -14,6 +14,8 @@ from stackos.operations.spec import (
     OperationSurfaces,
 )
 from stackos.operations.tracker.read_handlers import (
+    tracker_active_tasks,
+    tracker_active_tasks_all,
     tracker_agent_stats,
     tracker_agent_stats_all,
     tracker_blockers,
@@ -33,6 +35,8 @@ from stackos.operations.tracker.read_handlers import (
     tracker_why,
 )
 from stackos.operations.tracker.schemas import (
+    TrackerActiveTasksAllInput,
+    TrackerActiveTasksInput,
     TrackerAgentStatsAllInput,
     TrackerAgentStatsInput,
     TrackerChangedInput,
@@ -100,6 +104,7 @@ from stackos.repositories.tracker import (
 )
 from stackos.repositories.tracker.inspection_schema import TaskActivityOut, TaskResultsOut
 from stackos.repositories.tracker.schema import (
+    ActiveTasksOut,
     TrackerAgentStatsOut,
     TrackerTaskBoardOut,
 )
@@ -124,6 +129,48 @@ _TICKET_COUNTS_RESPONSE_POLICY = OperationResponsePolicy(
 
 def operation_specs() -> list[OperationSpec]:
     return [
+        *[
+            operation_spec(
+                name=name,
+                summary="Read in-progress task-index facts for Home without ticket graphs.",
+                input_model=model,
+                output_model=ActiveTasksOut,
+                handler=handler,
+                mutating=False,
+                grant_policy=grant,
+                response_policy=OperationResponsePolicy(
+                    default_mode="compact",
+                    allowed_modes=("compact", "raw"),
+                    ack_safe=False,
+                    compact_notes=(
+                        "Keep scope, project/task identities, all facts, as_of and next_cursor.",
+                    ),
+                ),
+                purpose=(
+                    "Home membership uses lifecycle in-progress, including queued/stopped work. "
+                    "Stable task-ID order; page with after_id. Reuses task-index rollup and "
+                    "whole-task usage with current/Last execution. No prompts or raw receipts. "
+                    "Global scope is local-admin only over active projects without pending cleanup."
+                ),
+                examples=(OperationExample(title="Read active tasks", arguments=args),),
+            )
+            for name, model, handler, grant, args in (
+                (
+                    "tracker.activeTasks",
+                    TrackerActiveTasksInput,
+                    tracker_active_tasks,
+                    "direct-read",
+                    {"project_id": 1},
+                ),
+                (
+                    "tracker.activeTasksAll",
+                    TrackerActiveTasksAllInput,
+                    tracker_active_tasks_all,
+                    "local-admin-read",
+                    {},
+                ),
+            )
+        ],
         *[
             OperationSpec(
                 name=name,

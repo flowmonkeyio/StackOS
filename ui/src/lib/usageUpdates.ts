@@ -25,7 +25,7 @@ type LatestUsage = { version: number; item: UsageItem }
 type Channel = {
   listeners: Set<Listener>; stream: TrackerStatusStream | null; projectId: number | null
   latest: { tasks: Map<string, LatestUsage>; tickets: Map<string, LatestUsage> }
-  connection: UsageFeedState; snapshotReady: boolean; freshnessTimer: number | null; generation: number
+  connection: UsageFeedState; snapshotReady: boolean; freshnessTimer: number | null; generation: number; snapshotVersion: number; frameReady: boolean
 }
 const channels = new Map<number | null, Channel>()
 let revision = 0
@@ -33,6 +33,25 @@ let revision = 0
 const FEED_STALE_MS = 45_000
 
 export function usageCheckpoint(): number { return revision }
+
+// Global usage frames are invalidations, not replaceable project metrics.
+// A successful current bulk read can establish replacement readiness, but a
+// read crossing an event/disconnect/hidden boundary cannot bless stale facts.
+export function usageSnapshotCheckpoint(projectId: number | null) {
+  const channel = channels.get(projectId)
+  return channel ? { channel, generation: channel.generation, version: channel.snapshotVersion } : null
+}
+
+export function markUsageSnapshot(projectId: number | null, checkpoint: ReturnType<typeof usageSnapshotCheckpoint>): boolean {
+  const channel = channels.get(projectId)
+  if (!channel || !checkpoint || document.hidden || !channel.stream || !channel.frameReady
+    || channel !== checkpoint.channel || channel.generation !== checkpoint.generation
+    || channel.snapshotVersion !== checkpoint.version) return false
+  channel.snapshotReady = true
+  const receivedAt = channel.connection.receivedAt
+  if (receivedAt !== null && Date.now() - receivedAt < FEED_STALE_MS) publishConnection(channel, 'live')
+  return true
+}
 
 export function patchUsageAfter(target: TrackerSnapshot | null, projectId: number, checkpoint: number): void {
   patchUsageSnapshot(target, usageAfter(projectId, checkpoint))
@@ -54,6 +73,7 @@ function open(channel: Channel): void {
   const generation = ++channel.generation
   const current = () => channel.generation === generation && channels.get(channel.projectId) === channel && !document.hidden
   channel.snapshotReady = false
+  channel.frameReady = false
   publishConnection(channel, channel.connection.receivedAt === null && channel.connection.status !== 'reconnecting' ? 'connecting' : 'reconnecting')
   if (!current()) return
   armFreshness(channel)
@@ -62,6 +82,11 @@ function open(channel: Channel): void {
     taskKey: undefined,
     onUsage: (updates) => {
       if (!current()) return
+      channel.snapshotVersion += 1
+      if (channel.projectId === null) {
+        channel.snapshotReady = false
+        if (channel.connection.status === 'live') publishConnection(channel, 'reconnecting')
+      }
       if (updates) {
         const version = ++revision
         for (const key of ['tasks', 'tickets'] as const) {
@@ -79,24 +104,30 @@ function open(channel: Channel): void {
     },
     onFrame: (receivedAt) => {
       if (!current()) return
+      channel.frameReady = true
       publishConnection(channel, channel.snapshotReady ? 'live' : channel.connection.status, receivedAt)
       armFreshness(channel)
     },
     onDisconnect: () => {
       if (!current()) return
+      channel.snapshotVersion += 1
       channel.snapshotReady = false
+      channel.frameReady = false
       publishConnection(channel, 'reconnecting')
       armFreshness(channel)
     },
     onEvent: (event) => {
       if (!current()) return
+      channel.snapshotVersion += 1
       // Its usage frame already refreshed every consumer. Receipt-only writes
       // do not require a second whole-page Work/status reload.
       if (event.event_type !== 'tracker.usage.changed') channel.listeners.forEach((listener) => listener.status?.(event))
     },
     onError: (cause) => {
       if (!current()) return
+      channel.snapshotVersion += 1
       channel.snapshotReady = false
+      channel.frameReady = false
       publishConnection(channel, 'reconnecting')
       channel.listeners.forEach((listener) => listener.error?.(cause))
     },
@@ -144,7 +175,7 @@ export function subscribeUsageUpdates(projectId: number | null, listener: Listen
     channel = {
       projectId, listeners: new Set(), stream: null, latest: { tasks: new Map(), tickets: new Map() },
       connection: { status: document.hidden ? 'paused' : 'connecting', receivedAt: null },
-      snapshotReady: false, freshnessTimer: null, generation: 0,
+      snapshotReady: false, freshnessTimer: null, generation: 0, snapshotVersion: 0, frameReady: false,
     }
     channels.set(projectId, channel)
   }

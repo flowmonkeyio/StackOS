@@ -7,6 +7,8 @@ from starlette.concurrency import run_in_threadpool
 from stackos.mcp.context import MCPContext
 from stackos.mcp.streaming import ProgressEmitter
 from stackos.operations.tracker.schemas import (
+    TrackerActiveTasksAllInput,
+    TrackerActiveTasksInput,
     TrackerAgentStatsAllInput,
     TrackerAgentStatsInput,
     TrackerChangedInput,
@@ -35,7 +37,28 @@ from stackos.repositories.tracker import (
     TrackerVerifyOut,
 )
 from stackos.repositories.tracker.inspection_schema import TaskActivityOut, TaskResultsOut
-from stackos.repositories.tracker.schema import TrackerAgentStatsOut
+from stackos.repositories.tracker.schema import ActiveTasksOut, TrackerAgentStatsOut
+
+
+async def tracker_active_tasks(
+    inp: TrackerActiveTasksInput, ctx: MCPContext, _emitter: ProgressEmitter
+) -> ActiveTasksOut:
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).active_tasks,
+        project_id=inp.project_id,
+        limit=inp.limit,
+        after_id=inp.after_id,
+    )
+
+
+async def tracker_active_tasks_all(
+    inp: TrackerActiveTasksAllInput, ctx: MCPContext, _emitter: ProgressEmitter
+) -> ActiveTasksOut:
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).active_tasks,
+        limit=inp.limit,
+        after_id=inp.after_id,
+    )
 
 
 async def tracker_task_activity(

@@ -1296,6 +1296,37 @@ after a successful current-project index response.
 
 ## Status Events
 
+### Home active-task reads
+
+`tracker.activeTasks(project_id)` and local-admin-only `tracker.activeTasksAll`
+return bounded pages of tasks whose lifecycle is exactly `in-progress`.
+Queued and stopped execution remain members; complete, aborted and backlog
+tasks do not. Global scope includes active projects without incomplete cleanup;
+project reads require an available project. Bound MCP callers cannot use the
+global read or override their project binding.
+
+Both accept `limit` (1–200, default 100) and `after_id` (the returned
+`next_cursor`), in stable ascending task-ID order. Identity is the composite
+`(project_id, key)`, never the task key or project display name alone. Pages
+include `scope`, `project_id`, `as_of`, project metadata and whitelisted task
+facts from the existing task-index projection: ticket rollup, whole-task usage,
+actual active/Last execution and persisted elapsed source dates. A minimal
+`delivery` object retains validated handoff status, ticket key and recorded stop
+reason without returning frozen instructions, native paths or raw receipts.
+Selected agents alone do not establish automation. Missing usage retains its
+canonical coverage and unknown values. Compact and raw preserve the same full
+bounded projection; ack is unavailable. Reads create no tracker or other state.
+
+The shared `useActiveTasks` Home reader loads pages atomically and subscribes
+once through `usageUpdates`. Lifecycle, execution and usage frames invalidate
+that scope's bulk read, including global frames with no replaceable project
+metrics. A current successful read and healthy shared transport are both needed
+for fresh presentation; errors retain previous rows and expose the error.
+Disconnects, hidden surfaces and reads crossed by invalidation cannot restore
+Live from stale facts. Canonical project-store metadata and removed-ID fences
+continue to govern row names and visibility. No per-row read or token aggregation
+is added; focused Board/Graph subscriptions keep their existing scope.
+
 Task inspection uses `tracker.taskActivity` and `tracker.taskResults` through
 the shared MCP, REST operation and CLI adapters. Both require `project_id` and
 `task_key`, accept `limit` (1–200, default 50) and an opaque `cursor`, and return

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { subscribeUsageUpdates, usageCheckpoint, patchUsageAfter } from './usageUpdates'
+import { subscribeUsageUpdates, usageCheckpoint, patchUsageAfter, usageSnapshotCheckpoint, markUsageSnapshot } from './usageUpdates'
 import type { TrackerSnapshot } from '@/lib/task-tracker/types'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 import { openTrackerStatusStream } from '@/lib/task-tracker/liveEvents'
@@ -12,6 +12,32 @@ beforeEach(() => {
 })
 afterEach(() => vi.useRealTimers())
 describe('one shared usage transport', () => {
+  it('requires a current global read and current transport epoch to establish replacement freshness', () => {
+    const connection = vi.fn()
+    const stop = subscribeUsageUpdates(null, { usage: vi.fn(), connection })
+    const stream = vi.mocked(openTrackerStatusStream).mock.calls[0]![0]
+    expect(markUsageSnapshot(null, usageSnapshotCheckpoint(null))).toBe(false)
+    stream.onFrame?.(Date.now())
+    const crossed = usageSnapshotCheckpoint(null)
+    stream.onUsage?.()
+    expect(markUsageSnapshot(null, crossed)).toBe(false)
+    expect(connection.mock.lastCall?.[0].status).not.toBe('live')
+    const current = usageSnapshotCheckpoint(null)
+    expect(markUsageSnapshot(null, current)).toBe(true)
+    expect(connection.mock.lastCall?.[0].status).toBe('live')
+    stream.onUsage?.()
+    expect(connection.mock.lastCall?.[0].status).toBe('reconnecting')
+    stream.onDisconnect?.()
+    expect(markUsageSnapshot(null, usageSnapshotCheckpoint(null))).toBe(false)
+    stream.onFrame?.(Date.now())
+    const retired = usageSnapshotCheckpoint(null)
+    stop()
+    const next = subscribeUsageUpdates(null, { usage: vi.fn(), connection })
+    vi.mocked(openTrackerStatusStream).mock.calls[1]![0].onFrame?.(Date.now())
+    expect(markUsageSnapshot(null, retired)).toBe(false)
+    next()
+  })
+
   it('preserves later usage across pending page reads, isolates scopes and replaces reconnect state', () => {
     const stop = subscribeUsageUpdates(7, { usage: vi.fn() })
     const stream = vi.mocked(openTrackerStatusStream).mock.calls[0]![0]
