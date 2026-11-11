@@ -1270,12 +1270,31 @@ since schema stamping otherwise skips data migrations.
 Upgrade leaves statuses, priorities, workflow snapshots and tracker settings
 unchanged; downgrade does not reverse saved operator order.
 
-Real priority/order edits emit `tracker.task.changed` into the existing timeline
-and `tracker-status` SSE transport, including task scope and `changed_fields`.
-Relative movement with an unchanged integer uses `order`; changed integers use
-`order_index`. Existing agent priority patches emit the same genuine task-change
-event. These events invalidate readers without masquerading as status changes
-or adding a polling path. UI callers retain the immutable intent for transport
+Real priority edits emit `tracker.task.changed` into the existing timeline and
+`tracker-status` SSE transport. A reorder emits exactly one
+`tracker.tasks.changed` event, regardless of how many ranks change. Its source
+is `tracker` with the tracker ID; typed metadata contains `tracker_id`, the
+accepted tracker `rev`, `affected_task_keys`, the union of `changed_fields`, and
+`affected_tasks`. Each structured member contains `task_id`, `task_key`,
+`changed_fields` and `url_path`. Relative movement with an unchanged integer
+uses `order`; changed integers use `order_index`. The event, all ranks, one
+revision and the intent-bound retry receipt commit in the same transaction;
+independent readers see the notification only after commit. A rollback, no-op
+or replay produces no new notification. Existing agent priority patches and
+single-task history retain `tracker.task.changed`.
+
+Task-scoped timeline/latest-event readers match exact keys in the structured
+batch members; task activity also checks the persisted task ID. Membership uses
+an existence query before pagination so each batch appears once per affected
+task. Top-level lookalikes, nested keys, display text and the key summary array
+do not establish batch membership. Project scope applies independently. A batch
+remains one SSE frame within the normal 50-event page cadence, and subsequent
+single-task events retain their own IDs and visibility. Consumers use the batch
+revision and member keys to invalidate relevant projections and coordinate
+save responses with SSE.
+
+These events invalidate readers without masquerading as status changes or
+adding a polling path. UI callers retain the immutable intent for transport
 retry, reconcile after conflicts, and check project ownership before applying a
 late response. The card and navigation consumers own that interaction state.
 

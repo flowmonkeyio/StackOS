@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import func
+from sqlalchemy import and_, func, or_
 from sqlalchemy import select as sa_select
 from sqlmodel import col, select
 
@@ -15,8 +15,10 @@ from stackos.repositories.tracker.events import (
     TRACKER_EXECUTION_CHANGED,
     TRACKER_TASK_CHANGED,
     TRACKER_TASK_STATUS_CHANGED,
+    TRACKER_TASKS_CHANGED,
     TRACKER_TICKET_STATUS_CHANGED,
     TRACKER_USAGE_CHANGED,
+    tracker_batch_task_filter,
 )
 
 from .schema import ContextItemOut, ContextPageOut, ContextQueryOut, ProjectEventOut
@@ -146,6 +148,7 @@ class ContextQueryMixin(ContextRepositorySupport):
         n = _normalise_limit(limit)
         event_types = [
             TRACKER_TASK_CHANGED,
+            TRACKER_TASKS_CHANGED,
             TRACKER_TASK_STATUS_CHANGED,
             TRACKER_TICKET_STATUS_CHANGED,
             TRACKER_EXECUTION_CHANGED,
@@ -158,7 +161,15 @@ class ContextQueryMixin(ContextRepositorySupport):
             filters.append(col(ProjectEvent.project_id) == project_id)
         if task_key:
             metadata_json: Any = ProjectEvent.metadata_json
-            filters.append(metadata_json["task_key"].as_string() == task_key)
+            filters.append(
+                or_(
+                    and_(
+                        col(ProjectEvent.event_type) != TRACKER_TASKS_CHANGED,
+                        metadata_json["task_key"].as_string() == task_key,
+                    ),
+                    tracker_batch_task_filter(task_key=task_key),
+                )
+            )
         total = _scalar_count(
             self._s,
             sa_select(func.count()).select_from(ProjectEvent).where(*filters),
@@ -185,6 +196,7 @@ class ContextQueryMixin(ContextRepositorySupport):
             self._require_project(project_id)
         event_types = [
             TRACKER_TASK_CHANGED,
+            TRACKER_TASKS_CHANGED,
             TRACKER_TASK_STATUS_CHANGED,
             TRACKER_TICKET_STATUS_CHANGED,
             TRACKER_EXECUTION_CHANGED,
@@ -197,7 +209,15 @@ class ContextQueryMixin(ContextRepositorySupport):
             filters.append(col(ProjectEvent.project_id) == project_id)
         if task_key:
             metadata_json: Any = ProjectEvent.metadata_json
-            filters.append(metadata_json["task_key"].as_string() == task_key)
+            filters.append(
+                or_(
+                    and_(
+                        col(ProjectEvent.event_type) != TRACKER_TASKS_CHANGED,
+                        metadata_json["task_key"].as_string() == task_key,
+                    ),
+                    tracker_batch_task_filter(task_key=task_key),
+                )
+            )
         row = self._s.exec(
             select(ProjectEvent).where(*filters).order_by(col(ProjectEvent.id).desc()).limit(1)
         ).first()

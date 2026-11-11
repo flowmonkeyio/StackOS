@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 
 import pytest
+from sqlmodel import Session, select
 from typer.testing import CliRunner
 
 import stackos.cli.operation_commands as operation_cli
 from stackos.auth import derive_ui_token
 from stackos.cli import app
+from stackos.context.repository import ContextRepository
+from stackos.db.models import IdempotencyKey, TrackerRevision
 
 
 def _create(api, project_id, key):
@@ -68,8 +71,7 @@ def test_browser_priority_and_reorder_share_bounded_owner_and_stream(api, projec
         },
     )
     assert replay.json()["data"]["replayed"] is True
-    # The first task already has rank zero. Priority plus the second task's
-    # changed rank emit two events; do not wait for a nonexistent third event.
+    # Priority and the whole reorder emit two durable notifications.
     with api.stream(
         "GET",
         f"/api/v1/projects/{project_id}/context/timeline/stream?replay=true&max_events=2",
@@ -79,6 +81,7 @@ def test_browser_priority_and_reorder_share_bounded_owner_and_stream(api, projec
         frames = response.read().decode()
     assert "event: tracker-status" in frames
     assert '"event_type":"tracker.task.changed"' in frames.replace(" ", "")
+    assert '"event_type":"tracker.tasks.changed"' in frames.replace(" ", "")
     assert "tracker.task.status_changed" not in frames
     stale = api.post(
         "/api/v1/operations/tracker.updateTaskPriority/call",
@@ -99,6 +102,81 @@ def test_browser_priority_and_reorder_share_bounded_owner_and_stream(api, projec
         },
     )
     assert forbidden.status_code == 403
+
+
+def test_large_reorder_rest_receipt_and_scoped_sse_share_one_batch(api, project_id):
+    tasks = [_create(api, project_id, f"large-{index}") for index in range(62)]
+    with Session(api.app.state.engine) as session:
+        before = session.exec(
+            select(TrackerRevision).where(TrackerRevision.project_id == project_id)
+        ).all()
+        prior_rev = before[-1].rev
+    arguments = {
+        **_arguments(tasks[0], "large-reorder"),
+        "anchor_task_key": tasks[-1]["key"],
+        "placement": "before",
+    }
+    response = api.post(
+        "/api/v1/operations/tracker.reorderTask/call", json={"arguments": arguments}
+    )
+    assert response.status_code == 200, response.text
+    receipt = response.json()["data"]
+    assert receipt["rev"] == prior_rev + 1
+    assert len(receipt["affected_task_keys"]) == 62
+    with Session(api.app.state.engine) as session:
+        context = ContextRepository(session)
+        page = context.tracker_status_timeline(project_id=project_id, limit=50)
+        assert len(page.items) == page.total_estimate == 1
+        assert page.next_cursor is None
+        batch = page.items[0]
+        assert batch.metadata_json["rev"] == receipt["rev"]
+        assert batch.metadata_json["affected_task_keys"] == receipt["affected_task_keys"]
+        assert context.tracker_status_timeline(project_id=project_id, after_id=batch.id).items == []
+        assert (
+            len(
+                session.exec(
+                    select(TrackerRevision).where(
+                        TrackerRevision.project_id == project_id, TrackerRevision.rev > prior_rev
+                    )
+                ).all()
+            )
+            == 1
+        )
+        assert (
+            len(
+                session.exec(
+                    select(IdempotencyKey).where(IdempotencyKey.tool_name == "tracker.reorderTask")
+                ).all()
+            )
+            == 1
+        )
+    for key in (tasks[0]["key"], tasks[-1]["key"]):
+        streamed = api.get(
+            f"/api/v1/projects/{project_id}/context/timeline/stream",
+            params={
+                "task_key": key,
+                "replay": "true",
+                "max_events": 1,
+                "limit": 50,
+                "poll_ms": 250,
+            },
+        )
+        assert streamed.status_code == 200
+        frames = []
+        for frame in streamed.text.split("\n\n"):
+            if "event: tracker-status\n" in frame:
+                frames.append(
+                    json.loads(
+                        next(line[6:] for line in frame.splitlines() if line.startswith("data: "))
+                    )
+                )
+        assert len(frames) == 1
+        assert frames[0]["id"] == batch.id
+        assert frames[0]["event_type"] == "tracker.tasks.changed"
+        assert frames[0]["metadata_json"]["rev"] == receipt["rev"]
+    replay = api.post("/api/v1/operations/tracker.reorderTask/call", json={"arguments": arguments})
+    assert replay.json()["data"]["replayed"] is True
+    assert replay.json()["data"]["rev"] == receipt["rev"]
 
 
 @pytest.mark.parametrize(

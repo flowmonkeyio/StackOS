@@ -784,6 +784,11 @@ transaction owner. Strict inputs require the task's status/timestamp and an
 intent-bound retry key; they cannot supply lifecycle or arbitrary patches.
 See [Board priority and order writes](task-tracker.md#board-priority-and-order-writes)
 for neighbor placement, ordering, conflicts and existing-stream invalidation.
+Each accepted reorder commits one tracker revision and one
+`tracker.tasks.changed` timeline/SSE event with structured affected task
+membership and that revision. Priority edits retain `tracker.task.changed`.
+The raw Board receipt's `affected_task_keys` and `rev` identify the same accepted
+mutation; retries and no-ops do not emit another event.
 
 ## CLI Calls
 
