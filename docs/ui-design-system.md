@@ -85,6 +85,9 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 
 **UiButton.** Default `secondary`. Reserve `primary` for the main permitted action on the surface: navigation, a local utility, or an explicitly registered setup/human-decision operation. `danger` is reserved for explicit local-admin revocation/destructive controls. Icon-only slots center the supplied icon in both axes; the button owns the hit target and the icon keeps its declared dimensions.
 
+Content defaults to centered. Use `align="start"` for full-width menu choices
+instead of competing justification utilities; icon-only buttons stay centered.
+
 **UiCard.** For real things such as projects, plugins, runs, resources, and integrations. **Never nested.** When you want a card inside a card, you want a `UiPanel` or a `UiSectionHeader` + plain divider.
 
 **UiSectionHeader.** Use for section titles inside a page, panel, or card. Keep actions in the action slot; they align right on desktop and wrap below the heading copy on narrow screens so titles and descriptions never squeeze into one-word columns.
@@ -101,6 +104,12 @@ Use `layout="detail"` for stable reading/editing dialogs. This opt-in preset has
 **UiSidePanel.** Right edge, 480px default, 720px for editors. Same H/B/F structure as dialog.
 
 Dialogs and side panels share `overlayStack.ts`: opening order owns layering and keyboard handling, only the top overlay handles Escape/Tab, and the body remains locked until the final overlay closes. Closing restores the opener; removing a lower overlay preserves the surviving overlay's final return target. Do not add local stacking wrappers around these primitives.
+
+`UiConfirmDialog` places its explanation and optional supplemental slot content
+in the body, between the title and actions. `UiDialog.describedBy` links an
+accessible description supplied by body content; ordinary dialog descriptions
+remain in the header. Confirmation actions and dismissal keep their existing
+flow ownership, including pending and unsaved-edit guards.
 
 **UiToast.** Top-right, 320px, auto-dismiss after 5s except `danger` (sticky). One queue, max 3 visible. Live region.
 

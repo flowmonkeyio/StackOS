@@ -6,7 +6,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 
 | Component | Notes |
 |---|---|
-| `UiButton` | variants: primary, secondary, ghost, danger; sizes sm/md/lg; loading; iconLeft/Right |
+| `UiButton` | variants: primary, secondary, ghost, danger; sizes sm/md/lg; loading; iconLeft/Right; `align="start"` for menu choices (default/icon-only centered) |
 | `UiIcon` | MIT Heroicons-backed icon registry for reusable control icons |
 | `UiIconButton` | square; aria-label required |
 | `UiButtonGroup` | segmented |
@@ -19,8 +19,8 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `UiRange` | tick marks optional |
 | `UiSecretInput` | reveal + copy |
 | `UiFormField` | label + control + help/error/dirty |
-| `UiDialog` | viewport portal; shared dialog/drawer stack; focus trap; H/B/F; optional `layout="detail"` with bounded 880px frame and scrolling body; centered 32px close target / 16px icon |
-| `UiConfirmDialog` | builds on Dialog |
+| `UiDialog` | viewport portal; shared dialog/drawer stack; focus trap; H/B/F; `describedBy` links body-owned descriptions; optional `layout="detail"` with bounded 880px frame and scrolling body; centered 32px close target / 16px icon |
+| `UiConfirmDialog` | builds on Dialog; accessible explanation and supplemental slot in body above cancel/confirm actions |
 | `UiSidePanel` | left/right; 480/720 |
 | `UiDropdownMenu` | keyboard arrows; sections; optional `portalTarget` for viewport-clamped actions inside scrolling lists |
 | `UiPopover` | trigger or external-element anchor; viewport flip/clamp, scroll/resize placement and focus return |

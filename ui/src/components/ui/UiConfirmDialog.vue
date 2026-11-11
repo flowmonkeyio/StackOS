@@ -10,6 +10,10 @@
     @confirm="onConfirm"
   />
 -->
+<script lang="ts">
+let confirmIdSeed = 0;
+</script>
+
 <script setup lang="ts">
 import UiDialog from './UiDialog.vue';
 import UiButton from './UiButton.vue';
@@ -30,6 +34,8 @@ const emit = defineEmits<{
   (e: 'cancel'): void;
 }>();
 
+const descriptionId = `ui-confirm-desc-${++confirmIdSeed}`;
+
 function close() { emit('update:modelValue', false); }
 function cancel() { emit('cancel'); close(); }
 function confirm() { emit('confirm'); }
@@ -39,11 +45,20 @@ function confirm() { emit('confirm'); }
   <UiDialog
     :model-value="modelValue"
     :title="title"
-    :description="description"
+    :described-by="description ? descriptionId : undefined"
     size="sm"
     @update:model-value="(v) => $emit('update:modelValue', v)"
   >
-    <slot />
+    <div class="space-y-3">
+      <p
+        v-if="description"
+        :id="descriptionId"
+        class="text-sm text-fg-default break-words"
+      >
+        {{ description }}
+      </p>
+      <slot />
+    </div>
     <template #footer>
       <UiButton
         variant="ghost"

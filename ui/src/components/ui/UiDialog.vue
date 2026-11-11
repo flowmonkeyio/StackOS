@@ -22,6 +22,8 @@ export interface UiDialogProps {
   modelValue: boolean;
   title?: string;
   description?: string;
+  /** Accessible description supplied by content in a body slot. */
+  describedBy?: string;
   size?: 'sm' | 'md' | 'lg' | 'xl';
   /** Hide the X. Use only when dismiss requires explicit user action. */
   hideClose?: boolean;
@@ -38,6 +40,7 @@ export interface UiDialogProps {
 const props = withDefaults(defineProps<UiDialogProps>(), {
   title: undefined,
   description: undefined,
+  describedBy: undefined,
   size: 'md',
   layout: 'default',
 });
@@ -182,7 +185,7 @@ defineExpose({ body: bodyRef, focusTitle });
             tabindex="-1"
             aria-modal="true"
             :aria-labelledby="titleId"
-            :aria-describedby="descriptionId"
+            :aria-describedby="describedBy ?? descriptionId"
             :class="[
               'ui-dialog z-modal w-full rounded-xl border border-default bg-bg-surface shadow-xl flex flex-col max-h-[calc(100vh-2rem)]',
               sizeClass,

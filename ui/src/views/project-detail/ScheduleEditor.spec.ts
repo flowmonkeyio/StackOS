@@ -127,6 +127,42 @@ describe('simple automation setup', () => {
     await wrapper!.setProps({ projectId: 2 }); resolve({ templates: [{ key: 'late', name: 'Wrong project' }] }); await flushPromises()
     expect(wrapper!.find('form').exists()).toBe(false); expect(wrapper!.text()).not.toContain('Wrong project'); expect(rows).toHaveLength(0)
   })
+  it('keeps the nested unsaved confirmation body, focus and dismissal inside the shared overlay stack', async () => {
+    wrapper = mount(ScheduleEditor, { attachTo: document.body, props: { projectId: 1, job: saved() } })
+    await flushPromises()
+    const goal = document.querySelector<HTMLTextAreaElement>('textarea')!
+    goal.value = 'Unsaved goal'
+    goal.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    const cancel = Array.from(document.querySelectorAll<HTMLButtonElement>('.ui-dialog__footer button')).find(button => button.textContent?.trim() === 'Cancel')!
+    const openConfirmation = async () => { cancel.focus(); cancel.click(); await flushPromises() }
+    await openConfirmation()
+    const frames = () => Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]'))
+    const confirm = frames().at(-1)!
+    expect(frames()).toHaveLength(2)
+    expect(confirm.querySelector('.ui-dialog__header')!.textContent).not.toContain('Your unsaved')
+    expect(confirm.querySelector('.ui-dialog__body')!.textContent).toContain('Your unsaved automation changes will be lost.')
+    expect(confirm.contains(document.activeElement)).toBe(true)
+    const confirmAction = confirm.querySelector<HTMLButtonElement>('.ui-dialog__footer button:last-child')!
+    confirmAction.focus()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    expect(document.activeElement).toBe(confirm.querySelector('[aria-label="Close dialog"]'))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(frames()).toHaveLength(1)
+    expect(document.activeElement).toBe(cancel)
+    expect(goal.value).toBe('Unsaved goal')
+    await openConfirmation()
+    document.querySelectorAll<HTMLElement>('.ui-dialog__overlay').item(1).click()
+    await flushPromises()
+    expect(frames()).toHaveLength(1)
+    expect(document.activeElement).toBe(cancel)
+    expect(wrapper!.emitted('close')).toBeUndefined()
+    await openConfirmation()
+    frames().at(-1)!.querySelector<HTMLButtonElement>('.ui-dialog__footer button:last-child')!.click()
+    await flushPromises()
+    expect(wrapper!.emitted('close')).toHaveLength(1)
+  })
   it('guards route/project changes and keeps edits when navigation is cancelled', async () => {
     const job = saved(); const page = defineComponent({ setup() { const route = useRoute(); return () => h(ScheduleEditor, { projectId: Number(route.params.id), job }) } })
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/projects/:id/schedules', component: page }, { path: '/other', component: { template: '<p>Other</p>' } }] })

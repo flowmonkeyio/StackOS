@@ -3,7 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import TrackerBoardFilterBar from './TrackerBoardFilterBar.vue'
 import { parseBoardFilters } from './boardFilters'
-import { UiPopover } from '@/components/ui'
+import { UiButton, UiPopover } from '@/components/ui'
 
 let available = 480
 let resize: () => void
@@ -34,6 +34,18 @@ function button(wrapper: ReturnType<typeof render>, text: string) {
 }
 
 describe('Board filter controls', () => {
+  it('requests shared start alignment for every filter choice without conflicting utilities', async () => {
+    const wrapper = render()
+    await button(wrapper, 'Filter').trigger('click')
+    for (const label of ['Text', 'Status', 'Priority', 'Workflow', 'Assignee']) {
+      const option = wrapper.findAllComponents(UiButton).find(item => item.text() === label)!
+      expect(option.props('align')).toBe('start')
+      expect(option.classes()).toContain('justify-start')
+      expect(option.classes()).not.toContain('justify-center')
+    }
+    expect(button(wrapper, 'Filter').classes()).toContain('justify-center')
+    wrapper.unmount()
+  })
   it('opens and applies Completed choices through the real shared select', async () => {
     const wrapper = render()
     await nextTick()
