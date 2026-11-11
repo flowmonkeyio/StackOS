@@ -35,7 +35,7 @@ remains the agent/MCP token for all other mutations.
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 from urllib.parse import parse_qs, urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -98,12 +98,16 @@ class VerificationInput(BaseModel):
 
 
 CallbackPurpose = Literal["signup", "recovery", "unknown"]
-CallbackOutcome = Literal["pending", "success", "expired_or_used", "invalid", "retry"]
+CallbackOutcome = Literal[
+    "pending", "success", "expired_or_used", "invalid", "retry", "sign_in_required"
+]
 
 
 def _callback_result(purpose: CallbackPurpose, outcome: CallbackOutcome) -> dict:
     """Safe presentation facts; the shared client owns rendering and app return."""
-    if outcome == "success":
+    if outcome == "sign_in_required":
+        action = "sign_in"
+    elif outcome == "success":
         action = "set_password" if purpose == "recovery" else "continue"
     elif outcome == "pending":
         action = "continue_reset" if purpose == "recovery" else "confirm_email"
@@ -139,14 +143,26 @@ def _callback_redirect(
     )
 
 
-def _callback_error(exc: HTTPException, purpose: CallbackPurpose) -> dict:
+def _callback_error(
+    exc: HTTPException, purpose: CallbackPurpose, *, verification_completed: bool
+) -> dict:
     code = exc.detail.get("code") if isinstance(exc.detail, dict) else None
     outcome: CallbackOutcome = "invalid"
-    if code == "verification_expired_or_invalid":
+    if verification_completed and purpose == "signup":
+        # Email confirmation succeeded; another confirmation email is not
+        # needed just because this browser session could not be established.
+        outcome = "sign_in_required"
+    elif (
+        verification_completed
+        or exc.status_code == 503
+        or code == "verification_expired_or_invalid"
+    ):
         # GoTrue's otp_expired covers expiration and replay; do not invent a
         # separate token ledger or probe accounts to guess which happened.
+        # A completed exchange consumes the link even if local session creation
+        # fails. Provider unavailability can also hide a completed exchange.
         outcome = "expired_or_used"
-    elif exc.status_code in {409, 429, 503}:
+    elif exc.status_code in {409, 429}:
         outcome = "retry"
     return _callback_result(purpose, outcome)
 
@@ -202,6 +218,7 @@ async def recover(body: EmailInput, auth: Auth) -> dict:
 
 @router.post("/verify")
 async def verify(body: VerificationInput, request: Request, response: Response, auth: Auth) -> dict:
+    verification_completed = False
     try:
         if not 1 <= len(body.token_hash.get_secret_value()) <= 1024:
             raise HTTPException(400, {"code": "verification_invalid"})
@@ -213,6 +230,7 @@ async def verify(body: VerificationInput, request: Request, response: Response, 
                 "type": body.type,
             },
         )
+        verification_completed = True
         result = await auth.create(
             tokens,
             response,
@@ -223,7 +241,10 @@ async def verify(body: VerificationInput, request: Request, response: Response, 
         detail: dict[str, Any] = (
             dict(exc.detail) if isinstance(exc.detail, dict) else {"code": "verification_invalid"}
         )
-        detail["callback"] = _callback_error(exc, body.type)
+        detail["callback"] = _callback_error(
+            exc, body.type, verification_completed=verification_completed
+        )
+        detail["retryable"] = detail["callback"]["retryable"]
         raise HTTPException(exc.status_code, detail) from exc
     return {**result, "callback": _callback_result(body.type, "success")}
 
@@ -271,7 +292,9 @@ async def consume_callback(request: Request, auth: Auth) -> Response:
             VerificationInput(token_hash=SecretStr(token), type=purpose), request, response, auth
         )
     except HTTPException as exc:
-        result = _callback_error(exc, purpose)
+        # Preserve the producer's exchange-phase classification, rather than
+        # inferring retryability again from the local failure's HTTP status.
+        result = cast(dict[str, Any], exc.detail)["callback"]
         return _callback_redirect(purpose, result["outcome"], token)
     return response
 

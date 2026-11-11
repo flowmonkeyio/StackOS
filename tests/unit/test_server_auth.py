@@ -321,7 +321,7 @@ def test_callback_pending_uses_shared_ui_and_never_consumes_link(online, purpose
         (403, "otp_expired", "expired_or_used"),
         (422, "validation_failed", "invalid"),
         (429, "over_email_send_rate_limit", "retry"),
-        (503, "unexpected_failure", "retry"),
+        (503, "unexpected_failure", "expired_or_used"),
     ],
 )
 def test_callback_errors_reach_shared_ui_and_api_with_safe_actions(
@@ -381,6 +381,122 @@ def test_malformed_callback_has_actionable_shared_ui_result(online, method):
         "outcome": "invalid",
     }
     assert not client.cookies and state["calls"] == []
+
+
+@pytest.mark.parametrize("purpose", ["signup", "recovery"])
+@pytest.mark.parametrize("consumer", ["verify", "callback"])
+@pytest.mark.parametrize("local_status", [409, 429, 503])
+def test_consumed_link_local_failure_requires_new_email(
+    online, monkeypatch, purpose, consumer, local_status
+):
+    """A one-use exchange followed by session failure cannot promise same-link retry."""
+    from fastapi import HTTPException
+
+    from stackos.auth import ServerAuth
+
+    client, _selected, _state = online
+    original_call = ServerAuth.call
+    consumed = False
+
+    async def one_use(auth, method, path, **kwargs):
+        nonlocal consumed
+        if path == "verify":
+            if consumed:
+                raise HTTPException(401, {"code": "verification_expired_or_invalid"})
+            consumed = True
+        return await original_call(auth, method, path, **kwargs)
+
+    async def unavailable_session(*args, **kwargs):
+        raise HTTPException(local_status, {"code": "session_busy", "retryable": True})
+
+    monkeypatch.setattr(ServerAuth, "call", one_use)
+    original_create = ServerAuth.create
+    monkeypatch.setattr(ServerAuth, "create", unavailable_session)
+
+    def submit():
+        values = {"token_hash": "single-use-code", "type": purpose}
+        if consumer == "verify":
+            response = client.post("/api/v1/auth/verify", json=values)
+            assert response.status_code == local_status
+            detail = response.json()["detail"]
+            assert detail["retryable"] is False
+            return detail["callback"]
+        query = callback_query(
+            client.post(
+                "/api/v1/auth/callback",
+                data=values,
+                follow_redirects=False,
+            )
+        )
+        assert "token_hash" not in query
+        return query
+
+    first = submit()
+    expected_outcome = "sign_in_required" if purpose == "signup" else "expired_or_used"
+    assert consumed and first["purpose"] == purpose and first["outcome"] == expected_outcome
+    if consumer == "verify":
+        assert first["next_action"] == ("sign_in" if purpose == "signup" else "request_recovery")
+        assert first["retryable"] is False
+    monkeypatch.setattr(ServerAuth, "create", original_create)
+    # Releasing the local failure does not make the already consumed link usable.
+    values = {"token_hash": "single-use-code", "type": purpose}
+    if consumer == "verify":
+        second = client.post("/api/v1/auth/verify", json=values)
+        assert second.status_code == 401
+        assert second.json()["detail"]["callback"]["outcome"] == "expired_or_used"
+        if purpose == "recovery":
+            assert second.json()["detail"]["callback"]["next_action"] == first["next_action"]
+    else:
+        assert (
+            callback_query(
+                client.post(
+                    "/api/v1/auth/callback",
+                    data=values,
+                    follow_redirects=False,
+                )
+            )["outcome"]
+            == "expired_or_used"
+        )
+    assert not client.cookies
+
+
+@pytest.mark.parametrize("purpose", ["signup", "recovery"])
+@pytest.mark.parametrize("consumer", ["verify", "callback"])
+def test_preverification_rate_limit_can_retry_same_link(online, purpose, consumer):
+    client, _selected, state = online
+    values = {"token_hash": "not-consumed", "type": purpose}
+    state["error"] = 429
+    if consumer == "verify":
+        response = client.post("/api/v1/auth/verify", json=values)
+        assert response.status_code == 429
+        assert response.json()["detail"]["retryable"] is True
+        assert response.json()["detail"]["callback"]["next_action"] == "retry_verification"
+    else:
+        query = callback_query(
+            client.post(
+                "/api/v1/auth/callback",
+                data=values,
+                follow_redirects=False,
+            )
+        )
+        assert query["outcome"] == "retry" and query["token_hash"] == "not-consumed"
+    state["error"] = None
+    if consumer == "verify":
+        response = client.post("/api/v1/auth/verify", json=values)
+        assert response.status_code == 200
+        assert response.json()["callback"]["outcome"] == "success"
+    else:
+        assert (
+            callback_query(
+                client.post(
+                    "/api/v1/auth/callback",
+                    data=values,
+                    follow_redirects=False,
+                )
+            )["outcome"]
+            == "success"
+        )
+    assert client.cookies
 
 
 def test_provider_values_never_in_response(online):

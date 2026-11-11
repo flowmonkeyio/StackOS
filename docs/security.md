@@ -89,13 +89,22 @@ facts; the session endpoint remains the authority for authenticated access.
 | --- | --- | --- |
 | `pending` | `confirm_email` | `continue_reset` |
 | `success` | `continue` | `set_password` |
+| `sign_in_required` | `sign_in` | Not used |
 | `expired_or_used` | `resend_verification` | `request_recovery` |
 | `invalid` | `resend_verification` | `request_recovery` |
 | `retry` | `retry_verification` | `retry_verification` |
 
-Unknown-purpose invalid links use `sign_in`. Only `retry` sets `retryable=true`;
-rate limits (429), provider unavailability (503) and session contention (409)
-remain explicit. Supabase's `otp_expired` can represent an expired, consumed or
+Unknown-purpose invalid links use `sign_in`. Only `retry` sets `retryable=true`.
+Rate limits known to precede verification retain the same-link retry action.
+Once a recovery exchange succeeds, a later session failure requires a new
+recovery email: the link was consumed. When signup confirmation succeeded,
+the email is already verified, so a later session failure instead returns
+`sign_in_required`; sign-in can establish the normal session without another
+confirmation email. Provider unavailability can also leave consumption
+uncertain, so it conservatively uses the same renewal action. HTTP statuses
+(including 409/429/503) remain explicit; both the API's `retryable` flag and the
+form redirect preserve this exchange-phase classification. Supabase's
+`otp_expired` can represent an expired, consumed or
 unusable code; StackOS returns the combined `expired_or_used` renewal state
 without claiming to distinguish causes or creating another token ledger.
 Malformed links and other provider verification rejections use `invalid`.
