@@ -67,9 +67,13 @@ wider. Project names select through `useProjectNavigation`; separate row actions
 request rename/delete targets from that same owner. The project store owns
 display-name updates and bounded moves through the browser-safe catalog
 operations, reloading all pages after move attempts. `ProjectRenameDialog` owns
-the retained draft and saving/failure states. Home and Overview resolve displayed
-project names from the shared store before falling back to portfolio snapshots,
-so a confirmed rename remains visible when an older portfolio read completes.
+the retained draft and saving/failure states. Home and Overview read owners
+reconcile strictly newer project metadata into the shared store using the
+canonical `updated_at`, retaining sub-millisecond precision. They update only
+metadata on already loaded IDs, preserving catalog membership, order and selection.
+Displays use shared names with portfolio fallback for unloaded IDs. Equal/older
+portfolio responses cannot undo a confirmed rename; newer Refresh results update
+the shared labels. Catalog reads and mutation responses also retain newer metadata.
 The confirmed-delete consumer owns
 the subsequent confirmation, cleanup and navigation, not the selector.
 

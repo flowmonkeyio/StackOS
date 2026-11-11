@@ -126,6 +126,63 @@ describe('projects store', () => {
     expect(store.activeProject?.name).toBe('Alpha')
   })
 
+  it('reconciles newer portfolio metadata without changing catalog identity, order, paging or selection', () => {
+    const store = useProjectsStore()
+    store.items = PAGE.items
+    store.activeProjectId = 1
+    store.nextCursor = 50
+    store.totalEstimate = 51
+    const newer = { ...PAGE.items[0], name: 'Alpha Agency', domain: 'updated.test', updated_at: '2025-01-02T00:00:00Z', slug: 'untrusted-replacement', order_index: -1 }
+    store.reconcileProjectMetadata([newer, { ...newer, id: 999 }])
+    expect(store.activeProject).toEqual({ ...PAGE.items[0], name: newer.name, domain: newer.domain, updated_at: newer.updated_at })
+    expect(store.items).toHaveLength(1)
+    expect(store.nextCursor).toBe(50)
+    expect(store.totalEstimate).toBe(51)
+    expect(store.activeProjectId).toBe(1)
+    store.reconcileProjectMetadata([PAGE.items[0], { ...newer, name: 'Equal timestamp' }])
+    expect(store.activeProject?.name).toBe('Alpha Agency')
+  })
+
+  it.each([
+    ['2025-01-01T00:00:00.000002Z', '2025-01-01T00:00:00.000001Z', true],
+    ['2025-01-01T00:00:00.000001Z', '2025-01-01T00:00:00.000002Z', false],
+    ['2025-01-01T00:00:00.000001', '2024-12-31T19:00:00.000001-05:00', false],
+    ['invalid', '2025-01-01T00:00:00Z', false],
+    ['2025-01-01T00:00:00Z', 'invalid', true],
+  ])('orders canonical metadata timestamps %s versus %s', (incoming, current, newer) => {
+    const store = useProjectsStore()
+    store.items = [{ ...PAGE.items[0], updated_at: current }]
+    store.reconcileProjectMetadata([{ ...PAGE.items[0], name: 'New name', updated_at: incoming }])
+    expect(store.getById(1)?.name).toBe(newer ? 'New name' : 'Alpha')
+  })
+
+  it('does not replace newer portfolio metadata with a catalog read that finishes late', async () => {
+    const store = useProjectsStore()
+    store.items = PAGE.items
+    let finish!: (response: Response) => void
+    globalThis.fetch = vi.fn(() => new Promise<Response>((resolve) => { finish = resolve }))
+    const read = store.refresh()
+    store.reconcileProjectMetadata([{ ...PAGE.items[0], name: 'New name', updated_at: '2025-01-02T00:00:00Z' }])
+    finish(json(PAGE))
+    await read
+    expect(store.getById(1)?.name).toBe('New name')
+  })
+
+  it('does not replace a newer canonical name with an earlier rename response', async () => {
+    const store = useProjectsStore()
+    store.items = PAGE.items
+    store.activeProjectId = 1
+    let finish!: (response: Response) => void
+    globalThis.fetch = vi.fn(() => new Promise<Response>((resolve) => { finish = resolve }))
+    const rename = store.renameProject(1, 'First rename')
+    const newest = { ...PAGE.items[0], name: 'Later canonical rename', updated_at: '2025-01-03T00:00:00Z' }
+    store.reconcileProjectMetadata([newest])
+    finish(json({ data: { ...PAGE.items[0], name: 'First rename', updated_at: '2025-01-02T00:00:00Z' } }))
+    await expect(rename).resolves.toEqual(newest)
+    expect(store.activeProject?.name).toBe(newest.name)
+    expect(store.managementPending).toBe(false)
+  })
+
   it('loads every page before admitting a move, then reloads authoritative order and preserves selection', async () => {
     const rows = Array.from({ length: 75 }, (_, i) => ({ ...PAGE.items[0], id: i + 1, order_index: i + 1 }))
     const requests: { url: string; body: unknown }[] = []

@@ -1,8 +1,11 @@
 // @vitest-environment node
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 import { callOperation } from '@/lib/operations'
 import { useHomePortfolioInsights } from './useHomePortfolioInsights'
+import { useProjectsStore } from '@/stores/projects'
+import { portfolioFixture } from './overviewFixtures'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
 const project = {
@@ -14,6 +17,7 @@ const project = {
 
 describe('useHomePortfolioInsights', () => {
   beforeEach(() => {
+    setActivePinia(createPinia())
     vi.mocked(callOperation).mockReset()
   })
 
@@ -45,6 +49,9 @@ describe('useHomePortfolioInsights', () => {
   })
 
   it('ignores an older request after the filter changes', async () => {
+    const projects = useProjectsStore()
+    const cached = { ...portfolioFixture({ id: 7, name: 'Current cached name' }), order_index: 7, locale: 'en-US', niche: null, schedule_json: null }
+    projects.items = [cached]
     let oldReply!: (value: unknown) => void
     vi.mocked(callOperation).mockImplementationOnce(
       () =>
@@ -64,9 +71,10 @@ describe('useHomePortfolioInsights', () => {
       sort: 'name',
       ticket_status: 'complete',
     })
-    oldReply({ items: [project], next_cursor: 7 })
+    oldReply({ items: [{ ...cached, name: 'Obsolete filtered result', updated_at: '2026-09-08T00:00:00Z' }], next_cursor: 7 })
     await old
     expect(portfolio.items.value.map((item) => item.id)).toEqual([9])
+    expect(projects.getById(7)?.name).toBe('Current cached name')
   })
 
   it('keeps last-good data and an explicit error when background refresh fails', async () => {

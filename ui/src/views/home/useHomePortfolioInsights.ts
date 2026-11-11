@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import { callOperation } from '@/lib/operations'
 import { formatApiError } from '@/lib/client'
+import { useProjectsStore } from '@/stores/projects'
 import type { TrackerStatus } from '@/lib/task-tracker/types'
 import type { OverviewPage, PortfolioProject } from './ticketOverview'
 
@@ -12,6 +13,7 @@ export interface PortfolioFilters {
 }
 
 export function useHomePortfolioInsights() {
+  const projects = useProjectsStore()
   const items = ref<PortfolioProject[]>([])
   const loading = ref(false)
   const error = ref<string | null>(null)
@@ -36,6 +38,7 @@ export function useHomePortfolioInsights() {
         ...(append && nextCursor.value !== null ? { after_id: nextCursor.value } : {}),
       })
       if (request !== generation) return
+      projects.reconcileProjectMetadata(page.items)
       items.value = append ? [...items.value, ...page.items] : page.items
       nextCursor.value = page.next_cursor ?? null
       total.value = page.total_estimate ?? null

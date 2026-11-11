@@ -5,13 +5,31 @@ import { defineStore } from 'pinia'
 
 import { apiFetch } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
+import { parseStackOsDate } from '@/lib/stackos/time'
 import { changesOrder, type ReorderMove } from '@/components/ui/verticalReorder'
 import type { SchemaProjectCreateRequest, SchemaWriteResponseProjectOut, components } from '@/api'
 
 export type Project = components['schemas']['ProjectOut']
 type ProjectsPage = components['schemas']['PageResponse_ProjectOut_']
+type ProjectMetadata = Pick<Project, 'id' | 'name' | 'domain' | 'is_active' | 'updated_at'>
 
 const DEFAULT_LIMIT = 50
+
+function isNewerMetadata(incoming: string, current: string): boolean {
+  const nextTime = parseStackOsDate(incoming).getTime()
+  const currentTime = parseStackOsDate(current).getTime()
+  if (!Number.isFinite(nextTime)) return false
+  if (!Number.isFinite(currentTime)) return true
+  if (nextTime !== currentTime) return nextTime > currentTime
+  // Project timestamps retain Python's microseconds; Date only compares milliseconds.
+  const subMillisecond = (value: string) => (value.match(/\.(\d+)/)?.[1] ?? '').padEnd(6, '0').slice(3, 6)
+  return subMillisecond(incoming) > subMillisecond(current)
+}
+
+function preserveNewerMetadata(incoming: Project, current?: Project): Project {
+  if (!current || !isNewerMetadata(current.updated_at, incoming.updated_at)) return incoming
+  return { ...incoming, name: current.name, domain: current.domain, is_active: current.is_active, updated_at: current.updated_at }
+}
 
 export const useProjectsStore = defineStore('projects', () => {
   const items = ref<Project[]>([])
@@ -31,7 +49,8 @@ export const useProjectsStore = defineStore('projects', () => {
 
   function _ingestPage(page: ProjectsPage, append: boolean): void {
     const rows = append ? [...items.value, ...page.items] : page.items
-    items.value = [...new Map(rows.map((project) => [project.id, project])).values()].sort(
+    const current = new Map(items.value.map((project) => [project.id, project]))
+    items.value = [...new Map(rows.map((project) => [project.id, preserveNewerMetadata(project, current.get(project.id))])).values()].sort(
       (left, right) => left.order_index - right.order_index || left.id - right.id,
     )
     nextCursor.value = page.next_cursor ?? null
@@ -40,6 +59,17 @@ export const useProjectsStore = defineStore('projects', () => {
       const firstLiveProject = items.value.find((project) => project.is_active)
       if (firstLiveProject) activeProjectId.value = firstLiveProject.id
     }
+  }
+
+  function reconcileProjectMetadata(snapshots: ProjectMetadata[]): void {
+    const incoming = new Map(snapshots.map((project) => [project.id, project]))
+    // Portfolio rows are partial project records: update only their shared
+    // metadata on already loaded IDs, never list membership/order or selection.
+    items.value = items.value.map((current) => {
+      const next = incoming.get(current.id)
+      if (!next || !isNewerMetadata(next.updated_at, current.updated_at)) return current
+      return { ...current, name: next.name, domain: next.domain, is_active: next.is_active, updated_at: next.updated_at }
+    })
   }
 
   async function readCatalog(activeOnly = false, allPages = false): Promise<boolean> {
@@ -139,8 +169,9 @@ export const useProjectsStore = defineStore('projects', () => {
       const response = await callOperation<SchemaWriteResponseProjectOut>('project.update', {
         project_id: id, patch: { name }, scope: 'catalog',
       })
-      items.value = items.value.map((item) => item.id === id ? response.data : item)
-      return response.data
+      const saved = preserveNewerMetadata(response.data, getById(id) ?? undefined)
+      items.value = items.value.map((item) => item.id === id ? saved : item)
+      return saved
     } catch (err) {
       // A lost response may still have applied the name. Confirm only an
       // authoritative match; genuine failures keep the owning dialog's draft.
@@ -225,6 +256,7 @@ export const useProjectsStore = defineStore('projects', () => {
     loadMore,
     loadAll,
     renameProject,
+    reconcileProjectMetadata,
     moveProject,
     createProject,
     setActiveProjectId,
