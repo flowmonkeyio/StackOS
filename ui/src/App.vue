@@ -183,8 +183,8 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
     <aside
       id="cs-sidebar"
       :class="[
-        'bg-sb-bg md:sticky md:top-0 md:z-auto md:h-screen md:w-sidebar md:flex-shrink-0 md:translate-x-0 md:shadow-none',
-        'fixed inset-y-0 left-0 z-modal w-[280px] max-w-[85vw] transition-transform duration-base ease-standard md:static',
+        'bg-sb-bg md:sticky md:top-0 md:z-dropdown md:h-screen md:w-sidebar md:flex-shrink-0 md:translate-x-0 md:shadow-none',
+        'fixed inset-y-0 left-0 z-overlay w-[280px] max-w-[85vw] transition-transform duration-base ease-standard md:static',
         drawerOpen ? 'translate-x-0 shadow-xl' : '-translate-x-full',
       ]"
       aria-label="Primary navigation"

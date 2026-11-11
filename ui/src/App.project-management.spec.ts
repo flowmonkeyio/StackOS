@@ -12,6 +12,7 @@ import HomeView from '@/views/HomeView.vue'
 import HomeProjectsSection from '@/views/home/HomeProjectsSection.vue'
 import { portfolioFixture, ticketSummaryFixture } from '@/views/home/overviewFixtures'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
+import { zIndex } from '@/design/tokens'
 
 enableAutoUnmount(afterEach)
 const originalFetch = globalThis.fetch
@@ -65,6 +66,18 @@ it('routes menu intents through the real shell, shared store and canonical opera
   await switcher.get('button[aria-label="Actions for Alpha"]').trigger('click')
   await switcher.get('[role="menu"]').findAll('button')[0].trigger('click')
   const dialog = new DOMWrapper(document.querySelector<HTMLElement>('.ui-dialog__overlay')!)
+  // jsdom cannot paint stacking contexts. Keep the shell's layer contract here;
+  // native-browser hit tests cover the selector overlapping real routed content.
+  const sidebar = app.get('#cs-sidebar')
+  const layer = (prefix: string) => {
+    const token = sidebar.classes().find((name) => name.startsWith(`${prefix}z-`))?.slice(prefix.length + 2)
+    return token === 'auto' ? 0 : zIndex[token as keyof typeof zIndex]
+  }
+  expect(layer('md:'), 'desktop selector must escape the main content layer').toBeGreaterThan(0)
+  expect(layer(''), 'drawer stays above its scrim').toBeGreaterThanOrEqual(zIndex.overlay)
+  for (const prefix of ['', 'md:']) {
+    expect(layer(prefix), 'dialogs must cover the selector in either shell layout').toBeLessThan(Number(dialog.element.style.zIndex))
+  }
   await dialog.get('input').trigger('mousedown')
   expect(switcher.find('[aria-label="Projects"]').exists()).toBe(true)
   await dialog.get('input').setValue('Alpha Studio')
