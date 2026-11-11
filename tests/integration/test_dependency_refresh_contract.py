@@ -14,6 +14,9 @@ def test_query_defaults_and_partial_project_updates_remain_distinct(
     client: TestClient, auth_token: str
 ) -> None:
     client.headers.update({"Authorization": f"Bearer {auth_token}"})
+    empty = client.get("/api/v1/projects")
+    assert empty.status_code == 200
+    assert empty.json()["items"] == []
     created = client.post(
         "/api/v1/projects",
         json={
@@ -38,10 +41,20 @@ def test_query_defaults_and_partial_project_updates_remain_distinct(
     assert cleared.json()["data"]["niche"] is None
     assert cleared.json()["data"]["locale"] == "fr-FR"
 
-    deleted = client.delete(path)
-    assert deleted.status_code == 200
-    assert deleted.json()["data"]["is_active"] is False
-    assert client.get(path).status_code == 200  # Omitted hard=False remains a soft delete.
+    # Unconfirmed archive/hard-delete calls are retired and must preserve the row.
+    current = cleared.json()["data"]
+    assert current["is_active"] is True
+    for params in ({}, {"hard": "false"}, {"hard": "true"}):
+        assert client.delete(path, params=params).status_code == 405
+        preserved = client.get(path)
+        assert preserved.status_code == 200
+        assert preserved.json() == current
+
+    # Seed inactive metadata explicitly for query-default proof, independently
+    # of deletion. Inactive rows remain records; confirmed cleanup removes them.
+    inactive = client.patch(path, json={"is_active": False})
+    assert inactive.status_code == 200
+    assert inactive.json()["data"]["is_active"] is False
     for params in ({}, {"active_only": "false"}):
         response = client.get("/api/v1/projects", params=params)
         assert response.status_code == 200
