@@ -133,6 +133,8 @@ workspace or grant filesystem access. `project.get` returns that exact
 operations, the project schedule REST URLs and `stackos ops call`.
 ID-based mutations require the matching project; a foreign job is missing
 before any effect. Writes retain their existing local-admin setup boundary.
+Compact responses retain identity/state and repair context; use raw to read back
+the concrete goal, supplied inputs and native execution configuration.
 
 `schedule.set` replaces configuration under a stable project `kind` key.
 It accepts `name`, `goal` (instructions), five-field `cron_expr`, IANA

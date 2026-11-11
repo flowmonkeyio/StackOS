@@ -219,7 +219,7 @@ def test_permissions_surfaces_and_project_scope(api, project_id, tmp_path):
     assert list(other.iterdir()) == []
 
 
-def test_saved_project_and_schedule_references_require_reassignment(api, project_id, tmp_path):
+def test_saved_project_references_require_reassignment(api, project_id, tmp_path):
     scope = bind(api, project_id, tmp_path / "bound")
     created = call(
         api,

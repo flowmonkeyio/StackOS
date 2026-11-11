@@ -769,7 +769,7 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
         return {
             key: copy.deepcopy(value)
             for key, value in data.items()
-            if key not in {"inputs_json", "execution_json"}
+            if key not in {"goal", "inputs_json", "execution_json"}
         }
     if operation_name == "localAgentChat.createMessage":
         out = {

@@ -146,6 +146,21 @@ def test_schedule_compact_keeps_state_snapshots_and_canonical_metrics() -> None:
     )
 
 
+def test_schedule_goal_configuration_stays_in_raw_response() -> None:
+    payload = {
+        "data": {
+            "id": 3,
+            "goal": "Concrete operator instructions",
+            "inputs_json": {"context": "value"},
+            "execution_json": {"host_key": "codex"},
+        },
+        "project_id": 7,
+    }
+    compact = shape_operation_response(_spec("schedule.set"), payload, response_mode="compact")
+    assert compact["data"] == {"id": 3}
+    assert shape_operation_response(_spec("schedule.set"), payload, response_mode="raw") == payload
+
+
 @pytest.mark.parametrize("operation", ["runPlan.get", "runPlan.getStep", "runPlan.claimStep"])
 def test_run_plan_compact_retains_workflow_contract_drift(operation: str) -> None:
     diagnostic = {
