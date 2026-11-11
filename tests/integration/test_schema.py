@@ -679,7 +679,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0041_ui804_consolidation",
+            "0042_schedule_main_thread",
         )
     finally:
         conn.close()
@@ -1565,6 +1565,10 @@ def _historical_project_fixture_session(engine) -> Iterator[Session]:
     """
     with engine.begin() as connection:
         before = connection.exec_driver_sql("PRAGMA table_info(projects)").all()
+        schedule_columns = connection.exec_driver_sql("PRAGMA table_info(scheduled_jobs)").all()
+        add_goal = "goal" not in {column[1] for column in schedule_columns}
+        if add_goal:
+            connection.exec_driver_sql("ALTER TABLE scheduled_jobs ADD COLUMN goal VARCHAR")
         additions = [
             (name, ddl)
             for name, ddl in (
@@ -1584,6 +1588,8 @@ def _historical_project_fixture_session(engine) -> Iterator[Session]:
             yield session
     finally:
         with engine.begin() as connection:
+            if add_goal:
+                connection.exec_driver_sql("ALTER TABLE scheduled_jobs DROP COLUMN goal")
             for name, _ in reversed(additions):
                 connection.exec_driver_sql(f"ALTER TABLE projects DROP COLUMN {name}")
             assert connection.exec_driver_sql("PRAGMA table_info(projects)").all() == before
@@ -1749,7 +1755,7 @@ def test_alembic_upgrade_creates_expected_stackos_tables(isolated_alembic: Path)
     assert not (tables & LEGACY_TABLES)
     with sqlite3.connect(isolated_alembic) as conn:
         assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [
-            ("0041_ui804_consolidation",)
+            ("0042_schedule_main_thread",)
         ]
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     assert {"order_index", "cleanup_json", "primary_workspace_binding_id"} <= _table_columns(
@@ -1810,6 +1816,10 @@ def test_project_folder_migration_requires_explicit_adoption_and_preserves_state
             table: conn.execute(f"SELECT * FROM {table}").fetchall()
             for table in ("workspace_bindings", "agent_sessions", "scheduled_jobs")
         }
+        before_columns = {
+            table: ",".join(row[1] for row in conn.execute(f"PRAGMA table_info({table})"))
+            for table in before
+        }
         project_columns = ",".join(row[1] for row in conn.execute("PRAGMA table_info(projects)"))
         project_before = conn.execute(f"SELECT {project_columns} FROM projects").fetchall()
     _run_alembic(["upgrade", "head"])
@@ -1820,7 +1830,8 @@ def test_project_folder_migration_requires_explicit_adoption_and_preserves_state
         ]
         assert conn.execute(f"SELECT {project_columns} FROM projects").fetchall() == project_before
         assert {
-            table: conn.execute(f"SELECT * FROM {table}").fetchall() for table in before
+            table: conn.execute(f"SELECT {before_columns[table]} FROM {table}").fetchall()
+            for table in before
         } == before
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
         conn.execute("PRAGMA foreign_keys=ON")
@@ -2310,7 +2321,8 @@ def test_schedule_id_upgrade_failure_rolls_back_and_retries(
     engine.dispose()
     _run_alembic(["upgrade", "head"])
     with sqlite3.connect(isolated_alembic) as conn:
-        assert conn.execute("SELECT id, enabled FROM scheduled_jobs").fetchone() == (9, 1)
+        # The later main-thread transition disarms this goal-less historical fixture.
+        assert conn.execute("SELECT id, enabled FROM scheduled_jobs").fetchone() == (9, 0)
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
 
 

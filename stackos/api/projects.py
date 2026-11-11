@@ -154,6 +154,7 @@ async def upsert_schedule(
             name=body.name,
             timezone=body.timezone,
             template_key=body.template_key,
+            goal=body.goal,
             inputs_json=body.inputs_json,
             execution_json=body.execution_json.model_dump(exclude_unset=True)
             if body.execution_json

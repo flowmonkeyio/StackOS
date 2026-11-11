@@ -27,13 +27,10 @@ def timing(engine, tmp_path):
             cron_expr="* * * * *",
             enabled=True,
             name="Proof",
+            goal="Benign timing proof",
             timezone="UTC",
             template_key="proof.flow",
             inputs_json={},
-            execution_json={
-                "project_dir": str(tmp_path),
-                "delivery_agent": {"instructions": "proof"},
-            },
         )
         session.add(row)
         session.commit()

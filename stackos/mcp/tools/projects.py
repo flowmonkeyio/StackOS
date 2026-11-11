@@ -356,6 +356,7 @@ async def _schedule_set(
         name=inp.name,
         timezone=inp.timezone,
         template_key=inp.template_key,
+        goal=inp.goal,
         inputs_json=inp.inputs_json,
         execution_json=inp.execution_json.model_dump(exclude_unset=True)
         if inp.execution_json

@@ -193,8 +193,17 @@ enabled configuration and fences edits even during asynchronous preflight.
 
 The occurrence-launch consumer receives `(row, due_utc, admit)`. It must call
 `admit()` after any awaited readiness checks, immediately before creating work,
-without an intervening await. The scheduler owns eligibility only; request,
-run-plan, tracker and task-delivery owners retain admitted workflow lifecycle.
+without an intervening await. Each occurrence creates and claims one AgentRequest
+and calls the shared native host service once for a project main-agent thread.
+Goal and optional workflow are context for that agent, which reads current project
+and effective workflow guidance and decides how to use ordinary tools/approvals.
+The scheduler does not create or advance plans or dispatch task-delivery roles.
+Project setup owns the folder; only host_key inherits from explicit schedule,
+project delivery defaults, then the native default. Specialist instructions/model
+pins do not become main-agent settings. Request-first history includes actual
+native results/usage with optional same-project real plan links, without tokens
+or launch snapshots. Unresolved requests and linked unfinished plans prevent
+overlap independently of leases; blocked/crashed work is never silently retried.
 
 ## Data Model
 

@@ -399,7 +399,12 @@ class AgentRequestRepository:
         claim_token: str,
     ) -> Envelope[AgentRequestOut]:
         row = self._fetch(project_id=project_id, request_id=request_id)
-        self._verify_claim(row, claim_token)
+        # Native results can link after a long invocation's final handoff. The
+        # original owner remains fenced against reclaim even beyond its lease.
+        evidence = (row.metadata_json or {}).get("native_execution")
+        self._verify_claim(
+            row, claim_token, allow_expired=bool(evidence and evidence.get("finished_at"))
+        )
         plan = self._s.get(RunPlan, run_plan_id)
         if plan is None:
             raise NotFoundError(f"run plan {run_plan_id} not found")

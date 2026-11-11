@@ -336,6 +336,7 @@ class ScheduledJob(SQLModel, table=True):
     name: str | None = Field(default=None, max_length=200)
     timezone: str | None = Field(default=None, max_length=100)
     template_key: str | None = Field(default=None, max_length=200)
+    goal: str | None = Field(default=None)
     inputs_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     execution_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     last_request_id: int | None = Field(

@@ -7,6 +7,8 @@ creating work. Nothing here owns an admitted workflow's lifecycle.
 
 from __future__ import annotations
 
+import asyncio
+import json
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass
@@ -22,16 +24,42 @@ from apscheduler.triggers.date import DateTrigger
 from sqlmodel import Session, select
 
 from stackos.artifacts import redact_secret_text
-from stackos.db.models import AgentRequest, Project, RunPlan, ScheduledJob, TrackerTask
-from stackos.repositories.agent_requests import AgentRequestRepository
+from stackos.db.models import (
+    AgentRequest,
+    AgentRequestStatus,
+    Project,
+    RunPlan,
+    ScheduledJob,
+    TrackerTask,
+)
+from stackos.host_mcp import service as native_host
+from stackos.host_mcp.service import AgentExecutionScope
+from stackos.repositories.agent_requests import AgentRequestExecution, AgentRequestRepository
 from stackos.repositories.projects import ScheduleConfiguration, ScheduledJobRepository
 from stackos.repositories.run_plan_state import TERMINAL_PLAN_STATUSES
-from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker.utils import TERMINAL_TRACKER_STATUSES
-from stackos.repositories.tracker.workflow import workflow_step_ticket_key
-from stackos.task_delivery import start_delivery
 
 WORKFLOW_JOB_PREFIX = "workflow-schedule-"
+MAIN_AGENT_BOOTSTRAP = """You are the main agent for this project automation.
+Read the repository's current instructions and project context before working.
+Carry out the supplied operator goal under ordinary tool authority and approvals.
+If a workflow reference is supplied, resolve its effective project workflow,
+extension, main-agent guidance and applicable roles before deciding how to execute it.
+Coordinate and delegate as appropriate. Create or execute a real run plan only
+through ordinary authorized tools when applicable. The scheduler has created no plan.
+Preserve evidence and report the actual outcome. Return run_plan_id only for a real
+plan in this project, otherwise null. A blocked outcome remains open for inspection.
+"""
+MAIN_AGENT_RESULT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "status": {"type": "string", "enum": ["success", "blocked", "failed"]},
+        "summary": {"type": "string"},
+        "run_plan_id": {"type": ["integer", "null"], "minimum": 1},
+    },
+    "required": ["status", "summary", "run_plan_id"],
+    "additionalProperties": False,
+}
 Launch = Callable[[ScheduledJob, datetime, Callable[[], bool]], Awaitable[None]]
 
 
@@ -104,7 +132,7 @@ class WorkflowScheduleRuntime:
                 self._arm(row)
 
     def _arm(self, row: ScheduledJob) -> None:
-        if not row.enabled or not row.template_key or not row.execution_json or not row.timezone:
+        if not row.enabled or not row.goal or not row.timezone:
             return
         assert row.id is not None
         trigger = CronTrigger.from_crontab(row.cron_expr, timezone=ZoneInfo(row.timezone))
@@ -167,127 +195,202 @@ class WorkflowScheduleRuntime:
             )
 
     async def _launch(self, row: ScheduledJob, due: datetime, admit: Callable[[], bool]) -> None:
-        """Admit once; lifecycle and dependency traversal stay with existing owners."""
-        with self.session_factory() as session:
-            current = session.get(ScheduledJob, row.id)
-            if (
-                current is None
-                or current.project_id != row.project_id
-                or not current.enabled
-                or self._config(current) != self._config(row)
-            ):
-                return
-            requests = AgentRequestRepository(session)
-            request_key = f"schedule:{row.id}:{due.astimezone(UTC).isoformat()}"
-            # Even a NEW or failed preparation is historical evidence, never retry authority.
-            if requests.find_by_key(project_id=row.project_id, request_key=request_key):
-                return
-            if self._unfinished(session, current):
-                self._result(session, current, due, "overlap")
-                return
-            request_id = None
-            try:
+        """One admitted request, one native project-main conversation, no workflow dispatch."""
+        request_id = None
+        claim_token = None
+        try:
+            with self.session_factory() as session:
+                current = session.get(ScheduledJob, row.id)
+                if (
+                    current is None
+                    or current.project_id != row.project_id
+                    or not current.enabled
+                    or self._config(current) != self._config(row)
+                ):
+                    return
+                requests = AgentRequestRepository(session)
+                request_key = f"schedule:{row.id}:{due.astimezone(UTC).isoformat()}"
+                if requests.find_by_key(project_id=row.project_id, request_key=request_key):
+                    return
+                if self._unfinished(session, current):
+                    self._result(session, current, due, "overlap")
+                    return
                 settings = ScheduledJobRepository(session).validate_configuration(
                     row.project_id, self._config(current)
                 )
                 assert settings is not None
-                step_assignments = settings.pop("step_agent_assignments")
-                # Keep the validated source bytes through the final presence guard
-                # and plan creation; handoff must not reread mutable source files.
-                resolved_settings = settings.pop("_resolved_settings")
-                # Setup/host checks may outlive presence, configuration or jitter allowance.
                 if not admit():
                     return
-                metadata = {
+                context = {
+                    "project_id": row.project_id,
                     "schedule_id": row.id,
                     "schedule_name": current.name,
                     "schedule_due_at": due.astimezone(UTC).isoformat(),
+                    "goal": current.goal,
                     "template_key": current.template_key,
+                    "inputs_json": current.inputs_json,
                 }
                 request = requests.create(
                     project_id=row.project_id,
                     request_key=request_key,
                     title=current.name or current.kind,
+                    body_preview=current.goal or "",
                     source_kind="schedule",
-                    metadata_json=metadata,
+                    metadata_json=context,
                 ).data
                 request_id = request.id
                 current.last_request_id = request_id
                 self._result(session, current, due, "admitted")
-                # prepare/create strictly validates and freezes one effective template
-                # and its concrete inputs together, including ordinary grants/approvals.
-                plan = requests.prepare_run_plan(
+                claim = requests.claim(
+                    project_id=row.project_id, request_id=request_id, claimed_by="schedule"
+                ).data
+                claim_token = claim.claim_token
+            prompt = json.dumps(
+                {
+                    **context,
+                    "request_id": request_id,
+                    "request_key": request_key,
+                    "project_dir": settings["project_dir"],
+                },
+                ensure_ascii=False,
+            )
+
+            # Native service invokes this fence at registry admission and process spawn.
+            # Disconnect/remove never cancels an already spawned occurrence.
+            def launch_allowed() -> bool:
+                if not admit():
+                    return False
+                from stackos.repositories.projects import ProjectRepository
+
+                with self.session_factory() as check:
+                    project = ProjectRepository(check).get(row.project_id)
+                    return project.project_dir == settings["project_dir"]
+
+            result = await asyncio.to_thread(
+                native_host.run_agent,
+                instructions=MAIN_AGENT_BOOTSTRAP,
+                prompt=prompt,
+                output_schema=MAIN_AGENT_RESULT_SCHEMA,
+                execution_scope=AgentExecutionScope(
                     project_id=row.project_id,
                     request_id=request_id,
-                    claimed_by="schedule",
-                    key=f"schedule-{row.id}-{due.strftime('%Y%m%dt%H%M%S%f')}",
-                    template_key=current.template_key,
-                    repo_root=settings["project_dir"],
-                    inputs_json=current.inputs_json,
-                    metadata_json=metadata,
-                ).data.run_plan
-                plans = RunPlanRepository(session)
-                started = plans.start(plan.id, project_id=row.project_id)
-                step = plans.claim_step(
-                    run_plan_id=plan.id,
+                    agent="project-main",
+                ),
+                request_execution=AgentRequestExecution(
                     project_id=row.project_id,
-                    run_id=started.run_id,
-                    claimed_by="schedule",
-                ).data
-                start_delivery(
-                    session=session,
+                    request_id=request_id,
+                    claim_token=claim_token,
                     session_factory=self.session_factory,
-                    scheduler=self.scheduler,
-                    project_id=row.project_id,
-                    task_key=f"workflow-{plan.id}",
-                    run_plan_id=plan.id,
-                    step_id=step.step_id,
-                    agent_assignments={
-                        workflow_step_ticket_key(plan.id, key): role
-                        for key, role in step_assignments.items()
-                    },
-                    _resolved_settings=resolved_settings,
-                    **settings,
+                    snapshot=context,
+                ),
+                launch_allowed=launch_allowed,
+                **settings,
+            )
+            with self.session_factory() as session:
+                requests = AgentRequestRepository(session)
+                if not result.ok:
+                    raise RuntimeError(
+                        result.error or f"Native launch exited with {result.exit_code}"
+                    )
+                from stackos.host_mcp.result import validate_agent_result
+
+                result = validate_agent_result(
+                    result, MAIN_AGENT_RESULT_SCHEMA, settings["host_key"]
                 )
-                self._result(session, current, due, "started")
-            except Exception as error:
-                # No fallback/resume/queue. Keep admitted state inspectable for explicit repair.
-                session.rollback()
-                session.refresh(current)
-                self._result(session, current, due, "blocked" if request_id else "unavailable")
+                if not result.ok:
+                    raise RuntimeError(result.error)
+                assert result.result is not None
+                plan_id = result.result["run_plan_id"]
+                if plan_id is not None:
+                    requests.link_run_plan(
+                        project_id=row.project_id,
+                        request_id=request_id,
+                        claim_token=claim_token,
+                        run_plan_id=plan_id,
+                    )
+                outcome = result.result["status"]
+                if outcome != "blocked":
+                    requests.complete(
+                        project_id=row.project_id,
+                        request_id=request_id,
+                        claim_token=claim_token,
+                        status=AgentRequestStatus.RESOLVED
+                        if outcome == "success"
+                        else AgentRequestStatus.FAILED,
+                    )
+                current = session.get(ScheduledJob, row.id)
+                if current is not None and current.last_request_id == request_id:
+                    self._result(session, current, due, outcome)
+        except Exception as error:
+            # Never retry. Preserve unobserved native exit / persistence failures as unresolved.
+            with self.session_factory() as session:
                 if request_id is not None:
-                    request_row = session.get(AgentRequest, request_id)
-                    assert request_row is not None
-                    request_row.metadata_json = {
-                        **(request_row.metadata_json or {}),
-                        "schedule_error": redact_secret_text(str(error)),
-                    }
-                    session.add(request_row)
-                    session.commit()
+                    requests = AgentRequestRepository(session)
+                    request = requests.get(project_id=row.project_id, request_id=request_id)
+                    evidence = (request.metadata_json or {}).get("native_execution")
+                    diagnostic = {"schedule_error": redact_secret_text(str(error))}
+                    if claim_token and (evidence is None or evidence.get("finished_at")):
+                        requests.complete(
+                            project_id=row.project_id,
+                            request_id=request_id,
+                            claim_token=claim_token,
+                            status=AgentRequestStatus.FAILED,
+                            metadata_json=diagnostic,
+                        )
+                    else:
+                        request_row = session.get(AgentRequest, request_id)
+                        assert request_row is not None
+                        request_row.metadata_json = {
+                            **(request_row.metadata_json or {}),
+                            **diagnostic,
+                        }
+                        session.add(request_row)
+                        session.commit()
+                current = session.get(ScheduledJob, row.id)
+                if current is not None and (
+                    request_id is None or current.last_request_id == request_id
+                ):
+                    self._result(session, current, due, "failed" if request_id else "unavailable")
 
     @staticmethod
     def _unfinished(session: Session, row: ScheduledJob) -> bool:
-        if row.last_request_id is None:
-            return False
-        request = session.get(AgentRequest, row.last_request_id)
-        if request is None or request.project_id != row.project_id:
-            return True
-        if request.run_plan_id is None:
-            return False
-        plan = session.get(RunPlan, request.run_plan_id)
-        if (
-            plan is None
-            or plan.project_id != row.project_id
-            or plan.status not in TERMINAL_PLAN_STATUSES
-        ):
-            return True
-        task = session.exec(
-            select(TrackerTask).where(
-                TrackerTask.project_id == row.project_id,
-                TrackerTask.key == f"workflow-{plan.id}",
+        if row.last_request_id is not None:
+            last = session.get(AgentRequest, row.last_request_id)
+            if last is None or last.project_id != row.project_id:
+                return True
+        # Include admission interrupted before last_request_id was committed and
+        # older linked unfinished plans. Neither lease expiry nor null plan is completion.
+        requests = session.exec(
+            select(AgentRequest).where(
+                AgentRequest.project_id == row.project_id,
+                AgentRequest.source_kind == "schedule",
+                AgentRequest.metadata_json["schedule_id"].as_integer() == row.id,  # type: ignore[index]
             )
-        ).first()
-        return task is None or task.status not in TERMINAL_TRACKER_STATUSES
+        ).all()
+        for request in requests:
+            if request.status not in {
+                AgentRequestStatus.RESOLVED,
+                AgentRequestStatus.FAILED,
+                AgentRequestStatus.IGNORED,
+            }:
+                return True
+            if request.run_plan_id is not None:
+                plan = session.get(RunPlan, request.run_plan_id)
+                if (
+                    plan is None
+                    or plan.project_id != row.project_id
+                    or plan.status not in TERMINAL_PLAN_STATUSES
+                ):
+                    return True
+                task = session.exec(
+                    select(TrackerTask).where(
+                        TrackerTask.project_id == row.project_id,
+                        TrackerTask.key == f"workflow-{plan.id}",
+                    )
+                ).first()
+                if task is None or task.status not in TERMINAL_TRACKER_STATUSES:
+                    return True
+        return False
 
     @staticmethod
     def _result(session: Session, row: ScheduledJob, due: datetime, status: str) -> None:

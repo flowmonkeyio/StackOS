@@ -180,8 +180,8 @@ create collisions and stale updates reject safely, without replaying prompt
 content from generic database idempotency storage. A write failure reports
 whether the source was untouched, rolled back, or remains unconfirmed.
 
-Native-name changes keep the filename stable. Reassign saved project defaults,
-schedules and legacy registrations before renaming a referenced identity;
+Native-name changes keep the filename stable. Reassign saved project defaults
+and legacy registrations before renaming a referenced identity;
 rejection returns safe reference IDs and reassign-first guidance. The service
 never moves files, rewrites references, or edits active/historical snapshots.
 `stale_source` means refresh and reconcile the draft, `ambiguous_identity`
@@ -537,8 +537,8 @@ permitted child-materialization path and its completion boundary alongside the
 prohibited lifecycle writes, without adding model-specific workflow policy.
 Source/local parity checks establish availability; a bounded native rehearsal
 must exercise child creation, refusal of self-claim/record/dispatch, the safe
-return of outputs, and preservation of unrelated work. Full scheduled native
-workflow progression remains a separate integration proof.
+return of outputs, and preservation of unrelated work. Scheduled main-agent
+launch and explicit workflow execution remain separate integration boundaries.
 
 Source upgrades do not rewrite existing run-plan snapshots or host-local
 files. Existing runs keep their frozen structure and output contracts. Local

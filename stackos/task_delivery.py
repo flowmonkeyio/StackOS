@@ -835,7 +835,7 @@ def resolve_delivery_settings(
     role_keys: set[str] | None = None,
     _retained_agents: Mapping[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Read-only execution preflight shared by handoff and schedule setup.
+    """Read-only execution preflight for explicit task delivery.
 
     Resolve current settings here; only start_delivery freezes them on a task.
     Its internal retained map resumes an already admitted pre-source task.

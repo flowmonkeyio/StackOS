@@ -25,11 +25,7 @@ from stackos.db.models import (
     TrackerItemStatus,
     WorkspaceBinding,
 )
-from stackos.operations.tracker.schemas import (
-    AgentRole,
-    TaskDeliveryAgentOverride,
-    TaskMcpConfigRef,
-)
+from stackos.operations.tracker.schemas import TaskMcpConfigRef
 from stackos.repositories.base import (
     BudgetExceededError,
     ConflictError,
@@ -127,15 +123,11 @@ class IntegrationBudgetOut(BaseModel):
 
 
 class ScheduleExecution(BaseModel):
-    """Existing handoff settings, without occurrence-specific lifecycle arguments."""
+    """Native launch settings; project_dir only fences a saved legacy target."""
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    project_dir: str = Field(min_length=1)
+    project_dir: str | None = Field(default=None, min_length=1)
     host_key: str | None = Field(default=None, min_length=1)
-    delivery_agent: TaskDeliveryAgentOverride | None = None
-    review_agent: TaskDeliveryAgentOverride | None = None
-    agents: dict[AgentRole, TaskDeliveryAgentOverride] | None = None
-    step_agent_assignments: dict[str, AgentRole] | None = None
     mcp_config_ref: TaskMcpConfigRef | None = None
 
 
@@ -148,6 +140,7 @@ class ScheduleConfiguration(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     timezone: str | None = Field(default=None, min_length=1, max_length=100)
     template_key: str | None = Field(default=None, min_length=1, max_length=160)
+    goal: str | None = Field(default=None, min_length=1)
     inputs_json: dict[str, Any] | None = None
     execution_json: ScheduleExecution | None = None
 
@@ -166,6 +159,7 @@ class ScheduledJobOut(BaseModel):
     name: str | None
     timezone: str | None
     template_key: str | None
+    goal: str | None
     inputs_json: dict[str, Any] | None
     execution_json: ScheduleExecution | None
     last_request_id: int | None
@@ -178,6 +172,17 @@ class ScheduleRemovalOut(BaseModel):
     removed: bool = True
 
 
+class ScheduledNativeExecutionOut(BaseModel):
+    invocation_id: str
+    agent: str
+    host_key: str
+    model: str | None = None
+    started_at: str
+    thread_id: str | None = None
+    request_id: int
+    live_usage: dict[str, Any] | None = None
+
+
 class ScheduledRunOut(BaseModel):
     project_id: int
     request_id: int
@@ -185,7 +190,7 @@ class ScheduledRunOut(BaseModel):
     schedule_name: str
     template_key: str | None
     workflow_title: str | None
-    run_plan_id: int
+    run_plan_id: int | None
     run_id: int | None
     task_key: str | None
     status: str
@@ -193,7 +198,13 @@ class ScheduledRunOut(BaseModel):
     ended_at: datetime | None
     duration_seconds: float | None
     agent_stats: AgentStatsMetricsOut | None
-    active_execution: ActiveExecutionOut | None
+    active_execution: ScheduledNativeExecutionOut | ActiveExecutionOut | None
+    request_status: str
+    native_execution: ScheduledNativeExecutionOut | None = None
+    outcome_status: str | None = None
+    summary: str | None = None
+    error: str | None = None
+    usage: dict[str, Any] | None = None
 
 
 class ProjectRepository:
@@ -735,6 +746,7 @@ class ScheduledJobRepository:
         name: str | None = None,
         timezone: str | None = None,
         template_key: str | None = None,
+        goal: str | None = None,
         inputs_json: dict[str, Any] | None = None,
         execution_json: dict[str, Any] | None = None,
     ) -> Envelope[ScheduledJobOut]:
@@ -748,12 +760,13 @@ class ScheduledJobRepository:
                     "name": name,
                     "timezone": timezone,
                     "template_key": template_key,
+                    "goal": goal,
                     "inputs_json": inputs_json,
                     "execution_json": execution_json,
                 }
             ).model_dump(mode="json")
             if execution_json is not None:
-                # Preserve omitted versus explicit-null role overrides through storage.
+                # Retain only deliberately supplied native launch options.
                 config["execution_json"] = ScheduleExecution.model_validate(
                     execution_json
                 ).model_dump(mode="json", exclude_unset=True)
@@ -855,171 +868,90 @@ class ScheduledJobRepository:
     def validate_configuration(
         self, project_id: int, config: dict[str, Any]
     ) -> dict[str, Any] | None:
-        """Read-only setup/admission preflight; return validated execution settings."""
+        """Read-only main-thread preflight, without workflow input or role resolution."""
+        from stackos.host_mcp.service import agent_selection_error, inspect_host
+        from stackos.repositories.tracker import TrackerRepository
         from stackos.workflows.run_plan_schema import ensure_run_plan_has_no_secrets
+        from stackos.workflows.template_loader import WorkflowTemplateLoader
 
         try:
             ensure_run_plan_has_no_secrets(config)
-        except ValueError as exc:
-            raise ValidationError(str(exc)) from None
-        timezone = config.get("timezone")
+            parsed = ScheduleConfiguration.model_validate(config)
+        except (ValueError, SchemaValidationError) as exc:
+            raise ValidationError(f"Invalid schedule configuration: {exc}") from None
         try:
-            zone = ZoneInfo(timezone) if timezone else ZoneInfo("UTC")
-            CronTrigger.from_crontab(config["cron_expr"], timezone=zone)
+            CronTrigger.from_crontab(parsed.cron_expr, timezone=ZoneInfo(parsed.timezone or "UTC"))
         except (ValueError, ZoneInfoNotFoundError) as exc:
             raise ValidationError(f"Invalid schedule cron/timezone: {exc}") from None
-        from stackos.repositories.tracker import TrackerRepository
-        from stackos.task_delivery import resolve_delivery_settings, workflow_agent_assignments
-        from stackos.workflows.template_loader import WorkflowTemplateLoader
-
         execution = (
-            ScheduleExecution.model_validate(config["execution_json"]).model_dump(
-                exclude_unset=True
-            )
-            if config.get("execution_json")
-            else {}
+            parsed.execution_json.model_dump(exclude_none=True) if parsed.execution_json else {}
         )
-        explicit = execution.pop("step_agent_assignments", None)
-        sources = {
-            **(execution.get("agents") or {}),
-            **{
-                role: execution[role]
-                for role in ("delivery_agent", "review_agent")
-                if execution.get(role)
-            },
-        }
-        missing = [
-            key
-            for key in ("name", "timezone", "template_key", "execution_json")
-            if not config.get(key)
-        ]
-        incomplete_draft = not config.get("enabled") and (
-            missing or (not execution.get("agents") and explicit is None)
-        )
-        # Legacy role arguments replace matching mapped choices at execution, but
-        # both forms remain stored. Validate the shadowed choices before merging.
-        shadowed = {
-            role: choice
-            for role, choice in (execution.get("agents") or {}).items()
-            if role in {"delivery_agent", "review_agent"}
-            and execution.get(role) is not None
-            and (not incomplete_draft or choice.get("source_ref") or choice.get("instructions"))
-        }
-        if shadowed:
-            resolve_delivery_settings(
-                self._s,
-                project_id=project_id,
-                project_dir=execution["project_dir"],
-                host_key=execution.get("host_key"),
-                agents=shadowed,
-                role_keys=set(shadowed),
+        project = ProjectRepository(self._s).get(project_id)
+        # A supplied workflow is a method reference, not a concrete run.
+        if parsed.template_key:
+            WorkflowTemplateLoader(self._s).describe_template(
+                key=parsed.template_key, project_id=project_id, repo_root=project.project_dir
             )
-        if incomplete_draft:
-            # Incomplete drafts stay inert, but supplied source identities must be current.
-            source_roles = {
-                role
-                for role, choice in sources.items()
-                if choice.get("source_ref") or choice.get("instructions")
-            }
-            if source_roles:
-                resolve_delivery_settings(
-                    self._s, project_id=project_id, role_keys=source_roles, **execution
-                )
+        if not parsed.enabled:
             return None
+        missing = [key for key in ("name", "timezone", "goal") if not getattr(parsed, key)]
         if missing:
             raise ValidationError(
                 "Schedule needs setup: " + ", ".join(missing), data={"missing_fields": missing}
             )
-        from stackos.repositories.run_plans import RunPlanRepository
-
-        validation = RunPlanRepository(self._s).validate_plan(
-            template_key=config["template_key"],
-            project_id=project_id,
-            repo_root=execution["project_dir"],
-            inputs_json=config.get("inputs_json"),
-            enforce_required_inputs=bool(config.get("enabled")),
-        )
-        if not validation.valid:
+        if not project.project_dir:
             raise ValidationError(
-                "Workflow setup is invalid",
-                data={
-                    "errors": [issue.model_dump() for issue in validation.errors],
-                },
+                project.project_folder_issue or "Select the project folder in project setup"
             )
-        assert validation.plan is not None
-        template = WorkflowTemplateLoader(self._s).describe_template(
-            key=config["template_key"], project_id=project_id, repo_root=execution["project_dir"]
-        )
-        requirements = [req.model_dump() for req in template.spec.agent_requirements]
-        declared = {req["role"] for req in requirements}
-        if declared and set(execution.get("agents") or {}) - declared - {
-            "delivery_agent",
-            "review_agent",
-        }:
-            raise ValidationError("Selected agents must bind declared workflow roles")
+        directory = Path(project.project_dir)
+        if (
+            execution.get("project_dir")
+            and Path(execution["project_dir"]).expanduser().resolve() != directory
+        ):
+            raise ValidationError(
+                "Saved automation folder differs from project setup. "
+                "Confirm the configured project folder before saving."
+            )
         defaults = TrackerRepository(self._s).delivery_defaults(project_id=project_id)
-        available = set(defaults.get("agents") or {}) | set(execution.get("agents") or {})
-        available.update(
-            role
-            for role in ("delivery_agent", "review_agent")
-            if defaults.get(role) or execution.get(role)
-        )
-        assignments = workflow_agent_assignments(
-            requirements=requirements,
-            steps={
-                step.id: (step.metadata_json or {}).get("agent_assignment")
-                for step in validation.plan.steps
-            },
-            selected_roles=available,
-            assignments=explicit,
-        )
-        if declared and set(assignments.values()) - declared - {"delivery_agent", "review_agent"}:
-            raise ValidationError("Selected agents must bind declared workflow roles")
-        # Validate every supplied choice before persistence, even an unassigned role.
-        # Unrelated project defaults remain outside this selection.
-        resolved = resolve_delivery_settings(
-            self._s,
-            project_id=project_id,
-            role_keys=set(assignments.values()) | sources.keys(),
-            **execution,
-        )
-        return (
-            {
-                **execution,
-                "step_agent_assignments": assignments,
-                "_resolved_settings": {"project_id": project_id, **resolved},
-            }
-            if config.get("enabled")
-            else None
-        )
+        host_key = execution.get("host_key") or defaults.get("host_key") or "codex"
+        if not isinstance(host_key, str):
+            raise ValidationError("Schedule host_key must be a string")
+        error = agent_selection_error(host_key, sandbox="workspace-write")
+        if error:
+            raise ValidationError(error)
+        host = inspect_host(host_key)
+        # Registration repair concerns the host's global MCP entry, not native
+        # execution availability. Explicit task routing is validated separately.
+        if not host.available:
+            raise ValidationError(f"Native host needs setup: {host.message}")
+        reference = execution.get("mcp_config_ref")
+        if reference is not None:
+            if host_key != "codex":
+                raise ValidationError("Task MCP configuration is unsupported by this host")
+            from stackos.host_mcp.adapters.codex import task_mcp_overrides
+
+            try:
+                reference, _ = task_mcp_overrides(directory, reference)
+            except ValueError as exc:
+                raise ValidationError(str(exc)) from None
+        return {
+            "host_key": host_key,
+            "project_dir": str(directory),
+            **({"mcp_config_ref": reference} if reference is not None else {}),
+        }
 
     def _out(self, row: ScheduledJob) -> ScheduledJobOut:
         out = ScheduledJobOut.model_validate(row)
-        missing = [
-            key
-            for key in ("name", "timezone", "template_key", "execution_json")
-            if not getattr(row, key)
-        ]
-        out.setup_issue = "Schedule needs setup: " + ", ".join(missing) if missing else None
-        if not missing:
-            try:
-                self.validate_configuration(
-                    row.project_id,
-                    {
-                        **{key: getattr(row, key) for key in ScheduleConfiguration.model_fields},
-                        "enabled": True,
-                    },
-                )
-            except ValidationError as exc:
-                errors = exc.data.get("errors", [])
-                messages = [issue.get("message", "") for issue in errors if isinstance(issue, dict)]
-                source_ref = exc.data.get("source_ref")
-                if isinstance(source_ref, dict):
-                    messages.append(
-                        f"{source_ref.get('native_name')} ({source_ref.get('source_path')})"
-                    )
-                    messages.append(exc.data.get("repair", "Repair the selected project source."))
-                out.setup_issue = ": ".join([exc.detail, *filter(None, messages)])
+        try:
+            self.validate_configuration(
+                row.project_id,
+                {
+                    **{key: getattr(row, key) for key in ScheduleConfiguration.model_fields},
+                    "enabled": True,
+                },
+            )
+        except (ValidationError, NotFoundError) as exc:
+            out.setup_issue = exc.detail
         return out
 
     def runs(
@@ -1031,16 +963,10 @@ class ScheduledJobRepository:
         after_id: int | None = None,
     ) -> Page[ScheduledRunOut]:
         ProjectRepository(self._s).get(project_id)
-        statement = (
-            select(AgentRequest)
-            .join(RunPlan, col(AgentRequest.run_plan_id) == col(RunPlan.id))
-            .where(
-                AgentRequest.project_id == project_id,
-                RunPlan.project_id == project_id,
-                AgentRequest.source_kind == "schedule",
-                AgentRequest.run_plan_id.is_not(None),  # type: ignore[union-attr]
-                AgentRequest.metadata_json["schedule_id"].as_integer().is_not(None),  # type: ignore[index]
-            )
+        statement = select(AgentRequest).where(
+            AgentRequest.project_id == project_id,
+            AgentRequest.source_kind == "schedule",
+            AgentRequest.metadata_json["schedule_id"].as_integer().is_not(None),  # type: ignore[index]
         )
         if schedule_id is not None:
             statement = statement.where(
@@ -1056,17 +982,14 @@ class ScheduledJobRepository:
         )
 
     def _run_out(self, request: AgentRequest) -> ScheduledRunOut:
+        from stackos.repositories.agent_requests import AgentRequestRepository
         from stackos.repositories.tracker import TrackerRepository
 
-        plan = self._s.get(RunPlan, request.run_plan_id)
-        if (
-            plan is None
-            or plan.id is None
-            or request.id is None
-            or plan.project_id != request.project_id
-        ):
-            raise NotFoundError("Scheduled request has no project-scoped run plan")
-        run = self._s.get(Run, plan.run_id) if plan.run_id else None
+        assert request.id is not None
+        plan = self._s.get(RunPlan, request.run_plan_id) if request.run_plan_id else None
+        if plan is not None and plan.project_id != request.project_id:
+            plan = None
+        run = self._s.get(Run, plan.run_id) if plan and plan.run_id else None
         tasks = (
             TrackerRepository(self._s)
             .get(
@@ -1075,31 +998,73 @@ class ScheduledJobRepository:
                 include_graph=False,
             )
             .tasks
+            if plan
+            else []
         )
-        task = next(
-            (task for task in tasks if (task.source_json or {}).get("run_plan_id") == plan.id), None
+        task = (
+            next(
+                (task for task in tasks if (task.source_json or {}).get("run_plan_id") == plan.id),
+                None,
+            )
+            if plan
+            else None
         )
         metadata = request.metadata_json or {}
-        started = (task.started_at if task else None) or plan.started_at
-        ended = (task.completed_at if task else None) or plan.completed_at
+        observed = AgentRequestRepository(self._s).execution_evidence(
+            project_id=request.project_id, request_id=request.id
+        )
+        native = observed["native_execution"]
+        execution = (
+            ScheduledNativeExecutionOut.model_validate(native["execution"]) if native else None
+        )
+        result = (native.get("result") or {}) if native else {}
+        started = (
+            datetime.fromisoformat(execution.started_at).replace(tzinfo=None)
+            if execution
+            else (
+                (task.started_at if task else None)
+                or (plan.started_at if plan else None)
+                or request.claimed_at
+            )
+        )
+        ended = (
+            datetime.fromisoformat(native["finished_at"]).replace(tzinfo=None)
+            if native and native.get("finished_at")
+            else (
+                (task.completed_at if task else None)
+                or (plan.completed_at if plan else None)
+                or request.completed_at
+            )
+        )
         return ScheduledRunOut(
             project_id=request.project_id,
             request_id=request.id,
             schedule_id=metadata["schedule_id"],
-            schedule_name=metadata.get("schedule_name", request.title),
-            template_key=plan.template_key,
-            workflow_title=plan.title,
-            run_plan_id=plan.id,
+            schedule_name=metadata.get("schedule_name") or request.title,
+            template_key=plan.template_key if plan else metadata.get("template_key"),
+            workflow_title=plan.title if plan else None,
+            run_plan_id=plan.id if plan else None,
             run_id=run.id if run and run.project_id == request.project_id else None,
             task_key=task.key if task else None,
-            status=task.status.value if task else plan.status.value,
+            status=request.status.value
+            if native or not plan
+            else (task.status.value if task else plan.status.value),
+            request_status=request.status.value,
             started_at=started,
             ended_at=ended,
             duration_seconds=max(0, (ended - started).total_seconds())
             if started and ended
             else None,
-            agent_stats=task.agent_stats if task else None,
-            active_execution=task.active_execution if task else None,
+            # A main-thread total never includes a linked task's child invocations.
+            agent_stats=task.agent_stats if task and not native else None,
+            active_execution=observed["active_execution"]
+            if native
+            else (task.active_execution if task else None),
+            native_execution=execution,
+            outcome_status=result.get("status"),
+            summary=result.get("summary"),
+            error=(native.get("error") if native else None) or metadata.get("schedule_error"),
+            usage=native.get("usage") if native else None,
         )
 
 

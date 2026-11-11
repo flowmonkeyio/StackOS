@@ -1,358 +1,320 @@
-"""Cron admission composes real request/plan/tracker owners; only the host is stubbed."""
+"""Real request/native registry lifecycle; only the native adapter is substituted."""
 
+import asyncio
 import json
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
+from threading import Event
+from types import SimpleNamespace
 
 import pytest
 from sqlmodel import Session, select
 
 from stackos.config import Settings
+from stackos.db.connection import make_engine
 from stackos.db.models import AgentRequest, Run, RunPlan, ScheduledJob, TrackerTask
-from stackos.host_mcp.result import AgentRunResult
+from stackos.host_mcp import service
+from stackos.host_mcp.agent_execution import InvocationCancelled
+from stackos.host_mcp.result import AgentRunResult, usage_snapshot
 from stackos.jobs.scheduler import build_scheduler
 from stackos.jobs.workflow_schedules import WorkflowScheduleRuntime
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.projects import ProjectRepository, ScheduledJobRepository
-from stackos.repositories.run_plans import RunPlanRepository
-from stackos.repositories.tracker import TrackerRepository
-from stackos.workflows.template_loader import WorkflowTemplateLoader
-from stackos.workflows.template_schema import WorkflowTemplateSpec
-from tests.integration.test_repositories.test_task_delivery_sources import source
+from tests.helpers.sqlite_schema import capture_database_snapshot, restore_database_snapshot
+from tests.integration.test_repositories.test_schedule_main_thread import bind_folder
+from tests.integration.test_repositories.test_schedule_main_thread import (
+    native_ready as native_ready,
+)
 
 
 @pytest.fixture
-def session(engine):
-    with Session(engine) as session:
-        yield session
-
-
-@pytest.fixture
-def project_id(session):
-    return (
-        ProjectRepository(session)
-        .create(slug="occurrence", name="Occurrence proof", domain="example.test", locale="en-US")
-        .data.id
-    )
-
-
-@pytest.fixture
-def occurrence(session, project_id, engine, tmp_path, monkeypatch):
-    monkeypatch.setattr("stackos.task_delivery.agent_selection_error", lambda *a, **k: None)
-    spec = WorkflowTemplateSpec.model_validate(
-        {
-            "schema_version": "stackos.workflow-template.v1",
-            "key": "proof.harmless",
-            "name": "Harmless preparation",
-            "version": "0.1.0",
-            "inputs": [{"key": "goal", "type": "string", "required": True}],
-            # Deliberately list the dependent first: admission must use readiness.
-            "steps": [
-                {"id": "gather", "title": "Gather", "depends_on": ["shape"]},
-                {"id": "shape", "title": "Shape", "instructions": ["Prepare gather children."]},
-            ],
-        }
-    )
-    WorkflowTemplateLoader(session).save_project_template(project_id=project_id, spec=spec)
-    roles = {
-        role: {
-            "source_ref": source(
-                session, project_id, tmp_path, role, "Execute only the assigned harmless contract."
-            )
-        }
-        for role in ("delivery_agent", "review_agent")
-    }
-    TrackerRepository(session).configure_delivery(project_id=project_id, delivery=roles)
-    row = (
-        ScheduledJobRepository(session)
-        .set(
-            project_id=project_id,
-            kind="harmless",
-            name="Daily harmless work",
-            cron_expr="* * * * *",
-            timezone="UTC",
-            template_key=spec.key,
-            inputs_json={"goal": "Synthetic input"},
-            execution_json={"project_dir": str(tmp_path), "agents": roles},
-            enabled=True,
+def occurrence(engine, tmp_path, monkeypatch, native_ready):
+    database = make_engine(tmp_path / "occurrence.sqlite")
+    restore_database_snapshot(database, capture_database_snapshot(engine))
+    with Session(database) as session:
+        project = (
+            ProjectRepository(session)
+            .create(slug="occurrence", name="Proof", domain="proof.test")
+            .data
         )
-        .data
-    )
+        bind_folder(session, project.id, tmp_path)
+        row = (
+            ScheduledJobRepository(session)
+            .set(
+                project_id=project.id,
+                kind="proof",
+                name="Main proof",
+                goal="Benign project goal",
+                cron_expr="* * * * *",
+                timezone="UTC",
+                enabled=True,
+            )
+            .data
+        )
     clock = [datetime(2030, 1, 1, tzinfo=UTC)]
-    scheduler = build_scheduler(Settings(), engine)
-    runtime = WorkflowScheduleRuntime(scheduler, lambda: Session(engine), now=lambda: clock[0])
+    scheduler = build_scheduler(Settings(), database)
+    runtime = WorkflowScheduleRuntime(scheduler, lambda: Session(database), now=lambda: clock[0])
     runtime.connect()
-    return row.id, runtime, scheduler, clock, spec
+    calls = []
+
+    def runner(directory, instructions, prompt, schema, on_session, **options):
+        on_session(f"native-main-{len(calls) + 1}")
+        calls.append((str(directory), instructions, json.loads(prompt), schema, options))
+        return AgentRunResult(
+            0,
+            thread_id=f"native-main-{len(calls)}",
+            result={"status": "success", "summary": "Observed benign result", "run_plan_id": None},
+            usage=usage_snapshot("proof", "invocation", 37, 6),
+        )
+
+    monkeypatch.setattr(service, "agent_selection_error", lambda *_a, **_k: None)
+    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    try:
+        yield row.id, project.id, runtime, clock, database, calls
+    finally:
+        service.shutdown_usage()
+        database.dispose()
 
 
 async def fire(occurrence):
-    row_id, runtime, _, clock, _ = occurrence
+    row_id, _, runtime, clock, _, _ = occurrence
     registration = runtime.registrations[row_id]
     clock[0] = registration.due
     await runtime._fire(row_id=row_id, registration=registration)
 
 
 @pytest.mark.asyncio
-async def test_occurrence_runs_first_ready_planning_children_and_remaining_work(
-    occurrence, session, project_id, engine, monkeypatch
-):
-    from stackos import task_delivery
-
-    repo = TrackerRepository(session)
-    repo.create_task(project_id=project_id, key="unrelated", title="Unrelated")
-    untouched = (
-        repo.get(project_id=project_id, task_key="unrelated").tasks[0].model_dump(mode="json")
-    )
-    calls = []
-
-    def host(_host, _directory, instructions, prompt, _schema, **kwargs):
-        packet = json.loads(prompt)
-        ticket = packet["brief"]["ticket"]
-        calls.append((ticket["key"], packet["phase"]))
-        if packet["workflow_step"] and packet["workflow_step"]["step_id"] == "shape":
-            assert "contract-declared child" in instructions
-            plan_id = ticket["run_plan_id"]
-            with Session(engine) as writer:
-                plans = RunPlanRepository(writer)
-                parent = plans.get_step(plan_id, "gather", project_id=project_id)
-                TrackerRepository(writer).create_ticket(
-                    project_id=project_id,
-                    task_key=ticket["task_key"],
-                    key="prepared-child",
-                    title="Prepared harmless child",
-                    parent_ticket_key=f"workflow-{plan_id}-gather",
-                    dependency_keys=[f"workflow-{plan_id}-gather"],
-                    run_plan_id=plan_id,
-                    run_plan_step_id=parent.id,
-                )
-        return AgentRunResult(
-            exit_code=0,
-            thread_id=f"native-edge-{len(calls)}",
-            result={"status": "success", "summary": "Checked", "outputs": "{}", "followups": []},
-        )
-
-    monkeypatch.setattr(task_delivery, "run_agent", host)
-    await fire(occurrence)
-    row_id, _, scheduler, _, _ = occurrence
-    session.expire_all()
-    row = session.get(ScheduledJob, row_id)
-    request = AgentRequestRepository(session).get(
-        project_id=project_id, request_id=row.last_request_id
-    )
-    plan = RunPlanRepository(session).get(request.run_plan_id, project_id=project_id)
-    assert request.request_key == f"schedule:{row_id}:2030-01-01T00:01:00+00:00"
-    assert request.metadata_json["schedule_name"] == "Daily harmless work"
-    assert plan.inputs_json == {"goal": "Synthetic input"}
-    assert [(s.step_id, s.status) for s in plan.steps] == [
-        ("gather", "pending"),
-        ("shape", "running"),
-    ]
-    jobs = [job for job in scheduler.get_jobs() if job.id.startswith("task-delivery:")]
-    assert len(jobs) == 1
-    jobs[0].func(**jobs[0].kwargs)
-    session.expire_all()
-    assert (
-        repo.get(project_id=project_id, task_key=f"workflow-{plan.id}")
-        .tasks[0]
-        .metadata_json["delivery"]["reason"]
-        is None
-    )
-    assert RunPlanRepository(session).get(plan.id, project_id=project_id).status == "completed", (
-        repo.get(project_id=project_id, task_key=f"workflow-{plan.id}").tasks[0].metadata_json,
-        calls,
-    )
-    assert calls == [
-        (f"workflow-{plan.id}-shape", "delivery"),
-        ("prepared-child", "delivery"),
-        ("prepared-child", "review"),
-        (f"workflow-{plan.id}-gather", "delivery"),
-    ]
-    state = (
-        repo.get(project_id=project_id, task_key=f"workflow-{plan.id}")
-        .tasks[0]
-        .metadata_json["delivery"]
-    )
-    assert state["delivery_agent"]["instructions"] == "Execute only the assigned harmless contract."
-    assert state["step_id"] == "shape"
-    assert (
-        repo.get(project_id=project_id, task_key="unrelated").tasks[0].model_dump(mode="json")
-        == untouched
-    )
-    assert not (Path(state["project_dir"]) / ".git").exists()
-
-    # Completion permits a new due key, while replay of the old one remains inert.
-    await fire(occurrence)
-    session.expire_all()
-    assert len(session.exec(select(AgentRequest)).all()) == 2
-    assert len(session.exec(select(RunPlan)).all()) == 2
-
-
-@pytest.mark.asyncio
-async def test_duplicate_and_overlap_never_prepare_or_restart(occurrence, session, project_id):
-    await fire(occurrence)
-    row_id, runtime, scheduler, clock, _ = occurrence
-    session.expire_all()
-    row = session.get(ScheduledJob, row_id)
-    assert row.last_request_id is not None
-    request = session.get(AgentRequest, row.last_request_id)
-    # An expired request lease is unrelated to the unfinished canonical plan/task.
-    request.claim_expires_at = datetime(2000, 1, 1)
-    session.add(request)
-    session.commit()
-    due = clock[0]
-    await runtime.launch(row, due, lambda: True)
-    await fire(occurrence)
-    session.expire_all()
-    assert len(session.exec(select(AgentRequest)).all()) == 1
-    assert len(session.exec(select(RunPlan)).all()) == 1
-    assert len(session.exec(select(Run)).all()) == 1
-    assert len([job for job in scheduler.get_jobs() if job.id.startswith("task-delivery:")]) == 1
-    assert session.get(ScheduledJob, row_id).last_run_status == "overlap"
-    assert request.run_plan_id is not None
-
-
-@pytest.mark.asyncio
-async def test_approval_blocks_without_bypass_or_lease_based_overlap(
-    occurrence, session, project_id
-):
-    row_id, _, scheduler, _, spec = occurrence
-    updated = spec.model_dump(mode="json")
-    updated["version"] = "0.2.0"
-    updated["approval_gates"] = [{"key": "operator", "required_when": "before work"}]
-    updated["steps"][1]["approval_refs"] = ["operator"]
-    WorkflowTemplateLoader(session).save_project_template(
-        project_id=project_id, spec=WorkflowTemplateSpec.model_validate(updated)
-    )
-    await fire(occurrence)
-    session.expire_all()
-    row = session.get(ScheduledJob, row_id)
-    request = session.get(AgentRequest, row.last_request_id)
-    assert row.last_run_status == "blocked"
-    assert "approval" in request.metadata_json["schedule_error"]
-    plan = RunPlanRepository(session).get(request.run_plan_id, project_id=project_id)
-    assert plan.status == "started"
-    assert all(step.status == "pending" for step in plan.steps)
-    assert plan.approval_requests[0].status == "pending"
-    assert not [job for job in scheduler.get_jobs() if job.id.startswith("task-delivery:")]
-    await fire(occurrence)
-    session.expire_all()
-    assert len(session.exec(select(AgentRequest)).all()) == 1
-    assert session.get(ScheduledJob, row_id).last_run_status == "overlap"
-
-
-@pytest.mark.asyncio
-async def test_role_overrides_preserve_partial_values_and_explicit_null(
-    occurrence, session, project_id, tmp_path
-):
-    row_id, runtime, _, _, _ = occurrence
-    repo = TrackerRepository(session)
-    repo.configure_delivery(
-        project_id=project_id,
-        delivery={
-            role: {
-                "source_ref": source(
-                    session, project_id, tmp_path, role, "Current prepared method"
-                ),
-                "model": "project-model",
-            }
-            for role in ("delivery_agent", "review_agent")
-        },
-    )
-    row = session.get(ScheduledJob, row_id)
-    config = json.loads(json.dumps(runtime._config(row)))
-    config["execution_json"]["delivery_agent"] = {"model": None}
-    ScheduledJobRepository(session).set(project_id=project_id, **config)
-    # Re-arm after this explicit settings edit, as the daemon reconciliation seam does.
-    runtime.reconcile(project_id=project_id, job_id=row_id)
-    await fire(occurrence)
-    session.expire_all()
-    request = session.get(AgentRequest, session.get(ScheduledJob, row_id).last_request_id)
-    state = (
-        repo.get(project_id=project_id, task_key=f"workflow-{request.run_plan_id}")
-        .tasks[0]
-        .metadata_json["delivery"]
-    )
-    assert "model" not in state["delivery_agent"]
-    assert state["delivery_agent"]["instructions"] == "Current prepared method"
-    assert state["review_agent"]["model"] == "project-model"
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("failure", ["input", "host", "guard"])
-async def test_preflight_and_final_admission_create_no_work(
-    occurrence, session, monkeypatch, failure
-):
-    row_id, runtime, _, clock, _ = occurrence
-    row = session.get(ScheduledJob, row_id)
-    if failure == "input":
-        row.inputs_json = {}
+@pytest.mark.parametrize("workflow", [None, "core.project-memory-review"])
+async def test_one_main_invocation_request_history_and_no_plan(occurrence, workflow):
+    row_id, project_id, runtime, clock, engine, calls = occurrence
+    with Session(engine) as session:
+        row = session.get(ScheduledJob, row_id)
+        row.template_key = workflow
         session.add(row)
         session.commit()
-    elif failure == "host":
-        monkeypatch.setattr(
-            "stackos.task_delivery.agent_selection_error", lambda *a, **k: "Host unavailable"
-        )
-    due = clock[0] + timedelta(minutes=1)
-    clock[0] = due
-    await runtime.launch(row, due, lambda: failure != "guard")
-    session.expire_all()
-    for model in (AgentRequest, RunPlan, Run, TrackerTask):
-        assert session.exec(select(model)).all() == []
-    assert session.get(ScheduledJob, row_id).last_run_status == (
-        None if failure == "guard" else "unavailable"
-    )
-    if failure != "guard":
-        assert ScheduledJobRepository(session).list(row.project_id)[0].setup_issue is not None
-
-
-@pytest.mark.asyncio
-async def test_existing_unprepared_due_key_is_not_claimed(occurrence, session, project_id):
-    row_id, _, _, _, _ = occurrence
-    existing = (
-        AgentRequestRepository(session)
-        .create(
-            project_id=project_id,
-            request_key=f"schedule:{row_id}:2030-01-01T00:01:00+00:00",
-            title="Existing unprepared occurrence",
-            source_kind="schedule",
-        )
-        .data
-    )
+        runtime.reconcile(project_id=project_id, job_id=row_id)
     await fire(occurrence)
-    session.expire_all()
-    assert session.get(AgentRequest, existing.id).status == "new"
-    assert session.exec(select(RunPlan)).all() == []
-    assert session.get(ScheduledJob, row_id).last_request_id is None
+    with Session(engine) as session:
+        request = session.exec(select(AgentRequest)).one()
+        assert request.status == "resolved" and request.run_plan_id is None
+        for model in (RunPlan, Run, TrackerTask):
+            assert session.exec(select(model)).all() == []
+        row = session.get(ScheduledJob, row_id)
+        await runtime._launch(row, clock[0], lambda: True)
+        assert len(calls) == 1
+        history = ScheduledJobRepository(session).runs(project_id=project_id).items[0]
+        assert history.native_execution.thread_id == "native-main-1"
+        assert history.status == "resolved" and history.summary == "Observed benign result"
+        assert history.run_plan_id is None and history.task_key is None and history.run_id is None
+        assert history.usage["measured"]["total"] == 43
+        assert history.agent_stats is None and history.active_execution is None
+        assert "claim_token" not in history.model_dump_json()
+        assert "instructions" not in history.model_dump_json()
+        assert "prompt" not in history.model_dump_json()
+        ScheduledJobRepository(session).remove(row_id, project_id=project_id)
+        assert (
+            ScheduledJobRepository(session).runs(project_id=project_id).items[0].request_id
+            == request.id
+        )
+    assert calls[0][2]["template_key"] == workflow
+    assert calls[0][2]["goal"] == "Benign project goal"
+    assert "claim_token" not in json.dumps(calls[0][2])
+    assert not {"model", "provider", "profile", "native_settings"} & calls[0][4].keys()
+    assert "repository" in calls[0][1] and "main agent" in calls[0][1]
 
 
 @pytest.mark.asyncio
-async def test_handoff_failure_stays_visible_and_blocks_later_ticks(
-    occurrence, session, project_id, monkeypatch
+async def test_live_request_beyond_lease_blocks_overlap_and_retains_real_liveness(
+    occurrence, monkeypatch
 ):
-    row_id, _, scheduler, _, _ = occurrence
-    add_job = scheduler.add_job
+    from stackos.repositories import agent_requests
 
-    def unavailable(*args, **kwargs):
-        if kwargs.get("id", "").startswith("task-delivery:"):
-            raise RuntimeError("Synthetic scheduler handoff failure")
-        return add_job(*args, **kwargs)
+    row_id, project_id, _runtime, _clock, engine, calls = occurrence
+    entered, finish = Event(), Event()
+    original = service._definition_by_key("codex").run_agent
 
-    monkeypatch.setattr(scheduler, "add_job", unavailable)
+    def runner(*args, **kwargs):
+        kwargs["on_session"]("native-main-1")
+        entered.set()
+        assert finish.wait(10)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    task = asyncio.create_task(fire(occurrence))
+    assert await asyncio.to_thread(entered.wait, 10)
+    try:
+        with Session(engine) as session:
+            request = session.exec(select(AgentRequest)).one()
+            now = datetime.now(UTC).replace(tzinfo=None) + timedelta(seconds=1200)
+            monkeypatch.setattr(agent_requests, "_utcnow", lambda: now)
+            history = ScheduledJobRepository(session).runs(project_id=project_id).items[0]
+            assert history.active_execution.thread_id == "native-main-1"
+            await fire(occurrence)
+            assert session.exec(select(AgentRequest)).all() == [request]
+            session.expire_all()
+            assert session.get(ScheduledJob, row_id).last_run_status == "overlap"
+    finally:
+        finish.set()
+        await task
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["new", "claimed", "run-created"])
+async def test_unresolved_or_orphan_admission_blocks_without_plan_or_lease(occurrence, status):
+    row_id, project_id, _, _, engine, calls = occurrence
+    with Session(engine) as session:
+        request = (
+            AgentRequestRepository(session)
+            .create(
+                project_id=project_id,
+                request_key="older",
+                title="Interrupted admission",
+                source_kind="schedule",
+                metadata_json={"schedule_id": row_id},
+            )
+            .data
+        )
+        row = session.get(AgentRequest, request.id)
+        row.status = status
+        row.claim_expires_at = datetime(2000, 1, 1)
+        session.add(row)
+        session.commit()
     await fire(occurrence)
-    session.expire_all()
-    request = session.get(AgentRequest, session.get(ScheduledJob, row_id).last_request_id)
-    plan = RunPlanRepository(session).get(request.run_plan_id, project_id=project_id)
-    assert plan.status == "started"
-    assert session.get(ScheduledJob, row_id).last_run_status == "blocked"
-    assert request.metadata_json["schedule_error"] == "Synthetic scheduler handoff failure"
-    state = (
-        TrackerRepository(session)
-        .get(project_id=project_id, task_key=f"workflow-{plan.id}")
-        .tasks[0]
-        .metadata_json["delivery"]
-    )
-    assert state["status"] == "stopped"
+    assert not calls
+    with Session(engine) as session:
+        assert session.get(ScheduledJob, row_id).last_run_status == "overlap"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["blocked", "failed", "crash", "launch-error"])
+async def test_failures_are_truthful_no_replay_and_blocked_remains_open(
+    occurrence, monkeypatch, outcome
+):
+    row_id, _project_id, runtime, clock, engine, calls = occurrence
+
+    def runner(*args, **kwargs):
+        calls.append(1)
+        if outcome == "launch-error":
+            raise RuntimeError("Launch failed")
+        kwargs["on_session"]("native-failure")
+        if outcome == "crash":
+            return AgentRunResult(7, thread_id="native-failure", error="Native crash")
+        return AgentRunResult(
+            0,
+            thread_id="native-failure",
+            result={
+                "status": outcome,
+                "summary": "Needs attention",
+                "run_plan_id": None,
+            },
+        )
+
+    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
     await fire(occurrence)
-    session.expire_all()
-    assert len(session.exec(select(AgentRequest)).all()) == 1
-    assert session.get(ScheduledJob, row_id).last_run_status == "overlap"
+    with Session(engine) as session:
+        request = session.exec(select(AgentRequest)).one()
+        assert request.status == ("claimed" if outcome == "blocked" else "failed")
+        row = session.get(ScheduledJob, row_id)
+        await runtime._launch(row, clock[0], lambda: True)
+        assert len(calls) == 1
+        assert request.run_plan_id is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mutation", ["disable", "delete", "edit", "disconnect"])
+async def test_native_spawn_guard_fences_changes_after_admission(occurrence, monkeypatch, mutation):
+    row_id, _project_id, runtime, _, engine, _ = occurrence
+    spawned = []
+
+    def runner(*args, process_control, **kwargs):
+        if mutation == "disconnect":
+            runtime.disconnect(runtime.connection)
+        else:
+            with Session(engine) as session:
+                row = session.get(ScheduledJob, row_id)
+                if mutation == "delete":
+                    session.delete(row)
+                else:
+                    row.enabled = mutation != "disable"
+                    row.goal = "Changed"
+                    session.add(row)
+                session.commit()
+        import sys
+
+        with pytest.raises(InvocationCancelled, match="cancelled"):
+            process_control.spawn([sys.executable, "-c", "print('must not run')"])
+            spawned.append(True)
+        return AgentRunResult(None, error="Fenced before spawn")
+
+    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    await fire(occurrence)
+    assert not spawned
+    with Session(engine) as session:
+        assert session.exec(select(AgentRequest)).one().status == "failed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("foreign", [False, True])
+async def test_actual_plan_link_is_project_checked_and_unfinished_plan_blocks(
+    occurrence, monkeypatch, foreign
+):
+    from stackos.repositories import agent_requests
+    from stackos.repositories.run_plans import RunPlanRepository
+
+    row_id, project_id, _runtime, _clock, engine, calls = occurrence
+    plans = []
+
+    def runner(*args, on_session, **kwargs):
+        on_session("native-with-plan")
+        with Session(engine) as session:
+            target = project_id
+            if foreign:
+                target = (
+                    ProjectRepository(session)
+                    .create(slug="other", name="Other", domain="other.test")
+                    .data.id
+                )
+            plan = (
+                RunPlanRepository(session)
+                .create(
+                    project_id=target,
+                    run_plan_json={
+                        "key": "agent-created",
+                        "title": "Real plan",
+                        "steps": [{"id": "work", "title": "Work"}],
+                    },
+                )
+                .data
+            )
+            plans.append(plan.id)
+        # Final native handoff/link retains the original owner beyond its lease.
+        later = datetime.now(UTC).replace(tzinfo=None) + timedelta(seconds=1200)
+        monkeypatch.setattr(agent_requests, "_utcnow", lambda: later)
+        calls.append(1)
+        return AgentRunResult(
+            0,
+            thread_id="native-with-plan",
+            result={
+                "status": "success",
+                "summary": "Created real plan",
+                "run_plan_id": plan.id,
+            },
+        )
+
+    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    await fire(occurrence)
+    with Session(engine) as session:
+        request = session.exec(select(AgentRequest)).one()
+        history = ScheduledJobRepository(session).runs(project_id=project_id).items[0]
+        assert request.run_plan_id == (None if foreign else plans[0])
+        assert history.run_plan_id == (None if foreign else plans[0])
+        assert request.status == ("failed" if foreign else "resolved")
+        if foreign:
+            assert "project" in history.error
+        else:
+            assert history.task_key == f"workflow-{plans[0]}"
+    if not foreign:
+        await fire(occurrence)
+        assert len(calls) == 1
+        with Session(engine) as session:
+            assert session.get(ScheduledJob, row_id).last_run_status == "overlap"
