@@ -24,6 +24,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `UiSidePanel` | left/right; 480/720 |
 | `UiDropdownMenu` | keyboard arrows; sections |
 | `UiPopover` | floating-ui placement |
+| `UiReorderList`, `UiReorderHandle` | neutral vertical neighbor intents, handle/menu alternatives, insertion feedback, gesture-scoped edge scroll and cleanup |
 | `UiTooltip` | hover + focus |
 | `UiCard` | density compact/comfortable; optional padding; no nested cards |
 | `UiPanel` | flat alt-surface; for sub-sections |
@@ -46,6 +47,19 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `UiMetricCard` | label + value + delta |
 | `UiDescriptionList` | label/value rows |
 | `UiFactGroups` | grouped drawer/detail metadata blocks with headings, badges, mono IDs, and wide rows |
+
+The shared reorder primitive accepts arbitrary items through `itemKey`/`itemLabel`,
+optional meaningful `itemVersion`, `scopeKey`, `disabled` and an optional
+`scrollContainer` (the list by default). Its item slot supplies the item and handle
+bindings, including dropdown actions for Move up/down/to top/to bottom. A real move
+emits only `{ itemKey, anchorKey, placement: 'before' | 'after' }`; the consumer owns
+validation, optimistic ordering, persistence and recovery. The primitive never
+imports tracker, store or API contracts. It keeps the source-sized item in place,
+uses a restrained text preview and a single insertion line, suppresses visible
+no-ops, scrolls only the supplied vertical container, and cleans up its one
+animation-frame loop and gesture listeners on every termination path. Movement
+announcements and focus/visibility restoration accompany menu and drop intents;
+there is no decorative movement animation.
 
 ## Shipped — domain (`ui/src/components/domain/`)
 
