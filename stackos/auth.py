@@ -446,6 +446,29 @@ class ServerAuth:
         self.session.add(row)
         self.session.commit()
 
+    async def renew(self, row: UserSession) -> UserPrincipal:
+        """Rotate credentials for an already resolved, locked server session."""
+        saved = self.tokens(row)
+        tokens = await self.call(
+            "POST",
+            "token?grant_type=refresh_token",
+            payload={"refresh_token": saved["refresh_token"]},
+        )
+        principal = await self.principal(tokens.get("access_token", ""))
+        if principal.user_id != row.user_id:
+            raise HTTPException(401, {"code": "session_invalid"})
+        if row.expires_at <= time.time():
+            raise HTTPException(401, {"code": "session_expired_or_invalid"})
+        self.save_tokens(
+            row,
+            {
+                "access_token": tokens["access_token"],
+                "refresh_token": tokens["refresh_token"],
+                "csrf": saved["csrf"],
+            },
+        )
+        return principal
+
     async def create(
         self,
         tokens: dict[str, Any],
@@ -521,7 +544,13 @@ class ServerAuth:
         # provider await. The same rule covers refresh, logout, login replacement
         # and recovery revocation, rather than only the first observed caller.
         try:
-            return list(self.session.exec(query.with_for_update(nowait=True)).all())
+            # A preceding unlocked read may already be in this Session's identity
+            # map. Reload after locking so renewal cannot reuse stale credentials.
+            return list(
+                self.session.exec(
+                    query.with_for_update(nowait=True).execution_options(populate_existing=True)
+                ).all()
+            )
         except OperationalError as exc:
             self.session.rollback()
             if getattr(exc.orig, "sqlstate", None) == "55P03":
@@ -622,7 +651,24 @@ async def _server_dispatch(
                     auth.csrf(request, row)
                 # Refresh/logout must remain usable after the access JWT expires.
                 if path not in {"/api/v1/auth/refresh", "/api/v1/auth/logout"}:
-                    request.state.principal = await auth.principal(auth.tokens(row)["access_token"])
+                    access_token = auth.tokens(row)["access_token"]
+                    try:
+                        principal = await auth.principal(access_token)
+                    except HTTPException as exc:
+                        if (
+                            (method, path) != ("GET", "/api/v1/auth/session")
+                            or exc.status_code != 401
+                            or not isinstance(exc.detail, dict)
+                            or exc.detail.get("code") != "authentication_failed"
+                        ):
+                            raise
+                        # A fresh document has no CSRF yet. Maintain only its
+                        # existing cookie-bound session before returning bootstrap
+                        # identity/CSRF; business writes and explicit refresh still
+                        # require the existing exact-Origin and CSRF checks.
+                        row = auth.resolve(request, lock=True)
+                        principal = await auth.renew(row)
+                    request.state.principal = principal
                     if request.state.principal.user_id != row.user_id:
                         raise HTTPException(401, {"code": "session_invalid"})
                 request.state.auth_scope = "verified-user"

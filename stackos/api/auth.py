@@ -314,22 +314,8 @@ async def user_session(request: Request, auth: Auth) -> dict:
 async def refresh(request: Request, auth: Auth) -> dict:
     row = auth.resolve(request, lock=True)
     auth.csrf(request, row)
-    saved = auth.tokens(row)
-    tokens = await auth.call(
-        "POST", "token?grant_type=refresh_token", payload={"refresh_token": saved["refresh_token"]}
-    )
-    principal = await auth.principal(tokens.get("access_token", ""))
-    if principal.user_id != row.user_id:
-        raise HTTPException(401, {"code": "session_invalid"})
-    auth.save_tokens(
-        row,
-        {
-            "access_token": tokens["access_token"],
-            "refresh_token": tokens["refresh_token"],
-            "csrf": saved["csrf"],
-        },
-    )
-    return {"status": "authenticated", "csrf_token": saved["csrf"]}
+    await auth.renew(row)
+    return {"status": "authenticated", "csrf_token": auth.tokens(row)["csrf"]}
 
 
 @router.post("/logout")

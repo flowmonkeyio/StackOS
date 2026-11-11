@@ -39,7 +39,7 @@ The REST contract under `/api/v1/auth` is:
 | `GET /callback` | Redirect to the shared `/sign-in` UI with a pending purpose-specific callback; never consume the code. |
 | `POST /callback`, `POST /verify` | Exchange the one-time `token_hash` and `type=signup/recovery` server-side. Form callbacks redirect to the shared UI on success or ordinary failure; API errors expose the same safe callback outcome and next action. |
 | `POST /login` | Password sign-in, followed by provider verification of the confirmed user. |
-| `GET /session` | Safe user/environment identity, state and CSRF token. |
+| `GET /session` | Safe user/environment identity, state and CSRF token; renew rejected provider access for an existing valid server session under a row lock. |
 | `POST /refresh` | Rotate server-held Supabase credentials under a row lock; contention returns retryable `session_busy` (409). |
 | `POST /logout` | Revoke the local session immediately; report whether provider revocation succeeded. |
 | `POST /password` | Recovery-session password reset; invalidate all StackOS sessions for that user/environment and require sign-in. |
@@ -52,12 +52,21 @@ access/refresh tokens remain encrypted in `user_sessions` with the server seed
 and authenticated session/environment/origin identity. They never appear in
 browser JSON or URLs. Normal sessions expire after seven days; recovery sessions
 expire after fifteen minutes and permit only session inspection, reset and logout.
-Provider `/user` verification protects authenticated requests. Access-token expiry
-requires an explicit refresh; invalid/expired server sessions require sign-in.
+Provider `/user` verification protects authenticated requests. A fresh document
+bootstraps through `GET /session`, which can renew server-held provider credentials
+before returning identity and CSRF. Renewal rechecks the stored session under the
+same lock as explicit refresh and verifies the returned user matches its owner;
+it preserves the cookie, CSRF, recovery restrictions and absolute session expiry.
+Other private requests still require explicit refresh after access-token expiry.
+Expired/invalid server sessions and revoked refresh credentials require sign-in;
+provider outages remain retryable failures. Supabase documents the
+[access/refresh token lifecycle](https://supabase.com/docs/guides/auth/sessions).
 
-Every online write requires the exact selected `Origin`, including sign-in,
-registration and verification. Session writes also require `X-CSRF-Token` from
-the same-origin session response. Online auth responses disable caching; email
+Every unsafe online HTTP request requires the exact selected `Origin`, including
+sign-in, registration and verification. Session POSTs also require `X-CSRF-Token`
+from the same-origin session response. Bootstrap GET uses the existing private
+GET origin and SameSite cookie checks; its credential maintenance changes no
+application data, principal or CSRF token. Online auth responses disable caching; email
 callbacks suppress query-bearing referrers and framing. HTTPS uses Secure cookies; the approved
 isolated loopback HTTP topology cannot use that flag. Explicit confirmation
 avoids consuming links on email-scanner GETs. See Supabase's

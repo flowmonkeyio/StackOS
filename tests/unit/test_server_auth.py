@@ -17,7 +17,7 @@ from pydantic import SecretStr
 from sqlmodel import Session, select
 
 from stackos.api.deps import get_settings
-from stackos.auth import session_cookie_name
+from stackos.auth import ServerAuth, session_cookie_name
 from stackos.config import Settings
 from stackos.db.models import Credential, Project, UserSession
 from stackos.repositories.projects import ProjectRepository
@@ -56,12 +56,25 @@ def online(client: TestClient, settings: Settings, monkeypatch: pytest.MonkeyPat
                 },
             )
         if request.url.path.endswith("/user"):
+            if (
+                state.get("expired_access")
+                and request.headers.get("authorization") == "Bearer private-access"
+            ):
+                return httpx.Response(401, json={"message": "JWT expired"})
             return httpx.Response(
                 200,
                 json={
-                    "id": state["user_id"],
+                    "id": state.get("renewed_user_id", state["user_id"])
+                    if request.headers.get("authorization") == "Bearer renewed-access"
+                    else state["user_id"],
                     "email_confirmed_at": "2026-11-10T00:00:00Z" if state["verified"] else None,
                 },
+            )
+        if request.url.query == b"grant_type=refresh_token":
+            if state.get("refresh_error"):
+                return httpx.Response(state["refresh_error"], json={"message": "refresh revoked"})
+            return httpx.Response(
+                200, json={"access_token": "renewed-access", "refresh_token": "renewed-refresh"}
             )
         return httpx.Response(
             200, json={"access_token": "private-access", "refresh_token": "private-refresh"}
@@ -237,6 +250,130 @@ def test_expiry_logout_replay_and_provider_outage(online):
     assert client.get("/api/v1/auth/session").status_code == 401
     assert client.get("/api/v1/auth/accounts").status_code == 401
     assert initialize_mcp(client).status_code == 401
+
+
+def test_cold_session_renews_without_in_memory_csrf(online):
+    client, selected, state = online
+    body = sign_in(client)
+    cookie = client.cookies.get(session_cookie_name(selected))
+    with Session(client.app.state.engine) as session:
+        original = session.exec(select(UserSession)).one().model_dump()
+    # A fresh document has only its HttpOnly cookie, with no in-memory CSRF.
+    client.headers.clear()
+    state["expired_access"] = True
+    # Ordinary private requests still use the existing explicit-refresh path.
+    assert client.get("/api/v1/projects").status_code == 401
+    assert not any(call[2] == b"grant_type=refresh_token" for call in state["calls"])
+    response = client.get("/api/v1/auth/session")
+    assert response.status_code == 200, response.text
+    assert response.json() == body
+    assert response.headers["cache-control"] == "no-store"
+    assert "renewed-access" not in response.text and "renewed-refresh" not in response.text
+    assert client.cookies.get(session_cookie_name(selected)) == cookie
+    assert client.get("/api/v1/projects").status_code == 200
+    with Session(client.app.state.engine) as session:
+        row = session.exec(select(UserSession)).one()
+        assert row.user_id == original["user_id"]
+        assert row.expires_at == original["expires_at"]
+        assert row.csrf_digest == original["csrf_digest"]
+    client.headers["Origin"] = ORIGIN
+    assert client.post("/api/v1/auth/refresh").status_code == 403
+    assert (
+        client.post(
+            "/api/v1/auth/refresh", headers={"X-CSRF-Token": body["csrf_token"]}
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post("/api/v1/auth/logout", headers={"X-CSRF-Token": body["csrf_token"]}).status_code
+        == 200
+    )
+    client.cookies.set(session_cookie_name(selected), cookie, domain="127.0.0.1", path="/")
+    assert client.get("/api/v1/auth/session").status_code == 401
+
+
+@pytest.mark.parametrize(
+    "failure", ["expired", "revoked", "other_user", "corrupt", "origin", "environment", "outage"]
+)
+def test_cold_session_renewal_fails_closed(online, failure):
+    client, _selected, state = online
+    sign_in(client)
+    state["expired_access"] = True
+    if failure in {"expired", "corrupt", "environment"}:
+        with Session(client.app.state.engine) as session:
+            row = session.exec(select(UserSession)).one()
+            if failure == "expired":
+                row.expires_at = int(time.time()) - 1
+            elif failure == "corrupt":
+                row.encrypted_payload = b"invalid"
+            else:
+                row.environment_id = "another-environment"
+            session.add(row)
+            session.commit()
+    elif failure == "revoked":
+        state["refresh_error"] = 400
+    elif failure == "other_user":
+        state["renewed_user_id"] = str(uuid4())
+    elif failure == "outage":
+        state["error"] = 503
+    else:
+        client.headers["Origin"] = "http://127.0.0.1:19510"
+    response = client.get("/api/v1/auth/session")
+    assert response.status_code == (
+        403 if failure == "origin" else 503 if failure == "outage" else 401
+    )
+    assert response.headers["cache-control"] == "no-store"
+    if failure not in {"revoked", "other_user"}:
+        assert not any(call[2] == b"grant_type=refresh_token" for call in state["calls"])
+    with Session(client.app.state.engine) as session:
+        assert session.exec(select(UserSession)).one().user_id == state["user_id"]
+
+
+def test_active_document_expired_access_still_requires_csrf_refresh(online):
+    client, _selected, state = online
+    body = sign_in(client)
+    state["expired_access"] = True
+    assert client.get("/api/v1/projects").status_code == 401
+    assert client.post("/api/v1/auth/refresh").status_code == 403
+    response = client.post("/api/v1/auth/refresh", headers={"X-CSRF-Token": body["csrf_token"]})
+    assert response.status_code == 200
+    assert response.json()["csrf_token"] == body["csrf_token"]
+    assert client.get("/api/v1/projects").status_code == 200
+
+
+def test_cold_recovery_renewal_keeps_recovery_restrictions(online):
+    client, _selected, state = online
+    response = client.post(
+        "/api/v1/auth/verify", json={"token_hash": "synthetic", "type": "recovery"}
+    )
+    assert response.status_code == 200
+    state["expired_access"] = True
+    response = client.get("/api/v1/auth/session")
+    assert response.status_code == 200
+    assert response.json()["status"] == "recovery_required"
+    assert client.get("/api/v1/projects").status_code == 403
+    with Session(client.app.state.engine) as session:
+        row = session.exec(select(UserSession)).one()
+        assert row.recovery and row.expires_at <= time.time() + 900
+
+
+def test_cold_renewal_does_not_recreate_concurrently_logged_out_session(online, monkeypatch):
+    client, _selected, state = online
+    sign_in(client)
+    state["expired_access"] = True
+    principal = ServerAuth.principal
+
+    async def logout_during_provider_check(auth, access):
+        with Session(client.app.state.engine) as session:
+            session.delete(session.exec(select(UserSession)).one())
+            session.commit()
+        return await principal(auth, access)
+
+    monkeypatch.setattr(ServerAuth, "principal", logout_during_provider_check)
+    assert client.get("/api/v1/auth/session").status_code == 401
+    assert not any(call[2] == b"grant_type=refresh_token" for call in state["calls"])
+    with Session(client.app.state.engine) as session:
+        assert session.exec(select(UserSession)).all() == []
 
 
 def test_recovery_callback_pending_invalid_retry_and_reset(online):
