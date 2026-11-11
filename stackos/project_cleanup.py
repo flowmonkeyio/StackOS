@@ -7,6 +7,8 @@ restart. Only the final database transaction removes those sources and identity.
 from __future__ import annotations
 
 import fcntl
+import hashlib
+import json
 import os
 import stat
 from contextlib import ExitStack, contextmanager
@@ -19,6 +21,7 @@ from pydantic import BaseModel
 from sqlalchemy import delete, update
 from sqlmodel import Session, col, select
 
+from stackos.action_output_contract import ACTION_OUTPUT_SCHEMA_REF
 from stackos.actions.repository.background import BACKGROUND_ACTION_TASKS
 from stackos.browser.runtime import BROWSER_PROFILE_DIRNAME, BrowserRuntime, get_browser_runtime
 from stackos.config import Settings
@@ -48,6 +51,15 @@ from stackos.host_mcp.agent_execution import managed_launch_lock
 from stackos.host_mcp.service import usage_executions
 from stackos.repositories.base import ValidationError
 from stackos.repositories.projects import ScheduledJobRepository
+from stackos.repositories.resources import ArtifactRepository
+
+
+class ProjectFileOwnershipRequired(ValueError):
+    def __init__(self, artifact_ids: list[int]) -> None:
+        super().__init__(
+            "trusted action receipt or explicit local-admin file reconciliation required"
+        )
+        self.artifact_ids = artifact_ids
 
 
 class ProjectCleanupResult(BaseModel):
@@ -57,6 +69,7 @@ class ProjectCleanupResult(BaseModel):
     blockers: list[str] = []
     retryable: bool = False
     error_code: str | None = None
+    ownership_required_artifact_ids: list[int] = []
 
 
 class ProjectCleanupService:
@@ -121,6 +134,9 @@ class ProjectCleanupService:
                     operation_id=(row.cleanup_json or {}).get("operation_id"),
                 )
             operation_id = (row.cleanup_json or {}).get("operation_id") or uuid4().hex
+            # Persist recovered custody with the admission marker, before any
+            # response files that supply its evidence can be removed.
+            self._recover_legacy_files(project_id)
             row.cleanup_json = {"operation_id": operation_id, "status": "pending"}
             row.is_active = False
             jobs = self.session.exec(
@@ -148,6 +164,11 @@ class ProjectCleanupService:
                     "status": "incomplete",
                     "error_code": type(exc).__name__,
                 }
+                missing_custody = (
+                    exc.artifact_ids if isinstance(exc, ProjectFileOwnershipRequired) else []
+                )
+                if missing_custody:
+                    retained.cleanup_json["ownership_required_artifact_ids"] = missing_custody
                 self.session.add(retained)
                 self.session.commit()
                 return ProjectCleanupResult(
@@ -156,6 +177,7 @@ class ProjectCleanupService:
                     operation_id=operation_id,
                     retryable=True,
                     error_code=type(exc).__name__,
+                    ownership_required_artifact_ids=missing_custody,
                 )
         return ProjectCleanupResult(
             project_id=project_id, status="deleted", operation_id=operation_id
@@ -309,6 +331,183 @@ class ProjectCleanupService:
             raise ValueError("invalid producer file custody")
         return self.settings.generated_assets_dir / relative
 
+    @staticmethod
+    def _custodies(artifact: Artifact) -> list[dict[str, Any]]:
+        custody = artifact.managed_file_json
+        if custody is None:
+            return []
+        return custody.get("files", [custody])
+
+    def _audit_output(self, call: ActionCall) -> dict[str, Any] | None:
+        output = call.response_json or {}
+        if output.get("output_mode") != "file":
+            return output
+        pointer = output.get("file") or {}
+        path = Path(pointer.get("path", ""))
+        root = self.settings.generated_assets_dir
+        owner = root / "action-outputs" / f"project-{call.project_id}"
+        if (
+            not path.is_relative_to(owner)
+            or ".." in path.parts
+            or type(pointer.get("bytes")) is not int
+        ):
+            return None
+        if not 0 < pointer["bytes"] <= 16 * 1024 * 1024:
+            return None
+        try:
+            with ExitStack() as opened:
+                parent = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                opened.callback(os.close, parent)
+                for part in path.relative_to(root).parts[:-1]:
+                    parent = os.open(
+                        part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent
+                    )
+                    opened.callback(os.close, parent)
+                fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+                with os.fdopen(fd, "rb") as stream:
+                    if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                        return None
+                    payload = stream.read(pointer["bytes"] + 1)
+            if len(payload) != pointer["bytes"] or hashlib.sha256(
+                payload
+            ).hexdigest() != pointer.get("sha256"):
+                return None
+            envelope = json.loads(payload)
+            if (
+                envelope.get("schema_version") != ACTION_OUTPUT_SCHEMA_REF
+                or envelope.get("project", {}).get("project_id") != call.project_id
+                or envelope.get("action_call", {}).get("id") != call.id
+                or envelope.get("action", {}).get("connector_key") != call.connector_key
+            ):
+                return None
+            return envelope["response"]["output_json"]
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
+
+    def _recover_legacy_files(self, project_id: int) -> None:
+        """Recover from daemon-owned receipts, never editable artifact provenance."""
+        artifacts = {
+            a.id: a
+            for a in self.session.exec(
+                select(Artifact).where(Artifact.project_id == project_id)
+            ).all()
+            if a.managed_file_json is None
+        }
+        if not artifacts:
+            return
+        media = {
+            "openai-images",
+            "google-gemini-image",
+            "ideogram",
+            "byteplus-seedream",
+            "reve",
+            "xai-imagine",
+            "aignc",
+            "alibaba-wan",
+            "google-veo",
+            "byteplus-seedance",
+            "kling-video",
+        }
+        for call in self.session.exec(
+            select(ActionCall).where(
+                ActionCall.project_id == project_id,
+                ActionCall.status == ActionCallStatus.SUCCESS,
+            )
+        ).all():
+            if call.dry_run or call.completed_at is None:
+                continue
+            if not (
+                (
+                    call.connector_key in media
+                    and call.operation
+                    in {"image.generate", "image.edit", "image.remix", "video.generate"}
+                )
+                or (call.connector_key, call.operation)
+                in {("telegram", "file.download"), ("hubspot", "bulk.exports.result")}
+            ):
+                continue
+            output = self._audit_output(call)
+            if not isinstance(output, dict):
+                continue
+            items = (
+                [output, *(output.get("data") or [])]
+                if isinstance(output.get("data", []), list)
+                else [output]
+            )
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                artifact_id = item.get("artifact_id")
+                artifact = artifacts.get(artifact_id) if type(artifact_id) is int else None
+                uri = item.get("artifact_ref") or item.get("url")
+                if (
+                    artifact is None
+                    or artifact.managed_file_json is not None
+                    or artifact.created_at > call.completed_at
+                    or not isinstance(uri, str)
+                ):
+                    continue
+                path = self._asset_path(uri)
+                if path is None or not path.exists():
+                    continue
+                try:
+                    custody = ArtifactRepository._generated_file_custody(
+                        asset_root=self.settings.generated_assets_dir,
+                        path=path,
+                        project_id=project_id,
+                        uri=uri,
+                    )
+                except (ValueError, OSError, ValidationError):
+                    continue
+                custody["evidence"] = {"basis": "action-audit", "action_call_id": call.id}
+                artifact.managed_file_json = custody
+                self.session.add(artifact)
+
+    def _handoff_shared_files(self, project_id: int) -> None:
+        """Keep verified custody on surviving references in the final purge transaction."""
+        artifacts = self.session.exec(select(Artifact)).all()
+        surviving = [a for a in artifacts if a.project_id != project_id]
+        references: dict[int, set[Path]] = {}
+        for artifact in surviving:
+            assert artifact.id is not None
+            refs = {
+                path
+                for custody in self._custodies(artifact)
+                if (path := self._managed_path(custody)) is not None
+            }
+            public = self._reference_path(artifact.uri)
+            if public is not None:
+                refs.add(public)
+            references[artifact.id] = refs
+        for pin in self.session.exec(
+            select(DurableActionArtifact)
+            .join(DurableActionJob)
+            .where(DurableActionJob.project_id != project_id)
+        ).all():
+            path = self._reference_path(pin.artifact_uri)
+            if path is not None and pin.artifact_id in references:
+                references[pin.artifact_id].add(path)
+        for refs in references.values():
+            refs.update(path.resolve() for path in list(refs))
+        for source in artifacts:
+            if source.project_id != project_id:
+                continue
+            for custody in self._custodies(source):
+                path = self._managed_path(custody)
+                if path is None:
+                    continue
+                for survivor in surviving:
+                    assert survivor.id is not None
+                    if not any(path.is_relative_to(ref) for ref in references[survivor.id]):
+                        continue
+                    files = self._custodies(survivor)
+                    if custody not in files:
+                        # Public directory references may retain several verified
+                        # files. No deleted-project row or untrusted provenance is kept.
+                        survivor.managed_file_json = {"files": [*files, dict(custody)]}
+                        self.session.add(survivor)
+        self.session.flush()
+
     def _clean_files(self, project_id: int) -> None:
         from stackos.plugins.builtin_finance import FinanceConsole
 
@@ -323,7 +522,8 @@ class ProjectCleanupService:
             path
             for a in artifacts
             if a.project_id != project_id
-            if (path := self._managed_path(a.managed_file_json)) is not None
+            for custody in self._custodies(a)
+            if (path := self._managed_path(custody)) is not None
         )
         for pin in self.session.exec(
             select(DurableActionArtifact)
@@ -341,15 +541,16 @@ class ProjectCleanupService:
 
         paths = self._roots(project_id)
         files = []
+        missing_custody = []
         for artifact in artifacts:
             if artifact.project_id != project_id:
                 continue
-            custody = artifact.managed_file_json
-            if custody is not None:
+            custodies = self._custodies(artifact)
+            for custody in custodies:
                 path = self._managed_path(custody)
                 if path is not None:
                     files.append((path, (custody["device"], custody["inode"])))
-            elif (artifact.provenance_json or {}).get("source") in {
+            if not custodies and (artifact.provenance_json or {}).get("source") in {
                 "aignc-action",
                 "alibaba-wan-action",
                 "google-veo-action",
@@ -373,7 +574,10 @@ class ProjectCleanupService:
                     and (path.exists() or path.is_symlink())
                     and not any(path.is_relative_to(root) for root in paths)
                 ):
-                    raise ValueError("generated file has no trusted producer custody")
+                    assert artifact.id is not None
+                    missing_custody.append(artifact.id)
+        if missing_custody:
+            raise ProjectFileOwnershipRequired(missing_custody)
         # Finance owns its publication/source metadata outside data/projects.
         # Retire it before the source identity is removed from the project tree.
         FinanceConsole(self.session, self.settings).cleanup_sources(
@@ -390,6 +594,7 @@ class ProjectCleanupService:
         # Pins RESTRICT artifact deletion. Retire owned jobs/pins before the
         # project cascade; SET NULL and non-FK project history needs explicit purge.
         s = self.session
+        self._handoff_shared_files(project_id)
         s.exec(delete(DurableActionJob).where(col(DurableActionJob.project_id) == project_id))
         for model, column in (
             (AgentSession, AgentSession.project_id),

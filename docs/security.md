@@ -124,12 +124,25 @@ that custody. Media, Telegram download and HubSpot export owners register the
 actual regular file, managed root and filesystem identity through the artifact
 owner; public artifact create/update cannot set that internal record. Cleanup
 does not traverse artifact-referenced directories or remove replaced files.
-Ambiguous legacy generated references retain their source rows in an incomplete
-cleanup instead of inferring ownership or reporting success with files left.
+Legacy files can recover custody from successful daemon-owned action receipts
+for the demonstrated media, Telegram download and HubSpot export producers.
+Recovery correlates the project, artifact ID, creation before completion and
+producer output URI. File-backed receipts must match their stored digest and envelope
+identity; recovery is committed before those receipt files are removed.
+Ambiguous legacy generated references retain their source rows and return
+`ownership_required_artifact_ids` in an incomplete cleanup. Editable provenance
+alone never establishes ownership. An internal, unpublished reconciliation
+method requires trusted local-admin context and an explicit exact project
+ID/slug, artifact ID/URI and current content SHA-256 ownership decision. It is
+limited to the stopped cleanup's reported gaps; retry retains its operation ID.
+This method grants no public operation or automatic agent authority.
 Shared references preserve bytes, including the original private file reference
-when public metadata is later edited. A durable pin or project-template binding
-owned by another project blocks deletion rather
-than deleting that owner's dependency. Repository folders, external exports,
+when public metadata is later edited. During final purge, verified file custody
+passes to surviving artifact references in the same database transaction. The
+last referencing project's cleanup removes those files; a rollback retains the
+original owner and rolls back the handoff. A durable pin or project-template
+binding owned by another project blocks deletion rather than deleting that
+owner's dependency. Repository folders, external exports,
 shared Accounts/catalog/browser runtimes and whole-instance backup archives are
 preserved. Arbitrary artifact URIs and request paths never grant file ownership.
 Cleanup errors retain a safe error class and truthful incomplete/retry status;
