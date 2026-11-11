@@ -83,12 +83,14 @@ def query_portfolio(
     if is_active is not None:
         statement = statement.where(col(Project.is_active).is_(is_active))
     if query and query.strip():
-        term = query.strip().lower()
+        # Escape LIKE syntax before letting the database apply the same case
+        # rules to the term and stored fields (not Python's Unicode rules).
+        term = query.strip().replace("/", "//").replace("%", "/%").replace("_", "/_")
         statement = statement.where(
             or_(
-                func.lower(Project.name).contains(term, autoescape=True),
-                func.lower(Project.slug).contains(term, autoescape=True),
-                func.lower(Project.domain).contains(term, autoescape=True),
+                func.lower(Project.name).contains(func.lower(term), escape="/"),
+                func.lower(Project.slug).contains(func.lower(term), escape="/"),
+                func.lower(Project.domain).contains(func.lower(term), escape="/"),
             )
         )
     count_statement = select(func.count()).select_from(statement.subquery())
