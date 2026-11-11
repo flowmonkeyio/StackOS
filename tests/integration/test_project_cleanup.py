@@ -312,12 +312,33 @@ async def test_storage_and_actual_native_browser_admission_block_without_abort(
         fcntl.flock(writer, fcntl.LOCK_EX | fcntl.LOCK_NB)
         blocked = await service.delete(target.id, confirmation=confirmation(target))
         assert "managed_storage_writer" in blocked.blockers
-    import stackos.project_cleanup as cleanup
+    from stackos.host_mcp.service import (
+        ActiveInvocation,
+        AgentExecutionScope,
+        _register,
+        _unregister,
+    )
 
-    monkeypatch.setattr(cleanup, "usage_executions", lambda pid: [{"project_id": pid}])
-    blocked = await service.delete(target.id, confirmation=confirmation(target))
-    assert "native_invocation" in blocked.blockers
-    monkeypatch.setattr(cleanup, "usage_executions", lambda pid: [])
+    invocation = ActiveInvocation(
+        invocation_id="cleanup-disposable-native",
+        host_key="codex",
+        model=None,
+        started_at=datetime.now().isoformat(),
+        scope=AgentExecutionScope(
+            project_id=target.id,
+            task_key="disposable-native",
+            ticket_key="fixture",
+            agent="fixture-only",
+        ),
+    )
+    _register(invocation)
+    try:
+        blocked = await service.delete(target.id, confirmation=confirmation(target))
+        assert "native_invocation" in blocked.blockers
+        assert not invocation.cancelled.is_set()
+        assert not invocation.process_control.cancelled.is_set()
+    finally:
+        _unregister(invocation)
     profile = browser_profile_dir(settings.data_dir, project_id=target.id, profile_key="fixture")
     async with _profile_lock(profile):
         blocked = await service.delete(target.id, confirmation=confirmation(target))
