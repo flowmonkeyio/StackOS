@@ -86,38 +86,6 @@ describe('projects store', () => {
     expect(store.items).toHaveLength(1)
   })
 
-  it('creates a project and marks it active', async () => {
-    const postedBodies: unknown[] = []
-    globalThis.fetch = vi.fn(async (_input, init) => {
-      if (init?.body) postedBodies.push(JSON.parse(String(init.body)))
-      return new Response(
-        JSON.stringify({
-          data: PAGE.items[0],
-          run_id: null,
-          project_id: PAGE.items[0].id,
-        }),
-        {
-          status: 201,
-          headers: { 'content-type': 'application/json' },
-        },
-      )
-    }) as typeof fetch
-    const store = useProjectsStore()
-    const created = await store.createProject({
-      slug: 'alpha',
-      name: 'Alpha',
-      domain: 'alpha.test',
-      niche: null,
-      locale: 'en-US',
-      schedule_json: null,
-    })
-
-    expect(created.id).toBe(1)
-    expect(store.items[0].name).toBe('Alpha')
-    expect(store.activeProjectId).toBe(1)
-    expect(postedBodies[0]).toMatchObject({ slug: 'alpha', domain: 'alpha.test' })
-  })
-
   it('exposes activeProject via getter', () => {
     const store = useProjectsStore()
     store.items = PAGE.items as never

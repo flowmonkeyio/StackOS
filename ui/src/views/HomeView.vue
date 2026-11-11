@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { UiButton, UiCallout, UiConfirmDialog, UiDialog, UiFormField, UiInput, UiPageHeader, UiPageShell } from '@/components/ui'
-import { useRouter } from 'vue-router'
+import { UiButton, UiConfirmDialog, UiPageHeader, UiPageShell } from '@/components/ui'
 import { useAuthStore } from '@/stores/auth'
-import { useProjectsStore } from '@/stores/projects'
-import { formatApiError } from '@/lib/client'
 import { isDesktopShell } from '@/lib/desktop'
 import { GETTING_STARTED_URL } from '@/lib/externalLinks'
 import { usePolling } from '@/composables/usePolling'
@@ -21,13 +18,6 @@ import { useAgentStats } from './home/useAgentStats'
 
 const isShell = isDesktopShell()
 const auth = useAuthStore()
-const projects = useProjectsStore()
-const router = useRouter()
-const createOpen = ref(false)
-const projectName = ref('')
-const projectSlug = ref('')
-const projectDomain = ref('')
-const createError = ref('')
 const repairOpen = ref(false)
 const portfolio = useHomePortfolioInsights()
 const { items, loading: projectsLoading, error: projectsError, nextCursor, total, filters } = portfolio
@@ -54,16 +44,6 @@ async function refresh(): Promise<void> {
   if (auth.mode === 'server') { await portfolio.load(); return }
   await Promise.all([portfolio.load(), tickets.load(), agents.load(), loadHealth(), loadHostStatuses()])
 }
-async function createProject(): Promise<void> {
-  createError.value = ''
-  try {
-    const project = await projects.createProject({ name: projectName.value.trim(), slug: projectSlug.value.trim(), domain: projectDomain.value.trim(), locale: 'en-US' })
-    createOpen.value = false
-    await router.push(`/projects/${project.id}`)
-  } catch (err) {
-    createError.value = formatApiError(err, 'Could not create project.')
-  }
-}
 function confirmRepair(): void {
   repairOpen.value = false
   void runSystemAction('repair')
@@ -88,13 +68,6 @@ function selectStatus(status: TrackerStatus | null): void {
       :description="auth.mode === 'server' ? 'Your private projects' : 'Your local runtime and projects'"
     >
       <template #actions>
-        <UiButton
-          v-if="auth.mode === 'server'"
-          variant="primary"
-          @click="createOpen = true"
-        >
-          Create project
-        </UiButton>
         <UiButton
           variant="secondary"
           size="sm"
@@ -162,61 +135,6 @@ function selectStatus(status: TrackerStatus | null): void {
       @more="portfolio.loadMore"
       @clear-status="selectStatus(null)"
     />
-    <UiDialog
-      v-model="createOpen"
-      title="Create private project"
-    >
-      <form
-        class="flex flex-col gap-4"
-        @submit.prevent="createProject"
-      >
-        <UiCallout
-          v-if="createError"
-          tone="danger"
-        >
-          {{ createError }}
-        </UiCallout>
-        <UiFormField
-          label="Project name"
-          required
-        >
-          <UiInput
-            v-model="projectName"
-            required
-            :disabled="projects.loading"
-          />
-        </UiFormField>
-        <UiFormField
-          label="Project slug"
-          help="Use lowercase letters, numbers and hyphens."
-          required
-        >
-          <UiInput
-            v-model="projectSlug"
-            pattern="[a-z0-9]+(-[a-z0-9]+)*"
-            required
-            :disabled="projects.loading"
-          />
-        </UiFormField>
-        <UiFormField
-          label="Domain"
-          required
-        >
-          <UiInput
-            v-model="projectDomain"
-            required
-            :disabled="projects.loading"
-          />
-        </UiFormField>
-        <UiButton
-          type="submit"
-          variant="primary"
-          :loading="projects.loading"
-        >
-          Create project
-        </UiButton>
-      </form>
-    </UiDialog>
     <UiConfirmDialog
       v-model="repairOpen"
       title="Install or repair StackOS?"

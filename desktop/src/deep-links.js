@@ -23,6 +23,13 @@ function parseStackosDeepLink(candidate) {
   }
 
   const pathname = normalizeStackosPath(parsed);
+  // This opens normal app sign-in on its selected server. It never conveys a
+  // session, credential, arbitrary destination or a different server origin.
+  if (parsed.protocol === STACKOS_PROTOCOL && parsed.hostname === "sign-in" &&
+      ["", "/"].includes(parsed.pathname) && !parsed.search && !parsed.hash &&
+      !parsed.username && !parsed.password && !parsed.port) {
+    return { path: "/sign-in" };
+  }
   if (!pathname) {
     return null;
   }

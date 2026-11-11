@@ -18,7 +18,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `UiRadioGroup` | keyboard arrows |
 | `UiRange` | tick marks optional |
 | `UiSecretInput` | reveal + copy |
-| `UiFormField` | label + control + help/error/dirty |
+| `UiFormField` | label + control + help/error/dirty; `label-actions` slot for context-relevant secondary controls |
 | `UiDialog` | viewport portal; shared dialog/drawer stack; focus trap; H/B/F; optional `layout="detail"` with bounded 880px frame and scrolling body; centered 32px close target / 16px icon |
 | `UiConfirmDialog` | builds on Dialog |
 | `UiSidePanel` | left/right; 480/720 |

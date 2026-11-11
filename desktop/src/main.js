@@ -763,6 +763,20 @@ app.on("open-url", (event, url) => {
   handleStackosDeepLink(url);
 });
 
+// Finite, same-origin account entry points. No renderer-supplied URL or token
+// crosses this bridge, and server pages receive no local maintenance authority.
+ipcMain.handle("stackos:open-account", async (event, flow) => {
+  if (!service.SERVER_URL || !mainWindow || event.sender !== mainWindow.webContents ||
+      event.senderFrame !== mainWindow.webContents.mainFrame || !service.isAppUrl(event.senderFrame.url) ||
+      !["register", "recover"].includes(flow)) {
+    throw new Error("Account browser navigation is unavailable.");
+  }
+  const target = new URL("/sign-in", service.APP_URL);
+  target.searchParams.set("flow", flow);
+  target.searchParams.set("client", "desktop");
+  await shell.openExternal(target.toString());
+});
+
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();

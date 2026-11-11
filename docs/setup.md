@@ -181,11 +181,25 @@ local maintenance or backup IPC. Connected runtime setup remains separate.
 Both clients use the same StackOS registration, email confirmation, sign-in,
 sign-out and password recovery endpoints. Open the email link on its selected
 server and explicitly confirm it; recovery opens the password reset screen.
-Expired links require another email, and expired sessions require sign-in.
+The account UI provides dedicated check-email, resend/change-email, explicit
+confirmation, expired/used/invalid-link renewal, new-password and completion
+states. Password controls support reveal, autofill and paste. The current
+password length is 8–1024 characters; provider errors remain authoritative.
+Desktop registration and recovery open the default browser. Completion offers
+**Open StackOS** through the existing `stackos:` handler, with an Applications
+fallback and an option to continue in the browser. App return contains no
+credential and does not authenticate the app: sign in normally on its selected
+server. Browser-only journeys continue in the browser.
+Active clients renew provider credentials through the shared server refresh
+endpoint. Real expiry requires sign-in; temporary unavailability keeps a retry
+state distinct from expiry. Reauthentication uses a fresh document and returns
+to the intended in-app project destination, still subject to ownership checks.
 The UI keeps only safe session identity and CSRF in memory. Cookies remain
 HttpOnly and bound by the server to environment and exact origin; neither
 loopback aliases nor another port are interchangeable navigation targets.
-The Overview can create and open private projects before a computer connects.
+The Overview opens existing private projects before a computer connects.
+Project creation remains agent-led through workspace/bootstrap. Empty accounts
+explain that next action; there is no manual project-name, slug or domain form.
 
 ### Connected execution service startup
 
@@ -270,7 +284,8 @@ local runtime or start a standalone data daemon. Sign in or repair explicitly.
    `server.env` to run the source server: `STACKOS_ENV_FILE=/private/tmp/stackos-dev-a/server.env stackos serve`.
    Keep the original installation running with its own unchanged data/state.
 2. Open that server's exact origin in web or desktop. Register, verify through
-   the local mailbox and sign in. Create a new private project; signup does not
+   the local mailbox and sign in. Ask your agent to create/connect a private
+   project through workspace/bootstrap; signup does not
    adopt any existing installation's projects, Accounts or files.
 3. In a separate terminal, select the same environment's `runtime.env`, sign in
    with `stackos login`, and run `stackos connect --project-id <id> --folder /absolute/existing/folder`.

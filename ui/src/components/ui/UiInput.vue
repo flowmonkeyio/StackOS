@@ -92,7 +92,7 @@ function clear() {
   <div
     :class="[
       'ui-input focus-within:outline focus-within:outline-2 focus-within:outline-focus focus-within:outline-offset-2 inline-flex items-center rounded-sm border bg-bg-surface shadow-xs transition-colors duration-fast',
-      invalid
+      controlInvalid
         ? 'border-danger'
         : 'border-default hover:border-strong hover:bg-bg-surface-alt focus-within:border-accent focus-within:bg-bg-surface',
       disabled &&

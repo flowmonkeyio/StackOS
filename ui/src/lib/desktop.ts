@@ -139,6 +139,7 @@ export type DesktopBackupAction =
   | 'restoreBackup'
 
 interface DesktopBridge {
+  openAccount?(flow: 'register' | 'recover'): Promise<void>
   status(): Promise<DesktopStatus>
   installOrRepair(): Promise<DesktopCommandResult>
   restartService(): Promise<DesktopCommandResult>
@@ -187,6 +188,7 @@ function runBackupAction(action: DesktopBackupAction): Promise<DesktopBackupResu
 
 export const desktop = {
   isShell: isDesktopShell,
+  openAccount: (flow: 'register' | 'recover') => safe((b) => b.openAccount ? b.openAccount(flow) : Promise.reject(new Error('Account browser navigation is unavailable.'))),
   status: () => safe((b) => b.status()),
   installOrRepair: () => safe((b) => b.installOrRepair()),
   restartService: () => safe((b) => b.restartService()),

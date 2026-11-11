@@ -98,7 +98,11 @@ function buildHeaders(init: ApiInit, defaultAccept: string): Headers {
   return finalHeaders
 }
 
-export async function apiFetch<T = unknown>(path: string, init: ApiInit = {}): Promise<T> {
+function isSessionEndpoint(path: string): boolean {
+  return /^\/api\/v1\/auth\/(?:ui-token|session|register|login|resend|recover|verify|callback|refresh|logout|password)(?:\?|$)/.test(buildUrl(path))
+}
+
+export async function apiFetch<T = unknown>(path: string, init: ApiInit = {}, renewed = false): Promise<T> {
   const rest = requestInitWithoutAuthOverrides(init)
   const finalHeaders = buildHeaders(init, 'application/json')
   const res = await fetch(buildUrl(path), { ...rest, headers: finalHeaders, credentials: 'same-origin', redirect: 'error' })
@@ -107,32 +111,42 @@ export async function apiFetch<T = unknown>(path: string, init: ApiInit = {}): P
   const body = isJson ? await res.json().catch(() => null) : await res.text()
 
   if (!res.ok) {
-    if (res.status === 401 && !path.startsWith('/api/v1/auth/')) _authStore?.onUnauthorized?.()
-    throw new ApiError(
+    const error = new ApiError(
       `Request to ${path} failed with ${res.status}`,
       res.status,
       body,
       res.headers.get('x-request-id'),
     )
+    if (res.status === 401 && !isSessionEndpoint(path)) {
+      const refreshed = await _authStore?.onUnauthorized?.(error, renewed)
+      // Admission rejected the first request. Only reads may be replayed;
+      // callers explicitly retry writes after renewal.
+      if (refreshed && ['GET', 'HEAD'].includes((init.method ?? 'GET').toUpperCase())) return apiFetch<T>(path, init, true)
+    }
+    throw error
   }
   return body as T
 }
 
-export async function apiStream(path: string, init: ApiInit = {}): Promise<Response> {
+export async function apiStream(path: string, init: ApiInit = {}, renewed = false): Promise<Response> {
   const rest = requestInitWithoutAuthOverrides(init)
   const finalHeaders = buildHeaders(init, 'text/event-stream')
   const res = await fetch(buildUrl(path), { ...rest, headers: finalHeaders, credentials: 'same-origin', redirect: 'error' })
   if (!res.ok) {
-    if (res.status === 401) _authStore?.onUnauthorized?.()
     const contentType = res.headers.get('content-type') ?? ''
     const isJson = contentType.includes('application/json')
     const body = isJson ? await res.json().catch(() => null) : await res.text()
-    throw new ApiError(
+    const error = new ApiError(
       `Request to ${path} failed with ${res.status}`,
       res.status,
       body,
       res.headers.get('x-request-id'),
     )
+    if (res.status === 401) {
+      const refreshed = await _authStore?.onUnauthorized?.(error, renewed)
+      if (refreshed && ['GET', 'HEAD'].includes((init.method ?? 'GET').toUpperCase())) return apiStream(path, init, true)
+    }
+    throw error
   }
   return res
 }

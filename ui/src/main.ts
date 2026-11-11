@@ -14,7 +14,7 @@ import router from './router'
 import './design/colors_and_type.css'
 import './style.css'
 import { ApiError } from '@/lib/client'
-import { registerAuthStoreWithClient, useAuthStore } from '@/stores/auth'
+import { authDestination, registerAuthStoreWithClient, useAuthStore } from '@/stores/auth'
 import { useToastsStore } from '@/stores/toasts'
 import { useProjectsStore } from '@/stores/projects'
 
@@ -26,8 +26,8 @@ async function start(): Promise<void> {
   registerAuthStoreWithClient(auth)
   await auth.bootstrap()
   router.beforeEach((to) => {
-    if (auth.mode === 'server' && !auth.ready && to.name !== 'sign-in') return '/sign-in'
-    if (auth.ready && to.name === 'sign-in') return '/'
+    if (auth.mode === 'server' && !auth.ready && to.name !== 'sign-in') return { path: '/sign-in', query: { returnTo: authDestination(to.fullPath) } }
+    if (auth.ready && to.name === 'sign-in' && to.query.auth !== 'callback' && !to.query.flow) return authDestination(to.query.returnTo)
   })
   app.use(router)
   await router.isReady()
@@ -35,7 +35,7 @@ async function start(): Promise<void> {
   const shouldResolveProjectRoute =
     router.currentRoute.value.path === '/' || router.currentRoute.value.path === '/projects'
   let projects: ReturnType<typeof useProjectsStore> | null = null
-  if (auth.ready) {
+  if (auth.ready && router.currentRoute.value.name !== 'sign-in') {
     projects = useProjectsStore()
     const refresh = projects.refresh()
     if (shouldResolveProjectRoute) await refresh
@@ -46,8 +46,7 @@ async function start(): Promise<void> {
   app.config.errorHandler = (err: unknown) => {
     if (err instanceof ApiError) {
       if (err.status === 401) {
-        auth.expire()
-        void router.replace(auth.mode === 'server' ? '/sign-in' : '/auth-error')
+        if (auth.mode !== 'server') { auth.expire(); void router.replace('/auth-error') }
       } else {
         toasts.error('Request failed', err.message)
       }

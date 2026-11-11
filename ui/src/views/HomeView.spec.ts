@@ -12,26 +12,13 @@ import { useAuthStore } from '@/stores/auth'
 const ORIG_FETCH = globalThis.fetch
 
 describe('HomeView', () => {
-  it('creates an online private project without local host or executor readiness requests', async () => {
-    globalThis.fetch = vi.fn(async (input, init) => {
-      if (input === '/api/v1/projects' && init?.method === 'POST') {
-        expect(JSON.parse(String(init.body))).toEqual({name:'Private project',slug:'private-project',domain:'example.test',locale:'en-US'})
-        return json({ data:{id:42,name:'Private project',slug:'private-project',domain:'example.test',is_active:true} })
-      }
-      return defaultFetch(String(input))
-    }) as typeof fetch
+  it('opens online projects without manual creation or local readiness requests', async () => {
+    globalThis.fetch = vi.fn(async (input) => defaultFetch(String(input))) as typeof fetch
     const wrapper = await mountHome(true)
     expect(wrapper.find('[aria-label="System status"]').exists()).toBe(false)
     expect(vi.mocked(fetch).mock.calls.every(([url])=>!String(url).includes('hostMcp') && !String(url).includes('StatsAll') && !String(url).includes('CountsAll'))).toBe(true)
-    await wrapper.findAll('button').find(b=>b.text()==='Create project')!.trigger('click')
-    const dialog = wrapper.get('[role=dialog]')
-    await dialog.get('input[pattern]').setValue('private-project')
-    const inputs = dialog.findAll('input')
-    await inputs[0]!.setValue('Private project')
-    await inputs[2]!.setValue('example.test')
-    await dialog.get('form').trigger('submit')
-    await flushPromises()
-    expect(wrapper.text()).toContain('Opened private project')
+    expect(wrapper.text()).not.toContain('Create project')
+    expect(wrapper.find('input[pattern]').exists()).toBe(false)
     wrapper.unmount()
   })
   it('keeps ticket-count polling without repeating usage refresh in the page timer', async () => {

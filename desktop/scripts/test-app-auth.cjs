@@ -3,6 +3,11 @@ const assert = require("node:assert/strict");
 const { spawnSync } = require("node:child_process");
 const servicePath = require.resolve("../src/service");
 const selected = "http://127.0.0.1:19940";
+const { resolveStackosDeepLink } = require('../src/deep-links');
+assert.equal(resolveStackosDeepLink('stackos://sign-in', selected), selected + '/sign-in');
+for (const target of ['stackos://sign-in?token=x', 'stackos://sign-in#token', 'stackos://user@sign-in', 'stackos://sign-in:19940', 'https://sign-in']) {
+  assert.equal(resolveStackosDeepLink(target, selected), null, target);
+}
 process.env.STACKOS_SERVER_URL = selected;
 const service = require(servicePath);
 assert.equal(service.APP_URL, `${selected}/`);
@@ -120,11 +125,15 @@ async function checkConnectedAvailabilityStartup() {
 
   function startup({ serverReady = true, runtime = { ok: true } } = {}) {
     const events = [];
+    const handlers = new Map();
+    const frame = { url: selected + '/sign-in' };
+    const contents = { mainFrame: frame };
     const app = new EventEmitter();
     const powerMonitor = new EventEmitter();
     app.whenReady = () => ({ then() {} }); // Exercise the caller without installing/opening windows.
     const selectedService = {
       SERVER_URL: selected + "/", APP_URL: selected + "/",
+      isAppUrl: (url) => new URL(url).origin === selected,
       checkSelectedServer: async () => { events.push("server-ready"); return serverReady; },
       prepareConnectedRuntime: async () => { events.push("runtime-ready"); return runtime; },
       openDesktopAvailability: () => {
@@ -135,22 +144,27 @@ async function checkConnectedAvailabilityStartup() {
     const context = vm.createContext({
       console: { warn() {} }, process, URL, setTimeout, clearTimeout,
       require(name) {
-        if (name === "electron") return { app, powerMonitor };
+        if (name === "electron") return { app, powerMonitor,
+          ipcMain: { handle(name, handler) { handlers.set(name, handler); } },
+          shell: { openExternal: async (url) => events.push('external:' + url) } };
         if (name === "./service") return selectedService;
         if (name === "./availability") return { createAvailabilityController };
         if (name.startsWith("node:")) return require(name);
         return {}; // Unused notification/update/UI boundaries.
       },
       recordLoad: async (url) => events.push("loaded:" + url),
+      bridgeContents: contents,
       recordFailure: async () => events.push("server-failed")
     });
     vm.runInContext(source + `
-      mainWindow = { loadURL: recordLoad };
+      mainWindow = { loadURL: recordLoad, webContents: bridgeContents };
       loadFailure = recordFailure;
       availabilityController = createAvailabilityController({ app, powerMonitor, service });
       globalThis.startup = prepareAndLoadStackOS;
     `, context, { filename: "desktop/src/main.js" });
-    return { run: context.startup, events, app, powerMonitor };
+    return { run: context.startup, events, app, powerMonitor,
+      account: (flow, sender = contents, senderFrame = frame) => handlers.get('stackos:open-account')({ sender, senderFrame }, flow),
+      frame };
   }
 
   const ready = startup();
@@ -174,6 +188,15 @@ async function checkConnectedAvailabilityStartup() {
   const serverUnavailable = startup({ serverReady: false });
   await serverUnavailable.run();
   assert.deepEqual(serverUnavailable.events, ["server-ready", "server-failed"]);
+  const account = startup();
+  await account.account('register');
+  assert.equal(account.events.at(-1), 'external:' + selected + '/sign-in?flow=register&client=desktop');
+  await assert.rejects(account.account('unknown'));
+  await assert.rejects(account.account('recover', {}));
+  await assert.rejects(account.account('recover', undefined, {url:selected + '/sign-in'}));
+  account.frame.url = 'http://localhost:19940/sign-in';
+  await assert.rejects(account.account('recover'));
+  assert.equal(account.events.length, 1);
   console.log("Connected main-process startup availability and refusal checks passed");
 }
 

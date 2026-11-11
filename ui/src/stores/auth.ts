@@ -12,7 +12,7 @@ interface UserSession {
 }
 
 export type AuthBootstrapState =
-  | { kind: 'idle' | 'bootstrapping' | 'ready' | 'signed_out' | 'recovery' }
+  | { kind: 'idle' | 'bootstrapping' | 'renewing' | 'ready' | 'signed_out' | 'recovery' }
   | { kind: 'error'; message: string; status?: number }
 
 export const useAuthStore = defineStore('auth', () => {
@@ -24,8 +24,39 @@ export const useAuthStore = defineStore('auth', () => {
   const state = ref<AuthBootstrapState>({ kind: 'idle' })
   const ready = computed(() => state.value.kind === 'ready')
   let bootstrapping: Promise<void> | null = null
+  let renewing: Promise<boolean> | null = null
+  let generation = 0
+
+  async function refreshSession(error?: unknown, renewed = false): Promise<boolean> {
+    if (renewing) return renewing
+    const code = authErrorCode(error)
+    if (renewed || mode.value !== 'server' || !csrfToken.value ||
+      ['session_expired_or_invalid', 'session_invalid', 'session_invalid_sign_in_required'].includes(code)) {
+      expire()
+      return false
+    }
+    const previous = state.value.kind === 'recovery' ? 'recovery' : 'ready'
+    const started = generation
+    state.value = { kind: 'renewing' }
+    renewing = (async () => {
+      try {
+        const result = await apiFetch<{status: string; csrf_token: string}>('/api/v1/auth/refresh', { method: 'POST' })
+        if (started !== generation) return false
+        if (result.status !== 'authenticated' || result.csrf_token !== csrfToken.value) throw new Error('Invalid session renewal response.')
+        state.value = { kind: previous }
+        return true
+      } catch (err) {
+        if (started !== generation) return false
+        if (err instanceof ApiError && [401, 403].includes(err.status)) expire()
+        else state.value = { kind: 'error', message: 'StackOS is temporarily unavailable. Try again to reconnect.' }
+        return false
+      }
+    })()
+    try { return await renewing } finally { renewing = null }
+  }
 
   function clear(): void {
+    generation++
     token.value = csrfToken.value = userId.value = environmentId.value = null
     state.value = { kind: 'idle' }
   }
@@ -88,15 +119,22 @@ export const useAuthStore = defineStore('auth', () => {
     try { await bootstrapping } finally { bootstrapping = null }
   }
 
-  async function submit(action: 'register' | 'login' | 'resend' | 'recover' | 'password', body: Record<string, string>): Promise<void> {
+  async function submit(action: 'register' | 'login' | 'resend' | 'recover' | 'password' | 'verify', body: Record<string, string>): Promise<unknown> {
     // A successful login sets the server cookie, but this document can still
     // hold another user's project caches. Only the fresh document's bootstrap
     // may make the private shell ready, including while navigation is delayed.
     if (action === 'login') expire()
-    await apiFetch(`/api/v1/auth/${action}`, {
+    const result = await apiFetch<UserSession>(`/api/v1/auth/${action}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     })
+    if (action === 'verify') {
+      // Confirmation can replace the browser's previous account cookie. Never
+      // reopen that document's private caches. Recovery only admits its form.
+      expire()
+      if (body.type === 'recovery') acceptSession(result)
+    }
     if (action === 'password') expire()
+    return result
   }
 
   async function logout(): Promise<void> {
@@ -108,7 +146,7 @@ export const useAuthStore = defineStore('auth', () => {
     expire()
   }
 
-  return { token, csrfToken, mode, userId, environmentId, state, ready, bootstrap, clear, expire, submit, logout }
+  return { token, csrfToken, mode, userId, environmentId, state, ready, bootstrap, clear, expire, submit, logout, refreshSession }
 })
 
 export function registerAuthStoreWithClient(store: ReturnType<typeof useAuthStore>): void {
@@ -116,6 +154,18 @@ export function registerAuthStoreWithClient(store: ReturnType<typeof useAuthStor
     get token() { return store.token },
     get csrfToken() { return store.csrfToken },
     get mode() { return store.mode },
-    onUnauthorized: () => store.expire(),
+    onUnauthorized: (error, renewed) => store.refreshSession(error, renewed),
   })
+}
+
+export function authErrorCode(err: unknown): string {
+  return err instanceof ApiError ? (err.body as { detail?: { code?: string } })?.detail?.code ?? '' : ''
+}
+
+export function authDestination(candidate: unknown): string {
+  if (typeof candidate !== 'string' || !candidate.startsWith('/') || candidate.includes('\\')) return '/'
+  const url = new URL(candidate, window.location.origin)
+  if (url.origin !== window.location.origin || url.username || url.password) return '/'
+  return url.pathname === '/' || /^\/projects\/[1-9]\d*(?:\/[a-zA-Z0-9_-]+)*\/?$/.test(url.pathname)
+    ? `${url.pathname}${url.search}${url.hash}` : '/'
 }

@@ -114,7 +114,7 @@ async function signOut(): Promise<void> {
 </script>
 
 <template>
-  <SignInView v-if="auth.mode === 'server' && !auth.ready" />
+  <SignInView v-if="auth.mode === 'server' && (!auth.ready || route.name === 'sign-in')" />
   <div
     v-else
     class="flex min-h-screen flex-col bg-bg-app text-fg-default md:flex-row"
@@ -198,7 +198,7 @@ async function signOut(): Promise<void> {
                 StackOS
               </div>
               <div class="text-2xs leading-tight text-sb-muted">
-                {{ auth.mode === 'server' ? auth.environmentId : 'Local runtime' }}
+                {{ auth.mode === 'server' ? 'Private workspace' : 'Local runtime' }}
               </div>
             </div>
           </RouterLink>
