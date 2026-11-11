@@ -618,6 +618,189 @@ def test_ordinary_review_requires_distinct_selected_native_identity(session, pro
     assert scheduler.jobs == []
 
 
+def aliased_review_workflow(session, project_id, root, host):
+    """One ordinary producer and two explicitly selected workflow mirrors."""
+    from stackos.db.models import RunPlan
+
+    if host == "codex":
+        builder = {
+            "source_ref": source(session, project_id, root, "builder"),
+        }
+        reviewer = {
+            "source_ref": source(
+                session,
+                project_id,
+                root,
+                "reviewer",
+                settings='model="gpt-6.1-sol"\nmodel_reasoning_effort="high"\n',
+            ),
+            "model": "gpt-6-astra",
+        }
+    else:
+        builder = {"host_key": host, "name": "builder", "instructions": "builder"}
+        reviewer = {"host_key": host, "name": "reviewer", "instructions": "reviewer"}
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "aliased-review",
+            "title": "Aliased review",
+            "steps": [
+                {"id": "build", "title": "Build"},
+                {
+                    "id": "inspect",
+                    "title": "Inspect",
+                    "depends_on": ["build"],
+                    "metadata_json": {"agent_assignment": "delivery_agent"},
+                },
+            ],
+        },
+    ).data
+    row = session.get(RunPlan, plan.id)
+    row.template_snapshot_json = {
+        "agent_requirements": [
+            {"role": "delivery_agent", "requirement": "required", "applies_to_steps": ["build"]},
+            {
+                "role": "delivery-reviewer",
+                "requirement": "required",
+                "applies_to_steps": ["inspect"],
+            },
+        ]
+    }
+    session.add(row)
+    session.commit()
+    started = plans.start(plan.id, project_id=project_id)
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="build")
+    task_key = f"workflow-{plan.id}"
+    TrackerRepository(session).create_ticket(
+        project_id=project_id,
+        task_key=task_key,
+        key="work",
+        title="Work",
+        parent_ticket_key=f"{task_key}-build",
+        dependency_keys=[f"{task_key}-build"],
+        run_plan_id=plan.id,
+        run_plan_step_id=plans.get_step(plan.id, "build").id,
+    )
+    return {
+        "task_key": task_key,
+        "run_plan_id": plan.id,
+        "step_id": "build",
+        "agents": {
+            "delivery_agent": builder,
+            "review_agent": reviewer,
+            "delivery-reviewer": reviewer,
+        },
+        "agent_assignments": {f"{task_key}-inspect": "delivery-reviewer"},
+    }
+
+
+@pytest.mark.parametrize("host", ["codex", "claude-code"])
+@pytest.mark.parametrize("resume", [False, True])
+def test_reviewer_alias_is_not_an_ordinary_executor(
+    session, project_id, tmp_path, monkeypatch, host, resume
+):
+    scope = aliased_review_workflow(session, project_id, tmp_path, host)
+    repo = TrackerRepository(session)
+    calls = []
+
+    def launch(selected_host, _dir, instructions, prompt, _schema, **kwargs):
+        packet = json.loads(prompt)
+        key, phase = packet["brief"]["ticket"]["key"], packet["phase"]
+        agent = kwargs["execution_scope"].agent
+        calls.append((key, phase, agent, kwargs.get("resume_thread_id")))
+        assert selected_host == host
+        fresh_mirror = host == "codex" and resume and packet["workflow_step"] is not None
+        assert instructions.split("\n\n", 1)[0] == (
+            "Future reviewer" if fresh_mirror and agent == "reviewer" else agent
+        )
+        if host == "codex" and agent == "reviewer":
+            assert kwargs["model"] == ("gpt-6-astra" if fresh_mirror else "gpt-6.1-sol")
+            assert kwargs["native_settings"] == {
+                "model_reasoning_effort": "low" if fresh_mirror else "high"
+            }
+        return AgentRunResult(
+            0,
+            thread_id=f"{key}-{phase}",
+            result=generic_result("blocked" if resume and len(calls) == 2 else "success"),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    start(session, project_id, tmp_path, scheduler, **scope)
+    snapshot = (
+        repo.get(project_id=project_id, task_key=scope["task_key"])
+        .tasks[0]
+        .metadata_json["delivery"]
+    )
+    assert snapshot["agents"]["review_agent"] == snapshot["agents"]["delivery-reviewer"]
+    # A duplicate queued handoff retains the original snapshot and one scheduled job.
+    start(session, project_id, tmp_path, scheduler, **scope)
+    assert len(scheduler.jobs) == 1
+    scheduler.run()
+    if resume:
+        session.expire_all()
+        retained = repo.brief(
+            project_id=project_id, ticket_key="work"
+        ).ticket.completion_evidence_json["automatic_delivery"]["sessions"]["review"]
+        if host == "codex":
+            source(
+                session,
+                project_id,
+                tmp_path,
+                "reviewer",
+                instructions="Future reviewer",
+                settings='model="gpt-6-astra"\nmodel_reasoning_effort="low"\n',
+            )
+        for status in ("in-progress", "not-started"):
+            repo.update_ticket(
+                project_id=project_id,
+                ticket_key="work",
+                patch_json={"status": status, "blocker_reason": None},
+            )
+        start(session, project_id, tmp_path, scheduler, **scope)
+        scheduler.run()
+        session.expire_all()
+        evidence = repo.brief(
+            project_id=project_id, ticket_key="work"
+        ).ticket.completion_evidence_json["automatic_delivery"]
+        assert evidence["sessions"]["review"] == retained
+        assert evidence["repair_count"] == 0
+    task_key = scope["task_key"]
+    expected = [("work", "delivery", "builder", None), ("work", "review", "reviewer", None)]
+    if resume:
+        expected.extend(
+            [
+                ("work", "delivery", "builder", "work-delivery"),
+                ("work", "review", "reviewer", "work-review"),
+            ]
+        )
+    expected.extend(
+        [
+            (f"{task_key}-build", "delivery", "builder", None),
+            (f"{task_key}-inspect", "delivery", "reviewer", None),
+        ]
+    )
+    assert calls == expected
+    state = repo.get(project_id=project_id, task_key=task_key).tasks[0].metadata_json["delivery"]
+    assert state["status"] == "complete", state
+
+
+@pytest.mark.parametrize("host", ["codex", "claude-code"])
+def test_reviewer_alias_cannot_implement_ordinary_ticket(session, project_id, tmp_path, host):
+    scope = aliased_review_workflow(session, project_id, tmp_path, host)
+    scope["agent_assignments"]["work"] = "delivery-reviewer"
+    scheduler = QueuedScheduler()
+    with pytest.raises(ValidationError, match="identities must be independent"):
+        start(session, project_id, tmp_path, scheduler, **scope)
+    assert not scheduler.jobs
+    task = (
+        TrackerRepository(session).get(project_id=project_id, task_key=scope["task_key"]).tasks[0]
+    )
+    assert "delivery" not in (task.metadata_json or {})
+
+
 def test_ambiguous_source_identity_never_substitutes_a_definition(session, project_id, tmp_path):
     ref = source(session, project_id, tmp_path, "writer")
     (tmp_path / ".codex/agents/duplicate.toml").write_bytes(

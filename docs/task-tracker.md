@@ -179,6 +179,12 @@ snapshot from current defaults and overrides. Prior ticket receipts, native
 sessions and consumed repair allowance survive. Completed tasks and frozen
 run/template snapshots are never refreshed. Tickets carry no
 agent settings. Invalid resolved roles or model selections reject before scheduling.
+Ordinary ticket independence compares the selected implementation executor's
+native host/name identity with `review_agent`. A workflow role may reference that
+reviewer as an alias without becoming another implementation worker or launching
+an extra agent. Assigning the alias to an ordinary implementation ticket still
+rejects self-review. Multiple applicable declared roles still require an explicit
+assignment, even when their selected definitions match.
 An already admitted inline Codex task stopped across the source-adoption upgrade
 retains its saved agents and assignments on unchanged explicit rehandoff, including
 work that has not launched yet. Current defaults cannot replace that selection;

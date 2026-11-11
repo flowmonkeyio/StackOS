@@ -1276,7 +1276,10 @@ def start_delivery(
     if ordinary:
         if "review_agent" not in resolved:
             raise ValidationError("Ordinary tickets require an independent review_agent binding")
-        for role, agent in resolved.items():
+        # Workflow aliases of the reviewer are not ordinary implementation workers.
+        # Compare only the native identities that will actually deliver these tickets.
+        for role in {assignments.get(ticket.key, "delivery_agent") for ticket in ordinary}:
+            agent = resolved[role]
             if role != "review_agent" and (agent["host_key"], agent["name"]) == (
                 resolved["review_agent"]["host_key"],
                 resolved["review_agent"]["name"],
