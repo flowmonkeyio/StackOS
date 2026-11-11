@@ -679,7 +679,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0038_project_order",
+            "0040_artifact_managed_files",
         )
     finally:
         conn.close()
@@ -1557,19 +1557,32 @@ def test_global_account_migration_refuses_data_collapsing_downgrade(
 
 @contextmanager
 def _historical_project_fixture_session(engine) -> Iterator[Session]:
-    """Use current ORM fixture builders, restoring old project DDL before upgrade.
+    """Use current ORM fixture builders, restoring historical DDL before upgrade.
 
-    These tests exercise other migrations. Only their setup temporarily needs
-    the new project column. Project-order proof seeds its old database in SQL.
+    These tests exercise earlier migrations. Only fixture setup needs the later
+    project fields; the real upgrade must still add them to the old table.
+    Project-order proof seeds its old database in SQL.
     """
     with engine.begin() as connection:
-        connection.exec_driver_sql("ALTER TABLE projects ADD COLUMN order_index INTEGER DEFAULT 0")
+        before = connection.exec_driver_sql("PRAGMA table_info(projects)").all()
+        additions = [
+            (name, ddl)
+            for name, ddl in (
+                ("order_index", "INTEGER DEFAULT 0"),
+                ("cleanup_json", "JSON"),
+            )
+            if name not in {column[1] for column in before}
+        ]
+        for name, ddl in additions:
+            connection.exec_driver_sql(f"ALTER TABLE projects ADD COLUMN {name} {ddl}")
     try:
         with Session(engine) as session:
             yield session
     finally:
         with engine.begin() as connection:
-            connection.exec_driver_sql("ALTER TABLE projects DROP COLUMN order_index")
+            for name, _ in reversed(additions):
+                connection.exec_driver_sql(f"ALTER TABLE projects DROP COLUMN {name}")
+            assert connection.exec_driver_sql("PRAGMA table_info(projects)").all() == before
 
 
 def test_telegram_cutover_retires_active_bindings_preserves_history(isolated_alembic: Path) -> None:
