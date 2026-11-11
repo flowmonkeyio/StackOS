@@ -82,6 +82,9 @@ async def test_unaudited_legacy_reconciliation_requires_exact_admin_decision_the
         extras={"surface": "rest", "trusted_local_admin": True, "auth_scope": "daemon-admin"},
     )
     with bind_context(ctx):
+        missing = {key: value for key, value in arguments.items() if key != "confirm_ownership"}
+        with pytest.raises(TypeError):
+            repo.reconcile_generated_file(**missing)
         for patch in (
             {"project_slug": "wrong"},
             {"expected_uri": "wrong"},
@@ -100,6 +103,146 @@ async def test_unaudited_legacy_reconciliation_requires_exact_admin_decision_the
             target.id, confirmation=confirmation(target)
         )
     assert retry.status == "deleted" and retry.operation_id == first.operation_id
+    assert not path.exists()
+
+
+@pytest.mark.asyncio
+async def test_changed_legacy_file_requires_fresh_content_confirmation_after_restart(
+    fixture, monkeypatch
+):
+    s, settings, target, _ = fixture
+    artifact_id, path = legacy_artifact(s, settings, target, monkeypatch)
+    first = await ProjectCleanupService(s, settings).delete(
+        target.id, confirmation=confirmation(target)
+    )
+    assert first.status == "incomplete"
+    reviewed_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+    path.write_text("changed after the ownership decision was prepared")
+    with Session(s.get_bind()) as restarted:
+        repo = ArtifactRepository(restarted)
+        ctx = MCPContext(
+            session=restarted,
+            request_id="fixture-revised-ownership",
+            project_id=target.id,
+            extras={"surface": "rest", "trusted_local_admin": True, "auth_scope": "daemon-admin"},
+        )
+        args = dict(
+            project_id=target.id,
+            project_slug=target.slug,
+            artifact_id=artifact_id,
+            expected_uri="/generated-assets/openai-images/legacy.png",
+            expected_sha256=reviewed_hash,
+            confirm_ownership=True,
+            asset_root=settings.generated_assets_dir,
+        )
+        with bind_context(ctx), pytest.raises(ConflictError, match="content hash"):
+            repo.reconcile_generated_file(**args)
+        assert restarted.get(Artifact, artifact_id).managed_file_json is None
+        retry = await ProjectCleanupService(restarted, settings).delete(
+            target.id, confirmation=confirmation(target)
+        )
+        assert retry.status == "incomplete" and retry.operation_id == first.operation_id
+        assert path.read_text() == "changed after the ownership decision was prepared"
+        with bind_context(ctx):
+            repo.reconcile_generated_file(
+                **{**args, "expected_sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
+            )
+    with Session(s.get_bind()) as restarted:
+        result = await ProjectCleanupService(restarted, settings).delete(
+            target.id, confirmation=confirmation(target)
+        )
+        assert result.status == "deleted" and result.operation_id == first.operation_id
+    assert not path.exists()
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_cannot_claim_another_projects_partition(fixture):
+    s, settings, target, other = fixture
+    path = put(
+        settings.generated_assets_dir / "action-outputs" / f"project-{other.id}" / "foreign.json"
+    )
+    uri = "/generated-assets/" + path.relative_to(settings.generated_assets_dir).as_posix()
+    artifact = (
+        ArtifactRepository(s)
+        .create(
+            project_id=target.id,
+            kind="image",
+            uri=uri,
+            provenance_json={"source": "openai-images-action"},
+        )
+        .data
+    )
+    result = await ProjectCleanupService(s, settings).delete(
+        target.id, confirmation=confirmation(target)
+    )
+    assert result.status == "incomplete"
+    ctx = MCPContext(
+        session=s,
+        request_id="fixture-foreign-partition",
+        project_id=target.id,
+        extras={"surface": "rest", "trusted_local_admin": True, "auth_scope": "daemon-admin"},
+    )
+    with bind_context(ctx), pytest.raises(ValidationError, match="another project root"):
+        ArtifactRepository(s).reconcile_generated_file(
+            project_id=target.id,
+            project_slug=target.slug,
+            artifact_id=artifact.id,
+            expected_uri=uri,
+            expected_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+            confirm_ownership=True,
+            asset_root=settings.generated_assets_dir,
+        )
+    assert path.read_text() == "sentinel"
+    assert s.get(Artifact, artifact.id).managed_file_json is None
+    assert s.get(Project, other.id).cleanup_json is None
+
+
+@pytest.mark.asyncio
+async def test_reconciled_shared_file_survives_until_last_project_cleanup(fixture, monkeypatch):
+    s, settings, target, other = fixture
+    artifact_id, path = legacy_artifact(s, settings, target, monkeypatch)
+    repo = ArtifactRepository(s)
+    survivor = repo.create(
+        project_id=other.id, kind="image", uri="/generated-assets/openai-images/legacy.png"
+    ).data
+    foreign = put(settings.data_dir / "projects" / str(other.id) / "foreign.txt")
+    first = await ProjectCleanupService(s, settings).delete(
+        target.id, confirmation=confirmation(target)
+    )
+    assert first.status == "incomplete" and path.exists() and foreign.exists()
+    ctx = MCPContext(
+        session=s,
+        request_id="fixture-shared-ownership",
+        project_id=target.id,
+        extras={"surface": "rest", "trusted_local_admin": True, "auth_scope": "daemon-admin"},
+    )
+    args = dict(
+        project_id=target.id,
+        project_slug=target.slug,
+        artifact_id=artifact_id,
+        expected_uri="/generated-assets/openai-images/legacy.png",
+        expected_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+        confirm_ownership=True,
+        asset_root=settings.generated_assets_dir,
+    )
+    with bind_context(ctx):
+        for wrong in ({"project_id": other.id}, {"artifact_id": survivor.id}):
+            with pytest.raises(ConflictError):
+                repo.reconcile_generated_file(**{**args, **wrong})
+        repo.reconcile_generated_file(**args)
+    with Session(s.get_bind()) as restarted:
+        result = await ProjectCleanupService(restarted, settings).delete(
+            target.id, confirmation=confirmation(target)
+        )
+        assert result.status == "deleted" and result.operation_id == first.operation_id
+        assert path.exists() and foreign.read_text() == "sentinel"
+        assert restarted.get(Artifact, survivor.id).managed_file_json is not None
+        assert restarted.get(Artifact, artifact_id) is None
+    with Session(s.get_bind()) as restarted:
+        result = await ProjectCleanupService(restarted, settings).delete(
+            other.id, confirmation=confirmation(other)
+        )
+        assert result.status == "deleted"
     assert not path.exists()
 
 
