@@ -5,13 +5,14 @@
 // holding the brand, ProjectSwitcher, primary nav, and theme toggle.
 // At < md it becomes a slide-over drawer under a scrim.
 
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import { RouterView, useRoute } from 'vue-router'
 
 import DesktopUpdatePrompt from '@/components/DesktopUpdatePrompt.vue'
 import ProjectSwitcher from '@/components/ProjectSwitcher.vue'
 import ProjectRenameDialog from '@/components/ProjectRenameDialog.vue'
+import ProjectDeleteDialog from '@/components/ProjectDeleteDialog.vue'
 import PluginNavRenderer from '@/components/renderers/PluginNavRenderer.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
 import { useProjectNavigation } from '@/composables/useProjectNavigation'
@@ -39,10 +40,22 @@ const {
   requestProjectRename,
   requestProjectDelete,
   closeProjectRename,
+  deleteProjectTarget,
+  closeProjectDelete,
+  finishProjectDeletion,
+  viewProjectWork,
 } = useProjectNavigation()
 
 const theme = ref<'light' | 'dark'>('light')
 const drawerOpen = ref(false)
+const projectSwitcher = ref<InstanceType<typeof ProjectSwitcher> | null>(null)
+async function onProjectDeleteClosed(): Promise<void> {
+  closeProjectDelete()
+  await nextTick()
+  // The deleted row's action opener no longer exists. Preserve the primitive's
+  // normal return focus when it does; otherwise return to the stable selector.
+  if (document.activeElement === document.body) projectSwitcher.value?.focusTrigger()
+}
 
 function applyTheme(): void {
   if (typeof document === 'undefined') return
@@ -202,11 +215,12 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
 
         <div class="shrink-0 px-3 py-3 pt-4 md:pt-3">
           <ProjectSwitcher
+            ref="projectSwitcher"
             :items="projectItems"
             :selected-project="currentProject"
             :loading="projectManagementLoading"
             :management-pending="projectManagementPending"
-            :management-open="Boolean(renameProjectTarget)"
+            :management-open="Boolean(renameProjectTarget || deleteProjectTarget)"
             :order-ready="projectOrderReady"
             :error="projectManagementError"
             @select="selectProject"
@@ -222,6 +236,14 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
           :key="renameProjectTarget.id"
           :project="renameProjectTarget"
           @close="closeProjectRename"
+        />
+        <ProjectDeleteDialog
+          v-if="deleteProjectTarget"
+          :key="deleteProjectTarget.id"
+          :project="deleteProjectTarget"
+          :finish="finishProjectDeletion"
+          :view-work="viewProjectWork"
+          @close="onProjectDeleteClosed"
         />
 
         <nav

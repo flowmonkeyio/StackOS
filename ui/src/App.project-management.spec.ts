@@ -84,7 +84,7 @@ it('routes menu intents through the real shell, shared store and canonical opera
     { url: '/api/v1/operations/project.update/call', args: { response_mode: 'raw', project_id: 1, scope: 'catalog', patch: { name: 'Alpha Studio' } } },
     { url: '/api/v1/operations/project.move/call', args: { response_mode: 'raw', project_id: 2, scope: 'catalog', placement: 'before', anchor_id: 1 } },
   ])
-  // The next ticket owns confirmation/cleanup. This entry must emit only an exact target intent.
+  // Opening confirmation emits only an exact target intent; no destructive write yet.
   await switcher.get('button[aria-label="Actions for Beta"]').trigger('click')
   await switcher.get('[role="menu"]').findAll('button').at(-1)!.trigger('click')
   expect(switcher.emitted('delete')).toEqual([[2]])

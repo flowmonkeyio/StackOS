@@ -86,4 +86,25 @@ describe('useHomePortfolioInsights', () => {
     expect(portfolio.items.value).toHaveLength(1)
     expect(portfolio.error.value).toBeTruthy()
   })
+
+  it('removes a confirmed deleted project immediately and fences late portfolio responses without hiding a same-name neighbor', async () => {
+    const projects = useProjectsStore()
+    const target = { ...portfolioFixture({ id: 7 }), order_index: 7, locale: 'en-US', niche: null, schedule_json: null }
+    projects.items = [target]
+    const page = { items: [target, { ...target, id: 8 }], total_estimate: 2, next_cursor: null }
+    vi.mocked(callOperation).mockResolvedValueOnce(page)
+    const portfolio = useHomePortfolioInsights()
+    await portfolio.load()
+    let finish!: (value: typeof page) => void
+    vi.mocked(callOperation).mockImplementationOnce(() => new Promise((resolve) => { finish = resolve }))
+    const late = portfolio.load()
+    vi.mocked(callOperation).mockResolvedValueOnce({ data: { project_id: 7, status: 'deleted' } })
+    await projects.deleteProject(target)
+    expect(portfolio.items.value.map((p) => p.id)).toEqual([8])
+    expect(portfolio.total.value).toBe(1)
+    finish(page)
+    await late
+    expect(portfolio.items.value.map((p) => p.id)).toEqual([8])
+    expect(projects.items).toEqual([])
+  })
 })

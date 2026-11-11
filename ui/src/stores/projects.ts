@@ -7,9 +7,10 @@ import { apiFetch } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
 import { parseStackOsDate } from '@/lib/stackos/time'
 import { changesOrder, type ReorderMove } from '@/components/ui/verticalReorder'
-import type { SchemaProjectCreateRequest, SchemaWriteResponseProjectOut, components } from '@/api'
+import type { SchemaProjectCreateRequest, SchemaWriteEnvelopeProjectCleanupResult, SchemaWriteResponseProjectOut, components } from '@/api'
 
 export type Project = components['schemas']['ProjectOut']
+export type ProjectCleanupResult = components['schemas']['ProjectCleanupResult']
 type ProjectsPage = components['schemas']['PageResponse_ProjectOut_']
 type ProjectMetadata = Pick<Project, 'id' | 'name' | 'domain' | 'is_active' | 'updated_at'>
 
@@ -40,7 +41,13 @@ export const useProjectsStore = defineStore('projects', () => {
   const activeProjectId = ref<number | null>(null)
   const catalogComplete = ref(false)
   const managementPending = ref(false)
+  // Session-local exclusion of confirmed missing IDs fences reads that began
+  // before cleanup. IDs are never reused; this stores no deleted project data.
+  const removedIds = ref(new Set<number>())
+  const incompleteCleanups = new Map<number, Project['cleanup_json']>()
   let refreshRequest: { key: string; promise: Promise<boolean> } | null = null
+
+  function isProjectDeleted(id: number): boolean { return removedIds.value.has(id) }
 
   const activeProject = computed<Project | null>(() => {
     if (activeProjectId.value === null) return null
@@ -48,13 +55,18 @@ export const useProjectsStore = defineStore('projects', () => {
   })
 
   function _ingestPage(page: ProjectsPage, append: boolean): void {
-    const rows = append ? [...items.value, ...page.items] : page.items
+    const rows = (append ? [...items.value, ...page.items] : page.items).filter((project) => !isProjectDeleted(project.id))
     const current = new Map(items.value.map((project) => [project.id, project]))
-    items.value = [...new Map(rows.map((project) => [project.id, preserveNewerMetadata(project, current.get(project.id))])).values()].sort(
+    items.value = [...new Map(rows.map((project) => {
+      const saved = preserveNewerMetadata(project, current.get(project.id))
+      const cleanup = incompleteCleanups.get(project.id)
+      return [project.id, cleanup ? { ...saved, is_active: false, cleanup_json: cleanup } : saved] as const
+    })).values()].sort(
       (left, right) => left.order_index - right.order_index || left.id - right.id,
     )
     nextCursor.value = page.next_cursor ?? null
-    totalEstimate.value = page.total_estimate ?? items.value.length
+    totalEstimate.value = Math.max(items.value.length, (page.total_estimate ?? items.value.length)
+      - page.items.filter((project) => isProjectDeleted(project.id)).length)
     if (activeProjectId.value === null && !managementPending.value) {
       const firstLiveProject = items.value.find((project) => project.is_active)
       if (firstLiveProject) activeProjectId.value = firstLiveProject.id
@@ -68,7 +80,8 @@ export const useProjectsStore = defineStore('projects', () => {
     items.value = items.value.map((current) => {
       const next = incoming.get(current.id)
       if (!next || !isNewerMetadata(next.updated_at, current.updated_at)) return current
-      return { ...current, name: next.name, domain: next.domain, is_active: next.is_active, updated_at: next.updated_at }
+      return { ...current, name: next.name, domain: next.domain,
+        is_active: incompleteCleanups.has(current.id) ? false : next.is_active, updated_at: next.updated_at }
     })
   }
 
@@ -184,6 +197,39 @@ export const useProjectsStore = defineStore('projects', () => {
     }
   }
 
+  async function deleteProject(target: Pick<Project, 'id' | 'slug'>): Promise<ProjectCleanupResult> {
+    if (managementPending.value) throw new Error('Wait for the current project update.')
+    const current = getById(target.id)
+    if (current && current.slug !== target.slug) throw new Error('Deletion target no longer matches.')
+    managementPending.value = true
+    try {
+      const response = await callOperation<SchemaWriteEnvelopeProjectCleanupResult>('project.delete', {
+        project_id: target.id, scope: 'catalog',
+        confirmation: { permanent: true, project_id: target.id, project_slug: target.slug },
+      })
+      const result = response.data
+      if (result.project_id !== target.id) throw new Error('Could not confirm the deletion target.')
+      if (result.status === 'deleted' || result.status === 'missing') {
+        removedIds.value.add(target.id)
+        incompleteCleanups.delete(target.id)
+        const wasLoaded = items.value.some((project) => project.id === target.id)
+        items.value = items.value.filter((project) => project.id !== target.id)
+        if (wasLoaded) totalEstimate.value = Math.max(items.value.length, totalEstimate.value - 1)
+        // Selection/routing belongs to useProjectNavigation, including failures.
+      } else if (result.status === 'incomplete') {
+        const cleanup = { status: 'incomplete', operation_id: result.operation_id, error_code: result.error_code,
+          ownership_required_artifact_ids: result.ownership_required_artifact_ids }
+        incompleteCleanups.set(target.id, cleanup)
+        items.value = items.value.map((project) => project.id === target.id ? {
+          ...project, is_active: false, cleanup_json: cleanup,
+        } : project)
+      }
+      return result
+    } finally {
+      managementPending.value = false
+    }
+  }
+
   async function moveProject(move: ReorderMove): Promise<boolean> {
     const live = items.value.filter((project) => project.is_active)
     if (!catalogComplete.value || loading.value || managementPending.value
@@ -256,6 +302,8 @@ export const useProjectsStore = defineStore('projects', () => {
     loadMore,
     loadAll,
     renameProject,
+    deleteProject,
+    isProjectDeleted,
     reconcileProjectMetadata,
     moveProject,
     createProject,

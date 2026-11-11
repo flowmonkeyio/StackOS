@@ -74,8 +74,20 @@ metadata on already loaded IDs, preserving catalog membership, order and selecti
 Displays use shared names with portfolio fallback for unloaded IDs. Equal/older
 portfolio responses cannot undo a confirmed rename; newer Refresh results update
 the shared labels. Catalog reads and mutation responses also retain newer metadata.
-The confirmed-delete consumer owns
-the subsequent confirmation, cleanup and navigation, not the selector.
+`ProjectDeleteDialog` shows the current name and immutable slug and submits the
+explicit permanent confirmation through `project.delete` in catalog scope.
+It protects in-flight cleanup from duplicate submission/close, routes blockers
+to existing Work controls, and retains incomplete/uncertain cleanup for same-ID
+retry. Legacy ownership gaps remain administrator work. Successful or missing
+targets leave the shared catalog and Overview immediately; session-local ID
+exclusions prevent late reads from restoring them. No deleted project payload
+is retained in the backend. `useProjectNavigation` alone chooses the first
+survivor in stored order or global Overview, preserves a newer selection and
+noncurrent routes, and permits navigation-only retry after cleanup succeeds.
+The selector remains an intent emitter. Dialog titles wrap long project names;
+normal overlay focus returns to the opener, or the stable selector when a
+deleted row's opener is gone. Source tests do not claim operator pointer or
+visual acceptance.
 
 ## Shipped — domain (`ui/src/components/domain/`)
 

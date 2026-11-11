@@ -30,6 +30,8 @@ const emit = defineEmits<{
 const open = ref(false)
 const menuId = useId()
 const rootEl = ref<HTMLDivElement | null>(null)
+const trigger = ref<HTMLButtonElement | null>(null)
+defineExpose({ focusTrigger: () => trigger.value?.focus({ preventScroll: true }) })
 const menuPanel = ref<HTMLElement>()
 const menuStyle = ref<Record<string, string>>({})
 const liveItems = computed(() => props.items.filter((p) => p.is_active))
@@ -109,6 +111,7 @@ onBeforeUnmount(() => {
     @keydown="onKeydown"
   >
     <button
+      ref="trigger"
       type="button"
       class="focus-ring-sb flex w-full min-w-0 items-center gap-2.5 rounded-md border border-sb-border bg-sb-hover px-2.5 py-2 text-left text-sm transition-colors duration-fast hover:bg-sb-active"
       :aria-expanded="open"
@@ -167,7 +170,7 @@ onBeforeUnmount(() => {
         class="px-2 py-1 text-xs text-sb-muted"
         role="status"
       >
-        Saving…
+        Updating projects…
       </div>
       <div
         v-if="error"
@@ -271,7 +274,7 @@ onBeforeUnmount(() => {
             @click="pick(p.id)"
           >
             <span class="block truncate font-medium text-sb-strong">{{ p.name }}</span>
-            <span class="block truncate text-2xs text-sb-muted">{{ p.slug }} · {{ p.domain }} · archived</span>
+            <span class="block truncate text-2xs text-sb-muted">{{ p.slug }} · {{ p.domain }} · {{ p.cleanup_json ? 'Cleanup incomplete' : 'archived' }}</span>
           </button>
           <UiDropdownMenu
             :items="actions(p)"

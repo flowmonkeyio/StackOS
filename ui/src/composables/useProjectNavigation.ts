@@ -11,7 +11,7 @@ import {
   projectSwitchDestination,
 } from '@/lib/stackos/projectNavigation'
 import { useStackOsCatalogStore } from '@/stores/plugins'
-import { useProjectsStore } from '@/stores/projects'
+import { useProjectsStore, type Project } from '@/stores/projects'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 
 interface CatalogRefresh {
@@ -28,25 +28,27 @@ export function useProjectNavigation() {
   const { enabledPlugins, pluginProjectId } = storeToRefs(catalog)
   let catalogRefresh: CatalogRefresh | null = null
   const renameTargetId = ref<number | null>(null)
-  const deleteTargetId = ref<number | null>(null)
+  const deleteTarget = ref<Project | null>(null)
   const renameProjectTarget = computed(() => renameTargetId.value === null ? null : projects.getById(renameTargetId.value))
-  // Selected management target, independent of the currently navigated project.
-  // The confirmed-delete consumer owns confirmation, cleanup and subsequent routing.
-  const deleteProjectTarget = computed(() => deleteTargetId.value === null ? null : projects.getById(deleteTargetId.value))
+  // Keep exact identity through uncertain cleanup and navigation failure, even
+  // after a catalog read removes the row. Shared metadata supplies current names.
+  const deleteProjectTarget = computed(() => deleteTarget.value === null ? null
+    : projects.getById(deleteTarget.value.id) ?? deleteTarget.value)
   function requestProjectRename(id: number): void {
     if (projects.getById(id)) renameTargetId.value = id
   }
   function requestProjectDelete(id: number): void {
-    if (projects.getById(id)) deleteTargetId.value = id
+    const project = projects.getById(id)
+    if (project) deleteTarget.value = { ...project }
   }
   function closeProjectRename(): void { renameTargetId.value = null }
-  function closeProjectDelete(): void { deleteTargetId.value = null }
+  function closeProjectDelete(): void { deleteTarget.value = null }
 
   const { routeProjectId, isProjectRoute, scopeKey: routeViewKey } =
     useProjectRouteScope(route)
   const navigationProjectId = computed(() => {
-    if (isProjectRoute.value) return routeProjectId.value
-    return activeProject.value?.id ?? null
+    const id = isProjectRoute.value ? routeProjectId.value : activeProject.value?.id ?? null
+    return id !== null && projects.isProjectDeleted(id) ? null : id
   })
   const currentProject = computed(() => {
     if (isProjectRoute.value) {
@@ -80,11 +82,11 @@ export function useProjectNavigation() {
 
   function synchronizeSuccessfulRoute(to: RouteLocationNormalized): void {
     const projectId = projectIdFromRoute(to)
-    if (projectId !== null) projects.setActiveProjectId(projectId)
+    if (projectId !== null && !projects.isProjectDeleted(projectId)) projects.setActiveProjectId(projectId)
     const navigationId = to.path.startsWith('/projects/')
       ? projectId
       : projects.activeProjectId
-    if (navigationId !== null) void refreshNavigationCatalog(navigationId)
+    if (navigationId !== null && !projects.isProjectDeleted(navigationId)) void refreshNavigationCatalog(navigationId)
   }
 
   onMounted(() => synchronizeSuccessfulRoute(route))
@@ -94,6 +96,7 @@ export function useProjectNavigation() {
   onBeforeUnmount(removeAfterEach)
 
   async function selectProject(projectId: number): Promise<boolean> {
+    if (projects.isProjectDeleted(projectId)) return false
     const destination = projectSwitchDestination(route, projectId)
     if (destination) {
       try {
@@ -107,6 +110,30 @@ export function useProjectNavigation() {
     projects.setActiveProjectId(projectId)
     await refreshNavigationCatalog(projectId)
     return true
+  }
+
+  async function finishProjectDeletion(projectId: number): Promise<boolean> {
+    if (!projects.isProjectDeleted(projectId)) return false
+    // Inspect the current route/selection after cleanup: a later user choice
+    // must survive a delayed deletion response.
+    if (routeProjectId.value !== projectId && projects.activeProjectId !== projectId) return true
+    if (!projects.catalogComplete && !await projects.loadAll()) return false
+    const survivor = projects.items.find((project) => project.is_active && !project.cleanup_json)
+      ?? projects.items.find((project) => !project.cleanup_json)
+    if (survivor) return selectProject(survivor.id)
+    try {
+      const failure = await router.push('/')
+      if (isNavigationFailure(failure) && route.path !== '/') return false
+      projects.setActiveProjectId(null)
+      return true
+    } catch { return false }
+  }
+
+  async function viewProjectWork(projectId: number): Promise<boolean> {
+    try {
+      const failure = await router.push({ path: `/projects/${projectId}/tasks` })
+      return !isNavigationFailure(failure) || route.path === `/projects/${projectId}/tasks`
+    } catch { return false }
   }
 
   return {
@@ -128,5 +155,7 @@ export function useProjectNavigation() {
     requestProjectDelete,
     closeProjectRename,
     closeProjectDelete,
+    finishProjectDeletion,
+    viewProjectWork,
   }
 }

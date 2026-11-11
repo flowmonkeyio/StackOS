@@ -380,6 +380,84 @@ describe('projects store', () => {
     expect(store.activeProjectId).toBe(76)
     expect(store.activeProject?.id).toBe(76)
   })
+
+  it('confirms one immutable deletion target, excludes late catalog rows, and leaves routing to its owner', async () => {
+    const store = useProjectsStore()
+    store.items = PAGE.items
+    store.activeProjectId = 1
+    let finishRead!: (response: Response) => void
+    let finishDelete!: (response: Response) => void
+    globalThis.fetch = vi.fn((input) => new Promise<Response>((resolve) => {
+      if (String(input).includes('/operations/')) finishDelete = resolve
+      else finishRead = resolve
+    }))
+    const read = store.refresh()
+    const deletion = store.deleteProject(PAGE.items[0])
+    await expect(store.deleteProject(PAGE.items[0])).rejects.toThrow('Wait')
+    expect(JSON.parse(String(vi.mocked(fetch).mock.calls[1][1]?.body))).toEqual({ arguments: {
+      response_mode: 'raw', scope: 'catalog', project_id: 1,
+      confirmation: { permanent: true, project_id: 1, project_slug: 'alpha' },
+    } })
+    finishDelete(json({ data: { project_id: 1, status: 'deleted' } }))
+    await deletion
+    expect(store.items).toEqual([])
+    expect(store.activeProjectId).toBe(1)
+    finishRead(json(PAGE))
+    await read
+    expect(store.items).toEqual([])
+    expect(store.totalEstimate).toBe(0)
+    store.reconcileProjectMetadata([{ ...PAGE.items[0], name: 'Late rename' }])
+    expect(store.items).toEqual([])
+    expect(store.managementPending).toBe(false)
+  })
+
+  it('retains incomplete cleanup and retries the same ID/slug, including a missing result beside a same-name project', async () => {
+    const store = useProjectsStore()
+    store.items = [PAGE.items[0], { ...PAGE.items[0], id: 2, slug: 'other', order_index: 2 }]
+    const receipts = [
+      { project_id: 1, status: 'incomplete', operation_id: 'cleanup-1', retryable: true, error_code: 'PermissionError' },
+      { project_id: 1, status: 'missing' },
+    ]
+    globalThis.fetch = vi.fn(async () => json({ data: receipts.shift() }))
+    expect((await store.deleteProject(PAGE.items[0])).status).toBe('incomplete')
+    expect(store.getById(1)).toMatchObject({ is_active: false, cleanup_json: { status: 'incomplete', operation_id: 'cleanup-1' } })
+    expect((await store.deleteProject(PAGE.items[0])).status).toBe('missing')
+    expect(store.items.map((p) => p.id)).toEqual([2])
+    expect(vi.mocked(fetch).mock.calls.map(([, init]) => JSON.parse(String(init?.body)).arguments.confirmation)).toEqual([
+      { permanent: true, project_id: 1, project_slug: 'alpha' },
+      { permanent: true, project_id: 1, project_slug: 'alpha' },
+    ])
+  })
+
+  it('keeps blocked or uncertain deletions truthful and releases the management lock', async () => {
+    const store = useProjectsStore()
+    store.items = PAGE.items
+    globalThis.fetch = vi.fn(async () => json({ data: { project_id: 1, status: 'blocked', blockers: ['running_work'] } }))
+    expect((await store.deleteProject(PAGE.items[0])).status).toBe('blocked')
+    expect(store.getById(1)?.is_active).toBe(true)
+    globalThis.fetch = vi.fn(async () => { throw new Error('offline') })
+    await expect(store.deleteProject(PAGE.items[0])).rejects.toThrow('offline')
+    expect(store.getById(1)).not.toBeNull()
+    expect(store.managementPending).toBe(false)
+    globalThis.fetch = vi.fn(async () => json({ data: { project_id: 2, status: 'deleted' } }))
+    await expect(store.deleteProject(PAGE.items[0])).rejects.toThrow('target')
+    expect(store.getById(1)).not.toBeNull()
+  })
+
+  it('does not let reads that began before incomplete cleanup reactivate the retained target', async () => {
+    const store = useProjectsStore()
+    store.items = PAGE.items
+    let finish!: (response: Response) => void
+    globalThis.fetch = vi.fn((input) => String(input).includes('/operations/')
+      ? Promise.resolve(json({ data: { project_id: 1, status: 'incomplete', operation_id: 'same-op' } }))
+      : new Promise<Response>((resolve) => { finish = resolve }))
+    const late = store.refresh()
+    await store.deleteProject(PAGE.items[0])
+    finish(json(PAGE))
+    await late
+    store.reconcileProjectMetadata([{ ...PAGE.items[0], updated_at: '2026-01-01T00:00:00Z' }])
+    expect(store.getById(1)).toMatchObject({ is_active: false, cleanup_json: { status: 'incomplete', operation_id: 'same-op' } })
+  })
 })
 
 function json(value: unknown): Response {

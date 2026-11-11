@@ -143,7 +143,102 @@ describe('useProjectNavigation', () => {
     expect(fetch).not.toHaveBeenCalled()
     harness.wrapper.unmount()
   })
+
+  it('deletes the current project then switches through canonical routing to the first survivor in stored order', async () => {
+    const harness = await setupNavigation('/projects/1/connections?section=bots&provider_key=old', [
+      projectFixture(1, 'Alpha'), { ...projectFixture(3, 'Third'), order_index: 0 }, projectFixture(2, 'Beta'),
+    ])
+    harness.projects.items.sort((a, b) => a.order_index - b.order_index)
+    harness.projects.catalogComplete = true
+    harness.navigation.requestProjectDelete(1)
+    mockDelete(1)
+    await harness.projects.deleteProject(harness.projects.getById(1)!)
+    expect(harness.navigation.deleteProjectTarget.value?.slug).toBe('alpha')
+    expect(harness.navigation.projectNavSections.value).toEqual([])
+    expect(await harness.navigation.finishProjectDeletion(1)).toBe(true)
+    expect(harness.router.currentRoute.value.fullPath).toBe('/projects/3/connections?section=bots')
+    expect(harness.projects.activeProjectId).toBe(3)
+    harness.wrapper.unmount()
+  })
+
+  it.each(['/projects/1/agents', '/accounts?account=keep', '/'])(
+    'deleting a noncurrent target preserves route and selection on %s', async (path) => {
+      const harness = await setupNavigation(path)
+      mockDelete(2)
+      await harness.projects.deleteProject(harness.projects.getById(2)!)
+      expect(await harness.navigation.finishProjectDeletion(2)).toBe(true)
+      expect(harness.router.currentRoute.value.fullPath).toBe(path)
+      expect(harness.projects.activeProjectId).toBe(1)
+      harness.wrapper.unmount()
+    },
+  )
+
+  it('goes to global Overview after the last project, with no deleted project links or reselection', async () => {
+    const harness = await setupNavigation('/projects/1/agents', [projectFixture(1, 'Alpha')])
+    harness.projects.catalogComplete = true
+    mockDelete(1)
+    await harness.projects.deleteProject(harness.projects.getById(1)!)
+    expect(await harness.navigation.finishProjectDeletion(1)).toBe(true)
+    expect(harness.router.currentRoute.value.fullPath).toBe('/')
+    expect(harness.projects.activeProjectId).toBeNull()
+    expect(harness.navigation.projectNavSections.value).toEqual([])
+    expect(await harness.navigation.selectProject(1)).toBe(false)
+    expect(harness.projects.activeProjectId).toBeNull()
+    harness.wrapper.unmount()
+  })
+
+  it('retains successful cleanup when routing is blocked and permits navigation-only retry', async () => {
+    const harness = await setupNavigation('/projects/1/connections')
+    harness.projects.catalogComplete = true
+    const removeGuard = harness.router.beforeEach((to) => to.params.id === '2' ? false : true)
+    mockDelete(1)
+    await harness.projects.deleteProject(harness.projects.getById(1)!)
+    expect(await harness.navigation.finishProjectDeletion(1)).toBe(false)
+    expect(harness.projects.getById(1)).toBeNull()
+    expect(harness.navigation.projectNavSections.value).toEqual([])
+    expect(harness.navigation.currentProject.value).toBeNull()
+    removeGuard()
+    expect(await harness.navigation.finishProjectDeletion(1)).toBe(true)
+    expect(harness.projects.activeProjectId).toBe(2)
+    harness.wrapper.unmount()
+  })
+
+  it('preserves a newer selection made while cleanup was in flight and opens blocked Work through the same router', async () => {
+    const harness = await setupNavigation('/projects/1/agents')
+    let finish!: (response: Response) => void
+    globalThis.fetch = vi.fn((input) => String(input).includes('project.delete')
+      ? new Promise<Response>((resolve) => { finish = resolve }) : Promise.resolve(json([])))
+    const deletion = harness.projects.deleteProject(harness.projects.getById(1)!)
+    await harness.navigation.selectProject(2)
+    finish(json({ data: { project_id: 1, status: 'deleted' } }))
+    await deletion
+    expect(await harness.navigation.finishProjectDeletion(1)).toBe(true)
+    expect(harness.router.currentRoute.value.path).toBe('/projects/2/agents')
+    expect(harness.projects.activeProjectId).toBe(2)
+    expect(await harness.navigation.viewProjectWork(2)).toBe(true)
+    expect(harness.router.currentRoute.value.path).toBe('/projects/2/tasks')
+    harness.wrapper.unmount()
+  })
+
+  it('loads all survivor pages before choosing and blocks navigation when that required read fails', async () => {
+    const harness = await setupNavigation('/projects/1/agents', [projectFixture(1, 'Alpha')])
+    mockDelete(1)
+    await harness.projects.deleteProject(harness.projects.getById(1)!)
+    globalThis.fetch = vi.fn(async () => { throw new Error('unavailable') })
+    expect(await harness.navigation.finishProjectDeletion(1)).toBe(false)
+    expect(harness.router.currentRoute.value.path).toBe('/projects/1/agents')
+    globalThis.fetch = vi.fn(async (input) => String(input).includes('/projects?')
+      ? json({ items: [projectFixture(8, 'Unseen')], next_cursor: null }) : json([]))
+    expect(await harness.navigation.finishProjectDeletion(1)).toBe(true)
+    expect(harness.router.currentRoute.value.path).toBe('/projects/8/agents')
+    harness.wrapper.unmount()
+  })
 })
+
+function mockDelete(id: number): void {
+  globalThis.fetch = vi.fn(async (input) => String(input).includes('project.delete')
+    ? json({ data: { project_id: id, status: 'deleted' } }) : json([]))
+}
 
 interface NavigationHarness {
   pinia: Pinia
@@ -174,6 +269,7 @@ async function setupNavigation(
       { path: '/projects/:id', component: { template: '<div />' } },
       { path: '/projects/:id/connections', component: { template: '<div />' } },
       { path: '/projects/:id/agents', component: { template: '<div />' } },
+      { path: '/projects/:id/tasks', component: { template: '<div />' } },
     ],
   })
   await router.push(path)
