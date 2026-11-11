@@ -67,7 +67,10 @@ wider. Project names select through `useProjectNavigation`; separate row actions
 request rename/delete targets from that same owner. The project store owns
 display-name updates and bounded moves through the browser-safe catalog
 operations, reloading all pages after move attempts. `ProjectRenameDialog` owns
-the retained draft and saving/failure states. The confirmed-delete consumer owns
+the retained draft and saving/failure states. Home and Overview resolve displayed
+project names from the shared store before falling back to portfolio snapshots,
+so a confirmed rename remains visible when an older portfolio read completes.
+The confirmed-delete consumer owns
 the subsequent confirmation, cleanup and navigation, not the selector.
 
 ## Shipped — domain (`ui/src/components/domain/`)

@@ -7,6 +7,11 @@ import ProjectSwitcher from '@/components/ProjectSwitcher.vue'
 import ProjectRenameDialog from '@/components/ProjectRenameDialog.vue'
 import { useProjectsStore, type Project } from '@/stores/projects'
 import { useToastsStore } from '@/stores/toasts'
+import HomeConsoleView from '@/views/HomeConsoleView.vue'
+import HomeView from '@/views/HomeView.vue'
+import HomeProjectsSection from '@/views/home/HomeProjectsSection.vue'
+import { portfolioFixture, ticketSummaryFixture } from '@/views/home/overviewFixtures'
+import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 
 enableAutoUnmount(afterEach)
 const originalFetch = globalThis.fetch
@@ -86,6 +91,93 @@ it('routes menu intents through the real shell, shared store and canonical opera
   expect(requests).toHaveLength(2)
   expect(router.currentRoute.value.fullPath).toBe('/projects/1/connections')
 })
+
+it.each(['/projects/1', '/'])(
+  'updates the real route label after rename and retains it across a late portfolio response on %s',
+  async (path) => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const projects = useProjectsStore()
+    let project: Project = {
+      ...portfolioFixture({ name: 'Alpha' }),
+      order_index: 1, locale: 'en-US', niche: null, schedule_json: null,
+    }
+    projects.items = [project]
+    projects.activeProjectId = project.id
+    let deferPortfolio = false
+    let finishPortfolio!: () => void
+    const writes: unknown[] = []
+    globalThis.fetch = vi.fn(async (input, init) => {
+      const url = String(input)
+      if (url.startsWith('/api/v1/projects?')) return json({ items: [project], next_cursor: null, total_estimate: 1 })
+      if (url.includes('/operations/project.update/')) {
+        const args = JSON.parse(String(init?.body)).arguments
+        writes.push(args)
+        project = { ...project, name: args.patch.name }
+        return json({ data: project })
+      }
+      if (url.includes('/operations/project.portfolio/')) {
+        const page = { items: [portfolioFixture({ ...project })], next_cursor: null, total_estimate: 1 }
+        if (deferPortfolio) return new Promise<Response>((resolve) => { finishPortfolio = () => resolve(json(page)) })
+        return json(page)
+      }
+      if (url.includes('tracker.ticketCounts')) return json(ticketSummaryFixture())
+      if (url.includes('tracker.agentStats')) return json(agentStatsFixture())
+      if (url.includes('workflowExtension.list')) return json({ extensions: [] })
+      if (url.includes('/workflow-templates')) return json({ templates: [] })
+      if (url.includes('/connections/accounts')) return json({ accounts: [] })
+      return json([])
+    })
+    const router = createRouter({ history: createMemoryHistory(), routes: [
+      { path: '/', component: HomeView },
+      { path: '/projects/:id', component: HomeConsoleView },
+    ] })
+    await router.push(path)
+    await router.isReady()
+    const app = mount(App, {
+      attachTo: document.body,
+      global: { plugins: [pinia, router], stubs: {
+        DesktopUpdatePrompt: true, HomeSystemStatusCard: true, AgentActivitySection: true,
+        HomePortfolioOverview: true, TicketStatusChart: true,
+      } },
+    })
+    await flushPromises()
+    const view = path === '/' ? app.getComponent(HomeView) : app.getComponent(HomeConsoleView)
+    const visibleLabel = () => path === '/'
+      ? app.getComponent(HomeProjectsSection).get('table tbody tr td').text()
+      : view.get('h1').text()
+    expect(visibleLabel()).toContain('Alpha')
+
+    // This read started with the old name and will finish after the rename.
+    deferPortfolio = true
+    await view.findAll('button').find((button) => button.text() === 'Refresh')!.trigger('click')
+    await flushPromises()
+    expect(finishPortfolio).toBeTypeOf('function')
+    const selector = app.getComponent(ProjectSwitcher)
+    await selector.get('button').trigger('click')
+    await flushPromises()
+    await selector.get('button[aria-label="Actions for Alpha"]').trigger('click')
+    await selector.get('[role="menu"]').findAll('button')[0].trigger('click')
+    const dialog = new DOMWrapper(document.querySelector<HTMLElement>('.ui-dialog__overlay')!)
+    await dialog.get('input').setValue('Alpha Studio')
+    await dialog.get('form').trigger('submit')
+    await flushPromises()
+
+    expect(visibleLabel()).toContain('Alpha Studio')
+    expect(app.findComponent(ProjectRenameDialog).exists()).toBe(false)
+    expect(selector.get('button').text()).toContain('Alpha Studio')
+    expect(writes).toEqual([{ response_mode: 'raw', project_id: 1, scope: 'catalog', patch: { name: 'Alpha Studio' } }])
+    expect(projects.activeProjectId).toBe(1)
+    expect(projects.getById(1)?.slug).toBe('business-one')
+    expect(router.currentRoute.value.fullPath).toBe(path)
+
+    finishPortfolio()
+    await flushPromises()
+    expect(visibleLabel()).toContain('Alpha Studio')
+    expect(projects.activeProject?.name).toBe('Alpha Studio')
+    expect(router.currentRoute.value.fullPath).toBe(path)
+  },
+)
 
 function json(value: unknown): Response {
   return new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } })

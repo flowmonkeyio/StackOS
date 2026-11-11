@@ -16,6 +16,7 @@ import {
 import type { TrackerStatus } from '@/lib/task-tracker/types'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { usePolling } from '@/composables/usePolling'
+import { useProjectsStore } from '@/stores/projects'
 import { formatAbsoluteDateTime } from '@/lib/stackos/time'
 import { connectionNeedsAttention, connectionStatusKey } from './connections/credentialPresentation'
 import { providerLabel } from './connections/formatters'
@@ -31,6 +32,8 @@ const router = useRouter()
 const base = computed(() => `/projects/${projectId.value}`)
 const overview = useProjectOverview(projectId)
 const { project, accounts, workflows, task, loading, errors } = overview
+const projects = useProjectsStore()
+const projectName = computed(() => projects.getById(projectId.value)?.name ?? project.value?.name)
 const description = computed(() => project.value?.domain || 'Current project work')
 const tickets = useTicketCounts(projectId)
 const agents = useAgentStats(projectId)
@@ -55,7 +58,7 @@ function inspectStatus(status: TrackerStatus): void {
   <UiPageShell>
     <ProjectPageHeader
       :project-id="projectId"
-      :title="project?.name"
+      :title="projectName"
       :description="description"
     >
       <template #actions>
