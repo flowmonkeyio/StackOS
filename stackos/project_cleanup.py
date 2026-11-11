@@ -199,16 +199,14 @@ class ProjectCleanupService:
         if BACKGROUND_ACTION_TASKS.foreground_active(project_id):
             blockers.append("foreground_action")
         tasks = s.exec(select(TrackerTask).where(TrackerTask.project_id == project_id)).all()
-        if any(
-            (t.metadata_json or {}).get("delivery", {}).get("status") in {"queued", "running"}
-            for t in tasks
-        ):
+        deliveries = [(t.metadata_json or {}).get("delivery") or {} for t in tasks]
+        if any(delivery.get("status") in {"queued", "running"} for delivery in deliveries):
             blockers.append("admitted_delivery")
         # Stopped delivery controller audits are not active writers by themselves.
         stopped_runs = {
-            (t.metadata_json or {}).get("delivery", {}).get("controller_run_id")
-            for t in tasks
-            if (t.metadata_json or {}).get("delivery", {}).get("status") in {"stopped", "complete"}
+            delivery.get("controller_run_id")
+            for delivery in deliveries
+            if delivery.get("status") in {"stopped", "complete"}
         }
         if any(
             r.id not in stopped_runs
@@ -500,6 +498,10 @@ class ProjectCleanupService:
                 references[pin.artifact_id].add(path)
         for refs in references.values():
             refs.update(path.resolve() for path in list(refs))
+        references_by_path: dict[Path, set[int]] = {}
+        for artifact_id, refs in references.items():
+            for path in refs:
+                references_by_path.setdefault(path, set()).add(artifact_id)
         custodies = [
             custody
             for source in artifacts
@@ -521,20 +523,31 @@ class ProjectCleanupService:
                         "mode": stat.S_IFMT(info.st_mode),
                     }
                 )
+        additions: dict[int, list[dict[str, Any]]] = {}
         for custody in custodies:
             path = self._managed_path(custody)
             if path is None:
                 continue
-            for survivor in surviving:
-                assert survivor.id is not None
-                if not any(path.is_relative_to(ref) for ref in references[survivor.id]):
-                    continue
-                files = self._custodies(survivor)
-                if custody not in files:
-                    # Public directory references may retain several verified
-                    # files. No deleted-project row or untrusted provenance is kept.
-                    survivor.managed_file_json = {"files": [*files, dict(custody)]}
-                    self.session.add(survivor)
+            owners: set[int] = set()
+            for ancestor in (path, *path.parents):
+                owners.update(references_by_path.get(ancestor, ()))
+            for artifact_id in owners:
+                additions.setdefault(artifact_id, []).append(custody)
+        for survivor in surviving:
+            assert survivor.id is not None
+            if survivor.id not in additions:
+                continue
+            files = list(self._custodies(survivor))
+            seen = {json.dumps(custody, sort_keys=True) for custody in files}
+            for custody in additions[survivor.id]:
+                key = json.dumps(custody, sort_keys=True)
+                if key not in seen:
+                    files.append(dict(custody))
+                    seen.add(key)
+            # Public directory references may retain several verified files.
+            # Batch the assignment so a directory handoff is linear in its files.
+            survivor.managed_file_json = {"files": files}
+            self.session.add(survivor)
         self.session.flush()
 
     def _clean_files(self, project_id: int) -> None:
@@ -713,7 +726,7 @@ def _remove_at(
     *,
     identity: tuple[int, int, int] | None = None,
 ) -> None:
-    if any(path.is_relative_to(shared) for shared in protected):
+    if path in protected or any(ancestor in protected for ancestor in path.parents):
         return
     try:
         info = os.stat(name, dir_fd=parent, follow_symlinks=False)
