@@ -1203,8 +1203,8 @@ and consumption remain separate claims.
 
 `tracker.updateTaskPriority` and `tracker.reorderTask` are strict, browser-safe
 operations exposed through the same registry to REST, CLI and MCP. They use
-the existing task `priority_key` and integer `order_index`; no migration or
-ranking store is involved. The UI client is `lib/stackos/taskBoard.ts`.
+the existing task `priority_key` and integer `order_index`, with no separate
+ranking store. The UI client is `lib/stackos/taskBoard.ts`.
 
 Both require `project_id`, `task_key`, `expected_status`, `expected_updated_at`
 and a stable `idempotency_key`. Priority accepts only `priority_key: p0|p1|p2|p3`.
@@ -1229,6 +1229,28 @@ unchanged priority are no-ops: no normalization, revision or change event.
 No-op receipts still make retries stable. All changed ranks, revision, events
 and retry receipt commit together; the moved task's snapshot also advances when
 a tied integer remains unchanged but its relative position changes.
+
+New tasks and real task status transitions prepend to the full destination
+column using that same persisted rank. The repository reserves the SQLite
+writer before allocating a rank, so concurrent arrivals serialize. Direct
+patches, child-ticket rollups and workflow mirroring share the status-transition
+hook; same-status writes and title, usage or priority updates retain manual
+order. Arrival placement does not change priority or ticket scheduling.
+
+Migration `0039_tracker_board_arrivals` normalizes existing untouched columns
+once. Complete tracker revisions, creation receipts and rank snapshots establish
+which columns have no saved manual order. A reorder's recorded `expected_status`
+identifies its column, which is preserved. The latest same-project task status
+event supplies entry order; tasks without historical entry events fall back to
+creation time, then numeric ID. Unrelated `updated_at` changes never determine
+placement. Incomplete or contradictory history preserves the affected column
+(an unidentified reorder preserves the tracker), with task keys, reasons and
+manual revision refs in the existing `board-arrivals-normalization` revision.
+That receipt also records creation fallbacks and makes retries idempotent.
+Legacy `create_all` schema adoption runs the same repair before stamping head,
+since schema stamping otherwise skips data migrations.
+Upgrade leaves statuses, priorities, workflow snapshots and tracker settings
+unchanged; downgrade does not reverse saved operator order.
 
 Real priority/order edits emit `tracker.task.changed` into the existing timeline
 and `tracker-status` SSE transport, including task scope and `changed_fields`.

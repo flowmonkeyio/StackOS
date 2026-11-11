@@ -89,6 +89,17 @@ def _stamp_create_all_schema_if_needed(settings: Settings, cfg: Config) -> bool:
                     return False
             if not required_tables <= set(inspector.get_table_names()):
                 return False
+        # Stamping skips data migrations as well as DDL. Apply this one-time
+        # data repair through its canonical owner before recording head. Its
+        # audit marker makes a lost stamp/retry safe; failure leaves the old
+        # version eligible for retry rather than silently claiming completion.
+        from sqlmodel import Session
+
+        from stackos.repositories.tracker.ordering import normalize_default_columns
+
+        with Session(engine) as session:
+            normalize_default_columns(session)
+            session.commit()
     finally:
         engine.dispose()
 

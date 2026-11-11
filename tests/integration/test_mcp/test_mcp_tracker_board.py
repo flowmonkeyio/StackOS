@@ -38,11 +38,11 @@ def test_mcp_board_intents_use_same_repository_and_enforce_project(mcp_client, s
             "expected_updated_at": second["updated_at"],
             "idempotency_key": "mcp-move",
             "anchor_task_key": first["key"],
-            "placement": "before",
+            "placement": "after",
         },
     )
     assert moved["data"]["changed"] is True, moved
-    assert moved["data"]["task"]["order_index"] == 0
+    assert moved["data"]["task"]["order_index"] == 1
     missing = mcp_client.call_tool_error(
         "tracker.updateTaskPriority",
         {

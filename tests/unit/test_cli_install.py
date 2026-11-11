@@ -51,7 +51,7 @@ from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.secrets import PayloadSecretRepository
 
-HEAD_REVISION = "0038_project_primary_workspace"
+HEAD_REVISION = "0039_tracker_board_arrivals"
 
 
 @pytest.fixture

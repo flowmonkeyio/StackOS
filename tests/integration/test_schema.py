@@ -677,7 +677,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0038_project_primary_workspace",
+            "0039_tracker_board_arrivals",
         )
     finally:
         conn.close()
@@ -2395,7 +2395,19 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
     with sqlite3.connect(isolated_alembic) as conn:
         assert _list_tables(isolated_alembic) == tables_before
         for table, rows in before.items():
-            assert conn.execute(f"SELECT * FROM {table}").fetchall() == rows
+            if table == "tracker_revisions":
+                # The Board data migration appends its own receipt, retaining
+                # every historical revision and frozen delivery record intact.
+                assert conn.execute(
+                    "SELECT * FROM tracker_revisions "
+                    "WHERE change_kind != 'board-arrivals-normalization'"
+                ).fetchall() == rows
+                assert conn.execute(
+                    "SELECT COUNT(*) FROM tracker_revisions "
+                    "WHERE change_kind = 'board-arrivals-normalization'"
+                ).fetchone() == (1,)
+            else:
+                assert conn.execute(f"SELECT * FROM {table}").fetchall() == rows
         configs = {
             project_id: json.loads(config)
             for project_id, config in conn.execute(
