@@ -140,7 +140,14 @@ Shared references preserve bytes, including the original private file reference
 when public metadata is later edited. During final purge, verified file custody
 passes to surviving artifact references in the same database transaction. The
 last referencing project's cleanup removes those files; a rollback retains the
-original owner and rolls back the handoff. A durable pin or project-template
+original owner and rolls back the handoff. This includes shared action-response
+files and other leaves owned through derived project directories without a
+source Artifact. Cleanup inventories those remaining roots through no-follow
+directory descriptors; a reference never selects an additional inventory root.
+Transferred custody retains the original project-root boundary and leaf type,
+device and inode. Final-reference cleanup removes the matching leaf and prunes
+only empty parents inside that original root, preserving unrelated files and
+symlink targets. A durable pin or project-template
 binding owned by another project blocks deletion rather than deleting that
 owner's dependency. Repository folders, external exports,
 shared Accounts/catalog/browser runtimes and whole-instance backup archives are

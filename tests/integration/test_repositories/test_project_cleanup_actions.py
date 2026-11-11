@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 from alembic import command
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlmodel import Session, select
 
 from stackos.actions import ActionRepository
@@ -18,7 +18,7 @@ from stackos.repositories.projects import IntegrationBudgetRepository, ProjectRe
 from stackos.repositories.resources import ArtifactRepository
 from tests.helpers.sqlite_schema import capture_database_snapshot, restore_database_snapshot
 from tests.integration.account_test_support import seed_test_account
-from tests.integration.test_project_cleanup import confirmation
+from tests.integration.test_project_cleanup import confirmation, put
 from tests.integration.test_repositories.test_actions import _provider_credential_ref
 
 
@@ -125,3 +125,93 @@ async def test_existing_producer_files_recover_from_action_audit_after_upgrade_a
             == []
         )
     assert not path.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("directory", [False, True])
+@pytest.mark.parametrize("owner_first", [False, True])
+@pytest.mark.parametrize("purge_failure", [False, True])
+async def test_real_action_response_shared_custody_reaches_final_reference(
+    cleanup_db, httpx_mock, directory, owner_first, purge_failure
+):
+    session, settings, target = cleanup_db
+    other = (
+        ProjectRepository(session)
+        .create(
+            slug="disposable-response-survivor", name="Disposable survivor", domain="fixture.test"
+        )
+        .data
+    )
+    seed_test_account(
+        session, project_id=target.id, provider_key="xai-imagine", secret_payload=b"fixture-key"
+    )
+    IntegrationBudgetRepository(session).set(
+        project_id=target.id, kind="xai-imagine", monthly_budget_usd=10
+    )
+    httpx_mock.add_response(
+        method="POST",
+        url="https://api.x.ai/v1/images/generations",
+        json={"data": [{"b64_json": base64.b64encode(b"fixture-media").decode()}]},
+    )
+    action = (
+        await ActionRepository(session, asset_dir=settings.generated_assets_dir).execute(
+            project_id=target.id,
+            action_ref="utils.xai.image.generate",
+            input_json={"prompt": "fixture", "aspect_ratio": "1:1", "resolution": "1k"},
+            credential_ref=_provider_credential_ref(session, target.id, "xai-imagine"),
+            output_policy_json={"mode": "always_file"},
+        )
+    ).data
+    response = Path(action.output_json["file"]["path"])
+    owned_root = settings.generated_assets_dir / "action-outputs" / f"project-{target.id}"
+    assert response.is_relative_to(owned_root)
+    ref_path = owned_root if directory else response
+    survivor = (
+        ArtifactRepository(session)
+        .create(
+            project_id=other.id,
+            kind="response",
+            uri="/generated-assets/"
+            + ref_path.relative_to(settings.generated_assets_dir).as_posix(),
+        )
+        .data
+    )
+    foreign = put(settings.generated_assets_dir / "action-outputs" / "project-99999" / "keep")
+    first, last = (target, other) if owner_first else (other, target)
+    engine = session.get_bind()
+
+    def fail_purge(_conn, _cursor, sql, _parameters, _context, _many):
+        if sql.startswith("DELETE FROM projects"):
+            raise RuntimeError("fixture failure after shared-root handoff")
+
+    if purge_failure:
+        event.listen(engine, "before_cursor_execute", fail_purge)
+        try:
+            failed = await ProjectCleanupService(session, settings).delete(
+                first.id, confirmation=confirmation(first)
+            )
+        finally:
+            event.remove(engine, "before_cursor_execute", fail_purge)
+        assert failed.status == "incomplete" and response.exists()
+        assert session.get(Artifact, survivor.id).managed_file_json is None
+        assert session.get(ActionCall, action.action_call.id) is not None
+    with Session(engine) as restarted:
+        result = await ProjectCleanupService(restarted, settings).delete(
+            first.id, confirmation=confirmation(first)
+        )
+        assert result.status == "deleted" and response.exists()
+        if purge_failure:
+            assert result.operation_id == failed.operation_id
+        if owner_first:
+            assert restarted.get(ActionCall, action.action_call.id) is None
+            assert restarted.get(Artifact, survivor.id).managed_file_json is not None
+    with Session(engine) as restarted:
+        result = await ProjectCleanupService(restarted, settings).delete(
+            last.id, confirmation=confirmation(last)
+        )
+        assert result.status == "deleted"
+        assert restarted.exec(select(Project)).all() == []
+        assert restarted.exec(select(Artifact)).all() == []
+        assert restarted.exec(select(ActionCall)).all() == []
+    assert not response.exists() and not owned_root.exists()
+    assert foreign.read_text() == "sentinel"

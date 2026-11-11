@@ -12,6 +12,7 @@ from stackos.db.models import Artifact, Project
 from stackos.mcp.context import MCPContext, bind_context
 from stackos.project_cleanup import ProjectCleanupService
 from stackos.repositories.base import ConflictError, ValidationError
+from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.resources import ArtifactRepository
 from tests.integration.test_project_cleanup import confirmation, put
 from tests.integration.test_project_cleanup import fixture as fixture
@@ -331,3 +332,51 @@ async def test_custody_handoff_rolls_back_with_failed_project_purge(fixture):
         )
         assert final.status == "deleted"
     assert not path.exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("root_index", range(7))
+async def test_shared_leaf_from_each_derived_root_is_retired_by_final_reference(
+    fixture, root_index
+):
+    s, settings, target, other = fixture
+    owned_root = ProjectCleanupService(s, settings)._roots(target.id)[root_index]
+    path = put(owned_root / "nested" / "shared.bin")
+    unrelated = put(settings.data_dir / "unowned" / "must-survive")
+    third = (
+        ProjectRepository(s)
+        .create(slug="disposable-third-reference", name="Third", domain="fixture.test")
+        .data
+    )
+    for project in (other, third):
+        ArtifactRepository(s).create(project_id=project.id, kind="file", uri=path.as_uri())
+        ArtifactRepository(s).create(project_id=project.id, kind="file", uri=unrelated.as_uri())
+    for project in (target, other, third):
+        with Session(s.get_bind()) as restarted:
+            result = await ProjectCleanupService(restarted, settings).delete(
+                project.id, confirmation=confirmation(project)
+            )
+            assert result.status == "deleted"
+        if project.id != third.id:
+            assert path.exists()
+        assert unrelated.read_text() == "sentinel"
+    assert not path.exists() and not owned_root.exists()
+
+
+@pytest.mark.asyncio
+async def test_shared_root_alias_custody_never_follows_its_external_target(fixture, tmp_path):
+    s, settings, target, other = fixture
+    root = ProjectCleanupService(s, settings)._roots(target.id)[0]
+    root.mkdir(parents=True)
+    external = put(tmp_path / "repository" / "keep")
+    alias = root / "shared-link"
+    alias.symlink_to(external)
+    ArtifactRepository(s).create(project_id=other.id, kind="file", uri=alias.as_uri())
+    for project in (target, other):
+        with Session(s.get_bind()) as restarted:
+            result = await ProjectCleanupService(restarted, settings).delete(
+                project.id, confirmation=confirmation(project)
+            )
+            assert result.status == "deleted"
+        assert external.read_text() == "sentinel"
+    assert not alias.is_symlink() and not root.exists()

@@ -6,6 +6,7 @@ restart. Only the final database transaction removes those sources and identity.
 
 from __future__ import annotations
 
+import errno
 import fcntl
 import hashlib
 import json
@@ -322,14 +323,24 @@ class ProjectCleanupService:
         return path if path.is_absolute() and path.is_relative_to(self.settings.data_dir) else None
 
     def _managed_path(self, custody: dict[str, Any] | None) -> Path | None:
-        if custody is None or custody.get("root") != str(
-            self.settings.generated_assets_dir.resolve()
-        ):
-            return None  # User-selected external output roots are not managed storage.
+        if custody is None:
+            return None
         relative = Path(custody["path"])
         if relative.is_absolute() or ".." in relative.parts or not relative.parts:
             raise ValueError("invalid producer file custody")
-        return self.settings.generated_assets_dir / relative
+        if custody.get("root") == str(self.settings.generated_assets_dir.resolve()):
+            return self.settings.generated_assets_dir / relative
+        owner = custody.get("owner_project_id")
+        if (
+            custody.get("root") == str(self.settings.data_dir.resolve())
+            and type(owner) is int
+            and owner > 0
+        ):
+            path = self.settings.data_dir / relative
+            if any(path.is_relative_to(root) for root in self._roots(owner)):
+                return path
+            raise ValueError("file custody outside original project roots")
+        return None  # User-selected external outputs are not managed storage.
 
     @staticmethod
     def _custodies(artifact: Artifact) -> list[dict[str, Any]]:
@@ -489,23 +500,41 @@ class ProjectCleanupService:
                 references[pin.artifact_id].add(path)
         for refs in references.values():
             refs.update(path.resolve() for path in list(refs))
-        for source in artifacts:
-            if source.project_id != project_id:
+        custodies = [
+            custody
+            for source in artifacts
+            if source.project_id == project_id
+            for custody in self._custodies(source)
+        ]
+        # _clean_files has already removed unshared leaves. Remaining files in
+        # these derived roots are owned without needing a source Artifact (for
+        # example ActionCall response files). Never inventory a requested URI.
+        for root in self._roots(project_id):
+            for path, info in _owned_leaves(root, self.settings.data_dir):
+                custodies.append(
+                    {
+                        "root": str(self.settings.data_dir.resolve()),
+                        "path": path.relative_to(self.settings.data_dir).as_posix(),
+                        "owner_project_id": project_id,
+                        "device": info.st_dev,
+                        "inode": info.st_ino,
+                        "mode": stat.S_IFMT(info.st_mode),
+                    }
+                )
+        for custody in custodies:
+            path = self._managed_path(custody)
+            if path is None:
                 continue
-            for custody in self._custodies(source):
-                path = self._managed_path(custody)
-                if path is None:
+            for survivor in surviving:
+                assert survivor.id is not None
+                if not any(path.is_relative_to(ref) for ref in references[survivor.id]):
                     continue
-                for survivor in surviving:
-                    assert survivor.id is not None
-                    if not any(path.is_relative_to(ref) for ref in references[survivor.id]):
-                        continue
-                    files = self._custodies(survivor)
-                    if custody not in files:
-                        # Public directory references may retain several verified
-                        # files. No deleted-project row or untrusted provenance is kept.
-                        survivor.managed_file_json = {"files": [*files, dict(custody)]}
-                        self.session.add(survivor)
+                files = self._custodies(survivor)
+                if custody not in files:
+                    # Public directory references may retain several verified
+                    # files. No deleted-project row or untrusted provenance is kept.
+                    survivor.managed_file_json = {"files": [*files, dict(custody)]}
+                    self.session.add(survivor)
         self.session.flush()
 
     def _clean_files(self, project_id: int) -> None:
@@ -549,7 +578,24 @@ class ProjectCleanupService:
             for custody in custodies:
                 path = self._managed_path(custody)
                 if path is not None:
-                    files.append((path, (custody["device"], custody["inode"])))
+                    prune_to = None
+                    owner = custody.get("owner_project_id")
+                    if type(owner) is int:
+                        prune_to = next(
+                            (root for root in self._roots(owner) if path.is_relative_to(root)),
+                            None,
+                        )
+                    files.append(
+                        (
+                            path,
+                            (
+                                custody["device"],
+                                custody["inode"],
+                                custody.get("mode", stat.S_IFREG),
+                            ),
+                            prune_to,
+                        )
+                    )
             if not custodies and (artifact.provenance_json or {}).get("source") in {
                 "aignc-action",
                 "alibaba-wan-action",
@@ -583,9 +629,11 @@ class ProjectCleanupService:
         FinanceConsole(self.session, self.settings).cleanup_sources(
             self._project(project_id), remove_managed
         )
-        for path, identity in files:
+        for path, identity, prune_to in files:
             _check_ancestors(path, self.settings.data_dir)
-            _remove_owned(path, protected, self.settings.data_dir, identity=identity)
+            _remove_owned(
+                path, protected, self.settings.data_dir, identity=identity, prune_to=prune_to
+            )
         for path in paths:
             _check_ancestors(path, self.settings.data_dir)
             _remove_owned(path, protected, self.settings.data_dir)
@@ -618,7 +666,12 @@ def _check_ancestors(path: Path, root: Path) -> None:
 
 
 def _remove_owned(
-    path: Path, protected: set[Path], root: Path, *, identity: tuple[int, int] | None = None
+    path: Path,
+    protected: set[Path],
+    root: Path,
+    *,
+    identity: tuple[int, int, int] | None = None,
+    prune_to: Path | None = None,
 ) -> None:
     """Walk by held descriptors, never following a replaced directory or parent."""
     relative = path.relative_to(root)
@@ -626,12 +679,30 @@ def _remove_owned(
         try:
             parent = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
             opened.callback(os.close, parent)
+            directories = []
+            current = root
             for part in relative.parts[:-1]:
+                current = current / part
+                directories.append((parent, part, current))
                 parent = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
                 opened.callback(os.close, parent)
         except FileNotFoundError:
             return
         _remove_at(parent, relative.name, path, protected, identity=identity)
+        # Retired source roots may outlive their project while shared bytes are
+        # retained. Prune only empty parents, never recursively delete new files.
+        if prune_to is not None:
+            for parent, name, directory in reversed(directories):
+                if not directory.is_relative_to(prune_to):
+                    break
+                try:
+                    os.rmdir(name, dir_fd=parent)
+                except FileNotFoundError:
+                    continue
+                except OSError as exc:
+                    if exc.errno in {errno.ENOTEMPTY, errno.EEXIST}:
+                        break
+                    raise
 
 
 def _remove_at(
@@ -640,7 +711,7 @@ def _remove_at(
     path: Path,
     protected: set[Path],
     *,
-    identity: tuple[int, int] | None = None,
+    identity: tuple[int, int, int] | None = None,
 ) -> None:
     if any(path.is_relative_to(shared) for shared in protected):
         return
@@ -648,9 +719,7 @@ def _remove_at(
         info = os.stat(name, dir_fd=parent, follow_symlinks=False)
     except FileNotFoundError:
         return
-    if identity is not None and (
-        not stat.S_ISREG(info.st_mode) or (info.st_dev, info.st_ino) != identity
-    ):
+    if identity is not None and (info.st_dev, info.st_ino, stat.S_IFMT(info.st_mode)) != identity:
         raise ValueError("producer-owned file was replaced")
     if stat.S_ISDIR(info.st_mode):
         directory = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
@@ -663,6 +732,39 @@ def _remove_at(
             os.close(directory)
     else:
         os.unlink(name, dir_fd=parent)  # Unlink a leaf alias, never its target.
+
+
+def _owned_leaves(path: Path, root: Path) -> list[tuple[Path, os.stat_result]]:
+    """Inventory only a derived owned tree, through no-follow directory descriptors."""
+    _check_ancestors(path, root)
+    leaves = []
+
+    def visit(parent: int, name: str, current: Path) -> None:
+        try:
+            info = os.stat(name, dir_fd=parent, follow_symlinks=False)
+        except FileNotFoundError:
+            return
+        if not stat.S_ISDIR(info.st_mode):
+            leaves.append((current, info))
+            return
+        fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+        try:
+            for child in os.listdir(fd):
+                visit(fd, child, current / child)
+        finally:
+            os.close(fd)
+
+    with ExitStack() as opened:
+        try:
+            parent = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            opened.callback(os.close, parent)
+            for part in path.relative_to(root).parts[:-1]:
+                parent = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+                opened.callback(os.close, parent)
+        except FileNotFoundError:
+            return []
+        visit(parent, path.name, path)
+    return leaves
 
 
 @contextmanager
