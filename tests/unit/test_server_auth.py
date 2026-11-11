@@ -18,7 +18,7 @@ from sqlmodel import Session, select
 from stackos.api.deps import get_settings
 from stackos.auth import session_cookie_name
 from stackos.config import Settings
-from stackos.db.models import Project, UserSession
+from stackos.db.models import Credential, Project, UserSession
 from stackos.repositories.projects import ProjectRepository
 
 ORIGIN = "http://127.0.0.1:18510"
@@ -80,6 +80,23 @@ def sign_in(client: TestClient) -> dict:
     return response.json()
 
 
+def initialize_mcp(client: TestClient):
+    return client.post(
+        "/mcp",
+        headers={"Accept": "application/json, text/event-stream"},
+        json={
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "server-auth-regression", "version": "1"},
+            },
+        },
+    )
+
+
 def test_verified_session_and_no_data_adoption(online):
     client, selected, state = online
     with Session(client.app.state.engine) as session:
@@ -89,6 +106,16 @@ def test_verified_session_and_no_data_adoption(online):
             .data
         )
         original = session.get(Project, existing.id).model_dump(mode="json")
+        legacy_account = Credential(
+            credential_ref="cred_legacy",
+            provider_key="openrouter",
+            display_name="Legacy local Account",
+            display_name_key="legacy local account",
+        )
+        session.add(legacy_account)
+        session.commit()
+        session.refresh(legacy_account)
+        original_account = legacy_account.model_dump(mode="json")
     response = client.post(
         "/api/v1/auth/register", json={"email": "user@example.test", "password": "password-123"}
     )
@@ -97,25 +124,40 @@ def test_verified_session_and_no_data_adoption(online):
     with Session(client.app.state.engine) as session:
         assert session.exec(select(UserSession)).all() == []
         assert session.exec(select(Project)).one().model_dump(mode="json") == original
+        assert session.exec(select(Credential)).one().model_dump(mode="json") == original_account
     body = sign_in(client)
+    client.headers["X-CSRF-Token"] = body["csrf_token"]
     response = client.get("/api/v1/auth/session")
     assert response.json()["user_id"] == state["user_id"]
     assert response.json()["csrf_token"] == body["csrf_token"]
     assert response.headers["cache-control"] == "no-store"
     with Session(client.app.state.engine) as session:
         assert session.exec(select(Project)).one().model_dump(mode="json") == original
+        assert session.exec(select(Credential)).one().model_dump(mode="json") == original_account
         row = session.exec(select(UserSession)).one()
         assert b"private-access" not in row.encrypted_payload
         assert client.cookies.get(session_cookie_name(selected)) != row.token_digest
     assert client.get("/api/v1/projects").json()["items"] == []
     # Accounts are now admitted through the accepted owner-aware repository;
     # signing up still cannot see legacy standalone Accounts.
-    assert client.get("/api/v1/auth/accounts").json()["accounts"] == []
-    for path in (
-        "/mcp",
-        "/generated-assets/private.txt",
-    ):
-        assert client.get(path).status_code == 403
+    accounts = client.get("/api/v1/auth/accounts")
+    assert accounts.status_code == 200
+    assert accounts.json()["accounts"] == []
+    created = client.post(
+        "/api/v1/auth/accounts/openrouter",
+        json={"display_name": "Owned Account", "fields": {"api_key": "synthetic-private-key"}},
+    )
+    assert created.status_code == 201, created.text
+    ref = created.json()["data"]["credential_ref"]
+    accounts = client.get("/api/v1/auth/accounts")
+    assert accounts.status_code == 200
+    assert [account["credential_ref"] for account in accounts.json()["accounts"]] == [ref]
+    assert "synthetic-private-key" not in accounts.text
+    assert client.get("/api/v1/auth/accounts/cred_legacy").status_code == 404
+    initialized = initialize_mcp(client)
+    assert initialized.status_code == 200, initialized.text
+    assert initialized.json()["result"]["protocolVersion"] == "2024-11-05"
+    assert client.get("/generated-assets/private.txt").status_code == 403
 
 
 def test_origin_csrf_and_environment_replay(online):
@@ -141,6 +183,8 @@ def test_origin_csrf_and_environment_replay(online):
     client.app.state.settings = other
     client.cookies.set(session_cookie_name(other), value, domain="127.0.0.1", path="/")
     assert client.get("/api/v1/auth/session").status_code == 401
+    assert client.get("/api/v1/auth/accounts").status_code == 401
+    assert initialize_mcp(client).status_code == 401
 
 
 def test_no_admin_bootstrap_or_unverified_session(online, auth_token):
@@ -158,6 +202,8 @@ def test_no_admin_bootstrap_or_unverified_session(online, auth_token):
     )
     assert response.status_code == 401
     assert not client.cookies
+    assert client.get("/api/v1/auth/accounts").status_code == 401
+    assert initialize_mcp(client).status_code == 401
 
 
 def test_expiry_logout_replay_and_provider_outage(online):
@@ -171,6 +217,8 @@ def test_expiry_logout_replay_and_provider_outage(online):
     assert response.json() == {"status": "signed_out", "provider_revoked": False}
     client.cookies.set(session_cookie_name(selected), copied, domain="127.0.0.1", path="/")
     assert client.get("/api/v1/auth/session").status_code == 401
+    assert client.get("/api/v1/auth/accounts").status_code == 401
+    assert initialize_mcp(client).status_code == 401
     state["error"] = None
     client.cookies.clear()
     sign_in(client)
@@ -180,6 +228,8 @@ def test_expiry_logout_replay_and_provider_outage(online):
         session.add(row)
         session.commit()
     assert client.get("/api/v1/auth/session").status_code == 401
+    assert client.get("/api/v1/auth/accounts").status_code == 401
+    assert initialize_mcp(client).status_code == 401
 
 
 def test_recovery_callback_pending_invalid_retry_and_reset(online):

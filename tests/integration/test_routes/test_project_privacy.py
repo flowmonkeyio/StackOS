@@ -159,8 +159,34 @@ def test_same_environment_private_projects_and_no_adoption(private_api):
 
 def test_child_ids_lists_streams_and_unadapted_routes(private_api):
     api, _selected, _users, login = private_api
+
+    def mcp(method, params):
+        response = api.post(
+            "/mcp",
+            headers={"Accept": "application/json, text/event-stream"},
+            json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params},
+        )
+        assert response.status_code == 200, response.text
+        return response.json()["result"]
+
+    def call(name, **arguments):
+        return mcp("tools/call", {"name": name, "arguments": arguments})
+
     login("u1")
     p1 = create_project(api, "private-one")
+    created = api.post(
+        "/api/v1/auth/accounts/openrouter",
+        json={"display_name": "Private Account", "fields": {"api_key": "synthetic-private-key"}},
+    )
+    assert created.status_code == 201, created.text
+    private_account = created.json()["data"]["credential_ref"]
+    accounts = api.get("/api/v1/auth/accounts")
+    assert accounts.status_code == 200
+    assert [account["credential_ref"] for account in accounts.json()["accounts"]] == [
+        private_account
+    ]
+    assert api.get(f"/api/v1/auth/accounts/{private_account}").status_code == 200
+    assert "synthetic-private-key" not in accounts.text
     with Session(api.app.state.engine) as session:
         run = Run(project_id=p1, kind=RunKind.RUN_PLAN, status=RunStatus.RUNNING)
         session.add(run)
@@ -168,6 +194,19 @@ def test_child_ids_lists_streams_and_unadapted_routes(private_api):
         session.refresh(run)
         run_id = run.id
     assert api.get(f"/api/v1/runs/{run_id}").status_code == 200
+    initialized = mcp(
+        "initialize",
+        {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "project-privacy-regression", "version": "1"},
+        },
+    )
+    assert initialized["protocolVersion"] == "2024-11-05"
+    own_run = call("run.get", run_id=run_id, response_mode="raw")
+    assert own_run["isError"] is False, own_run
+    assert own_run["structuredContent"]["id"] == run_id
+    assert own_run["structuredContent"]["project_id"] == p1
     login("u2")
     p2 = create_project(api, "private-two")
     for path in (
@@ -179,10 +218,31 @@ def test_child_ids_lists_streams_and_unadapted_routes(private_api):
     ):
         response = api.get(path)
         assert response.status_code == 404, (path, response.text)
+    accounts = api.get("/api/v1/auth/accounts")
+    assert accounts.status_code == 200
+    assert accounts.json()["accounts"] == []
+    foreign = api.get(f"/api/v1/auth/accounts/{private_account}")
+    missing = api.get("/api/v1/auth/accounts/cred_missing")
+    assert foreign.status_code == missing.status_code == 404
+    assert foreign.json() == missing.json()
+    own_project = call("project.get", id_or_slug=p2, response_mode="raw")
+    assert own_project["isError"] is False, own_project
+    assert own_project["structuredContent"]["id"] == p2
+    for arguments in ({"run_id": run_id}, {"run_id": run_id, "project_id": p2}, {"run_id": 999999}):
+        denied = call("run.get", **arguments)
+        assert denied["isError"] is True, denied
+        assert denied["structuredContent"]["code"] == -32004
+    ungranted = call(
+        "resource.upsert",
+        project_id=p2,
+        plugin_slug="core",
+        resource_key="learning",
+        data_json={"body": "must not write without a grant"},
+    )
+    assert ungranted["isError"] is True, ungranted
+    assert ungranted["structuredContent"]["code"] == -32007
     for path in (
-        "/api/v1/auth/accounts",
         "/api/v1/context/timeline/stream",
-        "/mcp",
         "/generated-assets/private.txt",
         "/api/v1/desktop/native-availability",
     ):
