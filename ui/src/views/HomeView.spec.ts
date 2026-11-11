@@ -238,6 +238,7 @@ async function mountHome() {
 }
 
 function defaultFetch(url: string): Response {
+  if (url.includes('tracker.deliveryCapacity')) return json({ scope: 'local-user-daemon', configured_limit: 3, running_count: 1, queued_count: 0, supported_min: 1, supported_max: 32 })
   if (url === '/api/v1/operations/tracker.agentStatsAll/call') return json(agentStatsFixture({ project_id: null, is_active: true }))
   if (url.includes('tracker.activeTasksAll')) return json(activeTasksFixture())
   if (url === '/api/v1/auth/accounts') return json({ accounts: [], providers: [] })

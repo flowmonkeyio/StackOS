@@ -302,6 +302,14 @@ Both are local-admin REST/CLI operations; ordinary MCP and workflow/run-token
 authority cannot use them. There is no project selector or per-project override.
 For example: `stackos ops call tracker.setDeliveryCapacity --input capacity.json`.
 
+Global Overview and project Home expose this same setting through the header
+capacity control (for example, `2 of 3 running`). Open it to edit the limit with
+the input or stepper, then Save. The effective value updates from server
+readback; a failed/invalid save keeps the draft and error. Cancel, Escape or
+outside dismissal discards unsaved edits. A limit below the running count leaves
+current work running and delays new admission. Opening the control, refreshing,
+or changing projects only reads configuration.
+
 One singleton preference row in the existing data-directory database owns this
 limit across all projects. It survives ordinary restart/install/upgrade and is
 covered by the existing encrypted database backup/export; there is no separate

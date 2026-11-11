@@ -5,6 +5,7 @@ import { isDesktopShell } from '@/lib/desktop'
 import { GETTING_STARTED_URL } from '@/lib/externalLinks'
 import { useStackOsCatalogStore } from '@/stores/plugins'
 import ActiveTaskList from './home/ActiveTaskList.vue'
+import DeliveryCapacityControl from './home/DeliveryCapacityControl.vue'
 import HomeConnectionsSection from './home/HomeConnectionsSection.vue'
 import HomeSystemStatusCard from './home/HomeSystemStatusCard.vue'
 import { useHomeAgentHostStatuses } from './home/useHomeAgentHostStatuses'
@@ -15,6 +16,7 @@ import { useAgentStats } from './home/useAgentStats'
 const isShell = isDesktopShell()
 const repairOpen = ref(false)
 const activeTasks = ref<InstanceType<typeof ActiveTaskList> | null>(null)
+const capacityControl = ref<InstanceType<typeof DeliveryCapacityControl> | null>(null)
 const catalog = useStackOsCatalogStore()
 const accounts = computed(() => catalog.globalAccountsStatus?.accounts ?? [])
 const agents = useAgentStats()
@@ -37,7 +39,7 @@ onMounted(() => {
 })
 
 async function refresh(): Promise<void> {
-  await Promise.all([activeTasks.value?.refresh(), catalog.refreshAccounts(), agents.load(), loadHealth(), loadHostStatuses()])
+  await Promise.all([activeTasks.value?.refresh(), capacityControl.value?.refresh(), catalog.refreshAccounts(), agents.load(), loadHealth(), loadHostStatuses()])
 }
 function confirmRepair(): void {
   repairOpen.value = false
@@ -52,6 +54,7 @@ function confirmRepair(): void {
       description="Your local runtime and projects"
     >
       <template #actions>
+        <DeliveryCapacityControl ref="capacityControl" />
         <UiButton
           variant="secondary"
           size="sm"

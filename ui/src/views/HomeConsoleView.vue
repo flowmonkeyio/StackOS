@@ -6,6 +6,7 @@ import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { usePolling } from '@/composables/usePolling'
 import { useProjectsStore } from '@/stores/projects'
 import ActiveTaskList from './home/ActiveTaskList.vue'
+import DeliveryCapacityControl from './home/DeliveryCapacityControl.vue'
 import HomeConnectionsSection from './home/HomeConnectionsSection.vue'
 import AgentActivitySection from './home/AgentActivitySection.vue'
 import { useAgentStats } from './home/useAgentStats'
@@ -13,6 +14,7 @@ import { useProjectOverview } from './home/useProjectOverview'
 
 const { projectId } = useProjectRouteScope()
 const activeTasks = ref<InstanceType<typeof ActiveTaskList> | null>(null)
+const capacityControl = ref<InstanceType<typeof DeliveryCapacityControl> | null>(null)
 const overview = useProjectOverview(projectId)
 const { project, accounts, loading, errors } = overview
 const projects = useProjectsStore()
@@ -24,7 +26,7 @@ onMounted(() => { void agents.load() })
 const { summary: agentSummary, loading: agentsLoading, error: agentsError, filters: agentFilters } = agents
 const { running, refresh } = usePolling(overview.load, { intervalMs: 30_000 })
 async function refreshAll(): Promise<void> {
-  await Promise.all([refresh(), agents.load(), activeTasks.value?.refresh()])
+  await Promise.all([refresh(), agents.load(), activeTasks.value?.refresh(), capacityControl.value?.refresh()])
 }
 </script>
 
@@ -36,6 +38,10 @@ async function refreshAll(): Promise<void> {
       :description="description"
     >
       <template #actions>
+        <DeliveryCapacityControl
+          :key="projectId"
+          ref="capacityControl"
+        />
         <UiButton
           variant="secondary"
           size="sm"

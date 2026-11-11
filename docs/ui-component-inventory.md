@@ -96,6 +96,15 @@ visual acceptance.
 
 ## Shipped — domain (`ui/src/components/domain/`)
 
+Both Home headers mount the feature-owned `views/home/DeliveryCapacityControl`.
+Its compact trigger shows server-reported admitted tasks against the persisted
+local-daemon limit, independent of the visible task list or selected project.
+The anchored `UiPopover` uses the shared form/input/buttons for a bounded integer
+draft and explicit Save. Dismiss discards the draft; failed saves retain it;
+success uses the operation's durable readback. Lowering below running work
+explains that current tasks continue. Visibility-aware polling and Home Refresh
+reload counts through the same local-admin read, with no project override.
+
 | Component | Notes |
 |---|---|
 | `ProjectPageHeader` | project-aware title, breadcrumbs, utility action slot, and route chrome |

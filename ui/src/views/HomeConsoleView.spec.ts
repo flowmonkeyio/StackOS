@@ -18,6 +18,7 @@ beforeEach(() => {
   vi.mocked(callOperation).mockReset()
   vi.mocked(apiFetch).mockReset()
   vi.mocked(callOperation).mockImplementation(async (name, args) => {
+    if (name === 'tracker.deliveryCapacity') return { scope: 'local-user-daemon', configured_limit: 7, running_count: 2, queued_count: 1, supported_min: 1, supported_max: 32 } as never
     const id = Number(args.project_id)
     if (name === 'tracker.agentStats') return agentStatsFixture({ project_id: id }) as never
     if (name === 'tracker.activeTasks') return activeTasksFixture(id, [activeTaskFixture({ project_id: id, key: 'work / beta' })]) as never
@@ -50,6 +51,21 @@ async function mountProject() {
 }
 
 describe('project Home active work', () => {
+  it('uses the same daemon capacity when switching projects without writing', async () => {
+    const { wrapper, router } = await mountProject()
+    try {
+      expect(wrapper.get('[data-popover-trigger]').text()).toBe('2 of 7 running')
+      await wrapper.get('[data-popover-trigger]').trigger('click')
+      await wrapper.get('input[type="number"]').setValue(12)
+      await router.push('/projects/2')
+      await flushPromises()
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+      expect(wrapper.get('[data-popover-trigger]').text()).toBe('2 of 7 running')
+      const capacityCalls = vi.mocked(callOperation).mock.calls.filter(([name]) => name.includes('Capacity'))
+      expect(capacityCalls.length).toBeGreaterThanOrEqual(2)
+      expect(capacityCalls.every(([name, args]) => name === 'tracker.deliveryCapacity' && Object.keys(args).length === 0)).toBe(true)
+    } finally { wrapper.unmount() }
+  })
   it('uses the selected scope, retained Usage and connections in order, and opens its graph', async () => {
     const { wrapper, router } = await mountProject()
     try {
