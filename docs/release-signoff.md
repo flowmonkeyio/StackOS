@@ -263,6 +263,78 @@ for its synthetic-month rehearsal, external custody and selected provider-route
 checks. Passing fixtures proves the package contract, not production activation
 or authorization for live financial work.
 
+## Accepted Sources And Release Identity
+
+Before building a release, the named main integration/release owner reconciles
+the intended accepted source set in the existing release preparation or receipt.
+Ticket completion or the name `main` alone does not establish that set. Record:
+
+- Each admitted ticket/branch, exact accepted commit, independent review ref,
+  required prerequisites and inclusion evidence in the integration candidate.
+- Explicit excluded branches/work, their reason and the operator decision or
+  resume condition. Acceptance elsewhere does not admit an excluded branch.
+- The named integration owner, exact candidate commit, working tree and dirty
+  baseline, plus the owners of build outputs and the shared installed runtime.
+
+Use `git merge-base --is-ancestor <accepted-sha> <candidate-sha>` for each
+accepted merge-preserved source. Exit `1` means missing ancestry; other errors
+mean the check failed to execute. For cherry-picks or conflict resolutions,
+record the accepted-to-integrated commit mapping and independently reviewed
+diff/behavior evidence instead of treating missing ancestry as inclusion.
+Inspect the affected paths and prerequisites for reversions or overwritten fixes;
+ancestry alone cannot prove retained behavior. Reuse unchanged accepted fixes and
+valid proof; resolve omissions with the existing accepted source rather than
+reimplementing it. Main admits sources and resolves integration conflicts, then
+reruns affected proof and review when merged behavior changes.
+
+Execute the existing release path in this order, retaining evidence in that same
+receipt rather than creating another install tracker:
+
+1. Reconcile admitted/excluded sources and freeze the integration candidate.
+2. Run required integrated signoff once on that candidate, including the UI
+   production bundle. Record the resulting commit and generated asset hashes;
+   if generation changes the candidate, bind proof to the final committed state.
+3. Build the payload and package from that verified state using the existing
+   [desktop commands](./desktop-distribution.md#build-commands). Record the
+   source commit, exact command/result, payload `build-info.json` fields
+   (`version`, `buildId`, `builtAt`), produced app/package paths and checksums,
+   and representative packaged source/UI hashes. Build info has no Git commit;
+   the receipt must establish that source-to-artifact link. Version equality
+   alone cannot identify a same-version replacement.
+4. Before replacement, reconcile the produced app's identity and packaged
+   source/UI against that record. A missing accepted source, changed candidate,
+   unexplained artifact difference or mismatched build identity holds release
+   claims and requires affected re-verification.
+5. Only with explicit install authority and a coordinated shared-runtime window,
+   install/repair, restart and reopen the installed app. Execute the lifecycle
+   checks below and in [lifecycle smoke](./lifecycle-smoke-verification.md),
+   including health/doctor, launchd ownership, preserved database/auth/settings
+   and the affected installed UI flow. Read installed build info and compare
+   packaged/served assets to the produced artifact. Record installed identity,
+   commands/results and observations separately from produced identity.
+
+The build owner retains each mutable output until its consuming child process
+finishes: `stackos/ui_dist/`, `desktop/payload/`, generated packaging config and
+`desktop/dist/`. Sequence writers and consumers that share these paths; use
+test-owned isolated outputs where the existing scripts support them. Doctor or
+config tests must not delete another invocation's output. Packaging isolation
+does not authorize parallel installation or ownership of the live daemon.
+
+A source-ready handoff names the reconciled set, exclusions, candidate, proof
+and pending release owner/gates. It does not claim installed-complete. The
+existing release gate owns that claim only after identity reconciliation and
+installed proof; stale or unavailable evidence stays explicit.
+
+For a bounded guidance check, consume this procedure against a known accepted
+change and a candidate deliberately missing it; record the detected omission.
+Then use the reconciled candidate, deliberately mismatch a copied payload build
+identity, and record the hold before any installed-complete claim. Restore the
+matching identity as the safe alternative and confirm unrelated excluded work
+does not become required. Use read-only history and disposable evidence copies;
+do not rebuild accepted fixes, replace the app or restart shared processes for
+this exercise. Record source refs, actual commands/observations and substitution
+limits. This proves the reconciliation method, not a new live installation.
+
 ## Execution Evidence And Shared Runtime
 
 No automated release check may perform live mailbox, customer, payment, refund,

@@ -530,6 +530,14 @@ guidance when those surfaces changed. Do not make broad suites routine for
 guidance-only work or waive a required project gate without authority.
 
 Reconcile tracker truth, current candidate, proof, docs and release authority.
+Before packaging, the named main integration/release owner reconciles the exact
+accepted source set and explicit exclusions in the existing release receipt.
+Follow [accepted sources and release identity](../../docs/release-signoff.md#accepted-sources-and-release-identity)
+for inclusion proof, ordered consolidation/signoff/build/package/install/restart,
+output ownership and separate produced/installed identities. Reuse accepted fixes;
+an omitted accepted branch or mismatched artifact identity holds affected claims.
+Return source-ready evidence when installation is outside current authority;
+the existing release gate retains installed proof and final claims.
 Keep all required frozen output objects schema-valid, with concise values and
 permitted refs. Tracker audit reconciles evidence; it need not repeat broad
 code review. Technical readiness does not authorize publication, deployment,

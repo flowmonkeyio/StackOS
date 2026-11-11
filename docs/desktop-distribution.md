@@ -82,6 +82,14 @@ pnpm --dir desktop run release:preflight
 
 ## Build Commands
 
+The main integration/release owner first reconciles the intended accepted source
+set and explicit exclusions using [accepted sources and release
+identity](./release-signoff.md#accepted-sources-and-release-identity). Run the
+verified UI build, payload and package stages in order with exclusive ownership
+of shared outputs. Keep the source-to-produced-artifact receipt separate from
+installed identity and install/repair/restart proof. A successful package build
+does not establish an installed-complete result or grant installation authority.
+
 Install desktop dependencies:
 
 ```bash
