@@ -677,8 +677,13 @@ def test_source_edit_refreshes_admission_but_resumes_frozen_session(
         instructions="Future",
         settings='model_reasoning_effort="low"\n',
     )
+    # Resolve the fixture blocker before requeueing its saved session.
     for status in ("in-progress", "not-started"):
-        repo.update_ticket(project_id=project_id, ticket_key="work", patch_json={"status": status})
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="work",
+            patch_json={"status": status, "blocker_reason": None},
+        )
     start(session, project_id, tmp_path, scheduler, task_key="resume", agents=roles)
     current = (
         repo.get(project_id=project_id, task_key="resume")
@@ -686,6 +691,7 @@ def test_source_edit_refreshes_admission_but_resumes_frozen_session(
         .metadata_json["delivery"]["agents"]["delivery_agent"]
     )
     assert current["instructions"] == "Future"
+    assert current["native_settings"] == {"model_reasoning_effort": "low"}
     scheduler.run()
     assert calls == [
         ("delivery", "Original", None, {"model_reasoning_effort": "high"}),
