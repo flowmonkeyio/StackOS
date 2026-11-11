@@ -41,6 +41,7 @@ from stackos.repositories.base import (
 from stackos.repositories.run_plan_state import TERMINAL_PLAN_STATUSES, TERMINAL_RUN_STATUSES
 from stackos.repositories.tracker.ordering import next_task_position
 from stackos.repositories.tracker.schema import (
+    TrackerCorrectionIntent,
     TrackerListItemResultOut,
     TrackerMutationOut,
     TrackerReopenOut,
@@ -1290,6 +1291,7 @@ class TrackerMutationMixin:
         allow_workflow_status_from_run_plan: bool = False,
     ) -> TrackerTicket:
         now = now or _utcnow()
+        self._validate_correction_intent(context_json)
         self._validate_workflow_task_ticket_binding(
             task=task,
             key=key,
@@ -1807,6 +1809,17 @@ class TrackerMutationMixin:
 
     def _validate_ticket_patch_fields(self, patch_json: dict[str, Any]) -> None:
         self._validate_patch_fields(patch_json, allowed=_TICKET_PATCH_FIELDS, entity_kind="ticket")
+        if "context_json" in patch_json:
+            self._validate_correction_intent(patch_json["context_json"])
+
+    @staticmethod
+    def _validate_correction_intent(context: dict[str, Any] | None) -> None:
+        try:
+            TrackerCorrectionIntent.from_context(context)
+        except PydanticValidationError as error:
+            raise ValidationError(
+                "Invalid context_json.correction candidate intent", data={"errors": str(error)}
+            ) from error
 
     def _validate_patch_fields(
         self,

@@ -21,6 +21,49 @@ def _operation_data(response):
     return body.get("data", body)
 
 
+@pytest.mark.parametrize("mode", ["compact", "raw"])
+def test_correction_intent_rest_roundtrip_and_invalid_write_is_atomic(api, project_id, mode):
+    from stackos.repositories.tracker import TrackerRepository
+
+    engine = api.app.state.engine
+    with Session(engine) as session:
+        repo = TrackerRepository(session)
+        repo.create_task(project_id=project_id, key="proof", title="Proof")
+        repo.create_ticket(project_id=project_id, task_key="proof", key="proof", title="Proof")
+    correction = {
+        "work_intent": "evidence_only",
+        "candidate_commit_sha": "a" * 40,
+        "target_attempt": 5,
+        "required_outcome": "Collect evidence",
+    }
+    context = {"keep": "input", "correction": correction}
+    args = {"project_id": project_id, "ticket_key": "proof", "response_mode": mode}
+    response = api.post(
+        "/api/v1/operations/tracker.updateTicket/call",
+        json={"arguments": {**args, "patch_json": {"context_json": context}}},
+    )
+    assert response.status_code == 200, response.text
+    assert _operation_data(response)["ticket"]["key"] == "proof"
+    response = api.post(
+        "/api/v1/operations/tracker.updateTicket/call",
+        json={
+            "arguments": {
+                **args,
+                "patch_json": {
+                    "title": "Invalid",
+                    "context_json": {"correction": {**correction, "work_intent": "proof only"}},
+                },
+            }
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert "correction" in response.text
+    with Session(engine) as session:
+        ticket = TrackerRepository(session).brief(project_id=project_id, ticket_key="proof").ticket
+        assert ticket.context_json == context
+        assert ticket.title == "Proof"
+
+
 def test_ticket_create_rest_invalid_ack_keeps_errors_and_state(api: TestClient, project_id: int):
     engine = api.app.state.engine
     with Session(engine) as session:

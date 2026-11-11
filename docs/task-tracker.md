@@ -477,8 +477,8 @@ resume that exact role session with task-frozen settings. Roles/tickets stay
 distinct. Persist the scoped rejection before repair, supplying occurrence
 phase/attempt/candidate and persisted `review_result` status/summary/outputs.
 Up to three automatic repair passes are allowed per ticket after the initial
-delivery. Each pass requires a separate new descendant commit, then the same
-reviewer rechecks that exact SHA. The runner increments the durable count before
+delivery. Each source-repair pass requires a separate new descendant commit,
+then the same reviewer rechecks that exact SHA. The runner increments the durable count before
 launching a repair; explicit requeue preserves it and cannot bypass the limit.
 Legacy evidence with `repair_pass_used=true` and no count means one consumed
 repair, not a fresh allowance. Rejection after the third repair stops the task.
@@ -487,6 +487,30 @@ child approval preserves that count and may requeue at `repair_count=3`.
 Its corrected descendant still needs independent review; a subsequent ordinary
 rejection at three permits no fourth ordinary repair. This is not a total cap
 on corrections from all origins and does not reset sessions or history.
+An explicitly admitted evidence-only correction can retain the unchanged clean
+candidate, including after one or three consumed repairs. Before requeue, the
+authorized correction owner merges `context_json.correction` with typed
+`work_intent: "evidence_only"` (or `"source_repair"`), the full lowercase
+`candidate_commit_sha`, and a positive integer `target_attempt` equal to the
+ticket's next automatic attempt. Preserve source/check/outcome evidence and
+all existing context, sessions, attempts and counters. `tracker.updateTicket`
+and the other ticket mutation paths validate this record through the repository;
+MCP, REST and CLI share that contract. This field adds no mutation authority.
+The intent is captured in each launch's `occurrence.correction_intent`. Only
+the matching attempt may use it, and the admitted SHA must match both its
+observed base and the immediately preceding delivered candidate. Evidence-only
+delivery and independent review must return that same clean current HEAD.
+Changed source requires explicit source-repair admission and a descendant
+commit. A changed correction during proof invalidates the observation. Current
+independent review remains mandatory; old approval never supplies missing proof.
+Missing/legacy/prose intent and intent targeting another attempt retain the
+conservative descendant rules. Neither a result string, zero diff, historical
+repair count nor a no-op commit selects evidence-only work. An ordinary review
+rejection still consumes the existing allowance; the one-attempt intent cannot
+carry into the next repair. No sessions or repair allowances are reset.
+An earlier source-change obligation also survives a successful proof-only
+occurrence, so a later ambiguous correction cannot use that approval to bypass
+descendant validation even when no ordinary repair has been consumed.
 Blocked required verification, native/access/model/resume/schema failure or a
 dirty/mismatched candidate also stops the same task with history;
 there is no fresh-session, host or model fallback. Current independent approval
@@ -892,7 +916,9 @@ commit SHA before dependencies are released. Git is optional. Non-Git tasks invo
 `--skip-git-repo-check` launch option. Supplied candidate evidence must resolve
 to clean current HEAD and descend from the observed base. Observation work may
 cite unchanged HEAD. Engineering guidance still requires separate source-change
-and repair commits; a supplied repair candidate must be a new descendant.
+and repair commits; a supplied source-repair candidate must be a new descendant.
+Only the explicitly admitted evidence-only occurrence described above may keep
+its unchanged exact candidate after earlier repairs.
 Git presence alone does not require a commit or clean worktree: noncoding work
 may execute in a dirty Git directory and return non-Git outputs. Baseline HEAD
 is an observation, not a source-candidate requirement. A valid repository with no

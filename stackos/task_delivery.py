@@ -46,6 +46,7 @@ from stackos.repositories.base import ConflictError, NotFoundError, ValidationEr
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
 from stackos.repositories.tracker.events import record_execution_change
+from stackos.repositories.tracker.schema import TrackerCorrectionIntent
 from stackos.repositories.tracker.setup import _delivery_role_defaults
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
 
@@ -778,6 +779,10 @@ def _assignment_occurrence(
     contexts = {
         kind: (brief.get(kind) or {}).get("context_json") or {} for kind in ("task", "ticket")
     }
+    try:
+        correction_intent = TrackerCorrectionIntent.from_context(contexts["ticket"])
+    except SchemaValidationError:
+        correction_intent = None  # Old malformed records retain conservative candidate checks.
     return {
         "attempt": evidence["attempt"],
         "repair_count": evidence.get("repair_count"),
@@ -799,7 +804,25 @@ def _assignment_occurrence(
             if key in launched_agent
         },
         "resume_thread_id": resume_thread_id,
+        "correction_intent": correction_intent.model_dump() if correction_intent else None,
     }
+
+
+def _evidence_only_candidate(occurrence: dict[str, Any], evidence: dict[str, Any]) -> bool:
+    intent = occurrence.get("correction_intent")
+    if (
+        not intent
+        or intent["work_intent"] != "evidence_only"
+        or intent["target_attempt"] != occurrence["attempt"]
+    ):
+        return False
+    prior = evidence["attempts"][-1].get("candidate", {}) if evidence["attempts"] else {}
+    if not (
+        intent["candidate_commit_sha"] == occurrence["candidate"].get("base_commit_sha")
+        and intent["candidate_commit_sha"] == prior.get("commit_sha")
+    ):
+        raise ValidationError("Evidence-only intent does not match the prior candidate and base")
+    return True
 
 
 def _archive_attempt(evidence: dict[str, Any]) -> None:
@@ -1788,6 +1811,7 @@ def run_delivery(
                 decision = value.get("status")
                 outputs = {}
                 validation_error = None
+                evidence_only = False
                 valid = result.ok
                 if valid:
                     try:
@@ -1816,21 +1840,20 @@ def run_delivery(
                         if not isinstance(outputs, dict):
                             raise ValidationError("outputs must encode a JSON object")
                         returned_sha = outputs.get("commit_sha")
-                        previous_candidate: dict[str, Any] = next(
-                            (
-                                attempt.get("candidate", {})
-                                for attempt in reversed(evidence["attempts"])
-                                if attempt.get("review", {}).get("validated_outcome") == "success"
-                            ),
-                            {},
-                        )
-                        changed_candidate = bool(
-                            workflow_step is None
-                            and previous_candidate.get("commit_sha")
-                            and previous_candidate.get("base_commit_sha")
-                            and previous_candidate.get("commit_sha")
-                            != previous_candidate.get("base_commit_sha")
-                        )
+                        changed_candidate = False
+                        if workflow_step is None:
+                            # Proof-only approval must not erase a prior source change
+                            # when a later correction has legacy/ambiguous intent.
+                            for attempt in evidence["attempts"]:
+                                prior = attempt.get("candidate", {})
+                                if (
+                                    attempt.get("review", {}).get("validated_outcome") == "success"
+                                    and prior.get("commit_sha")
+                                    and prior.get("base_commit_sha")
+                                    and prior["commit_sha"] != prior["base_commit_sha"]
+                                ):
+                                    changed_candidate = True
+                                    break
                         # Blocked reviews still attest the delivered candidate.
                         # Blocked delivery may instead leave unfinished owned work.
                         if (
@@ -1853,15 +1876,35 @@ def run_delivery(
                                 )
                             )
                         ):
+                            evidence_only = workflow_step is None and _evidence_only_candidate(
+                                occurrence, evidence
+                            )
+                            intent = occurrence.get("correction_intent") or {}
+                            source_repair = (
+                                intent.get("work_intent") == "source_repair"
+                                and intent.get("target_attempt") == occurrence["attempt"]
+                            )
                             sha = _candidate_commit(
                                 state["project_dir"],
                                 returned_sha,
                                 evidence["candidate"].get("base_commit_sha"),
                             )
+                            if (
+                                evidence_only
+                                and sha != occurrence["correction_intent"]["candidate_commit_sha"]
+                            ):
+                                raise ValidationError(
+                                    "Evidence-only work requires the unchanged admitted candidate"
+                                )
                             if workflow_step is not None or phase == "delivery":
                                 if (
                                     workflow_step is None
-                                    and (evidence.get("repair_count", 0) or changed_candidate)
+                                    and not evidence_only
+                                    and (
+                                        evidence.get("repair_count", 0)
+                                        or changed_candidate
+                                        or source_repair
+                                    )
                                     and sha == evidence["candidate"].get("base_commit_sha")
                                 ):
                                     raise ValidationError("Repair requires a new descendant commit")
@@ -1930,6 +1973,16 @@ def run_delivery(
                     _workflow_scope(
                         repo, project_id, task, state.get("run_plan_id"), state.get("step_id")
                     )
+                    if valid and evidence_only:
+                        current = repo.brief(project_id=project_id, ticket_key=ticket_key).ticket
+                        current_digest = sha256(
+                            json.dumps(current.context_json or {}, sort_keys=True).encode()
+                        ).hexdigest()
+                        if current_digest != occurrence["context_digests"]["ticket"]:
+                            validation_error = "Evidence-only correction changed during proof"
+                            evidence[phase]["validation_error"] = validation_error
+                            evidence[phase]["validated_outcome"] = None
+                            valid = accepted = repair = False
                     if valid:
                         context = deepcopy(task.context_json or {})
                         notes = context.setdefault("followups", [])

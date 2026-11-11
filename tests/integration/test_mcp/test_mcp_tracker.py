@@ -442,6 +442,59 @@ def test_tracker_operations_are_registered(mcp_client: MCPClient) -> None:
     assert {"task_key", "run_plan_id", "run_id", "step_id", "reason"} <= set(reopen_props)
 
 
+def test_correction_intent_mcp_roundtrip_preserves_context_and_validation_errors(
+    mcp_client: MCPClient, seeded_project: dict
+) -> None:
+    project_id = int(seeded_project["data"]["id"])
+    mcp_client.call_tool_structured(
+        "tracker.createTask", {"project_id": project_id, "key": "proof", "title": "Proof"}
+    )
+    mcp_client.call_tool_structured(
+        "tracker.createTicket",
+        {"project_id": project_id, "task_key": "proof", "key": "proof", "title": "Proof"},
+    )
+    context = {
+        "keep": "input",
+        "correction": {
+            "work_intent": "evidence_only",
+            "candidate_commit_sha": "a" * 40,
+            "target_attempt": 5,
+        },
+    }
+    for mode in ("compact", "raw"):
+        mcp_client.call_tool_structured(
+            "tracker.updateTicket",
+            {
+                "project_id": project_id,
+                "ticket_key": "proof",
+                "response_mode": mode,
+                "patch_json": {"context_json": context},
+            },
+        )
+        invalid = mcp_client.call_tool(
+            "tracker.updateTicket",
+            {
+                "project_id": project_id,
+                "ticket_key": "proof",
+                "response_mode": mode,
+                "patch_json": {
+                    "title": "Invalid",
+                    "context_json": {
+                        "correction": {**context["correction"], "target_attempt": "5"},
+                    },
+                },
+            },
+        )
+        assert invalid["result"]["isError"] is True
+        assert "correction" in str(invalid)
+        brief = mcp_client.call_tool_structured(
+            "tracker.brief",
+            {"project_id": project_id, "ticket_key": "proof", "response_mode": "raw"},
+        )
+        assert brief["ticket"]["context_json"] == context
+        assert brief["ticket"]["title"] == "Proof"
+
+
 def test_tracker_mcp_vertical_slice(mcp_client: MCPClient, seeded_project: dict) -> None:
     project_id = int(seeded_project["data"]["id"])
 

@@ -51,6 +51,20 @@ def test_delivery_operation_has_one_contract_and_no_ack():
         )
 
 
+def test_correction_intent_is_described_by_the_shared_ticket_operation():
+    spec = build_operation_registry().get("tracker.updateTicket")
+    assert spec.surfaces.mcp.enabled and spec.surfaces.rest.enabled and spec.surfaces.cli.enabled
+    schema = spec.input_model.model_json_schema()
+    patch = schema["properties"]["patch_json"]
+    intent = patch["properties"]["context_json"]["properties"]["correction"]["then"]
+    assert intent["properties"]["work_intent"]["enum"] == ["evidence_only", "source_repair"]
+    assert set(intent["required"]) == {"work_intent", "candidate_commit_sha", "target_attempt"}
+    listed = schema["properties"]["updates_json"]["items"]["properties"]["patch_json"]
+    assert listed["properties"] == patch["properties"]
+    example = next(e for e in spec.examples if "evidence-only" in e.title)
+    spec.input_model.model_validate(example.arguments)
+
+
 def test_assignment_map_accepts_arbitrary_safe_role_keys():
     spec = build_operation_registry().get("tracker.startDelivery")
     arguments = {

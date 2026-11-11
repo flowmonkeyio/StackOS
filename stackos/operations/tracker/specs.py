@@ -937,9 +937,30 @@ def operation_specs() -> list[OperationSpec]:
                 "patch-only updates by ticket_key or ticket_id. For dependency changes, "
                 "prefer add_dependency_keys/remove_dependency_keys unless replacing the "
                 "whole dependency list. Add dry_run=true to preview dependency diffs "
-                "without writing before a larger cleanup."
+                "without writing before a larger cleanup. Scoped proof recovery may "
+                "explicitly set context_json.correction.work_intent=evidence_only with "
+                "candidate_commit_sha and target_attempt; preserve existing context, "
+                "sessions, history and repair_count. Source repair remains conservative."
             ),
             examples=(
+                OperationExample(
+                    title="Admit evidence-only work for one exact candidate and attempt",
+                    arguments={
+                        "project_id": 1,
+                        "ticket_key": "core-tracker-ui",
+                        "patch_json": {
+                            "context_json": {
+                                "correction": {
+                                    "work_intent": "evidence_only",
+                                    "candidate_commit_sha": "a" * 40,
+                                    "target_attempt": 4,
+                                    "source_ticket": "integration-check",
+                                    "required_outcome": "Collect missing interaction proof",
+                                }
+                            }
+                        },
+                    },
+                ),
                 OperationExample(
                     title="Patch a ticket list with safe dependency edits",
                     arguments={

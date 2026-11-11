@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
+from pydantic import ValidationError as PydanticValidationError
+
 from stackos.db.models import (
     TrackerItemStatus,
     TrackerSourceKind,
     TrackerTicketKind,
 )
 from stackos.repositories.base import ValidationError
-from stackos.repositories.tracker.schema import TrackerListIssueOut
+from stackos.repositories.tracker.schema import TrackerCorrectionIntent, TrackerListIssueOut
 from stackos.repositories.tracker.utils import _clean_text, _slug
 
 
@@ -79,6 +81,14 @@ def normalize_ticket_spec(
 
     issues: list[TrackerListIssueOut] = []
     warnings: list[str] = []
+    try:
+        TrackerCorrectionIntent.from_context(raw.get("context_json"))
+    except PydanticValidationError as error:
+        issues.append(
+            TrackerListIssueOut(
+                index=index, key=key, field="context_json.correction", message=str(error)
+            )
+        )
     title = _clean_text(raw.get("title")) if raw.get("title") is not None else ""
     if not title:
         title = key

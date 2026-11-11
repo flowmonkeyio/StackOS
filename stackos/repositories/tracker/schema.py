@@ -15,6 +15,21 @@ from stackos.db.models import (
 )
 
 
+class TrackerCorrectionIntent(BaseModel):
+    """Typed candidate intent within the existing, otherwise opaque correction record."""
+
+    work_intent: Literal["evidence_only", "source_repair"]
+    candidate_commit_sha: str = Field(pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+    target_attempt: int = Field(strict=True, gt=0)
+
+    @classmethod
+    def from_context(cls, context: dict[str, Any] | None) -> TrackerCorrectionIntent | None:
+        correction = context.get("correction") if isinstance(context, dict) else None
+        if not isinstance(correction, dict) or "work_intent" not in correction:
+            return None  # Historical prose/records never authorize candidate relaxation.
+        return cls.model_validate(correction)
+
+
 class TrackerLaneOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

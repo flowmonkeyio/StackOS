@@ -28,9 +28,24 @@ from stackos.host_mcp.project_agents import AgentSourceRef
 from stackos.mcp.contract import MCPInput
 from stackos.repositories.tracker.agent_stats import stats_timezone
 from stackos.repositories.tracker.inspection_schema import ResultSourceKind
+from stackos.repositories.tracker.schema import TrackerCorrectionIntent
 
 TrackerResponseMode = Literal["compact", "raw", "standard", "verbose"]
 AgentRole = Annotated[str, Field(pattern=r"^[a-zA-Z0-9_][a-zA-Z0-9_-]{0,159}$", strict=True)]
+# Patch payloads remain extensible. Only the explicit correction intent reserves
+# typed fields; legacy correction prose and unrelated context remain opaque.
+TICKET_CORRECTION_PATCH_SCHEMA: dict[str, Any] = {
+    "properties": {
+        "context_json": {
+            "properties": {
+                "correction": {
+                    "if": {"type": "object", "required": ["work_intent"]},
+                    "then": TrackerCorrectionIntent.model_json_schema(),
+                }
+            }
+        }
+    }
+}
 
 
 class TrackerTaskActivityInput(MCPInput):
@@ -755,10 +770,19 @@ class TrackerUpdateTicketInput(MCPInput):
     ticket_key: str | None = None
     patch_json: dict[str, Any] | None = Field(
         default=None,
-        description=TRACKER_PATCH_DESCRIPTION,
+        json_schema_extra=TICKET_CORRECTION_PATCH_SCHEMA,
+        description=TRACKER_PATCH_DESCRIPTION
+        + (
+            " Ticket context_json.correction may explicitly admit work_intent "
+            "(evidence_only or source_repair), with the full candidate_commit_sha "
+            "and positive integer target_attempt. Merge existing context/evidence. "
+            "Evidence-only intent applies only to that attempt and unchanged candidate; "
+            "omitted/legacy intent retains source-repair validation."
+        ),
     )
     updates_json: list[dict[str, Any]] | None = Field(
         default=None,
+        json_schema_extra={"items": {"properties": {"patch_json": TICKET_CORRECTION_PATCH_SCHEMA}}},
         description=(
             "Optional list of atomic ticket patch updates. Each item identifies a ticket "
             "by ticket_id or ticket_key and supplies patch_json. Use add_dependency_keys "

@@ -4261,6 +4261,279 @@ def test_feedback_requeue_preserves_consumed_repair_budget(
         assert attempt["review"]["validated_outcome"] == "repair"
 
 
+@pytest.mark.parametrize(
+    ("consumed", "fault"),
+    [
+        (0, None),
+        (1, None),
+        (3, None),
+        (1, "source-descendant"),
+        (0, "source-repair"),
+        (0, "source-descendant"),
+        (3, "rejected-proof"),
+    ]
+    + [
+        (1, fault)
+        for fault in (
+            "source-repair",
+            "legacy",
+            "prose",
+            "stale-intent",
+            "wrong-base",
+            "dirty",
+            "wrong-head",
+            "wrong-review",
+            "stale-approval",
+            "changed-source",
+            "rejected-proof",
+            "changed-intent",
+        )
+    ],
+)
+def test_explicit_evidence_only_recovery_retains_exact_candidate_and_history(
+    session, project_id, tmp_path, monkeypatch, consumed, fault
+):
+    from copy import deepcopy
+
+    from stackos import task_delivery
+
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="deliver", title="Proof recovery")
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="deliver",
+        key="first",
+        title="Source and proof",
+        context_json={"keep": "input"},
+    )
+    recovering = False
+    calls = []
+
+    def launch(_host, _directory, _instructions, prompt, _schema, **kwargs):
+        packet = json.loads(prompt)
+        phase = packet["phase"]
+        prior = [call for call in calls if call["phase"] == phase]
+        assert kwargs.get("resume_thread_id") == (f"first-{phase}" if prior else None)
+        calls.append(packet)
+        status = "success"
+        sha = git(tmp_path, "rev-parse", "HEAD")
+        if phase == "delivery":
+            if (not recovering and (consumed > 0 or fault is None)) or (
+                recovering and fault in {"changed-source", "source-descendant"}
+            ):
+                sha = commit(tmp_path, f"source-{len(calls)}")
+            elif fault == "dirty":
+                (tmp_path / "unfinished").write_text("dirty")
+            elif fault == "wrong-head":
+                sha = git(tmp_path, "rev-parse", "HEAD~1")
+            elif fault == "changed-intent":
+                with Session(session.get_bind()) as active:
+                    TrackerRepository(active).update_ticket(
+                        project_id=project_id,
+                        ticket_key="first",
+                        patch_json={"context_json": {"correction": "superseded"}},
+                    )
+        elif not recovering and len(prior) < consumed:
+            status = "repair"
+        elif recovering:
+            if fault == "wrong-review":
+                sha = git(tmp_path, "rev-parse", "HEAD~1")
+            elif fault == "stale-approval":
+                status = "blocked"  # Old exact-SHA approval cannot replace current proof.
+            elif fault == "rejected-proof":
+                status = "repair"
+        return AgentRunResult(
+            0,
+            thread_id=f"first-{phase}",
+            result=generic_result(status, {"commit_sha": sha}, "Fresh proof"),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    ticket = repo.brief(project_id=project_id, ticket_key="first").ticket
+    assert ticket.status == "complete"
+    original = deepcopy(ticket.completion_evidence_json["automatic_delivery"])
+    assert original["repair_count"] == consumed
+    sha = original["candidate"]["commit_sha"]
+    correction = {
+        "source_ticket": "integrated-proof",
+        "check": "missing browser evidence",
+        "work_intent": "source_repair"
+        if fault in {"source-repair", "source-descendant"}
+        else "evidence_only",
+        "candidate_commit_sha": sha,
+        "target_attempt": original["attempt"] + 1,
+    }
+    if fault in {"legacy", "prose"}:
+        correction.pop("work_intent")
+        correction["required_outcome"] = "evidence_only; no source changes"
+    elif fault == "stale-intent":
+        correction["target_attempt"] -= 1
+    elif fault == "wrong-base":
+        commit(tmp_path, "unrelated-new-head")
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="first",
+        patch_json={
+            "status": "in-progress",
+            "context_json": {
+                **ticket.context_json,
+                "correction": correction,
+            },
+        },
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="first",
+        patch_json={"status": "not-started"},
+    )
+    recovering = True
+    prior_calls = len(calls)
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    ticket = repo.brief(project_id=project_id, ticket_key="first").ticket
+    evidence = ticket.completion_evidence_json["automatic_delivery"]
+    assert evidence["repair_count"] == min(3, consumed + int(fault == "rejected-proof"))
+    assert evidence["sessions"] == original["sessions"]
+    assert evidence["attempts"][: len(original["attempts"])] == original["attempts"]
+    assert evidence["attempts"][len(original["attempts"])]["review"] == original["review"]
+    if fault != "changed-intent":
+        assert ticket.context_json["keep"] == "input"
+    if fault == "source-descendant":
+        assert ticket.status == "complete"
+        descendant = evidence["candidate"]["commit_sha"]
+        assert descendant != sha
+        assert git(tmp_path, "merge-base", "--is-ancestor", sha, descendant) == ""
+        assert evidence["review"]["validated_outcome"] == "success"
+        return
+    if fault == "rejected-proof" and consumed == 3:
+        assert ticket.status == "failed"
+        assert "repair limit" in ticket.outcome.lower()
+        assert len(calls) == prior_calls + 2
+        assert evidence["review"]["validated_outcome"] == "repair"
+        return
+    if fault is None:
+        assert ticket.status == "complete"
+        assert len(calls) == prior_calls + 2  # Mandatory independent current review.
+        assert git(tmp_path, "rev-parse", "HEAD") == sha
+        assert evidence["candidate"] == {"base_commit_sha": sha, "commit_sha": sha}
+        for phase in ("delivery", "review"):
+            assert evidence[phase]["occurrence"]["correction_intent"] == {
+                key: correction[key]
+                for key in ("work_intent", "candidate_commit_sha", "target_attempt")
+            }
+            assert evidence[phase]["validated_outcome"] == "success"
+        if consumed == 0:
+            # A successful proof-only occurrence must not erase the source-change
+            # obligation for a later ambiguous/legacy correction.
+            repo.update_ticket(
+                project_id=project_id,
+                ticket_key="first",
+                patch_json={"status": "in-progress", "context_json": {"correction": "repair"}},
+            )
+            repo.update_ticket(
+                project_id=project_id,
+                ticket_key="first",
+                patch_json={"status": "not-started"},
+            )
+            submit(session, project_id, tmp_path, scheduler)
+            scheduler.run()
+            session.expire_all()
+            legacy = repo.brief(project_id=project_id, ticket_key="first").ticket
+            assert legacy.status == "failed"
+            assert (
+                legacy.completion_evidence_json["automatic_delivery"]["delivery"][
+                    "validation_error"
+                ]
+                == "Repair requires a new descendant commit"
+            )
+    else:
+        assert ticket.status != "complete"
+        assert (
+            repo.get(project_id=project_id, task_key="deliver")
+            .tasks[0]
+            .metadata_json["delivery"]["status"]
+            == "stopped"
+        )
+        if fault == "stale-approval":
+            assert ticket.status == "in-progress"
+            assert evidence["review"]["validated_outcome"] == "blocked"
+        else:
+            receipt = evidence["review" if fault == "wrong-review" else "delivery"]
+            assert receipt["validated_outcome"] is None
+            assert receipt["validation_error"]
+
+
+@pytest.mark.parametrize(
+    "path", ["update", "preview", "patch", "list", "create", "create-list", "create-preview"]
+)
+def test_correction_admission_rejects_untyped_intent_before_mutation(session, project_id, path):
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="intent", title="Intent")
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="intent",
+        key="existing",
+        title="Keep",
+        context_json={"unrelated": "keep"},
+    )
+    before = repo.brief(project_id=project_id, ticket_key="existing").ticket
+    context = {
+        "correction": {
+            "work_intent": "evidence_only",
+            "candidate_commit_sha": "a" * 40,
+            "target_attempt": True,  # Coercion must not select a candidate exemption.
+        }
+    }
+    patch = {"title": "Should not change", "context_json": context}
+
+    def mutate():
+        if path in {"update", "preview"}:
+            return repo.update_ticket(
+                project_id=project_id,
+                ticket_key="existing",
+                patch_json=patch,
+                dry_run=path == "preview",
+            )
+        if path == "patch":
+            return repo.patch(project_id=project_id, patch_json={"tickets": {"existing": patch}})
+        if path == "list":
+            return repo.update_ticket_list(
+                project_id=project_id,
+                updates_json=[{"ticket_key": "existing", "patch_json": patch}],
+            )
+        if path == "create":
+            return repo.create_ticket(
+                project_id=project_id,
+                task_key="intent",
+                key="new",
+                title="New",
+                context_json=context,
+            )
+        payload = {"task_key": "intent", "tickets": [{"key": "new", "context_json": context}]}
+        if path == "create-preview":
+            return repo.validate_ticket_list(project_id=project_id, ticket_list_json=payload)
+        return repo.create_ticket_list(project_id=project_id, ticket_list_json=payload)
+
+    if path in {"list", "create-list", "create-preview"}:
+        result = mutate()
+        data = result if path == "create-preview" else result.data
+        assert data.valid is False
+        assert data.errors
+    else:
+        with pytest.raises(ValidationError, match="correction"):
+            mutate()
+    session.expire_all()
+    after = repo.brief(project_id=project_id, ticket_key="existing").ticket
+    assert after.context_json == before.context_json
+    assert after.title == before.title
+    assert len(repo.get(project_id=project_id, task_key="intent").tickets) == 1
+
+
 def test_three_repairs_reach_approval_in_original_sessions(
     session, project_id, tmp_path, monkeypatch
 ):
