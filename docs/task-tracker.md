@@ -299,7 +299,8 @@ one task remain serial until all task work completes or execution stops:
 
 ```text
 ordinary: ready -> delivery -> independent review -> success -> complete
-                         -> scoped repair -> same delivery/review sessions (once)
+                         -> scoped repair -> same delivery/review sessions
+                            (up to three ordinary repair passes)
 mirror: claim step -> accepted descendants -> frozen contract -> record outputs
 ```
 
