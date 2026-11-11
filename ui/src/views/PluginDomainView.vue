@@ -126,13 +126,14 @@ onBeforeUnmount(() => { generation++; removeRouteListener() })
             :key="`${workflow.source}:${workflow.key}`"
             class="domain-workflow"
           >
-            <strong>{{ workflow.name }}</strong><p>{{ workflow.description }}</p>
             <RouterLink
-              class="focus-ring text-accent-primary underline rounded-sm"
+              class="focus-ring rounded-sm font-semibold text-fg-link hover:underline"
               :to="workflowLocation(projectId, slug, workflow.key)"
+              :title="workflow.name"
             >
-              View workflow<span class="sr-only">: {{ workflow.name }}</span>
+              {{ workflow.name }}
             </RouterLink>
+            <p>{{ workflow.description }}</p>
           </div>
         </div>
         <p
@@ -165,7 +166,7 @@ onBeforeUnmount(() => { generation++; removeRouteListener() })
 .domain-section { min-width: 0; display: grid; gap: 16px; padding: 20px 0 16px; }
 .domain-section :deep(.ui-section-header) { margin-bottom: 0; }
 .domain-workflows { border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); background: var(--color-bg-surface); }
-.domain-workflow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto; gap: 20px; align-items: center; padding: 14px 16px; font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.domain-workflow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 20px; align-items: center; padding: 14px 16px; font-size: var(--fs-sm); overflow-wrap: anywhere; }
 .domain-workflow + .domain-workflow { border-top: 1px solid var(--color-border-subtle); }
 .domain-workflow p { color: var(--color-fg-muted); }
 @media (max-width: 900px) { .domain-workflow { grid-template-columns: minmax(0, 1fr); gap: 8px; } }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
@@ -186,6 +186,59 @@ describe('PluginsView directory', () => {
     expect(wrapper.text()).toContain('Crawl websites.')
     expect(wrapper.text()).toContain('Availability unavailable')
     expect(wrapper.text()).not.toContain('Account repair required')
+    wrapper.unmount()
+  })
+
+  it('returns to the same plugin list while clearing the chip keeps all services in the current project', async () => {
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      if (url.startsWith('/api/v1/plugins?')) return json([
+        { id: 1, slug: 'utils', name: 'Utilities', enabled_for_project: true },
+        { id: 2, slug: 'seo', name: 'SEO', enabled_for_project: true },
+      ])
+      if (url.startsWith('/api/v1/providers?')) return json([
+        { id: 11, plugin_id: 1, plugin_slug: 'utils', key: 'crawl', name: 'Crawler', auth_type: 'none' },
+        { id: 12, plugin_id: 2, plugin_slug: 'seo', key: 'audit', name: 'Auditor', auth_type: 'none' },
+      ])
+      if (url.endsWith('integration.list/call')) return json({ project_id: 1, items: [] })
+      return json([])
+    }) as typeof fetch
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/projects/:id/plugins', component: PluginsView }] })
+    await router.push('/projects/1/plugins')
+    const wrapper = mount(PluginsView, { global: { plugins: [router, createPinia()] } })
+    await flushPromises()
+    const search = wrapper.get<HTMLInputElement>('input[placeholder="Search plugins or services"]')
+    await search.setValue('Utilities')
+    await wrapper.get('button[aria-label="Sort catalog"]').trigger('click')
+    await wrapper.findAll('[role="option"]').find(option => option.text() === 'Most actions')!.trigger('click')
+    await wrapper.get('section[aria-label="Utilities"] button').trigger('click')
+    expect(search.element.value).toBe('')
+    expect(wrapper.text()).toContain('Crawler')
+    expect(wrapper.text()).not.toContain('Auditor')
+    const back = () => wrapper.findAll('button').find(button => button.text() === 'Back to plugins')!
+    expect(back()).toBeDefined()
+    await wrapper.get('button[aria-label="Remove Plugin filter: Utilities"]').trigger('click')
+    expect(wrapper.get('[role="tab"][aria-selected="true"]').text()).toBe('Services')
+    expect(wrapper.text()).toContain('Auditor')
+    expect(back()).toBeDefined()
+    await search.setValue('no service')
+    await wrapper.get('button[aria-label="Sort catalog"]').trigger('click')
+    await wrapper.findAll('[role="option"]').find(option => option.text() === 'Name')!.trigger('click')
+    const calls = vi.mocked(fetch).mock.calls.length
+    await back().trigger('click')
+    expect(router.currentRoute.value.path).toBe('/projects/1/plugins')
+    expect(wrapper.get('[role="tab"][aria-selected="true"]').text()).toBe('Plugins')
+    expect(search.element.value).toBe('Utilities')
+    expect(wrapper.get('button[aria-label="Sort catalog"]').text()).toBe('Most actions')
+    expect(wrapper.findAll('h3').map(heading => heading.text())).toEqual(['Utilities'])
+    expect(wrapper.find('.ui-badge[aria-label^="Remove Plugin"]').exists()).toBe(false)
+    expect(vi.mocked(fetch).mock.calls).toHaveLength(calls)
+    await wrapper.get('section[aria-label="Utilities"] button').trigger('click')
+    await router.push('/projects/2/plugins'); await flushPromises()
+    await search.setValue('Auditor')
+    await back().trigger('click')
+    expect(router.currentRoute.value.path).toBe('/projects/2/plugins')
+    expect(search.element.value).toBe('Auditor')
     wrapper.unmount()
   })
 

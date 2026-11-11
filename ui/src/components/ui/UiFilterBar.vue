@@ -76,15 +76,20 @@ defineEmits<{
         variant="subtle"
         size="sm"
         interactive
+        truncate
+        :aria-label="`Remove ${f.label} filter: ${f.value}`"
+        :title="`${f.label}: ${f.value}`"
         @click="$emit('remove', f.key)"
       >
         <span class="text-fg-muted font-normal mr-1">{{ f.label }}:</span>
         <span>{{ f.value }}</span>
-        <UiIcon
-          name="close"
-          class="ml-1 -mr-0.5 h-2.5 w-2.5"
-          aria-hidden="true"
-        />
+        <template #iconRight>
+          <UiIcon
+            name="close"
+            class="-mr-0.5 h-2.5 w-2.5 shrink-0"
+            aria-hidden="true"
+          />
+        </template>
       </UiBadge>
       <UiButton
         variant="link"

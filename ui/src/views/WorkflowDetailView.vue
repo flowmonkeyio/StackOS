@@ -17,7 +17,6 @@ const { projectId } = useProjectRouteScope(route)
 const slug = computed(() => String(route.params.pluginSlug ?? ''))
 const key = computed(() => String(route.params.templateKey ?? ''))
 const catalog = useStackOsCatalogStore()
-const plugin = computed(() => catalog.pluginProjectId === projectId.value ? catalog.plugins.find(item => item.slug === slug.value) : undefined)
 const template = ref<SchemaLoadedWorkflowTemplate | null>(null)
 const error = ref('')
 const loading = ref(true)
@@ -66,10 +65,20 @@ onBeforeUnmount(() => { generation++; removeRouteListener() })
 <template>
   <UiPageShell class="workflow-page">
     <RouterLink
-      class="focus-ring w-fit rounded-sm text-sm text-fg-muted"
+      v-slot="{ href, navigate }"
       :to="slug ? domainLocation(projectId, slug) : `/projects/${projectId}`"
+      custom
     >
-      {{ slug ? (plugin?.name ?? slug) : 'Home' }} / Workflows
+      <UiButton
+        :href="href"
+        variant="link"
+        size="sm"
+        icon-left="chevron-left"
+        class="self-start"
+        @click="navigate"
+      >
+        {{ slug ? 'Back to workflows' : 'Back to Home' }}
+      </UiButton>
     </RouterLink>
     <ProjectPageHeader
       :project-id="projectId"

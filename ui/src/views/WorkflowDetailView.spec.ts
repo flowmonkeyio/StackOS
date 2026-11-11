@@ -25,7 +25,7 @@ describe('Workflow detail', () => {
     const { wrapper } = await open('/projects/1/workflows/customer.weekly-review')
     expect(wrapper.get('h1').text()).toBe('Customer weekly review')
     expect(wrapper.get('a').attributes('href')).toBe('/projects/1')
-    expect(wrapper.get('a').text()).toBe('Home / Workflows')
+    expect(wrapper.get('a').text()).toBe('Back to Home')
     expect(wrapper.get('ol').text()).toContain('Prepare')
     expect(client.apiFetch.mock.calls.map(([url]) => url)).toEqual(['/api/v1/projects/1/workflow-templates/customer.weekly-review'])
   })
@@ -37,11 +37,32 @@ describe('Workflow detail', () => {
     await router.push('/projects/1/plugins/engineering/workflows/engineering.tracked-delivery'); await flushPromises()
     resolveOld(configuredWorkflow()); await flushPromises()
     expect(wrapper.get('h1').text()).toBe('Tracked delivery')
+    expect(wrapper.get('a').text()).toBe('Back to workflows')
+    expect(wrapper.get('a').attributes('href')).toBe('/projects/1/plugins/engineering')
     client.apiFetch.mockResolvedValue(configuredWorkflow('user.weekly-review'))
     await router.push('/projects/2/workflows/user.weekly-review'); await flushPromises()
     expect(client.apiFetch).toHaveBeenLastCalledWith('/api/v1/projects/2/workflow-templates/user.weekly-review')
     expect(wrapper.get('a').attributes('href')).toBe('/projects/2')
     expect(wrapper.get('h1').text()).toBe('Customer weekly review')
+  })
+  it.each([
+    ['/projects/2/plugins/engineering/workflows/engineering.tracked-delivery', '/projects/2/plugins/engineering', 'Back to workflows'],
+    ['/projects/2/workflows/customer.weekly-review', '/projects/2', 'Back to Home'],
+  ])('keeps an explicit safe return destination on a direct link while loading and after failure: %s', async (path, destination, label) => {
+    let reject!: (error: Error) => void
+    client.apiFetch.mockReturnValue(new Promise((_resolve, fail) => { reject = fail }))
+    const { wrapper, router } = await open(path)
+    const back = wrapper.get('a')
+    expect(wrapper.text()).toContain('Loading workflow')
+    expect(back.text()).toBe(label)
+    expect(back.attributes('href')).toBe(destination)
+    expect(back.classes()).toContain('focus-ring')
+    expect(back.classes()).toContain('ui-button')
+    reject(new Error('Source unavailable')); await flushPromises()
+    expect(wrapper.text()).toContain('Source unavailable')
+    expect(wrapper.get('a').attributes('href')).toBe(destination)
+    await wrapper.get('a').trigger('click'); await flushPromises()
+    expect(router.currentRoute.value.path).toBe(destination)
   })
   it('reports unavailable and mismatched non-plugin sources, then retries the same exact workflow', async () => {
     client.apiFetch.mockRejectedValue(new Error('Workflow not found'))
