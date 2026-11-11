@@ -550,11 +550,20 @@ schema-valid even when preparation is concise.
 
 Adoption is manual per project. Method belongs in reusable/local guidance;
 occurrence phase/attempt/SHA/persisted scoped feedback belongs in prompts, and
-models remain StackOS configuration. After independent source/local review,
-the main agent may manually refresh selected saved instruction strings through
-local-admin REST-only `tracker.configureDelivery`, preserving every other setting and reading
-back the result, including absent/null fields. Explicitly authorized instruction-only
-saved-default adoption may occur during a running task after that review.
+models remain StackOS configuration. Use the current occurrence and task/ticket
+amendments to resolve mutable facts, including a later authorized delivery
+instruction superseding an earlier
+preparation hold. Keep builds/tests and all proof outside a named exception
+required. Report current selected source and retained native source separately;
+source edits do not replace the resumed session's developer instructions or
+history. See the [occurrence contract](./task-tracker.md#automated-task-delivery).
+After independent source/local review, the main agent may explicitly adopt
+selected Codex source references through local-admin REST-only
+`tracker.configureDelivery` using expected-digest preview/write/readback.
+Preserve every other setting, including absent/null fields; retain source
+references instead of editable instruction copies. For other hosts, explicitly
+authorized instruction-only saved-default adoption may occur during a running
+task after that review, using the same local-admin owner.
 Installed activation is separately authorized and main-owned after task closure.
 Source edits alone update neither saved instructions nor active
 or historical task snapshots. Queued/running executions retain their snapshot;

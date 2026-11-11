@@ -221,6 +221,29 @@ the occurrence's attempt, candidate and latest scoped feedback. Earlier approval
 remain historical when current context requests a correction. Statistics, live
 usage (including retained samples and last execution), saved execution settings
 and nested old attempt receipts are omitted.
+
+Each launch supplies and records an `occurrence` beside the role's retained
+instructions: attempt, consumed repair count, candidate, task/ticket contract
+revisions, context digests, selected source, launched source and explicit resume
+thread ID. Context digests bind the canonical task/ticket `context_json` at
+launch; raw `tracker.brief` and tracker revisions retain the source context,
+while the prompt projection omits nonactionable notes. Digests do not establish
+approval. The selected source
+is the current admission choice; the launched source is the frozen role snapshot
+used by this native session. They can differ after a source edit and explicit
+rehandoff. Neither identifies an installed runtime upgrade.
+
+Read the occurrence with current task/ticket context and operator amendments
+before interpreting historical prompts or frozen step inputs. An authorized
+delivery amendment can supersede the same scope's earlier preparation-only
+hold while preserving that history. Required builds, tests and UI proof remain
+required. A named pointer drag/drop or autoscroll manual exception covers only
+that proof; it does not waive other browser evidence. A separately authorized
+server OS-return transport simulation is likewise confined to its named scope.
+Use the assigned StackOS browser route; these exceptions do not authorize
+Computer Use, machine sleep, installation or deployment. Unresolved authority
+contradictions stop the affected action for main reconciliation.
+
 Ordinary assignments receive compact outcomes for direct completed prerequisites.
 Mirrors receive completed outcomes within their dependency scope, including
 descendant/bound work and prior dependency containers, rather than every completed

@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.requirements-flow-definer
     name: Requirements Flow Definer
-    version: 0.6.4
+    version: 0.6.5
     description: Defines traceable project-specific requirements, user/data/system/business flows, and acceptance criteria before design.
     domain: engineering
     role: requirements-flow-definer
@@ -66,6 +66,16 @@ presets:
         the smallest complete change through the canonical owner; reject
         speculative abstractions, duplicate owners and opportunistic cleanup.
         These source roles do not pin a model or reasoning effort.
+        Keep reusable role method separate from mutable assignment facts.
+        On fresh launch and resume, read the current occurrence, task/ticket
+        context and operator amendments before interpreting historical prompts.
+        A later authorized delivery amendment supersedes an earlier preparation-only
+        hold for that scope; required builds, tests and other proof still apply.
+        Apply manual exceptions only to their named proof. Preserve native session
+        history, frozen role instructions/settings and consumed repair allowance.
+        Report the selected source ref/digest separately from the source actually
+        launched or retained by the native session; neither proves installed activation.
+        Unresolved authority contradictions stop affected actions for reconciliation.
         For terminal-managed engineering.tracked-delivery, the main agent is the
         sole writer of durable run/tracker state; specialists return packets.
         After explicit tracker.startDelivery handoff, StackOS mechanically records
@@ -141,7 +151,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.codebase-explorer
     name: Codebase Explorer
-    version: 0.6.4
+    version: 0.6.5
     description: Maps actual execution paths, owners, consumers, coupling, and proof surfaces for a bounded assignment.
     domain: engineering
     role: codebase-explorer
@@ -177,7 +187,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.planning
     name: Planning Agent
-    version: 0.7.13
+    version: 0.7.14
     description: Turns requirements, selected design, and proof plan into independently executable ticket packets and a coherent dependency graph.
     domain: engineering
     role: planning
@@ -242,7 +252,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.architecture
     name: Architecture Agent
-    version: 0.6.4
+    version: 0.6.5
     description: Defines the project-native candidate design, ownership boundaries, interfaces, risks, and proof obligations before ticket breakdown.
     domain: engineering
     role: architecture
@@ -280,7 +290,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.test-designer
     name: Test Designer
-    version: 0.6.7
+    version: 0.6.8
     description: Maps requirements and design risks to ticket-local and integration proof, expected outcomes, ownership and applicable project guidance.
     domain: engineering
     role: test-designer
@@ -326,7 +336,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.delivery
     name: Delivery Agent
-    version: 0.7.13
+    version: 0.7.14
     description: Implements one assigned ticket, performs its self-checks and bounded repairs, and returns candidate-ready evidence for immediate independent review.
     domain: engineering
     role: delivery
@@ -420,7 +430,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.delivery-reviewer
     name: Review Agent
-    version: 0.6.12
+    version: 0.6.13
     description: Independently reviews assigned readiness, ticket, integration, or audit scope against canonical requirements and actual evidence, returning findings for main-agent adjudication.
     domain: engineering
     role: delivery-reviewer
@@ -492,7 +502,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.release-ops
     name: Release/Ops Agent
-    version: 0.2.1
+    version: 0.2.2
     description: Handles release readiness, rollout notes, post-release checks, and operational cleanup.
     domain: engineering
     role: release-ops

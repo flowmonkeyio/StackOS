@@ -797,7 +797,7 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
     delivery = loader.describe_preset(key="stackos.sdlc.delivery").preset
     reviewer = loader.describe_preset(key="stackos.sdlc.delivery-reviewer").preset
 
-    assert architecture.version == "0.6.4"
+    assert architecture.version == "0.6.5"
     architecture_text = " ".join(
         [
             *architecture.prompt_contract.responsibilities,
@@ -866,13 +866,13 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
 def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -> None:
     loader = AgentPresetLoader()
     expected_versions = {
-        "requirements-flow-definer": "0.6.4",
-        "codebase-explorer": "0.6.4",
-        "planning": "0.7.13",
-        "architecture": "0.6.4",
-        "test-designer": "0.6.7",
-        "delivery": "0.7.13",
-        "delivery-reviewer": "0.6.12",
+        "requirements-flow-definer": "0.6.5",
+        "codebase-explorer": "0.6.5",
+        "planning": "0.7.14",
+        "architecture": "0.6.5",
+        "test-designer": "0.6.8",
+        "delivery": "0.7.14",
+        "delivery-reviewer": "0.6.13",
     }
     presets = {
         key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset for key in expected_versions
@@ -997,8 +997,8 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     assert "commit_sha" in delivery and "commit_sha" in reviewer
     assert "gemini and hermes" in reviewer and "normal native sessions" in reviewer
     assert "no enforced read-only guarantee" in reviewer
-    # The unused release role is intentionally outside this source revision.
-    assert loader.describe_preset(key="stackos.sdlc.release-ops").preset.version == "0.2.1"
+    # The shared adaptation also changes the release role's effective source.
+    assert loader.describe_preset(key="stackos.sdlc.release-ops").preset.version == "0.2.2"
 
 
 def test_sdlc_source_and_local_verification_repair_contracts() -> None:

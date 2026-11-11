@@ -767,6 +767,41 @@ def _work_prompt_copy(value: dict[str, Any]) -> dict[str, Any]:
     return packet
 
 
+def _assignment_occurrence(
+    brief: dict[str, Any],
+    evidence: dict[str, Any],
+    selected_agent: dict[str, Any],
+    launched_agent: dict[str, Any],
+    resume_thread_id: str | None,
+) -> dict[str, Any]:
+    """Bind mutable assignment facts separately from retained native role method."""
+    contexts = {
+        kind: (brief.get(kind) or {}).get("context_json") or {} for kind in ("task", "ticket")
+    }
+    return {
+        "attempt": evidence["attempt"],
+        "repair_count": evidence.get("repair_count"),
+        "candidate": deepcopy(evidence["candidate"]),
+        "task_contract_revision": contexts["task"].get("contract_revision"),
+        "ticket_contract_revision": contexts["ticket"].get("contract_revision"),
+        "context_digests": {
+            kind: sha256(json.dumps(context, sort_keys=True).encode()).hexdigest()
+            for kind, context in contexts.items()
+        },
+        "selected_source": {
+            key: deepcopy(selected_agent[key])
+            for key in ("source_ref", "source_digest")
+            if key in selected_agent
+        },
+        "launched_source": {
+            key: deepcopy(launched_agent[key])
+            for key in ("source_ref", "source_digest")
+            if key in launched_agent
+        },
+        "resume_thread_id": resume_thread_id,
+    }
+
+
 def _archive_attempt(evidence: dict[str, Any]) -> None:
     if "delivery" in evidence or "review" in evidence:
         evidence.setdefault("attempts", []).append(
@@ -1602,6 +1637,15 @@ def run_delivery(
                     brief = repo.brief(project_id=project_id, ticket_key=ticket_key).model_dump(
                         mode="json"
                     )
+                    occurrence = _assignment_occurrence(
+                        brief,
+                        evidence,
+                        state.get("agents", state)[selected_role],
+                        agent,
+                        resume_thread_id,
+                    )
+                    evidence[phase]["occurrence"] = occurrence
+                    _save_evidence(repo, project_id, ticket_key, evidence)
                     completed_tickets = [
                         t.model_dump(mode="json")
                         for t in repo.get(
@@ -1674,6 +1718,7 @@ def run_delivery(
                                     "reopened dependency work stops this task."
                                 ),
                                 "phase": phase,
+                                "occurrence": occurrence,
                                 "lifecycle": LAUNCH_AUTHORITY_BOUNDARY,
                                 "brief": brief,
                                 "delivery_result": evidence.get("delivery"),
@@ -1730,6 +1775,7 @@ def run_delivery(
                     "agent": agent["name"],
                     "selected_role": selected_role,
                     "launch": launch,
+                    "occurrence": occurrence,
                     **asdict(result),
                     **({"execution": observed["execution"]} if "execution" in observed else {}),
                     "usage": final_usage,

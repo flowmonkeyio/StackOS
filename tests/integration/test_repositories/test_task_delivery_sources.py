@@ -12,7 +12,12 @@ from stackos.repositories.base import ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
 from stackos.repositories.workspaces import WorkspaceRepository
-from tests.integration.test_repositories.test_task_delivery import QueuedScheduler, generic_result
+from tests.integration.test_repositories.test_task_delivery import (
+    QueuedScheduler,
+    commit,
+    generic_result,
+    git,
+)
 
 
 def source(session, project_id, root, name, instructions=None, settings=""):
@@ -640,13 +645,32 @@ def test_source_edit_refreshes_admission_but_resumes_frozen_session(
     )
     reviewer = source(session, project_id, tmp_path, "reviewer", instructions="Independent")
     repo = TrackerRepository(session)
-    repo.create_task(project_id=project_id, key="resume", title="Resume")
-    repo.create_ticket(project_id=project_id, task_key="resume", key="work", title="Work")
+    repo.create_task(
+        project_id=project_id,
+        key="resume",
+        title="Resume",
+        context_json={
+            "contract_revision": 1,
+            "operator_instruction": "Preparation only; no builds",
+        },
+    )
+    repo.create_ticket(
+        project_id=project_id,
+        task_key="resume",
+        key="work",
+        title="Work",
+        context_json={"contract_revision": 1},
+    )
+    git(tmp_path, "init")
+    candidate_a = commit(tmp_path, "A")
     roles = {"delivery_agent": {"source_ref": writer}, "review_agent": {"source_ref": reviewer}}
     calls = []
+    packets = []
 
     def launch(_host, _dir, instructions, prompt, _schema, **kwargs):
-        phase = json.loads(prompt)["phase"]
+        packet = json.loads(prompt)
+        packets.append(packet)
+        phase = packet["phase"]
         calls.append(
             (
                 phase,
@@ -677,6 +701,17 @@ def test_source_edit_refreshes_admission_but_resumes_frozen_session(
         instructions="Future",
         settings='model_reasoning_effort="low"\n',
     )
+    candidate_b = commit(tmp_path, "B")
+    amendment = {
+        "contract_revision": 2,
+        "operator_instruction": "Delivery authorized; run required builds, tests and UI proof",
+        "supersedes": "Preparation-only no-build hold",
+        "proof_exception": "Only pointer DnD/autoscroll is operator-owned; use StackOS browser",
+        "server_exception": "Separate server OS-return simulation waives no other proof",
+    }
+    repo.update_task(
+        project_id=project_id, task_key="resume", patch_json={"context_json": amendment}
+    )
     # Resolve the fixture blocker before requeueing its saved session.
     for status in ("in-progress", "not-started"):
         repo.update_ticket(
@@ -704,6 +739,23 @@ def test_source_edit_refreshes_admission_but_resumes_frozen_session(
     ]
     assert final["sessions"]["delivery"] == first["sessions"]["delivery"]
     assert final["repair_count"] == first["repair_count"] == 0
+    fresh, resumed, review = [packet["occurrence"] for packet in packets]
+    assert fresh["attempt"] == 1 and resumed["attempt"] == review["attempt"] == 2
+    assert fresh["candidate"]["base_commit_sha"] == candidate_a
+    assert resumed["candidate"]["base_commit_sha"] == candidate_b
+    assert fresh["task_contract_revision"] == 1
+    assert resumed["task_contract_revision"] == 2
+    assert resumed["ticket_contract_revision"] == 1
+    assert resumed["selected_source"]["source_digest"] == current["source_digest"]
+    assert (
+        resumed["launched_source"]["source_digest"]
+        == first["sessions"]["delivery"]["source_digest"]
+    )
+    assert resumed["selected_source"] != resumed["launched_source"]
+    assert resumed["resume_thread_id"] == "thread-delivery"
+    assert packets[1]["brief"]["task"]["context_json"] == amendment
+    assert final["delivery"]["occurrence"] == resumed
+    assert final["attempts"][0]["delivery"]["occurrence"] == fresh
 
 
 def test_ambiguous_declared_roles_need_explicit_assignment(session, project_id, tmp_path):

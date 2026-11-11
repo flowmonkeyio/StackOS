@@ -245,13 +245,13 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     assert (
         raw_recommended["stackos.sdlc.test-designer"]["preset"]["summary"]["version"]
         == compact_recommended["stackos.sdlc.test-designer"]["preset"]["version"]
-        == "0.6.7"
+        == "0.6.8"
     )
     expected_versions = {
-        "stackos.sdlc.requirements-flow-definer": "0.6.4",
-        "stackos.sdlc.planning": "0.7.13",
-        "stackos.sdlc.delivery": "0.7.13",
-        "stackos.sdlc.delivery-reviewer": "0.6.12",
+        "stackos.sdlc.requirements-flow-definer": "0.6.5",
+        "stackos.sdlc.planning": "0.7.14",
+        "stackos.sdlc.delivery": "0.7.14",
+        "stackos.sdlc.delivery-reviewer": "0.6.13",
     }
     assert set(actual) == set(expected) == set(expected_versions)
     for key, item in actual.items():
