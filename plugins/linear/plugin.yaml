@@ -4,9 +4,6 @@ version: 0.1.0
 description: Linear GraphQL issue-work provider with daemon-owned OAuth and a curated fixed-document action catalog.
 display_order: 47
 source: builtin
-ui:
-  nav:
-    section: Linear
 capabilities:
   - key: issue-work
     name: Issue Work

@@ -7,9 +7,10 @@ import { UiButton, UiCallout, UiLoadingState, UiPageShell, UiSectionHeader } fro
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { apiFetch, formatApiError } from '@/lib/client'
 import { projectIdFromRoute } from '@/lib/stackos/projectNavigation'
+import { domainPage } from '@/lib/stackos/pluginPage'
 import { useStackOsCatalogStore } from '@/stores/plugins'
 import DomainContentSection from './plugin-domain/DomainContentSection.vue'
-import { domainPage, workflowLocation } from './plugin-domain/viewModel'
+import { workflowLocation } from './plugin-domain/viewModel'
 
 const route = useRoute()
 const router = useRouter()
@@ -151,12 +152,38 @@ onBeforeUnmount(() => { generation++; removeRouteListener() })
         :plugin-slug="slug"
         :kind="section"
       />
-      <p
+      <div
         v-if="!page.sections.length"
-        class="text-sm text-fg-muted"
+        class="grid gap-3 py-5 text-sm text-fg-muted"
       >
-        This plugin does not declare a domain page.
-      </p>
+        <p>Find this plugin's services in setup and its saved information and files in Library.</p>
+        <div class="flex flex-wrap gap-4">
+          <RouterLink
+            class="focus-ring rounded-sm text-fg-link hover:underline"
+            :to="`/projects/${projectId}/plugins`"
+          >
+            Browse plugins and services
+          </RouterLink>
+          <RouterLink
+            class="focus-ring rounded-sm text-fg-link hover:underline"
+            :to="`/projects/${projectId}/connections?section=services`"
+          >
+            Manage connections
+          </RouterLink>
+          <RouterLink
+            class="focus-ring rounded-sm text-fg-link hover:underline"
+            :to="{ path: `/projects/${projectId}/library`, query: { tab: 'saved', plugin: slug } }"
+          >
+            Saved information
+          </RouterLink>
+          <RouterLink
+            class="focus-ring rounded-sm text-fg-link hover:underline"
+            :to="{ path: `/projects/${projectId}/library`, query: { tab: 'files', plugin: slug } }"
+          >
+            Files
+          </RouterLink>
+        </div>
+      </div>
     </template>
   </UiPageShell>
 </template>

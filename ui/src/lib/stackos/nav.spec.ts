@@ -5,7 +5,7 @@ import { coreNavSections, isStackOsNavItemActive, pluginContributionSections, pr
 
 function plugin(slug: string, order = 10, enabled = true): SchemaPluginOut {
   return { id: 1, created_at: '', updated_at: '', description: '', source: 'builtin', version: '0.1.0', slug, name: slug === 'finance' ? 'Finance Operations' : slug, enabled_for_project: enabled,
-    manifest_json: { display_order: order, ui: { nav: { section: slug, items: [{ label: 'Data', to: `resources?plugin_slug=${slug}` }, { label: 'Workflows', to: `workflow-templates?plugin_slug=${slug}` }] } } },
+    manifest_json: { display_order: order, ui: { page: { sections: ['workflows', 'saved', 'files'] }, nav: { section: slug, items: [{ label: 'Data', to: `resources?plugin_slug=${slug}` }, { label: 'Workflows', to: `workflow-templates?plugin_slug=${slug}` }] } } },
   } as SchemaPluginOut
 }
 
@@ -28,6 +28,20 @@ describe('project navigation', () => {
   })
   it('does not create domains for provider-only packages without a declared page or navigation', () => {
     expect(pluginContributionSections(7, [{ ...plugin('transport'), manifest_json: {} }])).toEqual([])
+  })
+  it('requires a supported page section; section labels and links alone cannot create a page', () => {
+    const plugins = [
+      { ...plugin('section-only'), manifest_json: { ui: { nav: { section: 'Integration' } } } },
+      { ...plugin('link-only'), manifest_json: { ui: { nav: { items: [{ to: 'plugins/link-only' }] } } } },
+      { ...plugin('empty'), manifest_json: { ui: { page: { sections: [] } } } },
+      { ...plugin('unsupported'), manifest_json: { ui: { page: { sections: ['unknown'] } } } },
+      { ...plugin('finance'), manifest_json: { ui: { nav: { items: [{ to: 'finance' }] } } } },
+      { ...plugin('records'), manifest_json: { ui: { page: { sections: ['saved', 'files'] } } } },
+      { ...plugin('workflow-only', 20), manifest_json: { display_order: 20, ui: { page: { sections: ['workflows'] } } } },
+      plugin('disabled', 30, false),
+    ] as SchemaPluginOut[]
+    const items = pluginContributionSections(7, plugins)[0]!.items
+    expect(items.map(item => item.to)).toEqual(['/projects/7/plugins/workflow-only', '/projects/7/finance', '/projects/7/plugins/records'])
   })
   it('keeps domain selection on workflow details and Library selection on filtered records', () => {
     expect(isStackOsNavItemActive({ to: '/projects/7/plugins/seo', matchPrefix: true }, '/projects/7/plugins/seo/workflows/seo.audit')).toBe(true)

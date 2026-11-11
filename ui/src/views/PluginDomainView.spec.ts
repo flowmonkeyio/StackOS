@@ -24,6 +24,23 @@ describe('Plugin domain', () => {
   beforeEach(() => { client.apiFetch.mockReset().mockImplementation(async (url: string) => defaults(url)) })
   afterEach(() => { wrappers.forEach(wrapper => wrapper.unmount()); wrappers.length = 0; document.body.innerHTML = '' })
 
+  it('offers setup and scoped Library destinations on a direct integration-only route', async () => {
+    client.apiFetch.mockImplementation(async () => [{ ...plugin('publishing'), manifest_json: {} }])
+    const { wrapper, router } = await open('/projects/2/plugins/publishing')
+    expect(wrapper.text()).not.toContain('does not declare a domain page')
+    expect(wrapper.find('section[aria-label="Workflows"]').exists()).toBe(false)
+    const links = wrapper.findAll('a')
+    expect(links.map(link => [link.text(), link.attributes('href')])).toEqual([
+      ['Browse plugins and services', '/projects/2/plugins'],
+      ['Manage connections', '/projects/2/connections?section=services'],
+      ['Saved information', '/projects/2/library?tab=saved&plugin=publishing'],
+      ['Files', '/projects/2/library?tab=files&plugin=publishing'],
+    ])
+    expect(client.apiFetch.mock.calls.some(([url]) => /workflow-templates|resource-records|artifacts/.test(url))).toBe(false)
+    await links[2]!.trigger('click'); await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/projects/2/library?tab=saved&plugin=publishing')
+  })
+
   it('keeps declared empty sections, omits unsupported workflows and blocks disabled/missing plugins', async () => {
     const { wrapper, router } = await open()
     expect(wrapper.findAll('section[aria-label]').map(section => section.attributes('aria-label'))).toEqual(['Workflows', 'Saved information', 'Files'])

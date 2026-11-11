@@ -295,6 +295,13 @@ readback; editing a definition does not execute work or rewrite frozen runs.
 Generic presets remain reusable guidance, separate from the live project list.
 The shared shell uses direct primary, Setup and enabled-domain links; see the
 [route and wrapper map](./ui-page-layout-map.md).
+`lib/stackos/pluginPage.ts` owns supported generic page sections for both
+`nav.ts` and `PluginDomainView`. Only a nonempty supported page declaration
+creates a generic sidebar destination; section-only navigation metadata does
+not. Finance retains its dedicated console. Integration-only packages and
+Publishing stay in Plugins/Connections, with their saved information and files
+in Library. Direct plugin routes without a page offer setup and scoped Library
+links.
 
 Connections is the reference implementation:
 
