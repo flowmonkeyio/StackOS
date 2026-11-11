@@ -4179,6 +4179,10 @@ def test_feedback_schema_error_requeue_excludes_serialized_followups(
         ("shared-id", "blocked", 2),
         ("schema", "blocked", 2),
         ("native-final", "blocked", 2),
+        ("stale-review", "blocked", 2),
+        ("wrong-review", "blocked", 2),
+        ("dirty-review", "blocked", 2),
+        ("mutating-review", "blocked", 2),
     ],
 )
 def test_feedback_identity_schema_and_check_failures_stop(
@@ -4201,6 +4205,18 @@ def test_feedback_identity_schema_and_check_failures_stop(
     phase = calls[-1]["phase"]
     assert evidence[phase]["validated_outcome"] is None
     assert evidence[phase]["usage"]["measured"]["total"] in {150, 230}
+    if decision == "blocked" and fault in {
+        "stale-review",
+        "wrong-review",
+        "dirty-review",
+        "mutating-review",
+    }:
+        assert snapshot.tickets[0].blocker_reason is None
+        assert snapshot.tickets[0].completed_at is not None
+        assert evidence["review"]["validation_error"]
+        assert evidence["repair_count"] == 0
+        assert evidence["candidate"] == calls[-1]["packet"]["candidate"]
+        assert evidence["sessions"]["review"]["thread_id"] == "first-review"
     if fault == "native-final":
         assert evidence["review"]["result"]["status"] == (
             "blocked" if decision == "blocked" else "repair"

@@ -1774,7 +1774,16 @@ def run_delivery(
                             and previous_candidate.get("commit_sha")
                             != previous_candidate.get("base_commit_sha")
                         )
-                        if decision in {"success", "repair"} and (
+                        # Blocked reviews still attest the delivered candidate.
+                        # Blocked delivery may instead leave unfinished owned work.
+                        if (
+                            decision in {"success", "repair"}
+                            or (
+                                workflow_step is None
+                                and phase == "review"
+                                and decision == "blocked"
+                            )
+                        ) and (
                             "commit_sha" in outputs
                             or candidate_required
                             or evidence["candidate"].get("commit_sha")
