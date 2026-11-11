@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from apscheduler.triggers.cron import CronTrigger
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter
 from pydantic import ValidationError as SchemaValidationError
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, func, or_, update
 from sqlmodel import Session, col, select
 
 from stackos.db.models import (
@@ -69,6 +69,7 @@ class ProjectOut(BaseModel):
     niche: str | None
     locale: str
     is_active: bool
+    cleanup_json: dict[str, Any] | None = None
     schedule_json: dict[str, Any] | None
     created_at: datetime
     updated_at: datetime
@@ -196,6 +197,29 @@ class ProjectRepository:
     def __init__(self, session: Session) -> None:
         self._s = session
 
+    def require_available(self, project_id: int, *, reserve: bool = False) -> Project:
+        """Fence admissions against cleanup using the existing SQLite write transaction.
+
+        Writers reserve immediately before persisting admission, without an await
+        or commit between this check and that write. Reads use a fresh SELECT so
+        an old Session identity map cannot authorize work after cleanup starts.
+        """
+        if reserve:
+            self._s.exec(update(Project).where(col(Project.id) == project_id).values(id=Project.id))
+        row = self._s.exec(
+            select(Project)
+            .where(Project.id == project_id)
+            .execution_options(populate_existing=True)
+        ).first()
+        if row is None:
+            raise NotFoundError(f"project {project_id} not found", data={"project_id": project_id})
+        if row.cleanup_json is not None:
+            raise ConflictError(
+                "project cleanup is incomplete; retry the confirmed deletion",
+                data={"project_id": project_id, "cleanup": row.cleanup_json},
+            )
+        return row
+
     def create(
         self,
         *,
@@ -318,6 +342,7 @@ class ProjectRepository:
         )
 
     def update(self, project_id: int, **patch: Any) -> Envelope[ProjectOut]:
+        self.require_available(project_id, reserve=True)
         if "name" in patch:
             patch["name"] = validate_project_name(patch["name"])
         row = self._fetch_row(project_id)
@@ -658,7 +683,7 @@ class ScheduledJobRepository:
         inputs_json: dict[str, Any] | None = None,
         execution_json: dict[str, Any] | None = None,
     ) -> Envelope[ScheduledJobOut]:
-        ProjectRepository(self._s).get(project_id)
+        ProjectRepository(self._s).require_available(project_id, reserve=True)
         try:
             config = ScheduleConfiguration.model_validate(
                 {
@@ -713,6 +738,7 @@ class ScheduledJobRepository:
         enabled: bool,
         project_id: int,
     ) -> Envelope[ScheduledJobOut]:
+        ProjectRepository(self._s).require_available(project_id, reserve=True)
         row = self._get(project_id, job_id)
         if enabled:
             self.validate_configuration(

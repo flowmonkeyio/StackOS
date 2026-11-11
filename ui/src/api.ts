@@ -5935,6 +5935,10 @@ export interface components {
         };
         /** ProjectOut */
         ProjectOut: {
+            /** Cleanup Json */
+            cleanup_json?: {
+                [key: string]: unknown;
+            } | null;
             /**
              * Created At
              * Format: date-time

@@ -93,6 +93,10 @@ class OperationDispatcher:
                 )
             if not trusted_local_admin or spec.name in RUN_PLAN_OWNER_TOOL_NAMES:
                 check_call_grant(spec.name, ctx, parsed)
+            if not spec.read_only and ctx.project_id is not None and name != "project.delete":
+                from stackos.repositories.projects import ProjectRepository
+
+                ProjectRepository(session).require_available(ctx.project_id)
             if (
                 spec.idempotency_policy == "dispatcher"
                 and not spec.read_only

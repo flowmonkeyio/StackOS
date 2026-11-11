@@ -482,12 +482,15 @@ def _retain_mcp_config(state: dict[str, Any], reference: dict[str, str] | None) 
 
 def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_key, **changes):
     """Reserve a directory in the existing snapshot before scheduling its task job."""
+    from stackos.repositories.projects import ProjectRepository
+
     if session.new or session.dirty or session.deleted:
         raise ValidationError("Task delivery handoff requires a clean repository transaction")
     try:
         # Serialize only admission, never execution. Reading and saving the queued
         # snapshot in one SQLite writer transaction also protects concurrent calls.
         session.connection().exec_driver_sql("BEGIN IMMEDIATE")
+        ProjectRepository(session).require_available(project_id)
         session.expire_all()
         task = _task(repo, project_id, task_key)
         previous = (task.metadata_json or {}).get("delivery", {})
@@ -1387,6 +1390,11 @@ def run_delivery(
 
     def launch_allowed() -> bool:
         with session_factory() as session:
+            from stackos.db.models import Project
+
+            project = session.get(Project, project_id)
+            if project is None or project.cleanup_json is not None:
+                return False
             repo = TrackerRepository(session)
             return not invocation_cancelled() and _delivery_active(
                 _task(repo, project_id, task_key), handoff_id

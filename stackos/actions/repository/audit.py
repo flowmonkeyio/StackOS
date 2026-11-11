@@ -149,6 +149,9 @@ class ActionAuditMixin:
                 error=error,
                 commit=commit,
             )
+        from stackos.repositories.projects import ProjectRepository
+
+        ProjectRepository(self._s).require_available(project_id, reserve=True)
         now = utcnow()
         row = ActionCall(
             project_id=project_id,

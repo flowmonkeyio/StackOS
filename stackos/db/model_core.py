@@ -39,6 +39,7 @@ class Project(SQLModel, table=True):
     niche: str | None = Field(default=None, max_length=200)
     locale: str = Field(max_length=16)
     is_active: bool = Field(default=False)
+    cleanup_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     schedule_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=_utcnow, nullable=False)

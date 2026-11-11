@@ -19,7 +19,6 @@ from stackos.db.models import (
     DurableActionItem,
     DurableActionItemStatus,
     Plugin,
-    Project,
     ProjectPlugin,
     Resource,
     ResourceRecord,
@@ -480,8 +479,9 @@ class ResourceRepository:
         )
 
     def _require_project(self, project_id: int) -> None:
-        if self._s.get(Project, project_id) is None:
-            raise NotFoundError(f"project {project_id} not found")
+        from stackos.repositories.projects import ProjectRepository
+
+        ProjectRepository(self._s).require_available(project_id)
 
     def _sync_catalog(self) -> None:
         from stackos.repositories.plugins import PluginRepository
@@ -890,8 +890,9 @@ class ArtifactRepository:
         return row
 
     def _require_project(self, project_id: int) -> None:
-        if self._s.get(Project, project_id) is None:
-            raise NotFoundError(f"project {project_id} not found")
+        from stackos.repositories.projects import ProjectRepository
+
+        ProjectRepository(self._s).require_available(project_id)
 
     def _sync_catalog(self) -> None:
         from stackos.repositories.plugins import PluginRepository

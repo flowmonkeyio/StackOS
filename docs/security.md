@@ -92,6 +92,41 @@ exact-path exception so no sibling route inherits it. Currently:
 | `/api/v1/ingress/slack/*` | Slack Events API and Interactivity requests cannot carry the daemon bearer token. The route verifies `X-Slack-Signature` against the encrypted Slack signing secret using the raw body and timestamp before writing communication resources or agent requests. | A caller with the Slack signing secret can submit Slack-shaped events for that profile. This path also bypasses loopback-only Host checks so deployed/tunnel hosts work; all non-ingress API paths remain loopback-host guarded. |
 | `/api/v1/ingress/hubspot/*` | HubSpot webhook and custom workflow-action requests cannot carry the daemon bearer token. The route verifies the provider-documented v3 timestamped HMAC against the daemon-held app client secret and configured public HTTPS URI before parsing or writing. v2 verification is unsupported. | A caller with the app client secret can submit HubSpot-shaped events for the one configured app/account profile. Exact portal/app checks and event/definition allowlists gate agent-request creation. This path bypasses loopback-only Host checks; the signed URI is derived from the configured ingress endpoint, never the incoming `Host` header. |
 
+## Internal project cleanup
+
+`ProjectCleanupService` is the internal permanent-cleanup owner. It requires
+`permanent=true`, the exact project ID and its immutable slug before mutation;
+it never resolves the target by display name. Public deletion adapters are a
+separate integration surface and must delegate to this owner with that explicit
+confirmation.
+
+Cleanup rejects actual native invocations, admitted delivery, running actions,
+durable work/leases, active request claims, owned browser processes (including
+unhealthy processes) and busy managed-file writers. It does not stop work or
+terminate external agents. The existing native launch lock, browser profile
+locks, managed-file writer locks and SQLite admission transactions coordinate
+with a project-local `cleanup_json` state. Fresh admission rechecks that state;
+an old Session object or inactive project flag does not authorize a new writer.
+Future project schedules are disabled and reconciled when cleanup is admitted.
+
+The project row and source records remain while managed files are removed.
+Pending/incomplete projects remain discoverable through the full catalog and
+cannot admit new work. Retry uses the same ID, slug and cleanup operation ID,
+including after restart; some files may already be gone. Only after file cleanup
+succeeds does one database transaction remove durable artifact pins, explicit
+session/OAuth/auth-event exceptions and the cascading project records. No
+deleted-project history or tombstone is retained. SQLite's project ID high-water
+mark remains intact.
+
+Only derived managed roots and registered generated media with known producer
+provenance are cleanup candidates. Shared references preserve bytes. A durable
+pin or project-template binding owned by another project blocks deletion rather
+than deleting that owner's dependency. Repository folders, external exports,
+shared Accounts/catalog/browser runtimes and whole-instance backup archives are
+preserved. Arbitrary artifact URIs and request paths never grant file ownership.
+Cleanup errors retain a safe error class and truthful incomplete/retry status;
+they do not claim rollback or secure erasure of historical copies.
+
 ## Generated asset and IMAP staging boundary
 
 Ordinary generated media remains available from the loopback-local

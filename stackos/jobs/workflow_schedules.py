@@ -22,7 +22,7 @@ from apscheduler.triggers.date import DateTrigger
 from sqlmodel import Session, select
 
 from stackos.artifacts import redact_secret_text
-from stackos.db.models import AgentRequest, RunPlan, ScheduledJob, TrackerTask
+from stackos.db.models import AgentRequest, Project, RunPlan, ScheduledJob, TrackerTask
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.projects import ScheduleConfiguration, ScheduledJobRepository
 from stackos.repositories.run_plan_state import TERMINAL_PLAN_STATUSES
@@ -140,6 +140,9 @@ class WorkflowScheduleRuntime:
         with self.session_factory() as session:
             row = session.get(ScheduledJob, row_id)
             if row is None or not row.enabled or self._config(row) != registration.config:
+                return None
+            project = session.get(Project, row.project_id)
+            if project is None or project.cleanup_json is not None:
                 return None
             return row
 

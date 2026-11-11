@@ -31,7 +31,7 @@ def test_project_order_migration_preserves_visible_order_and_nonorder_data(tmp_p
     command.upgrade(config, "head")
     with sqlite3.connect(settings.db_path) as connection:
         assert connection.execute("SELECT * FROM projects ORDER BY order_index,id").fetchall() == [
-            (*row, row[0]) for row in before
+            (*row, row[0], None) for row in before
         ]
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
     engine = make_engine(settings.db_path)
