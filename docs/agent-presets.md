@@ -155,6 +155,14 @@ traversal, nonregular sources and sources over 1 MiB are rejected. Discovery is
 bounded to 1,000 sources, with explicit failure above that limit. Refresh reads
 current files without a watcher or a last-used-folder fallback.
 
+The Agents editor shows Codex project-file context and the exact source path.
+Its model picker uses the shared `hostMcp.status` loader and the source host's
+`agent_execution.models` catalog. Inherited, saved values outside the catalog,
+and custom native names remain selectable. Catalog loading or retry never
+replaces the source draft, and a listed model does not establish account access.
+The normal page omits the project-folder path; missing or mismatched setup
+still provides an actionable error.
+
 `source_ref` is `{host_key, native_name, source_path}`, where `source_path` is
 the exact workspace-relative path. Reads return the SHA256 `digest`, editable
 `fields`, native settings, inherited field names, unsupported field names,
