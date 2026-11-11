@@ -809,6 +809,180 @@ def test_codex_failure_is_not_success_or_retried(
     assert len(calls) == 1
 
 
+@pytest.fixture
+def codex_task_route(tmp_path, monkeypatch):
+    import hashlib
+
+    route = tmp_path / "private-route.toml"
+    route.write_text('[mcp_servers.stackos]\nargs = ["mcp-bridge", "private-route-sentinel"]\n')
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fake/codex")
+    monkeypatch.setattr(
+        codex,
+        "_run_codex",
+        lambda *a, **kw: subprocess.CompletedProcess(
+            [],
+            0,
+            json.dumps([{"name": "stackos", "transport": {"type": "stdio", "command": "stackos"}}]),
+            "",
+        ),
+    )
+    return {"path": str(route), "sha256": hashlib.sha256(route.read_bytes()).hexdigest()}
+
+
+@pytest.mark.parametrize("resume", [None, "failed-thread"])
+@pytest.mark.parametrize("payload", [None, "not JSON", "wrong schema", "valid"])
+@pytest.mark.parametrize(
+    ("cause", "exit_code", "primary"),
+    [
+        ("exit", 7, "Codex task-routed execution failed"),
+        ("signal", -15, "Codex task-routed execution failed"),
+        ("terminal", 0, "Codex task-routed execution failed"),
+        ("cancelled", -15, "Codex task-routed invocation cancelled"),
+        ("cancelled", 0, "Codex task-routed invocation cancelled"),
+        ("process", None, "Codex task-routed process failed"),
+        ("stream", -15, "Codex task-routed stream failed"),
+    ],
+)
+def test_codex_task_routed_failure_keeps_safe_cause(
+    project, monkeypatch, codex_task_route, resume, payload, cause, exit_code, primary
+):
+    from stackos.host_mcp import progress
+    from stackos.host_mcp.agent_execution import ManagedProcessControl
+    from stackos.task_delivery import RESULT_SCHEMA
+
+    control = ManagedProcessControl()
+    calls = []
+    identities = []
+    final = {"status": "success", "summary": "available", "outputs": "{}", "followups": []}
+
+    def execute(command, *, on_session, process_control, **kwargs):
+        calls.append(command)
+        assert process_control is control
+        if payload is not None:
+            text = {
+                "not JSON": "not JSON private-result-sentinel",
+                "wrong schema": '{"summary": "private-result-sentinel"}',
+                "valid": json.dumps(final),
+            }[payload]
+            Path(command[command.index("-o") + 1]).write_text(text)
+        on_session("failed-thread")
+        if cause == "process":
+            raise OSError("private-exception-sentinel")
+        events = [
+            {"type": "thread.started", "thread_id": "failed-thread"},
+            {
+                "type": "turn.completed",
+                "usage": {"input_tokens": 100, "cached_input_tokens": 80, "output_tokens": 5},
+            },
+        ]
+        if cause == "terminal":
+            events.append({"type": "turn.failed", "message": "private-native-sentinel"})
+        process = subprocess.CompletedProcess(
+            command,
+            exit_code,
+            "\n".join(map(json.dumps, events)) + "\nprivate-stdout-sentinel",
+            "private-stderr-sentinel",
+        )
+        if cause in {"cancelled", "stream"}:
+            control.stop()
+        if cause == "stream":
+            # Stream cleanup sets cancelled too; the read failure remains the cause.
+            raise progress.CodexStreamError(process, OSError("private-exception-sentinel"))
+        return process
+
+    monkeypatch.setattr(progress, "run_codex_process", execute)
+    result = codex.run_agent(
+        project,
+        "delivery",
+        "Prompt",
+        RESULT_SCHEMA,
+        mcp_config_ref=codex_task_route,
+        resume_thread_id=resume,
+        on_session=identities.append,
+        process_control=control,
+    )
+    assert not result.ok
+    assert result.exit_code == exit_code
+    assert result.thread_id == "failed-thread"
+    assert result.result == (final if payload == "valid" else None)
+    assert result.error.startswith(primary)
+    if payload != "valid":
+        assert (
+            "\nInvalid Codex task-routed result; inspect native host diagnostics." in result.error
+        )
+    assert "private-" not in result.error
+    if cause != "cancelled":
+        assert "cancel" not in result.error.lower()
+    if exit_code is not None:
+        assert result.usage["snapshot"]["input"] == 100
+        assert result.usage["snapshot"]["cache_read"] == 80
+    else:
+        assert result.usage is None
+    assert control.cancelled.is_set() is (cause in {"cancelled", "stream"})
+    assert identities == ["failed-thread"]
+    assert len(calls) == 1
+    assert ("resume" in calls[0]) is (resume is not None)
+
+
+def test_codex_task_routed_cancelled_control_prevents_launch(
+    project, monkeypatch, codex_task_route
+):
+    from stackos.host_mcp.agent_execution import ManagedProcessControl
+
+    control = ManagedProcessControl()
+    assert control.stop() == "prevented"
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **kw: pytest.fail("must not launch"))
+    result = codex.run_agent(
+        project,
+        "delivery",
+        "Prompt",
+        SCHEMA,
+        mcp_config_ref=codex_task_route,
+        process_control=control,
+    )
+    assert not result.ok
+    assert result.exit_code is None
+    assert result.thread_id is None and result.usage is None and result.result is None
+    assert result.error == (
+        "Codex task-routed invocation cancelled before launch.\n"
+        "Invalid Codex task-routed result; inspect native host diagnostics."
+    )
+    assert control.cancelled.is_set()
+
+
+@pytest.mark.parametrize("resume", [None, "failed-thread"])
+@pytest.mark.parametrize("payload", [None, "not JSON", '{"private-result-sentinel": true}'])
+def test_codex_task_routed_zero_exit_still_requires_valid_result(
+    project, monkeypatch, codex_task_route, resume, payload
+):
+    calls = []
+
+    def execute(command, **kwargs):
+        calls.append(command)
+        if payload is not None:
+            Path(command[command.index("-o") + 1]).write_text(payload)
+        return subprocess.CompletedProcess(
+            command, 0, '{"type":"thread.started","thread_id":"failed-thread"}', ""
+        )
+
+    monkeypatch.setattr(codex.subprocess, "run", execute)
+    result = run_agent(
+        "codex",
+        project,
+        "delivery",
+        "Prompt",
+        SCHEMA,
+        mcp_config_ref=codex_task_route,
+        resume_thread_id=resume,
+    )
+    assert not result.ok
+    assert result.exit_code == 0
+    assert result.thread_id == "failed-thread"
+    assert result.result is None
+    assert result.error == "Invalid Codex task-routed result; inspect native host diagnostics."
+    assert len(calls) == 1
+
+
 def test_harness_settings_are_inherited_and_read_only_is_forwarded(
     project: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
