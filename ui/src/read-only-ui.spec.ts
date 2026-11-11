@@ -12,8 +12,9 @@ const AUTH_SETUP_STORE = join(ROOT, 'stores', 'plugins.ts')
 const USER_AUTH_STORE = join(ROOT, 'stores', 'auth.ts')
 const OPERATIONS_CLIENT = join(ROOT, 'lib', 'operations.ts')
 const TASK_CONTENT_CONTROLLER = join(ROOT, 'views', 'task-tracker', 'useTrackerTaskContent.ts')
-const AGENT_DEFAULTS_CONTROLLER = join(ROOT, 'views', 'project-detail', 'agent-defaults', 'useAgentDefaults.ts')
+const PROJECTS_STORE = join(ROOT, 'stores', 'projects.ts')
 const ALLOWED_WRITE_FILES = new Set([AUTH_SETUP_STORE, USER_AUTH_STORE, OPERATIONS_CLIENT])
+const TASK_BOARD_CLIENT = join(ROOT, 'lib', 'stackos', 'taskBoard.ts')
 
 function filesUnder(dir: string): string[] {
   const out: string[] = []
@@ -96,6 +97,17 @@ describe('restricted UI write contract', () => {
     expect([...text.matchAll(/method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/g)]).toHaveLength(writes.length)
   })
 
+  it('keeps project creation agent-owned and management operations within the bounded contracts', () => {
+    const text = readFileSync(PROJECTS_STORE, 'utf8')
+
+    expect([...text.matchAll(/method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/g)]).toHaveLength(0)
+    expect([...text.matchAll(/callOperation<[^\n]+>\('([^']+)'/g)].map((match) => match[1])).toEqual(['project.update', 'project.delete', 'project.move'])
+    expect(text).toContain("project_id: id, patch: { name }, scope: 'catalog'")
+    expect(text).toContain("placement: move.placement, scope: 'catalog'")
+    expect(text).toContain("project_id: target.id, scope: 'catalog'")
+    expect(text).toContain('confirmation: { permanent: true, project_id: target.id, project_slug: target.slug }')
+  })
+
   it('limits operation transport writes to the generic operation-call helper', () => {
     const text = readFileSync(OPERATIONS_CLIENT, 'utf8')
 
@@ -104,10 +116,10 @@ describe('restricted UI write contract', () => {
     expect(text).toContain("method: 'POST'")
   })
 
-  it('keeps tracker writes limited to the bounded task content and project defaults controllers', () => {
+  it('keeps tracker writes limited to the bounded task content and Board controllers', () => {
     const allowedOperations = new Map([
       [TASK_CONTENT_CONTROLLER, ['tracker.updateTaskContent']],
-      [AGENT_DEFAULTS_CONTROLLER, ['tracker.configureDelivery']],
+      [TASK_BOARD_CLIENT, ['tracker.updateTaskPriority', 'tracker.reorderTask']],
     ])
     const callers: string[] = []
     for (const scope of SCOPES) {

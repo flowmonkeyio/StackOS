@@ -53,6 +53,65 @@ def test_ticket_create_rest_invalid_ack_keeps_errors_and_state(api: TestClient, 
     assert _ticket_create_state(engine, project_id) == baseline
 
 
+@pytest.mark.parametrize("name", ["tracker.taskActivity", "tracker.taskResults"])
+def test_task_inspection_browser_preserves_scope_cursors_and_read_only_contract(
+    api, project_id, name
+):
+    from stackos.db.models import Artifact
+    from tests.integration.test_repositories.test_tracker_task_inspection import seed_inspection
+
+    with Session(api.app.state.engine) as session:
+        seed_inspection(session, project_id)
+        for index in range(3):
+            session.add(
+                Artifact(
+                    project_id=project_id,
+                    kind="file",
+                    uri=f"file:///tmp/{index}",
+                    provenance_json={"task_key": "inspect"},
+                )
+            )
+        session.commit()
+    headers = {"Authorization": f"Bearer {api.get('/api/v1/auth/ui-token').json()['token']}"}
+    args = {"project_id": project_id, "task_key": "inspect", "limit": 1}
+    values = []
+    for mode in ("compact", "raw"):
+        response = api.post(
+            f"/api/v1/operations/{name}/call",
+            headers=headers,
+            json={"arguments": {**args, "response_mode": mode}},
+        )
+        assert response.status_code == 200, response.text
+        data = _operation_data(response)
+        assert data["task_key"] == "inspect"
+        assert data["project_id"] == project_id
+        assert data["next_cursor"]
+        assert data["items"][0]["source_id"] > 0
+        assert data["coverage"]
+        assert "warnings" in data
+        values.append(data)
+    assert values[0] == values[1]
+    for invalid in (
+        {"response_mode": "ack"},
+        {"limit": 201},
+        {"limit": 0},
+        {"cursor": "not-a-cursor"},
+        {"task_key": "missing"},
+    ):
+        response = api.post(
+            f"/api/v1/operations/{name}/call",
+            headers=headers,
+            json={"arguments": {**args, **invalid}},
+        )
+        assert response.status_code in {400, 404, 422}, response.text
+    response = api.post(
+        f"/api/v1/operations/{name}/call",
+        headers=headers,
+        json={"arguments": {**args, "task_key": "other", "cursor": values[0]["next_cursor"]}},
+    )
+    assert response.status_code == 422, response.text
+
+
 def test_tracker_metrics_survive_raw_and_compact_browser_projections(
     api: TestClient, project_id: int
 ) -> None:

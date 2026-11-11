@@ -88,7 +88,11 @@ function trapFocus(ev: KeyboardEvent) {
     }
     return true;
   });
-  if (!focusables.length) return;
+  if (!focusables.length) {
+    ev.preventDefault();
+    node.focus({ preventScroll: true });
+    return;
+  }
   const first = focusables[0];
   const last = focusables[focusables.length - 1];
   if (ev.shiftKey && (document.activeElement === first || !focusables.includes(document.activeElement as HTMLElement))) {
@@ -109,8 +113,9 @@ async function onDialogOpened() {
   applyStackStyles();
   await nextTick();
   if (!isTopOverlay(overlayEntry)) return;
-  const target = dialogRef.value?.querySelector<HTMLElement>('[data-autofocus]')
-    ?? dialogRef.value?.querySelector<HTMLElement>('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+  const target = dialogRef.value?.querySelector<HTMLElement>('[data-autofocus]:not(:disabled)')
+    ?? dialogRef.value?.querySelector<HTMLElement>('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')
+    ?? dialogRef.value;
   target?.focus();
 }
 
@@ -174,6 +179,7 @@ defineExpose({ body: bodyRef, focusTitle });
             v-if="modelValue"
             ref="dialogRef"
             role="dialog"
+            tabindex="-1"
             aria-modal="true"
             :aria-labelledby="titleId"
             :aria-describedby="descriptionId"
@@ -192,7 +198,7 @@ defineExpose({ body: bodyRef, focusTitle });
                   <h2
                     v-if="title"
                     :id="titleId"
-                    class="ui-dialog__title t-h2 text-fg-strong"
+                    class="ui-dialog__title t-h2 break-words text-fg-strong"
                     tabindex="-1"
                     :title="title"
                   >
@@ -201,7 +207,7 @@ defineExpose({ body: bodyRef, focusTitle });
                   <p
                     v-if="description"
                     :id="descriptionId"
-                    class="text-sm text-fg-muted mt-1"
+                    class="text-sm text-fg-muted mt-1 break-words"
                   >
                     {{ description }}
                   </p>

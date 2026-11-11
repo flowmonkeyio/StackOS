@@ -140,6 +140,44 @@ async def test_late_tick_and_final_admission_guard(timing):
 
 
 @pytest.mark.asyncio
+async def test_project_cleanup_during_preflight_disarms_future_and_late_admission(
+    timing, engine, tmp_path
+):
+    from stackos.project_cleanup import ProjectCleanupService
+
+    clock, scheduler, runtime, launches, row_id = timing
+    settings = Settings(data_dir=tmp_path / "cleanup-data", state_dir=tmp_path / "cleanup-state")
+    settings.ensure_dirs()
+    scheduler.start(paused=True)
+    try:
+        runtime.connect()
+        job = scheduler.get_job(f"workflow-schedule-{row_id}")
+
+        async def cleanup_during_preflight(row, due, admit):
+            with Session(engine) as session:
+                session.info["operation_services"] = {"schedule_reconcile": runtime.reconcile}
+                project = session.get(Project, row.project_id)
+                result = await ProjectCleanupService(session, settings).delete(
+                    project.id,
+                    confirmation={
+                        "permanent": True,
+                        "project_id": project.id,
+                        "project_slug": project.slug,
+                    },
+                )
+                assert result.status == "deleted"
+            assert not admit()
+
+        runtime.launch = cleanup_during_preflight
+        clock[0] = job.next_run_time
+        await job.func(**job.kwargs)
+        assert launches == []
+        assert scheduler.get_job(job.id) is None
+    finally:
+        scheduler.shutdown(wait=False)
+
+
+@pytest.mark.asyncio
 async def test_canonical_mutation_hook_removes_only_affected_timer(timing, engine):
     from stackos.repositories.projects import ScheduledJobRepository
 

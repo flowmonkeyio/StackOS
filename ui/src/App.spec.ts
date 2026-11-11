@@ -141,6 +141,7 @@ describe('App', () => {
 function projectFixture(id: number, name: string): Project {
   return {
     id,
+    order_index: id,
     name,
     slug: name.toLowerCase(),
     domain: `${name.toLowerCase()}.test`,

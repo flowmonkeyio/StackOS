@@ -103,9 +103,12 @@ For an independently prepared task, the planner can instead call
 `tracker.startDelivery` after creating self-contained tickets and dependencies.
 It supplies the project directory and task choices, merged by role with
 `TaskTracker.config_json.delivery` defaults into one effective task snapshot.
-The planner adapts named delivery/review instructions from the
-project's available guidance; agent files are optional sources, not a launch
-requirement. StackOS passes the instructions to the harness and follows the
+Fresh Codex admission selects exact project agent source refs. The bounded source
+service resolves identity, instructions and supported native settings once;
+missing, ambiguous or unadopted sources reject before queueing. Other hosts retain
+inline contracts. Source model/effort wins over task and project fallback choices;
+absent values inherit the host. Native settings cannot expand execution authority.
+StackOS passes the frozen contract to the harness and follows the
 generic dependency traversal. Source changes and repairs create separate scoped
 commits for independent exact-commit review; observation work may cite unchanged
 HEAD and non-Git work needs no commit. Ordinary review permits up to three scoped
@@ -114,8 +117,9 @@ separate descendant commit. Preserve consumed repair allowance across requeue;
 blocked required proof, execution failure, candidate mismatch or rejection after
 the third repair stops the same task with evidence. Workflow handoff uses a
 running step as entry context, then traverses all remaining task work. Mirrors execute their frozen contracts
-once after accepted descendants, using existing roles selected by frozen step
-extensions or explicit task assignments. RunPlanRepository alone records their
+once after accepted descendants, using selected declared roles. Explicit task
+assignments win over frozen step assignments, then uniquely applicable declared
+roles; ambiguity requires selection. RunPlanRepository alone records their
 lifecycle. Assigned agents execute integration, review, audit and closeout gates;
 main retains scope admission and final claims and observes without lifecycle
 writes. Results use the actual launcher schema; the current closed envelope is
@@ -158,9 +162,11 @@ recommended StackOS operation directly, the agent should inspect and invoke it
 through the scoped toolbox.
 
 For Codex-style hosts, inspect `.codex/config.toml` and existing
-`.codex/agents/*.toml` before creating or updating local agents. StackOS does
-not scan or register those files because repository filesystem access belongs
-to the host agent, not the daemon. The workflow and preset responses should
+`.codex/agents/*.toml` before creating or updating local agents. The explicit
+project-agent REST console can read/write bounded definitions under local-admin
+file authority; handoff reads explicitly selected sources in a bound workspace.
+Binding alone grants no general file access. StackOS never scans personal/global
+agents or silently registers replacements. The workflow and preset responses should
 tell the agent what roles are needed; the host-local format decides how those
 roles are materialized.
 

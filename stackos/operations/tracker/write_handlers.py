@@ -23,9 +23,11 @@ from stackos.operations.tracker.schemas import (
     TrackerRejectTaskInput,
     TrackerReleaseInput,
     TrackerReopenInput,
+    TrackerReorderTaskInput,
     TrackerStartDeliveryInput,
     TrackerUpdateTaskContentInput,
     TrackerUpdateTaskInput,
+    TrackerUpdateTaskPriorityInput,
     TrackerUpdateTicketInput,
 )
 from stackos.repositories.base import ConflictError, ValidationError
@@ -34,21 +36,32 @@ from stackos.repositories.tracker import (
     TrackerMutationOut,
     TrackerReopenOut,
     TrackerRepository,
+    TrackerTaskBoardOut,
     TrackerTaskContentOut,
 )
-from stackos.repositories.tracker.schema import TrackerSummaryOut
 
 
 async def tracker_configure_delivery(
     inp: TrackerConfigureDeliveryInput,
     ctx: MCPContext,
     _emitter: ProgressEmitter,
-) -> WriteEnvelope[TrackerSummaryOut]:
+) -> WriteEnvelope[dict[str, Any]]:
     if ctx.extras.get("surface") != "rest" or ctx.extras.get("trusted_local_admin") is not True:
         raise ValidationError("Delivery defaults require authenticated local-admin setup")
-    result = TrackerRepository(ctx.session).configure_delivery(
-        project_id=inp.project_id, delivery=inp.delivery.model_dump(exclude_unset=True)
-    )
+    repo = TrackerRepository(ctx.session)
+    if inp.adopt_sources is not None:
+        assert inp.project_dir is not None
+        result = repo.adopt_delivery_sources(
+            project_id=inp.project_id,
+            project_dir=inp.project_dir,
+            sources={role: choice.model_dump() for role, choice in inp.adopt_sources.items()},
+            preview=inp.preview,
+        )
+    else:
+        assert inp.delivery is not None
+        result = repo.configure_delivery(
+            project_id=inp.project_id, delivery=inp.delivery.model_dump(exclude_unset=True)
+        ).model_dump(mode="json")
     return WriteEnvelope(data=result, run_id=ctx.run_id, project_id=inp.project_id)
 
 
@@ -108,6 +121,9 @@ async def tracker_start_delivery(
         else None,
         review_agent=inp.review_agent.model_dump(exclude_unset=True)
         if inp.review_agent is not None
+        else None,
+        agents={role: choice.model_dump(exclude_unset=True) for role, choice in inp.agents.items()}
+        if inp.agents is not None
         else None,
         run_plan_id=inp.run_plan_id,
         step_id=inp.step_id,
@@ -367,6 +383,34 @@ async def tracker_update_task(
         run_id=ctx.run_id,
         project_id=env.project_id,
     )
+
+
+async def tracker_update_task_priority(
+    inp: TrackerUpdateTaskPriorityInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[TrackerTaskBoardOut]:
+    env = TrackerRepository(ctx.session).update_task_board(
+        **inp.model_dump(exclude={"run_token", "expected_etag", "response_mode"}),
+        actor="local-user:operator"
+        if str(ctx.extras.get("auth_scope")).startswith("ui-")
+        else None,
+    )
+    return WriteEnvelope[TrackerTaskBoardOut](data=env.data, project_id=env.project_id)
+
+
+async def tracker_reorder_task(
+    inp: TrackerReorderTaskInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[TrackerTaskBoardOut]:
+    env = TrackerRepository(ctx.session).update_task_board(
+        **inp.model_dump(exclude={"run_token", "expected_etag", "response_mode"}),
+        actor="local-user:operator"
+        if str(ctx.extras.get("auth_scope")).startswith("ui-")
+        else None,
+    )
+    return WriteEnvelope[TrackerTaskBoardOut](data=env.data, project_id=env.project_id)
 
 
 async def tracker_update_task_content(
@@ -652,8 +696,10 @@ __all__ = [
     "tracker_reject_task",
     "tracker_release",
     "tracker_reopen",
+    "tracker_reorder_task",
     "tracker_start_delivery",
     "tracker_update_task",
     "tracker_update_task_content",
+    "tracker_update_task_priority",
     "tracker_update_ticket",
 ]

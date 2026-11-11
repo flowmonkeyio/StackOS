@@ -135,7 +135,9 @@ def operation_specs() -> list[OperationSpec]:
             ),
             returns=(
                 "Safe project metadata only: id, slug, name, domain, locale, active flag, "
-                "and timestamps. Selected servers return only the verified user's projects.",
+                "stored order_index and timestamps. Lists and ID cursors follow (order_index, id); "
+                "new projects append. Refresh pagination after a concurrent catalog move. "
+                "Selected servers return only the verified user's projects.",
             ),
             examples=(OperationExample(title="List projects", arguments={"limit": 20}),),
             mutating=False,
@@ -157,7 +159,12 @@ def operation_specs() -> list[OperationSpec]:
             when_to_use=(
                 "The agent has a candidate project id or slug and wants the exact metadata.",
             ),
-            returns=("One safe project record.",),
+            returns=(
+                "One safe project record, the explicit primary_workspace_binding_id, "
+                "resolved project_dir or actionable project_folder_issue. Resolution never "
+                "chooses a workspace from binding order, sessions or remote names and grants "
+                "no file access. Explicit task and saved schedule targets stay independent.",
+            ),
             examples=(OperationExample(title="Get project", arguments={"id_or_slug": "acme"}),),
             mutating=False,
             grant_policy="direct-setup-read",
@@ -412,6 +419,9 @@ def operation_specs() -> list[OperationSpec]:
                 "workspace_alias for an explicitly named no-directory binding.",
                 "Pass rebind_existing=true only when intentionally moving an existing "
                 "repo binding to a different project.",
+                "A selected primary folder cannot move implicitly. Task worktrees use "
+                "distinct directory bindings. Clear the primary reference in project setup "
+                "before deliberately relocating its binding, then select it again.",
             ),
             returns=("A write envelope with the workspace binding.",),
             examples=(

@@ -221,3 +221,17 @@ def test_manual_incident_linkage_reuses_existing_evidence_owners() -> None:
     assert "Pending consumption stays pending" in text
     assert "Required current defects remain blockers" in text
     assert "one-off QA scratch outside Git" in text
+
+
+def test_workspace_ui_paths_use_current_human_destinations() -> None:
+    from stackos.repositories.workspace_guidance import _ui_paths
+
+    assert _ui_paths(None) == {"projects": "/"}
+    assert _ui_paths(7) == {
+        "home": "/projects/7",
+        "connections": "/projects/7/connections",
+        "tasks": "/projects/7/tasks",
+        "plugins": "/projects/7/plugins",
+        "library": "/projects/7/library",
+        "agents": "/projects/7/agents",
+    }

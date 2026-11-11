@@ -118,14 +118,14 @@ resources:
       record_kind: client-project-context
       agent_guidance: Store one resource per stable business engagement in the currently bound StackOS project. This record does not create a nested StackOS project, cross-project access, a client-management system, or finance authority. Update the same engagement_ref on rerun; finance pointers are navigation only and all financial facts and mutable settings stay in the selected external finance backend.
 ui:
+  page:
+    sections: [workflows, saved, files]
   nav:
     section: Agency
     items:
-      - key: agency.resources
-        label: Data
-        route: /resources?plugin=agency
-      - key: agency.templates
-        label: Workflows
-        route: /workflow-templates?plugin=agency
+      - key: agency.domain
+        label: Agency
+        to: plugins/agency
+        matchPrefix: true
 config:
   schema_version: stackos.plugin.v1

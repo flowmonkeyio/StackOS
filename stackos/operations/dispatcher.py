@@ -81,6 +81,9 @@ class OperationDispatcher:
             ctx.extras["settings"] = settings
             if settings.process_role == "server" and ctx.principal is None:
                 raise ToolNotGrantedError("server operations require a verified user principal")
+        # A permanent-delete handler can purge this very Run. Keep scope as
+        # immutable request data rather than refreshing an expired ORM row later.
+        run_project_id = ctx.run.project_id if ctx.run is not None else None
         with bind_context(ctx):
             project_id = authorize_operation(session, spec.name, parsed.model_dump(), run=ctx.run)
             if project_id is not None:
@@ -110,6 +113,14 @@ class OperationDispatcher:
                 )
             if not trusted_local_admin or spec.name in RUN_PLAN_OWNER_TOOL_NAMES:
                 check_call_grant(spec.name, ctx, parsed)
+            if (
+                not spec.read_only
+                and ctx.project_id is not None
+                and name not in {"project.delete", "project.reconcileFileOwnership"}
+            ):
+                from stackos.repositories.projects import ProjectRepository
+
+                ProjectRepository(session).require_available(ctx.project_id)
             if (
                 spec.idempotency_policy == "dispatcher"
                 and not spec.read_only
@@ -152,8 +163,8 @@ class OperationDispatcher:
                 ) from exc
 
             payload = _result_to_json(result)
-            if ctx.run is not None and ctx.run.project_id is not None:
-                seen = _find_mismatched_project_id(payload, ctx.run.project_id)
+            if run_project_id is not None:
+                seen = _find_mismatched_project_id(payload, run_project_id)
                 if seen is not None:
                     if ctx.principal is not None:
                         raise NotFoundError("project or child not found")
@@ -162,7 +173,7 @@ class OperationDispatcher:
                         data={
                             "operation": spec.name,
                             "run_id": ctx.run_id,
-                            "run_project_id": ctx.run.project_id,
+                            "run_project_id": run_project_id,
                             "result_project_id": seen,
                         },
                     )

@@ -135,6 +135,8 @@ class Artifact(SQLModel, table=True):
     superseded_by_artifact_id: int | None = Field(default=None)
     metadata_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     provenance_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    # Internal producer custody, deliberately absent from artifact tool inputs/outputs.
+    managed_file_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
 

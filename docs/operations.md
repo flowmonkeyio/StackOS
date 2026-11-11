@@ -203,8 +203,119 @@ uncertainty surviving restart requires manual reconciliation before a new handof
 This fence covers every task sharing that connection, including stopped tasks.
 An idle transport after restart does not authorize replay. No process is killed
 or relaunched to resolve uncertainty.
+## Project display names and catalog order
+
+`project.update` changes display names through the existing project repository.
+Names are trimmed, nonblank strings of at most 200 characters; duplicate names
+are allowed. A same-name update is a no-op. IDs, slugs, workspace bindings and
+repository folders retain their identity. Agent and browser callers can patch
+only `name`; daemon-admin REST/CLI callers retain safe metadata administration.
+
+`project.list` and the legacy project list route use stored `(order_index, id)`
+order and matching ID cursors. Migration `0038_project_order` preserves the
+previous ID-ascending order; newly created projects append. Start pagination
+again after a concurrent catalog change. Explicit portfolio `recent`/`name`
+sorts retain their own documented projection ordering.
+
+`project.move` accepts one `project_id`, `placement` (`top`, `before`, `after`),
+and an `anchor_id` for before/after. It moves that project within the complete
+stored catalog, including records outside the caller's loaded page. It never
+accepts a replacement list. Active projects are permitted visible targets and
+anchors; missing/inactive anchors reject before mutation. Self and adjacent
+no-op moves preserve all data. A canceled interaction makes no call.
+
+Console callers explicitly supply `scope: "catalog"` to `project.update` and
+`project.move` through their browser-safe generic REST operation routes.
+Catalog scope requires authenticated local-admin/console REST authority and
+cannot be asserted through MCP. Ordinary `scope: "project"` calls keep normal
+bridge injection: a bound agent can rename/move only its own project, relative
+to an active project visible in `project.list`. No bridge scope exception exists.
+CLI uses the same registered operations via `stackos ops call project.move`.
+
+For example, move the selected catalog project before an anchor:
+
+```json
+{"project_id": 2, "scope": "catalog", "placement": "before", "anchor_id": 1}
+```
+
+## Permanent project deletion
+
+`project.delete` is the single permanent cleanup operation for MCP, REST, CLI
+and the browser console. It delegates to `ProjectCleanupService`; it does not
+archive the project. Supply the selected immutable ID and its current slug:
+
+```json
+{"project_id": 2, "confirmation": {"permanent": true, "project_id": 2, "project_slug": "acme"}}
+```
+
+Missing, false or mismatched confirmation rejects before cleanup. Display names
+never select the target. Bound agents can delete only their injected project;
+global agents must explicitly supply an existing project ID on every call.
+Console calls additionally require `scope: "catalog"` through the browser-safe
+generic REST operation route. Catalog scope remains REST-admin/console only.
+CLI uses `stackos ops call project.delete --input <json-file>`.
+The old `DELETE /api/v1/projects/{id}` route, including `hard=true`, is removed;
+old unconfirmed callers cannot become destructive.
+
+The bounded result is identical in `compact` and `raw` modes; `ack` is refused.
+Its `status` is `blocked`, `incomplete`, `deleted` or `missing`. `blockers` names
+active owners that must be stopped through their existing controls. Cleanup
+never aborts work or kills an agent. `incomplete` retains the project, the same
+`operation_id`, `retryable`, a safe `error_code`, and any
+`ownership_required_artifact_ids`. Some files may already be removed; retry the
+same confirmed operation rather than assuming rollback. Only `deleted` means
+cleanup completed. It removes live owned StackOS data and managed files while
+preserving repository folders, other projects, shared accounts/files, external
+exports and existing backup archives.
+
+Deletion handles retries by observing current state instead of storing a replay
+receipt in the deleted project. A same-key retry revalidates confirmation and
+returns `missing` after deletion. Global bridges retain existing-project
+admission and instead reject a missing saved ID with `project_unavailable`;
+they never substitute a same-named replacement. No deleted project payload,
+audit history or idempotency row is recreated.
+
+Unaudited legacy generated files can require an explicit ownership decision.
+Only an administrator using REST or CLI can call
+`project.reconcileFileOwnership`; it is unavailable to MCP and the console.
+It delegates to `ArtifactRepository.reconcile_generated_file` and accepts only
+a stopped cleanup's reported artifact gap. Review the exact identity, URI and
+current content hash, then supply:
+
+```json
+{"project_id": 2, "project_slug": "acme", "artifact_id": 42, "expected_uri": "/generated-assets/openai-images/legacy.png", "expected_sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef", "confirm_ownership": true}
+```
+
+The managed root is daemon-derived; callers cannot supply a filesystem path.
+Wrong identity, changed content, unsafe files or absent cleanup gaps reject.
+Ordinary deletion confirmation and editable artifact metadata cannot grant
+custody. After reconciliation, retry `project.delete` with the original ID/slug;
+its operation ID is preserved, including across restart.
 
 ## Project workflow schedules
+
+Project folder setup has one owner: `Project.primary_workspace_binding_id`.
+Initial folder-backed project bootstrap records its chosen binding. Connecting
+task worktrees or starting sessions never changes that selection. Existing
+projects deliberately remain unselected after migration; setup must confirm an
+existing same-project directory binding from `workspace.listBindings`, then use
+the local-admin `project.update` patch `{"primary_workspace_binding_id": <binding_id>}`
+once. Null supports projects without a local folder. This does not rebind a
+workspace, change project identity, or grant filesystem access.
+The selected binding's root cannot be moved implicitly through connect/bootstrap;
+task worktrees use distinct directory bindings. Intentional folder relocation
+clears the primary reference, updates the binding, then selects it again.
+
+`project.get` returns the stored reference plus `project_dir`, resolved only
+from that exact binding, or an actionable `project_folder_issue` for missing,
+wrong-project, conflicting or unavailable folders. Agents and new Automations
+share this read; neither screen chooses among task worktrees. File operations
+still enforce exact project/path association and local-admin authority.
+Explicit task worktrees and queued/running snapshots retain their own targets.
+Existing Automations keep their saved execution directory on unrelated edits.
+The editor explains a mismatch with project setup and requires explicit
+confirmation before using the configured project folder; saving then checks
+its agent selections in that folder. Setup never rewrites saved schedules.
 
 `schedule.list`, `schedule.set`, `schedule.toggle`, `schedule.remove` and
 `schedule.runs` share the project schedule repository through MCP, generic
@@ -218,11 +329,23 @@ It accepts a display `name`, five-field `cron_expr`, IANA `timezone`, existing
 `template_key`, concrete `inputs_json`, and `execution_json`. Execution settings
 reuse `tracker.startDelivery`: select a bound `connection_id` on the selected
 server, or an existing `project_dir` in standalone mode, with optional `host_key`,
-`delivery_agent`/`review_agent` overrides and `mcp_config_ref`. Task keys,
-ticket assignments, run-plan IDs and step IDs belong to occurrences and are
-rejected here. Roles must carry explicitly prepared workflow instructions in
-project defaults or these overrides; validation does not judge their semantic
-suitability. Credentials remain daemon-held; raw secret fields are rejected,
+`agents` (declared role key to selection), legacy `delivery_agent`/`review_agent`
+overrides and `mcp_config_ref`. Codex selections use exact project `source_ref`
+values for local execution (`host_key`, `native_name`, project-relative `source_path`), with optional
+execution fallbacks; source instructions are never copied into schedule storage.
+Connected execution retains its prepared instructions and local computer custody;
+the server does not read project files. Other hosts retain their existing inline
+contracts. No engineering pair is
+required for a workflow with one declared role. Ordinary tickets still require
+independent review through the handoff owner.
+
+Optional `step_agent_assignments` maps existing template step IDs to selected
+role keys. Explicit selections take precedence over frozen step metadata, then
+a uniquely applicable declared role; ambiguous roles require an explicit choice.
+The scheduler translates step IDs to the occurrence's canonical ticket keys.
+Task keys, ticket assignments and run-plan IDs remain occurrence-only inputs.
+Validation does not judge the semantic suitability of the selected instructions.
+Credentials remain daemon-held; raw secret fields are rejected,
 including in disabled drafts. Opaque secret markers keep their existing rules.
 Cron parsing uses the existing APScheduler `CronTrigger.from_crontab` contract:
 numeric weekdays run from Monday (`0`) to Sunday (`6`); named weekdays such as
@@ -232,7 +355,14 @@ Schedules default to disabled. Incomplete disabled drafts are permitted;
 supplied cron, timezone and execution shape must still be valid. Enabling
 strictly validates effective workflow inputs/defaults with the existing
 read-only run-plan validator and resolves current host/role settings through
-the handoff preflight. This creates no request, run plan, run or tracker task,
+the handoff preflight. Saving supplied source refs also revalidates their current
+identity/settings, including supplied roles not assigned to any step, regardless
+of enabled state. Unrelated unselected project defaults are not resolved.
+When both forms supply `delivery_agent` or `review_agent`, each retained choice
+is validated separately; the legacy argument keeps its existing execution precedence.
+Complete declared selections validate step and role mappings
+even while disabled. Missing/renamed/malformed sources fail without fallback.
+This creates no request, run plan, run or tracker task,
 and grants no external action approval. Legacy metadata rows migrate to
 disabled, retain their IDs/key/cron/history and show a needs-setup issue.
 
@@ -270,13 +400,17 @@ request whose preparation failed; it is never prepared or started again.
 Later due times skip with `overlap` while the last linked canonical plan or
 task is unfinished, including stopped/approval-blocked work. Request lease
 expiry is not workflow completion. No skipped tick creates queued work.
-Admission repeats strict read-only configuration/host preflight, checks the
-current availability guard, and calls `agentRequest.prepareRunPlan` once.
+Admission repeats strict read-only configuration/host preflight, retains its
+validated source/settings snapshot in memory, checks the current availability
+guard, and calls `agentRequest.prepareRunPlan` once.
 Its existing strict builder freezes the effective template, inputs, grants
 and approvals together. Existing plan start/claim selects the first
 dependency-ready step without a named phase, then `startDelivery` freezes
-current role settings on that task and traverses its dependencies. A non-Git
-workspace is valid. The schedule records `started`, `overlap`, `unavailable`
+the preflight role settings on that task without rereading mutable definitions,
+and traverses its dependencies. A non-Git
+workspace is valid. Each new occurrence reads current source digests/settings;
+queued, running and historical occurrences retain their accepted snapshots.
+The schedule records `started`, `overlap`, `unavailable`
 or `blocked`; admitted failures retain safe request diagnostics and canonical
 plan/approval state for explicit inspection/repair, with no automatic retry.
 Role override omission inherits defaults; explicit optional nulls clear them.
@@ -540,9 +674,10 @@ callable contract per StackOS primitive. The agent bridge advertises
 prerequisites, return notes, examples, and schemas. Use `toolbox.describe` for
 exact hidden setup and step-granted tools before calling them.
 
-The UI reads the same docs at `/projects/{project_id}/operations`. That page is
-not a second registry; it renders `GET /api/v1/operations` and
-`GET /api/v1/operations/{operation_name}`.
+The operation registry remains agent accessible through MCP, REST and CLI.
+`GET /api/v1/operations` and `GET /api/v1/operations/{operation_name}` retain
+their shared contracts. The standalone human operation-catalog page is removed;
+relevant object Details may expose safe contextual metadata.
 
 ## Agent activity reads
 
@@ -777,8 +912,18 @@ engineering plugin defaults once and preserves existing generic values.
 
 `tracker.startDelivery` freezes project defaults, task overrides and optional
 `agent_assignments` into one execution snapshot. The map identifies canonical
-ticket keys and existing `delivery_agent`/`review_agent` roles; frozen step
+ticket keys and selected arbitrary role keys in `agents`; frozen step
 extension `agent_assignment` supplies mirror defaults and explicit entries win.
+Otherwise admission uses the unique applicable selected declared workflow role;
+ambiguity rejects. Ordinary tickets retain a separate independent reviewer.
+Fresh Codex admission reads exact project source refs through the bounded source
+owner and freezes instructions/digest/supported native options. Source model and
+effort override execution fallbacks; no source field grants permissions, provider
+or MCP changes. Legacy inline Codex configuration needs explicit adoption.
+`tracker.configureDelivery` also accepts `project_dir`, `adopt_sources` with exact
+refs/digests, and `preview` in place of `delivery`. Preview compares without writes;
+explicit adoption preserves unrelated settings and verifies saved readback. See
+[source adoption](task-tracker.md#automated-task-delivery).
 For workflows the running `step_id` is entry context. The existing job traverses
 all dependency-ready work, activates nested groups without launching them,
 claims mirrors through the run-plan owner, runs accepted descendants and then
@@ -859,6 +1004,13 @@ The raw-only response keeps the saved task, revision, input receipt and replay
 status; ACK and compact modes are not available. See [task content](task-tracker.md#ui)
 for storage and UI behavior. Broader tracker operations remain agent/controller
 surfaces and do not become browser-safe through this exception.
+
+`tracker.updateTaskPriority` and `tracker.reorderTask` expose bounded task Board
+edits through MCP, REST (including the local browser) and CLI, with one repository
+transaction owner. Strict inputs require the task's status/timestamp and an
+intent-bound retry key; they cannot supply lifecycle or arbitrary patches.
+See [Board priority and order writes](task-tracker.md#board-priority-and-order-writes)
+for neighbor placement, ordering, conflicts and existing-stream invalidation.
 
 ## CLI Calls
 
@@ -1094,6 +1246,8 @@ index for common core operations, not a replacement for registry discovery.
 - `tracker.createTicket`
 - `tracker.updateTask`
 - `tracker.updateTaskContent`
+- `tracker.updateTaskPriority`
+- `tracker.reorderTask`
 - `tracker.updateTicket`
 - `tracker.patch`
 - `tracker.rejectTask`

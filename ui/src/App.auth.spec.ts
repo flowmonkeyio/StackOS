@@ -45,7 +45,7 @@ it('never restores a previous user’s cached heading or sidebar while fresh nav
   registerAuthStoreWithClient(auth)
   const projects = useProjectsStore()
   projects.items = [{id:7,name:'U1 private project',slug:'u1',domain:'example.test',locale:'en-US',niche:null,
-    is_active:true,schedule_json:null,created_at:'2026-11-10T00:00:00Z',updated_at:'2026-11-10T00:00:00Z'}]
+    is_active:true,order_index:1,schedule_json:null,created_at:'2026-11-10T00:00:00Z',updated_at:'2026-11-10T00:00:00Z'}]
   projects.activeProjectId = 7
   const router = createRouter({history:createMemoryHistory(),routes:[{
     path:'/projects/7',component:{template:'<h1>U1 private project</h1>'},

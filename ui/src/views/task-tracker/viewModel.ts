@@ -1,4 +1,5 @@
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
+import { parseStackOsDate } from '@/lib/stackos/time'
 import type {
   TrackerSnapshot,
   TrackerStatus,
@@ -7,6 +8,7 @@ import type {
 } from '@/lib/task-tracker/types'
 
 import type { GraphBlockFilter, StatusFilter, TaskProgressRow } from './viewTypes'
+import type { BoardFilterClause, BoardFilterState } from './boardFilters'
 
 export interface TrackerControlFilters {
   search: string
@@ -126,10 +128,7 @@ export function buildTaskProgressRows(
       }
     })
     .filter((row) => taskRowMatchesControls(row, filters))
-    .sort((a, b) => {
-      const createdDiff = Date.parse(b.task.created_at) - Date.parse(a.task.created_at)
-      return createdDiff || b.id - a.id
-    })
+    .sort(newestTaskFirst)
 }
 
 export function taskRowMatchesControls(
@@ -177,6 +176,41 @@ export function taskRowMatchesControls(
     ],
     query,
   )
+}
+
+/** Board-only projection: Graph keeps the unfiltered newest-first source rows. */
+export function projectBoardRows(
+  rows: TaskProgressRow[],
+  state: BoardFilterState,
+  now: Date = new Date(),
+): TaskProgressRow[] {
+  const days = { 'past-day': 1, 'past-week': 7, 'past-month': 30 }
+  return rows.filter(row => {
+    if (!state.clauses.every(clause => matchesBoardClause(row, clause))) return false
+    if (row.task.status !== 'complete' || state.completed === 'all') return true
+    if (state.completed === 'none' || !row.task.completed_at) return false
+    const elapsed = now.getTime() - parseStackOsDate(row.task.completed_at).getTime()
+    return elapsed >= 0 && elapsed <= days[state.completed] * 86_400_000
+  }).sort((a, b) => a.task.order_index - b.task.order_index || newestTaskFirst(a, b))
+}
+
+function matchesBoardClause(row: TaskProgressRow, clause: BoardFilterClause): boolean {
+  const base: TrackerControlFilters = { search: '', status: 'all', workflow: '', assignee: '' }
+  let matches: boolean
+  switch (clause.field) {
+    case 'text': return taskRowMatchesControls(row, { ...base, search: clause.value })
+    case 'blocked': return taskRowMatchesControls(row, { ...base, blocked: true })
+    case 'ticket-status': return taskRowMatchesControls(row, { ...base, ticketStatus: clause.value })
+    case 'status': matches = clause.values.includes(row.task.status); break
+    case 'priority': matches = clause.values.some(value => value === row.task.priority_key); break
+    case 'workflow': matches = taskMatchesWorkflow(row.task, clause.value); break
+    case 'assignee': matches = taskRowMatchesControls(row, { ...base, assignee: clause.value }); break
+  }
+  return clause.operator === 'is-not' ? !matches : matches
+}
+
+function newestTaskFirst(a: TaskProgressRow, b: TaskProgressRow): number {
+  return parseStackOsDate(b.task.created_at).getTime() - parseStackOsDate(a.task.created_at).getTime() || b.id - a.id
 }
 
 export function selectGraphVisibleTickets(

@@ -49,9 +49,10 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 
 - Sidebar: 256px desktop rail.
 - The project picker directly precedes the scrollable project navigation.
-  **Operate** leads (Home, Attention, Work, Activity), then **Configure**
-  (Connections, Automation, Spend, Agent defaults, Plugins), **Execution**, **Catalog**,
-  **Data & evidence**, and enabled plugin groups.
+  Home, Work, Automations and Library lead without a category heading. **Setup**
+  contains Connections, Spend, Agents and Plugins. The following **Plugins**
+  group contains direct enabled-domain links, including the existing Finance
+  destination. Domain links never expand into Data/Workflows submenus.
 - A separated **App** footer holds Overview, Accounts, and Backups outside the
   project navigation scroll, above the theme control. All three are available
   without a project. Backups retains the global `/setup` route.
@@ -59,6 +60,11 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
   not new top-level product lanes. The root `/` is the project portfolio +
   local system status; `/projects/:id` is the operations console (Home). See
   [`ui-redesign-direction.md`](./ui-redesign-direction.md).
+  There are no Attention, Activity, Execution, Catalog, Data & evidence,
+  Settings, Diagnostics or Advanced navigation wrappers. Work owns contextual
+  results/history; Library owns saved information/files; domain pages own their
+  workflow details. Finance request inspection stays at its origin even before
+  a tracker task exists. See the [route map](./ui-page-layout-map.md).
 - Top bar: 52px. Sticky. Solid `bg.surface`, no blur.
 - Page content: max `1536px` (wide), `1280px` (default), `768px` (reading).
 - Page header: title, slug, description, and utility controls (right). Breadcrumbs optional, above title.
@@ -84,6 +90,11 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 **UiSectionHeader.** Use for section titles inside a page, panel, or card. Keep actions in the action slot; they align right on desktop and wrap below the heading copy on narrow screens so titles and descriptions never squeeze into one-word columns.
 
 **UiDialog.** Header / body / footer. Footer right-aligned, ghost cancel + primary confirm. Trap focus. `Esc` requests close; the owning flow protects unsaved or in-flight work. The backdrop teleports to `body` and covers the viewport independently of page spacing, scrolling or transformed ancestors. The canonical close control is a nonshrinking `UiIconButton` at `md` (32 × 32px), with a centered 16 × 16px registry close icon aligned to the first header row.
+
+When pending work disables every control, the dialog frame remains a
+programmatic focus target and contains Tab/Shift+Tab. The owning flow can move
+focus to the retained title when disabling the focused action; it does not
+enable close or another submission to keep keyboard focus inside.
 
 Use `layout="detail"` for stable reading/editing dialogs. This opt-in preset has height `min(880px, 100dvh - 48px)`, fixed header/footer regions and one flexible, vertically scrolling body with `min-height: 0`. Width still follows `size` (`lg` is 672px) and the viewport clamp. Long headings wrap to two lines with their full text available as the title; the body wraps long content and prevents horizontal overflow. The default content-sized dialog remains unchanged. A detail flow keeps one shell mounted while switching its internal content; the flow owns identity, retained reading/draft state and intentional focus, never the primitive.
 

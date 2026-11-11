@@ -13,6 +13,7 @@ from stackos.db.models import ProjectEvent
 from stackos.repositories.base import Page, ValidationError
 from stackos.repositories.tracker.events import (
     TRACKER_EXECUTION_CHANGED,
+    TRACKER_TASK_CHANGED,
     TRACKER_TASK_STATUS_CHANGED,
     TRACKER_TICKET_STATUS_CHANGED,
     TRACKER_USAGE_CHANGED,
@@ -144,6 +145,7 @@ class ContextQueryMixin(ContextRepositorySupport):
             self._require_project(project_id)
         n = _normalise_limit(limit)
         event_types = [
+            TRACKER_TASK_CHANGED,
             TRACKER_TASK_STATUS_CHANGED,
             TRACKER_TICKET_STATUS_CHANGED,
             TRACKER_EXECUTION_CHANGED,
@@ -182,6 +184,7 @@ class ContextQueryMixin(ContextRepositorySupport):
         if project_id is not None:
             self._require_project(project_id)
         event_types = [
+            TRACKER_TASK_CHANGED,
             TRACKER_TASK_STATUS_CHANGED,
             TRACKER_TICKET_STATUS_CHANGED,
             TRACKER_EXECUTION_CHANGED,

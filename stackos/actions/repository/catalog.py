@@ -10,7 +10,7 @@ from sqlmodel import col, select
 
 from stackos.action_availability import build_action_availability, build_action_exposure
 from stackos.actions.manifest import ExecutableActionManifest, parse_action_manifest
-from stackos.db.models import Action, ExecutionContext, Plugin, Project, ProjectPlugin, Provider
+from stackos.db.models import Action, ExecutionContext, Plugin, ProjectPlugin, Provider
 from stackos.generated_inventory import (
     generated_action_public_key,
     generated_action_visible_for_project,
@@ -273,8 +273,9 @@ class ActionCatalogMixin:
         return project_plugin.enabled is False
 
     def _require_project(self, project_id: int) -> None:
-        if self._s.get(Project, project_id) is None:
-            raise NotFoundError(f"project {project_id} not found")
+        from stackos.repositories.projects import ProjectRepository
+
+        ProjectRepository(self._s).require_available(project_id)
 
 
 def _action_execution_context_guidance(

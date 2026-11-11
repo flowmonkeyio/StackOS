@@ -11,7 +11,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 245
+    assert len(names) == 255
     assert not names.intersection(
         {"actionCall.aggregate", "actionCall.aggregateAll", "actionCall.queryAll"}
     )
@@ -33,6 +33,8 @@ def test_operation_registry_documents_core_operations() -> None:
         "tracker.configureDelivery",
         "hostMcp.status",
         "project.portfolio",
+        "project.delete",
+        "project.reconcileFileOwnership",
         "secret.set",
         "schema.get",
         "account.list",
@@ -90,6 +92,10 @@ def test_operation_registry_documents_core_operations() -> None:
         "backup.status",
         "backup.configure",
         "backup.create",
+        "projectAgent.list",
+        "projectAgent.get",
+        "projectAgent.create",
+        "projectAgent.update",
     } <= names
 
     getting_started = registry.get("guide.gettingStarted").describe_out()
@@ -162,6 +168,8 @@ def test_operation_registry_documents_core_operations() -> None:
         "tracker.ticketCounts": "direct-read",
         "tracker.ticketCountsAll": "local-admin-read",
         "tracker.agentStats": "direct-read",
+        "tracker.taskActivity": "direct-read",
+        "tracker.taskResults": "direct-read",
         "tracker.agentStatsAll": "local-admin-read",
         "project.portfolio": "local-admin-read",
     }.items():
@@ -548,6 +556,10 @@ def test_operation_registry_surface_filter() -> None:
         "localRuntime.reconcile",
         "localRuntime.poll",
         "localRuntime.report",
+        "projectAgent.list",
+        "projectAgent.get",
+        "projectAgent.create",
+        "projectAgent.update",
         "desktop.availability",
         "account.application.status",
         "account.create",

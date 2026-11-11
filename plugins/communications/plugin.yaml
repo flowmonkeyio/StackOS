@@ -5242,16 +5242,15 @@ resources:
     events.
   schema: *id011
 ui:
+  page:
+    sections: [workflows, saved, files]
   nav:
     section: Communications
     items:
-    - key: communications.resources
-      label: Data
-      to: resources?plugin_slug=communications
+    - key: communications.domain
+      label: Communications
+      to: plugins/communications
       matchPrefix: true
-    - key: communications.templates
-      label: Workflows
-      to: workflow-templates?plugin_slug=communications
 config:
   schema_version: stackos.plugin.v1
   contract_doc: docs/integration-contracts/communications.md

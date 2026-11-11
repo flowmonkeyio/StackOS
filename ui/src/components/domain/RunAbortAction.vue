@@ -1,9 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { UiDropdownMenu, UiIcon, UiIconButton } from '@/components/ui'
+import type { UiDropdownMenuProps } from '@/components/ui/UiDropdownMenu.vue'
 import { useRunAbort, type RunAbortTarget } from '@/composables/useRunAbort'
 
-const props = defineProps<{ target: RunAbortTarget | null }>()
+const props = withDefaults(defineProps<{
+  target: RunAbortTarget | null
+  /** Footer consumers open inward; other consumers keep their existing placement. */
+  placement?: UiDropdownMenuProps['placement']
+}>(), { placement: 'bottom-end' })
 const emit = defineEmits<{ refresh: [] }>()
 const { pending, show } = useRunAbort()
 const available = computed(() => props.target && !['aborted', 'failed', 'complete', 'completed', 'skipped'].includes(props.target.status))
@@ -17,7 +22,7 @@ function select() {
   <UiDropdownMenu
     v-if="available"
     :items="[{ key: 'abort', label: pending ? 'Aborting…' : 'Abort run', tone: 'danger', disabled: pending, onSelect: select }]"
-    placement="bottom-end"
+    :placement="placement"
     aria-label="Run actions"
   >
     <template #trigger="{ toggle }">

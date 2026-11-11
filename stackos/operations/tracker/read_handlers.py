@@ -15,6 +15,8 @@ from stackos.operations.tracker.schemas import (
     TrackerNextInput,
     TrackerProjectInput,
     TrackerSearchInput,
+    TrackerTaskActivityInput,
+    TrackerTaskResultsInput,
     TrackerTicketCountsAllInput,
     TrackerTicketCountsInput,
     TrackerTicketInput,
@@ -32,7 +34,33 @@ from stackos.repositories.tracker import (
     TrackerTicketCountsOut,
     TrackerVerifyOut,
 )
+from stackos.repositories.tracker.inspection_schema import TaskActivityOut, TaskResultsOut
 from stackos.repositories.tracker.schema import TrackerAgentStatsOut
+
+
+async def tracker_task_activity(
+    inp: TrackerTaskActivityInput, ctx: MCPContext, _emitter: ProgressEmitter
+) -> TaskActivityOut:
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).task_activity,
+        project_id=inp.project_id,
+        task_key=inp.task_key,
+        limit=inp.limit,
+        cursor=inp.cursor,
+    )
+
+
+async def tracker_task_results(
+    inp: TrackerTaskResultsInput, ctx: MCPContext, _emitter: ProgressEmitter
+) -> TaskResultsOut:
+    return await run_in_threadpool(
+        TrackerRepository(ctx.session).task_results,
+        project_id=inp.project_id,
+        task_key=inp.task_key,
+        source_kind=inp.source_kind,
+        limit=inp.limit,
+        cursor=inp.cursor,
+    )
 
 
 async def tracker_agent_stats(

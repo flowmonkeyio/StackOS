@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, Literal
+from pathlib import Path
+from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from apscheduler.triggers.cron import CronTrigger
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, model_validator
 from pydantic import ValidationError as SchemaValidationError
+from sqlalchemy import and_, func, or_, update
 from sqlmodel import Session, col, select
 
 from stackos.db.models import (
@@ -21,8 +23,13 @@ from stackos.db.models import (
     RunPlan,
     ScheduledJob,
     TrackerItemStatus,
+    WorkspaceBinding,
 )
-from stackos.operations.tracker.schemas import TaskDeliveryAgentOverride, TaskMcpConfigRef
+from stackos.operations.tracker.schemas import (
+    AgentRole,
+    TaskDeliveryAgentOverride,
+    TaskMcpConfigRef,
+)
 from stackos.repositories.base import (
     BudgetExceededError,
     ConflictError,
@@ -30,7 +37,7 @@ from stackos.repositories.base import (
     NotFoundError,
     Page,
     ValidationError,
-    cursor_paginate,
+    _normalise_limit,
     cursor_paginate_desc,
 )
 from stackos.repositories.tracker.schema import ActiveExecutionOut, AgentStatsMetricsOut
@@ -40,17 +47,35 @@ def _utcnow() -> datetime:
     return datetime.now(tz=UTC).replace(tzinfo=None)
 
 
+ProjectName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+_project_name = TypeAdapter(ProjectName)
+
+
+def validate_project_name(value: Any) -> str:
+    try:
+        return _project_name.validate_python(value)
+    except SchemaValidationError as exc:
+        raise ValidationError(
+            "project name must be a nonblank string of at most 200 characters"
+        ) from exc
+
+
 class ProjectOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
     slug: str
     name: str
+    order_index: int
     domain: str
     niche: str | None
     locale: str
     is_active: bool
+    cleanup_json: dict[str, Any] | None = None
     schedule_json: dict[str, Any] | None
+    primary_workspace_binding_id: int | None = None
+    project_dir: str | None = None
+    project_folder_issue: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -110,6 +135,8 @@ class ScheduleExecution(BaseModel):
     host_key: str | None = Field(default=None, min_length=1)
     delivery_agent: TaskDeliveryAgentOverride | None = None
     review_agent: TaskDeliveryAgentOverride | None = None
+    agents: dict[AgentRole, TaskDeliveryAgentOverride] | None = None
+    step_agent_assignments: dict[str, AgentRole] | None = None
     mcp_config_ref: TaskMcpConfigRef | None = None
 
     @model_validator(mode="after")
@@ -184,6 +211,32 @@ class ProjectRepository:
     def __init__(self, session: Session) -> None:
         self._s = session
 
+    def require_available(self, project_id: int, *, reserve: bool = False) -> Project:
+        """Fence admissions against cleanup using the existing SQLite write transaction.
+
+        Writers reserve immediately before persisting admission, without an await
+        or commit between this check and that write. Reads use a fresh SELECT so
+        an old Session identity map cannot authorize work after cleanup starts.
+        """
+        from .project_access import require_project
+
+        require_project(self._s, project_id)
+        if reserve:
+            self._s.exec(update(Project).where(col(Project.id) == project_id).values(id=Project.id))
+        row = self._s.exec(
+            select(Project)
+            .where(Project.id == project_id)
+            .execution_options(populate_existing=True)
+        ).first()
+        if row is None:
+            raise NotFoundError(f"project {project_id} not found", data={"project_id": project_id})
+        if row.cleanup_json is not None:
+            raise ConflictError(
+                "project cleanup is incomplete; retry the confirmed deletion",
+                data={"project_id": project_id, "cleanup": row.cleanup_json},
+            )
+        return row
+
     def create(
         self,
         *,
@@ -197,6 +250,8 @@ class ProjectRepository:
         from .project_access import user_principal
 
         principal = user_principal(self._s)
+        name = validate_project_name(name)
+        self._lock_order()
         now = _utcnow()
         if self._s.exec(select(Project.id).where(Project.slug == slug)).first() is not None:
             raise ConflictError(f"project slug {slug!r} already exists")
@@ -205,6 +260,7 @@ class ProjectRepository:
             environment_id=principal.environment_id if principal is not None else None,
             slug=slug,
             name=name,
+            order_index=(self._s.exec(select(func.max(Project.order_index))).one() or 0) + 1,
             domain=domain,
             niche=niche,
             locale=locale,
@@ -216,11 +272,51 @@ class ProjectRepository:
         self._s.add(row)
         self._s.commit()
         self._s.refresh(row)
-        return Envelope(data=ProjectOut.model_validate(row), project_id=row.id)
+        return Envelope(data=self._out(row), project_id=row.id)
 
     def get(self, id_or_slug: int | str) -> ProjectOut:
         row = self._fetch_row(id_or_slug)
-        return ProjectOut.model_validate(row)
+        return self._out(row)
+
+    def _out(self, row: Project) -> ProjectOut:
+        out = ProjectOut.model_validate(row)
+        setup = (
+            "Ask your setup agent to select this project's folder once from its existing "
+            "workspace bindings in project setup. "
+            "Projects without a local folder can continue using other features."
+        )
+        binding = (
+            self._s.get(WorkspaceBinding, row.primary_workspace_binding_id)
+            if row.primary_workspace_binding_id
+            else None
+        )
+        if binding is None or binding.project_id != row.id or not binding.last_known_root:
+            return out.model_copy(update={"project_folder_issue": setup})
+        try:
+            root = Path(binding.last_known_root).resolve(strict=True)
+            if not root.is_dir() or not root.is_absolute() or root == Path(root.anchor):
+                raise ValueError("unavailable folder")
+            # Match the exact project/path association enforced by projectAgent.*.
+            owners = set()
+            for candidate in self._s.exec(select(WorkspaceBinding)).all():
+                try:
+                    if (
+                        candidate.last_known_root
+                        and Path(candidate.last_known_root).resolve() == root
+                    ):
+                        owners.add(candidate.project_id)
+                except (OSError, RuntimeError, ValueError):
+                    continue
+            if owners != {row.id}:
+                raise ValueError("conflicting folder association")
+        except (OSError, RuntimeError, ValueError):
+            return out.model_copy(
+                update={
+                    "project_folder_issue": "The configured project folder is unavailable "
+                    "or its binding needs repair. " + setup
+                }
+            )
+        return out.model_copy(update={"project_dir": str(root)})
 
     def resolve_identifier(
         self,
@@ -242,7 +338,7 @@ class ProjectRepository:
             select(Project).where(Project.name == project_name, project_owner_filter(self._s))
         ).all()
         if len(rows) == 1:
-            return ProjectOut.model_validate(rows[0])
+            return self._out(rows[0])
         if len(rows) > 1:
             raise ValidationError(
                 "project_name matches multiple projects; pass project_id or project_slug"
@@ -261,13 +357,30 @@ class ProjectRepository:
         stmt = select(Project).where(project_owner_filter(self._s))
         if active_only:
             stmt = stmt.where(col(Project.is_active).is_(True))
-        return cursor_paginate(
-            self._s,
-            stmt,
-            id_col=Project.id,
-            limit=limit,
-            after_id=after_id,
-            converter=lambda row: ProjectOut.model_validate(row),
+        size = _normalise_limit(limit)
+        total = self._s.exec(select(func.count()).select_from(stmt.subquery())).one()
+        if after_id is not None:
+            anchor = self._s.exec(stmt.where(Project.id == after_id)).first()
+            if anchor is None:
+                raise ValidationError(
+                    "project cursor no longer matches the list; refresh the first page"
+                )
+            stmt = stmt.where(
+                or_(
+                    col(Project.order_index) > anchor.order_index,
+                    and_(
+                        col(Project.order_index) == anchor.order_index, col(Project.id) > after_id
+                    ),
+                )
+            )
+        rows = self._s.exec(
+            stmt.order_by(col(Project.order_index), col(Project.id)).limit(size + 1)
+        ).all()
+        items = [self._out(row) for row in rows[:size]]
+        return Page(
+            items=items,
+            next_cursor=items[-1].id if len(rows) > size else None,
+            total_estimate=total,
         )
 
     def portfolio(
@@ -297,10 +410,39 @@ class ProjectRepository:
         )
 
     def update(self, project_id: int, **patch: Any) -> Envelope[ProjectOut]:
+        self.require_available(project_id, reserve=True)
+        if "name" in patch:
+            patch["name"] = validate_project_name(patch["name"])
         row = self._fetch_row(project_id)
         if "slug" in patch and patch["slug"] != row.slug:
             raise ValidationError("project slug is immutable")
-        allowed = {"name", "domain", "niche", "locale", "schedule_json", "is_active"}
+        if "primary_workspace_binding_id" in patch:
+            binding_id = patch["primary_workspace_binding_id"]
+            if binding_id is not None:
+                if type(binding_id) is not int or binding_id <= 0:
+                    raise ValidationError(
+                        "primary_workspace_binding_id must be a positive integer or null"
+                    )
+                binding = self._s.get(WorkspaceBinding, binding_id)
+                if (
+                    binding is None
+                    or binding.project_id != project_id
+                    or not binding.last_known_root
+                ):
+                    raise ValidationError(
+                        "Select an existing directory workspace binding belonging to this project"
+                    )
+        allowed = {
+            "name",
+            "domain",
+            "niche",
+            "locale",
+            "schedule_json",
+            "is_active",
+            "primary_workspace_binding_id",
+        }
+        if all(getattr(row, key) == value for key, value in patch.items() if key in allowed):
+            return Envelope(data=self._out(row), project_id=row.id)
         for key, value in patch.items():
             if key in allowed:
                 setattr(row, key, value)
@@ -308,21 +450,61 @@ class ProjectRepository:
         self._s.add(row)
         self._s.commit()
         self._s.refresh(row)
-        return Envelope(data=ProjectOut.model_validate(row), project_id=row.id)
+        return Envelope(data=self._out(row), project_id=row.id)
 
-    def delete(self, project_id: int, *, hard: bool = False) -> Envelope[ProjectOut]:
-        row = self._fetch_row(project_id)
-        if hard:
-            out = ProjectOut.model_validate(row)
-            self._s.delete(row)
+    def move(
+        self,
+        project_id: int,
+        *,
+        placement: Literal["top", "before", "after"],
+        anchor_id: int | None = None,
+    ) -> Envelope[ProjectOut]:
+        """Move one visible project, retaining every unseen/inactive catalog row."""
+        if placement not in {"top", "before", "after"} or (
+            (placement == "top") != (anchor_id is None)
+        ):
+            raise ValidationError("top requires no anchor; before/after require an anchor_id")
+        self._lock_order()
+        from .project_access import project_owner_filter
+
+        rows = list(
+            self._s.exec(
+                select(Project)
+                .where(project_owner_filter(self._s))
+                .order_by(col(Project.order_index), col(Project.id))
+            ).all()
+        )
+        target = next((row for row in rows if row.id == project_id and row.is_active), None)
+        if target is None:
+            raise NotFoundError("visible project not found")
+        anchor = next((row for row in rows if row.id == anchor_id and row.is_active), None)
+        if anchor_id is not None and anchor is None:
+            raise NotFoundError("visible anchor project not found; refresh the project list")
+        original = [row.id for row in rows]
+        if anchor_id != project_id:
+            rows.remove(target)
+            position = 0 if anchor is None else rows.index(anchor) + (placement == "after")
+            rows.insert(position, target)
+        if original != [row.id for row in rows]:
+            for position, row in enumerate(rows, start=1):
+                if row.order_index != position:
+                    row.order_index = position
+                    self._s.add(row)
             self._s.commit()
-            return Envelope(data=out, project_id=project_id)
-        row.is_active = False
-        row.updated_at = _utcnow()
-        self._s.add(row)
-        self._s.commit()
-        self._s.refresh(row)
-        return Envelope(data=ProjectOut.model_validate(row), project_id=row.id)
+        return Envelope(data=self._out(target), project_id=project_id)
+
+    def _lock_order(self) -> None:
+        # Serialize read/modify/write with moves and appends, including callers
+        # whose dispatcher already owns a write transaction for idempotency.
+        connection = self._s.connection()
+        if connection.dialect.name == "postgresql":
+            connection.exec_driver_sql("LOCK TABLE projects IN SHARE ROW EXCLUSIVE MODE")
+        else:
+            driver = connection.connection.driver_connection
+            assert driver is not None
+            if not driver.in_transaction:
+                connection.exec_driver_sql("BEGIN IMMEDIATE")
+        self._s.expire_all()
 
     def _fetch_row(self, id_or_slug: int | str) -> Project:
         from .project_access import project_owner_filter, require_project
@@ -594,7 +776,7 @@ class ScheduledJobRepository:
         inputs_json: dict[str, Any] | None = None,
         execution_json: dict[str, Any] | None = None,
     ) -> Envelope[ScheduledJobOut]:
-        ProjectRepository(self._s).get(project_id)
+        ProjectRepository(self._s).require_available(project_id, reserve=True)
         try:
             config = ScheduleConfiguration.model_validate(
                 {
@@ -649,6 +831,7 @@ class ScheduledJobRepository:
         enabled: bool,
         project_id: int,
     ) -> Envelope[ScheduledJobOut]:
+        ProjectRepository(self._s).require_available(project_id, reserve=True)
         row = self._get(project_id, job_id)
         if enabled:
             self.validate_configuration(
@@ -723,23 +906,72 @@ class ScheduledJobRepository:
             CronTrigger.from_crontab(config["cron_expr"], timezone=zone)
         except (ValueError, ZoneInfoNotFoundError) as exc:
             raise ValidationError(f"Invalid schedule cron/timezone: {exc}") from None
-        if not config.get("enabled"):
-            return None
+        from stackos.repositories.tracker import TrackerRepository
+        from stackos.task_delivery import resolve_delivery_settings, workflow_agent_assignments
+        from stackos.workflows.template_loader import WorkflowTemplateLoader
+
+        execution = (
+            ScheduleExecution.model_validate(config["execution_json"]).model_dump(
+                exclude_unset=True
+            )
+            if config.get("execution_json")
+            else {}
+        )
+        explicit = execution.pop("step_agent_assignments", None)
+        local_execution = {key: value for key, value in execution.items() if key != "connection_id"}
+        local_execution.setdefault("project_dir", None)
+        sources = {
+            **(execution.get("agents") or {}),
+            **{
+                role: execution[role]
+                for role in ("delivery_agent", "review_agent")
+                if execution.get(role)
+            },
+        }
         missing = [
             key
             for key in ("name", "timezone", "template_key", "execution_json")
             if not config.get(key)
         ]
+        incomplete_draft = not config.get("enabled") and (
+            missing or (not execution.get("agents") and explicit is None)
+        )
+        # Legacy role arguments replace matching mapped choices at execution, but
+        # both forms remain stored. Validate the shadowed choices before merging.
+        shadowed = {
+            role: choice
+            for role, choice in (execution.get("agents") or {}).items()
+            if role in {"delivery_agent", "review_agent"}
+            and execution.get(role) is not None
+            and (not incomplete_draft or choice.get("source_ref") or choice.get("instructions"))
+        }
+        if shadowed:
+            resolve_delivery_settings(
+                self._s,
+                project_id=project_id,
+                project_dir=execution.get("project_dir"),
+                host_key=execution.get("host_key"),
+                agents=shadowed,
+                role_keys=set(shadowed),
+            )
+        if incomplete_draft:
+            # Incomplete drafts stay inert, but supplied source identities must be current.
+            source_roles = {
+                role
+                for role, choice in sources.items()
+                if choice.get("source_ref") or choice.get("instructions")
+            }
+            if source_roles:
+                resolve_delivery_settings(
+                    self._s, project_id=project_id, role_keys=source_roles, **local_execution
+                )
+            return None
         if missing:
             raise ValidationError(
                 "Schedule needs setup: " + ", ".join(missing), data={"missing_fields": missing}
             )
         from stackos.repositories.run_plans import RunPlanRepository
-        from stackos.task_delivery import resolve_delivery_settings
 
-        execution = ScheduleExecution.model_validate(config["execution_json"]).model_dump(
-            exclude_unset=True
-        )
         if self._s.info.get("server_environment_id") is not None:
             from stackos.repositories.workspaces import LocalRuntimeConnectionRepository
 
@@ -757,7 +989,7 @@ class ScheduledJobRepository:
             project_id=project_id,
             repo_root=execution.get("project_dir"),
             inputs_json=config.get("inputs_json"),
-            enforce_required_inputs=True,
+            enforce_required_inputs=bool(config.get("enabled")),
         )
         if not validation.valid:
             raise ValidationError(
@@ -766,13 +998,54 @@ class ScheduledJobRepository:
                     "errors": [issue.model_dump() for issue in validation.errors],
                 },
             )
-        resolve_delivery_settings(
+        assert validation.plan is not None
+        template = WorkflowTemplateLoader(self._s).describe_template(
+            key=config["template_key"],
+            project_id=project_id,
+            repo_root=execution.get("project_dir"),
+        )
+        requirements = [req.model_dump() for req in template.spec.agent_requirements]
+        declared = {req["role"] for req in requirements}
+        if declared and set(execution.get("agents") or {}) - declared - {
+            "delivery_agent",
+            "review_agent",
+        }:
+            raise ValidationError("Selected agents must bind declared workflow roles")
+        defaults = TrackerRepository(self._s).delivery_defaults(project_id=project_id)
+        available = set(defaults.get("agents") or {}) | set(execution.get("agents") or {})
+        available.update(
+            role
+            for role in ("delivery_agent", "review_agent")
+            if defaults.get(role) or execution.get(role)
+        )
+        assignments = workflow_agent_assignments(
+            requirements=requirements,
+            steps={
+                step.id: (step.metadata_json or {}).get("agent_assignment")
+                for step in validation.plan.steps
+            },
+            selected_roles=available,
+            assignments=explicit,
+        )
+        if declared and set(assignments.values()) - declared - {"delivery_agent", "review_agent"}:
+            raise ValidationError("Selected agents must bind declared workflow roles")
+        # Validate every supplied choice before persistence, even an unassigned role.
+        # Unrelated project defaults remain outside this selection.
+        resolved = resolve_delivery_settings(
             self._s,
             project_id=project_id,
-            **{key: value for key, value in execution.items() if key != "connection_id"},
-            **({"project_dir": None} if "project_dir" not in execution else {}),
+            role_keys=set(assignments.values()) | sources.keys(),
+            **local_execution,
         )
-        return execution
+        return (
+            {
+                **execution,
+                "step_agent_assignments": assignments,
+                "_resolved_settings": {"project_id": project_id, **resolved},
+            }
+            if config.get("enabled")
+            else None
+        )
 
     def _out(self, row: ScheduledJob) -> ScheduledJobOut:
         out = ScheduledJobOut.model_validate(row)
@@ -794,6 +1067,12 @@ class ScheduledJobRepository:
             except ValidationError as exc:
                 errors = exc.data.get("errors", [])
                 messages = [issue.get("message", "") for issue in errors if isinstance(issue, dict)]
+                source_ref = exc.data.get("source_ref")
+                if isinstance(source_ref, dict):
+                    messages.append(
+                        f"{source_ref.get('native_name')} ({source_ref.get('source_path')})"
+                    )
+                    messages.append(exc.data.get("repair", "Repair the selected project source."))
                 out.setup_issue = ": ".join([exc.detail, *filter(None, messages)])
         return out
 

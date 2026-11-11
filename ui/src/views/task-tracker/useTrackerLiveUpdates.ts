@@ -21,6 +21,7 @@ export function useTrackerLiveUpdates(options: UseTrackerLiveUpdatesOptions) {
   const recentNodeIds = ref<Set<string>>(new Set())
   const recentNodeTimers = new Map<string, number>()
   let unsubscribe: (() => void) | null = null
+  let generation = 0
 
   function restart(): void {
     stop()
@@ -28,7 +29,7 @@ export function useTrackerLiveUpdates(options: UseTrackerLiveUpdatesOptions) {
     liveError.value = null
     unsubscribe = subscribeUsageUpdates(projectId.value, {
       usage: (updates) => options.refreshUsage?.(updates),
-      resume: () => { void reload() },
+      resume: () => requestRefresh(),
       status: onEvent,
       connection: (state) => {
         feedState.value = state
@@ -41,9 +42,13 @@ export function useTrackerLiveUpdates(options: UseTrackerLiveUpdatesOptions) {
   }
 
   function stop(): void {
+    generation += 1
     unsubscribe?.()
     unsubscribe = null
     feedState.value = { status: 'paused', receivedAt: feedState.value.receivedAt }
+    for (const timer of recentNodeTimers.values()) window.clearTimeout(timer)
+    recentNodeTimers.clear()
+    recentNodeIds.value = new Set()
   }
 
   function onEvent(event: ProjectTimelineEvent): void {
@@ -51,7 +56,16 @@ export function useTrackerLiveUpdates(options: UseTrackerLiveUpdatesOptions) {
     if (activeTaskKey.value && metadata.task_key !== activeTaskKey.value) return
     const touchedNodes = touchedGraphNodeIds(event)
     markRecentNodes(touchedNodes)
-    void reload().then(() => markRecentNodes(touchedNodes))
+    requestRefresh(touchedNodes)
+  }
+
+  function requestRefresh(touchedNodes: string[] = []): void {
+    const eventGeneration = generation
+    void reload().then(() => {
+      if (eventGeneration === generation) markRecentNodes(touchedNodes)
+    }).catch((cause) => {
+      if (eventGeneration === generation) liveError.value = formatApiError(cause, 'Could not refresh work')
+    })
   }
 
   function markRecentNodes(nodeIds: string[]): void {
@@ -76,8 +90,6 @@ export function useTrackerLiveUpdates(options: UseTrackerLiveUpdatesOptions) {
 
   onBeforeUnmount(() => {
     stop()
-    for (const timer of recentNodeTimers.values()) window.clearTimeout(timer)
-    recentNodeTimers.clear()
   })
 
   return { liveError, feedState, recentNodeIds, restart, stop }

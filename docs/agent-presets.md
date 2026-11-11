@@ -129,6 +129,69 @@ StackOS as daemon-managed agents. They are generic contracts that a main agent
 may adapt into whatever the host/project supports: `.codex` agents, markdown
 frontmatter files, plugin-specific agent files, or no local files at all.
 
+### Actual project Codex definitions
+
+The local console operations `projectAgent.list`, `projectAgent.get`,
+`projectAgent.create`, and `projectAgent.update` manage actual Codex TOML files.
+These are separate from the generic preset catalog. The file is authoritative;
+there is no independently editable database prompt copy. Saving never launches
+an agent, adopts delivery defaults, or changes an admitted execution snapshot.
+
+Every call supplies `project_id`, explicit `project_dir`, and `host_key: codex`.
+The directory must match an existing workspace binding for that project.
+Association and filesystem authority are separate: these operations require an
+authenticated local-admin REST session and reject run tokens and CLI requests.
+They are browser-safe at `/api/v1/operations/{operation_name}/call`, with MCP and
+CLI disabled. This bounded file-management path does not grant a tool consumer
+general filesystem access or permission to read personal/global agent files.
+
+Discovery reads only `.codex/agents/*.toml` and existing
+`.codex/config.toml` `agents.<key>.config_file` references. The latter resolve
+relative to `.codex`, within the chosen tree. Same-source registrations
+deduplicate; duplicate native names, malformed files and unsafe references
+produce individual diagnostics. Legacy registered files may obtain missing
+name/description metadata from their registration. Symlinks, hard links,
+traversal, nonregular sources and sources over 1 MiB are rejected. Discovery is
+bounded to 1,000 sources, with explicit failure above that limit. Refresh reads
+current files without a watcher or a last-used-folder fallback.
+
+`source_ref` is `{host_key, native_name, source_path}`, where `source_path` is
+the exact workspace-relative path. Reads return the SHA256 `digest`, editable
+`fields`, native settings, inherited field names, unsupported field names,
+registration metadata, capabilities and diagnostics. Compact reads keep every
+identity/digest/diagnostic and omit full instructions; request `raw` for editing.
+Unknown native values are preserved on disk but are not exposed as settings or
+claimed to be supported by execution. File fields never grant provider,
+credential, sandbox, permission or MCP authority.
+
+Create accepts `fields` with `name`, `description`, `developer_instructions`
+and optional native settings. It exclusively creates
+`.codex/agents/<name>.toml`. The supported standalone format needs no new config
+registration. Update accepts `source_ref`, `expected_digest` and a `patch`.
+Omitted fields survive; null optional fields inherit. Nested setting patches
+preserve untouched siblings and comments. Supported settings include model,
+reasoning effort/summary, verbosity, and reduction-only native feature/skill
+restrictions. Unsupported or authority-expanding patches reject. Writes retain
+full instructions, unknown keys, comments and file permissions, recheck source
+and registration identity before replacement, and verify exact saved-byte
+readback. Writes are raw-only; neither compact nor ack can hide a failed save.
+Retries recheck authority, workspace and current bytes in the handler. Exclusive
+create collisions and stale updates reject safely, without replaying prompt
+content from generic database idempotency storage. A write failure reports
+whether the source was untouched, rolled back, or remains unconfirmed.
+
+Native-name changes keep the filename stable. Reassign saved project defaults,
+schedules and legacy registrations before renaming a referenced identity;
+rejection returns safe reference IDs and reassign-first guidance. The service
+never moves files, rewrites references, or edits active/historical snapshots.
+`stale_source` means refresh and reconcile the draft, `ambiguous_identity`
+requires repairing duplicate names, and `write_failed` means inspect current
+bytes before retrying. Errors do not echo parser contents. This source service
+does not itself establish native launch or installed-host consumption; those
+consumers use its exact source identity and settings under their own authority.
+
+### Workflow setup
+
 Engineering setup uses the same workflow path as other domains. Start with the
 workflow that matches the work, resolve its agents with
 `agentPreset.resolveForWorkflow`, then create/start a run plan when executing
@@ -330,8 +393,11 @@ fourth ordinary repair. This is not a total cap on corrections from all origins.
 Main retains scope admission and final claims. In automatic delivery, assigned agents execute
 integration and workflow phase gates; main observes without lifecycle writes.
 Defaults use `TaskTracker.config_json.delivery`
-via local-admin REST-only `tracker.configureDelivery`, merged with task overrides by role once; local
-agent files are optional sources. Reusable roles never pin models. The shared
+via local-admin REST-only `tracker.configureDelivery`, merged with task overrides by role once.
+Fresh Codex handoff selects actual project sources; non-Codex hosts retain inline
+contracts. Explicit native model/effort wins, omitted values inherit task, project
+then host choices. Supported source restrictions can only reduce capabilities.
+Reusable presets recommend no fixed models. The shared
 host capability owner selects test-capable native permissions and approval review and uses
 normal native sessions for Gemini and Hermes reviewers with review-only
 instructions, truthfully reporting no enforced read-only isolation. Until acceptance,
@@ -399,6 +465,34 @@ requiring rerun, and never-executed required checks. A repair-only slice cannot
 inherit an incomplete original review. Preserve failed proof as history; identify
 original omissions separately from later operator amendments.
 
+Each material claim needs its distinct applicable obligation, actual
+producer/consumer boundary and matching evidence or explicit gap in that receipt
+or proof plan. A mocked array cannot establish the real API envelope; a broad
+green suite or unrelated check cannot cover a required unexecuted obligation.
+A reproduced defect calls for proportionate repair and proof of the same invariant
+across affected retained consumers and implicated neighboring transitions within
+the original outcome and existing authority. Evidence determines breadth; fixed
+edit counts, universal matrices and unrelated cleanup do not.
+
+Main chooses and verifies the [StackOS browser lifecycle and native CLI](browser-automation.md#client-flow)
+route before dispatch or resume and supplies current profile/session, tab ownership
+and login prerequisites. Delivery, review and test design use that route
+for browser work, with the installed skill/cookbook, authorized profile and pinned
+ticket tab. Computer Use/native desktop control will not be enabled and must not
+be requested or planned as a prerequisite. Preserve required outcome proof and
+explicit scoped manual ownership; identify any actual unsupported boundary and
+missing evidence truthfully rather than inventing a waiver.
+
+Orchestration reuses complete current proof with its covered scope, candidate,
+accepted prerequisites and environment basis. Changed or contradictory evidence
+and never-covered obligations need focused proof; retain one final mandatory
+project signoff at the existing gate. Diagnose stop prerequisites before repeating
+dependent checks, route required work to existing owners, and clear only proven
+resolved blockers. An explicitly authorized resume requires readback of runnable
+pending owned work, with receipts, native sessions and repair allowance preserved;
+an in-progress ticket alone is insufficient. No automatic reset/retry or broader
+worker lifecycle authority follows from this guidance.
+
 For visual changes, delivery and review compare the candidate with the approved
 design and current amendments: exact wording, content applicability, hierarchy,
 actual consumer widths and the reported interaction and relevant states. Record
@@ -431,6 +525,10 @@ must demonstrate actual-caller/lifetime gap discovery, exact-payload revalidatio
 readback before uncertain retry, justified proof reuse, exclusive setup and restraint
 on unrelated cleanup. Retain consumed candidate/hashes and observed actions outside
 Git. Phrase assertions alone establish availability, not effectiveness or adoption.
+The orchestration revision rechecked [Codex review rules](https://developers.openai.com/blog/custom-code-review-rules-for-codex)
+on 2026-11-11 for scoped invariants, safe alternatives and unrelated-change
+restraint. Its bounded recovery/browser exercise is source-use evidence, not
+measured production prevention or installed activation.
 
 The bounded automated planning permission was reviewed on 2026-11-09 against
 [Codex instruction discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md)
@@ -469,9 +567,10 @@ watcher, automatic rollout or requirement for a `.codex` folder.
 The main agent should detect or read the host convention before writing local
 agents. For Codex-style projects, inspect `.codex/config.toml` and existing
 `.codex/agents/*.toml` before proposing new files or updates. For other hosts,
-look for that host's agent convention first. StackOS does not scan, write, or
-register those host-local files; it only provides the generic preset contracts
-and workflow role requirements. If no convention is available, use the resolved
+look for that host's agent convention first. Preset resolution provides generic
+contracts and workflow role requirements without scanning or writing local files.
+Actual Codex file management uses the explicit local-admin operations described
+above; other host formats have no definition editor. If no convention is available, use the resolved
 workflow agents as operating guidance in the current session or ask the
 operator which host format to use. Preserve unrelated operator-authored content
 and do not create a second competing agent registry.

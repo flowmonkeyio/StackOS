@@ -35,6 +35,7 @@ from stackos.repositories.projects import ScheduleConfiguration, ScheduledJobRep
 from stackos.repositories.run_plan_state import TERMINAL_PLAN_STATUSES
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker.utils import TERMINAL_TRACKER_STATUSES
+from stackos.repositories.tracker.workflow import workflow_step_ticket_key
 from stackos.task_delivery import connection_execution_state, start_delivery
 
 WORKFLOW_JOB_PREFIX = "workflow-schedule-"
@@ -156,6 +157,9 @@ class WorkflowScheduleRuntime:
             row = session.get(ScheduledJob, row_id)
             if row is None or not row.enabled or self._config(row) != registration.config:
                 return None
+            project = session.get(Project, row.project_id)
+            if project is None or project.cleanup_json is not None:
+                return None
             return row
 
     async def _fire(self, *, row_id: int, registration: Registration) -> None:
@@ -235,6 +239,10 @@ class WorkflowScheduleRuntime:
                     exchange.require_available(connection)
                     if connection_execution_state(session, connection, exchange)["needs_attention"]:
                         raise ValueError("Computer work needs manual reconciliation")
+                step_assignments = settings.pop("step_agent_assignments")
+                # Keep the validated source bytes through the final presence guard
+                # and plan creation; handoff must not reread mutable source files.
+                resolved_settings = settings.pop("_resolved_settings")
                 # Setup/host checks may outlive presence, configuration or jitter allowance.
                 if not admit():
                     return
@@ -283,6 +291,11 @@ class WorkflowScheduleRuntime:
                     run_plan_id=plan.id,
                     step_id=step.step_id,
                     local_invocations=self.operation_services.get("local_invocations"),
+                    agent_assignments={
+                        workflow_step_ticket_key(plan.id, key): role
+                        for key, role in step_assignments.items()
+                    },
+                    _resolved_settings=resolved_settings,
                     **settings,
                 )
                 self._result(session, current, due, "started")

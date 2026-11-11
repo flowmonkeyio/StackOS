@@ -106,6 +106,12 @@ async def call_operation(
                 "local-admin-backup-write",
             }
             or console_contract
+            or (
+                spec.name == "project.reconcileFileOwnership"
+                and not spec.surfaces.mcp.enabled
+                and not spec.surfaces.rest.browser_safe
+                and auth_scope == "daemon-admin"
+            )
         )
         and spec.surfaces.rest.path == generic_operation_path
     )

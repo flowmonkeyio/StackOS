@@ -441,51 +441,45 @@ questions:
 
 1. **Home** — What calls were recorded, what is configured, and what tracked
    work was updated recently?
-2. **Attention** — Which approvals, questions, failures, or setup problems need
-   a human now?
-3. **Work** — What work have agents created, what is active or blocked, and
+2. **Work** — What work have agents created, what is active or blocked, and
    where are the results?
-4. **Activity** — What changed, in chronological and auditable order?
+3. **Automations** — What recurring work is configured and what ran?
+4. **Library** — What saved information and files belong to this project?
 
 The project picker sits immediately above project navigation. A separate App
 footer holds Overview, Accounts, and Backups outside the project navigation
 scroll. Overview opens the root portfolio and system/lifecycle surface;
 Backups retains `/setup` and works without a project.
 
-Secondary groups remain addressable and searchable:
+**Setup** contains Connections, Spend, Agents and Plugins. A separate **Plugins**
+group links directly to enabled domain pages; Finance retains its existing
+destination and sections. Domain pages expose their workflows and canonical
+Library content. Home links configured workflows to exact workflow details.
 
-- **Configure:** Connections, Automation, Spend, Plugins.
-- **Execution inspection:** Runs, run plans, agent requests, action calls,
-  approvals.
-- **Catalog:** Capabilities, Operations, workflow templates, agent presets.
-- **Data and evidence:** Resources, artifacts, project data, context, decisions,
-  learnings, experiments.
-
-“Inspect” may be a secondary entry or contextual action, but it is not a reason
-to hide important execution evidence. “Explore” is not a primary project lane;
-catalog discovery belongs in the secondary Catalog group. Runtime and host
-diagnostics belong to app Overview; integration availability belongs to Plugins.
-
-Task, run, action-call, agent-request, resource, and provider deep links remain
-stable. The redundant project Setup route is removed without an alias;
-workspace guidance uses the `home` UI path/URL pointing to `/projects/{id}`.
+Work shows task results and history contextually. Finance inspects the original
+analysis request at its origin, including pending/failed requests without a
+tracker task. The old global inspection/catalog/data pages and agent-defaults
+form are removed without aliases. Shared APIs and source records remain agent
+accessible. There is no Settings, Diagnostics or Advanced category replacement.
+Runtime and host status belongs to App Overview; integration availability
+belongs to Plugins. The [route map](./ui-page-layout-map.md) is the current
+human-route contract; earlier journey sketches below are historical rationale,
+not authorization to restore removed destinations.
 
 ## 7. Screen contracts
 
 | Surface | Primary inspection question | Valid human actions |
 | --- | --- | --- |
 | Overview | Is the local runtime ready, and how are tickets distributed across projects? | Inspect ticket statuses, filter projects, open work, refresh host status; lifecycle repair in the desktop app |
-| Home | What is the state of this project's tickets and setup? | Open status-filtered Work, inspect tracked work, open connections/workflow library |
-| Attention | What requires a human and why? | Approve/deny, answer, open setup, lifecycle repair |
+| Home | What is the state of this project's tickets and setup? | Open status-filtered Work, inspect tracked work, open connections/exact workflow details |
 | Work | What agent-created work exists and what state is it in? | Inspect, filter, navigate; explicit operator override only if authorized |
-| Activity | What changed and where is the evidence? | Filter, search, inspect |
+| Automations | What recurring work is configured? | Inspect/edit schedules and inspect their recorded runs |
+| Library | What saved information and files exist? | Filter and inspect source records/files with exact typed identity |
 | Backups | Is this installation and its enrolled data covered? | Inspect coverage and configure automatic backups through local-admin controls |
 | Connections | What providers can agents safely use? | Connect, test, revoke, repair |
 | Agent clients | Which MCP hosts are registered and healthy? | Repair StackOS-owned registration, explain restart |
-| Catalog | What contracts are available to agents? | Inspect, open setup, copy/open host request |
-| Runs | What executed and what is its exact state? | Inspect; approval/rejection only through explicit contract |
-| Action calls | What explicit call happened? | Inspect, copy safe refs, follow repair guidance |
-| Resources/artifacts | What durable outputs exist? | Inspect/export where authorized |
+| Agents | Which native project definitions are available? | Add/edit actual sources and explicitly adopt saved defaults |
+| Plugins/domains | Which enabled domain/workflow or integration is available? | Inspect domain pages, workflow details and integration readiness |
 | System | Is the local runtime healthy? | Install, doctor, restart, repair, update, backup, uninstall |
 
 Every page should answer one inspection question in its first viewport. Use

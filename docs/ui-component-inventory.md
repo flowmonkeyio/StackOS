@@ -22,8 +22,9 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `UiDialog` | viewport portal; shared dialog/drawer stack; focus trap; H/B/F; optional `layout="detail"` with bounded 880px frame and scrolling body; centered 32px close target / 16px icon |
 | `UiConfirmDialog` | builds on Dialog |
 | `UiSidePanel` | left/right; 480/720 |
-| `UiDropdownMenu` | keyboard arrows; sections |
-| `UiPopover` | floating-ui placement |
+| `UiDropdownMenu` | keyboard arrows; sections; optional `portalTarget` for viewport-clamped actions inside scrolling lists |
+| `UiPopover` | trigger or external-element anchor; viewport flip/clamp, scroll/resize placement and focus return |
+| `UiReorderList`, `UiReorderHandle` | neutral vertical neighbor intents, handle/menu alternatives, insertion feedback, gesture-scoped edge scroll and cleanup |
 | `UiTooltip` | hover + focus |
 | `UiCard` | density compact/comfortable; optional padding; no nested cards |
 | `UiPanel` | flat alt-surface; for sub-sections |
@@ -47,6 +48,52 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `UiDescriptionList` | label/value rows |
 | `UiFactGroups` | grouped drawer/detail metadata blocks with headings, badges, mono IDs, and wide rows |
 
+The shared reorder primitive accepts arbitrary items through `itemKey`/`itemLabel`,
+optional meaningful `itemVersion`, `scopeKey`, `disabled` and an optional
+`scrollContainer` (the list by default). Its item slot supplies the item and handle
+bindings, including dropdown actions for Move up/down/to top/to bottom. A real move
+emits only `{ itemKey, anchorKey, placement: 'before' | 'after' }`; the consumer owns
+validation, optimistic ordering, persistence and recovery. The primitive never
+imports tracker, store or API contracts. It keeps the source-sized item in place,
+uses a restrained text preview and a single insertion line, suppresses visible
+no-ops, scrolls only the supplied vertical container, and cleans up its one
+animation-frame loop and gesture listeners on every termination path. Movement
+announcements and focus/visibility restoration accompany menu and drop intents;
+there is no decorative movement animation.
+
+`ProjectSwitcher` consumes this primitive for the complete, stored project
+catalog. Its closed sidebar trigger retains its geometry; only the open menu is
+wider. Project names select through `useProjectNavigation`; separate row actions
+request rename/delete targets from that same owner. The project store owns
+display-name updates and bounded moves through the browser-safe catalog
+operations, reloading all pages after move attempts. `ProjectRenameDialog` owns
+the retained draft and saving/failure states. Home and Overview read owners
+reconcile strictly newer project metadata into the shared store using the
+canonical `updated_at`, retaining sub-millisecond precision. They update only
+metadata on already loaded IDs, preserving catalog membership, order and selection.
+Displays use shared names with portfolio fallback for unloaded IDs. Equal/older
+portfolio responses cannot undo a confirmed rename; newer Refresh results update
+the shared labels. Catalog reads and mutation responses also retain newer metadata.
+`ProjectDeleteDialog` shows the current name and immutable slug and submits the
+explicit permanent confirmation through `project.delete` in catalog scope.
+It protects in-flight cleanup from duplicate submission/close, routes blockers
+to existing Work controls, and retains incomplete/uncertain cleanup for same-ID
+retry. Legacy ownership gaps remain administrator work. Successful or missing
+targets leave the shared catalog and Overview immediately; session-local ID
+exclusions prevent late reads from restoring them. No deleted project payload
+is retained in the backend. `useProjectNavigation` alone chooses the first
+survivor in stored order or global Overview, preserves a newer selection and
+noncurrent routes, and permits navigation-only retry after cleanup succeeds.
+It rechecks route/selection ownership after survivor reads and rejects removed
+project destinations at router resolution after asynchronous leave/update guards.
+The same owner observes push/replace calls and native history events before
+component guards await, so pending direct links also retain navigation intent.
+Tracking delegates to Vue Router and is removed with the owning app lifecycle.
+The selector remains an intent emitter. Dialog titles wrap long project names;
+normal overlay focus returns to the opener, or the stable selector when a
+deleted row's opener is gone. Source tests do not claim operator pointer or
+visual acceptance.
+
 ## Shipped — domain (`ui/src/components/domain/`)
 
 | Component | Notes |
@@ -67,7 +114,14 @@ Project Automations reuses this inline compact renderer in its Runs table.
 `SchedulesTab` owns exactly two shared underline tabs, Automations and Runs;
 `ScheduleEditor` uses the existing dialog/form primitives for inert drafts and
 validated activation through `schedule.set/toggle/remove`. Removing a schedule
-preserves existing runs. `ScheduledRuns` reads the paginated `schedule.runs`
+preserves existing runs. One effective workflow read supplies named input fields
+and agent roles. `ScheduleWorkflowInputs` uses the existing form primitives for
+scalar/options inputs and bounded declared properties/lists (three nested levels,
+30 properties per object, 100 displayed list items). Opaque values and unknown
+saved keys stay intact; missing required setup permits a disabled draft and blocks
+enabling. Execution settings are a readable summary with project-agent selectors.
+Workflow changes and leaving an edited form require discard confirmation.
+`ScheduledRuns` reads the paginated `schedule.runs`
 projection and links its actual `task_key` to the existing Work graph. The
 schedules store patches canonical task usage through `usageUpdates`, including
 updates received during pending history reads; it never sums receipts or polls
@@ -239,12 +293,13 @@ same contract. A feature composable should receive explicit refs/callbacks,
 return its public state/actions, and keep one mutation/reload policy. The route
 view remains responsible for coordinating multiple composables.
 
-`project-detail/AgentDefaultsTab` composes the project scope with
-`agent-defaults/AgentDefaultsForm`; `useAgentDefaults` owns its load/save/readback
-lifecycle through `useProjectScopedLoader`. The tab keys the form by project so
-scope changes reset local drafts and selection state and invalidate pending requests.
-The form uses shared input, textarea, select and form-field
-primitives over existing tracker setup and safe host capabilities.
+`AgentsView` composes `agents/ProjectAgents` and `agents/useProjectAgents`.
+They read and edit actual project-local native definitions through the canonical
+source operations. Saved task defaults are adopted explicitly with digest
+readback; editing a definition does not execute work or rewrite frozen runs.
+Generic presets remain reusable guidance, separate from the live project list.
+The shared shell uses direct primary, Setup and enabled-domain links; see the
+[route and wrapper map](./ui-page-layout-map.md).
 
 Connections is the reference implementation:
 
@@ -274,13 +329,15 @@ search and sorting; focused plugin/provider card components own presentation.
 Both Plugins and Connections use the shared `ProviderMark` so website catalog
 logos and operator UI logos cannot drift.
 
-Graph surfaces intentionally have two different sizing contracts. Workflow
-guide journeys are document previews: their canvas grows to the complete stage
-layout and leaves wheel/pinch gestures to the containing page. The task tracker
-dependency map is a bounded, page-sized exploration canvas: node geometry and
-spacing may extend beyond the viewport, while pan, wheel/pinch zoom, minimap,
-and controls expose that off-canvas context. Do not share viewport behavior
-between these surfaces merely because both render with Vue Flow.
+Workflow details use `TemplateRenderer`'s compact stage list, declared inputs,
+outputs and approval gates, with the sanitized effective contract in Details.
+`WorkflowDetailView` owns both plugin-scoped details and Home's exact configured
+project/repository/user workflow inspection. Non-plugin workflows read the same
+effective-template API directly and return to Home; no global list store remains.
+They use ordinary page scrolling. The task tracker dependency map remains a
+bounded, page-sized exploration canvas: node geometry and spacing may extend
+beyond the viewport, while pan, wheel/pinch zoom, minimap and controls expose
+that off-canvas context.
 
 Partition integration tests by user flow before moving risky async ownership.
 Use focused unit tests for pure view models/composables and keep one route-level
@@ -302,10 +359,10 @@ test for cross-feature wiring, loading, and error-state truthfulness.
 | `views/accounts/TelegramProxySetupSection.vue` | Conditional disclosure of Telegram's manifest-backed proxy fields. | Keep proxy validation and normalization in the daemon's Account proxy contract. |
 | `views/ConnectionsView.vue` | Route/query synchronization, Account attachment, section composition, and project-bound communication/ingress dispatch remain. | Keep Account secret lifecycle in the reusable Accounts panel; do not fold it back into the project page. |
 | `views/connections/useConnectionCredentials.ts` | Lists attached Accounts, filters reusable unattached Accounts, and owns attach/detach confirmation state. | Keep global Account mutation and project communication topology out. |
-| `views/TaskTrackerView.vue` | Owns Board/map route history, independent map-task and popup identities, task-index loading and focused detail dispatch. `TrackerBoardPanel` renders seven fixed status columns, 224px anchored-footer cards and API-projected whole-task usage; `TaskTrackerCommandPanel` groups task identity/Automated, status/completion, inline shared usage and Task details below the view switch. `TicketGraphNode` renders its own projected ticket usage; `graphModel.ts` owns its 328 × 224 geometry and prerequisite-title resolution. `TrackerTaskDetailDialog` owns one persistent `UiDialog layout="detail"` for task/ticket inspection and a six-row scrolling ticket list. `TrackerTicketDetailContent` is shared with the map's `TrackerTicketDetailPanel` side inspector. `useTrackerExecutionContexts` owns context/artifact pagination; `useTrackerGraphSession` composes focused graph loading, viewport and the existing project/task event stream. Pure projections and filters remain in `task-tracker/viewModel.ts`. | Keep Board filters independent from map selection. Task state and ticket-status containment filters have separate meanings. Graph visibility never changes whole-task values/trends. The task-index rollup supplies actual prerequisite titles only when all open work waits on dependencies; active execution suppresses the Board badge. No per-card requests or receipt summing. Shared current/Last identity stays independent of lifecycle status. Preserve task drafts, disclosure state and scroll during ticket inspection. No standalone Stories or Tickets modes. |
+| `views/TaskTrackerView.vue` | Owns Board/map route history, independent map-task and popup identities, task-index loading and focused detail dispatch. `TrackerBoardPanel` renders seven fixed status columns, 224px anchored-footer cards and API-projected whole-task usage; `TaskTrackerCommandPanel` renders the unified `TrackerBoardFilterBar` on Board and groups task identity/Automated, status/completion, inline shared usage and Task details on Graph. The shared page-header switch stays top right in both views. `TrackerBoardFilterBar` measures only the chip region with a cleaned-up ResizeObserver, reserves controls and +N overflow space, and uses `BoardFilterEditor` for visible and overflow clause edits through the URL owner's commands. `TicketGraphNode` renders its own projected ticket usage; `graphModel.ts` owns its 328 × 224 geometry and prerequisite-title resolution. `TrackerTaskDetailDialog` owns one persistent `UiDialog layout="detail"` for task/ticket inspection and a six-row scrolling ticket list. `TrackerTicketDetailContent` is shared with the map's `TrackerTicketDetailPanel` side inspector. `useTrackerExecutionContexts` owns context/artifact pagination; `useTrackerGraphSession` composes focused graph loading, viewport and the existing project/task event stream. Pure projections and filters remain in `task-tracker/viewModel.ts`. | Keep Board filters independent from map selection. Task state and ticket-status containment filters have separate meanings. Graph visibility never changes whole-task values/trends. The task-index rollup supplies actual prerequisite titles only when all open work waits on dependencies; active execution suppresses the Board badge. No per-card requests or receipt summing. Shared current/Last identity stays independent of lifecycle status. Preserve task drafts, disclosure state and scroll during ticket inspection. No standalone Stories or Tickets modes. |
 | `views/connections/credentialPresentation.ts` | Provider/auth grouping, labels, connection status, and account presentation. | Keep provider catalog knowledge here; do not mix in communication topology facets. |
 | `views/connections/formatters.ts` | Communication profile, route, surface, Slack, ingress, and shared Account presentation exports. | Split another provider-specific facet only when it gains a distinct contract or test lifecycle. |
-| `views/AgentRequestsView.vue` | One cohesive queue/master-detail flow. | Extract the request detail region only if it gains independent mutation/loading state. |
+| `views/finance/FinanceRequestDialog.vue` | Contextual safe request read, original source and status at the Finance origin. | Preserve exact request/project/workspace identity, stale-read rejection and explicit unavailable/retry states. Never infer a tracker task or execute recovery from inspection. |
 
 Large generated catalogs, API types, and declarative plugin manifests are not
 decomposition targets. Change their generators or source manifests instead of
@@ -331,6 +388,47 @@ because they exposed or demonstrated domain mutations that now belong to the
 agent/MCP path.
 
 ## Design-system showcase
+
+Work Board card edits use `useTaskBoardEdits` for bounded priority or
+same-column neighbor intents, with one pending edit per conflicting column,
+optimistic presentation, confirmed-rejection rollback and canonical index
+reconciliation. Save errors, uncertain outcomes and saved-but-stale reads stay
+distinct. `TaskTrackerView` shares one project-index read and one trailing latest
+read across event bursts and explicit refreshes; background reads retain the
+board and leave focused loading with its existing readers. `TrackerBoardPanel`
+scopes disabled edit controls to pending columns and consumes `UiReorderList`
+with `UiReorderHandle` for each column. The shared primitive accepts arbitrary
+items through `itemKey`/`itemLabel`, optional meaningful `itemVersion`,
+`scopeKey`, `disabled` and an optional `scrollContainer` (the list by default).
+Its item slot supplies the item and handle bindings, including the existing
+dropdown action descriptors for Move up/down/to top/to bottom. A real move emits
+only `{ itemKey, anchorKey, placement: 'before' | 'after' }`; the consumer owns
+validation, optimistic ordering, persistence and recovery. The primitive never
+imports tracker, store or API contracts. It keeps the source-sized item in place,
+uses a restrained text preview and a single insertion line, suppresses visible
+no-ops, scrolls only the supplied vertical container, and cleans up its one
+animation-frame loop and gesture listeners on every termination path. Movement
+announcements and focus/visibility restoration accompany menu and drop intents;
+there is no decorative movement animation.
+
+Board supplies project/status/rank/priority eligibility revisions and the current
+project/filter context. Unrelated title, usage and `updated_at` refreshes retain
+the gesture; source/anchor eligibility changes cancel. The existing neighbor API
+preserves hidden tasks' relative order. The body open target remains separate
+from header controls. Header dropdown wrappers align on the same center line;
+run actions occupy space only when the shared action actually renders.
+`TaskPriorityBadge` shares P0 danger / P1 warning / P2 info / P3 neutral
+labels and tints across Board, task details and existing task Graph nodes;
+ticket priorities retain their own presentation. The 224px card height, usage
+slots and 56px footer stay fixed.
+
+Applied Board chips reuse `BoardFilterEditor` in a popover anchored to the clicked
+chip, including Completed's existing choices. Overflow stays mounted while its
+editor is open; responsive repartition re-anchors to the visible chip or surviving
+overflow trigger and preserves draft/focus. Filter/Display controls and the URL
+owner retain their existing commands. The primitive specs use a plain non-task
+list; pointer feel, edge-scroll feel and rendered alignment remain operator-owned
+manual checks.
 
 `RunAbortAction` provides the shared run menu trigger on Scheduled Runs, Board and
 the Graph task header. `RunAbortDialog` stays at the page composition root so a

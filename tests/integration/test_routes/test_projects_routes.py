@@ -34,27 +34,9 @@ def test_project_crud_routes(api: TestClient, project_id: int) -> None:
     assert patch.status_code == 200
     assert patch.json()["data"]["name"] == "New Name"
 
-    deleted = api.delete(f"/api/v1/projects/{project_id}")
-    assert deleted.status_code == 200
-    assert deleted.json()["data"]["is_active"] is False
-
-
-def test_project_hard_delete_route_removes_row(api: TestClient) -> None:
-    created = api.post(
-        "/api/v1/projects",
-        json={
-            "slug": "hard-delete-route",
-            "name": "Hard Delete Route",
-            "domain": "hard-delete-route.example",
-            "locale": "en-US",
-        },
-    )
-    assert created.status_code == 201
-    project_id = created.json()["data"]["id"]
-
-    deleted = api.delete(f"/api/v1/projects/{project_id}", params={"hard": "true"})
-    assert deleted.status_code == 200
-    assert api.get(f"/api/v1/projects/{project_id}").status_code == 404
+    # Unconfirmed archive/hard-delete routes are retired.
+    assert api.delete(f"/api/v1/projects/{project_id}").status_code == 405
+    assert api.get(f"/api/v1/projects/{project_id}").json()["name"] == "New Name"
 
 
 def test_list_projects_pagination_and_missing(api: TestClient) -> None:
@@ -64,6 +46,92 @@ def test_list_projects_pagination_and_missing(api: TestClient) -> None:
 
     missing = api.get("/api/v1/projects/999")
     assert missing.status_code == 404
+
+
+@pytest.mark.parametrize("name", ["", " \t\n", "x" * 201, None, 7])
+@pytest.mark.parametrize("surface", ["legacy", "operation", "console"])
+def test_project_name_validation_is_shared(api, project_id, surface, name):
+    original = api.get(f"/api/v1/projects/{project_id}").json()
+    headers = {}
+    if surface == "console":
+        headers = {"Authorization": "Bearer " + api.get("/api/v1/auth/ui-token").json()["token"]}
+    if surface == "legacy":
+        response = api.patch(f"/api/v1/projects/{project_id}", json={"name": name})
+    else:
+        response = api.post(
+            "/api/v1/operations/project.update/call",
+            headers=headers,
+            json={
+                "arguments": {"project_id": project_id, "scope": "catalog", "patch": {"name": name}}
+            },
+        )
+    assert response.status_code == 422, response.text
+    assert api.get(f"/api/v1/projects/{project_id}").json() == original
+
+
+def test_project_catalog_console_and_cli_use_shared_operations(api, project_id, monkeypatch):
+    other = api.post(
+        "/api/v1/projects", json={"slug": "other", "name": "Other", "domain": "test"}
+    ).json()["data"]
+    browser = {"Authorization": "Bearer " + api.get("/api/v1/auth/ui-token").json()["token"]}
+
+    def call(name, arguments, headers=browser):
+        return api.post(
+            f"/api/v1/operations/{name}/call", headers=headers, json={"arguments": arguments}
+        )
+
+    renamed = call(
+        "project.update",
+        {"project_id": other["id"], "scope": "catalog", "patch": {"name": "  Selected  "}},
+    )
+    assert renamed.status_code == 200, renamed.text
+    assert renamed.json()["data"]["name"] == "Selected"
+    moved = call(
+        "project.move",
+        {
+            "project_id": other["id"],
+            "scope": "catalog",
+            "placement": "before",
+            "anchor_id": project_id,
+        },
+    )
+    assert moved.status_code == 200, moved.text
+    assert [p["id"] for p in api.get("/api/v1/projects").json()["items"]] == [
+        other["id"],
+        project_id,
+    ]
+    for name, arguments in (
+        (
+            "project.update",
+            {"project_id": other["id"], "scope": "catalog", "patch": {"is_active": False}},
+        ),
+        ("project.move", {"project_id": other["id"], "placement": "top"}),
+    ):
+        assert call(name, arguments).status_code == 403
+
+    def request(method, path, *, body=None, **kwargs):
+        response = api.request(method, path, json=body)
+        response.raise_for_status()
+        return response.json()
+
+    monkeypatch.setattr(operation_cli, "_api_request", request)
+    for name, arguments in (
+        ("project.update", {"project_id": project_id, "patch": {"name": "  CLI renamed  "}}),
+        ("project.move", {"project_id": project_id, "placement": "top"}),
+    ):
+        result = CliRunner().invoke(
+            cli_app,
+            ["ops", "call", name, "--input", "-"],
+            input=json.dumps(arguments),
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0, result.stdout
+        assert json.loads(result.stdout)["data"]["id"] == project_id
+    listed = call("project.list", {"limit": 1}).json()
+    assert listed["items"][0]["id"] == project_id
+    assert listed["items"][0]["name"] == "CLI renamed"
+    assert listed["next_cursor"] == project_id
+    assert call("project.list", {"after_id": project_id}).json()["items"][0]["id"] == other["id"]
 
 
 def test_schedule_create_then_remove(api: TestClient, project_id: int) -> None:
@@ -98,6 +166,126 @@ def test_schedule_role_null_survives_http_storage(api, project_id, tmp_path, sur
     assert response.status_code == 200, response.text
     with Session(api.app.state.engine) as session:
         assert session.get(ScheduledJob, response.json()["data"]["id"]).execution_json == execution
+
+
+@pytest.mark.parametrize("surface", ["legacy", "operation"])
+def test_schedule_source_references_round_trip_and_revalidate_on_http_save(
+    api, project_id, tmp_path, surface
+):
+    from sqlmodel import Session, select
+
+    from stackos.db.models import ScheduledJob
+    from tests.integration.test_repositories.test_workflow_schedule_agents import (
+        assert_no_admission,
+        configuration,
+    )
+
+    with Session(api.app.state.engine) as session:
+        config = configuration(session, project_id, tmp_path)
+    execution = config["execution_json"]
+    execution["step_agent_assignments"] = {"step0": "role0"}
+    execution["agents"]["role0"]["model"] = None
+
+    def save():
+        if surface == "legacy":
+            return api.post(f"/api/v1/projects/{project_id}/schedules", json=config)
+        return api.post(
+            "/api/v1/operations/schedule.set/call",
+            json={"arguments": {"project_id": project_id, **config}},
+        )
+
+    response = save()
+    assert response.status_code == 200, response.text
+    ref = execution["agents"]["role0"]["source_ref"]
+    (tmp_path / ref["source_path"]).unlink()
+    rejected = save()
+    assert rejected.status_code == 422, rejected.text
+    with Session(api.app.state.engine) as session:
+        row = session.exec(select(ScheduledJob)).one()
+        assert row.execution_json == execution
+        assert not row.enabled
+        assert_no_admission(session)
+
+
+@pytest.mark.parametrize("surface", ["legacy", "operation"])
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("selection", ["missing_source", "copied_codex"])
+def test_schedule_http_save_validates_unassigned_selections(
+    api, project_id, tmp_path, surface, enabled, selection
+):
+    from sqlmodel import Session, select
+
+    from stackos.db.models import ScheduledJob
+    from tests.integration.test_repositories.test_workflow_schedule_agents import (
+        assert_no_admission,
+        configuration,
+    )
+
+    with Session(api.app.state.engine) as session:
+        config = configuration(session, project_id, tmp_path, count=2, ambiguous=True)
+    config["enabled"] = enabled
+    execution = config["execution_json"]
+    execution["step_agent_assignments"] = {"step0": "role0"}
+    ref = execution["agents"]["role1"]["source_ref"]
+    (tmp_path / ref["source_path"]).unlink()
+    if selection == "copied_codex":
+        execution["agents"]["role1"] = {"name": "copied", "instructions": "Duplicate Codex prompt"}
+    if surface == "legacy":
+        response = api.post(f"/api/v1/projects/{project_id}/schedules", json=config)
+    else:
+        response = api.post(
+            "/api/v1/operations/schedule.set/call",
+            json={"arguments": {"project_id": project_id, **config}},
+        )
+    assert response.status_code == 422, response.text
+    with Session(api.app.state.engine) as session:
+        assert session.exec(select(ScheduledJob)).all() == []
+        assert_no_admission(session)
+
+
+@pytest.mark.parametrize("surface", ["legacy", "operation"])
+@pytest.mark.parametrize("enabled", [False, True])
+@pytest.mark.parametrize("role", ["delivery_agent", "review_agent"])
+@pytest.mark.parametrize("invalid", ["copied_codex", "missing_source"])
+def test_schedule_http_save_validates_shadowed_map_selections(
+    api, project_id, tmp_path, surface, enabled, role, invalid
+):
+    from sqlmodel import Session, select
+
+    from stackos.db.models import ScheduledJob
+    from tests.integration.test_repositories.test_workflow_schedule_agents import (
+        assert_no_admission,
+        configuration,
+    )
+
+    with Session(api.app.state.engine) as session:
+        config = configuration(session, project_id, tmp_path)
+    config["enabled"] = enabled
+    execution = config["execution_json"]
+    ref = execution["agents"]["role0"]["source_ref"]
+    execution[role] = {"source_ref": ref}
+    execution["agents"][role] = (
+        {"name": "copied", "instructions": "Duplicate Codex prompt"}
+        if invalid == "copied_codex"
+        else {
+            "source_ref": {
+                **ref,
+                "native_name": "missing",
+                "source_path": ".codex/agents/missing.toml",
+            }
+        }
+    )
+    if surface == "legacy":
+        response = api.post(f"/api/v1/projects/{project_id}/schedules", json=config)
+    else:
+        response = api.post(
+            "/api/v1/operations/schedule.set/call",
+            json={"arguments": {"project_id": project_id, **config}},
+        )
+    assert response.status_code == 422, response.text
+    with Session(api.app.state.engine) as session:
+        assert session.exec(select(ScheduledJob)).all() == []
+        assert_no_admission(session)
 
 
 def test_schedule_mutations_reject_wrong_project(api: TestClient, project_id: int) -> None:

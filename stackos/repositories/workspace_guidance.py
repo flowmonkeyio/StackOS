@@ -19,7 +19,9 @@ def _ui_paths(project_id: int | None) -> dict[str, str]:
         "home": f"/projects/{project_id}",
         "connections": f"/projects/{project_id}/connections",
         "tasks": f"/projects/{project_id}/tasks",
-        "workflow_templates": f"/projects/{project_id}/workflow-templates",
+        "plugins": f"/projects/{project_id}/plugins",
+        "library": f"/projects/{project_id}/library",
+        "agents": f"/projects/{project_id}/agents",
     }
 
 

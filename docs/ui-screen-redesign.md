@@ -1,5 +1,10 @@
 # StackOS Desktop Screen Redesign
 
+Historical screen exploration. The current shipped navigation and source-backed
+destinations are defined in [the page layout map](./ui-page-layout-map.md).
+Earlier Attention, Activity, global workflow/data and diagnostic routes below
+are superseded; do not restore them from these sketches.
+
 Status: implementation contract for the reopened desktop redesign delivery.
 
 This document goes below navigation and visual tokens. It defines the job,

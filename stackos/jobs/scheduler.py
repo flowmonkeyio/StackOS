@@ -21,7 +21,7 @@ The two jobstore tables are deliberately distinct:
 Per audit MAJOR-23 the executor map is:
 
 - ``default`` — ``AsyncIOExecutor`` for short jobs.
-- ``long`` — ``ThreadPoolExecutor(max_workers=2)`` for genuinely
+- ``long`` — ``ThreadPoolExecutor(max_workers=3)`` for genuinely
   blocking calls (e.g. a future synchronous backup tool).
 
 Job defaults:
@@ -75,7 +75,7 @@ def build_scheduler(settings: Settings, engine: Engine) -> AsyncIOScheduler:
     _ = settings
     executors: dict[str, Any] = {
         "default": AsyncIOExecutor(),
-        "long": ThreadPoolExecutor(max_workers=2),
+        "long": ThreadPoolExecutor(max_workers=3),
     }
     jobstores: dict[str, Any] = {
         # Kept available for simple picklable jobs.

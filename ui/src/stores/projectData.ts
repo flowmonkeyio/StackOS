@@ -1,130 +1,46 @@
-import { ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { defineStore } from 'pinia'
-
-import type {
-  SchemaArtifactOut,
-  SchemaContextSnapshotOut,
-  SchemaDecisionOut,
-  SchemaExperimentObservationOut,
-  SchemaExperimentOut,
-  SchemaLearningOut,
-  SchemaMetricSnapshotOut,
-  SchemaPageResponseArtifactOut,
-  SchemaPageResponseContextSnapshotOut,
-  SchemaPageResponseDecisionOut,
-  SchemaPageResponseExperimentObservationOut,
-  SchemaPageResponseExperimentOut,
-  SchemaPageResponseLearningOut,
-  SchemaPageResponseMetricSnapshotOut,
-  SchemaPageResponseProjectEventOut,
-  SchemaProjectEventOut,
-} from '@/api'
-import { apiFetch, formatApiError } from '@/lib/client'
-import { createProjectRequestGate } from '@/lib/stackos/projectRequestGate'
+import type { SchemaDecisionOut, SchemaExperimentOut, SchemaLearningOut } from '@/api'
+import { createSourcePager } from '@/lib/sourcePager'
+import { useStackOsResourcesStore } from './stackosResources'
 
 export const useProjectDataStore = defineStore('projectData', () => {
-  const timeline = ref<SchemaProjectEventOut[]>([])
-  const snapshots = ref<SchemaContextSnapshotOut[]>([])
-  const learnings = ref<SchemaLearningOut[]>([])
-  const experiments = ref<SchemaExperimentOut[]>([])
-  const observations = ref<SchemaExperimentObservationOut[]>([])
-  const decisions = ref<SchemaDecisionOut[]>([])
-  const metrics = ref<SchemaMetricSnapshotOut[]>([])
-  const artifacts = ref<SchemaArtifactOut[]>([])
-  const loading = ref(false)
-  const error = ref<string | null>(null)
+  const source = <T extends { id: number }>(path: string) => createSourcePager<T>((id) => `/api/v1/projects/${id}/${path}`)
+  const sources = {
+    learnings: source<SchemaLearningOut>('learnings'),
+    experiments: source<SchemaExperimentOut>('experiments'),
+    decisions: source<SchemaDecisionOut>('decisions'),
+  }
+  const resources = useStackOsResourcesStore()
   const currentProjectId = ref<number | null>(null)
-  const requests = createProjectRequestGate((projectId) => {
-    timeline.value = []
-    snapshots.value = []
-    learnings.value = []
-    experiments.value = []
-    observations.value = []
-    decisions.value = []
-    metrics.value = []
-    artifacts.value = []
-    error.value = null
-    currentProjectId.value = projectId
+  const artifactScopeCurrent = computed(() => resources.currentProjectId === currentProjectId.value)
+  const artifacts = computed(() => artifactScopeCurrent.value ? resources.artifacts : [])
+  const pages = reactive({
+    learnings: sources.learnings.page, experiments: sources.experiments.page,
+    decisions: sources.decisions.page,
   })
+  const loading = computed(() => Object.values(pages).some((page) => page.loading) || artifactScopeCurrent.value && resources.artifactPage.loading)
+  const error = computed(() => Object.values(pages).find((page) => page.error)?.error || (artifactScopeCurrent.value ? resources.artifactPage.error : null))
 
-  async function refresh(projectId: number): Promise<void> {
-    const request = requests.begin(projectId, 'all')
-    loading.value = true
-    error.value = null
-    try {
-      const [
-        timelinePage,
-        snapshotPage,
-        learningPage,
-        experimentPage,
-        observationPage,
-        decisionPage,
-        metricPage,
-        artifactPage,
-      ] = await Promise.all([
-        apiFetch<SchemaPageResponseProjectEventOut>(
-          `/api/v1/projects/${projectId}/context/timeline?limit=50`,
-        ),
-        apiFetch<SchemaPageResponseContextSnapshotOut>(
-          `/api/v1/projects/${projectId}/context/snapshots?limit=50`,
-        ),
-        apiFetch<SchemaPageResponseLearningOut>(`/api/v1/projects/${projectId}/learnings?limit=50`),
-        apiFetch<SchemaPageResponseExperimentOut>(
-          `/api/v1/projects/${projectId}/experiments?limit=50`,
-        ),
-        apiFetch<SchemaPageResponseExperimentObservationOut>(
-          `/api/v1/projects/${projectId}/experiments/observations?limit=50`,
-        ),
-        apiFetch<SchemaPageResponseDecisionOut>(`/api/v1/projects/${projectId}/decisions?limit=50`),
-        apiFetch<SchemaPageResponseMetricSnapshotOut>(`/api/v1/projects/${projectId}/metrics?limit=50`),
-        apiFetch<SchemaPageResponseArtifactOut>(`/api/v1/projects/${projectId}/artifacts?limit=50`),
-      ])
-      if (!request.isCurrent()) return
-      timeline.value = timelinePage.items
-      snapshots.value = snapshotPage.items
-      learnings.value = learningPage.items
-      experiments.value = experimentPage.items
-      observations.value = observationPage.items
-      decisions.value = decisionPage.items
-      metrics.value = metricPage.items
-      artifacts.value = artifactPage.items
-    } catch (err) {
-      if (request.isCurrent()) {
-        error.value = formatApiError(err, 'failed to load project data')
-      }
-    } finally {
-      loading.value = request.finish()
-    }
+  function ensureScope(projectId: number) {
+    if (currentProjectId.value === projectId) return
+    Object.values(sources).forEach((reader) => reader.reset())
+    currentProjectId.value = projectId
   }
-
-  function reset(): void {
-    requests.invalidate()
-    timeline.value = []
-    snapshots.value = []
-    learnings.value = []
-    experiments.value = []
-    observations.value = []
-    decisions.value = []
-    metrics.value = []
-    artifacts.value = []
-    loading.value = false
-    error.value = null
+  /** Independent reads let mixed lists retry one failed source without losing the others. */
+  function refreshSource(projectId: number, kind: keyof typeof sources) {
+    ensureScope(projectId)
+    return sources[kind].refresh(projectId)
+  }
+  function loadMore(kind: keyof typeof sources) { return sources[kind].loadMore() }
+  function reset() {
+    Object.values(sources).forEach((reader) => reader.reset())
     currentProjectId.value = null
+    resources.reset()
   }
-
   return {
-    timeline,
-    snapshots,
-    learnings,
-    experiments,
-    observations,
-    decisions,
-    metrics,
-    artifacts,
-    loading,
-    error,
-    currentProjectId,
-    refresh,
-    reset,
+    learnings: sources.learnings.items, experiments: sources.experiments.items,
+    decisions: sources.decisions.items, artifacts, pages,
+    loading, error, currentProjectId, refreshSource, loadMore, reset,
   }
 })

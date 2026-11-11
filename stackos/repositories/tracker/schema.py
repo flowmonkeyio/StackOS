@@ -355,7 +355,7 @@ class AgentStatsRowOut(AgentStatsMetricsOut):
     project_name: str | None
     project_slug: str | None
     agent_name: str | None
-    selected_role: Literal["delivery_agent", "review_agent"] | None
+    selected_role: str | None
     host_key: str | None
     model: str | None
 
@@ -508,6 +508,16 @@ class TrackerTaskContentOut(BaseModel):
     replayed: bool = False
 
 
+class TrackerTaskBoardOut(BaseModel):
+    task: TrackerTaskOut
+    affected_task_keys: list[str]
+    changed: bool
+    rev: int
+    idempotency_key: str
+    request_sha256: str
+    replayed: bool = False
+
+
 class TrackerMutationOut(BaseModel):
     tracker: TrackerSummaryOut
     task: TrackerTaskOut | None = None
@@ -558,6 +568,7 @@ __all__ = [
     "TrackerSnapshotOut",
     "TrackerStatusOut",
     "TrackerSummaryOut",
+    "TrackerTaskBoardOut",
     "TrackerTaskContentOut",
     "TrackerTaskInputOut",
     "TrackerTaskOut",

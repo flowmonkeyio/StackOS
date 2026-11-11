@@ -171,6 +171,7 @@ class FinanceConsole:
         self.config_path = self.config_dir / "access.json"  # Legacy migration input only.
 
     def _project(self, project_id: int):
+        ProjectRepository(self.session).require_available(project_id)
         project = ProjectRepository(self.session).get(project_id)
         plugin = PluginRepository(self.session).get_plugin("finance", project_id=project_id)
         if plugin.enabled_for_project is not True:
@@ -188,7 +189,7 @@ class FinanceConsole:
         return f"finance:project:{project_id}"
 
     @contextmanager
-    def _lock(self, path: Path, *, create=False):
+    def _lock(self, path: Path, *, create=False, retiring=False):
         helpers().workspace.checked_path(path)
         flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK | (os.O_CREAT if create else 0)
         fd = os.open(path, flags, 0o600)
@@ -201,7 +202,10 @@ class FinanceConsole:
             except BlockingIOError:
                 _error("writer_busy", conflict=True)
             yield
-            if (path.lstat().st_dev, path.lstat().st_ino) != (info.st_dev, info.st_ino):
+            if not retiring and (path.lstat().st_dev, path.lstat().st_ino) != (
+                info.st_dev,
+                info.st_ino,
+            ):
                 _error("storage_lock_changed", conflict=True)
         finally:
             os.close(fd)
@@ -288,6 +292,39 @@ class FinanceConsole:
             ):
                 _error("legacy_access_corrupt")
         return doc
+
+    def cleanup_sources(self, project, remove_managed):
+        """Retire proven publication staging and legacy mappings for full cleanup.
+
+        Repository/legacy source folders remain external inputs. The caller holds
+        the managed project writer locks and has already fenced new admissions.
+        """
+        _, _, metadata = self._paths(project.id)
+        state = self._state(metadata, project)
+        publication = (state or {}).get("publication", {})
+        token = publication.get("token")
+        if token is not None:
+            if not isinstance(token, str) or not re.fullmatch(r"[a-f0-9]{32}", token):
+                _error("publication_metadata_corrupt")
+            stage = helpers().workspace.checked_path(self.config_dir / "staging" / token)
+            if stage.exists():
+                # Cleanup already fenced this project and holds its parent writer
+                # locks. An earlier partial removal may have unlinked this lock;
+                # recreate it through the same no-follow/exclusive lock owner.
+                if project.cleanup_json is None:
+                    _deny("cleanup_not_admitted")
+                with self._lock(stage / ".writer.lock", create=True, retiring=True):
+                    remove_managed(stage)
+        if self.config_path.exists():
+            with self._lock(self.config_dir / ".access.lock", create=True):
+                doc = self._legacy()
+                doc["entries"] = [e for e in doc["entries"] if e["project_id"] != project.id]
+                doc["intents"] = {
+                    k: v
+                    for k, v in doc["intents"].items()
+                    if not isinstance(v, dict) or v.get("project_id") != project.id
+                }
+                self._save(self.config_path, doc)
 
     def _legacy_source(self, doc, project):
         entries = [e for e in doc["entries"] if e["project_id"] == project.id]
@@ -678,6 +715,7 @@ class FinanceConsole:
         parent, root, metadata = self._paths(project.id)
         parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         with self._lock(parent / ".writer.lock", create=True):
+            project = self._project(inp.project_id)
             state = self._state(metadata, project)
             if state is None:
                 state = self._prepare(project, root, metadata, self._legacy())

@@ -1,231 +1,38 @@
 // @vitest-environment node
-
 import { describe, expect, it } from 'vitest'
-
 import type { SchemaPluginOut } from '@/api'
-import {
-  coreNavSections,
-  isStackOsNavItemActive,
-  pluginContributionSections,
-  projectNavSections,
-} from './nav'
+import { coreNavSections, isStackOsNavItemActive, pluginContributionSections, projectNavSections } from './nav'
 
-describe('StackOS nav contributions', () => {
-  it('leads with the four operator lanes and groups secondary inspection by job', () => {
-    const core = coreNavSections(7)
-    const labels = core.map((section) => section.label)
-
-    expect(labels).toEqual(['Operate', 'Configure', 'Execution', 'Catalog', 'Data & evidence'])
-    expect(core[0].items.map((item) => item.label)).toEqual([
-      'Home',
-      'Attention',
-      'Work',
-      'Activity',
-    ])
-    // Home is the project index; Work is the tracker route.
-    expect(core[0].items[0].to).toBe('/projects/7')
-    expect(core[0].items.find((item) => item.label === 'Work')?.to).toBe('/projects/7/tasks')
-    expect(core[1].items.map((item) => item.label)).toEqual([
-      'Connections',
-      'Automations',
-      'Spend',
-      'Agent defaults',
-      'Plugins',
-    ])
-    // Execution, catalog, and evidence remain secondary inspection groups.
-    expect(core[2].items.map((item) => item.to)).toContain('/projects/7/action-calls')
-    expect(core[3].items.map((item) => item.to)).toContain('/projects/7/operations')
-    expect(core[4].items.map((item) => item.to)).toContain('/projects/7/resources')
-  })
-
-  it('loads plugin nav contributions from sanitized manifest UI metadata', () => {
-    const plugin = {
-      id: 1,
-      slug: 'media-buying',
-      name: 'Media Buying',
-      version: '0.1.0',
-      description: '',
-      source: 'builtin',
-      created_at: '2026-01-01T00:00:00Z',
-      updated_at: '2026-01-01T00:00:00Z',
-      enabled_for_project: true,
-      manifest_json: {
-        ui: {
-          nav: {
-            section: 'Media Buying',
-            items: [{ key: 'campaigns', label: 'Campaigns', to: 'resources' }],
-          },
-        },
-      },
-    } as SchemaPluginOut
-
-    const sections = pluginContributionSections(9, [plugin])
-
-    expect(sections).toHaveLength(1)
-    expect(sections[0].label).toBe('Media Buying')
-    expect(sections[0].items[0]).toMatchObject({
-      key: 'campaigns',
-      label: 'Campaigns',
-      to: '/projects/9/resources',
-    })
-  })
-
-  it('keeps project configuration surfaces in the Configure group', () => {
-    const core = coreNavSections(12)
-    const configure = core.find((section) => section.label === 'Configure')
-
-    expect(configure?.items.map((item) => item.to)).toEqual([
-      '/projects/12/connections',
-      '/projects/12/schedules',
-      '/projects/12/cost-budget',
-      '/projects/12/agent-defaults',
-      '/projects/12/plugins',
-    ])
-  })
-
-  it('loads SEO nav from the plugin manifest contribution only when enabled', () => {
-    const plugin = {
-      id: 2,
-      slug: 'seo',
-      name: 'SEO',
-      version: '0.1.0',
-      description: '',
-      source: 'builtin',
-      created_at: '2026-01-01T00:00:00Z',
-      updated_at: '2026-01-01T00:00:00Z',
-      enabled_for_project: true,
-      manifest_json: {
-        ui: {
-          nav: {
-            section: 'SEO',
-            items: [
-              {
-                key: 'seo.resources',
-                label: 'Data',
-                to: 'resources?plugin_slug=seo',
-                matchPrefix: true,
-              },
-              {
-                key: 'seo.templates',
-                label: 'Workflows',
-                to: 'workflow-templates?plugin_slug=seo',
-              },
-            ],
-          },
-        },
-      },
-    } as SchemaPluginOut
-
-    const sections = pluginContributionSections(7, [plugin])
-    expect(sections[0].label).toBe('SEO')
-    expect(sections[0].items.map((item) => item.label)).toEqual(['Data', 'Workflows'])
-    expect(sections[0].items.map((item) => item.to)).toEqual([
-      '/projects/7/resources?plugin_slug=seo',
-      '/projects/7/workflow-templates?plugin_slug=seo',
-    ])
-
-    const disabled = { ...plugin, enabled_for_project: false } as SchemaPluginOut
-    expect(pluginContributionSections(7, [disabled])).toEqual([])
-  })
-
-  it('keeps project nav first and orders plugin tools with engineering first', () => {
-    const engineering = pluginFixture('engineering', 'Engineering')
-    const communications = pluginFixture('communications', 'Communications')
-    const seo = pluginFixture('seo', 'SEO')
-
-    const sections = projectNavSections(7, [seo, communications, engineering])
-
-    expect(sections[0].label).toBe('Operate')
-    expect(sections[1].label).toBe('Configure')
-    expect(sections[2].label).toBe('Execution')
-    expect(sections[3].label).toBe('Catalog')
-    expect(sections[4].label).toBe('Data & evidence')
-    expect(sections[5].label).toBe('Engineering')
-    expect(sections[6].label).toBe('Communications')
-    expect(sections[5].items.map((item) => item.to)).toEqual([
-      '/projects/7/resources?plugin_slug=engineering',
-      '/projects/7/workflow-templates?plugin_slug=engineering',
-    ])
-    expect(sections.map((section) => section.label)).toContain('SEO')
-  })
-
-  it('uses manifest display order for plugin tools before falling back to slug defaults', () => {
-    const customEarly = pluginFixture('custom-early', 'Custom Early', 5)
-    const engineering = pluginFixture('engineering', 'Engineering')
-    const communications = pluginFixture('communications', 'Communications')
-
-    const sections = pluginContributionSections(7, [communications, engineering, customEarly])
-
-    expect(sections.map((section) => section.label)).toEqual([
-      'Custom Early',
-      'Engineering',
-      'Communications',
-    ])
-  })
-
-  it('keeps plugin-scoped nav active state separate from generic pages', () => {
-    const genericResources = { to: '/projects/7/resources' }
-    const seoResources = {
-      to: '/projects/7/resources?plugin_slug=seo',
-      matchPrefix: true,
-    }
-    const genericTemplates = { to: '/projects/7/workflow-templates' }
-    const seoTemplates = { to: '/projects/7/workflow-templates?plugin_slug=seo' }
-
-    expect(isStackOsNavItemActive(genericResources, '/projects/7/resources', {})).toBe(true)
-    expect(
-      isStackOsNavItemActive(genericResources, '/projects/7/resources', { plugin_slug: 'seo' }),
-    ).toBe(false)
-    expect(
-      isStackOsNavItemActive(seoResources, '/projects/7/resources', { plugin_slug: 'seo' }),
-    ).toBe(true)
-    expect(
-      isStackOsNavItemActive(seoResources, '/projects/7/resources', { plugin_slug: 'core' }),
-    ).toBe(false)
-    expect(
-      isStackOsNavItemActive(genericTemplates, '/projects/7/workflow-templates', {
-        plugin_slug: 'seo',
-      }),
-    ).toBe(false)
-    expect(
-      isStackOsNavItemActive(seoTemplates, '/projects/7/workflow-templates', {
-        plugin_slug: 'seo',
-      }),
-    ).toBe(true)
-  })
-})
-
-function pluginFixture(slug: string, section: string, displayOrder?: number): SchemaPluginOut {
-  return {
-    id: slug === 'engineering' ? 1 : 2,
-    slug,
-    name: section,
-    version: '0.1.0',
-    description: '',
-    source: 'builtin',
-    created_at: '2026-01-01T00:00:00Z',
-    updated_at: '2026-01-01T00:00:00Z',
-    enabled_for_project: true,
-    manifest_json: {
-      ...(displayOrder === undefined ? {} : { display_order: displayOrder }),
-      ui: {
-        nav: {
-          section,
-          items: [
-            {
-              key: `${slug}.resources`,
-              label: 'Data',
-              to: `resources?plugin_slug=${slug}`,
-              matchPrefix: true,
-            },
-            {
-              key: `${slug}.templates`,
-              label: 'Workflows',
-              to: `workflow-templates?plugin_slug=${slug}`,
-            },
-          ],
-        },
-      },
-    },
+function plugin(slug: string, order = 10, enabled = true): SchemaPluginOut {
+  return { id: 1, created_at: '', updated_at: '', description: '', source: 'builtin', version: '0.1.0', slug, name: slug === 'finance' ? 'Finance Operations' : slug, enabled_for_project: enabled,
+    manifest_json: { display_order: order, ui: { nav: { section: slug, items: [{ label: 'Data', to: `resources?plugin_slug=${slug}` }, { label: 'Workflows', to: `workflow-templates?plugin_slug=${slug}` }] } } },
   } as SchemaPluginOut
 }
+
+describe('project navigation', () => {
+  it('connects the primary and Setup destinations without category pages', () => {
+    const sections = coreNavSections(7)
+    expect(sections.map(section => section.items.map(item => [item.label, item.to]))).toEqual([
+      [['Home', '/projects/7'], ['Work', '/projects/7/tasks'], ['Automations', '/projects/7/schedules'], ['Library', '/projects/7/library']],
+      [['Connections', '/projects/7/connections'], ['Spend', '/projects/7/cost-budget'], ['Agents', '/projects/7/agents'], ['Plugins', '/projects/7/plugins']],
+    ])
+  })
+  it('normalizes enabled legacy contributions to direct domains, preserving Finance and display order', () => {
+    const sections = projectNavSections(7, [plugin('agency', 19), plugin('support', 15), plugin('finance', 18), plugin('engineering'), plugin('seo', 60, false)])
+    expect(sections.map(section => section.key)).toEqual(['project', 'setup', 'domains'])
+    expect(sections[2]!.items.map(item => item.to)).toEqual([
+      '/projects/7/plugins/engineering', '/projects/7/plugins/support', '/projects/7/finance', '/projects/7/plugins/agency',
+    ])
+    expect(sections[2]!.items[2]!.label).toBe('Finance')
+    expect(sections[2]!.items).toHaveLength(4)
+  })
+  it('does not create domains for provider-only packages without a declared page or navigation', () => {
+    expect(pluginContributionSections(7, [{ ...plugin('transport'), manifest_json: {} }])).toEqual([])
+  })
+  it('keeps domain selection on workflow details and Library selection on filtered records', () => {
+    expect(isStackOsNavItemActive({ to: '/projects/7/plugins/seo', matchPrefix: true }, '/projects/7/plugins/seo/workflows/seo.audit')).toBe(true)
+    expect(isStackOsNavItemActive({ to: '/projects/7/plugins' }, '/projects/7/plugins/seo')).toBe(false)
+    expect(isStackOsNavItemActive({ to: '/projects/7/library' }, '/projects/7/library', { plugin: 'seo', item: 'resource_record:42' })).toBe(true)
+    expect(isStackOsNavItemActive({ to: '/projects/7/plugins/seo', matchPrefix: true }, '/projects/7/plugins/seo-other')).toBe(false)
+  })
+})

@@ -56,6 +56,24 @@ def _spec(name: str, *, mutating: bool = True) -> OperationSpec:
     )
 
 
+@pytest.mark.parametrize("name", ["tracker.taskActivity", "tracker.taskResults"])
+def test_task_inspection_compact_preserves_bounded_projection(name):
+    spec = _spec(name, mutating=False)
+    payload = {
+        "project_id": 1,
+        "task_id": 4,
+        "task_key": "work",
+        "next_cursor": "opaque",
+        "items": [{"source_kind": "artifact", "source_id": 123}],
+        "coverage": "Explicit sources",
+        "warnings": ["Missing source omitted"],
+    }
+    assert shape_operation_response(spec, payload, response_mode="compact") == payload
+    assert shape_operation_response(spec, payload, response_mode="raw") == payload
+    with pytest.raises(ValidationError):
+        resolve_response_mode(spec, {"response_mode": "ack"}, surface="mcp")
+
+
 def test_provider_side_effect_operations_are_raw_only() -> None:
     spec = _spec("communication.send")
 

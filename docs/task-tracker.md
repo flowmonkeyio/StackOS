@@ -83,8 +83,10 @@ operation accepts `arguments` containing `project_id` and `delivery`:
     "project_id": 1,
     "delivery": {
       "host_key": "codex",
-      "delivery_agent": {"name": "builder", "instructions": "Implement, check and commit the assigned ticket."},
-      "review_agent": {"name": "reviewer", "instructions": "Independently review the exact commit; do not change files or commits."}
+      "agents": {
+        "delivery_agent": {"source_ref": {"host_key": "codex", "native_name": "builder", "source_path": ".codex/agents/builder.toml"}},
+        "review_agent": {"source_ref": {"host_key": "codex", "native_name": "reviewer", "source_path": ".codex/agents/reviewer.toml"}}
+      }
     }
   }
 }
@@ -98,20 +100,12 @@ revision in raw mode; compact and ack are unsupported. Existing
 `tracker.get` with `response_mode=raw` exposes `tracker.config_json` for readback.
 MCP/system and workflow grants cannot authorize this local-admin write.
 
-The local console exposes this setup at **Configure → Agent defaults**
-(`/projects/:id/agent-defaults`). It reads `tracker.status` in raw mode and edits
-a copy of the complete saved delivery object, changing only selected fields.
-Untouched optional fields and other role settings are retained; the operation
-preserves unrelated tracker configuration. Blank optional selectors save as
-null; untouched absent fields remain absent. Harness/model choices and supported
-provider/profile controls use the shared host capability catalog, with no model
-access claim. After a harness change, incompatible saved provider/profile values
-remain visible until explicitly cleared in the same input. Clear them before
-using that harness; saving defaults does not establish execution readiness.
-A successful save reloads and checks the stored delivery object
-against the operation result and displays its revision. Failures remain visible
-and retain the draft. Existing task snapshots and ticket receipts stay unchanged;
-saving does not call `tracker.startDelivery` or refresh instructions from files.
+The local console exposes native project definitions at **Setup → Agents**
+(`/projects/:id/agents`). It lists, adds and edits actual native files through
+`projectAgent.*`; generic presets are not the live project list. Its saved-default
+adoption uses the preview/write/readback contract below. The old fixed
+delivery/review form is removed. Editing a source or adopting defaults never
+calls `tracker.startDelivery` and does not establish execution readiness.
 
 Migration `0035_generic_task_delivery` moves existing engineering plugin
 delivery defaults once, preserving role instructions, names, host, model,
@@ -122,17 +116,27 @@ is removed. Task snapshots, run snapshots and ticket evidence remain unchanged.
 Runtime reads only tracker defaults; enabling the engineering plugin is no
 longer a prerequisite for task automation.
 
-Source/local instruction adoption is a reviewed, explicit current-project setup
-action. Copy the full saved delivery object and replace only selected role
-instructions through `tracker.configureDelivery`; preserve names, hosts, models,
-provider/profile and all other fields. Read back exact preserved settings and
-instructions with canonical whitespace normalization, retaining absent/null fields.
-After independent source/local approval, explicitly authorized instruction-only
-saved-default adoption may occur during a running task. Queued/running snapshots
-stay frozen; explicit rehandoff after complete/stopped execution consumes current
-defaults while preserving receipts, sessions and repair allowance. Source edits
-alone never update saved settings. Installed activation is separately authorized
-and main-owned after task closure; no synchronizer or cross-project rollout is implied.
+Codex adoption is explicit current-project setup through the same REST operation.
+Send `project_dir`, `adopt_sources: {role: {source_ref, expected_digest}}` and
+`preview: true`, omitting `delivery`. The read-only preview returns instruction,
+identity and native-setting differences plus the proposed defaults and effective
+agents. Review those differences, then repeat with `preview: false`. Stale source
+digests reject before saving. Adoption preserves unrelated roles, all execution
+fallback choices (including absent/null fields) and other tracker settings; it
+replaces only selected editable instruction owners with `agents` references and
+checks the saved readback. No source file is rewritten. Queued/running task state,
+run/template snapshots, receipts and history remain unchanged. No database upgrade,
+watcher, preset lookup or same-name file inference performs adoption.
+
+For other-host inline defaults, after independent source/local approval,
+explicitly authorized instruction-only saved-default adoption may occur during a running task.
+Queued/running snapshots stay frozen. Explicit rehandoff after complete/stopped
+execution resolves current defaults while preserving prior ticket receipts,
+native sessions and consumed repair allowance. Completed tasks and frozen
+run/template snapshots stay unchanged. Installed activation is separately
+authorized and main-owned after task closure. Adoption does not authorize
+restarting the daemon orchestrating the active task; source checks do not prove
+saved adoption, native consumption or installed activation.
 
 The handoff is task-level; role objects and their fields can be omitted when
 project defaults supply them:
@@ -149,26 +153,38 @@ project defaults supply them:
     "model": "claude-sonnet-5-5"
   },
   "review_agent": {
-    "name": "project-review",
-    "instructions": "The project's adapted independent review instructions.",
+    "source_ref": {"host_key": "codex", "native_name": "project-review", "source_path": ".codex/agents/project-review.toml"},
     "model": "gpt-6.1-sol"
   }
 }
 ```
 
 The workspace bridge supplies `project_id`; REST and CLI callers supply it
-explicitly. Agent identity and instructions come from project defaults or the
-planner's task adaptation. Task overrides merge field by field within each role;
+explicitly. Fresh Codex admission requires an exact project `source_ref`; legacy
+inline Codex choices return `adoption_required`. Other hosts retain intentional
+inline contracts. `agents` maps arbitrary safe role keys to selected definitions
+and execution fallback choices. Task overrides merge field by field within each role;
 an explicit null clears an optional role selection (model/provider/profile/host),
 while a resolved name or instructions cannot be missing, null or empty.
-Projects need no `.codex` folder, and StackOS does not substitute generic presets
-for those instructions. Harness and role choices are frozen under the task's `metadata_json.delivery`,
+Source-native model/effort and supported reduction-only feature/skill settings win.
+Omitted values inherit task choices, project choices, then the native host. Source
+fields cannot replace provider/profile, permissions, sandbox or MCP routes;
+unsupported settings reject with repair context. The existing native launcher uses
+supported `--model`/`-c` options, never an invented `--agent` option. Harness and role
+choices, source ref/digest, instructions and native settings are frozen under the
+task's `metadata_json.delivery.agents`,
 with other task metadata preserved. Queued/running launches keep that snapshot.
 An explicit handoff after an execution completes or stops resolves a new current
 snapshot from current defaults and overrides. Prior ticket receipts, native
 sessions and consumed repair allowance survive. Completed tasks and frozen
 run/template snapshots are never refreshed. Tickets carry no
 agent settings. Invalid resolved roles or model selections reject before scheduling.
+An already admitted inline Codex task stopped across the source-adoption upgrade
+retains its saved agents and assignments on unchanged explicit rehandoff, including
+work that has not launched yet. Current defaults cannot replace that selection;
+changed host, agent settings or assignments reject. Existing workspace, MCP-route,
+host-preflight and native-session identity guards still apply. This exception does
+not admit a new inline Codex task or refresh its prior receipts or repair count.
 Each role may override `host_key`, `model`, `provider`, and (for Hermes)
 `profile`. The merged role host overrides the task host, then the project host,
 then `codex`. Clearing a role host uses that task/project host chain.
@@ -220,12 +236,24 @@ detection and dependency rescans, including tickets omitted from the prompt.
 Packet-size comparisons measure serialized characters and UTF-8 bytes; they do
 not measure model tokens or establish answer-quality improvements.
 
-Optional task-level `agent_assignments` maps canonical ticket keys to the existing
-`delivery_agent` or `review_agent`. Frozen step extensions
+Optional task-level `agent_assignments` maps canonical ticket keys to selected
+role keys. Frozen step extensions
 `{"agent_assignment":"review_agent"}` provide mirror defaults; explicit map
 entries win. The resolved map is frozen with each execution snapshot.
-An unassigned mirror uses `delivery_agent`. Models and instructions remain
-project/task settings. No workflow or step name selects behavior.
+Otherwise a mirror selects the unique applicable selected declared role from its
+frozen template `agent_requirements/applies_to_steps`; ambiguity requires an explicit
+assignment. Legacy plans without declared roles retain their explicit execution
+bindings. One-role workflows need no engineering pair. Ordinary tickets require a
+separate `review_agent` binding and distinct native identities/sessions. Resumed
+source sessions retain their frozen agent snapshot; new untouched work uses the
+new admission snapshot. External skill bytes and the host installation are not
+frozen. No workflow or step name selects behavior.
+
+The Codex mapping follows the supported definition fields in
+[OpenAI's custom-agent contract](https://learn.chatgpt.com/docs/agent-configuration/subagents)
+(checked 2026-11-09). Tests exercise native argument/config mapping, rejected
+authority increases, source precedence and unrelated execution settings. Actual
+installed-host consumption is a separate integration proof.
 
 An already-automated frozen planning contract may explicitly authorize
 `tracker.createTicket` and dependency updates for contract-declared children
@@ -242,7 +270,7 @@ remains an explicit reviewed current-project action; active snapshots stay froze
 
 The call returns task/job/status refs immediately. Each task has its own memory
 scheduler job (`task-delivery:<project_id>:<task_id>`). Distinct canonical working
-directories can execute concurrently, within the existing long executor's two
+directories can execute concurrently, within the existing long executor's three
 workers shared with other long jobs. Tickets and delivery/review calls within
 one task remain serial until all task work completes or execution stops:
 
@@ -371,6 +399,24 @@ return; it never accepts the superseded mirror occurrence. Mirror `repair`
 without that persisted progress, blocked/failed, malformed output and native
 failure stop the same task.
 No ready work with unfinished tickets is stopped, never reported complete.
+
+After native, session, schema and applicable candidate validation, an ordinary
+delivery or review `blocked` result keeps the ticket `in-progress`, with a safe
+summary (or a phase-specific reason for a blank summary) in `blocker_reason`
+and `outcome` and no terminal
+`completed_at`. Its receipt retains `validated_outcome=blocked`, outputs,
+candidate, followups, attempts, native sessions and consumed repair allowance;
+task delivery stops. Existing blocked counts and Work/detail views read these
+canonical ticket fields. Native, malformed-result, candidate-integrity and
+explicit `failed` outcomes retain failure behavior; exhausted ordinary repair
+allowance still stops delivery. Historical attempts are not rewritten.
+
+There is no automatic retry or blocker clearing. Main must resolve the actual
+prerequisite, explicitly clear `blocker_reason` through `tracker.updateTicket`,
+requeue the ordinary ticket as `not-started`, then explicitly hand off delivery
+again. Neither an unresolved blocker nor an `in-progress` ordinary ticket can
+launch. This resumes the saved role sessions and preserves the counted repair
+pass; an interrupted repair does not consume another pass merely on requeue.
 
 ```json
 {"status":"success","summary":"Executed checks.","outputs":"{\"report\":{\"count\":2}}","followups":[]}
@@ -1180,7 +1226,111 @@ behavior. Readback plus an exact subsequent native prompt can additionally prove
 saved-instruction consumption in that isolated scope; primary installed activation
 and consumption remain separate claims.
 
+## Board priority and order writes
+
+`tracker.updateTaskPriority` and `tracker.reorderTask` are strict, browser-safe
+operations exposed through the same registry to REST, CLI and MCP. They use
+the existing task `priority_key` and integer `order_index`, with no separate
+ranking store. The UI client is `lib/stackos/taskBoard.ts`.
+
+Both require `project_id`, `task_key`, `expected_status`, `expected_updated_at`
+and a stable `idempotency_key`. Priority accepts only `priority_key: p0|p1|p2|p3`.
+Reorder accepts `anchor_task_key` and `placement: before|after`. The anchor
+must currently belong to the same project and status column as the moved task.
+There is no lifecycle, ticket-priority or execution-policy payload. These direct
+tracker intents do not accept a run token or arbitrary patch fields.
+
+The repository reserves the SQLite writer before validating current state and
+retry identity. Stale task snapshots or missing/moved anchors return a structured
+conflict with `next_operations: [tracker.get]`; refresh and submit a new intent.
+An identical retry returns its saved raw receipt with `replayed: true`; reusing
+the key with different arguments conflicts. The receipt includes the saved task,
+`affected_task_keys`, `changed`, tracker revision and request fingerprint.
+
+Board projection and reorder must sort by `order_index` ascending, then
+`created_at` descending and numeric `id` descending. Reorder removes only the
+selected task from that complete column sequence and inserts it at the anchor,
+preserving hidden tasks' relative order. A real move normalizes only that column
+to zero-based integer positions. A same-position/self-anchor move and an
+unchanged priority are no-ops: no normalization, revision or change event.
+No-op receipts still make retries stable. All changed ranks, revision, events
+and retry receipt commit together; the moved task's snapshot also advances when
+a tied integer remains unchanged but its relative position changes.
+
+New tasks and real task status transitions prepend to the full destination
+column using that same persisted rank. The repository reserves the SQLite
+writer before allocating a rank, so concurrent arrivals serialize. Direct
+patches, child-ticket rollups and workflow mirroring share the status-transition
+hook; same-status writes and title, usage or priority updates retain manual
+order. Arrival placement does not change priority or ticket scheduling.
+
+Migration `0039_tracker_board_arrivals` normalizes existing untouched columns
+once. Complete tracker revisions, creation receipts and rank snapshots establish
+which columns have no saved manual order. A reorder's recorded `expected_status`
+identifies its column, which is preserved. The latest same-project task status
+event supplies entry order; tasks without historical entry events fall back to
+creation time, then numeric ID. Unrelated `updated_at` changes never determine
+placement. Incomplete or contradictory history preserves the affected column
+(an unidentified reorder preserves the tracker), with task keys, reasons and
+manual revision refs in the existing `board-arrivals-normalization` revision.
+That receipt also records creation fallbacks and makes retries idempotent.
+Legacy `create_all` schema adoption runs the same repair before stamping head,
+since schema stamping otherwise skips data migrations.
+Upgrade leaves statuses, priorities, workflow snapshots and tracker settings
+unchanged; downgrade does not reverse saved operator order.
+
+Real priority/order edits emit `tracker.task.changed` into the existing timeline
+and `tracker-status` SSE transport, including task scope and `changed_fields`.
+Relative movement with an unchanged integer uses `order`; changed integers use
+`order_index`. Existing agent priority patches emit the same genuine task-change
+event. These events invalidate readers without masquerading as status changes
+or adding a polling path. UI callers retain the immutable intent for transport
+retry, reconcile after conflicts, and check project ownership before applying a
+late response. The card and navigation consumers own that interaction state.
+
+Work's existing project-index loader shares one in-flight read and one queued
+latest read across live events, manual refresh and post-save reconciliation.
+Background reads retain the current board. Focused graph/detail readers keep
+their own loading state and do not hold that queue open. Board writes and index
+reads have 15-second abort deadlines; scope exit aborts them and ignores late
+outcomes. Pending edits block only conflicting edits in the same status column,
+leaving other columns, inspection, filters and navigation usable.
+
+A confirmed rejected save removes its optimistic edit and reads current truth.
+A successful save followed by a failed read retains the optimistic order and
+reports that the task saved. A timeout, lost response or server error leaves the
+save outcome uncertain: reconcile by reading, without automatically repeating
+the mutation. Refresh retries only the read and clears settled optimistic state
+after a successful current-project index response.
+
 ## Status Events
+
+Task inspection uses `tracker.taskActivity` and `tracker.taskResults` through
+the shared MCP, REST operation and CLI adapters. Both require `project_id` and
+`task_key`, accept `limit` (1–200, default 50) and an opaque `cursor`, and return
+the exact task scope, canonical source IDs, `next_cursor`, coverage and warnings.
+Compact and raw retain the same bounded projection; ack is unavailable. Cursors
+bind the project, task and source filter, ordered by descending source timestamp,
+source kind and row ID. Pass the returned cursor unchanged for older items.
+
+Activity reads existing task/ticket/run-linked project events and only structured
+delivery lifecycle revision deltas. It writes no history and makes no complete
+internal-audit claim. Missing historical phases remain absent. Existing live
+timeline transport may invalidate/refetch the active read; these operations add
+no poller or durable event store.
+
+Results accepts an optional `source_kind`: `resource_record`, `artifact`,
+`learning`, `decision` or `experiment`. It follows explicit same-project tracker
+membership/links, run-plan/run links, execution-context links (including inactive
+contexts), artifact associations, top-level typed provenance fields
+(`task_key`, `ticket_key`, `run_plan_id`, `run_id`, `context_ref`), validated
+artifact resource links, decision runs, learning snapshot runs and experiment
+run arrays. One result retains all valid association reasons and the existing
+canonical payload for shared Library details. Titles, arbitrary metadata,
+completion prose and nested lookalike keys never establish an association.
+An association does not imply approval or exclusive production; unlinked records
+remain available through Library. Broken or foreign references never create
+placeholder results.
 
 Tracker task and ticket status changes are also written to the project timeline
 as append-only `project_events` rows:
@@ -1255,6 +1405,8 @@ Agent write operations:
 - `tracker.createTicket`
 - `tracker.updateTask`
 - `tracker.updateTaskContent` (human console REST/CLI only)
+- `tracker.updateTaskPriority` (bounded task priority; MCP/REST/CLI/browser)
+- `tracker.reorderTask` (same-status neighbor placement; MCP/REST/CLI/browser)
 - `tracker.updateTicket`
 - `tracker.patch`
 - `tracker.rejectTask`
@@ -1671,15 +1823,59 @@ theme changes and device pixel ratio changes. Its observers and listeners are
 released on unmount. The compact summary adds no fit-based visibility gate or
 refresh timer.
 
+## Board URL state
+
+`TaskTrackerView` owns Board filter and display state through the current URL.
+The pure `task-tracker/boardFilters.ts` parser, serializer and update/remove/clear
+commands provide one typed clause model to the controls and Board projection.
+There is no saved filter store. History and reload read the same query state;
+changing filters preserves the open detail identity and its draft.
+
+| Query | Meaning |
+| --- | --- |
+| `search` | Text substring across task and ticket/index search fields, case insensitive |
+| `status`, `priority` | Comma-separated or repeated values; OR within a field, AND between clauses |
+| `status_op`, `priority_op` | `is` (default) or `is-not`; priorities are `p0` through `p3` |
+| `workflow`, `assignee` | One workflow key or assignee; corresponding `_op` accepts `is` or `is-not` |
+| `ticket_status`, `focus=blocked` | Legacy Home restrictions represented as removable clauses |
+| `completed` | `all`, `past-day`, `past-week`, `past-month`, or `none` |
+| `hide_empty=1` | Hide columns without any projected tasks |
+
+Missing status/completed choices default to Status is not Aborted and Completed
+Past week. Explicit `status=all&completed=all` keeps Clear all unrestricted on
+reload; clearing filters retains the empty-column display choice. Invalid
+enum values are ignored, with missing/invalid status and completion choices
+using the same defaults. Complete selected explicitly with Completed None
+reconciles to All in the control state and subsequent URL writes.
+
+Completion windows apply only to tasks whose actual status is `complete`,
+using `completed_at` and the existing StackOS UTC timestamp parser. Windows
+include their lower boundary and exclude future or unknown/invalid timestamps;
+Past month means 30 rolling days. All includes unknown dates. Other statuses,
+including reopened tasks, are unaffected by completion dates.
+
+Board rows sort by persisted `order_index`, then newest `created_at` and
+descending ID, matching the reorder repository. Graph's picker retains its
+unfiltered newest-first order. Project switching preserves view, status,
+priority, completion/display choices and portable legacy restrictions, and
+clears text, workflow, assignee and task/ticket selections.
+
 ## UI
 
 The Work UI provides two views, Board and Graph. It renders:
 
-- Board by default, with seven fixed columns for the current task statuses:
+- Board by default, with seven columns for the current task statuses (empty
+  columns can be hidden through the display choice):
   `not-started`, `in-progress`, `complete`, `deferred`, `aborted`, `failed`,
   and `skipped`. Cards cannot be dragged between columns or change status.
-- a Board / Graph switch in the same shared desktop toolbar as the
-  current view's controls. There are no separate Stories or Tickets views.
+- a Board / Graph switch in the same top-right page-header position in both
+  views. Board has one filter bar: Filter opens Text, Status, Priority,
+  Workflow and Assignee editors; applied chips support edit and removal.
+  Excess chips collapse into a +N filters popover without wrapping or horizontal
+  scrolling. Clear all, result count and Display keep their reserved space.
+  Display contains Completed tasks and Hide empty columns. Returning from Graph
+  refreshes the task index while retaining the mounted Board and its scroll.
+  There are no separate Stories or Tickets views.
 - project-wide task cards with leading identity, title, status and completion
   progress, followed by quiet usage for automated work and an anchored execution
   footer. A current occurrence shows its actual host logo, readable role, exact

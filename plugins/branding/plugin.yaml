@@ -1892,16 +1892,15 @@ resources:
       record_kind: distribution-record
       agent_guidance: Record API, browser, admin UI, script, and fallback publication attempts the same way. Outcome snapshots and notable replies can become future evidence-items.
 ui:
+  page:
+    sections: [workflows, saved, files]
   nav:
     section: Branding
     items:
-      - key: branding.resources
-        label: Data
-        to: resources?plugin_slug=branding
+      - key: branding.domain
+        label: Branding
+        to: plugins/branding
         matchPrefix: true
-      - key: branding.templates
-        label: Workflows
-        to: workflow-templates?plugin_slug=branding
 config:
   schema_version: stackos.plugin.v1
   level: 1

@@ -7,6 +7,7 @@ import type {
 } from '@/api'
 import { apiFetch, formatApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
+import { useProjectsStore } from '@/stores/projects'
 import {
   configuredWorkflows,
   type ConfiguredWorkflow,
@@ -16,6 +17,7 @@ import {
 } from './ticketOverview'
 
 export function useProjectOverview(projectId: Ref<number>) {
+  const projects = useProjectsStore()
   const project = ref<PortfolioProject | null>(null)
   const accounts = ref<SchemaAccountOut[]>([])
   const workflows = ref<ConfiguredWorkflow[]>([])
@@ -74,6 +76,7 @@ export function useProjectOverview(projectId: Ref<number>) {
           limit: 1,
         }),
         (page) => {
+          projects.reconcileProjectMetadata(page.items)
           project.value = page.items[0] ?? null
           task.value = project.value?.latest_task ?? null
         },

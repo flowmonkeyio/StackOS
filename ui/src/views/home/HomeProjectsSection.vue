@@ -15,6 +15,7 @@ import {
 import type { DataTableColumn } from '@/components/types'
 import { GETTING_STARTED_URL } from '@/lib/externalLinks'
 import { trackerStatus } from '@/design/status'
+import { useProjectsStore } from '@/stores/projects'
 import { ticketStatuses, ticketWorkUrl, type PortfolioProject } from './ticketOverview'
 import type { PortfolioFilters } from './useHomePortfolioInsights'
 
@@ -32,6 +33,7 @@ const emit = defineEmits<{
   clearStatus: []
 }>()
 const router = useRouter()
+const projects = useProjectsStore()
 const search = ref('')
 const sort = ref<'recent' | 'name'>('recent')
 const columns: DataTableColumn<PortfolioProject>[] = [
@@ -148,7 +150,7 @@ function changeSort(value: string | number | null): void {
     >
       <template #cell:name="{ row }">
         <div class="min-w-0">
-          <span class="font-medium text-fg-strong">{{ row.name }}</span>
+          <span class="font-medium text-fg-strong">{{ projects.getById(row.id)?.name ?? row.name }}</span>
           <p class="truncate text-xs text-fg-muted">
             {{ row.domain || row.slug }}
           </p>

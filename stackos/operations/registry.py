@@ -140,6 +140,7 @@ def build_operation_registry() -> OperationRegistry:
         guides,
         integrations,
         local_runtime,
+        project_agents,
         project_bootstrap,
         project_setup,
         readiness,
@@ -177,6 +178,8 @@ def build_operation_registry() -> OperationRegistry:
     for spec in auth.operation_specs():
         registry.register(spec)
     for spec in backups.operation_specs():
+        registry.register(spec)
+    for spec in project_agents.operation_specs():
         registry.register(spec)
     for spec in browser.operation_specs():
         registry.register(spec)

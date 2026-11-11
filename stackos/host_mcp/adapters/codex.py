@@ -6,6 +6,7 @@ import json
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
@@ -70,6 +71,7 @@ def run_agent(
     resume_thread_id: str | None = None,
     on_session: Callable[[str], None] | None = None,
     mcp_config_ref: dict[str, str] | None = None,
+    native_settings: dict[str, Any] | None = None,
     process_control: ManagedProcessControl | None = None,
 ) -> AgentRunResult:
     """Run supplied instructions in a new or explicitly selected native thread."""
@@ -85,6 +87,7 @@ def run_agent(
             if mcp_config_ref is not None
             else []
         )
+        overrides += native_agent_overrides(native_settings or {})
     except ValueError as error:
         return AgentRunResult(None, error=str(error))
     with TemporaryDirectory(prefix="stackos-agent-") as temporary:
@@ -120,6 +123,7 @@ def run_agent(
         process = None
         thread_id = None
         execution_error = None
+        routed_execution_error = None
 
         def record_session(session_id: str) -> None:
             nonlocal thread_id
@@ -150,8 +154,17 @@ def run_agent(
         except CodexStreamError as exc:
             process = exc.process
             execution_error = str(exc)
-        except (OSError, UnicodeError, InvocationCancelled) as exc:
+            routed_execution_error = (
+                "Codex task-routed stream failed; inspect native host diagnostics."
+            )
+        except InvocationCancelled as exc:
+            execution_error = f"Codex process failed (InvocationCancelled): {exc}"
+            routed_execution_error = "Codex task-routed invocation cancelled before launch."
+        except (OSError, UnicodeError) as exc:
             execution_error = f"Codex process failed ({type(exc).__name__}): {exc}"
+            routed_execution_error = (
+                "Codex task-routed process failed; inspect native host diagnostics."
+            )
         exit_code = process.returncode if process is not None else None
         stdout = process.stdout if process is not None else ""
         stderr = process.stderr if process is not None else ""
@@ -200,8 +213,19 @@ def run_agent(
                 else None
             )
         )
-        if execution_error and mcp_config_ref is not None:
-            execution_error = "Codex task-routed execution failed; inspect native host diagnostics."
+        if mcp_config_ref is not None:
+            if routed_execution_error is not None:
+                # Stream failure cleanup may set cancelled; retain the initiating failure.
+                execution_error = routed_execution_error
+            elif process_control is not None and process_control.cancelled.is_set():
+                execution_error = (
+                    "Codex task-routed invocation cancelled by managed process control."
+                )
+            elif execution_error:
+                execution_error = (
+                    "Codex task-routed execution failed; inspect native host diagnostics."
+                )
+        routed_result_error = "Invalid Codex task-routed result; inspect native host diagnostics."
         # The primary final can still contain useful facts after native failure.
         # Retaining it never overrides the process/transport success boundary.
         try:
@@ -214,7 +238,11 @@ def run_agent(
                     exit_code,
                     thread_id=thread_id,
                     usage=usage,
-                    error="Invalid Codex task-routed result; inspect native host diagnostics.",
+                    error=(
+                        f"{execution_error}\n{routed_result_error}"
+                        if execution_error
+                        else routed_result_error
+                    ),
                 )
             detail = f"Invalid Codex result: {exc}"
             native_detail = execution_error or stderr.strip() or stdout.strip()
@@ -224,7 +252,7 @@ def run_agent(
                 usage=usage,
                 error=f"{native_detail}\n{detail}" if native_detail else detail,
             )
-        return validate_agent_result(
+        validated = validate_agent_result(
             AgentRunResult(
                 exit_code,
                 thread_id=thread_id,
@@ -235,6 +263,73 @@ def run_agent(
             output_schema,
             "Codex",
         )
+        if mcp_config_ref is not None and validated.result is None:
+            # Schema errors can echo private final values just like JSON-read errors.
+            return replace(
+                validated,
+                error=(
+                    f"{execution_error}\n{routed_result_error}"
+                    if execution_error
+                    else routed_result_error
+                ),
+            )
+        return validated
+
+
+def native_agent_overrides(settings: dict[str, Any]) -> list[str]:
+    """Map only the supported definition options; authority stays with the host."""
+    import tomlkit
+
+    from stackos.host_mcp.adapters.codex_definition import AgentFields, unsupported_settings
+
+    try:
+        fields = AgentFields.model_validate(
+            {
+                "name": "selection",
+                "description": "selection",
+                "developer_instructions": "selection",
+                **settings,
+            }
+        )
+        unsupported = unsupported_settings(fields, settings)
+        allowed = {
+            "model_reasoning_effort",
+            "model_reasoning_summary",
+            "model_verbosity",
+            "features",
+            "skills",
+        }
+        if set(settings) - allowed or unsupported:
+            raise ValueError("unsupported native project settings")
+    except (ValueError, TypeError):
+        raise ValueError(
+            "Unsupported native project settings; use supported reduction-only options"
+        ) from None
+
+    overrides = []
+
+    def literal(value):
+        if isinstance(value, dict):
+            table = tomlkit.inline_table()
+            for key, item in value.items():
+                table[key] = item
+            return table.as_string()
+        if isinstance(value, list):
+            return "[" + ", ".join(literal(item) for item in value) + "]"
+        return tomlkit.item(value).as_string()
+
+    def append(key, value):
+        if isinstance(value, dict):
+            for child, item in value.items():
+                append(f"{key}.{child}", item)
+        else:
+            overrides.extend(["-c", f"{key}={literal(value)}"])
+
+    for key, value in settings.items():
+        if value is None:
+            raise ValueError("Native project settings cannot contain explicit null")
+        append(key, value)
+    return overrides
 
 
 def task_mcp_overrides(

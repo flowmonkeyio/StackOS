@@ -51,7 +51,7 @@ from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.secrets import PayloadSecretRepository
 
-HEAD_REVISION = "0041_account_owners"
+HEAD_REVISION = "0042_server_main_consolidation"
 
 
 @pytest.fixture

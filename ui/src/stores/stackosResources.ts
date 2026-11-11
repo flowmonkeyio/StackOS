@@ -1,93 +1,78 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
-
-import type {
-  SchemaArtifactOut,
-  SchemaPageResponseArtifactOut,
-  SchemaPageResponseResourceRecordOut,
-  SchemaResourceOut,
-  SchemaResourceRecordOut,
-} from '@/api'
+import type { SchemaArtifactOut, SchemaResourceOut, SchemaResourceRecordOut } from '@/api'
 import { apiFetch, formatApiError } from '@/lib/client'
+import { createSourcePager } from '@/lib/sourcePager'
 import { createProjectRequestGate } from '@/lib/stackos/projectRequestGate'
+
+export interface ResourceFilters { pluginSlug?: string | null; resourceKey?: string | null }
 
 export const useStackOsResourcesStore = defineStore('stackosResources', () => {
   const resources = ref<SchemaResourceOut[]>([])
-  const records = ref<SchemaResourceRecordOut[]>([])
-  const artifacts = ref<SchemaArtifactOut[]>([])
-  const loading = ref(false)
-  const error = ref<string | null>(null)
+  const recordSource = createSourcePager<SchemaResourceRecordOut>((id) => `/api/v1/projects/${id}/resource-records`)
+  const artifactSource = createSourcePager<SchemaArtifactOut>((id) => `/api/v1/projects/${id}/artifacts`)
   const currentProjectId = ref<number | null>(null)
-  const requests = createProjectRequestGate((projectId) => {
-    resources.value = []
-    records.value = []
-    artifacts.value = []
-    error.value = null
-    currentProjectId.value = projectId
-  })
+  const schemaLoading = ref(false)
+  const schemaError = ref<string | null>(null)
+  const schemaRequests = createProjectRequestGate()
+  const loading = computed(() => schemaLoading.value || recordSource.page.loading || artifactSource.page.loading)
+  const error = computed(() => schemaError.value || recordSource.page.error || artifactSource.page.error)
 
-  async function refresh(
-    projectId: number,
-    filters: { pluginSlug?: string | null; resourceKey?: string | null } = {},
-  ): Promise<void> {
-    const request = requests.begin(projectId, 'list')
+  function ensureScope(projectId: number) {
+    if (currentProjectId.value === projectId) return
+    reset()
+    currentProjectId.value = projectId
+  }
+  function params(filters: ResourceFilters) {
+    const result: Record<string, string> = {}
+    if (filters.pluginSlug) result.plugin_slug = filters.pluginSlug
+    return result
+  }
+  async function refreshSchemas(projectId: number, filters: ResourceFilters = {}) {
+    ensureScope(projectId)
+    const request = schemaRequests.begin(projectId)
+    schemaLoading.value = true
+    schemaError.value = null
     resources.value = []
-    records.value = []
-    artifacts.value = []
-    loading.value = true
-    error.value = null
     try {
-      const resourceParams = new URLSearchParams()
-      const recordParams = new URLSearchParams({ limit: '50' })
-      const artifactParams = new URLSearchParams({ limit: '50' })
-      resourceParams.set('project_id', String(projectId))
-      if (filters.pluginSlug) {
-        resourceParams.set('plugin_slug', filters.pluginSlug)
-        recordParams.set('plugin_slug', filters.pluginSlug)
-        artifactParams.set('plugin_slug', filters.pluginSlug)
-      }
-      if (filters.resourceKey) recordParams.set('resource_key', filters.resourceKey)
-      const resourceSuffix = resourceParams.toString() ? `?${resourceParams.toString()}` : ''
-      const [resourceRows, recordPage, artifactPage] = await Promise.all([
-        apiFetch<SchemaResourceOut[]>(`/api/v1/resources${resourceSuffix}`),
-        apiFetch<SchemaPageResponseResourceRecordOut>(
-          `/api/v1/projects/${projectId}/resource-records?${recordParams.toString()}`,
-        ),
-        apiFetch<SchemaPageResponseArtifactOut>(
-          `/api/v1/projects/${projectId}/artifacts?${artifactParams.toString()}`,
-        ),
-      ])
-      if (!request.isCurrent()) return
-      resources.value = resourceRows
-      records.value = recordPage.items
-      artifacts.value = artifactPage.items
+      const query = new URLSearchParams({ ...params(filters), project_id: String(projectId) })
+      const rows = await apiFetch<SchemaResourceOut[]>(`/api/v1/resources?${query}`)
+      if (request.isCurrent()) resources.value = rows
     } catch (err) {
-      if (request.isCurrent()) {
-        error.value = formatApiError(err, 'failed to load resources')
-      }
+      if (request.isCurrent()) schemaError.value = formatApiError(err, 'Failed to load resource schemas')
     } finally {
-      loading.value = request.finish()
+      const current = request.isCurrent()
+      request.finish()
+      if (current) schemaLoading.value = false
     }
   }
-
-  function reset(): void {
-    requests.invalidate()
+  function refreshRecords(projectId: number, filters: ResourceFilters = {}) {
+    ensureScope(projectId)
+    const query = params(filters)
+    if (filters.resourceKey) query.resource_key = filters.resourceKey
+    return recordSource.refresh(projectId, query)
+  }
+  function refreshArtifacts(projectId: number, filters: ResourceFilters = {}, reuse = false) {
+    ensureScope(projectId)
+    return artifactSource.refresh(projectId, { ...params(filters), include_inactive: 'true' }, reuse)
+  }
+  async function refresh(projectId: number, filters: ResourceFilters = {}) {
+    await Promise.all([refreshSchemas(projectId, filters), refreshRecords(projectId, filters), refreshArtifacts(projectId, filters)])
+  }
+  function reset() {
+    schemaRequests.invalidate()
     resources.value = []
-    records.value = []
-    artifacts.value = []
-    loading.value = false
-    error.value = null
+    schemaLoading.value = false
+    schemaError.value = null
+    recordSource.reset()
+    artifactSource.reset()
     currentProjectId.value = null
   }
-
   return {
-    resources,
-    records,
-    artifacts,
-    loading,
-    error,
-    currentProjectId,
-    refresh,
-    reset,
+    resources, records: recordSource.items, artifacts: artifactSource.items,
+    recordPage: recordSource.page, artifactPage: artifactSource.page,
+    loading, error, schemaLoading, schemaError, currentProjectId,
+    refresh, refreshSchemas, refreshRecords, refreshArtifacts,
+    loadMoreRecords: recordSource.loadMore, loadMoreArtifacts: artifactSource.loadMore, reset,
   }
 })

@@ -82,13 +82,15 @@ def test_global_startup_invalid_or_conflicting_selector_has_no_writes(session: S
 def test_global_startup_keeps_archive_access_and_rejects_deleted_saved_id(session: Session) -> None:
     projects = ProjectRepository(session)
     target = _create_project(session)
-    projects.delete(target)
+    projects.update(target, is_active=False)
     repo = WorkspaceRepository(session)
     assert (
         repo.start_session(runtime="agent", global_session=True, project_id=target).project_id
         == target
     )
-    projects.delete(target, hard=True)
+    # Historical missing-project fixture, deliberately retaining its old data.
+    session.delete(session.get(Project, target))
+    session.commit()
     replacement = _create_project(session)
     assert replacement > target
     before = len(session.exec(select(AgentSession)).all())

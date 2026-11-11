@@ -18,6 +18,7 @@ from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
 from stackos.workflows.template_loader import WorkflowTemplateLoader
 from stackos.workflows.template_schema import WorkflowTemplateSpec
+from tests.integration.test_repositories.test_task_delivery_sources import source
 
 
 @pytest.fixture
@@ -54,7 +55,11 @@ def occurrence(session, project_id, engine, tmp_path, monkeypatch):
     )
     WorkflowTemplateLoader(session).save_project_template(project_id=project_id, spec=spec)
     roles = {
-        role: {"name": role, "instructions": "Execute only the assigned harmless contract."}
+        role: {
+            "source_ref": source(
+                session, project_id, tmp_path, role, "Execute only the assigned harmless contract."
+            )
+        }
         for role in ("delivery_agent", "review_agent")
     }
     TrackerRepository(session).configure_delivery(project_id=project_id, delivery=roles)
@@ -68,7 +73,7 @@ def occurrence(session, project_id, engine, tmp_path, monkeypatch):
             timezone="UTC",
             template_key=spec.key,
             inputs_json={"goal": "Synthetic input"},
-            execution_json={"project_dir": str(tmp_path)},
+            execution_json={"project_dir": str(tmp_path), "agents": roles},
             enabled=True,
         )
         .data
@@ -237,7 +242,7 @@ async def test_approval_blocks_without_bypass_or_lease_based_overlap(
 
 @pytest.mark.asyncio
 async def test_role_overrides_preserve_partial_values_and_explicit_null(
-    occurrence, session, project_id
+    occurrence, session, project_id, tmp_path
 ):
     row_id, runtime, _, _, _ = occurrence
     repo = TrackerRepository(session)
@@ -245,8 +250,9 @@ async def test_role_overrides_preserve_partial_values_and_explicit_null(
         project_id=project_id,
         delivery={
             role: {
-                "name": role,
-                "instructions": "Current prepared method",
+                "source_ref": source(
+                    session, project_id, tmp_path, role, "Current prepared method"
+                ),
                 "model": "project-model",
             }
             for role in ("delivery_agent", "review_agent")

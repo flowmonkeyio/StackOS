@@ -37,11 +37,22 @@ class Project(SQLModel, table=True):
     owner_user_id: str | None = Field(default=None, max_length=36, index=True)
     slug: str = Field(max_length=80, unique=True, index=True)
     name: str = Field(max_length=200)
+    order_index: int = Field(default=0, nullable=False, index=True)
     domain: str = Field(max_length=255)
     niche: str | None = Field(default=None, max_length=200)
     locale: str = Field(max_length=16)
     is_active: bool = Field(default=False)
+    cleanup_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     schedule_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    # Optional reverse link: bindings still own their project; exclude this edge
+    # from metadata's creation order to avoid a cyclic table-sort dependency.
+    primary_workspace_binding_id: int | None = Field(
+        default=None,
+        sa_column=Column(
+            ForeignKey("workspace_bindings.id", ondelete="SET NULL", use_alter=True),
+            nullable=True,
+        ),
+    )
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
     updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
 

@@ -9,11 +9,11 @@ from threading import Barrier
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import event
+from sqlalchemy import delete, event
 from sqlmodel import Session, SQLModel, select
 
 from stackos.db.connection import make_engine, make_settings_engine
-from stackos.db.models import AgentSession, IdempotencyKey, TrackerRevision, TrackerTask
+from stackos.db.models import AgentSession, IdempotencyKey, Project, TrackerRevision, TrackerTask
 from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.tracker import TrackerRepository
@@ -63,7 +63,8 @@ def _project(admission_engine):
         yield project.id
     finally:
         with Session(admission_engine) as session:
-            ProjectRepository(session).delete(project.id, hard=True)
+            session.execute(delete(Project).where(Project.id == project.id))
+            session.commit()
 
 
 @pytest.fixture
@@ -80,8 +81,11 @@ def admission_other_project(admission_engine):
 
 @pytest.mark.parametrize("scope", ["same-task", "same-project", "other-project"])
 def test_delivery_admits_one_writer(
-    admission_engine, admission_project, admission_other_project, tmp_path, scope
+    admission_engine, admission_project, admission_other_project, tmp_path, scope, monkeypatch
 ):
+    # Host readiness is outside this database-writer race. Use the existing
+    # inline host contract so project source ownership does not preempt admission.
+    monkeypatch.setattr("stackos.task_delivery.agent_selection_error", lambda *args, **kwargs: None)
     with Session(admission_engine) as session:
         prepared_task(session, admission_project)
         prepared_task(session, admission_other_project)
@@ -93,7 +97,9 @@ def test_delivery_admits_one_writer(
         with Session(admission_engine) as session:
             ready.wait(timeout=10)
             try:
-                return submit(session, project_id, tmp_path, scheduler, task_key=key)
+                return submit(
+                    session, project_id, tmp_path, scheduler, task_key=key, host_key="claude"
+                )
             except ValidationError as error:
                 return error
 
@@ -300,7 +306,8 @@ def test_identity_nonreuse_and_source_conflict(admission_engine, admission_proje
         deleted = projects.create(
             slug=f"deleted-{uuid4().hex}", name="Deleted", domain="example.test"
         ).data.id
-        projects.delete(deleted, hard=True)
+        session.execute(delete(Project).where(Project.id == deleted))
+        session.commit()
     with Session(admission_engine) as session:
         replacement = (
             ProjectRepository(session)
@@ -312,4 +319,5 @@ def test_identity_nonreuse_and_source_conflict(admission_engine, admission_proje
             WorkspaceRepository(session).start_session(
                 runtime="codex", global_session=True, project_id=deleted
             )
-        ProjectRepository(session).delete(replacement, hard=True)
+        session.execute(delete(Project).where(Project.id == replacement))
+        session.commit()
