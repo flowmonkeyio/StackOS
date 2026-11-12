@@ -6,17 +6,29 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import stat
+from contextlib import ExitStack
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Literal
 
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import col, select
 
+from stackos.action_output_contract import ACTION_OUTPUT_SCHEMA_REF
 from stackos.actions.manifest import ExecutableActionManifest
+from stackos.actions.media_artifacts import LEGACY_MEDIA_CONNECTORS, legacy_media_file_items
 from stackos.artifacts import redact_secret_text
 from stackos.auth_providers import ResolvedCredential
-from stackos.db.models import ActionCall, ActionCallStatus, DurableActionJob, IdempotencyKey
+from stackos.db.models import (
+    ActionCall,
+    ActionCallStatus,
+    Artifact,
+    DurableActionJob,
+    IdempotencyKey,
+)
 from stackos.generated_inventory import (
     generated_action_audit_key,
     generated_action_public_audit_metadata,
@@ -28,6 +40,7 @@ from stackos.repositories.base import (
     ValidationError,
     cursor_paginate_desc,
 )
+from stackos.repositories.resources import ArtifactRepository
 
 from .audit_queries import audit_predicates
 from .schema import (
@@ -40,6 +53,115 @@ from .utils import _redact_for_audit, utcnow
 
 class ActionAuditMixin:
     """Persist action-call audit rows with public-safe output shapes."""
+
+    @staticmethod
+    def requires_file_reconciliation(artifact: Artifact) -> bool:
+        """Legacy producer hints can require review, but cannot authorize deletion."""
+        return (artifact.provenance_json or {}).get("source") in {
+            *(connector + "-action" for connector in LEGACY_MEDIA_CONNECTORS),
+            "telegram.file.download",
+            "hubspot-export-action",
+        }
+
+    def recover_generated_file_custody(self, *, project_id: int, asset_root: Path) -> None:
+        """Recover finite pre-upgrade producer receipts through the artifact owner.
+
+        No manifest/catalog lookup or provider execution is needed for historical
+        receipts. Unknown producers remain subject to explicit admin reconciliation.
+        """
+        if not any(
+            artifact.managed_file_json is None
+            for artifact in self._s.exec(
+                select(Artifact).where(Artifact.project_id == project_id)
+            ).all()
+        ):
+            return
+        repository = ArtifactRepository(self._s)
+        for call in self._s.exec(
+            select(ActionCall).where(
+                ActionCall.project_id == project_id, ActionCall.status == ActionCallStatus.SUCCESS
+            )
+        ).all():
+            if call.dry_run or call.completed_at is None:
+                continue
+            output = self._audit_file_output(call, asset_root=asset_root)
+            if not isinstance(output, dict):
+                continue
+            items = legacy_media_file_items(call.connector_key, call.operation, output)
+            if (call.connector_key, call.operation) in {
+                ("telegram", "file.download"),
+                ("hubspot", "bulk.exports.result"),
+            }:
+                items = [output]
+            for item in items:
+                artifact_id = item.get("artifact_id")
+                uri = item.get("artifact_ref") or item.get("url")
+                if type(artifact_id) is int and isinstance(uri, str):
+                    repository.recover_generated_file_custody(
+                        project_id=project_id,
+                        artifact_id=artifact_id,
+                        uri=uri,
+                        asset_root=asset_root,
+                        action_call_id=call.id,
+                        completed_at=call.completed_at,
+                    )
+
+    @staticmethod
+    def _audit_file_output(call: ActionCall, *, asset_root: Path) -> dict[str, Any] | None:
+        """Read the action owner's file envelope without following filesystem aliases."""
+        output = call.response_json or {}
+        if not isinstance(output, dict):
+            return None
+        if output.get("output_mode") != "file":
+            return output
+        pointer = output.get("file")
+        if not isinstance(pointer, dict) or not isinstance(pointer.get("path"), str):
+            return None
+        path = Path(pointer["path"])
+        root = asset_root
+        owner = root / "action-outputs" / f"project-{call.project_id}"
+        if (
+            not path.is_relative_to(owner)
+            or ".." in path.parts
+            or type(pointer.get("bytes")) is not int
+        ):
+            return None
+        if not 0 < pointer["bytes"] <= 16 * 1024 * 1024:
+            return None
+        try:
+            with ExitStack() as opened:
+                parent = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+                opened.callback(os.close, parent)
+                for part in path.relative_to(root).parts[:-1]:
+                    parent = os.open(
+                        part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent
+                    )
+                    opened.callback(os.close, parent)
+                fd = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+                with os.fdopen(fd, "rb") as stream:
+                    if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                        return None
+                    payload = stream.read(pointer["bytes"] + 1)
+            if len(payload) != pointer["bytes"] or hashlib.sha256(
+                payload
+            ).hexdigest() != pointer.get("sha256"):
+                return None
+            envelope = json.loads(payload)
+            if (
+                envelope.get("schema_version") != ACTION_OUTPUT_SCHEMA_REF
+                or envelope.get("project", {}).get("project_id") != call.project_id
+                or envelope.get("action_call", {}).get("id") != call.id
+                or envelope.get("action_call", {}).get("status") != "success"
+                or envelope.get("response", {}).get("dry_run") is not False
+                or envelope.get("action", {}).get("connector_key") != call.connector_key
+                or envelope.get("action", {}).get("operation") != call.operation
+                or envelope.get("action", {}).get("plugin_slug") != call.plugin_slug
+                or envelope.get("action", {}).get("action_key") != call.action_key
+            ):
+                return None
+            return envelope["response"]["output_json"]
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            return None
 
     def get_call(self, *, project_id: int, action_call_id: int) -> ActionCallAuditOut:
         self._require_project(project_id)

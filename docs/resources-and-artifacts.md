@@ -90,8 +90,11 @@ Artifact rows live in `artifacts`:
   leaves such as action responses retain their original project boundary and
   filesystem identity even when there was no source Artifact. Custom
   output roots remain external. Legacy custody can recover from successful
-  daemon-owned producer receipts; missing evidence returns exact artifact IDs
-  for explicit local-admin ownership reconciliation. See
+  daemon-owned producer receipts. The action-output owner decodes recognized
+  legacy envelopes and passes normalized artifact/file facts to this repository;
+  generic project cleanup does not interpret provider responses. Recovery requires
+  the artifact's current URI to match the receipt URI. Missing evidence returns
+  exact artifact IDs for explicit local-admin ownership reconciliation. See
   [internal project cleanup](./security.md#internal-project-cleanup).
 - `created_at`, `updated_at`: lifecycle timestamps.
 

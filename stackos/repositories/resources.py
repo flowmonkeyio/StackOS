@@ -568,6 +568,45 @@ class ArtifactRepository:
             "inode": info.st_ino,
         }
 
+    def recover_generated_file_custody(
+        self,
+        *,
+        project_id: int,
+        artifact_id: int,
+        uri: str,
+        asset_root: Path,
+        action_call_id: int,
+        completed_at: datetime,
+    ) -> None:
+        """Accept normalized facts from the trusted action ledger, never public metadata.
+
+        The action owner verifies success and interprets its receipt. This owner
+        correlates the artifact and validates the actual leaf before storing custody.
+        The caller's cleanup transaction commits recovery before removing receipts.
+        """
+        artifact = self._s.get(Artifact, artifact_id)
+        if (
+            artifact is None
+            or artifact.project_id != project_id
+            or artifact.managed_file_json is not None
+            or artifact.uri != uri
+            or artifact.created_at > completed_at
+            or not uri.startswith("/generated-assets/")
+        ):
+            return
+        relative = Path(uri.removeprefix("/generated-assets/"))
+        if relative.is_absolute() or ".." in relative.parts or not relative.parts:
+            return
+        try:
+            custody = self._generated_file_custody(
+                asset_root=asset_root, path=asset_root / relative, project_id=project_id, uri=uri
+            )
+        except (ValueError, OSError, ValidationError):
+            return
+        custody["evidence"] = {"basis": "action-audit", "action_call_id": action_call_id}
+        artifact.managed_file_json = custody
+        self._s.add(artifact)
+
     def reconcile_generated_file(
         self,
         *,

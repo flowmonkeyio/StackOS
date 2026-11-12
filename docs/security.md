@@ -129,9 +129,13 @@ owner; public artifact create/update cannot set that internal record. Cleanup
 does not traverse artifact-referenced directories or remove replaced files.
 Legacy files can recover custody from successful daemon-owned action receipts
 for the demonstrated media, Telegram download and HubSpot export producers.
+The action-output owner interprets the finite recognized legacy receipts; the
+artifact repository validates their normalized file facts. Generic cleanup uses
+private custody and requests reconciliation for unresolved producer hints.
 Recovery correlates the project, artifact ID, creation before completion and
-producer output URI. File-backed receipts must match their stored digest and envelope
-identity; recovery is committed before those receipt files are removed.
+exact current artifact/producer output URI. File-backed receipts must match their
+stored digest and project, call, action and successful non-dry envelope identity;
+recovery is committed before those receipt files are removed.
 Ambiguous legacy generated references retain their source rows and return
 `ownership_required_artifact_ids` in an incomplete cleanup. Editable provenance
 alone never establishes ownership. The admin REST/CLI-only

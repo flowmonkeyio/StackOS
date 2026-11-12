@@ -18,6 +18,40 @@ from stackos.integrations._rate_limit import get_bucket
 from stackos.repositories.base import ValidationError
 from stackos.repositories.resources import ArtifactRepository
 
+LEGACY_MEDIA_CONNECTORS = frozenset(
+    {
+        "openai-images",
+        "google-gemini-image",
+        "ideogram",
+        "byteplus-seedream",
+        "reve",
+        "xai-imagine",
+        "aignc",
+        "alibaba-wan",
+        "google-veo",
+        "byteplus-seedance",
+        "kling-video",
+    }
+)
+
+
+def legacy_media_file_items(
+    connector_key: str, operation: str, output: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Decode the finite pre-custody media receipts beside their producer owner."""
+    if connector_key not in LEGACY_MEDIA_CONNECTORS or operation not in {
+        "image.generate",
+        "image.edit",
+        "image.remix",
+        "video.generate",
+    }:
+        return []
+    data = output.get("data")
+    return [
+        output,
+        *[item for item in (data if isinstance(data, list) else []) if isinstance(item, dict)],
+    ]
+
 
 async def execute_media_native(
     request: ActionConnectorRequest,
