@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { subscribeUsageUpdates, usageCheckpoint, patchUsageAfter } from './usageUpdates'
+import { subscribeUsageUpdates, usageCheckpoint, patchUsageAfter, patchUsageSnapshot } from './usageUpdates'
 import type { TrackerSnapshot } from '@/lib/task-tracker/types'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 import { openTrackerStatusStream } from '@/lib/task-tracker/liveEvents'
+import { WorkDurationOutCoverage } from '@/api'
 vi.mock('@/lib/task-tracker/liveEvents', () => ({ openTrackerStatusStream: vi.fn(() => ({ close: vi.fn() })) }))
 beforeEach(() => {
   vi.mocked(openTrackerStatusStream).mockClear()
@@ -12,6 +13,22 @@ beforeEach(() => {
 })
 afterEach(() => vi.useRealTimers())
 describe('one shared usage transport', () => {
+  it('carries timing-only final receipts and explicit unavailable values through the existing refresh owner', () => {
+    const stop = subscribeUsageUpdates(9, { usage: vi.fn() })
+    const stream = vi.mocked(openTrackerStatusStream).mock.calls[0]![0]
+    const start = usageCheckpoint()
+    const duration = { coverage: WorkDurationOutCoverage.partial, total_seconds: 1200, observed_at: '2026-11-09T08:00:00Z', endpoint_at: '2026-11-09T08:00:00Z', recorded_intervals: 2, unavailable_intervals: 1, live: [] }
+    stream.onUsage?.({ tasks: [{ key: 'task', work_duration: duration, active_execution: null }], tickets: [{ key: 'child', work_duration: duration, active_execution: null }], replace: true })
+    const snapshot = { tasks: [{ key: 'task', work_duration: null }], tickets: [{ key: 'child', work_duration: null }] } as unknown as TrackerSnapshot
+    patchUsageAfter(snapshot, 9, start)
+    expect(snapshot.tasks[0]!.work_duration).toEqual(duration)
+    expect(snapshot.tickets[0]!.work_duration).toEqual(duration)
+    expect(snapshot.tickets[0]!.active_execution).toBeNull()
+    patchUsageSnapshot(snapshot, { tasks: [{ key: 'task', work_duration: null }], tickets: [{ key: 'child', work_duration: null }] })
+    expect(snapshot.tasks[0]!.work_duration).toBeNull()
+    expect(snapshot.tickets[0]!.work_duration).toBeNull()
+    stop()
+  })
   it('preserves later usage across pending page reads, isolates scopes and replaces reconnect state', () => {
     const stop = subscribeUsageUpdates(7, { usage: vi.fn() })
     const stream = vi.mocked(openTrackerStatusStream).mock.calls[0]![0]

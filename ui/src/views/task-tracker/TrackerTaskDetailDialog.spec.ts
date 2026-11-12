@@ -2,6 +2,7 @@ import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/lib/client'
+import { WorkDurationOutCoverage } from '@/api'
 import { formatDateTime } from '@/lib/stackos/json'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 import SourceDetailRenderer from '@/components/renderers/SourceDetailRenderer.vue'
@@ -149,9 +150,10 @@ describe('TrackerTaskDetailDialog', () => {
     expect(wrapper.props('tickets')![0]!.priority_key).toBe(sourceTicket().priority_key)
     wrapper.unmount()
   })
-  it('keeps task and shared ticket elapsed distinct after completion without visible Started facts', async () => {
-    const record = { ...task(), status: 'complete' as const, started_at: '2026-11-08T01:00:00', completed_at: '2026-11-09T05:00:00' }
-    const source = { ...sourceTicket(), status: 'complete' as const, started_at: '2026-11-08T02:00:00', completed_at: '2026-11-08T04:22:00' }
+  it('keeps task and shared ticket work time distinct from lifecycle dates', async () => {
+    const duration = { coverage: WorkDurationOutCoverage.complete, total_seconds: 100800, observed_at: null, endpoint_at: null, recorded_intervals: 3, unavailable_intervals: 0 }
+    const record = { ...task(), status: 'complete' as const, started_at: '2026-11-01T01:00:00', completed_at: '2026-11-09T05:00:00', work_duration: duration }
+    const source = { ...sourceTicket(), status: 'complete' as const, started_at: '2026-11-01T02:00:00', completed_at: '2026-11-08T04:22:00', work_duration: { ...duration, total_seconds: 8520 } }
     const wrapper = mount(TrackerTaskDetailDialog, { props: { modelValue: true, task: record, tickets: [source] } })
     expect(popup().get('.active-execution-line__elapsed').text()).toBe('1d 4h')
     expect(popup().findAll('dt').map(label => label.text())).not.toContain('Started')

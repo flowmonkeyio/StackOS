@@ -125,12 +125,18 @@ tickets are 328 × 224px; Board cards are 224px tall at the existing column
 width. Manual work reserves the same card geometry and omits usage. Current
 execution uses the canonical host mark, readable recorded role and exact model;
 retained execution is explicitly `Last:`. The same footer slot shows compact
-item elapsed time (`<1m`, `14m`, `2h 22m`, `1d 4h`) with an accessible elapsed
-label, independently of identity, automation or tokens. It uses the persisted
-first start to now for open work, or to completion for terminal work, retaining
-the value after agent exit and reload. Missing/invalid lifecycle data or an end
-before start shows `N/A`; terminal work never falls back to a running clock.
-The shared Work heartbeat invalidates this display without per-card timers.
+Work time (`0m`, `<1m`, `14m`, `2h 22m`, `1d 4h`) with an accessible Work time
+label, independently of identity, automation or tokens. The canonical
+`work_duration` projection unions recorded managed invocation intervals across
+delivery, review and repair; task totals union all ticket intervals, counting
+overlap once. Queued, stopped and reopened gaps add nothing. Partial coverage
+shows `Partial` visibly; unavailable history shows `N/A`, never a guessed zero.
+Only the exact owned live identity in that projection can extend its total after
+`observed_at`, once, using the shared Work heartbeat without per-card timers.
+Stopped, closed and disconnected observations freeze at the supported total;
+the final receipt replaces the provisional observation. Lifecycle dates retain
+their own meaning and never fill missing duration. Work time is invocation wall
+time, including unobserved machine sleep, not CPU-active time.
 Task and shared ticket details use the same presentation and omit duplicate
 Started facts. Ordinary assignment
 never invents an occurrence. Genuine prerequisites use actual ticket titles

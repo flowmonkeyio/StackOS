@@ -218,16 +218,18 @@ const snapshot: TrackerSnapshot = {
 }
 
 describe('buildTrackerFlowModel', () => {
-  it('projects each item lifecycle independently of its parent and agent call', () => {
+  it('preserves each item work projection independently of parent lifecycle and agent call', () => {
     const source = structuredClone(snapshot)
     source.tasks[0]!.started_at = '2026-11-08T00:00:00Z'
     source.tickets[0]!.started_at = '2026-11-08T01:00:00Z'
     source.tickets[0]!.completed_at = '2026-11-08T03:22:00Z'
     source.tickets[0]!.status = 'complete'
+    source.tickets[0]!.work_duration = { coverage: 'partial', total_seconds: 1200, observed_at: null, endpoint_at: null, recorded_intervals: 2, unavailable_intervals: 1, live: [] } as NonNullable<typeof source.tickets[number]['work_duration']>
     for (const showContainment of [false, true]) {
       const model = buildTrackerFlowModel(source, { showContainment })
       const node = model.nodes.find(node => node.data?.itemKey === source.tickets[0]!.key)!
       expect(node.data?.lifecycle).toMatchObject({ status: 'complete', started_at: '2026-11-08T01:00:00Z', completed_at: '2026-11-08T03:22:00Z' })
+      expect(node.data?.lifecycle?.work_duration).toEqual(source.tickets[0]!.work_duration)
     }
   })
   it('resolves prerequisite keys to actual titles at the dependency projection owner', () => {

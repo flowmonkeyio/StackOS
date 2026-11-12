@@ -1,8 +1,8 @@
 import { openTrackerStatusStream, type ProjectTimelineEvent, type TrackerStatusStream } from '@/lib/task-tracker/liveEvents'
 import type { TrackerSnapshot, ActiveExecution } from '@/lib/task-tracker/types'
-import type { SchemaAgentStatsMetricsOut } from '@/api'
+import type { SchemaAgentStatsMetricsOut, SchemaWorkDurationOut } from '@/api'
 
-type UsageItem = { key: string; agent_stats?: SchemaAgentStatsMetricsOut | null; active_execution?: ActiveExecution | null }
+type UsageItem = { key: string; agent_stats?: SchemaAgentStatsMetricsOut | null; active_execution?: ActiveExecution | null; work_duration?: SchemaWorkDurationOut | null }
 export interface UsageProjection { tasks: UsageItem[]; tickets: UsageItem[]; replace?: boolean }
 
 export function patchUsageSnapshot(target: TrackerSnapshot | null, incoming: UsageProjection): void {
@@ -11,7 +11,7 @@ export function patchUsageSnapshot(target: TrackerSnapshot | null, incoming: Usa
     const updates = new Map(incoming[key].map((item) => [item.key, item]))
     for (const item of target[key]) {
       const update = updates.get(item.key)
-      if (update) { item.agent_stats = update.agent_stats; item.active_execution = update.active_execution }
+      if (update) { item.agent_stats = update.agent_stats; item.active_execution = update.active_execution; item.work_duration = update.work_duration }
     }
   }
 }

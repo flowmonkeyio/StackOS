@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it, vi } from 'vitest'
+import { WorkDurationOutCoverage } from '@/api'
 import type { TrackerStatus, TrackerTask } from '@/lib/task-tracker/types'
 import { trackerStatus } from '@/design/status'
 import { UiIcon } from '@/components/ui'
@@ -52,11 +53,11 @@ describe('Work board presentation', () => {
     expect(wrapper.findAll('.tracker-board__column')).toHaveLength(7)
     wrapper.unmount()
   })
-  it('shows persisted item elapsed for completed manual cards without an owner or token eligibility', () => {
-    const record = { ...task('complete'), owner: null, started_at: '2026-11-08T01:00:00', completed_at: '2026-11-09T05:00:00' }
+  it('shows recorded work for completed manual cards without an owner or token eligibility', () => {
+    const record = { ...task('complete'), owner: null, started_at: '2026-11-01T01:00:00', completed_at: '2026-11-09T05:00:00', work_duration: { coverage: WorkDurationOutCoverage.complete, total_seconds: 100800, observed_at: null, endpoint_at: null, recorded_intervals: 3, unavailable_intervals: 0 } }
     const rows = buildTaskProgressRows([record], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
     const wrapper = mount(TrackerBoardPanel, { props: { rows } })
-    expect(wrapper.get('[aria-label="Elapsed time: 1d 4h"]').text()).toBe('1d 4h')
+    expect(wrapper.get('[aria-label="Work time: 1d 4h"]').text()).toBe('1d 4h')
     expect(wrapper.find('.agent-usage-summary').exists()).toBe(false)
     wrapper.unmount()
   })

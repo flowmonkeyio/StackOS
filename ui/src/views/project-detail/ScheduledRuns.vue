@@ -4,11 +4,12 @@ import { storeToRefs } from 'pinia'
 import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
+import WorkTime from '@/components/domain/WorkTime.vue'
 import RunAbortAction from '@/components/domain/RunAbortAction.vue'
 import RunAbortDialog from '@/components/domain/RunAbortDialog.vue'
 import { UiCallout, UiIcon, UiIconButton, UiInput } from '@/components/ui'
 import type { DataTableColumn } from '@/components/types'
-import { formatAbsoluteDateTime, formatRelativeDateTime, formatDurationBetween, formatDurationMinutes } from '@/lib/stackos/time'
+import { formatAbsoluteDateTime, formatRelativeDateTime } from '@/lib/stackos/time'
 import { useSchedulesStore } from '@/stores/schedules'
 
 defineProps<{ projectId: number }>()
@@ -18,16 +19,11 @@ const { runs, runsLoading, runsError, nextCursor } = storeToRefs(store)
 const search = ref('')
 const rows = computed(() => runs.value.filter(row => `${row.schedule_name} ${row.workflow_title ?? row.template_key ?? ''}`.toLowerCase().includes(search.value.trim().toLowerCase())).map(row => ({ ...row, id: row.request_id })))
 type Row = typeof rows.value[number]
-function duration(row: Row): string {
-  if (row.duration_seconds != null) return row.duration_seconds === 0 ? '0s' : formatDurationMinutes(row.duration_seconds / 60)
-  if (row.ended_at || ['started', 'running', 'in-progress'].includes(row.status)) return formatDurationBetween(row.started_at, row.ended_at)
-  return '—'
-}
 const columns: DataTableColumn<Row>[] = [
   { key: 'schedule_name', label: 'Run', widthClass: 'w-[19%]' },
   { key: 'started_at', label: 'Started', widthClass: 'w-[11%]' },
   { key: 'status', label: 'Status', widthClass: 'w-[11%]' },
-  { key: 'duration_seconds', label: 'Duration', widthClass: 'w-[8%]' },
+  { key: 'duration_seconds', label: 'Work time', widthClass: 'w-[8%]' },
   { key: 'agent_stats', label: 'Usage', widthClass: 'w-[37%]' },
   { key: 'task_key', label: '', widthClass: 'w-[14%]' },
 ]
@@ -112,7 +108,11 @@ const columns: DataTableColumn<Row>[] = [
         />
       </template>
       <template #cell:duration_seconds="{ row }">
-        <span class="tabular-nums">{{ duration(row) }}</span>
+        <WorkTime
+          :item="row"
+          :execution="row.active_execution"
+          class="scheduled-run-work-time"
+        />
       </template>
       <template #cell:agent_stats="{ row }">
         <AgentUsageSummary

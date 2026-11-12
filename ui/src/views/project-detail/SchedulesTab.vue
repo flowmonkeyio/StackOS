@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, provide, ref } from 'vue'
 import { storeToRefs } from 'pinia'
 import DataTable from '@/components/DataTable.vue'
 import TabBar from '@/components/TabBar.vue'
@@ -9,7 +9,8 @@ import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import { formatAbsoluteDateTime, formatRelativeDateTime } from '@/lib/stackos/time'
 import { formatApiError } from '@/lib/client'
-import { subscribeUsageUpdates } from '@/lib/usageUpdates'
+import { subscribeUsageUpdates, type UsageFeedState } from '@/lib/usageUpdates'
+import { usageFeedKey } from '@/composables/useUsageFeed'
 import { useSchedulesStore, type ScheduledJob } from '@/stores/schedules'
 import type { DataTableColumn } from '@/components/types'
 import ScheduleEditor from './ScheduleEditor.vue'
@@ -41,7 +42,10 @@ function load(): Promise<unknown> {
   return refreshing
 }
 const { refresh } = useProjectScopedLoader({ projectId, load })
+const feed = ref<UsageFeedState>({ status: 'connecting', receivedAt: null })
+provide(usageFeedKey, feed)
 const unsubscribe = subscribeUsageUpdates(projectId.value, {
+  connection: state => { feed.value = state },
   usage: updates => { if (updates) store.applyUsage(updates); else void refresh() },
   status: () => { void refresh() }, resume: () => { void refresh() },
 })

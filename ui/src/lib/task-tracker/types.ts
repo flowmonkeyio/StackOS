@@ -1,4 +1,4 @@
-import type { SchemaActiveExecutionOut, SchemaAgentStatsMetricsOut } from '@/api'
+import type { SchemaActiveExecutionOut, SchemaAgentStatsMetricsOut, SchemaWorkDurationOut } from '@/api'
 
 export type TrackerStatus =
   | 'not-started'
@@ -56,6 +56,7 @@ export interface TrackerPriority {
 }
 
 export interface TrackerTask {
+  work_duration?: SchemaWorkDurationOut | null
   active_execution?: ActiveExecution | null
   id: number
   project_id: number
@@ -99,6 +100,7 @@ export interface TrackerTaskTicketSummary {
 }
 
 export interface TrackerTicket {
+  work_duration?: SchemaWorkDurationOut | null
   active_execution?: ActiveExecution | null
   id: number
   project_id: number

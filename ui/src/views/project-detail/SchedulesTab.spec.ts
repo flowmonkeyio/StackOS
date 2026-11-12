@@ -9,6 +9,7 @@ import RunAbortAction from '@/components/domain/RunAbortAction.vue'
 import { UiFormField, UiInput } from '@/components/ui'
 import { useSchedulesStore } from '@/stores/schedules'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
+import { WorkDurationOutCoverage } from '@/api'
 import { openTrackerStatusStream } from '@/lib/task-tracker/liveEvents'
 
 vi.mock('@/lib/task-tracker/liveEvents', () => ({ openTrackerStatusStream: vi.fn(() => ({ close: vi.fn() })) }))
@@ -70,14 +71,17 @@ describe('Automations and Runs', () => {
     const w = await mountTab()
     const store = useSchedulesStore()
     const metrics = agentStatsFixture().totals
+    const run = { active_execution: null, project_id: 1, run_id: null, run_plan_id: 1, schedule_id: 1, started_at: null, ended_at: null, template_key: null, workflow_title: null }
     store.runs = [
-      { request_id: 1, schedule_name: 'Very long review name '.repeat(10), task_key: 'workflow-123', status: 'complete', agent_stats: metrics, duration_seconds: 0 },
-      { request_id: 2, schedule_name: 'Unknown usage', task_key: null, status: 'failed', agent_stats: null, duration_seconds: null, ended_at: '2026-11-09T00:00:00Z' },
-    ] as typeof store.runs
+      { ...run, request_id: 1, schedule_name: 'Very long review name '.repeat(10), task_key: 'workflow-123', status: 'complete', agent_stats: metrics, duration_seconds: 0, work_duration: { coverage: WorkDurationOutCoverage.complete, total_seconds: 0, recorded_intervals: 1, unavailable_intervals: 0, observed_at: null, endpoint_at: null } },
+      { ...run, request_id: 2, schedule_name: 'Unknown usage', task_key: null, status: 'failed', agent_stats: null, duration_seconds: null, work_duration: null, started_at: '2026-11-01T00:00:00Z', ended_at: '2026-11-09T00:00:00Z' },
+    ]
     await w.get('#cs-tab-runs').trigger('click')
     expect(w.findAllComponents(AgentUsageSummary)[0].props('metrics')).toEqual(metrics)
     expect(w.get('a').attributes('href')).toBe('/projects/1/tasks?view=graph&task=workflow-123')
-    expect(w.get('table').text()).toContain('0s')
+    expect(w.get('table').text()).toContain('Work time')
+    expect(w.get('[aria-label="Work time: 0m"]').text()).toBe('0m')
+    expect(w.get('[aria-label="Work time: N/A · Unavailable"]').text()).toBe('N/A')
     expect(w.get('table').text()).toContain('N/A')
     expect(w.get('table').text()).toContain('Work unavailable')
     expect(w.get('table').findAll('canvas')).toHaveLength(6)
@@ -92,9 +96,10 @@ describe('Automations and Runs', () => {
     store.runs = [{ request_id: 1, schedule_name: 'Actual run', task_key: 'workflow-1', status: 'in-progress', agent_stats: null }] as typeof store.runs
     const stream = vi.mocked(openTrackerStatusStream).mock.calls[0][0]
     const metrics = agentStatsFixture().totals
-    stream.onUsage?.({ tasks: [{ key: 'workflow-1', agent_stats: metrics, active_execution: null }], tickets: [] })
+    stream.onUsage?.({ tasks: [{ key: 'workflow-1', agent_stats: metrics, active_execution: null, work_duration: { coverage: WorkDurationOutCoverage.partial, total_seconds: 1200, recorded_intervals: 2, unavailable_intervals: 1, observed_at: null, endpoint_at: null } }], tickets: [] })
     await w.get('#cs-tab-runs').trigger('click')
     expect(w.findAllComponents(AgentUsageSummary)[0].props('metrics')).toEqual(metrics)
+    expect(w.get('[aria-label="Work time: 20m · Partial coverage"]').text()).toBe('20mPartial')
     expect(openTrackerStatusStream).toHaveBeenCalledTimes(1)
     expect(globalThis.fetch).toHaveBeenCalledTimes(2)
     const close = vi.mocked(openTrackerStatusStream).mock.results[0].value.close

@@ -42,6 +42,7 @@ export const useSchedulesStore = defineStore('schedules', () => {
       if (task) {
         row.agent_stats = task.agent_stats ?? null
         row.active_execution = task.active_execution ?? null
+        row.work_duration = task.work_duration ?? null
       }
     }
   }

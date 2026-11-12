@@ -1,5 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
+import { WorkDurationOutCoverage } from '@/api'
 
 import type { TrackerVueNodeData } from '@/lib/task-tracker/graphModel'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
@@ -7,13 +8,13 @@ import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 import TicketGraphNode from './TicketGraphNode.vue'
 
 describe('TicketGraphNode', () => {
-  it('shows the ticket lifecycle independently of current execution identity and token eligibility', async () => {
-    const lifecycle = { status: 'complete' as const, started_at: '2026-11-08T01:00:00', completed_at: '2026-11-08T03:22:00' }
+  it('shows recorded ticket work independently of lifecycle, execution identity and token eligibility', async () => {
+    const lifecycle = { status: 'complete' as const, started_at: '2026-11-01T01:00:00', completed_at: '2026-11-08T03:22:00', work_duration: { coverage: WorkDurationOutCoverage.partial, total_seconds: 8520, observed_at: null, endpoint_at: null, recorded_intervals: 3, unavailable_intervals: 1 } }
     const data = nodeData({ lifecycle, owner: null })
     const wrapper = mount(TicketGraphNode, { props: { data }, global: { stubs: { Handle: true } } })
-    expect(wrapper.get('[aria-label="Elapsed time: 2h 22m"]').text()).toBe('2h 22m')
+    expect(wrapper.get('[aria-label="Work time: 2h 22m · Partial coverage"]').text()).toBe('2h 22mPartial')
     expect(wrapper.find('.agent-usage-summary').exists()).toBe(false)
-    await wrapper.setProps({ data: { ...data, lifecycle: { ...lifecycle, started_at: null } } })
+    await wrapper.setProps({ data: { ...data, lifecycle: { ...lifecycle, work_duration: null } } })
     expect(wrapper.get('.active-execution-line__elapsed').text()).toBe('N/A')
     wrapper.unmount()
   })

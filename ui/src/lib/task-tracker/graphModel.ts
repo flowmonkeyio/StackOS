@@ -26,7 +26,7 @@ export interface TrackerVueNodeData {
   assignee?: string | null
   owner?: string | null
   activeExecution?: ActiveExecution | null
-  lifecycle?: Pick<TrackerTask, 'status' | 'started_at' | 'completed_at'> | null
+  lifecycle?: Pick<TrackerTask, 'status' | 'started_at' | 'completed_at' | 'work_duration'> | null
   sourceKind?: string | null
   runPlanId?: number | null
   agentStats?: AgentStatsMetrics | null
