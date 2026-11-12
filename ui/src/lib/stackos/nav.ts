@@ -1,5 +1,5 @@
 import type { SchemaPluginOut } from '@/api'
-import { domainPage } from './pluginPage'
+import { domainPage, isProjectPluginEnabled } from './pluginPage'
 
 export interface StackOsNavItem {
   key: string
@@ -107,7 +107,7 @@ export function pluginContributionSections(
   const base = `/projects/${projectId}`
   const items: StackOsNavItem[] = []
   for (const plugin of [...plugins].sort(comparePlugins)) {
-    if (plugin.enabled_for_project === false) continue
+    if (!isProjectPluginEnabled(plugin)) continue
     const ui = isRecord(plugin.manifest_json?.ui) ? plugin.manifest_json.ui : null
     const nav = isRecord(ui?.nav) ? ui.nav : null
     // Section metadata cannot create a page. Finance retains its dedicated

@@ -28,6 +28,11 @@ behavior. Operations define the callable contract around that behavior:
 - enabled surfaces
 - agent guidance, prerequisites, return notes, and examples
 
+`plugin.enable` accepts explicit project setup from the authenticated local
+console through its browser-safe REST operation. The existing plugin repository
+owns validation and enablement; the console does not receive agent grants.
+`plugin.disable` and legacy plugin write routes remain daemon-admin only.
+
 ## Project display names and catalog order
 
 `project.update` changes display names through the existing project repository.

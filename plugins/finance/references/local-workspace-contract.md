@@ -33,6 +33,12 @@ never-provisioned enabled project's default store from the packaged
 locked and atomic. Subsequent calls load existing data. Missing or corrupt
 provisioned files require repair and are never reset from the template.
 Empty collections are intentional.
+Finance requires explicit project enablement: an absent project-plugin setting is
+available for setup, not an enabled console. Plugins links to the selected project's
+Finance setup; **Enable Finance** uses the existing authenticated `plugin.enable`
+operation for that project and retries status. **Refresh** rechecks readiness after enablement,
+permission changes or storage repair. Enabling does not repair or reset a previously
+provisioned store. Directoryless projects use the same managed storage contract.
 Fill only sourced facts; unknown does not mean zero. Apply the
 [selected-workflow setup matrix](backend-contract.md#setup-and-execution):
 receipt custody does not require taxpayer/advisor/bank setup. Complete only

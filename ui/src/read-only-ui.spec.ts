@@ -79,6 +79,20 @@ describe('restricted UI write contract', () => {
     ])
   })
 
+  it('keeps plugin enablement confined to explicit Finance setup in the selected project', () => {
+    const finance = join(ROOT, 'views', 'FinanceView.vue')
+    for (const scope of SCOPES) {
+      for (const file of filesUnder(join(ROOT, scope))) {
+        const source = readFileSync(file, 'utf8')
+        if (source.includes("'plugin.enable'")) {
+          expect(file).toBe(finance)
+          expect(source).toContain("callOperation('plugin.enable', { project_id: id, plugin_slug: 'finance' })")
+          expect(source).toContain('if (!pluginDisabled.value || enabling.value || loading.value) return')
+        }
+      }
+    }
+  })
+
   it('limits project store direct writes to creation and management operations to the bounded contracts', () => {
     const text = readFileSync(PROJECTS_STORE, 'utf8')
 

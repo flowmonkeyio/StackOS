@@ -228,6 +228,7 @@ const { refresh } = useProjectScopedLoader({
           v-for="item in visiblePlugins"
           :key="item.plugin.slug"
           :item="item"
+          :project-id="projectId"
           :availability-loading="availabilityLoading"
           :availability-error="availabilityError"
           :connections-href="connectionsHref"

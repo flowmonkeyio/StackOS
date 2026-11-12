@@ -7,7 +7,7 @@ import { UiButton, UiCallout, UiLoadingState, UiPageShell, UiSectionHeader } fro
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { apiFetch, formatApiError } from '@/lib/client'
 import { projectIdFromRoute } from '@/lib/stackos/projectNavigation'
-import { domainPage } from '@/lib/stackos/pluginPage'
+import { domainPage, isProjectPluginEnabled } from '@/lib/stackos/pluginPage'
 import { useStackOsCatalogStore } from '@/stores/plugins'
 import DomainContentSection from './plugin-domain/DomainContentSection.vue'
 import { workflowLocation } from './plugin-domain/viewModel'
@@ -18,7 +18,7 @@ const { projectId } = useProjectRouteScope(route)
 const slug = computed(() => String(route.params.pluginSlug ?? ''))
 const catalog = useStackOsCatalogStore()
 const plugin = ref<SchemaPluginOut>()
-const enabled = computed(() => plugin.value && plugin.value.enabled_for_project !== false)
+const enabled = computed(() => plugin.value && isProjectPluginEnabled(plugin.value))
 const page = computed(() => domainPage(plugin.value))
 const contentSections = computed(() => page.value.sections.filter((section): section is 'saved' | 'files' => section !== 'workflows'))
 const workflows = ref<SchemaWorkflowTemplateSummaryOut[]>([])

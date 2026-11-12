@@ -28,6 +28,7 @@ import type {
 } from '@/api'
 import { apiFetch, formatApiError } from '@/lib/client'
 import { createProjectRequestGate } from '@/lib/stackos/projectRequestGate'
+import { isProjectPluginEnabled } from '@/lib/stackos/pluginPage'
 
 /** Safe projection of one project-authorized Telegram Account session. */
 export type TelegramAccountSessionStatus = SchemaAccountSessionOut
@@ -51,7 +52,7 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
   let pendingPlugins: { projectId: number; promise: Promise<boolean> } | null = null
 
   const enabledPlugins = computed(() =>
-    plugins.value.filter((plugin) => plugin.enabled_for_project !== false),
+    plugins.value.filter(isProjectPluginEnabled),
   )
 
   function refreshPlugins(
@@ -463,7 +464,7 @@ function composeCatalog(
 ): SchemaCatalogOut {
   return {
     plugins: plugins
-      .filter((plugin) => plugin.enabled_for_project !== false)
+      .filter(isProjectPluginEnabled)
       .map<SchemaPluginCatalogOut>((plugin) => ({
         plugin,
         capabilities: capabilities.filter((capability) => capability.plugin_slug === plugin.slug),

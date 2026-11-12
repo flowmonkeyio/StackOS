@@ -5,9 +5,10 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import FinanceView from './FinanceView.vue'
 import { insightFixture } from './finance/insightsFixtures'
 import { callOperation } from '@/lib/operations'
-import { ApiError } from '@/lib/client'
+import { ApiError, apiFetch } from '@/lib/client'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
+vi.mock('@/lib/client', async (original) => ({ ...await original<typeof import('@/lib/client')>(), apiFetch: vi.fn() }))
 vi.mock('chart.js', () => ({
   Chart: class {
     static register = vi.fn()
@@ -144,6 +145,103 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 describe('Finance management', () => {
+  it('explicitly enables only the selected project and retries authoritative status', async () => {
+    let enabled = false
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name === 'plugin.enable') {
+        enabled = true
+        return { data: { project_id: 1, plugin_slug: 'finance', enabled: true } }
+      }
+      if (name === 'finance.status' && !enabled)
+        throw new ApiError('disabled', 403, { detail: 'disabled', data: { finance_code: 'plugin_not_enabled' } })
+      return basics(name, args)
+    })
+    vi.mocked(apiFetch).mockResolvedValue([])
+    const { wrapper } = await mounted()
+    expect(apiFetch).not.toHaveBeenCalled()
+    expect(wrapper.text()).not.toContain('Synthetic vendor')
+    await wrapper.get('[data-test="enable-finance"]').trigger('click')
+    await flushPromises()
+    expect(callOperation).toHaveBeenCalledWith('plugin.enable', { project_id: 1, plugin_slug: 'finance' })
+    expect(wrapper.text()).toContain('USD 90,071,992,547,409.93')
+    expect(wrapper.find('[data-test="enable-finance"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+  it.each(['resolve', 'reject'])('ignores a late enable %s after switching projects', async (outcome) => {
+    let finish!: () => void
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name === 'plugin.enable') return new Promise((resolve, reject) => {
+        finish = () => outcome === 'resolve' ? resolve({}) : reject(new Error('private failure'))
+      })
+      if (name === 'finance.status' && args.project_id === 1)
+        throw new ApiError('disabled', 403, { detail: 'disabled', data: { finance_code: 'plugin_not_enabled' } })
+      return basics(name, args)
+    })
+    const { wrapper, router } = await mounted()
+    await wrapper.get('[data-test="enable-finance"]').trigger('click')
+    expect(wrapper.get('[data-test="enable-finance"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-test="enable-finance"]').trigger('click')
+    expect(vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'plugin.enable')).toHaveLength(1)
+    await router.push('/projects/2/finance')
+    await flushPromises()
+    finish()
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('USD 90,071,992,547,409.93')
+    expect(apiFetch).not.toHaveBeenCalled()
+    expect(vi.mocked(callOperation).mock.calls.filter(([name, args]) => name === 'finance.status' && args.project_id === 1)).toHaveLength(1)
+    wrapper.unmount()
+  })
+  it('keeps failed enablement safe and allows a status retry after permissions change', async () => {
+    let disabled = true
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name === 'plugin.enable') throw new Error('/private/secret')
+      if (name === 'finance.status' && disabled)
+        throw new ApiError('disabled', 403, { detail: 'disabled', data: { finance_code: 'plugin_not_enabled' } })
+      return basics(name, args)
+    })
+    const { wrapper } = await mounted()
+    await wrapper.get('[data-test="enable-finance"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('Check local permissions')
+    expect(wrapper.text()).not.toContain('/private/secret')
+    disabled = false
+    await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="enable-finance"]').exists()).toBe(false)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+  it.each(['scope-change', 'newer-refresh'])('ignores a delayed disabled status after %s', async (transition) => {
+    let finish!: () => void
+    let first = true
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name === 'finance.status' && first) {
+        first = false
+        return new Promise((_resolve, reject) => {
+          finish = () => reject(new ApiError('disabled', 403, {
+            detail: 'disabled', data: { finance_code: 'plugin_not_enabled' },
+          }))
+        })
+      }
+      return basics(name, args)
+    })
+    const { wrapper, router } = await mounted()
+    if (transition === 'scope-change') await router.push('/projects/2/finance')
+    else await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+    await flushPromises()
+    finish()
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="enable-finance"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('USD 90,071,992,547,409.93')
+    expect(vi.mocked(callOperation).mock.calls.some(([name]) => name === 'plugin.enable')).toBe(false)
+    wrapper.unmount()
+  })
   it('resolves an older contextual request beyond the bounded queue page by its exact identity', async () => {
     const basics = vi.mocked(callOperation).getMockImplementation()!
     const request = { id: 703, project_id: 1, title: 'Older Finance request', status: 'new', run_plan_id: null,
@@ -870,7 +968,7 @@ describe('Finance management', () => {
     [
       'plugin_not_enabled',
       403,
-      'Finance is not enabled for this project. Enable Finance in Plugins',
+      'Finance is not enabled for this project. Enable Finance',
     ],
     ['writer_busy', 409, 'Project Finance data is busy. Wait for the current write or backup'],
     ['unknown-private-code', 422, 'Project Finance data is unavailable.'],
