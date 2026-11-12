@@ -91,6 +91,8 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "tracker.ticketCountsAll",
         "tracker.agentStats",
         "tracker.agentStatsAll",
+        "tracker.activeTasks",
+        "tracker.activeTasksAll",
         "project.portfolio",
         "integration.list",
         "agentPreset.describe",

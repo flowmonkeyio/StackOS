@@ -33,6 +33,17 @@ TrackerResponseMode = Literal["compact", "raw", "standard", "verbose"]
 AgentRole = Annotated[str, Field(pattern=r"^[a-zA-Z0-9_][a-zA-Z0-9_-]{0,159}$", strict=True)]
 
 
+class TrackerActiveTasksAllInput(MCPInput):
+    model_config = ConfigDict(extra="forbid")
+    limit: int = Field(default=100, ge=1, le=200)
+    after_id: int | None = Field(default=None, ge=1)
+    response_mode: TrackerResponseMode = "compact"
+
+
+class TrackerActiveTasksInput(TrackerActiveTasksAllInput):
+    project_id: int = Field(ge=1)
+
+
 class TrackerTaskActivityInput(MCPInput):
     model_config = ConfigDict(extra="forbid")
     project_id: int = Field(ge=1)

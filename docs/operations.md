@@ -238,6 +238,22 @@ Add `template_key` for a workflow hint. Normal grants and approvals apply to
 any work the main agent chooses; enabled configuration alone is not evidence
 of desktop availability.
 
+## Local task admission capacity
+
+`tracker.deliveryCapacity` and `tracker.setDeliveryCapacity` use the same
+registry-owned local-admin console boundary as other explicit settings controls.
+They are REST/CLI-only, browser-safe operations with compact/raw readback and no
+ack mode. Neither accepts a project selector or workflow run-token authority.
+The write accepts only a strict integer `concurrent_tasks` from 1 through 32.
+Readback preserves `scope: "local-user-daemon"`, `configured_limit`,
+`running_count`, `queued_count`, `supported_min` and `supported_max`.
+
+The existing database stores one atomic preference shared across the daemon's
+projects (default 3). A successful save affects future admission; lowering does
+not cancel running work. The bounded task executor is independent of backup
+`long` workers. See [local task capacity](./task-tracker.md#local-task-capacity)
+for count semantics, persistence, backup coverage and recovery boundaries.
+
 ## Local backup administration
 
 `backup.status`, `backup.configure` and `backup.create` share the generic
@@ -461,6 +477,23 @@ their shared contracts. The standalone human operation-catalog page is removed;
 relevant object Details may expose safe contextual metadata.
 
 ## Agent activity reads
+
+Home uses `tracker.activeTasks` (`project_id`, direct-read) and
+`tracker.activeTasksAll` (local-admin-read). Both are read-only registry
+operations exposed through REST/CLI/MCP, with the global operation denied to
+project-bound MCP callers. `ActiveTasksOut` preserves bounded task-index facts
+and project/task identity in compact/raw mode, without prompts or receipt
+payloads; ack is unavailable. Pass `limit` and then the returned `next_cursor`
+as `after_id` for another page. See [Home active-task reads](./task-tracker.md#home-active-task-reads)
+for lifecycle, scope and refresh semantics.
+
+```json
+{"arguments":{"project_id":1,"limit":100,"response_mode":"raw"}}
+```
+
+Use this payload at `/api/v1/operations/tracker.activeTasks/call`. Local admin
+may call `/api/v1/operations/tracker.activeTasksAll/call` with
+`{"arguments":{"limit":100}}`.
 
 `tracker.agentStats` (`project_id`) and `tracker.agentStatsAll` (`is_active`:
 true/false/null for Active/Archived/All, default true) expose one tracker-owned

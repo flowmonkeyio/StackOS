@@ -17,7 +17,10 @@ from stackos.repositories.tracker import agent_stats as stats_projection
 from stackos.repositories.tracker.events import record_execution_change
 
 
-@pytest.mark.parametrize("mode", ["brief", "stream", "index", "get", "project", "global"])
+@pytest.mark.parametrize(
+    "mode",
+    ["brief", "stream", "index", "get", "project", "global", "active-project", "active-global"],
+)
 @pytest.mark.parametrize("handoff_at", ["before_capture", "after_capture", "after_receipt_read"])
 def test_overlapping_receipt_handoff_keeps_inflight_projections_consistent(
     session, project_id, monkeypatch, tmp_path, mode, handoff_at
@@ -39,6 +42,10 @@ def test_overlapping_receipt_handoff_keeps_inflight_projections_consistent(
     repo.create_ticket(
         project_id=project_id, task_key="overlap", key="overlap-child", title="Child"
     )
+    if mode.startswith("active-"):
+        repo.update_ticket(
+            project_id=project_id, ticket_key="overlap-child", patch_json={"status": "in-progress"}
+        )
     stamp = datetime.now(UTC).isoformat()
 
     def measured(i, o, cache):
@@ -195,6 +202,15 @@ def test_overlapping_receipt_handoff_keeps_inflight_projections_consistent(
                             await stream.aclose()
 
                     usage = asyncio.run(first())
+                elif mode.startswith("active-"):
+                    result = read_repo.active_tasks(
+                        project_id=project_id if mode == "active-project" else None
+                    )
+                    assert len(result.items) == 1
+                    assert result.items[0].active_execution is None
+                    usage = [
+                        value.agent_stats.reported_usage.model_dump() for value in result.items
+                    ]
                 elif mode in {"project", "global"}:
                     day = date.fromisoformat(stamp[:10])
                     kwargs = {"start_date": day, "end_date": day, "timezone": "UTC"}

@@ -33,6 +33,8 @@ def main() -> int:
             in {
                 "tracker.agentStats",
                 "tracker.agentStatsAll",
+                "tracker.activeTasks",
+                "tracker.activeTasksAll",
                 "tracker.get",
                 "tracker.taskActivity",
                 "tracker.taskResults",

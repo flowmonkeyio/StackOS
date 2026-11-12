@@ -270,8 +270,10 @@ remains an explicit reviewed current-project action; active snapshots stay froze
 
 The call returns task/job/status refs immediately. Each task has its own memory
 scheduler job (`task-delivery:<project_id>:<task_id>`). Distinct canonical working
-directories can execute concurrently, within the existing long executor's three
-workers shared with other long jobs. Tickets and delivery/review calls within
+directories can execute concurrently, within this local daemon's persisted task
+capacity (default 3, supported range 1..32). Task jobs use the separate bounded
+`task-delivery` executor; backup and other `long` jobs do not consume task slots.
+Tickets and delivery/review calls within
 one task remain serial until all task work completes or execution stops:
 
 ```text
@@ -289,6 +291,47 @@ different projects on this daemon) from acquiring the same directory. Symlink
 and filesystem aliases conflict. Separate Git worktrees sharing repository
 metadata remain distinct; Git is optional. No worktree creation or branch merge
 is performed by the runner.
+
+### Local task capacity
+
+`tracker.deliveryCapacity` reads the effective `configured_limit`, admitted
+`running_count`, waiting `queued_count`, supported bounds and
+`scope: "local-user-daemon"`. `tracker.setDeliveryCapacity` explicitly saves
+`{"concurrent_tasks": 6}` and returns that same readback in its write envelope.
+Both are local-admin REST/CLI operations; ordinary MCP and workflow/run-token
+authority cannot use them. There is no project selector or per-project override.
+For example: `stackos ops call tracker.setDeliveryCapacity --input capacity.json`.
+
+Global Overview and project Home expose this same setting through the header
+capacity control (for example, `2 of 3 running`). Open it to edit the limit with
+the input or stepper, then Save. The effective value updates from server
+readback; a failed/invalid save keeps the draft and error. Cancel, Escape or
+outside dismissal discards unsaved edits. A limit below the running count leaves
+current work running and delays new admission. Opening the control, refreshing,
+or changing projects only reads configuration.
+
+One singleton preference row in the existing data-directory database owns this
+limit across all projects. It survives ordinary restart/install/upgrade and is
+covered by the existing encrypted database backup/export; there is no separate
+preference file or backup path. Different data directories remain independent.
+This is not account isolation for people sharing one daemon or a cross-device quota.
+
+A successful save commits before admission changes. A failed commit leaves the
+previous limit effective. Raising drains the existing queued task metadata;
+lowering keeps already admitted work and waits for slots before further admission.
+`running_count` includes admitted callbacks starting or retiring, so it can exceed
+a newly lowered limit. Backup workers and tasks merely waiting for a slot are
+excluded. The existing launch lock serializes slot reservations across projects.
+No priority policy is added; native sessions, candidate evidence and repair
+allowance are retained.
+Abort keeps its reservation until native termination/prevention is confirmed or
+the original callback retires. Queue registration failures cannot skip native
+cancellation. A stopped handoff with an outstanding reservation in this daemon
+cannot be replaced or share its working directory; inspect its delivery state
+and retry after that reservation is released. Retired handoffs release only
+their own reservation, so a late return cannot release a replacement's slot.
+Daemon restart does not automatically resume old handoffs; normal explicit
+recovery/rehandoff authority still applies.
 
 ### Task-local native tool routing
 
@@ -1322,6 +1365,37 @@ the mutation. Refresh retries only the read and clears settled optimistic state
 after a successful current-project index response.
 
 ## Status Events
+
+### Home active-task reads
+
+`tracker.activeTasks(project_id)` and local-admin-only `tracker.activeTasksAll`
+return bounded pages of tasks whose lifecycle is exactly `in-progress`.
+Queued and stopped execution remain members; complete, aborted and backlog
+tasks do not. Global scope includes active projects without incomplete cleanup;
+project reads require an available project. Bound MCP callers cannot use the
+global read or override their project binding.
+
+Both accept `limit` (1–200, default 100) and `after_id` (the returned
+`next_cursor`), in stable ascending task-ID order. Identity is the composite
+`(project_id, key)`, never the task key or project display name alone. Pages
+include `scope`, `project_id`, `as_of`, project metadata and whitelisted task
+facts from the existing task-index projection: ticket rollup, whole-task usage,
+actual active/Last execution and persisted elapsed source dates. A minimal
+`delivery` object retains validated handoff status, ticket key and recorded stop
+reason without returning frozen instructions, native paths or raw receipts.
+Selected agents alone do not establish automation. Missing usage retains its
+canonical coverage and unknown values. Compact and raw preserve the same full
+bounded projection; ack is unavailable. Reads create no tracker or other state.
+
+The shared `useActiveTasks` Home reader loads pages atomically and subscribes
+once through `usageUpdates`. Lifecycle, execution and usage frames invalidate
+that scope's bulk read, including global frames with no replaceable project
+metrics. A current successful read and healthy shared transport are both needed
+for fresh presentation; errors retain previous rows and expose the error.
+Disconnects, hidden surfaces and reads crossed by invalidation cannot restore
+Live from stale facts. Canonical project-store metadata and removed-ID fences
+continue to govern row names and visibility. No per-row read or token aggregation
+is added; focused Board/Graph subscriptions keep their existing scope.
 
 Task inspection uses `tracker.taskActivity` and `tracker.taskResults` through
 the shared MCP, REST operation and CLI adapters. Both require `project_id` and

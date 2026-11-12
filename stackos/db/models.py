@@ -113,6 +113,7 @@ from stackos.db.model_runtime import (
 )
 from stackos.db.model_secrets import PayloadSecret
 from stackos.db.model_tracker import (
+    TaskDeliveryCapacity,
     TaskTracker,
     TaskTrackerLane,
     TaskTrackerPriority,
@@ -213,6 +214,7 @@ __all__ = [
     "RunStepCall",
     "RunStepStatus",
     "ScheduledJob",
+    "TaskDeliveryCapacity",
     "TaskTracker",
     "TaskTrackerLane",
     "TaskTrackerPriority",

@@ -4,27 +4,12 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
 import HomeView from './HomeView.vue'
-import { portfolioFixture, ticketSummaryFixture } from './home/overviewFixtures'
+import { activeTasksFixture } from './home/activeTaskFixtures'
 import { agentStatsFixture } from './home/agentStatsFixtures'
-import { localActivityFilters } from '@/lib/agentActivity'
 
 const ORIG_FETCH = globalThis.fetch
 
 describe('HomeView', () => {
-  it('keeps ticket-count polling without repeating usage refresh in the page timer', async () => {
-    vi.useFakeTimers()
-    globalThis.fetch = vi.fn(async (input) => defaultFetch(String(input))) as typeof fetch
-    const wrapper = await mountHome()
-    try {
-      const count = (operation: string) => vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => String(url).includes(operation)).length
-      const usage = count('tracker.agentStatsAll')
-      const tickets = count('tracker.ticketCounts')
-      expect(usage).toBeGreaterThan(0)
-      await vi.advanceTimersByTimeAsync(30_000)
-      expect(count('tracker.agentStatsAll')).toBe(usage)
-      expect(count('tracker.ticketCounts')).toBeGreaterThan(tickets)
-    } finally { wrapper.unmount(); vi.useRealTimers() }
-  })
   beforeEach(() => {
     setActivePinia(createPinia())
     Reflect.deleteProperty(window, 'stackosDesktop')
@@ -82,71 +67,44 @@ describe('HomeView', () => {
     expect(guide.attributes('rel')).toBe('noopener noreferrer')
   })
 
-  it('filters contributing projects by ticket status and aligns chart visibility with the directory', async () => {
-    const requests: Array<{ url: string; args: Record<string, unknown> }> = []
-    globalThis.fetch = vi.fn(async (input, init) => {
-      const url = String(input)
-      if (init?.body) requests.push({ url, args: JSON.parse(String(init.body)).arguments })
-      return defaultFetch(url)
-    }) as typeof fetch
+
+  it('orders sections and keeps lifetime work independent of Usage date and project visibility', async () => {
+    globalThis.fetch = vi.fn(async input => defaultFetch(String(input))) as typeof fetch
     const wrapper = await mountHome()
-    const overview = wrapper.findComponent({ name: 'HomePortfolioOverview' })
-    expect(wrapper.text()).toContain('Tickets by status')
-    expect(wrapper.findComponent({ name: 'AgentActivitySection' }).props('summary').totals.reported_usage.total).toBe(100)
-    expect(requests.find(({ url }) => url.includes('agentStatsAll'))?.args).toEqual({ response_mode: 'raw', is_active: true, ...localActivityFilters() })
-    await wrapper.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click')
-    await flushPromises()
-    expect(requests.filter(({ url }) => url.includes('agentStatsAll'))).toHaveLength(2)
-    expect(overview.text()).toContain('Current snapshot · 4 tickets')
-    expect(overview.findComponent({ name: 'TicketStatusChart' }).attributes('summary-aside')).toBeUndefined()
-    expect(wrapper.text()).not.toContain('Latest action calls')
-    expect(
-      wrapper.findAll('a').find(link => link.attributes('href') === '/projects/1/tasks?work_entry=tickets%3Ain-progress')!.text(),
-    ).toContain('In Progress 1')
-    overview.vm.$emit('select', 'in-progress')
-    await flushPromises()
-    expect(
-      requests.filter(({ url }) => url.includes('project.portfolio')).at(-1)?.args,
-    ).toMatchObject({ ticket_status: 'in-progress', is_active: true, limit: 50 })
-    overview.vm.$emit('visibility', 'all')
-    await flushPromises()
-    expect(requests.filter(({ url }) => url.includes('agentStatsAll')).at(-1)?.args).toEqual({ response_mode: 'raw', is_active: null, ...localActivityFilters() })
-    overview.vm.$emit('visibility', 'archived')
-    await flushPromises()
-    expect(requests.filter(({ url }) => url.includes('agentStatsAll')).at(-1)?.args).toEqual({ response_mode: 'raw', is_active: false, ...localActivityFilters() })
-    overview.vm.$emit('visibility', 'all')
-    await flushPromises()
-    expect(requests.filter(({ url }) => url.includes('ticketCountsAll')).at(-1)?.args).toEqual({
-      response_mode: 'raw',
-      is_active: null,
-    })
-    expect(
-      requests.filter(({ url }) => url.includes('project.portfolio')).at(-1)?.args,
-    ).toMatchObject({ ticket_status: 'in-progress', is_active: null })
-    await wrapper.get('button[aria-label="Clear ticket status filter"]').trigger('click')
-    await flushPromises()
-    expect(
-      requests.filter(({ url }) => url.includes('project.portfolio')).at(-1)?.args,
-    ).toMatchObject({ ticket_status: null, is_active: null })
-    wrapper.unmount()
+    try {
+      expect(wrapper.findAll('[aria-label="System status"], [aria-label="Active tasks"], [aria-label="Agent activity"], [aria-label="Connected tools"]').map(node => node.attributes('aria-label')))
+        .toEqual(['System status', 'Active tasks', 'Agent activity', 'Connected tools'])
+      const active = wrapper.get('[aria-label="Active tasks"]')
+      const before = active.text()
+      const calls = () => vi.mocked(globalThis.fetch).mock.calls.filter(([url]) => String(url).includes('tracker.activeTasksAll')).length
+      const reads = calls()
+      const usage = wrapper.findComponent({ name: 'AgentActivitySection' })
+      usage.vm.$emit('filters', { start_date: '2026-11-02', end_date: '2026-11-05' })
+      await flushPromises()
+      await wrapper.findAll('[role="tab"]').find(button => button.text() === 'Archived')!.trigger('click')
+      await flushPromises()
+      expect(calls()).toBe(reads)
+      expect(active.text()).toBe(before)
+      expect(wrapper.text()).not.toContain('Tickets by status')
+      expect(wrapper.text()).not.toContain('Latest tracked work')
+      expect(globalThis.fetch).toHaveBeenCalledWith('/api/v1/operations/tracker.agentStatsAll/call',
+        expect.objectContaining({ body: expect.stringContaining('"is_active":false') }))
+      await active.get('a').trigger('click')
+      await flushPromises()
+      expect(wrapper.text()).toContain('Task graph')
+      expect(wrapper.vm.$route.fullPath).toBe('/projects/1/tasks?view=graph&task=active-work')
+    } finally { wrapper.unmount() }
   })
 
-  it('turns an empty portfolio into a plain-language first step', async () => {
-    globalThis.fetch = vi.fn(async (input) => {
-      const url = String(input)
-      if (url === '/api/v1/operations/project.portfolio/call') {
-        return json({ items: [], next_cursor: null, total_estimate: 0 })
-      }
-      return defaultFetch(url)
-    }) as typeof fetch
-
+  it('shows an honest empty active list while retaining the other sections', async () => {
+    globalThis.fetch = vi.fn(async input => String(input).includes('tracker.activeTasksAll')
+      ? json(activeTasksFixture(null, [])) : defaultFetch(String(input))) as typeof fetch
     const wrapper = await mountHome()
-    await vi.waitFor(() => expect(wrapper.text()).toContain('Ready for your first project'))
-
-    expect(wrapper.text()).not.toContain('binds a deliberate workspace')
-    const guides = wrapper.findAll('a[href="https://stackos.flowmonkey.io/getting-started"]')
-    expect(guides).toHaveLength(2)
-    expect(guides.some((guide) => guide.text().includes('Open getting started'))).toBe(true)
+    try {
+      expect(wrapper.text()).toContain('No tasks are in progress.')
+      expect(wrapper.find('[aria-label="Agent activity"]').exists()).toBe(true)
+      expect(wrapper.find('[aria-label="Connected tools"]').exists()).toBe(true)
+    } finally { wrapper.unmount() }
   })
 
   it('renders fast desktop AI-tool connection status in user-facing language', async () => {
@@ -262,7 +220,7 @@ describe('HomeView', () => {
 async function mountHome() {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/', component: HomeView }],
+    routes: [{ path: '/', component: HomeView }, { path: '/projects/:id/tasks', component: { template: '<div>Task graph</div>' } }],
   })
   await router.push('/')
   await router.isReady()
@@ -280,10 +238,10 @@ async function mountHome() {
 }
 
 function defaultFetch(url: string): Response {
+  if (url.includes('tracker.deliveryCapacity')) return json({ scope: 'local-user-daemon', configured_limit: 3, running_count: 1, queued_count: 0, supported_min: 1, supported_max: 32 })
   if (url === '/api/v1/operations/tracker.agentStatsAll/call') return json(agentStatsFixture({ project_id: null, is_active: true }))
-  if (url === '/api/v1/operations/tracker.ticketCountsAll/call') {
-    return json(ticketSummaryFixture())
-  }
+  if (url.includes('tracker.activeTasksAll')) return json(activeTasksFixture())
+  if (url === '/api/v1/auth/accounts') return json({ accounts: [], providers: [] })
   if (url === '/api/v1/operations/hostMcp.status/call') {
     return json({
       ok: true,
@@ -303,13 +261,6 @@ function defaultFetch(url: string): Response {
       scheduler_running: true,
       version: '1.0.3',
       daemon_uptime_s: 120,
-    })
-  }
-  if (url === '/api/v1/operations/project.portfolio/call') {
-    return json({
-      items: [portfolioFixture()],
-      next_cursor: null,
-      total_estimate: 1,
     })
   }
   return json({})

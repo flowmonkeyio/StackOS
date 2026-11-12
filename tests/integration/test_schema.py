@@ -142,6 +142,7 @@ EXPECTED_TABLES: frozenset[str] = frozenset(
         "task_tracker_lanes",
         "task_tracker_priorities",
         "task_trackers",
+        "task_delivery_capacity",
         "telegram_application",
         "tracker_revisions",
         "tracker_tasks",
@@ -679,7 +680,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0042_schedule_main_thread",
+            "0043_automations_homes_merge",
         )
     finally:
         conn.close()
@@ -1755,7 +1756,7 @@ def test_alembic_upgrade_creates_expected_stackos_tables(isolated_alembic: Path)
     assert not (tables & LEGACY_TABLES)
     with sqlite3.connect(isolated_alembic) as conn:
         assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [
-            ("0042_schedule_main_thread",)
+            ("0043_automations_homes_merge",)
         ]
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     assert {"order_index", "cleanup_json", "primary_workspace_binding_id"} <= _table_columns(
@@ -2421,7 +2422,7 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
         tables_before = _list_tables(isolated_alembic)
     _run_alembic(["upgrade", "head"])
     with sqlite3.connect(isolated_alembic) as conn:
-        assert _list_tables(isolated_alembic) == tables_before
+        assert _list_tables(isolated_alembic) == tables_before | {"task_delivery_capacity"}
         for table, rows in before.items():
             if table == "tracker_revisions":
                 # The Board data migration appends its own receipt, retaining

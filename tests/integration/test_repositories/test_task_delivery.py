@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from itertools import pairwise
 from pathlib import Path
 from threading import Barrier, Event, RLock
@@ -1060,6 +1061,9 @@ def test_explicit_rehandoff_refreshes_current_snapshot_preserving_frozen_and_tic
         },
     )
     task_delivery._update_delivery(repo, project_id, f"workflow-{plan_id}", status="complete")
+    # The completed fixture's queued callback must retire its reservation
+    # before an explicit replacement can adopt current settings.
+    scheduler.run()
     frozen = deepcopy(plans.get(plan_id).model_dump(mode="json"))
     repo.create_task(
         project_id=project_id,
@@ -1125,7 +1129,7 @@ def test_explicit_rehandoff_refreshes_current_snapshot_preserving_frozen_and_tic
         repo.get(project_id=project_id, task_key="historical").tasks[0].model_dump(mode="json")
         == old
     )
-    assert len(scheduler.jobs) == 2
+    assert len(scheduler.jobs) == 1
 
 
 def test_unchanged_head_is_valid_observation_evidence(session, project_id, tmp_path, monkeypatch):
@@ -1450,7 +1454,7 @@ class QueuedScheduler:
 
     def add_job(self, function, **options) -> None:
         assert options["jobstore"] == "memory"
-        assert options["executor"] == "long"
+        assert options["executor"] == "task-delivery"
         self.jobs.append((function, options))
 
     def run(self) -> None:
@@ -3340,8 +3344,8 @@ def test_dequeued_callback_cannot_use_a_new_delivery_handoff(
     function, old = scheduler.jobs.pop()
     repo = TrackerRepository(session)
     task_delivery._update_delivery(repo, project_id, "deliver", status="stopped")
-    submit(session, project_id, tmp_path, scheduler)
-    current = repo.get(project_id=project_id, task_key="deliver")
+    with pytest.raises(ValidationError, match="still retiring"):
+        submit(session, project_id, tmp_path, scheduler)
     calls = []
 
     def launch(*args, **kwargs):
@@ -3350,6 +3354,11 @@ def test_dequeued_callback_cannot_use_a_new_delivery_handoff(
         return AgentRunResult(0, thread_id=f"fresh-{len(calls)}", result=generic_result("blocked"))
 
     monkeypatch.setattr(task_delivery, "run_agent", launch)
+    # The dequeued callback must retire before its handoff can be replaced.
+    function(**old["kwargs"])
+    assert not calls
+    submit(session, project_id, tmp_path, scheduler)
+    current = repo.get(project_id=project_id, task_key="deliver")
     function(**old["kwargs"])
     session.expire_all()
     assert repo.get(project_id=project_id, task_key="deliver") == current
@@ -3373,7 +3382,7 @@ def test_abort_during_scheduler_registration_preserves_only_current_handoff(
 
     ready, release, lock = Event(), Event(), Lock()
     actual = BackgroundScheduler(
-        jobstores={"memory": MemoryJobStore()}, executors={"long": APSExecutor(1)}
+        jobstores={"memory": MemoryJobStore()}, executors={"task-delivery": APSExecutor(1)}
     )
     actual.start(paused=True)
     calls, old_jobs = [], []
@@ -3680,15 +3689,29 @@ def test_abort_stays_cancelled_after_reopen_and_native_retirement(
                             run_id=plans.get(plan_id).run_id,
                             step_id="deliver",
                         )
-                        submit(
-                            session,
-                            project_id,
-                            tmp_path,
-                            scheduler,
-                            task_key=task_key,
-                            run_plan_id=plan_id,
-                            step_id="deliver",
-                        )
+                        if retired:
+                            # No registered control could confirm the stop. A
+                            # replacement must wait for this callback's release.
+                            with pytest.raises(ValidationError, match="still retiring"):
+                                submit(
+                                    session,
+                                    project_id,
+                                    tmp_path,
+                                    scheduler,
+                                    task_key=task_key,
+                                    run_plan_id=plan_id,
+                                    step_id="deliver",
+                                )
+                        else:
+                            submit(
+                                session,
+                                project_id,
+                                tmp_path,
+                                scheduler,
+                                task_key=task_key,
+                                run_plan_id=plan_id,
+                                step_id="deliver",
+                            )
                     assert not launch_guards[-1]()
                     before = TrackerRepository(session).get(
                         project_id=project_id, task_key=task_key
@@ -3705,9 +3728,20 @@ def test_abort_stays_cancelled_after_reopen_and_native_retirement(
             after = TrackerRepository(session).get(project_id=project_id, task_key=task_key)
             assert calls == (["delivery"] if phase == "delivery" else ["delivery", "review"])
             assert {ticket.key: ticket.status for ticket in after.tickets} == statuses
-            assert (
-                after.tasks[0].model_dump(exclude={"agent_stats", "active_execution"}) == task_state
-            )
+            after_task = after.tasks[0].model_dump(exclude={"agent_stats", "active_execution"})
+            if retired:
+                # Only the original reservation's retirement may change task
+                # state after an unconfirmed abort; all lifecycle/evidence
+                # fields remain fenced against the late native outcome.
+                assert task_state["metadata_json"]["delivery"]["slot_reserved"]
+                assert after_task["metadata_json"]["delivery"]["slot_reserved"] is False
+                assert after_task["updated_at"] >= task_state["updated_at"]
+                task_state["metadata_json"]["delivery"]["slot_reserved"] = False
+                task_state["metadata_json"]["delivery"]["updated_at"] = after_task["metadata_json"][
+                    "delivery"
+                ]["updated_at"]
+                task_state["updated_at"] = after_task["updated_at"]
+            assert after_task == task_state
             assert plans.get(plan_id).status == "started"
             assert plans.get_step(plan_id, "deliver").status == (
                 RunPlanStepStatus.RUNNING if rehandoff else RunPlanStepStatus.PENDING
@@ -3715,11 +3749,28 @@ def test_abort_stays_cancelled_after_reopen_and_native_retirement(
             evidence = next(
                 ticket for ticket in after.tickets if ticket.key == "selected"
             ).completion_evidence_json["automatic_delivery"]
-            if rehandoff:
+            if rehandoff and not retired:
                 assert after.tickets == before.tickets
             else:
                 assert evidence.get("cancellation") or evidence[phase]["cancelled"]
             assert evidence[phase].get("validated_outcome") is None
+            if rehandoff and retired:
+                retained_evidence = deepcopy(evidence)
+                submit(
+                    session,
+                    project_id,
+                    tmp_path,
+                    scheduler,
+                    task_key=task_key,
+                    run_plan_id=plan_id,
+                    step_id="deliver",
+                )
+                assert (
+                    TrackerRepository(session)
+                    .brief(project_id=project_id, ticket_key="selected")
+                    .ticket.completion_evidence_json["automatic_delivery"]
+                    == retained_evidence
+                )
     finally:
         release.set()
         for process in native:

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { subscribeUsageUpdates, usageCheckpoint, patchUsageAfter } from './usageUpdates'
+import { subscribeUsageUpdates, usageCheckpoint, patchUsageAfter, usageSnapshotCheckpoint, markUsageSnapshot } from './usageUpdates'
 import type { TrackerSnapshot } from '@/lib/task-tracker/types'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 import { openTrackerStatusStream } from '@/lib/task-tracker/liveEvents'
@@ -12,6 +12,54 @@ beforeEach(() => {
 })
 afterEach(() => vi.useRealTimers())
 describe('one shared usage transport', () => {
+  it('keeps a pending project snapshot current across foreign events but rejects a read crossed by its own batch', () => {
+    const status = vi.fn(), connection = vi.fn(), usage = vi.fn()
+    const stop = subscribeUsageUpdates(1, { usage, status, connection })
+    try {
+      const stream = vi.mocked(openTrackerStatusStream).mock.calls[0]![0]
+      stream.onFrame?.(Date.now())
+      const pending = usageSnapshotCheckpoint(1)
+      const batch = { id: 1, project_id: 2, event_type: 'tracker.tasks.changed', metadata_json: { rev: 8, affected_tasks: [{ task_key: 'a' }, { task_key: 'b' }] } }
+      stream.onEvent(batch as never)
+      expect(status).not.toHaveBeenCalled()
+      expect(usage).not.toHaveBeenCalled()
+      expect(markUsageSnapshot(1, pending)).toBe(true)
+      expect(connection.mock.lastCall?.[0].status).toBe('live')
+      const localBatch = { ...batch, id: 2, project_id: 1 }
+      stream.onEvent(localBatch as never)
+      expect(status).toHaveBeenCalledTimes(1)
+      expect(status).toHaveBeenCalledWith(localBatch)
+      expect(markUsageSnapshot(1, pending)).toBe(false)
+      expect(markUsageSnapshot(1, usageSnapshotCheckpoint(1))).toBe(true)
+    } finally { stop() }
+  })
+
+  it('requires a current global read and current transport epoch to establish replacement freshness', () => {
+    const connection = vi.fn()
+    const stop = subscribeUsageUpdates(null, { usage: vi.fn(), connection })
+    const stream = vi.mocked(openTrackerStatusStream).mock.calls[0]![0]
+    expect(markUsageSnapshot(null, usageSnapshotCheckpoint(null))).toBe(false)
+    stream.onFrame?.(Date.now())
+    const crossed = usageSnapshotCheckpoint(null)
+    stream.onUsage?.()
+    expect(markUsageSnapshot(null, crossed)).toBe(false)
+    expect(connection.mock.lastCall?.[0].status).not.toBe('live')
+    const current = usageSnapshotCheckpoint(null)
+    expect(markUsageSnapshot(null, current)).toBe(true)
+    expect(connection.mock.lastCall?.[0].status).toBe('live')
+    stream.onUsage?.()
+    expect(connection.mock.lastCall?.[0].status).toBe('reconnecting')
+    stream.onDisconnect?.()
+    expect(markUsageSnapshot(null, usageSnapshotCheckpoint(null))).toBe(false)
+    stream.onFrame?.(Date.now())
+    const retired = usageSnapshotCheckpoint(null)
+    stop()
+    const next = subscribeUsageUpdates(null, { usage: vi.fn(), connection })
+    vi.mocked(openTrackerStatusStream).mock.calls[1]![0].onFrame?.(Date.now())
+    expect(markUsageSnapshot(null, retired)).toBe(false)
+    next()
+  })
+
   it('preserves later usage across pending page reads, isolates scopes and replaces reconnect state', () => {
     const stop = subscribeUsageUpdates(7, { usage: vi.fn() })
     const stream = vi.mocked(openTrackerStatusStream).mock.calls[0]![0]

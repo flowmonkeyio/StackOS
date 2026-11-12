@@ -96,13 +96,22 @@ visual acceptance.
 
 ## Shipped — domain (`ui/src/components/domain/`)
 
+Both Home headers mount the feature-owned `views/home/DeliveryCapacityControl`.
+Its compact trigger shows server-reported admitted tasks against the persisted
+local-daemon limit, independent of the visible task list or selected project.
+The anchored `UiPopover` uses the shared form/input/buttons for a bounded integer
+draft and explicit Save. Dismiss discards the draft; failed saves retain it;
+success uses the operation's durable readback. Lowering below running work
+explains that current tasks continue. Visibility-aware polling and Home Refresh
+reload counts through the same local-admin read, with no project override.
+
 | Component | Notes |
 |---|---|
 | `ProjectPageHeader` | project-aware title, breadcrumbs, utility action slot, and route chrome |
 | `ProviderMark` | canonical provider logo/initial mark backed by `provider-presentation.json`; shared by Connections and Plugins |
 | `AgentUsageSummary` | Shared fixed Input / Cache / Output renderer; accepts `metrics: AgentStatsMetrics \| null`, `compact?: boolean` and `active?: boolean`. Default mode keeps the analytics headline scale. Compact mode reserves three equal columns with fixed label, number and mini-canvas slots; values never wrap or toggle charts. Numbers retain task/ticket lifetime totals; bars show recent reported increments from that scope. Active charts use the existing shared feed clock, completed charts retain their last window. Missing measurements use N/A; measured zero stays 0. Exact focus/hover values remain available when a compact number is elided. Input uses paired `remaining_input`, Cache uses `cache_read`, Output uses `output`; raw input stays inclusive. No receipt parsing, subtotal calculation or polling. Work callers enforce automatic parent-task eligibility. |
 | `UsageTrace` | Shared canvas bar renderer. `lib/liveUsage.ts` owns paired counter mapping and one-minute reported-delta buckets. Shared default is 20 bars; `barCount` accepts 5–60, `endAt` supplies the active clock or defaults to the last observation. Empty and first-reading states retain a fixed baseline; the first reading adds only a neutral tick. Unknown intervals and negative corrections stay gaps. Each metric has a separate zero-based scale; bars remain at most 2 CSS pixels wide. Chart values are accessible by title/ARIA. Resize, theme and pixel-density changes redraw; unmount releases observers/listeners. No SVG, animation, per-card timer or visibility decision based on sample count. |
-| `ActiveExecutionLine` | Shared actual current / explicitly Last execution identity using canonical `agentIdentity.ts` host marks and readable recorded roles. Shared compact item elapsed uses first `started_at` to now while open or `completed_at` while terminal, independent of identity, automation and tokens; unavailable/invalid lifecycle ranges show `N/A`. The existing Work heartbeat invalidates presentation with a fresh clock, without per-card timers. Elapsed survives agent exit/reload; Last retains full recorded provenance in its accessible title. `owner` is ordinary assignment when no occurrence exists. Card footers reserve 56px and center the 32px mark and text; the blocker badge sits outside the bottom edge. Task and shared ticket details use the same elapsed presentation without duplicate Started facts or separate current-call token totals. |
+| `ActiveExecutionLine` | Shared actual current / explicitly Last execution identity using canonical `agentIdentity.ts` host marks and readable recorded roles. Shared compact item elapsed uses first `started_at` to now while open or `completed_at` while terminal, independent of identity, automation and tokens; unavailable/invalid lifecycle ranges show `N/A`. The existing Work heartbeat invalidates presentation with a fresh clock, without per-card timers. Elapsed survives agent exit/reload; Last retains full recorded provenance in its accessible title. Focusable instances also disclose the full role/model or fallback owner in a hover/focus tooltip without expanding their layout slot. `owner` is ordinary assignment when no occurrence exists. Card footers reserve 56px and center the 32px mark and text; the blocker badge sits outside the bottom edge. Task and shared ticket details use the same elapsed presentation without duplicate Started facts or separate current-call token totals. |
 | `UsageLiveIndicator` | Small recording dot and Live label for actual active executions with a healthy shared feed; Connecting/Reconnecting stays neutral. Consumes the Work page's existing subscription through `useUsageFeed`, opens no connection and owns no timer. Hidden for last execution or ordinary assignment. |
 
 `AgentUsageSummary` also accepts `inline` with `compact` for the contextual task
@@ -161,6 +170,20 @@ add workflow-specific UI unless the generic renderer is insufficient and the
 exception is signed off.
 
 ## View decomposition pattern
+
+Both Home pages mount `views/home/ActiveTaskList.vue`, whose single
+`useActiveTasks` scope supplies the lifecycle projection and feed to
+`ActiveTaskRow.vue`. Continuous rows use shared lifetime usage, execution,
+priority and elapsed renderers, fixed list-wide zones and container breakpoints.
+Manual rows reserve the same geometry without automated usage; current/Last
+identity and Live retain the canonical feed semantics. Each row links directly
+to the selected task graph. Global rows include canonical project names;
+project rows omit redundant names. `HomeConnectionsSection.vue` renders a compact
+directory after Usage using the existing scoped account owners; it does not probe
+providers. Its 48px entries use normalized 24px provider marks, concise account
+names and canonical status icons with accessible labels. Identical provider/account
+names retain stable account numbers. Hover/focus discloses full identity and state;
+Manage connections in the header reaches the existing global or project owner.
 
 Both Home pages share `views/home/AgentActivitySection.vue`: Input / Cache /
 Output headlines, date controls, daily chart with input detail, and an accessible
@@ -225,9 +248,11 @@ retain the same column widths in browsers with classic scrollbars.
 Home and Overview receive usage updates through the shared `usageUpdates`
 SSE transport. `useAgentStats` owns statistics requests, date/group/scope filters
 and stale-response protections, including manual and filter refreshes. Their
-30-second page polls retain ticket counts and, on project Home, overview data;
-they do not refresh usage. Work consumers retain lifetime task/ticket projections,
-independent of these Home date filters.
+30-second project Home polling retains overview metadata and accounts; it does
+not refresh usage. The removed ticket/portfolio summaries no longer poll.
+Global Active/Archived/All visibility remains an aggregate Usage control beside
+the date controls. Active-task membership and lifetime figures do not depend on
+these filters. Work consumers retain the same lifetime task/ticket projections.
 
 Work reuses the compact `AgentUsageSummary` on Board cards, the graph task
 header, individual ticket nodes, task details, and `TrackerTicketDetailContent`

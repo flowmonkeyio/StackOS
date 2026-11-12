@@ -57,8 +57,9 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
   project navigation scroll, above the theme control. All three are available
   without a project. Backups retains the global `/setup` route.
   Domain-specific surfaces are plugin contributions or generic resource links,
-  not new top-level product lanes. The root `/` is the project portfolio +
-  local system status; `/projects/:id` is the operations console (Home). See
+  not new top-level product lanes. The root `/` shows local system status and
+  active work across projects; `/projects/:id` is the project Home. Both retain
+  existing Usage followed by Connected tools. See
   [`ui-redesign-direction.md`](./ui-redesign-direction.md).
   There are no Attention, Activity, Execution, Catalog, Data & evidence,
   Settings, Diagnostics or Advanced navigation wrappers. Work owns contextual

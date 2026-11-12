@@ -16,6 +16,8 @@ def _tracker_operations() -> OperationRegistry:
         "tracker.ticketCountsAll",
         "tracker.agentStats",
         "tracker.agentStatsAll",
+        "tracker.activeTasks",
+        "tracker.activeTasksAll",
         "tracker.get",
         "tracker.next",
         "tracker.blockers",
