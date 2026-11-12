@@ -431,8 +431,8 @@ slots and 56px footer stay fixed.
 Applied Board chips reuse `BoardFilterEditor` in a popover anchored to the clicked
 chip, including Completed's existing choices. Overflow stays mounted while its
 editor is open; responsive repartition re-anchors to the visible chip or surviving
-overflow trigger and preserves draft/focus. Filter/Display controls and the URL
-owner retain their existing commands. The primitive specs use a plain non-task
+overflow trigger and preserves draft/focus. Filter/Display controls call the
+existing project-local preference owner's explicit commands. The primitive specs use a plain non-task
 list; pointer feel, edge-scroll feel and rendered alignment remain operator-owned
 manual checks.
 

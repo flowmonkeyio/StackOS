@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, provide, reactive, ref } from 'vue'
-import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter, type LocationQueryRaw } from 'vue-router'
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter, type LocationQuery, type LocationQueryRaw } from 'vue-router'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import { UiButton, UiCallout, UiEmptyState, UiLoadingState, UiPageShell, UiSegmentedControl } from '@/components/ui'
 import { callOperation } from '@/lib/operations'
@@ -404,6 +404,10 @@ function resolveMapTaskKey(): string {
 function mapNeedsCanonicalRoute(): boolean {
   return viewMode.value === 'graph' && Boolean(activeTaskRow.value) && queryText(route.query.task) !== mapTaskKey.value
 }
+function isCurrentNavigation(query: LocationQuery): boolean {
+  // Consuming the entry intent replaces the route without changing its inspection target.
+  return currentScope() && ['view', 'task', 'detail', 'ticket'].every(key => queryText(route.query[key]) === queryText(query[key]))
+}
 const removeRouteListener = router.afterEach(async (to, from, failure) => {
   if (failure || to.path !== from.path || !currentScope()) return
   consumeBoardEntry()
@@ -417,11 +421,11 @@ const removeRouteListener = router.afterEach(async (to, from, failure) => {
   if (mapChanged && !mapNeedsCanonicalRoute()) graph.restartStatusStream()
   if (viewMode.value === 'graph' && mapChanged) {
     await loadMap()
-    if (!currentScope() || router.currentRoute.value !== to) return
+    if (!isCurrentNavigation(to.query)) return
   }
   if (viewMode.value === 'board' && from.query.view === 'graph') {
     await load({ restartStream: false })
-    if (!currentScope() || router.currentRoute.value !== to) return
+    if (!isCurrentNavigation(to.query)) return
   }
   if (to.query.detail !== from.query.detail) {
     if (detailTaskKey.value) await loadDetail(detailTaskKey.value)

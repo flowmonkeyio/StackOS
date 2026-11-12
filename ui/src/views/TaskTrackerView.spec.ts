@@ -777,15 +777,33 @@ describe('Work board navigation', () => {
     malformed.wrapper.unmount()
   })
 
-  it('preserves combined Graph/detail navigation when consuming a same-page entry intent', async () => {
-    const { wrapper, router, dialog, controls } = await render()
-    await router.push('/projects/7/tasks?work_entry=tickets:complete&view=graph&task=task-a&detail=task-b&ticket=ticket-b')
-    await flushPromises()
-    expect(router.currentRoute.value.query).toEqual({ view: 'graph', task: 'task-a', detail: 'task-b', ticket: 'ticket-b' })
-    expect(controls().props('activeTaskKey')).toBe('task-a')
-    expect(dialog().props('task')?.key).toBe('task-b')
-    expect(dialog().props('ticketKey')).toBe('ticket-b')
-    wrapper.unmount()
+  it.each(['graph', 'board'] as const)('preserves inspection after entry cleanup settles during a deferred %s read', async (view) => {
+    const { wrapper, router, dialog, controls } = await render(view === 'graph'
+      ? '/projects/7/tasks' : '/projects/7/tasks?view=graph&task=task-a', true)
+    const read = mocks.callOperation.getMockImplementation()!
+    let finish!: () => void
+    mocks.callOperation.mockImplementation((name, args, options) => {
+      if (name === 'tracker.get' && (view === 'graph' ? args.include_graph : args.task_index_only)) {
+        return new Promise(resolve => { finish = () => resolve(read(name, args, options)) })
+      }
+      return read(name, args, options)
+    })
+    const query = { ...(view === 'graph' ? { view: 'graph', task: 'task-a' } : {}), detail: 'task-b', ticket: 'ticket-b' }
+    try {
+      await router.push({ query: { ...query, work_entry: 'tickets:complete' } })
+      await flushPromises()
+      // Cleanup creates a new route object before the real Graph/index response arrives.
+      expect(router.currentRoute.value.query).toEqual(query)
+      expect(finish).toBeTypeOf('function')
+      expect(dialog().props('task')).toBeNull()
+      finish()
+      await flushPromises()
+      expect(controls().props('viewMode')).toBe(view)
+      expect(dialog().props('task')?.key).toBe('task-b')
+      expect(dialog().props('ticketKey')).toBe('ticket-b')
+      expect(popup().get('[role="dialog"]').text()).toContain('Beta ticket')
+      expect(popup().get('[role="dialog"]').text()).not.toContain('no longer available')
+    } finally { wrapper.unmount() }
   })
 
   it('retains the open task and draft when a new filter excludes it', async () => {

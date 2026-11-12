@@ -1886,9 +1886,9 @@ including reopened tasks, are unaffected by completion dates.
 
 Board rows sort by persisted `order_index`, then newest `created_at` and
 descending ID, matching the reorder repository. Graph's picker retains its
-unfiltered newest-first order. Project switching preserves view, status,
-priority, completion/display choices and portable legacy restrictions, and
-clears text, workflow, assignee and task/ticket selections.
+unfiltered newest-first order. Project switching preserves Board/Graph view
+placement and restores the destination project's local Board preferences.
+Task/ticket selections and one-shot entry intents are cleared.
 
 ## UI
 
