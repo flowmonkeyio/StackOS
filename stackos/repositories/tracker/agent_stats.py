@@ -445,7 +445,7 @@ def summarize_receipts(
 def query_task_agent_stats(
     session: Session,
     *,
-    tracker_id: int,
+    tracker_id: int | None,
     task_ids: set[int],
     provisional: ProvisionalUsage | None = None,
     work_durations: dict[int, WorkDurationOut] | None = None,
@@ -468,7 +468,7 @@ def query_task_agent_stats(
         col(TrackerTicket.key),
         col(TrackerTicket.completion_evidence_json),
     ).where(
-        col(TrackerTicket.tracker_id) == tracker_id,
+        col(TrackerTicket.tracker_id) == tracker_id if tracker_id is not None else true(),
         col(TrackerTicket.task_id).in_(task_ids),
     )
     rows = session.execute(statement).all()

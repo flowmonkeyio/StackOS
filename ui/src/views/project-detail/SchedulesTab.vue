@@ -124,7 +124,7 @@ async function remove(): Promise<void> {
         :columns="columns"
         :loading="loading"
         aria-label="Automations"
-        :empty-message="error ? 'Automation list unavailable. Refresh to retry.' : 'No automations yet. Create an automation to schedule a workflow.'"
+        :empty-message="error ? 'Automation list unavailable. Refresh to retry.' : 'No automations yet. Create an automation to schedule a workflow or prompt.'"
       >
         <template #cell:name="{ row }">
           <div
@@ -135,9 +135,9 @@ async function remove(): Promise<void> {
           </div>
           <div
             class="truncate text-xs text-fg-muted"
-            :title="row.template_key ?? 'Workflow not selected'"
+            :title="row.template_key ?? 'Prompt'"
           >
-            {{ row.template_key ?? 'Workflow not selected' }}
+            {{ row.template_key ?? 'Prompt' }}
           </div>
         </template>
         <template #cell:cron_expr="{ row }">

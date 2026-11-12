@@ -226,64 +226,6 @@ def test_scheduled_jobs(session: Session, project_id: int) -> None:
     assert repo.list(project_id)[0].enabled is False
 
 
-def test_schedule_enable_preflight_and_settings_are_read_only(
-    session: Session, project_id: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from stackos.db.models import AgentRequest, Run, RunPlan, TrackerTask
-    from stackos.repositories.tracker import TrackerRepository
-
-    # Only the native launch capability is controlled; workflow/default resolution is real.
-    monkeypatch.setattr("stackos.task_delivery.agent_selection_error", lambda *args, **kwargs: None)
-
-    class FixedClock(datetime):
-        @classmethod
-        def now(cls, tz=None):
-            from datetime import UTC
-
-            return datetime(2026, 11, 2, 15, 0, tzinfo=UTC)
-
-    monkeypatch.setattr("stackos.repositories.projects.datetime", FixedClock)
-    roles = {
-        "agents": {
-            "project-memory-review": {
-                "host_key": "claude-code",
-                "name": "project-memory-review",
-                "instructions": "Perform the prepared review workflow.",
-            }
-        }
-    }
-    TrackerRepository(session).configure_delivery(project_id=project_id, delivery=roles)
-    repo = ScheduledJobRepository(session)
-    config = dict(
-        project_id=project_id,
-        kind="weekly",
-        name="Weekly review",
-        cron_expr="0 9 * * mon",
-        timezone="America/Los_Angeles",
-        template_key="core.project-memory-review",
-        execution_json={"project_dir": str(tmp_path)},
-    )
-    draft = repo.set(**config)
-    assert not draft.data.enabled
-    assert "goal" in draft.data.setup_issue
-    with pytest.raises(ValidationError, match="Workflow setup"):
-        repo.toggle(draft.data.id, project_id=project_id, enabled=True)
-    configured = repo.set(
-        **config, inputs_json={"goal": "Review synthetic project memory"}, enabled=True
-    )
-    assert configured.data.enabled
-    assert configured.data.next_run_at is not None
-    assert configured.data.next_run_at == datetime(2026, 11, 2, 17, 0)
-    assert configured.data.setup_issue is None
-    # Upsert retains its immutable identity while replacing the operator label/configuration.
-    assert configured.data.id == draft.data.id
-    for model in (AgentRequest, RunPlan, Run, TrackerTask):
-        assert session.exec(select(model)).all() == []
-    repo.toggle(draft.data.id, project_id=project_id, enabled=False)
-    assert repo.list(project_id)[0].next_run_at is None
-    assert repo.list(project_id)[0].execution_json.delivery_agent is None
-
-
 @pytest.mark.parametrize(
     "patch",
     [

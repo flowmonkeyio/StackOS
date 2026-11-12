@@ -2336,6 +2336,86 @@ export interface components {
             /** Ticket Key */
             ticket_key: string;
         };
+        /**
+         * ActiveTaskOut
+         * @description Whitelisted task-index projection; identity is (project_id, key).
+         */
+        ActiveTaskOut: {
+            active_execution: components["schemas"]["ActiveExecutionOut"] | null;
+            agent_stats: components["schemas"]["AgentStatsMetricsOut"] | null;
+            /** Completed At */
+            completed_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            delivery: components["schemas"]["TaskDeliveryStateOut"] | null;
+            /** Goal */
+            goal: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            /** Owner */
+            owner: string | null;
+            /** Priority Key */
+            priority_key: string;
+            project: components["schemas"]["ActiveTaskProjectOut"];
+            /** Project Id */
+            project_id: number;
+            /** Started At */
+            started_at: string | null;
+            status: components["schemas"]["TrackerItemStatus"];
+            ticket_summary: components["schemas"]["TrackerTaskTicketSummaryOut"] | null;
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ActiveTaskProjectOut */
+        ActiveTaskProjectOut: {
+            /** Domain */
+            domain: string;
+            /** Id */
+            id: number;
+            /** Is Active */
+            is_active: boolean;
+            /** Name */
+            name: string;
+            /** Slug */
+            slug: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** ActiveTasksOut */
+        ActiveTasksOut: {
+            /**
+             * As Of
+             * Format: date-time
+             */
+            as_of: string;
+            /** Items */
+            items: components["schemas"]["ActiveTaskOut"][];
+            /**
+             * Next Cursor
+             * @default null
+             */
+            next_cursor: number | null;
+            /** Project Id */
+            project_id: number | null;
+            /**
+             * Scope
+             * @enum {string}
+             */
+            scope: ActiveTasksOutScope;
+        };
         /** AgentDefinition */
         AgentDefinition: {
             /** Capabilities */
@@ -3553,6 +3633,55 @@ export interface components {
             tags?: string[] | null;
             /** Title */
             title?: string | null;
+        };
+        /** DeliveryCapacityInput */
+        DeliveryCapacityInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: DeliveryCapacityInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** DeliveryCapacityOut */
+        DeliveryCapacityOut: {
+            /** Configured Limit */
+            configured_limit: number;
+            /** Queued Count */
+            queued_count: number;
+            /** Running Count */
+            running_count: number;
+            /**
+             * Scope
+             * @default local-user-daemon
+             * @constant
+             */
+            scope: "local-user-daemon";
+            /**
+             * Supported Max
+             * @default 32
+             */
+            supported_max: number;
+            /**
+             * Supported Min
+             * @default 1
+             */
+            supported_min: number;
         };
         /** DurableActionItemOut */
         DurableActionItemOut: {
@@ -6765,24 +6894,14 @@ export interface components {
         RunStatus: RunStatus;
         /**
          * ScheduleExecution
-         * @description Existing handoff settings, without occurrence-specific lifecycle arguments.
+         * @description Native launch settings; project_dir only fences a saved legacy target.
          */
         ScheduleExecution: {
-            /** Agents */
-            agents?: {
-                [key: string]: components["schemas"]["TaskDeliveryAgentOverride"];
-            } | null;
-            delivery_agent?: components["schemas"]["TaskDeliveryAgentOverride"] | null;
             /** Host Key */
             host_key?: string | null;
             mcp_config_ref?: components["schemas"]["TaskMcpConfigRef"] | null;
             /** Project Dir */
-            project_dir: string;
-            review_agent?: components["schemas"]["TaskDeliveryAgentOverride"] | null;
-            /** Step Agent Assignments */
-            step_agent_assignments?: {
-                [key: string]: string;
-            } | null;
+            project_dir?: string | null;
         };
         /**
          * ScheduleListInput
@@ -6926,6 +7045,11 @@ export interface components {
              */
             expected_etag: string | null;
             /**
+             * Goal
+             * @default null
+             */
+            goal: string | null;
+            /**
              * Idempotency Key
              * @default null
              */
@@ -7015,6 +7139,8 @@ export interface components {
              */
             enabled: boolean;
             execution_json?: components["schemas"]["ScheduleExecution"] | null;
+            /** Goal */
+            goal?: string | null;
             /** Inputs Json */
             inputs_json?: {
                 [key: string]: unknown;
@@ -7035,6 +7161,8 @@ export interface components {
             /** Enabled */
             enabled: boolean;
             execution_json: components["schemas"]["ScheduleExecution"] | null;
+            /** Goal */
+            goal: string | null;
             /** Id */
             id: number;
             /** Inputs Json */
@@ -7062,22 +7190,67 @@ export interface components {
             /** Timezone */
             timezone: string | null;
         };
+        /** ScheduledNativeExecutionOut */
+        ScheduledNativeExecutionOut: {
+            /** Agent */
+            agent: string;
+            /** Host Key */
+            host_key: string;
+            /** Invocation Id */
+            invocation_id: string;
+            /**
+             * Live Usage
+             * @default null
+             */
+            live_usage: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Model
+             * @default null
+             */
+            model: string | null;
+            /** Request Id */
+            request_id: number;
+            /** Started At */
+            started_at: string;
+            /**
+             * Thread Id
+             * @default null
+             */
+            thread_id: string | null;
+        };
         /** ScheduledRunOut */
         ScheduledRunOut: {
-            active_execution: components["schemas"]["ActiveExecutionOut"] | null;
+            /** Active Execution */
+            active_execution: components["schemas"]["ScheduledNativeExecutionOut"] | components["schemas"]["ActiveExecutionOut"] | null;
             agent_stats: components["schemas"]["AgentStatsMetricsOut"] | null;
             /** Duration Seconds */
             duration_seconds: number | null;
             /** Ended At */
             ended_at: string | null;
+            /**
+             * Error
+             * @default null
+             */
+            error: string | null;
+            /** @default null */
+            native_execution: components["schemas"]["ScheduledNativeExecutionOut"] | null;
+            /**
+             * Outcome Status
+             * @default null
+             */
+            outcome_status: string | null;
             /** Project Id */
             project_id: number;
             /** Request Id */
             request_id: number;
+            /** Request Status */
+            request_status: string;
             /** Run Id */
             run_id: number | null;
             /** Run Plan Id */
-            run_plan_id: number;
+            run_plan_id: number | null;
             /** Schedule Id */
             schedule_id: number;
             /** Schedule Name */
@@ -7086,14 +7259,52 @@ export interface components {
             started_at: string | null;
             /** Status */
             status: string;
+            /**
+             * Summary
+             * @default null
+             */
+            summary: string | null;
             /** Task Key */
             task_key: string | null;
             /** Template Key */
             template_key: string | null;
+            /**
+             * Usage
+             * @default null
+             */
+            usage: {
+                [key: string]: unknown;
+            } | null;
             /** @default null */
             work_duration: components["schemas"]["WorkDurationOut"] | null;
             /** Workflow Title */
             workflow_title: string | null;
+        };
+        /** SetDeliveryCapacityInput */
+        SetDeliveryCapacityInput: {
+            /** Concurrent Tasks */
+            concurrent_tasks: number;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: SetDeliveryCapacityInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
         };
         /** SitemapFetchRequest */
         SitemapFetchRequest: {
@@ -7198,21 +7409,43 @@ export interface components {
          * @description Task choices may omit fields supplied by project defaults.
          */
         TaskDeliveryAgentOverride: {
-            /** Host Key */
-            host_key?: string | null;
-            /** Instructions */
-            instructions?: string | null;
-            /** Model */
-            model?: string | null;
-            /** Model Reasoning Effort */
-            model_reasoning_effort?: string | null;
-            /** Name */
-            name?: string | null;
-            /** Profile */
-            profile?: string | null;
-            /** Provider */
-            provider?: string | null;
-            source_ref?: components["schemas"]["AgentSourceRef"] | null;
+            /**
+             * Host Key
+             * @default null
+             */
+            host_key: string | null;
+            /**
+             * Instructions
+             * @default null
+             */
+            instructions: string | null;
+            /**
+             * Model
+             * @default null
+             */
+            model: string | null;
+            /**
+             * Model Reasoning Effort
+             * @default null
+             */
+            model_reasoning_effort: string | null;
+            /**
+             * Name
+             * @default null
+             */
+            name: string | null;
+            /**
+             * Profile
+             * @default null
+             */
+            profile: string | null;
+            /**
+             * Provider
+             * @default null
+             */
+            provider: string | null;
+            /** @default null */
+            source_ref: components["schemas"]["AgentSourceRef"] | null;
         };
         /**
          * TaskDeliveryDefaults
@@ -7235,6 +7468,27 @@ export interface components {
             host_key: string | null;
             /** @default null */
             review_agent: components["schemas"]["TaskDeliveryAgentOverride"] | null;
+        };
+        /**
+         * TaskDeliveryStateOut
+         * @description Public handoff facts, excluding frozen agents, prompts and native paths.
+         */
+        TaskDeliveryStateOut: {
+            /**
+             * Reason
+             * @default null
+             */
+            reason: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: TaskDeliveryStateOutStatus;
+            /**
+             * Ticketkey
+             * @default null
+             */
+            ticketKey: string | null;
         };
         /**
          * TaskMcpConfigRef
@@ -7359,6 +7613,76 @@ export interface components {
             name?: string | null;
             /** Team */
             team?: string | null;
+        };
+        /** TrackerActiveTasksAllInput */
+        TrackerActiveTasksAllInput: {
+            /**
+             * After Id
+             * @default null
+             */
+            after_id: number | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Limit
+             * @default 100
+             */
+            limit: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: TrackerActiveTasksAllInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** TrackerActiveTasksInput */
+        TrackerActiveTasksInput: {
+            /**
+             * After Id
+             * @default null
+             */
+            after_id: number | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Limit
+             * @default 100
+             */
+            limit: number;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: TrackerActiveTasksInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
         };
         /** TrackerAgentStatsAllInput */
         TrackerAgentStatsAllInput: {
@@ -8956,6 +9280,20 @@ export interface components {
              */
             run_id: number | null;
         };
+        /** WriteEnvelope[DeliveryCapacityOut] */
+        WriteEnvelope_DeliveryCapacityOut_: {
+            data: components["schemas"]["DeliveryCapacityOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
         /** WriteEnvelope[DurableActionJobOut] */
         WriteEnvelope_DurableActionJobOut_: {
             data: components["schemas"]["DurableActionJobOut"];
@@ -9429,6 +9767,9 @@ export type SchemaActionExposureNextActionOut = components['schemas']['ActionExp
 export type SchemaActionExposureOut = components['schemas']['ActionExposureOut'];
 export type SchemaActionOut = components['schemas']['ActionOut'];
 export type SchemaActiveExecutionOut = components['schemas']['ActiveExecutionOut'];
+export type SchemaActiveTaskOut = components['schemas']['ActiveTaskOut'];
+export type SchemaActiveTaskProjectOut = components['schemas']['ActiveTaskProjectOut'];
+export type SchemaActiveTasksOut = components['schemas']['ActiveTasksOut'];
 export type SchemaAgentDefinition = components['schemas']['AgentDefinition'];
 export type SchemaAgentFields = components['schemas']['AgentFields'];
 export type SchemaAgentList = components['schemas']['AgentList'];
@@ -9473,6 +9814,8 @@ export type SchemaContextSnapshotOut = components['schemas']['ContextSnapshotOut
 export type SchemaCostResponse = components['schemas']['CostResponse'];
 export type SchemaDecisionOut = components['schemas']['DecisionOut'];
 export type SchemaDecisionRecordRequest = components['schemas']['DecisionRecordRequest'];
+export type SchemaDeliveryCapacityInput = components['schemas']['DeliveryCapacityInput'];
+export type SchemaDeliveryCapacityOut = components['schemas']['DeliveryCapacityOut'];
 export type SchemaDurableActionItemOut = components['schemas']['DurableActionItemOut'];
 export type SchemaDurableActionJobOut = components['schemas']['DurableActionJobOut'];
 export type SchemaEnumLookupResponse = components['schemas']['EnumLookupResponse'];
@@ -9585,7 +9928,9 @@ export type SchemaScheduleSetInput = components['schemas']['ScheduleSetInput'];
 export type SchemaScheduleToggleInput = components['schemas']['ScheduleToggleInput'];
 export type SchemaScheduleUpsertRequest = components['schemas']['ScheduleUpsertRequest'];
 export type SchemaScheduledJobOut = components['schemas']['ScheduledJobOut'];
+export type SchemaScheduledNativeExecutionOut = components['schemas']['ScheduledNativeExecutionOut'];
 export type SchemaScheduledRunOut = components['schemas']['ScheduledRunOut'];
+export type SchemaSetDeliveryCapacityInput = components['schemas']['SetDeliveryCapacityInput'];
 export type SchemaSitemapFetchRequest = components['schemas']['SitemapFetchRequest'];
 export type SchemaSitemapFetchResponse = components['schemas']['SitemapFetchResponse'];
 export type SchemaSnapshotRef = components['schemas']['SnapshotRef'];
@@ -9593,6 +9938,7 @@ export type SchemaTaskActivityItem = components['schemas']['TaskActivityItem'];
 export type SchemaTaskActivityOut = components['schemas']['TaskActivityOut'];
 export type SchemaTaskDeliveryAgentOverride = components['schemas']['TaskDeliveryAgentOverride'];
 export type SchemaTaskDeliveryDefaults = components['schemas']['TaskDeliveryDefaults'];
+export type SchemaTaskDeliveryStateOut = components['schemas']['TaskDeliveryStateOut'];
 export type SchemaTaskMcpConfigRef = components['schemas']['TaskMcpConfigRef'];
 export type SchemaTaskResultAssociation = components['schemas']['TaskResultAssociation'];
 export type SchemaTaskResultItem = components['schemas']['TaskResultItem'];
@@ -9601,6 +9947,8 @@ export type SchemaTelegramApplicationStatusOut = components['schemas']['Telegram
 export type SchemaTemplateBaseSpec = components['schemas']['TemplateBaseSpec'];
 export type SchemaTemplateIoSpec = components['schemas']['TemplateIOSpec'];
 export type SchemaTemplateOwnerSpec = components['schemas']['TemplateOwnerSpec'];
+export type SchemaTrackerActiveTasksAllInput = components['schemas']['TrackerActiveTasksAllInput'];
+export type SchemaTrackerActiveTasksInput = components['schemas']['TrackerActiveTasksInput'];
 export type SchemaTrackerAgentStatsAllInput = components['schemas']['TrackerAgentStatsAllInput'];
 export type SchemaTrackerAgentStatsInput = components['schemas']['TrackerAgentStatsInput'];
 export type SchemaTrackerAgentStatsOut = components['schemas']['TrackerAgentStatsOut'];
@@ -9648,6 +9996,7 @@ export type SchemaWorkflowTemplateListOut = components['schemas']['WorkflowTempl
 export type SchemaWorkflowTemplateSpec = components['schemas']['WorkflowTemplateSpec'];
 export type SchemaWorkflowTemplateSummaryOut = components['schemas']['WorkflowTemplateSummaryOut'];
 export type SchemaWriteEnvelopeAgentDefinition = components['schemas']['WriteEnvelope_AgentDefinition_'];
+export type SchemaWriteEnvelopeDeliveryCapacityOut = components['schemas']['WriteEnvelope_DeliveryCapacityOut_'];
 export type SchemaWriteEnvelopeDurableActionJobOut = components['schemas']['WriteEnvelope_DurableActionJobOut_'];
 export type SchemaWriteEnvelopeFinanceCommitOut = components['schemas']['WriteEnvelope_FinanceCommitOut_'];
 export type SchemaWriteEnvelopeFinanceStatusOut = components['schemas']['WriteEnvelope_FinanceStatusOut_'];
@@ -12864,6 +13213,10 @@ export enum ActionCallStatus {
     success = "success",
     failed = "failed"
 }
+export enum ActiveTasksOutScope {
+    project = "project",
+    global = "global"
+}
 export enum AgentRequestAttentionStatus {
     unread = "unread",
     read = "read",
@@ -12916,6 +13269,12 @@ export enum AuthRevokeOutRemote_logout_statusAnyOf0 {
 export enum AuthStartRequestAuthorization_mode {
     phone = "phone",
     qr = "qr"
+}
+export enum DeliveryCapacityInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
 }
 export enum DurableActionItemStatus {
     pending = "pending",
@@ -13252,9 +13611,21 @@ export enum ScheduleToggleInputResponse_modeAnyOf0 {
     standard = "standard",
     verbose = "verbose"
 }
+export enum SetDeliveryCapacityInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
 export enum TaskActivityItemSource_kind {
     project_event = "project_event",
     tracker_revision = "tracker_revision"
+}
+export enum TaskDeliveryStateOutStatus {
+    queued = "queued",
+    running = "running",
+    stopped = "stopped",
+    complete = "complete"
 }
 export enum TaskResultItemSource_kind {
     resource_record = "resource_record",
@@ -13269,6 +13640,18 @@ export enum TaskResultsOutSource_kindAnyOf0 {
     learning = "learning",
     decision = "decision",
     experiment = "experiment"
+}
+export enum TrackerActiveTasksAllInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum TrackerActiveTasksInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
 }
 export enum TrackerAgentStatsAllInputGroup_by {
     agent = "agent",

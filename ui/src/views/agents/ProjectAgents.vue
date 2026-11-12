@@ -3,8 +3,10 @@ import { computed, inject, onBeforeUnmount, ref, toRef } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, routerKey } from 'vue-router'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import { resolveAgentHostLogo } from '@/lib/stackos/agentIdentity'
+import { isDesktopShell } from '@/lib/desktop'
 import { UiButton, UiCallout, UiConfirmDialog, UiFormField, UiIcon, UiIconButton, UiInput, UiLoadingState, UiSelect, UiTextarea } from '@/components/ui'
 import { useProjectFolder } from '@/composables/useProjectFolder'
+import { useHomeAgentHostStatuses } from '@/views/home/useHomeAgentHostStatuses'
 import { agentError, agentIdentity, useProjectAgents, type AgentSummary, type AgentFields } from './useProjectAgents'
 
 const props = defineProps<{ projectId: number; standalone?: boolean }>()
@@ -15,10 +17,16 @@ const search = ref('')
 const features = ref('null')
 const skills = ref('null')
 const customModel = ref(false)
+const { hostStatuses, loadHostStatuses } = useHomeAgentHostStatuses(isDesktopShell())
+let catalogRequested = false
 function resetEditorOptions(fields: AgentFields | null) {
   features.value = JSON.stringify(fields?.features ?? null, null, 2)
   skills.value = JSON.stringify(fields?.skills ?? null, null, 2)
   customModel.value = false
+  if (fields && !catalogRequested) {
+    catalogRequested = true
+    void loadHostStatuses()
+  }
 }
 const { items, diagnostics, loading, reading, saving, error, message, selected, draft, dirty, refresh, edit, add, close, save } = useProjectAgents(toRef(props, 'projectId'), projectDir, resetEditorOptions)
 reloadAgents = () => { close(); void refresh() }
@@ -31,7 +39,22 @@ function protect(action: () => void) { if (saving.value) return; if (dirty.value
 function discard() { const action = pending.value; pending.value = null; action?.() }
 const editor = ref<HTMLElement | null>(null)
 const optionsError = ref('')
-const modelOptions = computed(() => [{ value: '', label: 'Default (inherited)' }, ...(draft.value?.model ? [{ value: draft.value.model, label: draft.value.model }] : []), { value: '__custom__', label: 'Custom model…' }])
+const modelCatalog = computed(() => hostStatuses.value.items.find(host => host.host_key === (selected.value?.source_ref.host_key ?? 'codex'))?.agent_execution)
+const modelOptions = computed(() => {
+  const models = [...new Set(modelCatalog.value?.models ?? [])]
+  const retained = [...new Set([selected.value?.fields?.model, draft.value?.model])]
+    .filter((model): model is string => typeof model === 'string' && model.length > 0 && !models.includes(model))
+  return [
+    { value: '', label: 'Default (inherited)' },
+    ...models.map(model => ({ value: model, label: model })),
+    ...retained.map(model => ({ value: model, label: modelCatalog.value ? `${model} (not in catalog)` : model })),
+    { value: '__custom__', label: 'Custom model…' },
+  ]
+})
+const catalogIssue = computed(() => hostStatuses.value.kind === 'error'
+  ? hostStatuses.value.message
+  : hostStatuses.value.kind === 'loaded' && !modelCatalog.value?.models.length
+    ? 'This app version did not return a Codex model catalog.' : '')
 function selectModel(value: string | number | null) {
   customModel.value = value === '__custom__'
   if (draft.value && !customModel.value) draft.value.model = String(value ?? '') || null
@@ -111,15 +134,6 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
           class="text-sm text-fg-muted"
         >
           Agents defined in this project.
-        </p>
-        <p
-          v-if="projectDir"
-          class="flex items-start gap-2 text-sm text-fg-default break-all"
-        >
-          <UiIcon
-            name="folder"
-            class="mt-0.5 h-4 w-4 shrink-0"
-          />Project folder: {{ projectDir }}
         </p>
       </div>
       <div
@@ -260,7 +274,10 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
               />
             </UiIconButton>
           </div>
-          <p class="mt-1 break-all text-xs text-fg-muted">
+          <p class="mt-1 text-xs text-fg-muted">
+            Codex project file
+          </p>
+          <p class="mt-1 break-all font-mono text-xs text-fg-muted">
             {{ selected?.source_ref.source_path ?? (draft.name ? `.codex/agents/${draft.name}.toml` : '.codex/agents/') }}
           </p>
         </div>
@@ -291,24 +308,36 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
               :disabled="saving || selected?.capabilities?.edit === false"
             />
           </UiFormField>
-          <div class="grid grid-cols-2 gap-4 agent-settings">
-            <UiFormField label="Agent app">
-              <UiInput
-                model-value="Codex"
-                disabled
-              />
-            </UiFormField>
-            <UiFormField
-              label="Model"
+          <UiFormField label="Model">
+            <UiSelect
+              :model-value="customModel ? '__custom__' : draft.model ?? ''"
+              :options="modelOptions"
+              :disabled="saving || selected?.capabilities?.edit === false"
+              @update:model-value="selectModel"
+            />
+            <p
+              v-if="hostStatuses.kind === 'loading'"
+              class="mt-1 text-xs text-fg-muted"
+              role="status"
             >
-              <UiSelect
-                :model-value="customModel ? '__custom__' : draft.model ?? ''"
-                :options="modelOptions"
-                :disabled="saving || selected?.capabilities?.edit === false"
-                @update:model-value="selectModel"
-              />
-            </UiFormField>
-          </div>
+              Loading model catalog… You can keep editing.
+            </p>
+            <div
+              v-else-if="catalogIssue"
+              class="mt-2 space-y-2"
+              role="status"
+            >
+              <p class="text-xs text-warning-fg">
+                Model catalog unavailable. {{ catalogIssue }} Inherited, saved and custom values remain available.
+              </p>
+              <UiButton
+                size="sm"
+                @click="loadHostStatuses"
+              >
+                Retry models
+              </UiButton>
+            </div>
+          </UiFormField>
           <UiFormField
             v-if="customModel"
             label="Custom model"
@@ -427,5 +456,4 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
 .agent-row--selected { background: var(--color-accent-primary-subtle); box-shadow: inset 4px 0 var(--color-accent-primary); }
 .agent-editor { margin-top: -12px; min-height: calc(100dvh - 136px); padding: 16px; border: 1px solid var(--color-border-default); border-radius: 8px; background: var(--color-bg-surface); min-width: 0; overflow-wrap: anywhere; }
 @media (max-width: 1100px) { .agents-layout--editing { grid-template-columns: minmax(0, 1fr); } .agent-editor { margin-top: 0; min-height: 0; } }
-@media (max-width: 440px) { .agent-settings { grid-template-columns: minmax(0, 1fr); } }
 </style>

@@ -9,7 +9,8 @@ import { useProjectsStore, type Project } from '@/stores/projects'
 import { useToastsStore } from '@/stores/toasts'
 import HomeConsoleView from '@/views/HomeConsoleView.vue'
 import HomeView from '@/views/HomeView.vue'
-import HomeProjectsSection from '@/views/home/HomeProjectsSection.vue'
+import ActiveTaskList from '@/views/home/ActiveTaskList.vue'
+import { activeTaskFixture, activeTasksFixture } from '@/views/home/activeTaskFixtures'
 import { portfolioFixture, ticketSummaryFixture } from '@/views/home/overviewFixtures'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 import { zIndex } from '@/design/tokens'
@@ -170,9 +171,11 @@ it.each(['/projects/1', '/'])(
         project = { ...project, name: args.patch.name }
         return json({ data: project })
       }
-      if (url.includes('/operations/project.portfolio/')) {
-        const page = { items: [portfolioFixture({ ...project })], next_cursor: null, total_estimate: 1 }
-        if (deferPortfolio) return new Promise<Response>((resolve) => { finishPortfolio = () => resolve(json(page)) })
+      if (url.includes('/operations/project.portfolio/') || url.includes('/operations/tracker.activeTasks')) {
+        const page = url.includes('tracker.activeTasks')
+          ? activeTasksFixture(url.includes('activeTasksAll') ? null : 1, [activeTaskFixture({ project: { ...project }, title: 'Fixture work' })])
+          : { items: [portfolioFixture({ ...project })], next_cursor: null, total_estimate: 1 }
+        if (deferPortfolio && (path === '/' ? url.includes('tracker.activeTasks') : url.includes('project.portfolio'))) return new Promise<Response>((resolve) => { finishPortfolio = () => resolve(json(page)) })
         return json(page)
       }
       if (url.includes('tracker.ticketCounts')) return json(ticketSummaryFixture())
@@ -198,7 +201,7 @@ it.each(['/projects/1', '/'])(
     await flushPromises()
     const view = path === '/' ? app.getComponent(HomeView) : app.getComponent(HomeConsoleView)
     const visibleLabel = () => path === '/'
-      ? app.getComponent(HomeProjectsSection).get('table tbody tr td').text()
+      ? app.getComponent(ActiveTaskList).get('.active-task-row__project').text()
       : view.get('h1').text()
     expect(visibleLabel()).toContain('Alpha')
 
@@ -249,9 +252,11 @@ it.each(['/projects/1', '/'])(
     globalThis.fetch = vi.fn(async (input, init) => {
       const url = String(input)
       if (url.startsWith('/api/v1/projects?')) return json({ items: [project], next_cursor: null, total_estimate: 1 })
-      if (url.includes('/operations/project.portfolio/')) {
+      if (url.includes('/operations/project.portfolio/') || url.includes('/operations/tracker.activeTasks')) {
         portfolioRequests.push(JSON.parse(String(init?.body)).arguments)
-        return json({ items: [portfolioFixture({ ...project })], next_cursor: null, total_estimate: 1 })
+        return json(url.includes('tracker.activeTasks')
+          ? activeTasksFixture(url.includes('activeTasksAll') ? null : 1, [activeTaskFixture({ project: { ...project }, title: 'Fixture work' })])
+          : { items: [portfolioFixture({ ...project })], next_cursor: null, total_estimate: 1 })
       }
       if (url.includes('tracker.ticketCounts')) return json(ticketSummaryFixture())
       if (url.includes('tracker.agentStats')) return json(agentStatsFixture())
@@ -275,7 +280,7 @@ it.each(['/projects/1', '/'])(
     await flushPromises()
     const view = path === '/' ? app.getComponent(HomeView) : app.getComponent(HomeConsoleView)
     const visibleLabel = () => path === '/'
-      ? app.getComponent(HomeProjectsSection).get('table tbody tr td').text()
+      ? app.getComponent(ActiveTaskList).get('.active-task-row__project').text()
       : view.get('h1').text()
     expect(visibleLabel()).toContain('Alpha')
     const beforeReads = portfolioRequests.length

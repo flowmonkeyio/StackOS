@@ -511,7 +511,14 @@ def _base_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any
 
 def _compact_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any]:
     data = _data(payload)
-    if spec.name in {"tracker.taskActivity", "tracker.taskResults"}:
+    if spec.name in {
+        "tracker.taskActivity",
+        "tracker.taskResults",
+        "tracker.activeTasks",
+        "tracker.activeTasksAll",
+        "tracker.deliveryCapacity",
+        "tracker.setDeliveryCapacity",
+    }:
         # These pages already bound payload size and own their coverage contract.
         # Generic page/mutation shaping would discard task scope and warnings.
         return copy.deepcopy(payload)
@@ -769,7 +776,7 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
         return {
             key: copy.deepcopy(value)
             for key, value in data.items()
-            if key not in {"inputs_json", "execution_json"}
+            if key not in {"goal", "inputs_json", "execution_json"}
         }
     if operation_name == "localAgentChat.createMessage":
         out = {
@@ -819,6 +826,8 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
         "tracker.ticketCountsAll",
         "tracker.agentStats",
         "tracker.agentStatsAll",
+        "tracker.activeTasks",
+        "tracker.activeTasksAll",
         "project.portfolio",
         "browser.runtime.status",
     }:

@@ -51,6 +51,7 @@ function setDate(field: 'start_date' | 'end_date', value: string | number | null
           Recorded StackOS automation · {{ filters.timezone }}
         </p>
       </div>
+      <slot name="scope" />
       <div
         class="agent-activity__dates"
         role="group"

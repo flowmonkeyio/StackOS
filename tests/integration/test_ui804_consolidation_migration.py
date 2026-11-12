@@ -23,6 +23,19 @@ from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.tracker.ordering import NORMALIZATION_KIND
 
 
+def test_capacity_migration_replay_preserves_configured_preference(tmp_path):
+    settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
+    settings.ensure_dirs()
+    upgrade_to_head(settings)
+    with sqlite3.connect(settings.db_path) as connection:
+        connection.execute("INSERT INTO task_delivery_capacity VALUES (1, 9)")
+        connection.execute("UPDATE alembic_version SET version_num='0041_ui804_consolidation'")
+    upgrade_to_head(settings)
+    upgrade_to_head(settings)
+    with sqlite3.connect(settings.db_path) as connection:
+        assert connection.execute("SELECT * FROM task_delivery_capacity").fetchall() == [(1, 9)]
+
+
 @pytest.mark.parametrize(
     "prior_head", ["0040_artifact_managed_files", "0039_tracker_board_arrivals"]
 )
@@ -30,7 +43,7 @@ def test_consolidation_preserves_both_prior_heads_and_reruns_once(tmp_path, prio
     settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
     settings.ensure_dirs()
     config = alembic_config(settings)
-    assert ScriptDirectory.from_config(config).get_heads() == ["0041_ui804_consolidation"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["0043_automations_homes_merge"]
     command.upgrade(config, "0037_schedule_id_nonreuse")
     folder = tmp_path / "source"
     folder.mkdir()
@@ -109,7 +122,7 @@ def test_consolidation_preserves_both_prior_heads_and_reruns_once(tmp_path, prio
     upgrade_to_head(settings)
     with sqlite3.connect(settings.db_path) as connection:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchall() == [
-            ("0041_ui804_consolidation",)
+            ("0043_automations_homes_merge",)
         ]
         assert {
             table: connection.execute(f"SELECT {names} FROM {table} ORDER BY id").fetchall()

@@ -48,6 +48,17 @@ TICKET_CORRECTION_PATCH_SCHEMA: dict[str, Any] = {
 }
 
 
+class TrackerActiveTasksAllInput(MCPInput):
+    model_config = ConfigDict(extra="forbid")
+    limit: int = Field(default=100, ge=1, le=200)
+    after_id: int | None = Field(default=None, ge=1)
+    response_mode: TrackerResponseMode = "compact"
+
+
+class TrackerActiveTasksInput(TrackerActiveTasksAllInput):
+    project_id: int = Field(ge=1)
+
+
 class TrackerTaskActivityInput(MCPInput):
     model_config = ConfigDict(extra="forbid")
     project_id: int = Field(ge=1)

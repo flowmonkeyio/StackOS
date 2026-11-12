@@ -1,4 +1,5 @@
 import type { SchemaPluginOut } from '@/api'
+import { domainPage } from './pluginPage'
 
 export interface StackOsNavItem {
   key: string
@@ -109,9 +110,9 @@ export function pluginContributionSections(
     if (plugin.enabled_for_project === false) continue
     const ui = isRecord(plugin.manifest_json?.ui) ? plugin.manifest_json.ui : null
     const nav = isRecord(ui?.nav) ? ui.nav : null
-    if (!nav && !isRecord(ui?.page)) continue
-    // Domain identity owns the destination. Normalize older Data/Workflows
-    // contributions here too, including Agency and Support.
+    // Section metadata cannot create a page. Finance retains its dedicated
+    // console; generic domains must declare content the renderer supports.
+    if (!domainPage(plugin).sections.length && plugin.slug !== 'finance') continue
     const label = plugin.slug === 'finance' ? 'Finance'
       : typeof nav?.section === 'string' ? nav.section : plugin.name
     items.push({

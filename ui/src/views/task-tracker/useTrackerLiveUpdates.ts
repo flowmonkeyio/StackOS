@@ -3,6 +3,7 @@ import { onBeforeUnmount, ref, type Ref } from 'vue'
 import { formatApiError } from '@/lib/client'
 import {
   type ProjectTimelineEvent,
+  trackerEventTaskKeys, trackerEventRevision,
 } from '@/lib/task-tracker/liveEvents'
 import { subscribeUsageUpdates } from '@/lib/usageUpdates'
 import type { UsageFeedState, UsageProjection } from '@/lib/usageUpdates'
@@ -10,7 +11,7 @@ import type { UsageFeedState, UsageProjection } from '@/lib/usageUpdates'
 interface UseTrackerLiveUpdatesOptions {
   projectId: Readonly<Ref<number>>
   activeTaskKey: Readonly<Ref<string>>
-  reload: () => Promise<void>
+  reload: (revision?: number, taskKeys?: string[]) => Promise<void>
   refreshUsage?: (updates?: UsageProjection) => void
 }
 
@@ -52,16 +53,17 @@ export function useTrackerLiveUpdates(options: UseTrackerLiveUpdatesOptions) {
   }
 
   function onEvent(event: ProjectTimelineEvent): void {
-    const metadata = eventMetadata(event)
-    if (activeTaskKey.value && metadata.task_key !== activeTaskKey.value) return
+    if (event.project_id != null && event.project_id !== projectId.value) return
+    const taskKeys = trackerEventTaskKeys(event)
+    if (activeTaskKey.value && !taskKeys.includes(activeTaskKey.value)) return
     const touchedNodes = touchedGraphNodeIds(event)
     markRecentNodes(touchedNodes)
-    requestRefresh(touchedNodes)
+    requestRefresh(touchedNodes, trackerEventRevision(event), taskKeys)
   }
 
-  function requestRefresh(touchedNodes: string[] = []): void {
+  function requestRefresh(touchedNodes: string[] = [], revision?: number, taskKeys?: string[]): void {
     const eventGeneration = generation
-    void reload().then(() => {
+    void reload(revision, taskKeys).then(() => {
       if (eventGeneration === generation) markRecentNodes(touchedNodes)
     }).catch((cause) => {
       if (eventGeneration === generation) liveError.value = formatApiError(cause, 'Could not refresh work')
@@ -106,6 +108,5 @@ function eventMetadata(event: ProjectTimelineEvent): Record<string, unknown> {
 function touchedGraphNodeIds(event: ProjectTimelineEvent): string[] {
   const metadata = eventMetadata(event)
   if (typeof metadata.ticket_key === 'string') return [`ticket:${metadata.ticket_key}`]
-  if (typeof metadata.task_key === 'string') return [`task:${metadata.task_key}`]
-  return []
+  return trackerEventTaskKeys(event).map(key => `task:${key}`)
 }

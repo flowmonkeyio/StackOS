@@ -1,186 +1,178 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { defineComponent, h } from 'vue'
+import { createMemoryHistory, createRouter, RouterView, useRoute } from 'vue-router'
 import ScheduleEditor from './ScheduleEditor.vue'
-import ScheduleAgentSelectors from './ScheduleAgentSelectors.vue'
-import { UiConfirmDialog, UiSelect } from '@/components/ui'
+import { UiConfirmDialog, UiFormField, UiInput, UiSelect, UiTextarea } from '@/components/ui'
 import { callOperation } from '@/lib/operations'
 import { apiFetch } from '@/lib/client'
-import { useSchedulesStore } from '@/stores/schedules'
-import { blankAgent, agentIdentity } from '../agents/useProjectAgents'
+import { useSchedulesStore, type ScheduledJob } from '@/stores/schedules'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
 vi.mock('@/lib/client', async original => ({ ...await original<typeof import('@/lib/client')>(), apiFetch: vi.fn() }))
 let wrapper: VueWrapper | undefined
-const source = { host_key: 'codex' as const, native_name: 'research', source_path: '.codex/agents/research.toml' }
-function setup(roleCount = 1, missing = false) {
-  setActivePinia(createPinia())
-  const roles = ['researcher', 'writer', 'auditor'].slice(0, roleCount)
-  vi.mocked(callOperation).mockImplementation(async operation => operation === 'project.get' ? { id: 1, project_dir: '/fixture' } : { data: { project_id: 1, project_dir: '/fixture', items: missing ? [] : [{ project_id: 1, source_ref: source, fields: { ...blankAgent(), name: 'research' } }] } })
-  vi.mocked(apiFetch).mockImplementation(async path => path.endsWith('/workflow-templates') ? { templates: [{ key: 'fixture', name: 'Fixture workflow' }] } : { spec: { agent_requirements: roles.map(role => ({ role, purpose: `Work as ${role}`, requirement: 'required' })), steps: [{ id: 'work', title: 'Work', extensions_json: {} }] } })
-  wrapper = mount(ScheduleEditor, { props: { projectId: 1, job: { kind: 'fixture', name: 'Fixture', template_key: 'fixture', cron_expr: '* * * * *', timezone: 'UTC', enabled: false, execution_json: { project_dir: '/fixture', agents: missing ? { researcher: { source_ref: source } } : {}, host_key: 'codex' } } as never }, global: { stubs: { teleport: true } } })
+let rows: ScheduledJob[]
+const saved = (): ScheduledJob => ({ id: 1, project_id: 1, kind: 'stable', name: 'Review', template_key: 'fixture', goal: 'Saved goal', cron_expr: '0 9 * * *', timezone: 'UTC', enabled: false,
+  last_request_id: null, last_run_at: null, last_run_status: null, next_run_at: null,
+  inputs_json: { goal: 'Original context', count: 0, flag: false, unknown: [{ exact: true }], ref: 'credential_safe' },
+  execution_json: { project_dir: '/fixture', host_key: 'codex', mcp_config_ref: { path: '/fixture/routes.toml', sha256: 'a'.repeat(64) } },
+})
+function mountEditor(job: ScheduledJob | null = saved()) {
+  wrapper = mount(ScheduleEditor, { props: { projectId: 1, job }, global: { stubs: { teleport: true, RouterLink: { template: '<a><slot /></a>' } } } })
   return wrapper
 }
-const namedSource = (name: string) => ({ ...source, native_name: name, source_path: `.codex/agents/${name}.toml` })
-function legacySchedule(execution: object) {
-  setActivePinia(createPinia())
-  vi.mocked(callOperation).mockImplementation(async operation => operation === 'project.get' ? { id: 1, project_dir: '/fixture' } : { data: { project_id: 1, project_dir: '/fixture', items: ['mapped', 'legacy', 'new'].map(name => ({ project_id: 1, source_ref: namedSource(name), fields: { ...blankAgent(), name } })) } })
-  vi.mocked(apiFetch).mockImplementation(async path => path.endsWith('/workflow-templates') ? { templates: [{ key: 'fixture', name: 'Fixture' }] } : { spec: { agent_requirements: ['delivery_agent', 'review_agent'].map(role => ({ role, requirement: 'required' })), steps: [] } })
-  wrapper = mount(ScheduleEditor, { props: { projectId: 1, job: { kind: 'fixture', name: 'Fixture', template_key: 'fixture', cron_expr: '* * * * *', timezone: 'UTC', enabled: false, execution_json: { project_dir: '/fixture', host_key: 'codex', ...execution } } as never }, global: { stubs: { teleport: true } } })
-  return wrapper
-}
-afterEach(() => { wrapper?.unmount(); vi.resetAllMocks() })
-describe('workflow-specific schedule agents', () => {
-  it('uses the configured project folder for a new automation without a directory control', async () => {
-    const w = setup(); w.unmount()
-    wrapper = mount(ScheduleEditor, { props: { projectId: 1, job: null }, global: { stubs: { teleport: true } } })
-    await flushPromises()
-    expect(wrapper.text()).toContain('Project folder: /fixture')
-    expect(wrapper.text()).not.toContain('Working directory')
-    const save = vi.spyOn(useSchedulesStore(), 'save').mockResolvedValue()
-    await wrapper.get('form').trigger('submit'); await flushPromises()
-    expect(save).toHaveBeenCalledWith(1, expect.objectContaining({ execution_json: { project_dir: '/fixture' } }))
+function field(label: string) { return wrapper!.findAllComponents(UiFormField).find(row => row.props('label') === label)! }
+async function submit() { await wrapper!.get('form').trigger('submit'); await flushPromises() }
+async function mode(value: string) { await wrapper!.get(`input[type="radio"][value="${value}"]`).setValue(true) }
+function confirmation(title: string) { return wrapper!.findAllComponents(UiConfirmDialog).find(dialog => dialog.props('title') === title)! }
+
+beforeEach(() => {
+  setActivePinia(createPinia()); rows = []
+  vi.mocked(apiFetch).mockImplementation(async path => path.endsWith('/schedules') ? rows : { templates: [{ key: 'fixture', name: 'Fixture workflow' }, { key: 'second', name: 'Second workflow' }] })
+  vi.mocked(callOperation).mockImplementation(async (operation, args) => {
+    if (operation === 'project.get') return { id: args.project_id, project_dir: '/fixture' }
+    if (operation === 'schedule.set') { rows = [{ ...args, id: 1 } as unknown as ScheduledJob]; return { data: rows[0] } }
+    throw new Error(`Unexpected operation ${operation}`)
   })
-  it('retains a different saved target on unrelated edits and changes it only after confirmation', async () => {
-    const w = setup(); await flushPromises()
-    vi.mocked(callOperation).mockImplementation(async (operation, args) => operation === 'project.get'
-      ? { id: 1, project_dir: '/configured' }
-      : { data: { project_id: 1, project_dir: args.project_dir, items: [] } })
-    const job = w.getComponent(ScheduleEditor).props('job'); w.unmount()
-    wrapper = mount(ScheduleEditor, { props: { projectId: 1, job }, global: { stubs: { teleport: true } } }); await flushPromises()
-    expect(wrapper.text()).toContain('Automation uses a different folder')
-    const save = vi.spyOn(useSchedulesStore(), 'save').mockResolvedValue()
-    await wrapper.get('form').trigger('submit'); await flushPromises()
-    expect(save.mock.calls[0]![1].execution_json?.project_dir).toBe('/fixture')
-    await wrapper.findAll('button').find(button => button.text() === 'Use project folder')!.trigger('click')
-    const confirm = wrapper.getComponent(UiConfirmDialog)
-    expect(confirm.props('modelValue')).toBe(true)
-    expect(save).toHaveBeenCalledTimes(1)
-    confirm.vm.$emit('update:modelValue', false); await flushPromises()
-    expect(wrapper.text()).toContain('Project folder: /fixture')
-    await wrapper.findAll('button').find(button => button.text() === 'Use project folder')!.trigger('click')
-    confirm.vm.$emit('confirm'); await flushPromises()
-    await wrapper.get('form').trigger('submit'); await flushPromises()
-    expect(save.mock.calls[1]![1].execution_json?.project_dir).toBe('/configured')
-    expect(wrapper.text()).not.toContain('Automation uses a different folder')
+})
+afterEach(() => { wrapper?.unmount(); wrapper = undefined; vi.resetAllMocks() })
+
+describe('simple automation setup', () => {
+  it('renders simple controls and saves/reopens a prompt through the store without execution', async () => {
+    mountEditor(null); await useSchedulesStore().refresh(1); await flushPromises()
+    expect(wrapper!.findAll('input[type="radio"]').map(input => input.attributes('value'))).toEqual(['workflow', 'prompt'])
+    expect(wrapper!.findAllComponents(UiSelect)).toHaveLength(0)
+    expect(wrapper!.findAll('textarea')).toHaveLength(1)
+    expect(wrapper!.text()).not.toMatch(/Project folder:|Execution options|Agent app|JSON|role/i)
+    await field('Name').getComponent(UiInput).get('input').setValue('Daily prompt')
+    await field('Goal / instructions').getComponent(UiTextarea).get('textarea').setValue('Inspect\nand report')
+    await wrapper!.get('input[type="checkbox"]').setValue(true); await submit()
+    expect(rows[0]).toMatchObject({ name: 'Daily prompt', goal: 'Inspect\nand report', template_key: null, enabled: true, execution_json: null, inputs_json: null })
+    expect(rows[0]!.kind).toMatch(/^automation-/); expect(useSchedulesStore().items[0]).toEqual(rows[0])
+    wrapper!.unmount(); mountEditor(rows[0]); await flushPromises()
+    expect(wrapper!.get('input[value="prompt"]').element).toHaveProperty('checked', true)
+    expect(field('Goal / instructions').getComponent(UiTextarea).props('modelValue')).toBe('Inspect\nand report')
+    expect(vi.mocked(callOperation).mock.calls.map(([operation]) => operation)).toEqual(['project.get', 'schedule.set', 'project.get'])
   })
-  it('keeps folderless projects usable as disabled drafts and blocks enabling with an actionable message', async () => {
-    const w = setup(); w.unmount()
+  it('retains migrated context, identity, schedule and native settings across edits and mode/workflow changes', async () => {
+    const job = saved(); mountEditor(job); await useSchedulesStore().refresh(1); await flushPromises()
+    await field('Name').getComponent(UiInput).get('input').setValue('Renamed')
+    field('Workflow').getComponent(UiSelect).vm.$emit('update:modelValue', 'second'); await submit()
+    expect(rows[0]).toMatchObject({ kind: 'stable', name: 'Renamed', goal: job.goal, cron_expr: job.cron_expr, timezone: job.timezone, inputs_json: job.inputs_json, execution_json: job.execution_json, template_key: 'second' })
+    expect(apiFetch).toHaveBeenCalledTimes(3)
+    await mode('prompt'); await submit()
+    expect(rows[0]).toMatchObject({ template_key: null, goal: job.goal, inputs_json: job.inputs_json })
+    await mode('workflow'); await submit(); expect(field('Workflow').props('error')).toContain('Choose a workflow')
+    field('Workflow').getComponent(UiSelect).vm.$emit('update:modelValue', 'fixture'); await submit()
+    expect(rows[0]!.inputs_json).toEqual(job.inputs_json)
+  })
+  it('saves incomplete disabled drafts and links required goal errors when enabling', async () => {
+    mountEditor(null); await flushPromises(); await submit()
+    expect(rows[0]).toMatchObject({ enabled: false, goal: null, template_key: null })
+    await wrapper!.get('input[type="checkbox"]').setValue(true); await submit()
+    const goal = field('Goal / instructions'); expect(goal.props('error')).toContain('Enter a goal')
+    expect(goal.get('textarea').attributes('aria-describedby')?.split(' ')).toContain(goal.get('[role="alert"]').attributes('id'))
+    expect(vi.mocked(callOperation).mock.calls.filter(([operation]) => operation === 'schedule.set')).toHaveLength(1)
+  })
+  it('preserves edits through catalog failure/retry and canonical save rejection/recovery', async () => {
+    vi.mocked(apiFetch).mockRejectedValueOnce(new Error('Catalog offline')); mountEditor(); await flushPromises()
+    expect(wrapper!.text()).toContain('Catalog offline')
+    await wrapper!.findAll('button').find(button => button.text() === 'Retry workflows')!.trigger('click'); await flushPromises()
+    vi.spyOn(useSchedulesStore(), 'save').mockRejectedValueOnce(new Error('Canonical setup rejected'))
+    await field('Goal / instructions').getComponent(UiTextarea).get('textarea').setValue('Retained goal'); await submit()
+    expect(wrapper!.text()).toContain('Canonical setup rejected')
+    expect(field('Goal / instructions').getComponent(UiTextarea).props('modelValue')).toBe('Retained goal')
+    await submit(); expect(wrapper!.emitted('saved')).toHaveLength(1)
+  })
+  it('locks pending controls, refuses duplicate submission/close and recovers from rejection', async () => {
+    mountEditor(); await flushPromises(); let reject!: (cause: Error) => void
+    vi.mocked(callOperation).mockImplementation(async () => new Promise((_, fail) => { reject = fail }))
+    await wrapper!.get('form').trigger('submit'); await flushPromises()
+    expect(useSchedulesStore().saving).toBe(true)
+    expect(wrapper!.findAll('form input, form textarea, form button').every(input => input.attributes('disabled') !== undefined)).toBe(true)
+    await wrapper!.get('form').trigger('submit')
+    await wrapper!.findAll('button').find(button => button.text() === 'Cancel')!.trigger('click')
+    expect(wrapper!.emitted('close')).toBeUndefined()
+    reject(new Error('Save failed')); await flushPromises()
+    expect(useSchedulesStore().saving).toBe(false); expect(wrapper!.text()).toContain('Save failed')
+    expect(vi.mocked(callOperation).mock.calls.filter(([operation]) => operation === 'schedule.set')).toHaveLength(1)
+  })
+  it('permits folderless drafts and shows actionable setup for enabling', async () => {
     vi.mocked(callOperation).mockResolvedValue({ id: 1, project_dir: null, project_folder_issue: 'Select a binding once in project setup.' })
-    wrapper = mount(ScheduleEditor, { props: { projectId: 1, job: null }, global: { stubs: { teleport: true } } }); await flushPromises()
-    const save = vi.spyOn(useSchedulesStore(), 'save').mockResolvedValue()
-    await wrapper.get('form').trigger('submit'); await flushPromises()
-    expect(save.mock.calls[0]![1].execution_json).toBeNull()
-    await wrapper.get('input[type="checkbox"]').setValue(true)
-    await wrapper.get('form').trigger('submit'); await flushPromises()
-    expect(save).toHaveBeenCalledTimes(1)
-    expect(wrapper.text()).toContain('Select a binding once in project setup')
+    mountEditor(null); await flushPromises(); expect(wrapper!.text()).toContain('Open setup'); await submit()
+    expect(wrapper!.emitted('saved')).toHaveLength(1)
+    await wrapper!.get('input[type="checkbox"]').setValue(true); await submit()
+    expect(wrapper!.text()).toContain('Select a binding once in project setup.'); expect(wrapper!.emitted('saved')).toHaveLength(1)
   })
-  it('cannot save a prior project automation after the project changes', async () => {
-    const w = setup(); await flushPromises()
-    const save = vi.spyOn(useSchedulesStore(), 'save').mockResolvedValue()
-    await w.setProps({ projectId: 2 }); await flushPromises()
-    expect(w.find('form').exists()).toBe(false)
-    expect(w.text()).toContain('Reopen this automation from the current project')
-    expect(save).not.toHaveBeenCalled()
-    expect(w.text()).not.toContain('/fixture')
+  it('hides paths and retains a legacy folder fence until explicit confirmation', async () => {
+    vi.mocked(callOperation).mockResolvedValue({ id: 1, project_dir: '/configured' }); mountEditor(); await flushPromises()
+    const save = vi.spyOn(useSchedulesStore(), 'save').mockResolvedValue(); expect(wrapper!.text()).not.toMatch(/\/configured|\/fixture/)
+    await submit(); expect(save.mock.calls[0]![1].execution_json?.project_dir).toBe('/fixture')
+    await wrapper!.findAll('button').find(button => button.text() === 'Use project folder')!.trigger('click')
+    confirmation('Use the configured project folder?').vm.$emit('update:modelValue', false); await flushPromises()
+    await submit(); expect(save.mock.calls[1]![1].execution_json?.project_dir).toBe('/fixture')
+    await wrapper!.findAll('button').find(button => button.text() === 'Use project folder')!.trigger('click')
+    confirmation('Use the configured project folder?').vm.$emit('confirm'); await flushPromises()
+    await submit(); expect(save.mock.calls[2]![1].execution_json?.project_dir).toBe('/configured')
   })
-  it('reloads changed source/workflow props and rejects an earlier workflow response without repeated reads on selection', async () => {
-    let resolveOld!: (value: unknown) => void
-    vi.mocked(apiFetch).mockImplementation(async path => path.endsWith('/old') ? new Promise(resolve => { resolveOld = resolve })
-      : { spec: { agent_requirements: [{ role: 'current_role' }], steps: [] } })
-    vi.mocked(callOperation).mockImplementation(async (_operation, args) => ({ data: { project_id: args.project_id, project_dir: args.project_dir, items: [{ source_ref: source, fields: blankAgent() }] } }))
-    wrapper = mount(ScheduleAgentSelectors, { props: { projectId: 1, projectDir: '/fixture', templateKey: 'old', hostKey: 'codex', agents: {}, assignments: {} } })
-    await wrapper.setProps({ projectId: 2, projectDir: '/second', templateKey: 'current' }); await flushPromises()
-    resolveOld({ spec: { agent_requirements: [{ role: 'stale_role' }], steps: [] } }); await flushPromises()
-    expect(wrapper.text()).toContain('current_role'); expect(wrapper.text()).not.toContain('stale_role')
-    expect(callOperation).toHaveBeenLastCalledWith('projectAgent.list', expect.objectContaining({ project_id: 2, project_dir: '/second' }))
-    const reads = vi.mocked(callOperation).mock.calls.length
-    await wrapper.setProps({ agents: { current_role: { source_ref: source } } }); await flushPromises()
-    expect(callOperation).toHaveBeenCalledTimes(reads); expect(apiFetch).toHaveBeenCalledTimes(2)
+  it('protects close and beforeunload, and ignores late catalog responses after project change', async () => {
+    let resolve!: (value: unknown) => void; vi.mocked(apiFetch).mockReturnValueOnce(new Promise(done => { resolve = done }))
+    mountEditor(); await flushPromises(); await field('Goal / instructions').getComponent(UiTextarea).get('textarea').setValue('Unsaved')
+    const event = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(event); expect(event.defaultPrevented).toBe(true)
+    await wrapper!.findAll('button').find(button => button.text() === 'Cancel')!.trigger('click')
+    expect(confirmation('Discard automation edits?').props('modelValue')).toBe(true)
+    confirmation('Discard automation edits?').vm.$emit('update:modelValue', false); await flushPromises()
+    expect(field('Goal / instructions').getComponent(UiTextarea).props('modelValue')).toBe('Unsaved')
+    await wrapper!.setProps({ projectId: 2 }); resolve({ templates: [{ key: 'late', name: 'Wrong project' }] }); await flushPromises()
+    expect(wrapper!.find('form').exists()).toBe(false); expect(wrapper!.text()).not.toContain('Wrong project'); expect(rows).toHaveLength(0)
   })
-  it('clears workflow roles when the selection is cleared while an earlier read is pending', async () => {
-    let resolve!: (value: unknown) => void
-    vi.mocked(apiFetch).mockReturnValueOnce(new Promise(done => { resolve = done }))
-    vi.mocked(callOperation).mockResolvedValue({ data: { project_id: 1, project_dir: '/fixture', items: [] } })
-    wrapper = mount(ScheduleAgentSelectors, { props: { projectId: 1, projectDir: '/fixture', templateKey: 'old', hostKey: 'codex', agents: {}, assignments: {} } })
-    await wrapper.setProps({ templateKey: '' }); await flushPromises()
-    resolve({ spec: { agent_requirements: [{ role: 'stale_role' }], steps: [] } }); await flushPromises()
-    expect(wrapper.text()).not.toContain('stale_role')
-    expect(wrapper.text()).not.toContain('Loading workflow roles')
-  })
-  it.each([1, 3])('renders %i declared roles and saves explicit native references with no inline prompts', async count => {
-    const w = setup(count); await flushPromises()
-    const pickers = w.getComponent(ScheduleAgentSelectors).findAllComponents(UiSelect)
-    expect(pickers.length).toBe(count === 1 ? 1 : 4)
-    for (const picker of pickers.slice(0, count)) {
-      picker.vm.$emit('update:modelValue', agentIdentity(source))
-      await flushPromises()
-    }
+  it('keeps the nested unsaved confirmation body, focus and dismissal inside the shared overlay stack', async () => {
+    wrapper = mount(ScheduleEditor, { attachTo: document.body, props: { projectId: 1, job: saved() } })
     await flushPromises()
-    const save = vi.spyOn(useSchedulesStore(), 'save').mockResolvedValue()
-    await w.get('form').trigger('submit'); await flushPromises()
-    const args = save.mock.calls[0]![1]
-    expect(Object.keys(args.execution_json!.agents!)).toHaveLength(count)
-    for (const agent of Object.values(args.execution_json!.agents!)) expect(agent).toEqual({ host_key: 'codex', source_ref: source })
-    expect(w.text()).not.toContain('Delivery agent')
+    const goal = document.querySelector<HTMLTextAreaElement>('textarea')!
+    goal.value = 'Unsaved goal'
+    goal.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    const cancel = Array.from(document.querySelectorAll<HTMLButtonElement>('.ui-dialog__footer button')).find(button => button.textContent?.trim() === 'Cancel')!
+    const openConfirmation = async () => { cancel.focus(); cancel.click(); await flushPromises() }
+    await openConfirmation()
+    const frames = () => Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"]'))
+    const confirm = frames().at(-1)!
+    expect(frames()).toHaveLength(2)
+    expect(confirm.querySelector('.ui-dialog__header')!.textContent).not.toContain('Your unsaved')
+    expect(confirm.querySelector('.ui-dialog__body')!.textContent).toContain('Your unsaved automation changes will be lost.')
+    expect(confirm.contains(document.activeElement)).toBe(true)
+    const confirmAction = confirm.querySelector<HTMLButtonElement>('.ui-dialog__footer button:last-child')!
+    confirmAction.focus()
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }))
+    expect(document.activeElement).toBe(confirm.querySelector('[aria-label="Close dialog"]'))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(frames()).toHaveLength(1)
+    expect(document.activeElement).toBe(cancel)
+    expect(goal.value).toBe('Unsaved goal')
+    await openConfirmation()
+    document.querySelectorAll<HTMLElement>('.ui-dialog__overlay').item(1).click()
+    await flushPromises()
+    expect(frames()).toHaveLength(1)
+    expect(document.activeElement).toBe(cancel)
+    expect(wrapper!.emitted('close')).toBeUndefined()
+    await openConfirmation()
+    frames().at(-1)!.querySelector<HTMLButtonElement>('.ui-dialog__footer button:last-child')!.click()
+    await flushPromises()
+    expect(wrapper!.emitted('close')).toHaveLength(1)
   })
-  it('keeps externally missing assignments visible and rejects save until reassigned', async () => {
-    const w = setup(1, true); await flushPromises()
-    expect(w.text()).toContain('Saved source missing or invalid')
-    const save = vi.spyOn(useSchedulesStore(), 'save')
-    await w.get('form').trigger('submit'); await flushPromises()
-    expect(save).not.toHaveBeenCalled()
-    expect(w.text()).toContain('Reassign it before saving')
-    expect(w.getComponent(ScheduleAgentSelectors).getComponent(UiSelect).props('options')).toContainEqual(expect.objectContaining({ label: expect.stringContaining('(missing or invalid)') }))
-  })
-  it('preserves unsupported existing host execution choices', async () => {
-    const old = setup(); await flushPromises(); const job = old.getComponent(ScheduleEditor).props('job')!; old.unmount()
-    const execution = { project_dir: '/fixture', host_key: 'claude', delivery_agent: { name: 'existing', instructions: 'Keep native host route', profile: 'saved', provider: 'saved-provider', model: 'saved-model' }, mcp_config_ref: { path: '/fixture/routes.toml', sha256: 'a'.repeat(64) } }
-    wrapper = mount(ScheduleEditor, { props: { projectId: 1, job: { ...job, execution_json: execution } as never }, global: { stubs: { teleport: true } } }); await flushPromises()
-    const w = wrapper
-    expect(w.text()).toContain('claude execution settings are preserved')
-    expect(w.findAll('textarea')).toHaveLength(0)
-    expect(w.text()).toContain('Profile saved')
-    expect(w.text()).toContain('/fixture/routes.toml')
-    const save = vi.spyOn(useSchedulesStore(), 'save').mockResolvedValue()
-    await w.get('form').trigger('submit'); await flushPromises()
-    expect(save).toHaveBeenCalledWith(1, expect.objectContaining({ execution_json: execution }))
-  })
-  it.each(['delivery_agent', 'review_agent'] as const)('preserves the canonical %s choice and both saved representations when unchanged', async role => {
-    const execution = { project_dir: '/fixture', host_key: 'codex', agents: { [role]: { source_ref: namedSource('mapped'), model: 'mapped-model' } }, [role]: { source_ref: namedSource('legacy'), model: 'legacy-model', provider: 'saved-provider', profile: 'saved-profile' } }
-    const w = legacySchedule(execution); await flushPromises()
-    const picker = w.getComponent(ScheduleAgentSelectors).findAllComponents(UiSelect)[role === 'delivery_agent' ? 0 : 1]!
-    expect(picker.props('modelValue')).toBe(agentIdentity(namedSource('legacy')))
-    const save = vi.spyOn(useSchedulesStore(), 'save').mockResolvedValue()
-    await w.get('form').trigger('submit'); await flushPromises()
-    expect(save.mock.calls[0]![1].execution_json).toEqual(execution)
-  })
-  it.each(['delivery_agent', 'review_agent'] as const)('makes explicit %s source selection authoritative over legacy inline settings', async role => {
-    const settings = { model: 'retained-model', model_reasoning_effort: 'high', provider: 'saved-provider', profile: 'saved-profile' }
-    const other = role === 'delivery_agent' ? 'review_agent' : 'delivery_agent'
-    const untouched = { name: 'Other host', instructions: 'Preserve other host route', host_key: 'claude', model: 'other-model' }
-    const w = legacySchedule({ [role]: { name: 'Old role', instructions: 'Old copied prompt', ...settings }, [other]: untouched }); await flushPromises()
-    const picker = w.getComponent(ScheduleAgentSelectors).findAllComponents(UiSelect)[role === 'delivery_agent' ? 0 : 1]!
-    picker.vm.$emit('update:modelValue', agentIdentity(namedSource('new'))); await flushPromises()
-    const save = vi.spyOn(useSchedulesStore(), 'save').mockResolvedValue()
-    await w.get('form').trigger('submit'); await flushPromises()
-    const saved = save.mock.calls[0]![1].execution_json!
-    expect(saved[role]).toBeUndefined()
-    expect(saved.agents?.[role]).toEqual({ ...settings, host_key: 'codex', source_ref: namedSource('new') })
-    expect(saved[other]).toEqual(untouched)
-  })
-  it.each(['delivery_agent', 'review_agent'] as const)('clears and reassigns %s without leaving a legacy override or revealing a shadowed agent', async role => {
-    const w = legacySchedule({ agents: { [role]: { source_ref: namedSource('mapped') } }, [role]: { source_ref: namedSource('legacy') } }); await flushPromises()
-    const picker = w.getComponent(ScheduleAgentSelectors).findAllComponents(UiSelect)[role === 'delivery_agent' ? 0 : 1]!
-    const save = vi.spyOn(useSchedulesStore(), 'save').mockResolvedValue()
-    picker.vm.$emit('update:modelValue', ''); await flushPromises()
-    await w.get('form').trigger('submit'); await flushPromises()
-    let saved = save.mock.calls[0]![1].execution_json!
-    expect(saved[role]).toBeUndefined(); expect(saved.agents?.[role]).toBeUndefined()
-    picker.vm.$emit('update:modelValue', agentIdentity(namedSource('new'))); await flushPromises()
-    await w.get('form').trigger('submit'); await flushPromises()
-    saved = save.mock.calls[1]![1].execution_json!
-    expect(saved[role]).toBeUndefined(); expect(saved.agents?.[role]?.source_ref).toEqual(namedSource('new'))
+  it('guards route/project changes and keeps edits when navigation is cancelled', async () => {
+    const job = saved(); const page = defineComponent({ setup() { const route = useRoute(); return () => h(ScheduleEditor, { projectId: Number(route.params.id), job }) } })
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/projects/:id/schedules', component: page }, { path: '/other', component: { template: '<p>Other</p>' } }] })
+    await router.push('/projects/1/schedules'); await router.isReady()
+    wrapper = mount(RouterView, { global: { plugins: [router], stubs: { teleport: true } } }); await flushPromises()
+    await field('Goal / instructions').getComponent(UiTextarea).get('textarea').setValue('Unsaved')
+    const navigation = router.push('/projects/2/schedules'); await flushPromises()
+    confirmation('Discard automation edits?').vm.$emit('update:modelValue', false); await navigation; await flushPromises()
+    expect(router.currentRoute.value.params.id).toBe('1'); expect(field('Goal / instructions').getComponent(UiTextarea).props('modelValue')).toBe('Unsaved')
+    const leave = router.push('/other'); await flushPromises(); confirmation('Discard automation edits?').vm.$emit('confirm'); await leave; await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/other'); expect(rows).toHaveLength(0)
   })
 })

@@ -6,7 +6,7 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 
 | Component | Notes |
 |---|---|
-| `UiButton` | variants: primary, secondary, ghost, danger; sizes sm/md/lg; loading; iconLeft/Right |
+| `UiButton` | variants: primary, secondary, ghost, danger; sizes sm/md/lg; loading; iconLeft/Right; `align="start"` for menu choices (default/icon-only centered) |
 | `UiIcon` | MIT Heroicons-backed icon registry for reusable control icons |
 | `UiIconButton` | square; aria-label required |
 | `UiButtonGroup` | segmented |
@@ -19,8 +19,8 @@ A flat, honest list of what's shipped, what's coming, and what to migrate.
 | `UiRange` | tick marks optional |
 | `UiSecretInput` | reveal + copy |
 | `UiFormField` | label + control + help/error/dirty |
-| `UiDialog` | viewport portal; shared dialog/drawer stack; focus trap; H/B/F; optional `layout="detail"` with bounded 880px frame and scrolling body; centered 32px close target / 16px icon |
-| `UiConfirmDialog` | builds on Dialog |
+| `UiDialog` | viewport portal; shared dialog/drawer stack; focus trap; H/B/F; `describedBy` links body-owned descriptions; optional `layout="detail"` with bounded 880px frame and scrolling body; centered 32px close target / 16px icon |
+| `UiConfirmDialog` | builds on Dialog; accessible explanation and supplemental slot in body above cancel/confirm actions |
 | `UiSidePanel` | left/right; 480/720 |
 | `UiDropdownMenu` | keyboard arrows; sections; optional `portalTarget` for viewport-clamped actions inside scrolling lists |
 | `UiPopover` | trigger or external-element anchor; viewport flip/clamp, scroll/resize placement and focus return |
@@ -96,13 +96,22 @@ visual acceptance.
 
 ## Shipped — domain (`ui/src/components/domain/`)
 
+Both Home headers mount the feature-owned `views/home/DeliveryCapacityControl`.
+Its compact trigger shows server-reported admitted tasks against the persisted
+local-daemon limit, independent of the visible task list or selected project.
+The anchored `UiPopover` uses the shared form/input/buttons for a bounded integer
+draft and explicit Save. Dismiss discards the draft; failed saves retain it;
+success uses the operation's durable readback. Lowering below running work
+explains that current tasks continue. Visibility-aware polling and Home Refresh
+reload counts through the same local-admin read, with no project override.
+
 | Component | Notes |
 |---|---|
 | `ProjectPageHeader` | project-aware title, breadcrumbs, utility action slot, and route chrome |
 | `ProviderMark` | canonical provider logo/initial mark backed by `provider-presentation.json`; shared by Connections and Plugins |
 | `AgentUsageSummary` | Shared fixed Input / Cache / Output renderer; accepts `metrics: AgentStatsMetrics \| null`, `compact?: boolean` and `active?: boolean`. Default mode keeps the analytics headline scale. Compact mode reserves three equal columns with fixed label, number and mini-canvas slots; values never wrap or toggle charts. Numbers retain task/ticket lifetime totals; bars show recent reported increments from that scope. Active charts use the existing shared feed clock, completed charts retain their last window. Missing measurements use N/A; measured zero stays 0. Exact focus/hover values remain available when a compact number is elided. Input uses paired `remaining_input`, Cache uses `cache_read`, Output uses `output`; raw input stays inclusive. No receipt parsing, subtotal calculation or polling. Work callers enforce automatic parent-task eligibility. |
 | `UsageTrace` | Shared canvas bar renderer. `lib/liveUsage.ts` owns paired counter mapping and one-minute reported-delta buckets. Shared default is 20 bars; `barCount` accepts 5–60, `endAt` supplies the active clock or defaults to the last observation. Empty and first-reading states retain a fixed baseline; the first reading adds only a neutral tick. Unknown intervals and negative corrections stay gaps. Each metric has a separate zero-based scale; bars remain at most 2 CSS pixels wide. Chart values are accessible by title/ARIA. Resize, theme and pixel-density changes redraw; unmount releases observers/listeners. No SVG, animation, per-card timer or visibility decision based on sample count. |
-| `ActiveExecutionLine` / `WorkTime` | Shared actual current / explicitly Last execution identity using canonical `agentIdentity.ts` host marks and readable recorded roles. `WorkTime` formats the canonical `work_duration` interval union for the execution line and Scheduled Runs, independent of lifecycle dates, automation and tokens. Partial coverage shows `Partial`; unavailable history shows `N/A`, and recorded zero shows `0m`. Only an exact matching owned live identity extends the total once after `observed_at` on the existing Work heartbeat; stopped, closed or disconnected observations freeze without per-card timers. Last retains full recorded provenance in its accessible title. `owner` is ordinary assignment when no occurrence exists. Card footers reserve 56px and center the 32px mark and text; the blocker badge sits outside the bottom edge. Task and shared ticket details use the same Work time presentation without duplicate Started facts or separate current-call token totals. |
+| `ActiveExecutionLine` / `WorkTime` | Shared actual current / explicitly Last execution identity using canonical `agentIdentity.ts` host marks and readable recorded roles. `WorkTime` formats the canonical `work_duration` interval union for the execution line and Scheduled Runs, independent of lifecycle dates, automation and tokens. Partial coverage shows `Partial`; unavailable history shows `N/A`, and recorded zero shows `0m`. Only an exact matching owned live identity extends the total once after `observed_at` on the existing Work heartbeat; stopped, closed or disconnected observations freeze without per-card timers. Last retains full recorded provenance in its accessible title. Focusable instances disclose the full role/model or fallback owner in a hover/focus tooltip without expanding their layout slot. `owner` is ordinary assignment when no occurrence exists. Card footers reserve 56px and center the 32px mark and text; the blocker badge sits outside the bottom edge. Task and shared ticket details use the same Work time presentation without duplicate Started facts or separate current-call token totals. |
 | `UsageLiveIndicator` | Small recording dot and Live label for actual active executions with a healthy shared feed; Connecting/Reconnecting stays neutral. Consumes the Work page's existing subscription through `useUsageFeed`, opens no connection and owns no timer. Hidden for last execution or ordinary assignment. |
 
 `AgentUsageSummary` also accepts `inline` with `compact` for the contextual task
@@ -110,22 +119,27 @@ header: labels stay above fixed number/canvas columns in the same shared rendere
 This changes arrangement only; reporting intervals, scope and chart ownership
 remain unchanged.
 
-Project Automations reuses this inline compact renderer in its Runs table.
+Project Automations reuses this inline compact renderer for historical task runs.
 `SchedulesTab` owns exactly two shared underline tabs, Automations and Runs;
 `ScheduleEditor` uses the existing dialog/form primitives for inert drafts and
 validated activation through `schedule.set/toggle/remove`. Removing a schedule
-preserves existing runs. One effective workflow read supplies named input fields
-and agent roles. `ScheduleWorkflowInputs` uses the existing form primitives for
-scalar/options inputs and bounded declared properties/lists (three nested levels,
-30 properties per object, 100 displayed list items). Opaque values and unknown
-saved keys stay intact; missing required setup permits a disabled draft and blocks
-enabling. Execution settings are a readable summary with project-agent selectors.
-Workflow changes and leaving an edited form require discard confirmation.
+preserves existing runs. The editor offers Workflow / Prompt, a workflow selector
+only in Workflow mode, one Goal / instructions textarea, schedule/timezone and
+Enabled. Switching to Prompt clears only the workflow reference; goal and saved
+input context remain. Saved input context and native settings survive unrelated
+edits without schema fields or role selectors. The selected project supplies the
+folder; a missing-folder setup link and explicit legacy-folder reconciliation
+remain actionable without displaying directories. Incomplete disabled drafts
+stay saveable. Leaving an edited form requires discard confirmation.
 `ScheduledRuns` reads the paginated `schedule.runs`
-projection and links its actual `task_key` to the existing Work graph. The
-schedules store patches canonical task usage through `usageUpdates`, including
-updates received during pending history reads; it never sums receipts or polls
-rows. Table geometry is fixed across empty, measured, unknown and retained usage.
+request-first projection, displaying actual request state, result, duration and
+native session identity. Native usage is measured main-thread Input (including
+cache), Cache and Output; absent counters show Not reported. Only actual
+`task_key` values link to the Work graph, and only actual plans offer run actions.
+The schedules store patches canonical historical task usage through
+`usageUpdates`, including updates received during pending history reads, while
+keeping native main-thread evidence separate from linked task totals. It never
+sums receipts or polls rows.
 
 ## Shipped — app-level primitives (`ui/src/components/`)
 
@@ -156,6 +170,20 @@ add workflow-specific UI unless the generic renderer is insufficient and the
 exception is signed off.
 
 ## View decomposition pattern
+
+Both Home pages mount `views/home/ActiveTaskList.vue`, whose single
+`useActiveTasks` scope supplies the lifecycle projection and feed to
+`ActiveTaskRow.vue`. Continuous rows use shared lifetime usage, execution,
+priority and elapsed renderers, fixed list-wide zones and container breakpoints.
+Manual rows reserve the same geometry without automated usage; current/Last
+identity and Live retain the canonical feed semantics. Each row links directly
+to the selected task graph. Global rows include canonical project names;
+project rows omit redundant names. `HomeConnectionsSection.vue` renders a compact
+directory after Usage using the existing scoped account owners; it does not probe
+providers. Its 48px entries use normalized 24px provider marks, concise account
+names and canonical status icons with accessible labels. Identical provider/account
+names retain stable account numbers. Hover/focus discloses full identity and state;
+Manage connections in the header reaches the existing global or project owner.
 
 Both Home pages share `views/home/AgentActivitySection.vue`: Input / Cache /
 Output headlines, date controls, daily chart with input detail, and an accessible
@@ -220,9 +248,11 @@ retain the same column widths in browsers with classic scrollbars.
 Home and Overview receive usage updates through the shared `usageUpdates`
 SSE transport. `useAgentStats` owns statistics requests, date/group/scope filters
 and stale-response protections, including manual and filter refreshes. Their
-30-second page polls retain ticket counts and, on project Home, overview data;
-they do not refresh usage. Work consumers retain lifetime task/ticket projections,
-independent of these Home date filters.
+30-second project Home polling retains overview metadata and accounts; it does
+not refresh usage. The removed ticket/portfolio summaries no longer poll.
+Global Active/Archived/All visibility remains an aggregate Usage control beside
+the date controls. Active-task membership and lifetime figures do not depend on
+these filters. Work consumers retain the same lifetime task/ticket projections.
 
 Work reuses the compact `AgentUsageSummary` on Board cards, the graph task
 header, individual ticket nodes, task details, and `TrackerTicketDetailContent`
@@ -290,6 +320,13 @@ readback; editing a definition does not execute work or rewrite frozen runs.
 Generic presets remain reusable guidance, separate from the live project list.
 The shared shell uses direct primary, Setup and enabled-domain links; see the
 [route and wrapper map](./ui-page-layout-map.md).
+`lib/stackos/pluginPage.ts` owns supported generic page sections for both
+`nav.ts` and `PluginDomainView`. Only a nonempty supported page declaration
+creates a generic sidebar destination; section-only navigation metadata does
+not. Finance retains its dedicated console. Integration-only packages and
+Publishing stay in Plugins/Connections, with their saved information and files
+in Library. Direct plugin routes without a page offer setup and scoped Library
+links.
 
 Connections is the reference implementation:
 
@@ -349,7 +386,7 @@ test for cross-feature wiring, loading, and error-state truthfulness.
 | `views/accounts/TelegramProxySetupSection.vue` | Conditional disclosure of Telegram's manifest-backed proxy fields. | Keep proxy validation and normalization in the daemon's Account proxy contract. |
 | `views/ConnectionsView.vue` | Route/query synchronization, Account attachment, section composition, and project-bound communication/ingress dispatch remain. | Keep Account secret lifecycle in the reusable Accounts panel; do not fold it back into the project page. |
 | `views/connections/useConnectionCredentials.ts` | Lists attached Accounts, filters reusable unattached Accounts, and owns attach/detach confirmation state. | Keep global Account mutation and project communication topology out. |
-| `views/TaskTrackerView.vue` | Owns Board/map route history, independent map-task and popup identities, task-index loading and focused detail dispatch. `TrackerBoardPanel` renders seven fixed status columns, 224px anchored-footer cards and API-projected whole-task usage; `TaskTrackerCommandPanel` renders the unified `TrackerBoardFilterBar` on Board and groups task identity/Automated, status/completion, inline shared usage and Task details on Graph. The shared page-header switch stays top right in both views. `TrackerBoardFilterBar` measures only the chip region with a cleaned-up ResizeObserver, reserves controls and +N overflow space, and uses `BoardFilterEditor` for visible and overflow clause edits through the URL owner's commands. `TicketGraphNode` renders its own projected ticket usage; `graphModel.ts` owns its 328 × 224 geometry and prerequisite-title resolution. `TrackerTaskDetailDialog` owns one persistent `UiDialog layout="detail"` for task/ticket inspection and a six-row scrolling ticket list. `TrackerTicketDetailContent` is shared with the map's `TrackerTicketDetailPanel` side inspector. `useTrackerExecutionContexts` owns context/artifact pagination; `useTrackerGraphSession` composes focused graph loading, viewport and the existing project/task event stream. Pure projections and filters remain in `task-tracker/viewModel.ts`. | Keep Board filters independent from map selection. Task state and ticket-status containment filters have separate meanings. Graph visibility never changes whole-task values/trends. The task-index rollup supplies actual prerequisite titles only when all open work waits on dependencies; active execution suppresses the Board badge. No per-card requests or receipt summing. Shared current/Last identity stays independent of lifecycle status. Preserve task drafts, disclosure state and scroll during ticket inspection. No standalone Stories or Tickets modes. |
+| `views/TaskTrackerView.vue` | Owns Board/map route history, independent map-task and popup identities, project-local Board preferences, task-index loading and focused detail dispatch. `boardFilters.ts` guards one localStorage record per project and owns explicit update/remove/clear commands plus one-shot Home entry intents. `TrackerBoardPanel` renders seven fixed status columns, 224px anchored-footer cards and API-projected whole-task usage; `TaskTrackerCommandPanel` renders the unified `TrackerBoardFilterBar` on Board and groups task identity/Automated, status/completion, inline shared usage and Task details on Graph. The shared page-header switch stays top right in both views. `TrackerBoardFilterBar` measures only the chip region with a cleaned-up ResizeObserver, reserves controls and +N overflow space, and uses `BoardFilterEditor` for visible and overflow clause edits through the preference owner's commands. `TicketGraphNode` renders its own projected ticket usage; `graphModel.ts` owns its 328 × 224 geometry and prerequisite-title resolution. `TrackerTaskDetailDialog` owns one persistent `UiDialog layout="detail"` for task/ticket inspection and a six-row scrolling ticket list. `TrackerTicketDetailContent` is shared with the map's `TrackerTicketDetailPanel` side inspector. `useTrackerExecutionContexts` owns context/artifact pagination; `useTrackerGraphSession` composes focused graph loading, viewport and the existing project/task event stream. Pure projections and filters remain in `task-tracker/viewModel.ts`. | Keep Board filters independent from map selection. Task state and ticket-status containment filters have separate meanings. Graph visibility never changes whole-task values/trends. The task-index rollup supplies actual prerequisite titles only when all open work waits on dependencies; active execution suppresses the Board badge. No per-card requests or receipt summing. Shared current/Last identity stays independent of lifecycle status. Preserve task drafts, disclosure state and scroll during ticket inspection. No standalone Stories or Tickets modes. |
 | `views/connections/credentialPresentation.ts` | Provider/auth grouping, labels, connection status, and account presentation. | Keep provider catalog knowledge here; do not mix in communication topology facets. |
 | `views/connections/formatters.ts` | Communication profile, route, surface, Slack, ingress, and shared Account presentation exports. | Split another provider-specific facet only when it gains a distinct contract or test lifecycle. |
 | `views/finance/FinanceRequestDialog.vue` | Contextual safe request read, original source and status at the Finance origin. | Preserve exact request/project/workspace identity, stale-read rejection and explicit unavailable/retry states. Never infer a tracker task or execute recovery from inspection. |
@@ -383,9 +420,13 @@ Work Board card edits use `useTaskBoardEdits` for bounded priority or
 same-column neighbor intents, with one pending edit per conflicting column,
 optimistic presentation, confirmed-rejection rollback and canonical index
 reconciliation. Save errors, uncertain outcomes and saved-but-stale reads stay
-distinct. `TaskTrackerView` shares one project-index read and one trailing latest
-read across event bursts and explicit refreshes; background reads retain the
-board and leave focused loading with its existing readers. `TrackerBoardPanel`
+distinct. `TaskTrackerView` owns project-index revision coverage shared by save
+responses and live batch events. Covered responses and in-flight reads are
+reused; stale responses obtain the required revision. Unversioned events and
+explicit refreshes retain one trailing latest read. Background reconciliation
+keeps the board interactive without toggling global loading; initial/manual
+refresh still shows loading. Structured batch members scope focused reads and
+highlights; graph/detail readers reuse their own revision coverage. `TrackerBoardPanel`
 scopes disabled edit controls to pending columns and consumes `UiReorderList`
 with `UiReorderHandle` for each column. The shared primitive accepts arbitrary
 items through `itemKey`/`itemLabel`, optional meaningful `itemVersion`,
@@ -415,8 +456,8 @@ slots and 56px footer stay fixed.
 Applied Board chips reuse `BoardFilterEditor` in a popover anchored to the clicked
 chip, including Completed's existing choices. Overflow stays mounted while its
 editor is open; responsive repartition re-anchors to the visible chip or surviving
-overflow trigger and preserves draft/focus. Filter/Display controls and the URL
-owner retain their existing commands. The primitive specs use a plain non-task
+overflow trigger and preserves draft/focus. Filter/Display controls call the
+existing project-local preference owner's explicit commands. The primitive specs use a plain non-task
 list; pointer feel, edge-scroll feel and rendered alignment remain operator-owned
 manual checks.
 

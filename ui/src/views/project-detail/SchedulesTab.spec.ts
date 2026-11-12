@@ -6,7 +6,7 @@ import SchedulesTab from './SchedulesTab.vue'
 import ScheduleEditor from './ScheduleEditor.vue'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
 import RunAbortAction from '@/components/domain/RunAbortAction.vue'
-import { UiFormField, UiInput } from '@/components/ui'
+import { UiFormField, UiTextarea } from '@/components/ui'
 import { useSchedulesStore } from '@/stores/schedules'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 import { WorkDurationOutCoverage } from '@/api'
@@ -16,7 +16,7 @@ vi.mock('@/lib/task-tracker/liveEvents', () => ({ openTrackerStatusStream: vi.fn
 const ORIG_FETCH = globalThis.fetch
 let wrapper: VueWrapper | null = null
 const job = {
-  id: 1, project_id: 1, kind: 'stable-key', name: 'Daily learning review', template_key: 'core.review',
+  id: 1, project_id: 1, kind: 'stable-key', name: 'Daily learning review', template_key: 'core.review', goal: 'Review project learning',
   cron_expr: '0 22 * * *', timezone: 'America/Los_Angeles', enabled: true,
   next_run_at: '2026-11-10T06:00:00Z', last_run_at: null, last_run_status: null,
   inputs_json: { source: 'fixture' }, execution_json: { project_dir: '/synthetic/project', host_key: 'codex' },
@@ -75,7 +75,7 @@ describe('Automations and Runs', () => {
     store.runs = [
       { ...run, request_id: 1, schedule_name: 'Very long review name '.repeat(10), task_key: 'workflow-123', status: 'complete', agent_stats: metrics, duration_seconds: 0, work_duration: { coverage: WorkDurationOutCoverage.complete, total_seconds: 0, recorded_intervals: 1, unavailable_intervals: 0, observed_at: null, endpoint_at: null } },
       { ...run, request_id: 2, schedule_name: 'Unknown usage', task_key: null, status: 'failed', agent_stats: null, duration_seconds: null, work_duration: null, started_at: '2026-11-01T00:00:00Z', ended_at: '2026-11-09T00:00:00Z' },
-    ]
+    ] as unknown as typeof store.runs
     await w.get('#cs-tab-runs').trigger('click')
     expect(w.findAllComponents(AgentUsageSummary)[0].props('metrics')).toEqual(metrics)
     expect(w.get('a').attributes('href')).toBe('/projects/1/tasks?view=graph&task=workflow-123')
@@ -83,8 +83,8 @@ describe('Automations and Runs', () => {
     expect(w.get('[aria-label="Work time: 0m"]').text()).toBe('0m')
     expect(w.get('[aria-label="Work time: N/A · Unavailable"]').text()).toBe('N/A')
     expect(w.get('table').text()).toContain('N/A')
-    expect(w.get('table').text()).toContain('Work unavailable')
-    expect(w.get('table').findAll('canvas')).toHaveLength(6)
+    expect(w.get('table').text()).toContain('Not reported')
+    expect(w.get('table').findAll('canvas')).toHaveLength(3)
     await w.get('input[aria-label="Search runs"]').setValue('Unknown')
     expect(w.get('table').findAll('tbody tr')).toHaveLength(1)
     expect(w.find('a').exists()).toBe(false)
@@ -145,7 +145,7 @@ describe('Automations and Runs', () => {
     expect(w.findComponent(ScheduleEditor).exists()).toBe(false)
   })
 
-  it('keeps missing workflow inputs in the editor with a local field error and makes no write', async () => {
+  it('requires a goal rather than workflow business inputs before enabling', async () => {
     mockFetch([job])
     const w = await mountTab()
     await w.get('table [data-dropdown-trigger]').trigger('click')
@@ -153,13 +153,32 @@ describe('Automations and Runs', () => {
     await flushPromises()
     const save = vi.spyOn(useSchedulesStore(), 'save')
     const editor = w.getComponent(ScheduleEditor)
-    const source = editor.findAllComponents(UiFormField).find(field => field.props('label') === 'Source')!
-    await source.getComponent(UiInput).get('input').setValue('')
+    const goal = editor.findAllComponents(UiFormField).find(field => field.props('label') === 'Goal / instructions')!
+    await goal.getComponent(UiTextarea).get('textarea').setValue('')
     await editor.get('form').trigger('submit')
     await flushPromises()
-    expect(source.props('error')).toContain('required')
-    expect(editor.find('textarea').exists()).toBe(false)
+    expect(goal.props('error')).toContain('Enter a goal')
+    expect(editor.findAll('textarea')).toHaveLength(1)
     expect(save).not.toHaveBeenCalled()
+  })
+
+  it('renders request-only native result/usage and never replaces it with linked task counters', async () => {
+    const w = await mountTab(); const store = useSchedulesStore()
+    store.runs = [
+      { request_id: 101, schedule_name: 'Prompt run', template_key: null, run_plan_id: null, task_key: null, status: 'resolved', request_status: 'resolved', summary: '<b>Actual result</b>', duration_seconds: 12,
+        native_execution: { thread_id: 'native-session-101' }, usage: { status: 'measured', measured: { input: 100, output: 0, cache_read: null } } },
+      { request_id: 102, schedule_name: 'Linked native run', run_plan_id: 12, task_key: 'workflow-12', status: 'failed', request_status: 'failed', error: 'Native launch failed', native_execution: { thread_id: 'native-session-102' }, agent_stats: null, usage: null },
+    ] as unknown as typeof store.runs
+    store.applyUsage({ tasks: [{ key: 'workflow-12', agent_stats: agentStatsFixture().totals, active_execution: null }], tickets: [] })
+    await w.get('#cs-tab-runs').trigger('click')
+    expect(w.findAllComponents(AgentUsageSummary)).toHaveLength(0)
+    const first = w.get('tbody tr')
+    expect(first.text()).toContain('Prompt'); expect(first.text()).toContain('Resolved'); expect(first.text()).toContain('Request #101')
+    expect(first.findAll('dd').map(item => item.text())).toEqual(['100', 'Not reported', '0'])
+    expect(first.find('b').exists()).toBe(false); expect(first.text()).toContain('<b>Actual result</b>')
+    expect(first.find('a').exists()).toBe(false); expect(first.findComponent(RunAbortAction).exists()).toBe(false)
+    expect(w.get('table').text()).toContain('Native launch failed')
+    expect(w.get('table').findAll('a').map(link => link.attributes('href'))).toEqual(['/projects/1/tasks?view=graph&task=workflow-12'])
   })
 
   it('does not present a failed initial read as an empty history', async () => {

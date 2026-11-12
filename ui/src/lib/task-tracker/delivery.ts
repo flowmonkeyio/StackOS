@@ -7,12 +7,15 @@ export interface TaskDeliveryState {
 }
 
 /** The persisted handoff identifies the delivery method even after execution ends. */
-export function isAutomaticDeliveryTask(task: Pick<TrackerTask, 'metadata_json'> | null | undefined): boolean {
+type DeliveryTask = { delivery?: TaskDeliveryState | null; metadata_json?: TrackerTask['metadata_json'] }
+
+export function isAutomaticDeliveryTask(task: DeliveryTask | null | undefined): boolean {
   return taskDeliveryState(task) !== null
 }
 
 /** Execution state is separate from the task and workflow lifecycle. */
-export function taskDeliveryState(task: Pick<TrackerTask, 'metadata_json'> | null | undefined): TaskDeliveryState | null {
+export function taskDeliveryState(task: DeliveryTask | null | undefined): TaskDeliveryState | null {
+  if (task?.delivery !== undefined) return task.delivery
   const metadata = task?.metadata_json
   if (!isRecord(metadata)) return null
   const delivery = metadata.delivery

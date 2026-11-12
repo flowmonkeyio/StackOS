@@ -11,7 +11,7 @@ from typing import (
     overload,
 )
 
-from sqlalchemy import or_
+from sqlalchemy import func, or_, true
 from sqlalchemy import select as sa_select
 from sqlmodel import (
     col,
@@ -19,6 +19,7 @@ from sqlmodel import (
 )
 
 from stackos.db.models import (
+    Project,
     RunPlan,
     RunPlanStatus,
     RunPlanStep,
@@ -51,6 +52,10 @@ from stackos.repositories.tracker.agent_stats import (
 from stackos.repositories.tracker.counts import query_ticket_counts
 from stackos.repositories.tracker.schema import (
     ActiveExecutionOut,
+    ActiveTaskOut,
+    ActiveTaskProjectOut,
+    ActiveTasksOut,
+    TaskDeliveryStateOut,
     TrackerAgentStatsOut,
     TrackerBriefOut,
     TrackerChangedOut,
@@ -74,11 +79,13 @@ from stackos.repositories.tracker.schema import (
 )
 from stackos.repositories.tracker.utils import (
     ACTIVATES_DEPENDENCY_TYPE,
+    DEFAULT_TRACKER_KEY,
     TERMINAL_TRACKER_STATUSES,
     _is_closed_tracker_scope,
     _is_dependency_satisfied,
     _is_terminal_tracker_status,
     _required_id,
+    _utcnow,
 )
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
 from stackos.repositories.tracker.workflow_graph_analysis import (
@@ -98,6 +105,56 @@ def _execution_out(
 
 class TrackerQueryMixin:
     """Tracker read/query helpers and response shaping."""
+
+    def active_tasks(
+        self, *, project_id: int | None = None, limit: int = 100, after_id: int | None = None
+    ) -> ActiveTasksOut:
+        """Bounded Home membership with the same batched facts as the task index."""
+        from stackos.repositories.projects import ProjectRepository
+
+        if project_id is not None:
+            ProjectRepository(self._s).require_available(project_id)
+        rows = list(
+            self._s.exec(
+                select(TrackerTask, Project)
+                .join(TaskTracker, col(TaskTracker.id) == col(TrackerTask.tracker_id))
+                .join(Project, col(Project.id) == col(TrackerTask.project_id))
+                .where(
+                    col(TaskTracker.key) == DEFAULT_TRACKER_KEY,
+                    col(TrackerTask.status) == TrackerItemStatus.IN_PROGRESS,
+                    col(TrackerTask.id) > after_id if after_id is not None else true(),
+                    col(Project.id) == project_id
+                    if project_id is not None
+                    else col(Project.is_active).is_(True),
+                    func.json_type(Project.cleanup_json).is_(None)
+                    | (func.json_type(Project.cleanup_json) == "null"),
+                )
+                .order_by(col(TrackerTask.id))
+                .limit(limit + 1)
+            ).all()
+        )
+        more = len(rows) > limit
+        rows = rows[:limit]
+        facts = self._task_out_many(
+            None, [task for task, _project in rows], include_ticket_summary=True
+        )
+        items = [
+            ActiveTaskOut.model_validate(
+                {
+                    **task.model_dump(),
+                    "project": ActiveTaskProjectOut.model_validate(project),
+                    "delivery": TaskDeliveryStateOut.from_metadata(task.metadata_json),
+                }
+            )
+            for task, (_row, project) in zip(facts, rows, strict=True)
+        ]
+        return ActiveTasksOut(
+            scope="project" if project_id is not None else "global",
+            project_id=project_id,
+            as_of=_utcnow(),
+            items=items,
+            next_cursor=items[-1].id if more else None,
+        )
 
     def agent_stats(
         self,
@@ -963,7 +1020,7 @@ class TrackerQueryMixin:
         durations: dict[int, WorkDurationOut] = {}
         metrics = query_task_agent_stats(
             self._s,
-            tracker_id=_required_id(tracker_id, "tracker"),
+            tracker_id=tracker_id,
             task_ids={row.id for row in rows if row.id is not None},
             work_durations=durations,
             task_keys={row.id: row.key for row in rows if row.id is not None},
@@ -985,7 +1042,6 @@ class TrackerQueryMixin:
         tracker_id: int | None,
         tasks: list[TrackerTask],
     ) -> dict[int | None, TrackerTaskTicketSummaryOut]:
-        tracker_id = _required_id(tracker_id, "tracker")
         task_ids = {task.id for task in tasks if task.id is not None}
         if not task_ids:
             return {}
@@ -1002,7 +1058,7 @@ class TrackerQueryMixin:
                     TrackerTicket.key,
                     TrackerTicket.title,
                 ).where(
-                    TrackerTicket.tracker_id == tracker_id,
+                    TrackerTicket.tracker_id == tracker_id if tracker_id is not None else true(),
                     col(TrackerTicket.task_id).in_(task_ids),
                 )
             )

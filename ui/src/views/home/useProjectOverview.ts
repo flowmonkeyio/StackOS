@@ -2,26 +2,19 @@ import { onBeforeUnmount, ref, type Ref } from 'vue'
 import type {
   SchemaAccountOut,
   SchemaAuthStatusOut,
-  SchemaWorkflowTemplateExtensionListOut,
-  SchemaWorkflowTemplateListOut,
 } from '@/api'
 import { apiFetch, formatApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
 import { useProjectsStore } from '@/stores/projects'
 import {
-  configuredWorkflows,
-  type ConfiguredWorkflow,
   type OverviewPage,
   type PortfolioProject,
-  type RecordedTask,
 } from './ticketOverview'
 
 export function useProjectOverview(projectId: Ref<number>) {
   const projects = useProjectsStore()
   const project = ref<PortfolioProject | null>(null)
   const accounts = ref<SchemaAccountOut[]>([])
-  const workflows = ref<ConfiguredWorkflow[]>([])
-  const task = ref<RecordedTask | null>(null)
   const loading = ref(true)
   const errors = ref<Record<string, string>>({})
   let generation = 0
@@ -57,18 +50,6 @@ export function useProjectOverview(projectId: Ref<number>) {
         },
       ),
       read(
-        'workflows',
-        Promise.all([
-          callOperation<SchemaWorkflowTemplateExtensionListOut>('workflowExtension.list', {
-            project_id: id,
-          }),
-          apiFetch<SchemaWorkflowTemplateListOut>(`/api/v1/projects/${id}/workflow-templates`),
-        ]),
-        ([extensions, catalog]) => {
-          workflows.value = configuredWorkflows(extensions.extensions, catalog.templates)
-        },
-      ),
-      read(
         'work',
         callOperation<OverviewPage<PortfolioProject>>('project.portfolio', {
           project_id: id,
@@ -77,12 +58,11 @@ export function useProjectOverview(projectId: Ref<number>) {
         }),
         (page) => {
           projects.reconcileProjectMetadata(page.items)
-          project.value = page.items[0] ?? null
-          task.value = project.value?.latest_task ?? null
+          project.value = projects.isProjectDeleted(id) ? null : page.items[0] ?? null
         },
       ),
     ])
     if (request === generation) loading.value = false
   }
-  return { project, accounts, workflows, task, loading, errors, load }
+  return { project, accounts, loading, errors, load }
 }

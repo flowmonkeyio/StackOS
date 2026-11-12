@@ -8,7 +8,7 @@ from typing import Any, Literal, NoReturn
 from pydantic import ConfigDict, Field
 from sqlmodel import Session, select
 
-from stackos.db.models import ScheduledJob, TaskTracker
+from stackos.db.models import TaskTracker
 from stackos.host_mcp.adapters.codex_definition import AgentFields, AgentPatch
 from stackos.host_mcp.project_agents import (
     AgentDefinition,
@@ -59,7 +59,6 @@ class ProjectAgentUpdateInput(ProjectAgentGetInput):
 def saved_agent_references(
     session: Session,
     project_id: int,
-    project_dir: str,
     source_ref: AgentSourceRef,
 ) -> list[dict[str, Any]]:
     """Inspect editable assignments only; immutable task/run snapshots are history."""
@@ -88,22 +87,6 @@ def saved_agent_references(
     ).all():
         if matches((tracker.config_json or {}).get("delivery")):
             references.append({"kind": "project_assignment", "tracker_id": tracker.id})
-    for job in session.exec(
-        select(ScheduledJob)
-        .where(ScheduledJob.project_id == project_id)
-        .execution_options(populate_existing=True)
-    ).all():
-        execution = job.execution_json or {}
-        saved_dir = execution.get("project_dir")
-        if saved_dir is not None:
-            try:
-                if str(Path(saved_dir).resolve()) != project_dir:
-                    continue
-            except (OSError, RuntimeError, TypeError, ValueError):
-                # Unknown scope cannot establish that a name reference is unrelated.
-                pass
-        if matches(execution):
-            references.append({"kind": "schedule", "id": job.id})
     return references
 
 
@@ -129,9 +112,7 @@ def _service(inp: ProjectAgentScope, ctx: MCPContext) -> ProjectAgentService:
             continue
     if set(matching) != {inp.project_id}:
         raise ProjectAgentError("missing_scope")
-    service.references = lambda ref: saved_agent_references(
-        ctx.session, inp.project_id, str(service.root), ref
-    )
+    service.references = lambda ref: saved_agent_references(ctx.session, inp.project_id, ref)
     return service
 
 

@@ -256,6 +256,93 @@ class TrackerTaskOut(BaseModel):
     )
 
 
+class TaskDeliveryStateOut(BaseModel):
+    """Public handoff facts, excluding frozen agents, prompts and native paths."""
+
+    status: Literal["queued", "running", "stopped", "complete"]
+    ticketKey: str | None = None
+    reason: str | None = None
+
+    @classmethod
+    def from_metadata(cls, metadata: dict[str, Any] | None) -> TaskDeliveryStateOut | None:
+        delivery = (metadata or {}).get("delivery")
+        if not isinstance(delivery, dict):
+            return None
+
+        def nonempty(value: Any) -> bool:
+            return isinstance(value, str) and bool(value.strip())
+
+        if not isinstance(delivery.get("status"), str) or delivery["status"] not in {
+            "queued",
+            "running",
+            "stopped",
+            "complete",
+        }:
+            return None
+        if not nonempty(delivery.get("job_ref")):
+            return None
+        for role in ("delivery_agent", "review_agent"):
+            agent = delivery.get(role)
+            if not isinstance(agent, dict) or not all(
+                nonempty(agent.get(field)) for field in ("name", "instructions")
+            ):
+                return None
+        return cls.model_validate(
+            {
+                "status": delivery["status"],
+                "ticketKey": delivery["ticket_key"].strip()
+                if nonempty(delivery.get("ticket_key"))
+                else None,
+                "reason": delivery["reason"].strip()
+                if delivery["status"] == "stopped" and nonempty(delivery.get("reason"))
+                else None,
+            }
+        )
+
+
+class ActiveTaskProjectOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    slug: str
+    domain: str
+    is_active: bool
+    updated_at: datetime
+
+
+class ActiveTaskOut(BaseModel):
+    """Whitelisted task-index projection; identity is (project_id, key)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    key: str
+    title: str
+    goal: str
+    status: TrackerItemStatus
+    priority_key: str
+    owner: str | None
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+    project: ActiveTaskProjectOut
+    delivery: TaskDeliveryStateOut | None
+    ticket_summary: TrackerTaskTicketSummaryOut | None
+    agent_stats: AgentStatsMetricsOut | None
+    active_execution: ActiveExecutionOut | None
+
+
+class ActiveTasksOut(BaseModel):
+    scope: Literal["project", "global"]
+    project_id: int | None
+    as_of: datetime
+    items: list[ActiveTaskOut]
+    next_cursor: int | None = None
+
+
 class TrackerDependencyOut(BaseModel):
     id: int
     ticket_key: str

@@ -312,13 +312,14 @@ def operation_specs():
         ),
         operation_spec(
             name="schedule.runs",
-            summary="Page actual scheduled workflows and their canonical task usage.",
+            summary="Page scheduled requests, native results and optional workflow links.",
             input_model=ScheduleRunsInput,
             output_model=Page[ScheduledRunOut],
             handler=_schedule_runs,
-            purpose="Inspect linked scheduled executions, including history after removal.",
+            purpose="Inspect prompt-only and workflow executions, including removed schedules.",
             returns=(
-                "Skipped ticks create no history row. Task status and usage remain canonical.",
+                "Skipped ticks create no row. Request-only runs retain native identity, state "
+                "and measured usage; historical linked task usage remains canonical.",
             ),
             examples=(
                 OperationExample(
@@ -402,12 +403,11 @@ def operation_specs():
             purpose="Use this for explicit local-admin recurring job setup.",
             prerequisites=(
                 "Use a stable kind/key; set replaces the complete configuration.",
-                "Enabling requires name, IANA timezone, existing workflow, concrete inputs "
-                "and execution_json with an existing project_dir and configured suitable roles.",
-                "Use agents to bind declared workflow roles to project source_ref selections; "
-                "step_agent_assignments maps template step IDs to roles when selection "
-                "is ambiguous. "
-                "Codex schedules store references, never copied source instructions.",
+                "Enabling requires name, goal, IANA timezone, the selected project folder "
+                "and a ready native host. An optional template_key selects an existing workflow.",
+                "The project main agent resolves workflow inputs and roles. execution_json "
+                "accepts only an optional host_key, MCP route and saved-folder migration fence; "
+                "no delivery/reviewer instructions or model pins are inherited.",
                 "Strict preflight is read-only; it creates no request, run plan or task. "
                 "Disabled incomplete drafts remain inert. Normal grants and approvals still apply.",
             ),
@@ -421,19 +421,7 @@ def operation_specs():
                         "name": "Weekly review",
                         "timezone": "America/Los_Angeles",
                         "template_key": "core.project-memory-review",
-                        "inputs_json": {},
-                        "execution_json": {
-                            "project_dir": "/work/project",
-                            "agents": {
-                                "project-memory-review": {
-                                    "source_ref": {
-                                        "host_key": "codex",
-                                        "native_name": "memory-reviewer",
-                                        "source_path": ".codex/agents/memory-reviewer.toml",
-                                    }
-                                }
-                            },
-                        },
+                        "goal": "Review project memory and report useful updates.",
                         "enabled": False,
                     },
                 ),

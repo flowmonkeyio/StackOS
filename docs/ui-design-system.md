@@ -57,8 +57,9 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
   project navigation scroll, above the theme control. All three are available
   without a project. Backups retains the global `/setup` route.
   Domain-specific surfaces are plugin contributions or generic resource links,
-  not new top-level product lanes. The root `/` is the project portfolio +
-  local system status; `/projects/:id` is the operations console (Home). See
+  not new top-level product lanes. The root `/` shows local system status and
+  active work across projects; `/projects/:id` is the project Home. Both retain
+  existing Usage followed by Connected tools. See
   [`ui-redesign-direction.md`](./ui-redesign-direction.md).
   There are no Attention, Activity, Execution, Catalog, Data & evidence,
   Settings, Diagnostics or Advanced navigation wrappers. Work owns contextual
@@ -85,6 +86,9 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
 
 **UiButton.** Default `secondary`. Reserve `primary` for the main permitted action on the surface: navigation, a local utility, or an explicitly registered setup/human-decision operation. `danger` is reserved for explicit local-admin revocation/destructive controls. Icon-only slots center the supplied icon in both axes; the button owns the hit target and the icon keeps its declared dimensions.
 
+Content defaults to centered. Use `align="start"` for full-width menu choices
+instead of competing justification utilities; icon-only buttons stay centered.
+
 **UiCard.** For real things such as projects, plugins, runs, resources, and integrations. **Never nested.** When you want a card inside a card, you want a `UiPanel` or a `UiSectionHeader` + plain divider.
 
 **UiSectionHeader.** Use for section titles inside a page, panel, or card. Keep actions in the action slot; they align right on desktop and wrap below the heading copy on narrow screens so titles and descriptions never squeeze into one-word columns.
@@ -95,12 +99,21 @@ When pending work disables every control, the dialog frame remains a
 programmatic focus target and contains Tab/Shift+Tab. The owning flow can move
 focus to the retained title when disabling the focused action; it does not
 enable close or another submission to keep keyboard focus inside.
+The top dialog also recovers focus to its frame after content disables or
+removes the active control. Tab and Shift+Tab recover into its
+enabled controls, preserving nested overlay ownership and final opener return.
 
 Use `layout="detail"` for stable reading/editing dialogs. This opt-in preset has height `min(880px, 100dvh - 48px)`, fixed header/footer regions and one flexible, vertically scrolling body with `min-height: 0`. Width still follows `size` (`lg` is 672px) and the viewport clamp. Long headings wrap to two lines with their full text available as the title; the body wraps long content and prevents horizontal overflow. The default content-sized dialog remains unchanged. A detail flow keeps one shell mounted while switching its internal content; the flow owns identity, retained reading/draft state and intentional focus, never the primitive.
 
 **UiSidePanel.** Right edge, 480px default, 720px for editors. Same H/B/F structure as dialog.
 
 Dialogs and side panels share `overlayStack.ts`: opening order owns layering and keyboard handling, only the top overlay handles Escape/Tab, and the body remains locked until the final overlay closes. Closing restores the opener; removing a lower overlay preserves the surviving overlay's final return target. Do not add local stacking wrappers around these primitives.
+
+`UiConfirmDialog` places its explanation and optional supplemental slot content
+in the body, between the title and actions. `UiDialog.describedBy` links an
+accessible description supplied by body content; ordinary dialog descriptions
+remain in the header. Confirmation actions and dismissal keep their existing
+flow ownership, including pending and unsaved-edit guards.
 
 **UiToast.** Top-right, 320px, auto-dismiss after 5s except `danger` (sticky). One queue, max 3 visible. Live region.
 

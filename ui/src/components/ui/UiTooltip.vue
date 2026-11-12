@@ -20,6 +20,7 @@ export interface UiTooltipProps {
 const props = withDefaults(defineProps<UiTooltipProps>(), {
   placement: 'top',
   openDelay: 350,
+  open: undefined,
 });
 
 const visible = ref(false);

@@ -8,7 +8,8 @@ import ProjectDeleteDialog from '@/components/ProjectDeleteDialog.vue'
 import { useProjectsStore, type Project } from '@/stores/projects'
 import { useToastsStore } from '@/stores/toasts'
 import HomeView from '@/views/HomeView.vue'
-import HomeProjectsSection from '@/views/home/HomeProjectsSection.vue'
+import ActiveTaskList from '@/views/home/ActiveTaskList.vue'
+import { activeTaskFixture, activeTasksFixture } from '@/views/home/activeTaskFixtures'
 import { portfolioFixture, ticketSummaryFixture } from '@/views/home/overviewFixtures'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 
@@ -125,8 +126,10 @@ it('removes the target from the actual Overview list and selector while a late p
   globalThis.fetch = vi.fn(async (input) => {
     const url = String(input)
     if (url.startsWith('/api/v1/projects?')) return json({ items: rows, next_cursor: null, total_estimate: rows.length })
-    if (url.includes('/project.portfolio/')) {
-      const page = { items: rows, next_cursor: null, total_estimate: rows.length }
+    if (url.includes('/project.portfolio/') || url.includes('/tracker.activeTasks')) {
+      const page = url.includes('tracker.activeTasks')
+        ? activeTasksFixture(null, rows.map(project => activeTaskFixture({ project_id: project.id, project: { ...project }, title: 'Fixture work' })))
+        : { items: rows, next_cursor: null, total_estimate: rows.length }
       if (deferPortfolio) return new Promise<Response>((resolve) => { completePortfolio = () => resolve(json(page)) })
       return json(page)
     }
@@ -145,7 +148,7 @@ it('removes the target from the actual Overview list and selector while a late p
     HomePortfolioOverview: true, TicketStatusChart: true,
   } } })
   await flushPromises()
-  const list = () => app.getComponent(HomeProjectsSection).get('table tbody').text()
+  const list = () => app.getComponent(ActiveTaskList).text()
   expect(list()).toContain('Alpha')
   deferPortfolio = true
   await app.getComponent(HomeView).findAll('button').find((button) => button.text() === 'Refresh')!.trigger('click')

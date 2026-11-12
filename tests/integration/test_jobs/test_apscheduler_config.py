@@ -17,6 +17,8 @@ def test_scheduler_has_default_and_long_executors(engine: object) -> None:
     assert isinstance(s._executors["default"], AsyncIOExecutor)
     assert isinstance(s._executors["long"], ThreadPoolExecutor)
     assert s._executors["long"]._pool._max_workers == 3
+    assert isinstance(s._executors["task-delivery"], ThreadPoolExecutor)
+    assert s._executors["task-delivery"]._pool._max_workers == 32
 
 
 def test_scheduler_has_sqlalchemy_default_jobstore_and_memory(engine: object) -> None:

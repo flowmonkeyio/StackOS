@@ -319,9 +319,8 @@ Source of truth: action spec/version and action-call audit row.
 ### F7. Inspect recorded work
 
 ```text
-Home tracked-work section
--> Work queue
--> select task or run plan
+Home active-task list
+-> selected task graph in Work
 -> see goal, source agent/host when known, current step, elapsed time,
    blockers, approvals, grants, and recent evidence
 -> open run / tracker / action detail for technical depth
@@ -333,8 +332,10 @@ The UI must say “the agent” or name the host/actor when known. It must not s
 Source of truth: tracker, run plans, runs, steps, approval requests, links, and
 evidence records. Human summaries may join durable relationships but must not
 invent intent or outcomes. A persisted running run or registered MCP host is
-not proof that an agent is currently working. Home shows the recorded task
-state and timestamp, with execution details available through Work and audit.
+not proof that an agent is currently working. Home includes only lifecycle
+in-progress tasks, retaining stopped and queued execution. Live requires an
+actual current invocation and a healthy shared feed. Rows preserve canonical
+task totals and current/Last execution; Work and audit provide technical depth.
 
 ### F8. Human approval or rejection
 
@@ -439,8 +440,8 @@ project database and user-owned state unless destructive cleanup is explicit.
 The primary project navigation answers four high-frequency human
 questions:
 
-1. **Home** — What calls were recorded, what is configured, and what tracked
-   work was updated recently?
+1. **Home** — What tasks are in progress, what usage was recorded, and what
+   tools are connected?
 2. **Work** — What work have agents created, what is active or blocked, and
    where are the results?
 3. **Automations** — What recurring work is configured and what ran?
@@ -448,13 +449,13 @@ questions:
 
 The project picker sits immediately above project navigation. A separate App
 footer holds Overview, Accounts, and Backups outside the project navigation
-scroll. Overview opens the root portfolio and system/lifecycle surface;
+scroll. Overview opens active work across projects and the system/lifecycle surface;
 Backups retains `/setup` and works without a project.
 
 **Setup** contains Connections, Spend, Agents and Plugins. A separate **Plugins**
 group links directly to enabled domain pages; Finance retains its existing
 destination and sections. Domain pages expose their workflows and canonical
-Library content. Home links configured workflows to exact workflow details.
+Library content and contextual workflow details.
 
 Work shows task results and history contextually. Finance inspects the original
 analysis request at its origin, including pending/failed requests without a
@@ -470,8 +471,8 @@ not authorization to restore removed destinations.
 
 | Surface | Primary inspection question | Valid human actions |
 | --- | --- | --- |
-| Overview | Is the local runtime ready, and how are tickets distributed across projects? | Inspect ticket statuses, filter projects, open work, refresh host status; lifecycle repair in the desktop app |
-| Home | What is the state of this project's tickets and setup? | Open status-filtered Work, inspect tracked work, open connections/exact workflow details |
+| Overview | Is the local runtime ready, and what work is in progress across projects? | Open task graphs, inspect existing Usage and connected tools, refresh host status; lifecycle repair in the desktop app |
+| Home | What work is in progress in this project? | Open task graphs, inspect existing Usage and connected tools, manage connections |
 | Work | What agent-created work exists and what state is it in? | Inspect, filter, navigate; explicit operator override only if authorized |
 | Automations | What recurring work is configured? | Inspect/edit schedules and inspect their recorded runs |
 | Library | What saved information and files exist? | Filter and inspect source records/files with exact typed identity |
@@ -486,23 +487,18 @@ Every page should answer one inspection question in its first viewport. Use
 master/detail for large inspectable collections. Keep metrics compact and do not
 push the list or selected object below promotional content.
 
-Overview and project Home show current ticket counts by the seven canonical
-tracker statuses. Counts cover the default tracker, including manual and
-workflow-mirrored tickets, without adding task or run totals. They are a current
-snapshot, not a historical trend or evidence of live agents. A blocker is a
-separate work condition, not an additional lifecycle status.
+Overview preserves its entire Local service panel, then shows Active tasks,
+existing Usage and Connected tools. Project Home starts with Active tasks,
+followed by the same existing scoped Usage and Connected tools. Continuous rows
+have fixed identity, task-usage and execution zones, thin separators, one
+execution status and no task cards, task IDs or drag controls. Layout changes
+at container breakpoints for every row together; long text is elided with
+accessible full values. Selecting a row opens its project/task graph directly.
 
-Both surfaces share one compact snapshot: a proportional stacked strip and
-seven equal-width status/count controls below it. Keep every status readable,
-including zeros; do not enlarge small segments or duplicate the counts in a
-separate legend. The current total belongs in the header, with freshness below.
-
-Global counts follow the selected active/archived/all project scope. Selecting
-a status shows contributing projects; project-level inspection opens Work with
-that status filter applied. Counts and filters are server-side, not derived
-from the visible page. Global inspection remains local-admin-only. Detailed
-action-call history stays on its existing audit surface rather than the home
-charts.
+Task lifetime figures and membership remain independent of aggregate Usage's
+date, grouping and global Active/Archived/All project controls. Global active
+reads remain local-admin-only. A blocker remains a separate work condition,
+not a new lifecycle status. Detailed action history stays on its audit surface.
 
 The full Local service section stays visible: runtime facts, all app connection
 cards, Refresh, Restart, Run doctor, and Install or repair. Browser host status

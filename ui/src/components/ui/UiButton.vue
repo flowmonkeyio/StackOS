@@ -29,6 +29,8 @@ export interface UiButtonProps {
   loading?: boolean
   /** Stretch to fill parent width. */
   block?: boolean
+  /** Content alignment; icon-only buttons always stay centered. */
+  align?: 'center' | 'start'
   /** Icon registry name for leading/trailing icon. */
   iconLeft?: string
   iconRight?: string
@@ -47,6 +49,7 @@ const props = withDefaults(defineProps<UiButtonProps>(), {
   disabled: false,
   loading: false,
   block: false,
+  align: 'center',
   iconLeft: undefined,
   iconRight: undefined,
   iconOnly: false,
@@ -97,7 +100,8 @@ const sizeClass = computed(
     :aria-busy="loading || undefined"
     :aria-label="ariaLabel"
     :class="[
-      'ui-button focus-ring relative inline-flex items-center justify-center font-medium rounded-sm transition-colors duration-fast ease-standard select-none whitespace-nowrap',
+      'ui-button focus-ring relative inline-flex items-center font-medium rounded-sm transition-colors duration-fast ease-standard select-none whitespace-nowrap',
+      align === 'start' && !iconOnly ? 'justify-start' : 'justify-center',
       variantClass,
       sizeClass,
       block && 'w-full',
