@@ -23,8 +23,17 @@ def _operation_data(response):
 
 @pytest.mark.parametrize("as_list", [False, True])
 @pytest.mark.parametrize("mode", ["raw", "compact", "ack"])
-@pytest.mark.parametrize(("field", "value"), [("title", None), ("title", []), ("effort", {})])
-def test_ticket_patch_scalar_constraints_rest(api, project_id, as_list, mode, field, value):
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("title", None),
+        ("title", []),
+        ("effort", {}),
+        ("metadata_json", []),
+        ("definition_of_done_json", None),
+    ],
+)
+def test_ticket_patch_value_constraints_rest(api, project_id, as_list, mode, field, value):
     engine = api.app.state.engine
     with Session(engine) as session:
         _seed_ticket_create_state(session, project_id)

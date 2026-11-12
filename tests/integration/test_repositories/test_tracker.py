@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
+from pydantic import BaseModel
 from sqlalchemy import event
 from sqlmodel import Session, select
 
@@ -75,9 +78,19 @@ def _seed_ticket_create_state(session: Session, project_id: int) -> None:
         ("goal", None),
         ("title", "x" * 301),
         ("effort", "x" * 41),
+        ("source_json", []),
+        ("definition_of_done_json", None),
+        ("constraints_json", None),
+        ("expected_changes_json", None),
+        ("allowed_paths_json", None),
+        ("completion_evidence_json", []),
+        ("context_json", []),
+        ("metadata_json", []),
+        ("constraints_json", ["Valid", {}]),
+        ("metadata_json", {"unsupported": {1, 2}}),
     ],
 )
-def test_ticket_patch_scalar_constraints_reject_before_mutation(
+def test_ticket_patch_value_constraints_reject_before_mutation(
     session, project_id, as_list, field, value
 ):
     _seed_ticket_create_state(session, project_id)
@@ -118,7 +131,7 @@ def test_ticket_patch_scalar_constraints_reject_before_mutation(
 
 
 @pytest.mark.parametrize("as_list", [False, True])
-def test_ticket_patch_scalar_constraints_preserve_nullable_and_cleaned_values(
+def test_ticket_patch_value_constraints_preserve_nullable_and_cleaned_values(
     session, project_id, as_list
 ):
     _seed_ticket_create_state(session, project_id)
@@ -142,6 +155,14 @@ def test_ticket_patch_scalar_constraints_preserve_nullable_and_cleaned_values(
         "blocker_reason": None,
         "outcome": None,
         "effort": None,
+        "source_json": None,
+        "definition_of_done_json": [],
+        "constraints_json": [],
+        "expected_changes_json": [],
+        "allowed_paths_json": [],
+        "completion_evidence_json": None,
+        "context_json": None,
+        "metadata_json": None,
     }
     before = _ticket_create_state(session.get_bind(), project_id)
     for dry_run in (True, False):
@@ -161,6 +182,118 @@ def test_ticket_patch_scalar_constraints_preserve_nullable_and_cleaned_values(
     ticket = repo.brief(project_id=project_id, ticket_key="existing").ticket
     for field, value in patch.items():
         assert getattr(ticket, field) == (value.strip() if isinstance(value, str) else value)
+
+
+@pytest.mark.parametrize("caller", ["single", "list", "patch"])
+@pytest.mark.parametrize(
+    ("field", "value"), [("metadata_json", []), ("definition_of_done_json", None)]
+)
+def test_ticket_json_rejection_survives_caller_commit(session, project_id, caller, field, value):
+    _seed_ticket_create_state(session, project_id)
+    repo = TrackerRepository(session)
+    before = _ticket_create_state(session.get_bind(), project_id)
+    patch = {"status": "in-progress", field: value}
+    error = None
+    result = None
+    try:
+        if caller == "single":
+            repo.update_ticket(project_id=project_id, ticket_key="existing", patch_json=patch)
+        elif caller == "list":
+            result = repo.update_ticket_list(
+                project_id=project_id,
+                updates_json=[{"ticket_key": "existing", "patch_json": patch}],
+            ).data
+        else:
+            repo.patch(project_id=project_id, patch_json={"tickets": {"existing": patch}})
+    except Exception as exc:
+        error = exc  # A real caller may catch a failure and later commit its other work.
+    session.commit()
+    assert _ticket_create_state(session.get_bind(), project_id) == before
+    if caller == "list":
+        assert result is not None and result.valid is False
+        assert result.results[0].error_data["field"] == field
+    else:
+        assert isinstance(error, ValidationError)
+        assert error.data["field"] == field
+
+
+@pytest.mark.parametrize("caller", ["single", "list", "patch"])
+def test_ticket_json_patch_validates_normalized_values(session, project_id, caller):
+    class Metadata(BaseModel):
+        observed_at: datetime
+
+    _seed_ticket_create_state(session, project_id)
+    repo = TrackerRepository(session)
+    observed_at = datetime(2026, 11, 12, tzinfo=UTC)
+    patch = {
+        "source_json": {1: ("source", observed_at)},
+        "definition_of_done_json": ("Required",),
+        "constraints_json": ("Preserve",),
+        "expected_changes_json": ("Updated",),
+        "allowed_paths_json": ("docs/task-tracker.md",),
+        "completion_evidence_json": {},
+        "context_json": {},
+        "metadata_json": Metadata(observed_at=observed_at),
+    }
+    before = _ticket_create_state(session.get_bind(), project_id)
+    preview = repo.update_ticket(
+        project_id=project_id, ticket_key="existing", patch_json=patch, dry_run=True
+    ).data
+    assert preview.valid
+    assert _ticket_create_state(session.get_bind(), project_id) == before
+    if caller == "single":
+        repo.update_ticket(project_id=project_id, ticket_key="existing", patch_json=patch)
+    elif caller == "list":
+        result = repo.update_ticket_list(
+            project_id=project_id,
+            updates_json=[{"ticket_key": "existing", "patch_json": patch}],
+        ).data
+        assert result.valid
+    else:
+        repo.patch(project_id=project_id, patch_json={"tickets": {"existing": patch}})
+    ticket = repo.brief(project_id=project_id, ticket_key="existing").ticket
+    assert ticket.source_json == {"1": ["source", observed_at.isoformat()]}
+    assert ticket.definition_of_done_json == ["Required"]
+    assert ticket.constraints_json == ["Preserve"]
+    assert ticket.expected_changes_json == ["Updated"]
+    assert ticket.allowed_paths_json == ["docs/task-tracker.md"]
+    assert ticket.completion_evidence_json == ticket.context_json == {}
+    assert ticket.metadata_json == {"observed_at": "2026-11-12T00:00:00Z"}
+    revision = session.exec(select(TrackerRevision).order_by(TrackerRevision.rev.desc())).first()
+    assert revision.patch_json["source_json"] == ticket.source_json
+    assert revision.patch_json["metadata_json"] == ticket.metadata_json
+
+
+@pytest.mark.parametrize("case", ["correction", "serialization"])
+def test_ticket_json_patch_rejects_normalization_errors(session, project_id, case):
+    class Context(BaseModel):
+        correction: dict[str, str | int]
+
+    class Metadata(BaseModel):
+        value: object
+
+    _seed_ticket_create_state(session, project_id)
+    before = _ticket_create_state(session.get_bind(), project_id)
+    patch = {"status": "in-progress"}
+    if case == "correction":
+        patch["context_json"] = Context(
+            correction={
+                "work_intent": "invalid",
+                "candidate_commit_sha": "a" * 40,
+                "target_attempt": 1,
+            }
+        )
+        message = "Invalid context_json.correction"
+    else:
+        patch["metadata_json"] = Metadata(value=object())
+        message = "invalid tracker ticket patch value"
+    for dry_run in (True, False):
+        with pytest.raises(ValidationError, match=message):
+            TrackerRepository(session).update_ticket(
+                project_id=project_id, ticket_key="existing", patch_json=patch, dry_run=dry_run
+            )
+        session.commit()
+        assert _ticket_create_state(session.get_bind(), project_id) == before
 
 
 @pytest.mark.parametrize("dry_run", [True, False])

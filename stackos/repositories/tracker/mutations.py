@@ -133,6 +133,16 @@ _TICKET_TEXT_PATCH_FIELDS = (
     "outcome",
     "effort",
 )
+_TICKET_JSON_PATCH_FIELDS = (
+    "source_json",
+    "definition_of_done_json",
+    "constraints_json",
+    "expected_changes_json",
+    "allowed_paths_json",
+    "completion_evidence_json",
+    "context_json",
+    "metadata_json",
+)
 
 
 class TrackerMutationMixin:
@@ -1536,16 +1546,7 @@ class TrackerMutationMixin:
             parent_key = patch_json["parent_ticket_key"]
             parent = self._ticket_by_key(tracker.id, str(parent_key)) if parent_key else None
             ticket.parent_ticket_id = parent.id if parent is not None else None
-        for field in (
-            "source_json",
-            "definition_of_done_json",
-            "constraints_json",
-            "expected_changes_json",
-            "allowed_paths_json",
-            "completion_evidence_json",
-            "context_json",
-            "metadata_json",
-        ):
+        for field in _TICKET_JSON_PATCH_FIELDS:
             if field in patch_json:
                 setattr(ticket, field, redact_secrets(_jsonable(patch_json[field])))
         if dependency_preview is not None:
@@ -1577,16 +1578,20 @@ class TrackerMutationMixin:
         """Validate without changing rows, timestamps, revisions or emitting events."""
         self._validate_ticket_patch_fields(patch_json)
         self._validate_workflow_mirror_ticket_patch_fields(ticket, patch_json)
-        for field in _TICKET_TEXT_PATCH_FIELDS:
+        for field in _TICKET_TEXT_PATCH_FIELDS + _TICKET_JSON_PATCH_FIELDS:
             if field not in patch_json:
                 continue
             value = patch_json[field]
-            if isinstance(value, str):
-                value = _clean_text(value)
             try:
+                if field in _TICKET_JSON_PATCH_FIELDS:
+                    value = redact_secrets(_jsonable(value))
+                elif isinstance(value, str):
+                    value = _clean_text(value)
                 TypeAdapter(TrackerTicket.model_fields[field].rebuild_annotation()).validate_python(
                     value, strict=True
                 )
+                if field in _TICKET_JSON_PATCH_FIELDS:
+                    json.dumps(value)
             except PydanticValidationError as exc:
                 raise ValidationError(
                     "invalid tracker ticket patch value",
@@ -1595,6 +1600,16 @@ class TrackerMutationMixin:
                         "errors": exc.errors(include_input=False, include_url=False),
                     },
                 ) from exc
+            except (TypeError, ValueError) as exc:
+                raise ValidationError(
+                    "invalid tracker ticket patch value",
+                    data={
+                        "field": field,
+                        "errors": [{"type": "json_type", "msg": "Value must be JSON serializable"}],
+                    },
+                ) from exc
+            if field == "context_json":
+                self._validate_correction_intent(value)
         if "status" in patch_json:
             try:
                 new_status = _status_value(str(patch_json["status"]))
@@ -1828,8 +1843,6 @@ class TrackerMutationMixin:
 
     def _validate_ticket_patch_fields(self, patch_json: dict[str, Any]) -> None:
         self._validate_patch_fields(patch_json, allowed=_TICKET_PATCH_FIELDS, entity_kind="ticket")
-        if "context_json" in patch_json:
-            self._validate_correction_intent(patch_json["context_json"])
 
     @staticmethod
     def _validate_correction_intent(context: dict[str, Any] | None) -> None:
@@ -2029,7 +2042,9 @@ class TrackerMutationMixin:
                 summary=summary,
                 before_json=redact_secrets(before_json) if before_json is not None else None,
                 after_json=redact_secrets(after_json) if after_json is not None else None,
-                patch_json=redact_secrets(patch_json) if patch_json is not None else None,
+                patch_json=redact_secrets(_jsonable(patch_json))
+                if patch_json is not None
+                else None,
                 metadata_json=redact_secrets(metadata_json) if metadata_json is not None else None,
                 created_at=now,
             )
