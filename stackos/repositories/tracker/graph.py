@@ -249,6 +249,7 @@ class TrackerGraphMixin:
             ]
             for ticket_key in {ticket.key for ticket in tickets}
         }
+        declared_lanes = self._workflow_gate_lane_keys(tickets)
         for ticket in tickets:
             if _is_terminal_tracker_status(ticket.status):
                 continue
@@ -265,7 +266,7 @@ class TrackerGraphMixin:
             )
             dependency_count = len(dependencies_by_ticket.get(ticket.key, []))
             if (
-                is_workflow_gate_child(lane_key=ticket.lane_key)
+                is_workflow_gate_child(lane_key=declared_lanes.get(ticket.id, ticket.lane_key))
                 and looks_like_pre_gate
                 and dependency_count >= 2
                 and (ticket.run_plan_id is None or ticket.status != TrackerItemStatus.NOT_STARTED)
@@ -276,7 +277,9 @@ class TrackerGraphMixin:
                     "direction if this gate should unblock implementation work."
                 )
         warnings.extend(
-            self._workflow_graph_advisory_warnings(tickets=tickets, dependencies=dependencies)
+            self._workflow_graph_advisory_warnings(
+                tickets=tickets, dependencies=dependencies, declared_lanes=declared_lanes
+            )
         )
         return warnings
 
@@ -285,6 +288,7 @@ class TrackerGraphMixin:
         *,
         tickets: list[TrackerTicketOut],
         dependencies: list[TrackerDependencyOut],
+        declared_lanes: dict[int, str],
     ) -> list[str]:
         warnings: list[str] = []
         tickets_by_key = {ticket.key: ticket for ticket in tickets}
@@ -339,17 +343,25 @@ class TrackerGraphMixin:
                         f"{child.key} is attached to {parent.key} but is not reachable from "
                         "that step through dependency edges."
                     )
+                if declared_lanes.get(child.id) == "done":
+                    warnings.append(
+                        f"Workflow child {child.key} has no retained lane declaration; "
+                        "review its role. Gate containment is unknown for this child."
+                    )
             gate_child_keys = {
                 child.key
                 for child in children
                 if is_workflow_gate_child(
-                    lane_key=child.lane_key,
+                    lane_key=declared_lanes.get(child.id, child.lane_key),
                 )
             }
             bypassing_gate_children = bypassing_workflow_gate_children(
                 [child.key for child in children],
                 gate_child_keys,
                 dependency_edges,
+                unknown_child_nodes={
+                    child.key for child in children if declared_lanes.get(child.id) == "done"
+                },
             )
             if bypassing_gate_children:
                 sample = ", ".join(bypassing_gate_children[:3])

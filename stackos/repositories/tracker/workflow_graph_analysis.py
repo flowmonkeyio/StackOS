@@ -11,7 +11,7 @@ def is_workflow_gate_child(
     *,
     lane_key: str,
 ) -> bool:
-    """Identify a declared gate lane within the caller's workflow child scope.
+    """Identify a declared gate lane resolved by the caller from tracker provenance.
 
     Attachment supplies provenance; dependency paths establish containment.
     Unrecognized lanes have no declared gate role. Free-form ticket prose and
@@ -63,12 +63,19 @@ def bypassing_workflow_gate_children[Node: Hashable](
     child_nodes: Iterable[Node],
     gate_child_nodes: set[Node],
     dependency_edges: set[tuple[Node, Node]],
+    *,
+    unknown_child_nodes: set[Node] | None = None,
 ) -> list[Node]:
     """Return gate children that are not downstream of every delivery child."""
 
     ordered_children = list(child_nodes)
     gate_children = [child for child in ordered_children if child in gate_child_nodes]
-    delivery_children = [child for child in ordered_children if child not in gate_child_nodes]
+    unknown_children = unknown_child_nodes or set()
+    delivery_children = [
+        child
+        for child in ordered_children
+        if child not in gate_child_nodes and child not in unknown_children
+    ]
     if not gate_children or not delivery_children:
         return []
     child_set = set(ordered_children)

@@ -1827,6 +1827,14 @@ blocking for tracker audit or release closeout when they hide required work.
 
 Workflow gate diagnostics use the declared child attachment, gate lane
 (`verification`, `review`, `release`, `docs`, or `qa`), and dependency paths.
+The `done` lane is a lifecycle display state, not a role change. Diagnostics
+recover the latest non-`done` lane declaration from ticket revisions, preserving
+gate identity on completion and requeue. Explicit later lane declarations
+supersede earlier ones. Initially terminal creations record their supplied lane
+in the same revision history. Legacy tickets with no retained declaration remain
+unknown: graph diagnostics advise checking the role and omit it from gate-role
+containment comparisons. Activation, reachability and handoff checks still
+apply; names do not fill the role gap.
 An ordinary implementation ticket can discuss review, tests, verification, or
 release without acquiring a gate role. Unrecognized lanes do not imply a gate;
 missing activation, reachability, and terminal-child handoffs are still checked

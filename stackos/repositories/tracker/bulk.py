@@ -37,6 +37,7 @@ from stackos.repositories.tracker.ticket_list_specs import (
 )
 from stackos.repositories.tracker.utils import (
     DEPENDENCY_PATCH_FIELDS,
+    TERMINAL_TRACKER_STATUSES,
     _required_id,
     _utcnow,
 )
@@ -180,6 +181,9 @@ class TrackerBulkMixin:
                         entity_key=ticket.key,
                         summary=f"Created ticket {ticket.key} from list.",
                         after_json=self._ticket_snapshot(ticket),
+                        patch_json={"lane_key": spec["lane_key"]}
+                        if spec["status"] in TERMINAL_TRACKER_STATUSES
+                        else None,
                         commit=False,
                     )
 

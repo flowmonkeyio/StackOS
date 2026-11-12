@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import date
 from typing import (
     Any,
@@ -548,9 +549,15 @@ class TrackerQueryMixin:
                         ),
                     }
                 )
-                bypassing_gate_children = self._workflow_bypassing_gate_child_keys(siblings)
+                declared_lanes = self._workflow_gate_lane_keys(siblings)
+                bypassing_gate_children = self._workflow_bypassing_gate_child_keys(
+                    siblings, declared_lanes=declared_lanes
+                )
+                declared_lane = declared_lanes.get(
+                    _required_id(ticket.id, "ticket"), ticket.lane_key
+                )
                 ticket_is_gate_child = is_workflow_gate_child(
-                    lane_key=ticket.lane_key,
+                    lane_key=declared_lane,
                 )
                 if ticket_is_gate_child or ticket.key in bypassing_gate_children:
                     checks.append(
@@ -559,7 +566,7 @@ class TrackerQueryMixin:
                             "passed": ticket.key not in bypassing_gate_children,
                             "detail": (
                                 f"Workflow child {ticket.key} declares gate lane "
-                                f"{ticket.lane_key}. "
+                                f"{declared_lane}. "
                                 "It must be downstream of every sibling "
                                 f"delivery child under {parent.key}, not ready beside it."
                             ),
@@ -700,23 +707,74 @@ class TrackerQueryMixin:
                 rows.append(dependency)
         return rows
 
+    def _workflow_gate_lane_keys(
+        self, tickets: Sequence[TrackerTicket | TrackerTicketOut]
+    ) -> dict[int, str]:
+        """Recover declarations hidden by the terminal/requeued display lane.
+
+        Revisions are the existing provenance owner. Read only lane values for
+        the requested tickets, in one query, rather than copying role state into
+        metadata or loading completion evidence from historical snapshots.
+        """
+        lanes = {ticket.id: ticket.lane_key for ticket in tickets if ticket.id is not None}
+        unresolved = {ticket_id for ticket_id, lane in lanes.items() if lane == "done"}
+        if not unresolved:
+            return lanes
+        revisions = self._s.execute(
+            sa_select(
+                col(TrackerRevision.entity_id),
+                col(TrackerRevision.change_kind),
+                col(TrackerRevision.patch_json)["lane_key"].as_string(),
+                col(TrackerRevision.after_json)["lane_key"].as_string(),
+                col(TrackerRevision.before_json)["lane_key"].as_string(),
+            )
+            .where(
+                col(TrackerRevision.entity_kind) == "ticket",
+                col(TrackerRevision.entity_id).in_(unresolved),
+                col(TrackerRevision.project_id).in_({ticket.project_id for ticket in tickets}),
+            )
+            .order_by(col(TrackerRevision.id).desc())
+        )
+        for ticket_id, change_kind, patch_lane, after_lane, before_lane in revisions:
+            if ticket_id not in unresolved:
+                continue
+            for lane in (patch_lane, after_lane, before_lane):
+                if isinstance(lane, str) and lane and lane != "done":
+                    lanes[ticket_id] = lane
+                    unresolved.remove(ticket_id)
+                    break
+            if change_kind in {"create", "list-create"}:
+                # A legacy creation may have lost its declaration. Do not reach
+                # past this entity's birth into an older reused numeric ID.
+                unresolved.discard(ticket_id)
+            if not unresolved:
+                break
+        return lanes
+
     def _workflow_bypassing_gate_child_keys(
         self,
         children: list[TrackerTicket],
+        *,
+        declared_lanes: dict[int, str] | None = None,
     ) -> list[str]:
+        if declared_lanes is None:
+            declared_lanes = self._workflow_gate_lane_keys(children)
         children_by_id = {child.id: child for child in children if child.id is not None}
         child_ids = list(children_by_id)
         gate_child_ids = {
             child_id
             for child_id, child in children_by_id.items()
             if is_workflow_gate_child(
-                lane_key=child.lane_key,
+                lane_key=declared_lanes.get(child_id, child.lane_key),
             )
         }
         bypassing_ids = bypassing_workflow_gate_children(
             child_ids,
             gate_child_ids,
             self._workflow_dependency_edges(set(child_ids)),
+            unknown_child_nodes={
+                child_id for child_id in child_ids if declared_lanes.get(child_id) == "done"
+            },
         )
         return [children_by_id[child_id].key for child_id in bypassing_ids]
 

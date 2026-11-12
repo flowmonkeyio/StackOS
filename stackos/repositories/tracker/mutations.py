@@ -369,6 +369,7 @@ class TrackerMutationMixin:
                 entity_key=ticket.key,
                 summary=f"Created ticket {ticket.key}.",
                 after_json=self._ticket_snapshot(ticket),
+                patch_json={"lane_key": lane_key} if status in TERMINAL_TRACKER_STATUSES else None,
                 commit=False,
             )
         if commit:

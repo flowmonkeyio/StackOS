@@ -1585,6 +1585,162 @@ def test_workflow_declared_gate_bypass_and_handoff_remain_structural(session, pr
     }
 
 
+@pytest.mark.parametrize("requeue", [False, True])
+def test_workflow_gate_declaration_survives_completion_and_requeue(session, project_id, requeue):
+    tracker, plan, step, parent, _ = _workflow_graph_fixture(session, project_id)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=parent,
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        key="checkpoint",
+        title="Checkpoint",
+        lane_key="verification",
+        dependency_keys=["impl-a"],
+    )
+    tracker.update_ticket(
+        project_id=project_id, ticket_key="impl-a", patch_json={"status": "complete"}
+    )
+    tracker.update_ticket(
+        project_id=project_id, ticket_key="checkpoint", patch_json={"status": "complete"}
+    )
+    if requeue:
+        for status in ("in-progress", "not-started"):
+            tracker.update_ticket(
+                project_id=project_id, ticket_key="checkpoint", patch_json={"status": status}
+            )
+    assert tracker.brief(project_id=project_id, ticket_key="checkpoint").ticket.lane_key == "done"
+    for key, check_key in (
+        ("checkpoint", "workflow-child-gate-contained"),
+        (parent, "workflow-step-gate-children-contained"),
+    ):
+        checks = tracker.verify(project_id=project_id, ticket_key=key).checks
+        assert next(c for c in checks if c["key"] == check_key)["passed"] is False
+    snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
+    assert any("can bypass delivery work" in w for w in snapshot.graph.warnings)
+
+    # A later explicit role change supersedes the recovered declaration, even
+    # while the terminal display lane remains done.
+    tracker.update_ticket(
+        project_id=project_id, ticket_key="checkpoint", patch_json={"lane_key": "implementation"}
+    )
+    checks = tracker.verify(project_id=project_id, ticket_key="checkpoint").checks
+    assert not any(c["key"] == "workflow-child-gate-contained" for c in checks)
+    snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
+    assert not any("can bypass delivery work" in w for w in snapshot.graph.warnings)
+
+
+def test_workflow_parallel_gate_completion_does_not_invent_gate_order(session, project_id):
+    tracker, plan, step, parent, handoff = _workflow_graph_fixture(session, project_id)
+    for key in ("checkpoint-one", "checkpoint-two"):
+        tracker.create_ticket(
+            project_id=project_id,
+            task_key=f"workflow-{plan.id}",
+            parent_ticket_key=parent,
+            run_plan_id=plan.id,
+            run_plan_step_id=step.id,
+            key=key,
+            title=key,
+            lane_key="review",
+            dependency_keys=["impl-a", "impl-b"],
+        )
+    tracker.update_ticket(
+        project_id=project_id,
+        ticket_key=handoff,
+        patch_json={"dependency_keys": [parent, "checkpoint-one", "checkpoint-two"]},
+    )
+    for key in ("impl-a", "impl-b", "checkpoint-one"):
+        tracker.update_ticket(
+            project_id=project_id, ticket_key=key, patch_json={"status": "complete"}
+        )
+    for key, check_key in (
+        ("checkpoint-two", "workflow-child-gate-contained"),
+        (parent, "workflow-step-gate-children-contained"),
+    ):
+        checks = tracker.verify(project_id=project_id, ticket_key=key).checks
+        assert next(c for c in checks if c["key"] == check_key)["passed"] is True
+    snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
+    assert snapshot.graph.warnings == []
+
+
+@pytest.mark.parametrize("as_list", [False, True])
+def test_workflow_terminal_gate_creation_retains_declared_lane(session, project_id, as_list):
+    tracker, plan, step, parent, _ = _workflow_graph_fixture(session, project_id)
+    spec = {
+        "key": "checkpoint",
+        "title": "Checkpoint",
+        "status": "complete",
+        "lane_key": "review",
+        "parent_ticket_key": parent,
+        "run_plan_id": plan.id,
+        "run_plan_step_id": step.id,
+        "dependency_keys": ["impl-a"],
+    }
+    if as_list:
+        result = tracker.create_ticket_list(
+            project_id=project_id,
+            ticket_list_json={"task_key": f"workflow-{plan.id}", "tickets": [spec]},
+        ).data
+        assert result.valid
+    else:
+        tracker.create_ticket(project_id=project_id, task_key=f"workflow-{plan.id}", **spec)
+    checks = tracker.verify(project_id=project_id, ticket_key="checkpoint").checks
+    assert next(c for c in checks if c["key"] == "workflow-child-gate-contained")["passed"] is False
+    snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
+    assert any("can bypass delivery work" in w for w in snapshot.graph.warnings)
+
+
+def test_workflow_legacy_terminal_role_gap_is_advisory(session, project_id):
+    tracker, plan, step, parent, _ = _workflow_graph_fixture(session, project_id)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=parent,
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        key="review-guidance",
+        title="Review guidance",
+        status=TrackerItemStatus.COMPLETE,
+        lane_key="review",
+        dependency_keys=["impl-a"],
+    )
+    # Pre-repair terminal creation retained only the normalized done lane.
+    revision = session.exec(
+        select(TrackerRevision).where(TrackerRevision.entity_key == "review-guidance")
+    ).one()
+    revision.patch_json = None
+    session.add(revision)
+    session.commit()
+    checks = tracker.verify(project_id=project_id, ticket_key="review-guidance").checks
+    assert not any(c["key"] == "workflow-child-gate-contained" for c in checks)
+    snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
+    assert any("no retained lane declaration" in w for w in snapshot.graph.warnings)
+    assert not any("can bypass delivery work" in w for w in snapshot.graph.warnings)
+
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=parent,
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        key="checkpoint",
+        title="Checkpoint",
+        lane_key="review",
+        dependency_keys=["review-guidance"],
+    )
+    # Unknown role does not erase a known dependency path through that child.
+    tracker.update_ticket(
+        project_id=project_id,
+        ticket_key="review-guidance",
+        patch_json={"dependency_keys": ["impl-a", "impl-b"]},
+    )
+    checks = tracker.verify(project_id=project_id, ticket_key="checkpoint").checks
+    assert next(c for c in checks if c["key"] == "workflow-child-gate-contained")["passed"] is True
+    snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
+    assert not any("can bypass delivery work" in w for w in snapshot.graph.warnings)
+
+
 def test_workflow_detached_child_warns_without_any_gate_words(session, project_id):
     tracker, plan, step, parent, _ = _workflow_graph_fixture(session, project_id)
     tracker.create_ticket(
