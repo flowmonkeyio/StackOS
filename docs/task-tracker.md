@@ -1298,9 +1298,17 @@ adding a polling path. UI callers retain the immutable intent for transport
 retry, reconcile after conflicts, and check project ownership before applying a
 late response. The card and navigation consumers own that interaction state.
 
-Work's existing project-index loader shares one in-flight read and one queued
-latest read across live events, manual refresh and post-save reconciliation.
-Background reads retain the current board. Focused graph/detail readers keep
+Work's existing project-index loader owns revision coverage for save responses
+and live notifications. A response already covering the accepted `rev`, including
+an in-flight read started before the save, is reused; only an older response
+requires another read. Delayed notifications for that revision do not reload
+the index, while later revisions still reconcile. Unversioned invalidations and
+explicit refresh share one in-flight read and one queued latest read.
+Structured batch members scope selected-task refreshes and graph highlights;
+unrelated tasks/projects do not refresh focused readers. Graph and detail reads
+also reuse their own covered or in-flight responses.
+Initial and explicit refresh show loading; background reconciliation retains
+the current board and does not toggle the global loading control. Focused readers keep
 their own loading state and do not hold that queue open. Board writes and index
 reads have 15-second abort deadlines; scope exit aborts them and ignores late
 outcomes. Pending edits block only conflicting edits in the same status column,

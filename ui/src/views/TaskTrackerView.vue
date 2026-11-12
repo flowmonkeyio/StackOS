@@ -65,8 +65,8 @@ const tasks = computed(() => snapshot.value?.tasks ?? [])
 const ticketsByTask = computed(() => groupTicketsByTask(snapshot.value?.tickets ?? []))
 const allTaskRows = computed(() => buildTaskProgressRows(tasks.value, ticketsByTask.value, { search: '', status: 'all', workflow: '', assignee: '' }))
 const taskRows = computed(() => projectBoardRows(allTaskRows.value, boardFilters.value))
-const boardEdits = useTaskBoardEdits({ rows: taskRows, projectId, currentScope, refresh: async () => {
-  if (!await load({ restartStream: false })) throw new Error('Could not refresh the board.')
+const boardEdits = useTaskBoardEdits({ rows: taskRows, projectId, currentScope, refresh: async (minRevision) => {
+  if (!await load({ restartStream: false, quiet: true, minRevision })) throw new Error('Could not refresh the board.')
 } })
 const activeTaskRow = computed(() => allTaskRows.value.find((row) => row.key === mapTaskKey.value) ?? null)
 const taskSelectOptions = computed(() => allTaskRows.value.map((row) => ({
@@ -80,7 +80,7 @@ const assigneeOptions = computed(() => buildAssigneeOptions(tasks.value, snapsho
 const liveTaskKey = computed(() => viewMode.value === 'graph' ? mapTaskKey.value : '')
 const graph = useTrackerGraphSession({
   projectId, activeTaskKey: mapTaskKey, liveTaskKey, activeTaskRow, snapshot, routeError: error,
-  reload: async (options) => { await load(options) },
+  reload: async (options) => { if (!await load(options)) throw new Error(error.value ?? 'Could not refresh work.') },
   refreshUsage,
 })
 provide(usageFeedKey, graph.feedState)
@@ -102,11 +102,12 @@ const {
 let loadSequence = 0
 let detailSequence = 0
 let alive = true
-type LoadOptions = { refocus?: boolean; restartStream?: boolean }
-interface LoadRequest { options: LoadOptions; promise: Promise<boolean>; resolve: (result: boolean) => void }
+type LoadOptions = { refocus?: boolean; restartStream?: boolean; quiet?: boolean; minRevision?: number; taskKeys?: string[] }
+interface LoadRequest { options: LoadOptions; obtainedRevision?: number; promise: Promise<boolean>; resolve: (result: boolean) => void }
 let activeLoad: LoadRequest | null = null
 let trailingLoad: LoadRequest | null = null
 let loadController: AbortController | null = null
+let requiredIndexRevision = 0
 function refreshUsage(next?: UsageProjection): void {
   if (!currentScope() || !next) return
   patchUsageSnapshot(snapshot.value, next)
@@ -120,13 +121,30 @@ function currentScope(): boolean {
 
 function load(options: LoadOptions = {}): Promise<boolean> {
   if (!projectId.value || !currentScope()) return Promise.resolve(false)
+  if (options.minRevision !== undefined) requiredIndexRevision = Math.max(requiredIndexRevision, options.minRevision)
+  if (options.minRevision !== undefined && snapshot.value && snapshot.value.tracker.rev >= options.minRevision) {
+    void refreshInspection(loadSequence, detailTaskKey.value, options.refocus, options.taskKeys, options.minRevision)
+    return Promise.resolve(true)
+  }
+  // A failed read does not erase an accepted revision. Manual retry must
+  // obtain it before dropping settled optimistic state.
+  if (requiredIndexRevision > (snapshot.value?.tracker.rev ?? 0)) options = { ...options, minRevision: requiredIndexRevision }
   if (activeLoad) {
-    // Every caller shares the current project read and one trailing latest
-    // read. A post-save refresh must not accept a read started before the save.
+    // A known revision can reuse the obtained response, even if its read
+    // began before the save/event. Only an older response needs another read.
+    if (options.minRevision !== undefined) {
+      activeLoad.options.minRevision = Math.max(activeLoad.options.minRevision ?? 0, options.minRevision)
+      activeLoad.options.taskKeys = activeLoad.options.taskKeys && options.taskKeys
+        ? [...new Set([...activeLoad.options.taskKeys, ...options.taskKeys])] : undefined
+      if (!options.quiet) loading.value = true
+      return activeLoad.promise
+    }
+    // Unversioned invalidations and explicit refresh still request latest data.
     if (!trailingLoad) trailingLoad = loadRequest(options)
     else trailingLoad.options = {
       refocus: trailingLoad.options.refocus || options.refocus,
       restartStream: trailingLoad.options.restartStream !== false || options.restartStream !== false,
+      quiet: trailingLoad.options.quiet === true && options.quiet === true,
     }
     return trailingLoad.promise
   }
@@ -145,7 +163,17 @@ async function runLoad(request: LoadRequest): Promise<void> {
   activeLoad = request
   let result = false
   try {
-    result = await loadOnce(request.options)
+    result = await loadOnce(request)
+    let previousRevision = -1
+    while (result && request.options.minRevision !== undefined && (snapshot.value?.tracker.rev ?? -1) < request.options.minRevision) {
+      if ((request.obtainedRevision ?? -1) <= previousRevision) {
+        error.value = 'The board response is older than the saved change. Use Refresh to retry.'
+        result = false
+        break
+      }
+      previousRevision = request.obtainedRevision ?? -1
+      result = await loadOnce(request)
+    }
   } finally {
     activeLoad = null
     const next = trailingLoad
@@ -160,19 +188,24 @@ async function runLoad(request: LoadRequest): Promise<void> {
   }
 }
 
-async function loadOnce(options: LoadOptions): Promise<boolean> {
+async function loadOnce(request: LoadRequest): Promise<boolean> {
+  const options = request.options
   const sequence = ++loadSequence
   const usageVersion = usageCheckpoint()
   const controller = new AbortController()
   loadController = controller
   const timeout = setTimeout(() => controller.abort(new DOMException('Refresh timed out', 'TimeoutError')), 15000)
-  loading.value = true
+  if (!options.quiet || !snapshot.value) loading.value = true
   error.value = null
   try {
     const next = await callOperation<TrackerSnapshot>('tracker.get', {
       project_id: projectId.value, task_index_only: true, include_graph: false,
     }, { signal: controller.signal })
     if (controller.signal.aborted || !currentScope() || sequence !== loadSequence) return false
+    request.obtainedRevision = next.tracker.rev
+    // Do not publish a response known to predate the accepted mutation, or
+    // refresh focused readers from it. runLoad obtains the required revision.
+    if (options.minRevision !== undefined && next.tracker.rev < options.minRevision) return true
     patchUsageAfter(next, projectId.value, usageVersion)
     snapshot.value = next
     boardEdits.reconcile()
@@ -184,7 +217,7 @@ async function loadOnce(options: LoadOptions): Promise<boolean> {
     const detailKey = detailTaskKey.value
     // Focused readers own their loading/error state. A slow inspector must
     // not hold the project refresh queue or a completed Board edit open.
-    void refreshInspection(sequence, detailKey, options.refocus)
+    void refreshInspection(sequence, detailKey, options.refocus, options.taskKeys, options.minRevision)
     return currentScope() && sequence === loadSequence
   } catch (cause) {
     if (currentScope() && sequence === loadSequence) error.value = cause instanceof Error ? cause.message : 'Could not load work.'
@@ -196,17 +229,17 @@ async function loadOnce(options: LoadOptions): Promise<boolean> {
   }
 }
 
-async function refreshInspection(sequence: number, detailKey: string, refocus?: boolean): Promise<void> {
+async function refreshInspection(sequence: number, detailKey: string, refocus?: boolean, taskKeys?: string[], minRevision?: number): Promise<void> {
   try {
-    if (viewMode.value === 'graph') await loadMap(refocus)
+    if (viewMode.value === 'graph' && (!taskKeys?.length || taskKeys.includes(mapTaskKey.value))) await loadMap(refocus, minRevision)
     if (!currentScope() || sequence !== loadSequence) return
-    if (detailKey && detailTaskKey.value === detailKey) await loadDetail(detailKey)
+    if (detailKey && detailTaskKey.value === detailKey && (!taskKeys?.length || taskKeys.includes(detailKey))) await loadDetail(detailKey, minRevision)
   } catch (cause) {
     if (currentScope() && sequence === loadSequence) error.value = cause instanceof Error ? cause.message : 'Could not refresh task details.'
   }
 }
 
-async function loadMap(refocus?: boolean): Promise<void> {
+async function loadMap(refocus?: boolean, minRevision?: number): Promise<void> {
   if (!currentScope() || !activeTaskRow.value || viewMode.value !== 'graph') return
   const taskKey = mapTaskKey.value
   try { window.sessionStorage.setItem(mapTaskStorageKey, mapTaskKey.value) } catch { /* Storage may be unavailable. */ }
@@ -215,12 +248,27 @@ async function loadMap(refocus?: boolean): Promise<void> {
     return
   }
   const restored = graph.restoreViewport()
-  const focused = await graph.loadFocusedGraph(taskKey, { refocus: refocus ?? !restored })
+  const focused = await graph.loadFocusedGraph(taskKey, { refocus: refocus ?? !restored, minRevision })
   if (!currentScope() || viewMode.value !== 'graph' || mapTaskKey.value !== taskKey || queryText(route.query.task) !== taskKey) return
   if (focused && snapshot.value) snapshot.value = mergeFocusedTrackerSnapshot(snapshot.value, focused)
 }
 
-async function loadDetail(taskKey: string): Promise<void> {
+let detailRead: { taskKey: string; promise: Promise<void> } | null = null
+async function loadDetail(taskKey: string, minRevision?: number): Promise<void> {
+  const covered = () => detailSnapshot.value?.tasks[0]?.key === taskKey && detailSnapshot.value.tracker.rev >= minRevision!
+  if (minRevision !== undefined) {
+    if (covered()) return
+    while (detailRead?.taskKey === taskKey) {
+      await detailRead.promise
+      if (!currentScope() || detailTaskKey.value !== taskKey || covered()) return
+    }
+  }
+  const read = { taskKey, promise: readDetail(taskKey, minRevision) }
+  detailRead = read
+  try { await read.promise } finally { if (detailRead === read) detailRead = null }
+}
+
+async function readDetail(taskKey: string, minRevision?: number): Promise<void> {
   if (!currentScope() || detailTaskKey.value !== taskKey) return
   const sequence = ++detailSequence
   const usageVersion = usageCheckpoint()
@@ -238,6 +286,7 @@ async function loadDetail(taskKey: string): Promise<void> {
       project_id: projectId.value, task_key: taskKey, include_graph: false,
     })
     if (!currentScope() || sequence !== detailSequence || detailTaskKey.value !== taskKey) return
+    if (minRevision !== undefined && next.tracker.rev < minRevision) throw new Error('Task details are older than the change. Use Refresh to retry.')
     patchUsageAfter(next, projectId.value, usageVersion)
     const task = next.tasks.find((item) => item.key === taskKey)
     if (!task) throw new Error('This task is no longer available in this project.')

@@ -9,7 +9,9 @@ import { ApiError } from '@/lib/client'
 
 const mocks = vi.hoisted(() => ({ callOperation: vi.fn(), close: vi.fn(), stream: vi.fn() }))
 vi.mock('@/lib/operations', () => ({ callOperation: mocks.callOperation }))
-vi.mock('@/lib/task-tracker/liveEvents', () => ({ openTrackerStatusStream: mocks.stream }))
+vi.mock('@/lib/task-tracker/liveEvents', async importOriginal => ({
+  ...await importOriginal<typeof import('@/lib/task-tracker/liveEvents')>(), openTrackerStatusStream: mocks.stream,
+}))
 
 const taskA = trackerTask({ title: 'Alpha task' })
 const taskB = trackerTask({ id: 2, key: 'task-b', title: 'Beta task', status: 'complete', completed_at: '2026-11-09T12:00:00Z' })
@@ -70,6 +72,170 @@ async function render(url = '/projects/7/tasks', realDialogs = false, realContro
 const popup = () => new DOMWrapper(document.body)
 
 describe('Work board navigation', () => {
+  it.each(['save-first', 'SSE-first', 'in-flight-covered', 'in-flight-stale'])('reconciles a batch revision once across %s and later independent events', async order => {
+    dataMock([taskA, { ...taskB, status: taskA.status, order_index: 1 }], [])
+    const { wrapper, board } = await render()
+    const read = mocks.callOperation.getMockImplementation()!
+    const reads: Array<(value: TrackerSnapshot) => void> = []
+    let finishSave!: (value: unknown) => void
+    mocks.callOperation.mockImplementation((name, args) => {
+      if (name === 'tracker.reorderTask') return new Promise(resolve => { finishSave = resolve })
+      if (name === 'tracker.get' && args.task_index_only) return new Promise(resolve => reads.push(resolve))
+      return read(name, args)
+    })
+    const event = (rev: number) => ({ id: rev, project_id: 7, event_type: 'tracker.tasks.changed', metadata_json: {
+      tracker_id: 1, rev, affected_task_keys: [taskA.key, taskB.key],
+      affected_tasks: [taskA, taskB].map(task => ({ task_id: task.id, task_key: task.key, changed_fields: ['order_index'], url_path: `/projects/7/tasks?detail=${task.key}` })),
+    } })
+    const next = (rev: number) => ({ ...trackerSnapshot([{ ...taskA, order_index: 1 }, { ...taskB, status: taskA.status, order_index: 0 }], []), tracker: { ...trackerSnapshot([], []).tracker, rev } })
+    const onEvent = mocks.stream.mock.calls.at(-1)![0].onEvent
+    board().vm.$emit('move', { taskKey: taskA.key, anchorKey: taskB.key, placement: 'after' })
+    const accepted = { data: { rev: 2, task: taskA, affected_task_keys: [taskA.key, taskB.key], changed: true, replayed: false, idempotency_key: 'test', request_sha256: 'test' }, project_id: 7, run_id: null }
+    if (order === 'save-first') {
+      finishSave(accepted)
+      await flushPromises()
+      reads[0]!(next(2))
+      await flushPromises()
+      onEvent(event(2)) // arrives after the earlier GET completed
+    } else {
+      onEvent(event(2))
+      await flushPromises()
+      if (order === 'SSE-first') {
+        reads[0]!(next(2))
+        await flushPromises()
+        finishSave(accepted)
+      } else {
+        finishSave(accepted)
+        await flushPromises()
+        reads[0]!(next(order === 'in-flight-stale' ? 1 : 2))
+      }
+    }
+    await flushPromises()
+    if (order === 'in-flight-stale') {
+      expect(reads).toHaveLength(2)
+      reads[1]!(next(2))
+      await flushPromises()
+    }
+    const coveredReads = order === 'in-flight-stale' ? 2 : 1
+    expect(reads).toHaveLength(coveredReads)
+    expect(board().props('editPending')).toBe(false)
+    expect(board().props('rows').map((row: { key: string }) => row.key)).toEqual([taskB.key, taskA.key])
+    expect(wrapper.findComponent({ name: 'UiButton' }).props('loading')).toBe(false)
+    onEvent(event(2))
+    await flushPromises()
+    expect(reads).toHaveLength(coveredReads)
+    onEvent(event(3))
+    await flushPromises()
+    expect(reads).toHaveLength(coveredReads + 1)
+    expect(wrapper.findComponent({ name: 'UiButton' }).props('loading')).toBe(false)
+    reads.at(-1)!(next(3))
+    await flushPromises()
+    wrapper.unmount()
+  })
+
+  it('matches batch members in Graph, filters foreign/unrelated events and refreshes selected projections once', async () => {
+    const { wrapper } = await render('/projects/7/tasks?view=graph&task=task-a&detail=task-a')
+    const event = (keys: string[], rev = 2, project = 7) => ({ id: rev, project_id: project, event_type: 'tracker.tasks.changed', metadata_json: {
+      rev, affected_task_keys: keys, affected_tasks: keys.map(task_key => ({ task_key })),
+    } })
+    const onEvent = mocks.stream.mock.calls.at(-1)![0].onEvent
+    const before = mocks.callOperation.mock.calls.length
+    onEvent(event(['task-b']))
+    onEvent(event(['task-a'], 2, 8))
+    await flushPromises()
+    expect(mocks.callOperation.mock.calls).toHaveLength(before)
+    const read = mocks.callOperation.getMockImplementation()!
+    mocks.callOperation.mockImplementation(async (name, args) => {
+      const result = await read(name, args)
+      return name === 'tracker.get' ? { ...result, tracker: { ...result.tracker, rev: 2 } } : result
+    })
+    onEvent(event(['task-a', 'task-b']))
+    await flushPromises()
+    const calls = mocks.callOperation.mock.calls.slice(before)
+    expect(calls.filter(([name, args]) => name === 'tracker.get' && args.task_index_only)).toHaveLength(1)
+    expect(calls.filter(([name, args]) => name === 'tracker.get' && args.task_key === 'task-a' && args.include_graph)).toHaveLength(1)
+    expect(calls.filter(([name]) => name === 'tracker.taskActivity')).toHaveLength(1)
+    onEvent(event(['task-a', 'task-b']))
+    await flushPromises()
+    expect(mocks.callOperation.mock.calls).toHaveLength(before + calls.length)
+    wrapper.unmount()
+  })
+
+  it('reuses a covered index while an open inspector obtains its own affected revision', async () => {
+    const { wrapper, dialog } = await render('/projects/7/tasks?detail=task-a')
+    const read = mocks.callOperation.getMockImplementation()!
+    mocks.callOperation.mockImplementation(async (name, args) => {
+      const result = await read(name, args)
+      return name === 'tracker.get' ? { ...result, tracker: { ...result.tracker, rev: 3 } } : result
+    })
+    const onEvent = mocks.stream.mock.calls.at(-1)![0].onEvent
+    const event = (task_key: string, rev: number) => ({ project_id: 7, event_type: 'tracker.tasks.changed', metadata_json: { rev, affected_tasks: [{ task_key }] } })
+    const before = mocks.callOperation.mock.calls.length
+    onEvent(event('task-b', 2))
+    await flushPromises()
+    expect(mocks.callOperation.mock.calls.slice(before).filter(([name, args]) => name === 'tracker.get' && args.task_key)).toHaveLength(0)
+    onEvent(event('task-a', 3))
+    await flushPromises()
+    const calls = mocks.callOperation.mock.calls.slice(before)
+    expect(calls.filter(([name, args]) => name === 'tracker.get' && args.task_index_only)).toHaveLength(1)
+    expect(calls.filter(([name, args]) => name === 'tracker.get' && args.task_key === 'task-a')).toHaveLength(1)
+    expect(dialog().props('task').key).toBe('task-a')
+    wrapper.unmount()
+  })
+
+  it.each([['graph', 1], ['graph', 2], ['detail', 1], ['detail', 2]] as const)('reuses a pending %s response at revision %s or rereads only when older', async (kind, obtainedRevision) => {
+    const read = mocks.callOperation.getMockImplementation()!
+    const focused: Array<(value: TrackerSnapshot) => void> = []
+    let revision = 1
+    mocks.callOperation.mockImplementation(async (name, args) => {
+      if (name === 'tracker.get' && args.task_key && (kind === 'graph' ? args.include_graph : !args.include_graph)) return new Promise(resolve => focused.push(resolve))
+      const result = await read(name, args)
+      return name === 'tracker.get' ? { ...result, tracker: { ...result.tracker, rev: revision } } : result
+    })
+    const { wrapper } = await render(kind === 'graph' ? '/projects/7/tasks?view=graph&task=task-a' : '/projects/7/tasks?detail=task-a')
+    expect(focused).toHaveLength(1)
+    revision = 2
+    const event = { project_id: 7, event_type: 'tracker.tasks.changed', metadata_json: { rev: 2, affected_tasks: [{ task_key: 'task-a' }] } }
+    mocks.stream.mock.calls.at(-1)![0].onEvent(event)
+    await flushPromises()
+    expect(focused).toHaveLength(1)
+    const response = (rev: number) => { const next = trackerSnapshot([taskA], [ticketA], kind === 'graph'); next.tracker.rev = rev; return next }
+    focused[0]!(response(obtainedRevision))
+    await flushPromises()
+    if (obtainedRevision === 1) {
+      expect(focused).toHaveLength(2)
+      focused[1]!(response(2))
+      await flushPromises()
+    }
+    mocks.stream.mock.calls.at(-1)![0].onEvent(event)
+    await flushPromises()
+    expect(focused).toHaveLength(obtainedRevision === 1 ? 2 : 1)
+    wrapper.unmount()
+  })
+
+  it('shows loading for explicit refresh while a background read leaves controls and cards available', async () => {
+    const { wrapper, board, controls, dialog } = await render()
+    const read = mocks.callOperation.getMockImplementation()!
+    const reads: Array<(value: TrackerSnapshot) => void> = []
+    mocks.callOperation.mockImplementation((name, args) => name === 'tracker.get' && args.task_index_only
+      ? new Promise(resolve => reads.push(resolve)) : read(name, args))
+    mocks.stream.mock.calls.at(-1)![0].onEvent({ project_id: 7, event_type: 'tracker.task.changed', metadata_json: { task_key: taskA.key } })
+    await flushPromises()
+    const refresh = () => wrapper.findAllComponents({ name: 'UiButton' }).find(button => button.text().includes('Refresh'))!
+    expect(refresh().props('loading')).toBe(false)
+    await board().get('button').trigger('click')
+    await flushPromises()
+    expect(dialog().props('modelValue')).toBe(true)
+    controls().vm.$emit('refresh')
+    reads[0]!(trackerSnapshot([taskA, taskB], []))
+    await flushPromises()
+    expect(refresh().props('loading')).toBe(true)
+    reads[1]!(trackerSnapshot([taskA, taskB], []))
+    await flushPromises()
+    expect(refresh().props('loading')).toBe(false)
+    wrapper.unmount()
+  })
+
   it('wires the shared list through the real Board and save owner, with one filtered intent and rejection recovery', async () => {
     const records = [
       trackerTask({ key: 'a', id: 1, title: 'Visible first', order_index: 0 }),
@@ -158,6 +324,34 @@ describe('Work board navigation', () => {
     await flushPromises()
     expect(board().props('editError')).toBeNull()
     expect(board().props('rows').map((row: { key: string }) => row.key)).toEqual([taskA.key, taskB.key])
+    expect(mocks.callOperation.mock.calls.filter(([name]) => name === 'tracker.reorderTask')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('retains the accepted revision across read errors and rejects a stale manual retry', async () => {
+    dataMock([taskA, { ...taskB, status: taskA.status, order_index: 1 }], [])
+    const { wrapper, board, controls } = await render()
+    const read = mocks.callOperation.getMockImplementation()!
+    mocks.callOperation.mockImplementation((name, args) => {
+      if (name === 'tracker.reorderTask') return Promise.resolve({ data: { rev: 2 } })
+      if (name === 'tracker.get' && args.task_index_only) return Promise.reject(new Error('Read offline'))
+      return read(name, args)
+    })
+    board().vm.$emit('move', { taskKey: taskA.key, anchorKey: taskB.key, placement: 'after' })
+    await flushPromises()
+    expect(board().props('editError')).toContain('Task saved')
+    mocks.callOperation.mockImplementation(read) // stale revision 1
+    controls().vm.$emit('refresh')
+    await flushPromises()
+    expect(wrapper.text()).toContain('older than the saved change')
+    expect(board().props('rows').map((row: { key: string }) => row.key)).toEqual([taskB.key, taskA.key])
+    mocks.callOperation.mockImplementation(async (name, args) => {
+      const result = await read(name, args)
+      return name === 'tracker.get' ? { ...result, tracker: { ...result.tracker, rev: 2 } } : result
+    })
+    controls().vm.$emit('refresh')
+    await flushPromises()
+    expect(board().props('editError')).toBeNull()
     expect(mocks.callOperation.mock.calls.filter(([name]) => name === 'tracker.reorderTask')).toHaveLength(1)
     wrapper.unmount()
   })

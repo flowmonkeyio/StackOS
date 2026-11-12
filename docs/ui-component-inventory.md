@@ -395,9 +395,13 @@ Work Board card edits use `useTaskBoardEdits` for bounded priority or
 same-column neighbor intents, with one pending edit per conflicting column,
 optimistic presentation, confirmed-rejection rollback and canonical index
 reconciliation. Save errors, uncertain outcomes and saved-but-stale reads stay
-distinct. `TaskTrackerView` shares one project-index read and one trailing latest
-read across event bursts and explicit refreshes; background reads retain the
-board and leave focused loading with its existing readers. `TrackerBoardPanel`
+distinct. `TaskTrackerView` owns project-index revision coverage shared by save
+responses and live batch events. Covered responses and in-flight reads are
+reused; stale responses obtain the required revision. Unversioned events and
+explicit refreshes retain one trailing latest read. Background reconciliation
+keeps the board interactive without toggling global loading; initial/manual
+refresh still shows loading. Structured batch members scope focused reads and
+highlights; graph/detail readers reuse their own revision coverage. `TrackerBoardPanel`
 scopes disabled edit controls to pending columns and consumes `UiReorderList`
 with `UiReorderHandle` for each column. The shared primitive accepts arbitrary
 items through `itemKey`/`itemLabel`, optional meaningful `itemVersion`,

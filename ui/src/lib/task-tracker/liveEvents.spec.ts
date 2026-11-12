@@ -5,6 +5,7 @@ import {
   projectTimelineEventFromMessage,
   SseMessageParser,
   trackerStatusStreamPath,
+  trackerEventTaskKeys, trackerEventRevision,
 } from './liveEvents'
 
 const { mockApiStream } = vi.hoisted(() => ({
@@ -46,6 +47,21 @@ describe('SseMessageParser', () => {
 })
 
 describe('projectTimelineEventFromMessage', () => {
+  it('preserves structured batch membership and revision through a split wire frame', () => {
+    const wire = `id: 24\nevent: tracker-status\ndata: ${JSON.stringify({
+      id: 24, project_id: 7, event_type: 'tracker.tasks.changed', metadata_json: JSON.stringify({
+        rev: 42, task_key: 'lookalike', affected_task_keys: ['summary-only'],
+        affected_tasks: [{ task_key: 'a' }, { task_key: 'b' }, { task_key: 'a' }, null, { nested: { task_key: 'lookalike' } }],
+      }),
+    })}\n\n`
+    const parser = new SseMessageParser()
+    expect(parser.push(wire.slice(0, 70))).toEqual([])
+    const event = projectTimelineEventFromMessage(parser.push(wire.slice(70))[0]!)!
+    expect(trackerEventTaskKeys(event)).toEqual(['a', 'b'])
+    expect(trackerEventRevision(event)).toBe(42)
+    for (const rev of [-1, 0, '42', 1.5, null]) expect(trackerEventRevision({ ...event, metadata_json: { rev } })).toBeUndefined()
+    expect(trackerEventTaskKeys({ ...event, metadata_json: { affected_task_keys: ['summary-only'] } })).toEqual([])
+  })
   it('returns sanitized project timeline events for tracker-status messages', () => {
     const event = projectTimelineEventFromMessage({
       id: '22',
