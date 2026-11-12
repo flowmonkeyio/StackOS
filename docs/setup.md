@@ -440,6 +440,13 @@ at most 300). Long-running tool response reads remain unlimited. See
 [bridge diagnostics](./bridge-failure-diagnostics.md) for retry boundaries,
 automatic persistence and lookup.
 
+For a stopped native delivery, use the
+[interruption diagnosis guidance](./task-tracker.md#diagnosing-interrupted-delivery)
+to distinguish cancellation, approval transport failure, denial, unavailable
+access and suspected sleep/wake. Reconcile uncertain writes through authoritative
+readback before retrying; retain source, running-process and installed evidence
+as separate observations.
+
 Project context is directory-first and host-dependent. StackOS does not require
 a Git checkout to identify a workspace. The bridge accepts an explicit
 `--workspace-root` argument or `STACKOS_WORKSPACE_ROOT` environment value,

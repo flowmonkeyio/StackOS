@@ -525,6 +525,39 @@ reviewer reject requires `selected_role=review_agent` and
 `validated_outcome=repair`. Phase, agent name, current defaults and raw returned
 status are not substitutes. Older receipts can lack these facts.
 
+### Diagnosing interrupted delivery
+
+Retain the ticket, attempt, native thread/invocation and request IDs that are
+actually available, the candidate, launch/exit times and their time zones, the
+initiating observation, and the next action's owner. Mark missing history
+explicitly. A stopped task or invalid final result alone does not identify why
+the native call ended; an unexplained signal does not establish cancellation.
+Keep the initiating cause separate from a later result-validation or
+error-persistence failure, while preserving credential sanitization.
+
+| Observed boundary | Meaning and safe recovery |
+| --- | --- |
+| Explicit operator cancellation or managed cancellation | Preserve the cancellation reason and observed termination separately. Quiesce only owned processes and fence late results. Cancellation supplies no authority to resume. Main reconciles the current scope, blockers and retained sessions before an explicitly authorized rehandoff. |
+| Approval review transport error, including `400 Bad Request` | A failed review request is not an unsafe-action verdict. Retain the exact safe error and request identity; distinguish a receipt explicitly saying the action was not executed from unknown execution. If effects are uncertain, read authoritative target state before considering a retry. A permitted retry uses normal approval review after reconciliation; changing tools to evade review is not recovery. |
+| Actual approval denial | Stop the denied action and dependent work. Continue unaffected authorized checks; do not retry the denied action through another route. |
+| Required access or capability unavailable | Retain the precise missing boundary and owner as blocked proof. Another host, model or fresh session cannot silently replace the assigned execution. |
+| Suspected sleep/wake or lost runtime connection | Correlate existing OS suspend/wake observations with the affected runtime and attempt. Token silence, a heartbeat gap or a stopped label alone proves neither sleep nor a hang. Reconnect and controlled-clock tests prove only their exercised recovery boundary, not physical sleep effectiveness. |
+
+Before retrying an uncertain write, inspect the owning repository/provider's
+authoritative record and its operation-specific idempotency receipt. An absent
+acknowledgment is not evidence of no effect. If readback cannot settle the
+outcome, keep the write unresolved rather than risking a duplicate side effect.
+See [bridge replay boundaries](./bridge-failure-diagnostics.md#narrowed-replay-policy).
+
+Use existing physical observations without suspending or restarting a shared
+machine for diagnosis. When upstream or physical history cannot establish a
+cause, return a bounded diagnosis with known facts, missing evidence, the safe
+recovery rule, and a named followup owner and condition. Do not invent a runtime
+fix or claim a physical pass. Main owns any later authorized physical exercise
+and installed activation; source tests do not update the running daemon.
+
+### Native usage receipts
+
 Optional native usage travels separately from agent-authored outputs through
 `AgentRunResult.usage`. The shared owner in `host_mcp/result.py` validates
 `usage_snapshot(scope, basis, input_count, output_count, total, *, cache_read=None,
