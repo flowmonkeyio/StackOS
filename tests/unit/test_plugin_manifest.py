@@ -40,7 +40,6 @@ def _auth_field_keys(provider: ProviderManifest, method_key: str | None = None) 
         "gtm",
         "marketing",
         "media-buying",
-        "publishing",
         "seo",
         "support",
     ],
@@ -66,6 +65,21 @@ def test_finance_keeps_its_existing_console_owner() -> None:
     assert manifest.ui is not None
     assert "page" not in manifest.ui
     assert manifest.ui["nav"]["items"][0]["to"] == "finance"
+
+
+@pytest.mark.parametrize("slug", ["trackbooth", "shopify", "linear", "publishing"])
+def test_integration_packages_keep_capabilities_without_redundant_pages(slug: str) -> None:
+    root = Path(__file__).resolve().parents[2] / "plugins" / slug
+    manifest = load_plugin_manifest_file(root / "plugin.yaml")
+    assert not manifest.ui
+    assert manifest.providers
+    assert manifest.actions
+    assert all(provider.auth_methods for provider in manifest.providers)
+    if slug == "publishing":
+        assert {resource.key for resource in manifest.resources} == {
+            "published-post",
+            "publish-target",
+        }
 
 
 @pytest.mark.parametrize(
@@ -2410,8 +2424,7 @@ def test_publishing_plugin_yaml_facade_validates() -> None:
     manifest = load_plugin_manifest_file(Path("plugins/publishing/plugin.yaml"))
 
     assert manifest.slug == "publishing"
-    assert manifest.ui is not None
-    assert manifest.ui["nav"]["section"] == "Publishing"
+    assert manifest.ui is None
     assert {provider.key for provider in manifest.providers} == {"wordpress", "ghost"}
     providers = {provider.key: provider for provider in manifest.providers}
     assert _auth_field_keys(providers["wordpress"]) == [

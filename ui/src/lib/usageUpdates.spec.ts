@@ -47,6 +47,12 @@ describe('one shared usage transport', () => {
     expect(status).toHaveBeenCalledTimes(1)
     projectStream.onEvent({ id: 2, event_type: 'tracker.usage.changed' } as never)
     expect(status).toHaveBeenCalledTimes(1)
+    const batch = { id: 3, project_id: 1, event_type: 'tracker.tasks.changed', metadata_json: { rev: 8, affected_tasks: [{ task_key: 'a' }, { task_key: 'b' }] } }
+    projectStream.onEvent({ ...batch, project_id: 2 } as never)
+    expect(status).toHaveBeenCalledTimes(1)
+    projectStream.onEvent(batch as never)
+    expect(status).toHaveBeenLastCalledWith(batch)
+    expect(status).toHaveBeenCalledTimes(2)
     // The server emits one usage refresh per cycle, including final receipt
     // events. Its durable status companion must not reload analytics again.
     expect(first).toHaveBeenCalledTimes(1); expect(second).toHaveBeenCalledTimes(1)

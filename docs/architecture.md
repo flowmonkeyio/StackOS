@@ -128,6 +128,50 @@ edits do not update saved instructions, installed runtimes or frozen jobs. No
 synchronizer or cross-project rollout exists. Main retains scope admission and
 final claims; terminal-managed delivery keeps its sole-writer contract.
 
+## Request-Owned Native Execution
+
+`host_mcp.service.run_agent` accepts either project/task/ticket attribution or
+project/request attribution, exclusively. Request-only execution uses
+`AgentRequestExecution` with a daemon-held claim token and session factory; it
+creates no tracker records or run plan. The service records the actual admitted
+launch options and caller context in `AgentRequest.metadata_json.native_execution`
+through `AgentRequestRepository` before invoking the native adapter. Claim tokens
+are never part of that snapshot. Missing ownership or failed admission prevents
+native launch.
+
+The existing active invocation registry owns live thread identity, process control
+and counters. The repository retains the thread ID when the native host first
+announces it, so a later daemon crash does not erase that identity.
+`active_request_execution(project_id, request_id)` reads that
+transient lifetime. Request counters are excluded from task/ticket provisional
+statistics. The existing five-second collector verifies the exact registered
+owner and renews its repository lease only near expiry. Renewal and native exit
+share the launch lock, acquired before the registry lock; a collector observation
+cannot become stale between its ownership check and renewal. A live renewal
+failure records cancellation before completion, with process stopping outside the
+locks. Cancellation and exit fence renewal and late session callbacks. An admitted
+request cannot be reclaimed, released or prepared by a different runner even after
+its lease expires; an interrupted occurrence remains unresolved for explicit
+inspection, with no replay.
+
+At native exit the service persists one final native result, identity, measured
+usage and bounded samples through the same repository owner before retiring the
+registry snapshot. `AgentRequestRepository.execution_evidence` copies registry
+observation before reading SQL, covering the native-exit handoff without reporting
+a finished process as live; committed final evidence wins over an older copy.
+Counters come from the adapter, never the agent's result body;
+repeated checkpoints replace the invocation contribution. The controller still
+interprets the domain result and calls the existing request `complete` operation.
+Resolution requires successful native terminal evidence; cancellation, missing
+identity or an unobserved exit cannot become success. Failed work can be explicitly
+completed as failed with the original claim. A persistence failure propagates and
+leaves the request unresolved rather than reporting success.
+
+Request cancellation returns only the exact project/request's managed handles for
+the caller to stop. Daemon shutdown stops owned request processes and retains the
+registry until their final handoff. Project cleanup's existing native-invocation
+blocker also covers these calls. No second process registry or polling loop exists.
+
 ## Native Desktop Schedule Admission
 
 Electron main owns one authenticated availability stream through
@@ -149,8 +193,20 @@ enabled configuration and fences edits even during asynchronous preflight.
 
 The occurrence-launch consumer receives `(row, due_utc, admit)`. It must call
 `admit()` after any awaited readiness checks, immediately before creating work,
-without an intervening await. The scheduler owns eligibility only; request,
-run-plan, tracker and task-delivery owners retain admitted workflow lifecycle.
+without an intervening await. Each occurrence creates and claims one AgentRequest
+and calls the shared native host service once for a project main-agent thread.
+The one-second due-time window applies through initial request admission only.
+Native registration and spawn retain the admitted generation/configuration and
+project-folder fences without expiring valid work during native preparation.
+Goal and optional workflow are context for that agent, which reads current project
+and effective workflow guidance and decides how to use ordinary tools/approvals.
+The scheduler does not create or advance plans or dispatch task-delivery roles.
+Project setup owns the folder; only host_key inherits from explicit schedule,
+project delivery defaults, then the native default. Specialist instructions/model
+pins do not become main-agent settings. Request-first history includes actual
+native results/usage with optional same-project real plan links, without tokens
+or launch snapshots. Unresolved requests and linked unfinished plans prevent
+overlap independently of leases; blocked/crashed work is never silently retried.
 
 ## Data Model
 

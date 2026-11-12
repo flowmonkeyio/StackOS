@@ -3,7 +3,7 @@
 from sqlmodel import Session, select
 
 from stackos.auth import derive_ui_token
-from stackos.db.models import ScheduledJob, TaskTracker, WorkspaceBinding
+from stackos.db.models import TaskTracker, WorkspaceBinding
 from stackos.operations.registry import build_operation_registry
 from stackos.repositories.base import NotFoundError
 
@@ -219,7 +219,7 @@ def test_permissions_surfaces_and_project_scope(api, project_id, tmp_path):
     assert list(other.iterdir()) == []
 
 
-def test_saved_project_and_schedule_references_require_reassignment(api, project_id, tmp_path):
+def test_saved_project_references_require_reassignment(api, project_id, tmp_path):
     scope = bind(api, project_id, tmp_path / "bound")
     created = call(
         api,
@@ -242,19 +242,9 @@ def test_saved_project_and_schedule_references_require_reassignment(api, project
             name="Default",
             config_json={"delivery": {"agents": {"researcher": {"source_ref": row["source_ref"]}}}},
         )
-        schedule = ScheduledJob(
-            project_id=project_id,
-            kind="workflow",
-            cron_expr="0 9 * * *",
-            execution_json={
-                "project_dir": scope["project_dir"],
-                "agents": {"analyst": {"source_ref": row["source_ref"]}},
-            },
-        )
         session.add(tracker)
-        session.add(schedule)
         session.commit()
-        tracker_id, schedule_id = tracker.id, schedule.id
+        tracker_id = tracker.id
     args = {
         **scope,
         "source_ref": row["source_ref"],
@@ -263,14 +253,9 @@ def test_saved_project_and_schedule_references_require_reassignment(api, project
     }
     rejected = call(api, "update", args)
     assert rejected.status_code == 409, rejected.text
-    assert (
-        "referenced_identity" in rejected.text
-        and "schedule" in rejected.text
-        and "project_assignment" in rejected.text
-    )
+    assert "referenced_identity" in rejected.text and "project_assignment" in rejected.text
     with Session(api.app.state.engine) as session:
         session.delete(session.get(TaskTracker, tracker_id))
-        session.delete(session.get(ScheduledJob, schedule_id))
         session.commit()
     saved = call(api, "update", args)
     assert saved.status_code == 200, saved.text

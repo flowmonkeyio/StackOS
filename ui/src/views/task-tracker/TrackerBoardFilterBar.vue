@@ -162,7 +162,7 @@ function apply(clause: BoardFilterClause): void {
           :key="field.key"
           variant="ghost"
           size="sm"
-          class="justify-start"
+          align="start"
           @click="editing = field.key"
         >
           {{ field.label }}

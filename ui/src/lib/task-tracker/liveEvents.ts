@@ -16,6 +16,25 @@ export interface ProjectTimelineEvent {
   created_at: string
 }
 
+// Batch membership uses the producer's structured members, just like scoped
+// timeline readers. Summary keys and nested lookalikes are not membership.
+export function trackerEventTaskKeys(event: ProjectTimelineEvent): string[] {
+  const metadata = event.metadata_json
+  if (!metadata || typeof metadata !== 'object') return []
+  if (event.event_type === 'tracker.tasks.changed') {
+    if (!Array.isArray(metadata.affected_tasks)) return []
+    return [...new Set(metadata.affected_tasks.flatMap(member =>
+      member && typeof member === 'object' && typeof member.task_key === 'string' ? [member.task_key] : []))]
+  }
+  return typeof metadata.task_key === 'string' ? [metadata.task_key] : []
+}
+
+export function trackerEventRevision(event: ProjectTimelineEvent): number | undefined {
+  const metadata = event.metadata_json
+  const rev = metadata && typeof metadata === 'object' ? metadata.rev : undefined
+  return typeof rev === 'number' && Number.isSafeInteger(rev) && rev > 0 ? rev : undefined
+}
+
 export interface SseMessage {
   id: string | null
   event: string

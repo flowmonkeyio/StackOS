@@ -5,12 +5,15 @@ from __future__ import annotations
 import hashlib
 import hmac
 import secrets
+from collections.abc import Callable
+from copy import deepcopy
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic import ValidationError as PydanticValidationError
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlmodel import Session, col, select
 
 from stackos.artifacts import redact_secret_text, redact_secrets
@@ -21,6 +24,13 @@ from stackos.db.models import (
     AgentRequestStatus,
     ResourceRecord,
     RunPlan,
+)
+from stackos.host_mcp.agent_execution import managed_launch_lock
+from stackos.host_mcp.result import AgentRunResult
+from stackos.host_mcp.service import (
+    ActiveInvocation,
+    active_request_execution,
+    owns_request_invocation,
 )
 from stackos.repositories.base import (
     ConflictError,
@@ -102,6 +112,33 @@ class AgentRequestPrepareRunPlanOut(BaseModel):
     claim_token: str = Field(min_length=1)
 
 
+@dataclass(frozen=True)
+class AgentRequestExecution:
+    """Daemon-held claim and session factory for one request's native handoff.
+
+    No runner or process ownership lives here. The host registry calls these
+    repository writes before launch, on its existing collector, and at exit.
+    """
+
+    project_id: int
+    request_id: int
+    claim_token: str = field(repr=False)
+    session_factory: Callable[[], Session] = field(repr=False)
+    snapshot: dict[str, Any]
+
+    def admit(self, call: ActiveInvocation, launch_snapshot: dict[str, Any]) -> None:
+        with managed_launch_lock, self.session_factory() as session:
+            AgentRequestRepository(session)._admit_execution(self, call, launch_snapshot)
+
+    def renew(self, call: ActiveInvocation) -> None:
+        with managed_launch_lock, self.session_factory() as session:
+            AgentRequestRepository(session)._renew_execution(self, call)
+
+    def finish(self, call: ActiveInvocation, result: AgentRunResult | None) -> None:
+        with managed_launch_lock, self.session_factory() as session:
+            AgentRequestRepository(session)._finish_execution(self, call, result)
+
+
 class AgentRequestRepository:
     """Generic claimable inbox for agents.
 
@@ -128,6 +165,8 @@ class AgentRequestRepository:
         metadata_json: dict[str, Any] | None = None,
     ) -> Envelope[AgentRequestOut]:
         self._require_project(project_id)
+        if metadata_json is not None and "native_execution" in metadata_json:
+            raise ValidationError("native_execution is owned by the native request handoff")
         self._validate_source_record(project_id, source_resource_record_id)
         if not request_key.strip():
             raise ValidationError("request_key is required")
@@ -179,6 +218,25 @@ class AgentRequestRepository:
     def get(self, *, project_id: int, request_id: int) -> AgentRequestOut:
         return self._out(self._fetch(project_id=project_id, request_id=request_id))
 
+    def execution_evidence(self, *, project_id: int, request_id: int) -> dict[str, Any]:
+        """Request history projection: committed final evidence wins over a bounded copy."""
+        observed = active_request_execution(project_id, request_id, include_handoff=True)
+        row = self._fetch(project_id=project_id, request_id=request_id)
+        evidence = deepcopy((row.metadata_json or {}).get("native_execution"))
+        active = None
+        if (
+            observed is not None
+            and evidence is not None
+            and observed["invocation_id"] == evidence["execution"]["invocation_id"]
+        ):
+            finished = observed.pop("finished")
+            usage = observed.pop("usage")
+            if not finished and not evidence.get("finished_at"):
+                active = observed
+            if not evidence.get("finished_at"):
+                evidence.update(execution=observed, usage=usage)
+        return {"native_execution": redact_secrets(evidence), "active_execution": active}
+
     def list(
         self,
         *,
@@ -225,6 +283,9 @@ class AgentRequestRepository:
                     (col(AgentRequest.status) == AgentRequestStatus.CLAIMED)
                     & col(AgentRequest.claim_expires_at).is_not(None)
                     & (col(AgentRequest.claim_expires_at) <= now)
+                    & func.json_type(col(AgentRequest.metadata_json), "$.native_execution").is_(
+                        None
+                    )
                 ),
             ),
         )
@@ -256,6 +317,10 @@ class AgentRequestRepository:
             )
         row = self._fetch(project_id=project_id, request_id=request_id)
         now = _utcnow()
+        if (row.metadata_json or {}).get("native_execution") is not None:
+            raise ConflictError(
+                "native request execution requires explicit resolution, not reclaim"
+            )
         if row.status == AgentRequestStatus.CLAIMED:
             if row.claim_expires_at is None or row.claim_expires_at > now:
                 raise ConflictError(
@@ -305,6 +370,8 @@ class AgentRequestRepository:
         claim_token: str,
     ) -> Envelope[AgentRequestOut]:
         row = self._fetch(project_id=project_id, request_id=request_id)
+        if (row.metadata_json or {}).get("native_execution") is not None:
+            raise ConflictError("an admitted native request cannot be released for relaunch")
         self._verify_claim(row, claim_token)
         validate_transition(
             row.status,
@@ -332,7 +399,12 @@ class AgentRequestRepository:
         claim_token: str,
     ) -> Envelope[AgentRequestOut]:
         row = self._fetch(project_id=project_id, request_id=request_id)
-        self._verify_claim(row, claim_token)
+        # Native results can link after a long invocation's final handoff. The
+        # original owner remains fenced against reclaim even beyond its lease.
+        evidence = (row.metadata_json or {}).get("native_execution")
+        self._verify_claim(
+            row, claim_token, allow_expired=bool(evidence and evidence.get("finished_at"))
+        )
         plan = self._s.get(RunPlan, run_plan_id)
         if plan is None:
             raise NotFoundError(f"run plan {run_plan_id} not found")
@@ -394,6 +466,10 @@ class AgentRequestRepository:
         if run_plan_json is None and template_key is None:
             raise ValidationError("run_plan_json or template_key is required")
         row = self._fetch(project_id=project_id, request_id=request_id)
+        if (row.metadata_json or {}).get("native_execution") is not None:
+            raise ConflictError(
+                "native request execution requires explicit resolution, not reclaim"
+            )
         now = _utcnow()
         if row.status == AgentRequestStatus.CLAIMED:
             if row.claim_expires_at is None or row.claim_expires_at > now:
@@ -502,7 +578,21 @@ class AgentRequestRepository:
                 data={"status": status.value},
             )
         row = self._fetch(project_id=project_id, request_id=request_id)
-        self._verify_claim(row, claim_token)
+        evidence = (row.metadata_json or {}).get("native_execution")
+        self._verify_claim(row, claim_token, allow_expired=evidence is not None)
+        if metadata_json is not None and "native_execution" in metadata_json:
+            raise ValidationError("native_execution is owned by the native request handoff")
+        if evidence is not None:
+            if not evidence.get("finished_at"):
+                raise ConflictError("native request is still running or its exit is unobserved")
+            if status == AgentRequestStatus.RESOLVED and (
+                evidence.get("cancelled")
+                or evidence.get("exit_code") != 0
+                or evidence.get("error")
+                or evidence.get("result") is None
+                or not evidence["execution"].get("thread_id")
+            ):
+                raise ConflictError("native request has no successful terminal evidence")
         validate_transition(
             row.status,
             status,
@@ -535,6 +625,10 @@ class AgentRequestRepository:
     ) -> Envelope[AgentRequestOut]:
         _ = ignored_by
         row = self._fetch(project_id=project_id, request_id=request_id)
+        if (row.metadata_json or {}).get("native_execution") is not None:
+            raise ConflictError("an admitted native request requires terminal resolution")
+        if metadata_json is not None and "native_execution" in metadata_json:
+            raise ValidationError("native_execution is owned by the native request handoff")
         if row.status == AgentRequestStatus.CLAIMED:
             if claim_token is None:
                 raise ConflictError("claim_token is required for claimed agent requests")
@@ -567,7 +661,7 @@ class AgentRequestRepository:
         return Envelope(data=self._out(row), project_id=project_id)
 
     def _fetch(self, *, project_id: int, request_id: int) -> AgentRequest:
-        row = self._s.get(AgentRequest, request_id)
+        row = self._s.get(AgentRequest, request_id, populate_existing=True)
         if row is None or row.project_id != project_id:
             raise NotFoundError(f"agent request {request_id} not found")
         return row
@@ -627,7 +721,9 @@ class AgentRequestRepository:
                 },
             )
 
-    def _verify_claim(self, row: AgentRequest, claim_token: str) -> None:
+    def _verify_claim(
+        self, row: AgentRequest, claim_token: str, *, allow_expired: bool = False
+    ) -> None:
         if row.status not in {
             AgentRequestStatus.CLAIMED,
             AgentRequestStatus.RUN_CREATED,
@@ -638,7 +734,11 @@ class AgentRequestRepository:
                 "agent request is not actively claimed",
                 data={"request_id": row.id, "status": row.status.value},
             )
-        if row.claim_expires_at is not None and row.claim_expires_at <= _utcnow():
+        if (
+            not allow_expired
+            and row.claim_expires_at is not None
+            and row.claim_expires_at <= _utcnow()
+        ):
             raise ConflictError(
                 "agent request claim has expired",
                 data={"request_id": row.id, "claim_expires_at": row.claim_expires_at.isoformat()},
@@ -649,9 +749,119 @@ class AgentRequestRepository:
         ):
             raise ConflictError("claim_token does not match agent request claim")
 
+    def _execution_row(
+        self,
+        owner: AgentRequestExecution,
+        call: ActiveInvocation,
+        *,
+        finished: bool = False,
+    ) -> AgentRequest:
+        if (
+            call.scope.project_id != owner.project_id
+            or call.scope.request_id != owner.request_id
+            or not owns_request_invocation(call, finished=finished)
+        ):
+            raise ConflictError("native invocation does not own this request")
+        row = self._fetch(project_id=owner.project_id, request_id=owner.request_id)
+        self._verify_claim(row, owner.claim_token, allow_expired=True)
+        return row
+
+    def _admit_execution(
+        self,
+        owner: AgentRequestExecution,
+        call: ActiveInvocation,
+        launch_snapshot: dict[str, Any],
+    ) -> None:
+        from stackos.repositories.projects import ProjectRepository
+
+        ProjectRepository(self._s).require_available(owner.project_id, reserve=True)
+        row = self._execution_row(owner, call)
+        self._verify_claim(row, owner.claim_token)
+        if row.status != AgentRequestStatus.CLAIMED or (row.metadata_json or {}).get(
+            "native_execution"
+        ):
+            raise ConflictError("request already has native execution evidence")
+        row.metadata_json = {
+            **(row.metadata_json or {}),
+            "native_execution": redact_secrets(
+                {
+                    "snapshot": {**launch_snapshot, "context": owner.snapshot},
+                    "execution": call.projection(),
+                    "finished_at": None,
+                }
+            ),
+        }
+        self._s.add(row)
+        self._s.commit()
+
+    def _renew_execution(self, owner: AgentRequestExecution, call: ActiveInvocation) -> None:
+        row = self._execution_row(owner, call)
+        evidence = (row.metadata_json or {}).get("native_execution", {})
+        if (
+            call.cancelled.is_set()
+            or call.process_control.cancelled.is_set()
+            or evidence.get("finished_at")
+            or evidence.get("execution", {}).get("invocation_id") != call.invocation_id
+        ):
+            raise ConflictError("native request renewal is fenced")
+        now = _utcnow()
+        changed = False
+        if call.thread_id is not None and evidence["execution"].get("thread_id") != call.thread_id:
+            row.metadata_json = {
+                **(row.metadata_json or {}),
+                "native_execution": {
+                    **evidence,
+                    "execution": call.projection(),
+                },
+            }
+            changed = True
+        # Collector ticks remain transient; write only near the existing lease boundary.
+        if row.claim_expires_at is None or row.claim_expires_at <= now + timedelta(seconds=300):
+            row.claim_expires_at = now + timedelta(seconds=600)
+            changed = True
+        if changed:
+            row.updated_at = now
+            self._s.add(row)
+            self._s.commit()
+
+    def _finish_execution(
+        self,
+        owner: AgentRequestExecution,
+        call: ActiveInvocation,
+        result: AgentRunResult | None,
+    ) -> None:
+        row = self._execution_row(owner, call, finished=True)
+        evidence = dict((row.metadata_json or {}).get("native_execution", {}))
+        if (
+            evidence.get("finished_at")
+            or evidence.get("execution", {}).get("invocation_id") != call.invocation_id
+        ):
+            raise ConflictError("native request exit handoff is already finished or superseded")
+        evidence.update(
+            redact_secrets(
+                {
+                    "execution": call.projection(),
+                    "finished_at": _utcnow().isoformat(),
+                    "usage": call.usage,
+                    "exit_code": result.exit_code if result else None,
+                    "result": result.result if result else None,
+                    "error": result.error
+                    if result
+                    else "Native exit was not successfully observed",
+                    "cancelled": call.cancelled.is_set() or call.process_control.cancelled.is_set(),
+                    "stop_error": call.process_control.stop_error,
+                }
+            )
+        )
+        row.metadata_json = {**(row.metadata_json or {}), "native_execution": evidence}
+        row.updated_at = _utcnow()
+        self._s.add(row)
+        self._s.commit()
+
 
 __all__ = [
     "AgentRequestClaimOut",
+    "AgentRequestExecution",
     "AgentRequestOut",
     "AgentRequestPrepareRunPlanOut",
     "AgentRequestRepository",

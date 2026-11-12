@@ -16,7 +16,11 @@ function setup() {
   return { source, projectId, refresh, edits }
 }
 describe('Board save lifecycle', () => {
-  beforeEach(() => { vi.resetAllMocks() })
+  beforeEach(() => {
+    vi.resetAllMocks()
+    vi.mocked(reorderTask).mockResolvedValue({ data: { rev: 2 } } as never)
+    vi.mocked(saveTaskPriority).mockResolvedValue({ data: { rev: 2 } } as never)
+  })
   afterEach(() => { vi.useRealTimers() })
   it('does not save or refresh self, same-position, cross-column, cross-project or missing-anchor moves', async () => {
     const { edits, refresh, source } = setup()
@@ -42,9 +46,10 @@ describe('Board save lifecycle', () => {
     expect(edits.rows.value.map(row => row.key)).toEqual(['b', 'c', 'a'])
     expect(edits.pending.value).toBe(true)
     expect(reorderTask).toHaveBeenLastCalledWith({ project_id: 1, task_key: 'a', anchor_task_key: 'c', placement: 'after', expected_status: 'in-progress', expected_updated_at: '2026-11-10T00:00:00', idempotency_key: expect.any(String) }, expect.any(AbortSignal))
-    finish({} as never)
+    finish({ data: { rev: 2 } } as never)
     await saving
     expect(refresh).toHaveBeenCalledOnce()
+    expect(refresh).toHaveBeenLastCalledWith(2)
     expect(edits.pending.value).toBe(false)
   })
   it('rolls back failed priority/order saves with a concise error', async () => {

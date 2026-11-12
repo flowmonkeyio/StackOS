@@ -27,6 +27,9 @@ import {
 interface TrackerReloadOptions {
   refocus?: boolean
   restartStream?: boolean
+  quiet?: boolean
+  minRevision?: number
+  taskKeys?: string[]
 }
 
 interface UseTrackerGraphSessionOptions {
@@ -51,6 +54,7 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
   const selectedNodeFocusId = ref<string | null>(null)
   const detailPanelOpen = ref(false)
   let requestSeq = 0
+  let graphRead: { taskKey: string; promise: Promise<TrackerSnapshot | null> } | null = null
   const {
     liveError,
     feedState,
@@ -60,7 +64,7 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
   } = useTrackerLiveUpdates({
     projectId,
     activeTaskKey: options.liveTaskKey ?? activeTaskKey,
-    reload: () => reload({ refocus: false, restartStream: false }),
+    reload: (minRevision, taskKeys) => reload({ refocus: false, restartStream: false, quiet: true, minRevision, taskKeys }),
     refreshUsage: options.refreshUsage,
   })
 
@@ -259,7 +263,25 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
 
   async function loadFocusedGraph(
     taskKey: string,
-    loadOptions: { refocus?: boolean } = {},
+    loadOptions: { refocus?: boolean; minRevision?: number } = {},
+  ): Promise<TrackerSnapshot | null> {
+    const covered = () => graphSnapshot.value?.tasks[0]?.key === taskKey && graphSnapshot.value.tracker.rev >= loadOptions.minRevision!
+    if (loadOptions.minRevision !== undefined) {
+      if (covered()) return graphSnapshot.value
+      while (graphRead?.taskKey === taskKey) {
+        const next = await graphRead.promise
+        if (!next) return null
+        if (covered()) return graphSnapshot.value
+      }
+    }
+    const read = { taskKey, promise: readFocusedGraph(taskKey, loadOptions) }
+    graphRead = read
+    try { return await read.promise } finally { if (graphRead === read) graphRead = null }
+  }
+
+  async function readFocusedGraph(
+    taskKey: string,
+    loadOptions: { refocus?: boolean; minRevision?: number },
   ): Promise<TrackerSnapshot | null> {
     if (!validProjectId(projectId.value) || !taskKey) {
       graphSnapshot.value = null
@@ -275,6 +297,7 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
         include_graph: true,
       })
       if (currentRequest !== requestSeq) return null
+      if (loadOptions.minRevision !== undefined && nextGraph.tracker.rev < loadOptions.minRevision) throw new Error('The task graph is older than the change. Use Refresh to retry.')
       patchUsageAfter(nextGraph, projectId.value, usageVersion)
       graphSnapshot.value = nextGraph
       if (loadOptions.refocus) requestRefocus()

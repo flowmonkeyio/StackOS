@@ -190,8 +190,14 @@ Domain pages declare their supported sections in `ui.page.sections`, using
 when empty and omits undeclared sections. It uses the effective workflow loader
 and shared resource/artifact readers; a declaration does not create records,
 workflow templates, readiness, or execution controls. `ui.page.description` is
-optional operator-facing page copy. Publishing declares saved information and
-files only; Finance keeps its existing console. Library links retain the exact
+optional operator-facing page copy. The sidebar includes enabled plugins with at
+least one supported page section, plus Finance's existing console. `ui.nav`
+section labels or links alone do not create a domain destination. Integration-only
+packages (Trackbooth, Shopify and Linear) and Publishing contribute no redundant
+page; their providers, actions, credentials and setup remain available through
+Plugins and Connections. Existing saved information and files remain in Library,
+without migration. A direct plugin URL without a page links to setup and scoped
+Library tabs rather than advertising an empty page. Library links retain the exact
 project, plugin, source type and tab. Navigation contributions use `to` and
 `plugin_slug` query parameters, including Agency and Support.
 

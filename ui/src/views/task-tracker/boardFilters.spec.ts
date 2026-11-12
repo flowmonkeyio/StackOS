@@ -1,78 +1,83 @@
-// @vitest-environment node
-import { describe, expect, it } from 'vitest'
-import { parseQuery, stringifyQuery } from 'vue-router'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
-  boardFilterQuery, clearBoardFilters, parseBoardFilters, removeBoardFilter,
+  boardFiltersFromEntry, boardTicketEntry, clearBoardFilters, defaultBoardFilters,
+  normalizeBoardFilters, readBoardFilters, removeBoardFilter, saveBoardFilters,
   updateBoardDisplay, updateBoardFilter,
 } from './boardFilters'
+import type { BoardFilterState } from './boardFilters'
 
-describe('Board URL state', () => {
-  it('distinguishes fresh defaults from explicit unrestricted state after serialization/reload', () => {
-    const defaults = parseBoardFilters({})
-    expect(defaults).toEqual({
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear() })
+
+describe('Board local preferences', () => {
+  it('keeps fresh defaults distinct from saved unrestricted Clear all', () => {
+    expect(readBoardFilters(7)).toEqual({
       clauses: [{ field: 'status', operator: 'is-not', values: ['aborted'] }],
       completed: 'past-week', hideEmptyColumns: false,
     })
-    const cleared = clearBoardFilters(defaults)
-    const query = boardFilterQuery(cleared)
-    expect(query).toMatchObject({ status: 'all', completed: 'all' })
-    expect(parseBoardFilters(parseQuery(stringifyQuery(query)))).toEqual(cleared)
+    const cleared = clearBoardFilters({ ...defaultBoardFilters(), hideEmptyColumns: true })
+    saveBoardFilters(7, cleared)
+    expect(readBoardFilters(7)).toEqual({ clauses: [], completed: 'all', hideEmptyColumns: true })
+    expect(readBoardFilters(8)).toEqual(defaultBoardFilters())
+    expect(localStorage.length).toBe(1)
   })
 
-  it('roundtrips the five fields, limited operators, display choices and encoded text', () => {
-    const state = parseBoardFilters({
-      search: 'text & spaces', status: ['complete', 'in-progress', 'complete'],
-      priority: 'p0,p2', priority_op: 'is-not', workflow: 'engineering.delivery',
-      workflow_op: 'is-not', assignee: 'Agent / Reviewer', completed: 'past-month', hide_empty: '1',
-    })
-    expect(state.clauses).toEqual([
-      { field: 'text', value: 'text & spaces' },
-      { field: 'status', operator: 'is', values: ['in-progress', 'complete'] },
-      { field: 'priority', operator: 'is-not', values: ['p0', 'p2'] },
-      { field: 'workflow', operator: 'is-not', value: 'engineering.delivery' },
-      { field: 'assignee', operator: 'is', value: 'Agent / Reviewer' },
-    ])
-    expect(parseBoardFilters(parseQuery(stringifyQuery(boardFilterQuery(state))))).toEqual(state)
-  })
-
-  it('normalizes invalid values and repeated lists without accepting arbitrary operators', () => {
-    expect(parseBoardFilters({
-      status: 'invented', priority: ['p1', 'bad', 'p1'], priority_op: 'contains',
-      completed: 'current-cycle', hide_empty: 'yes', search: ['one', 'two'],
-      ticket_status: 'bad', focus: 'all',
-    })).toEqual({
+  it('roundtrips every clause, operator and display choice in one project record', () => {
+    const state: BoardFilterState = {
       clauses: [
-        { field: 'status', operator: 'is-not', values: ['aborted'] },
-        { field: 'priority', operator: 'is', values: ['p1'] },
-      ], completed: 'past-week', hideEmptyColumns: false,
-    })
+        { field: 'text', value: ' text & spaces ' },
+        { field: 'status', operator: 'is', values: ['in-progress', 'complete'] },
+        { field: 'priority', operator: 'is-not', values: ['p0', 'p2'] },
+        { field: 'workflow', operator: 'is-not', value: 'engineering.delivery' },
+        { field: 'assignee', operator: 'is', value: 'Agent / Reviewer' },
+        { field: 'ticket-status', value: 'failed' }, { field: 'blocked' },
+      ], completed: 'past-month', hideEmptyColumns: true,
+    }
+    saveBoardFilters(7, state)
+    expect(readBoardFilters(7)).toEqual(state)
+    expect(JSON.parse(localStorage.getItem('stackos:work-board-filters:7')!)).toEqual(state)
   })
 
-  it('represents legacy Home restrictions as individually removable clauses', () => {
-    const state = parseBoardFilters({ ticket_status: 'failed', focus: 'blocked' })
+  it.each(['{', 'null', '[]', '42', '{}', '{"clauses":null}', JSON.stringify({ clauses: [], completed: 'invented', hideEmptyColumns: false }),
+    JSON.stringify({ clauses: [{ field: 'status', values: ['bogus'] }], completed: 'all', hideEmptyColumns: false }),
+    JSON.stringify({ clauses: [{ field: 'status', values: ['complete'] }], completed: 'all', hideEmptyColumns: false }),
+    JSON.stringify({ clauses: [null], completed: 'all', hideEmptyColumns: false }),
+    JSON.stringify({ clauses: [{ field: 'priority', operator: 'contains', values: ['p1'] }], completed: 'all', hideEmptyColumns: false }),
+  ])('uses defaults for invalid storage %s', stored => {
+    localStorage.setItem('stackos:work-board-filters:7', stored)
+    expect(readBoardFilters(7)).toEqual(defaultBoardFilters())
+  })
+
+  it('guards denied storage access and failed writes without breaking commands', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied') })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    expect(readBoardFilters(7)).toEqual(defaultBoardFilters())
+    expect(() => saveBoardFilters(7, clearBoardFilters(defaultBoardFilters()))).not.toThrow()
+    vi.stubGlobal('window', { get localStorage() { throw new Error('disabled') } })
+    expect(readBoardFilters(7)).toEqual(defaultBoardFilters())
+    expect(() => saveBoardFilters(7, defaultBoardFilters())).not.toThrow()
+  })
+
+  it('validates one-shot Home intent and exposes its removable clause through the same model', () => {
+    const state = boardFiltersFromEntry(boardTicketEntry('failed'))!
     expect(state.clauses).toContainEqual({ field: 'ticket-status', value: 'failed' })
-    expect(state.clauses).toContainEqual({ field: 'blocked' })
-    const removed = removeBoardFilter(removeBoardFilter(state, 'ticket-status'), 'blocked')
-    expect(boardFilterQuery(removed)).toMatchObject({ ticket_status: undefined, focus: undefined })
-    expect(parseBoardFilters(parseQuery(stringifyQuery(boardFilterQuery(removed))))).toEqual(removed)
+    expect(removeBoardFilter(state, 'ticket-status')).toEqual(defaultBoardFilters())
+    expect(boardFiltersFromEntry('tickets:invented')).toBeNull()
+    expect(boardFiltersFromEntry(['tickets:failed'])).toBeNull()
   })
 
-  it('replaces a field instead of creating duplicate owners and preserves unrelated clauses', () => {
-    const state = parseBoardFilters({ search: 'first', priority: 'p3', completed: 'none' })
+  it('replaces fields, removes blank text and retains unrelated preferences', () => {
+    const state = updateBoardFilter(defaultBoardFilters(), { field: 'text', value: 'first' })
     const next = updateBoardFilter(state, { field: 'text', value: 'second' })
     expect(next.clauses.filter(clause => clause.field === 'text')).toEqual([{ field: 'text', value: 'second' }])
-    expect(next.clauses).toContainEqual({ field: 'priority', operator: 'is', values: ['p3'] })
-    expect(removeBoardFilter(next, 'status').clauses.some(clause => clause.field === 'status')).toBe(false)
+    expect(updateBoardFilter(next, { field: 'text', value: ' ' })).toEqual(defaultBoardFilters())
     expect(state.clauses[0]).toEqual({ field: 'text', value: 'first' })
   })
 
-  it('visibly reconciles Complete plus None to All from either command or a deep link', () => {
-    const complete = { field: 'status', operator: 'is', values: ['complete'] } as const
-    const hidden = updateBoardDisplay(parseBoardFilters({}), { completed: 'none' })
-    const next = updateBoardFilter(hidden, { ...complete, values: [...complete.values] })
+  it('reconciles Complete plus None on controls and storage readback', () => {
+    const hidden = updateBoardDisplay(defaultBoardFilters(), { completed: 'none' })
+    const next = updateBoardFilter(hidden, { field: 'status', operator: 'is', values: ['complete'] })
     expect(next.completed).toBe('all')
     expect(updateBoardDisplay(next, { completed: 'none' }).completed).toBe('all')
-    expect(parseBoardFilters({ status: 'complete', completed: 'none' }).completed).toBe('all')
-    expect(clearBoardFilters({ ...next, hideEmptyColumns: true }).hideEmptyColumns).toBe(true)
+    expect(normalizeBoardFilters({ ...next, completed: 'none' }).completed).toBe('all')
   })
 })

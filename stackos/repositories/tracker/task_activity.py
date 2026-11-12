@@ -10,6 +10,7 @@ from sqlmodel import Session, col, select
 from stackos.artifacts import redact_secret_text, redact_secrets
 from stackos.context.repository import ContextRepository
 from stackos.db.models import ProjectEvent, TrackerRevision
+from stackos.repositories.tracker.events import TRACKER_TASKS_CHANGED, tracker_batch_task_filter
 from stackos.repositories.tracker.inspection_schema import TaskActivityItem, TaskActivityOut
 from stackos.repositories.tracker.inspection_scope import (
     InspectionScope,
@@ -60,12 +61,14 @@ class TaskActivityMixin:
             typed_match(event.metadata_json, "ticket_key", scope.ticket_keys),
         )
         event_scope = or_(
+            tracker_batch_task_filter(task_key=task_key, task_id=scope.task.id),
             and_(col(event.source_type) == "tracker_task", col(event.source_id) == scope.task.id),
             and_(
                 col(event.source_type) == "tracker_ticket",
                 or_(col(event.source_id).in_(scope.tickets), invocation_scope),
             ),
             and_(
+                col(event.event_type) != TRACKER_TASKS_CHANGED,
                 col(event.source_type).not_in(["tracker_task", "tracker_ticket"]),
                 col(event.run_id).in_(scope.runs),
             ),

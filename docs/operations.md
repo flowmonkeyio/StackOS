@@ -120,147 +120,123 @@ its operation ID is preserved, including across restart.
 ## Project workflow schedules
 
 Project folder setup has one owner: `Project.primary_workspace_binding_id`.
-Initial folder-backed project bootstrap records its chosen binding. Connecting
-task worktrees or starting sessions never changes that selection. Existing
-projects deliberately remain unselected after migration; setup must confirm an
-existing same-project directory binding from `workspace.listBindings`, then use
-the local-admin `project.update` patch `{"primary_workspace_binding_id": <binding_id>}`
-once. Null supports projects without a local folder. This does not rebind a
-workspace, change project identity, or grant filesystem access.
-The selected binding's root cannot be moved implicitly through connect/bootstrap;
-task worktrees use distinct directory bindings. Intentional folder relocation
-clears the primary reference, updates the binding, then selects it again.
-
-`project.get` returns the stored reference plus `project_dir`, resolved only
-from that exact binding, or an actionable `project_folder_issue` for missing,
-wrong-project, conflicting or unavailable folders. Agents and new Automations
-share this read; neither screen chooses among task worktrees. File operations
-still enforce exact project/path association and local-admin authority.
-Explicit task worktrees and queued/running snapshots retain their own targets.
-Existing Automations keep their saved execution directory on unrelated edits.
-The editor explains a mismatch with project setup and requires explicit
-confirmation before using the configured project folder; saving then checks
-its agent selections in that folder. Setup never rewrites saved schedules.
+Folder-backed bootstrap records its chosen binding; connecting task worktrees or
+starting sessions does not change it. Existing projects deliberately remain
+unselected after migration. Setup selects an existing same-project directory
+binding from `workspace.listBindings` through the local-admin `project.update`
+patch `{"primary_workspace_binding_id": <binding_id>}`. This does not rebind a
+workspace or grant filesystem access. `project.get` returns that exact
+`project_dir` or an actionable `project_folder_issue`.
 
 `schedule.list`, `schedule.set`, `schedule.toggle`, `schedule.remove` and
-`schedule.runs` share the project schedule repository through MCP, generic
-REST operation calls and `stackos ops call`. The existing project schedule
-REST URLs delegate to that same owner, including the URL project ID on
-PATCH/DELETE. ID-based mutations require `project_id`; another project's
-job is reported missing before any effect.
+`schedule.runs` share `ScheduledJobRepository` through MCP, registered REST
+operations, the project schedule REST URLs and `stackos ops call`.
+ID-based mutations require the matching project; a foreign job is missing
+before any effect. Writes retain their existing local-admin setup boundary.
+Compact responses retain identity/state and repair context; use raw to read back
+the concrete goal, supplied inputs and native execution configuration.
 
 `schedule.set` replaces configuration under a stable project `kind` key.
-It accepts a display `name`, five-field `cron_expr`, IANA `timezone`, existing
-`template_key`, concrete `inputs_json`, and `execution_json`. Execution settings
-reuse `tracker.startDelivery`: required `project_dir`, optional `host_key`,
-`agents` (declared role key to selection), legacy `delivery_agent`/`review_agent`
-overrides and `mcp_config_ref`. Codex selections use exact project `source_ref`
-values (`host_key`, `native_name`, project-relative `source_path`), with optional
-execution fallbacks; source instructions are never copied into schedule storage.
-Other hosts retain their existing inline contracts. No engineering pair is
-required for a workflow with one declared role. Ordinary tickets still require
-independent review through the handoff owner.
+It accepts `name`, `goal` (instructions), five-field `cron_expr`, IANA
+`timezone`, `enabled` and an optional existing workflow `template_key`.
+`inputs_json` retains supplied context, including migrated workflow inputs.
+The main agent resolves concrete workflow inputs, method and roles; schedule
+setup does not validate business input completion or require role mappings.
 
-Optional `step_agent_assignments` maps existing template step IDs to selected
-role keys. Explicit selections take precedence over frozen step metadata, then
-a uniquely applicable declared role; ambiguous roles require an explicit choice.
-The scheduler translates step IDs to the occurrence's canonical ticket keys.
-Task keys, ticket assignments and run-plan IDs remain occurrence-only inputs.
-Validation does not judge the semantic suitability of the selected instructions.
-Credentials remain daemon-held; raw secret fields are rejected,
-including in disabled drafts. Opaque secret markers keep their existing rules.
-Cron parsing uses the existing APScheduler `CronTrigger.from_crontab` contract:
-numeric weekdays run from Monday (`0`) to Sunday (`6`); named weekdays such as
-`mon` avoid ambiguity. Persisted next-fire timestamps use UTC.
+The actual launch folder always comes from project setup. Optional
+`execution_json.host_key` wins over the project's delivery `host_key`, then
+the canonical native default (Codex). Model, provider and profile remain native
+host/project settings; delivery/reviewer instructions, source refs and model
+pins are never inherited. An explicit Codex `mcp_config_ref` uses the shared
+validated task-local route contract. The retained optional
+`execution_json.project_dir` only fences a saved legacy folder: if it differs
+from project setup, enabling fails until the operator confirms the configured
+folder and saves without the old fence. It cannot select a different target.
 
-Schedules default to disabled. Incomplete disabled drafts are permitted;
-supplied cron, timezone and execution shape must still be valid. Enabling
-strictly validates effective workflow inputs/defaults with the existing
-read-only run-plan validator and resolves current host/role settings through
-the handoff preflight. Saving supplied source refs also revalidates their current
-identity/settings, including supplied roles not assigned to any step, regardless
-of enabled state. Unrelated unselected project defaults are not resolved.
-When both forms supply `delivery_agent` or `review_agent`, each retained choice
-is validated separately; the legacy argument keeps its existing execution precedence.
-Complete declared selections validate step and role mappings
-even while disabled. Missing/renamed/malformed sources fail without fallback.
-This creates no request, run plan, run or tracker task,
-and grants no external action approval. Legacy metadata rows migrate to
-disabled, retain their IDs/key/cron/history and show a needs-setup issue.
+Schedules default to disabled and incomplete inert drafts are permitted.
+Supplied shape, cron/timezone, workflow reference and no-secret rules still
+validate. Enabling checks name, goal, timezone, the canonical project folder,
+workflow existence when selected and native host capability/readiness.
+It creates no request, plan or task. Raw secrets are rejected even in drafts;
+opaque credential refs and exact secret markers retain their normal rules.
+Cron uses APScheduler: numeric weekdays run Monday (`0`) through Sunday (`6`);
+named weekdays such as `mon` avoid ambiguity. Next-fire times are UTC.
 
-`schedule.remove` actually deletes configuration and reconciles its timer;
-it returns `{project_id, job_id, removed}` in the write envelope. It never
-cancels existing work or deletes its request, plan, run or task.
-Schedule IDs are never reassigned after removal. Migration `0037_schedule_id_nonreuse`
-preserves existing IDs and advances allocation beyond retained schedule history,
-so a new automation cannot inherit a removed automation's runs or stale references.
-The daemon installs `operation_services.schedule_reconcile(project_id, job_id)`
-for affected timer reconciliation; every mutation reaches that seam after
-commit, and queued admission must re-read current configuration.
+Migration `0042_schedule_main_thread` moves existing active setup once:
+goal/instructions are recovered from saved inputs, all input context and
+schedule identity/history remain, and role/step dispatch settings are removed.
+Missing goal/folder or an explicitly different saved folder disables the
+schedule with an actionable setup issue. It never rewrites admitted or
+historical request/plan/native snapshots. New occurrences use only the main
+thread path; historical plans remain readable and can still prevent overlap.
 
-Native availability uses the registered REST-only `desktop.availability`
-transport: Electron main POSTs `/api/v1/desktop/availability` with the locally
-read daemon token and holds the response stream open. The response begins with
-an SSE `ready` event and has no replay or heartbeat. Connection lifetime is the
-availability fact; it is not a JSON presence setter. Generic JSON operation
-calls cannot open it, and browser console tokens, CLI and MCP cannot enable it.
-Quit, suspend or disconnect removes workflow timers while maintenance and
-admitted tasks remain active. Reconnection arms future times only. Workflow
-jobs override the scheduler's permissive defaults with one-second jitter
-tolerance and generation/configuration checks before admission.
+Electron main holds the authenticated REST-only `desktop.availability` stream
+at `/api/v1/desktop/availability`. Browser tokens, MCP and CLI cannot advertise
+presence. Quit, suspend or disconnect removes future timers while admitted work
+continues. Reconnection arms future instants only. The existing memory scheduler
+uses exact next cron instants, one-second jitter tolerance, and generation/config
+guards; edits/removal are checked again at native process spawn. No missed ticks
+are replayed.
+The one-second jitter window gates request admission. Once admitted, native
+preparation may take longer; generation, configuration, presence and project-folder
+checks still fence registration and spawn.
 
-Each admitted due instant uses the existing project/request key
-`schedule:<id>:<due-UTC-ISO8601>`. An existing key is a no-op, including a
-request whose preparation failed; it is never prepared or started again.
-Later due times skip with `overlap` while the last linked canonical plan or
-task is unfinished, including stopped/approval-blocked work. Request lease
-expiry is not workflow completion. No skipped tick creates queued work.
-Admission repeats strict read-only configuration/host preflight, retains its
-validated source/settings snapshot in memory, checks the current availability
-guard, and calls `agentRequest.prepareRunPlan` once.
-Its existing strict builder freezes the effective template, inputs, grants
-and approvals together. Existing plan start/claim selects the first
-dependency-ready step without a named phase, then `startDelivery` freezes
-the preflight role settings on that task without rereading mutable definitions,
-and traverses its dependencies. A non-Git
-workspace is valid. Each new occurrence reads current source digests/settings;
-queued, running and historical occurrences retain their accepted snapshots.
-The schedule records `started`, `overlap`, `unavailable`
-or `blocked`; admitted failures retain safe request diagnostics and canonical
-plan/approval state for explicit inspection/repair, with no automatic retry.
-Role override omission inherits defaults; explicit optional nulls clear them.
+Each eligible instant creates and claims one existing AgentRequest under
+`schedule:<id>:<due-UTC-ISO8601>`, then calls shared
+`host_mcp.service.run_agent` once with request ownership. Its domain-neutral
+bootstrap carries project/request identity, goal, context and optional workflow
+reference. It tells the main agent to read current repository/project and
+effective workflow guidance and use ordinary tools and approvals. The scheduler
+never creates, starts, claims or advances a workflow plan, and never calls
+`startDelivery`. Explicit task delivery remains available for deliberately
+selected tracked work.
 
-`schedule.runs` pages existing scheduled requests linked to project-scoped
-plans (`limit` 1–200, descending request ID cursor `after_id`, optional
-`schedule_id`). Scheduled request metadata carries `schedule_id` and
-`schedule_name` snapshots; `source_kind` is `schedule`. Rows retain these
-snapshots after configuration rename/removal. The projection returns actual
-request/plan/run IDs, workflow title/key, nullable canonical task key, task
-status, timestamps/derived duration, `agent_stats` and `active_execution` from
-the tracker. A draft plan has no run ID until started; an unmaterialized or
-skipped tick has no row. There is no schedule occurrence/status/usage ledger.
-Run and claim tokens and arbitrary request metadata are never projected.
+The native service retains actual session, process lifetime, terminal result
+and measured counters in the request, renewing only the exact owner's lease.
+The controller interprets `status`, `summary` and optional `run_plan_id`.
+A real returned plan is same-project validated before linking; prompt-only
+results have null plan/task/run refs. Success resolves only with canonical
+successful native evidence. Failed launches/crashes remain failed with
+diagnostics; blocked or unobserved exits remain unresolved for explicit
+inspection. Existing occurrence keys never retry. Unresolved requests prevent
+overlap even with no plan, an expired lease or an interrupted last-request
+pointer write; linked unfinished real plans/tasks also prevent overlap.
+No fallback runner or automatic resume/replay exists.
 
-For example, save an inert draft with
-`stackos ops call schedule.set --input automation.json`, using:
+`schedule.remove` deletes configuration and reconciles its timer, returning
+`{project_id, job_id, removed}`. It does not cancel admitted work or delete
+history. Schedule IDs are never reused (`0037_schedule_id_nonreuse`).
+Every mutation reaches the daemon's `schedule_reconcile(project_id, job_id)`
+seam after commit.
+
+`schedule.runs` pages scheduled requests first (limit 1–200, descending
+request-ID cursor `after_id`, optional `schedule_id`). Safe output retains
+schedule name/ID snapshots after rename/removal, request status, actual native
+identity/session, outcome/summary/error, timestamps/duration and measured usage,
+plus optional real workflow/run/task links. Historical workflow-only records
+retain their canonical task status and usage. Main-thread usage does not add
+linked child-task totals. Missing usage remains unknown. Claim/run tokens,
+prompts, launch snapshots and arbitrary request metadata are never projected.
+Skipped ticks create no row; there is no second occurrence or usage ledger.
+
+For example, save an inert prompt draft with
+`stackos ops call schedule.set --input automation.json`:
 
 ```json
 {
   "project_id": 1,
   "kind": "weekly-review",
   "name": "Weekly review",
-  "cron_expr": "0 9 * * 1",
+  "goal": "Review project context and report useful updates.",
+  "cron_expr": "0 9 * * mon",
   "timezone": "America/Los_Angeles",
-  "template_key": "core.project-memory-review",
-  "inputs_json": {"goal": "Review project memory"},
-  "execution_json": {"project_dir": "/work/project"},
   "enabled": false
 }
 ```
 
-Finish suitable role setup before enabling. The desktop admission and timer
-runtime own whether a future firing is currently available; saved enabled
-configuration alone is not evidence of a running desktop app.
+Add `template_key` for a workflow hint. Normal grants and approvals apply to
+any work the main agent chooses; enabled configuration alone is not evidence
+of desktop availability.
 
 ## Local backup administration
 
@@ -808,6 +784,11 @@ transaction owner. Strict inputs require the task's status/timestamp and an
 intent-bound retry key; they cannot supply lifecycle or arbitrary patches.
 See [Board priority and order writes](task-tracker.md#board-priority-and-order-writes)
 for neighbor placement, ordering, conflicts and existing-stream invalidation.
+Each accepted reorder commits one tracker revision and one
+`tracker.tasks.changed` timeline/SSE event with structured affected task
+membership and that revision. Priority edits retain `tracker.task.changed`.
+The raw Board receipt's `affected_task_keys` and `rev` identify the same accepted
+mutation; retries and no-ops do not emit another event.
 
 ## CLI Calls
 
@@ -1304,6 +1285,17 @@ Use `action.execute` when the action belongs to a workflow:
    bootstrap/system write. Normal callers need a `run_token` whose active
    run-plan step explicitly grants `agentRequest.create`.
 6. Agent request operations never call Telegram, SMTP, IMAP, or any provider API.
+
+Native request execution has an additional ownership fence: expired requests with
+admitted `native_execution` evidence are excluded from claimable reads and cannot
+be reclaimed, released, ignored or prepared by a replacement runner. Only the
+native host service writes that metadata through `AgentRequestRepository`; callers
+cannot supply it through request create/complete metadata. Completion uses the
+original claim token and retained terminal evidence, including after lease expiry.
+Resolving requires an actual successful native exit and identity, with no
+cancellation. Crashed or interrupted work remains unresolved for explicit handling.
+See [request-owned native execution](architecture.md#request-owned-native-execution)
+for the internal lease, usage, liveness and final-persistence boundary.
 
 `localAgentChat.createMessage` stores local human/agent chat messages as
 communications resources and may create a generic `agent_request` for inbound

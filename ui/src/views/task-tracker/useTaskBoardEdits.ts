@@ -19,7 +19,7 @@ export function useTaskBoardEdits(options: {
   rows: Ref<TaskProgressRow[]>
   projectId: Ref<number>
   currentScope: () => boolean
-  refresh: () => Promise<void>
+  refresh: (revision?: number) => Promise<void>
 }) {
   const states = ref(new Map<string, EditState>())
   const pendingColumns = computed(() => [...states.value].filter(([, state]) => state.pending).map(([status]) => status))
@@ -81,10 +81,13 @@ export function useTaskBoardEdits(options: {
     states.value.set(row.task.status, state)
     error.value = null
     let outcome: 'saved' | 'rejected' | 'uncertain' = 'uncertain'
+    let revision: number | undefined
     const timeout = setTimeout(() => state.controller.abort(new DOMException('Save timed out', 'TimeoutError')), 15000)
     try {
-      if ('priority_key' in intent) await saveTaskPriority(intent, state.controller.signal)
-      else await reorderTask(intent, state.controller.signal)
+      const result = 'priority_key' in intent
+        ? await saveTaskPriority(intent, state.controller.signal)
+        : await reorderTask(intent, state.controller.signal)
+      revision = result.data.rev
       outcome = 'saved'
     } catch (cause) {
       // An explicit client rejection confirms no save. A timeout, lost
@@ -102,7 +105,7 @@ export function useTaskBoardEdits(options: {
         ? 'Could not save task. Refreshing the current board before you try again.'
         : 'We could not confirm the save. Checking the current board; the save has not been repeated.'
       try {
-        await options.refresh()
+        await options.refresh(revision)
         if (current()) states.value.delete(row.task.status)
       } catch {
         if (current()) error.value = outcome === 'saved'

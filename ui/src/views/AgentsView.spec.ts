@@ -9,10 +9,15 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
 let wrapper: VueWrapper | undefined
 const row = { project_id: 1, project_dir: '/fixture/project', source_ref: { host_key: 'codex', native_name: 'seo_keyword_research', source_path: '.codex/agents/seo-keyword-research.toml' }, digest: 'a'.repeat(64), registration_digest: null, fields: { ...blankAgent(), name: 'seo_keyword_research', description: 'Find opportunities', developer_instructions: 'Full native instructions' }, capabilities: { edit: true }, inherited_fields: ['model'], unsupported_fields: ['future_native'] }
+const catalog = { ok: true, items: [
+  { host_key: 'codex', agent_execution: { models: ['catalog-model', 'second-model', 'catalog-model'] } },
+  { host_key: 'claude', agent_execution: { models: ['other-host-model'] } },
+] }
 function setup(items = [row]) {
   vi.mocked(callOperation).mockImplementation(async (operation, args) => {
     if (operation === 'project.get') return { id: 1, primary_workspace_binding_id: 17, project_dir: '/fixture/project' }
     if (operation === 'projectAgent.list') return { data: { project_id: 1, project_dir: '/fixture/project', items } }
+    if (operation === 'hostMcp.status') return catalog
     return items.find(item => item.source_ref.native_name === (args.source_ref as typeof row.source_ref)?.native_name) ?? row
   })
   wrapper = mount(ProjectAgents, { props: { projectId: 1 }, global: { stubs: { teleport: true } } })
@@ -41,7 +46,7 @@ describe('Agents list and native editor', () => {
     expect(add.attributes('disabled')).toBeUndefined()
     await add.trigger('click')
     expect(wrapper.get('[aria-label="Agent editor"]').text()).toContain('Add agent')
-    expect(vi.mocked(callOperation).mock.calls.map(([name]) => name)).toEqual(['project.get', 'projectAgent.list'])
+    expect(vi.mocked(callOperation).mock.calls.map(([name]) => name)).toEqual(['project.get', 'projectAgent.list', 'hostMcp.status'])
   })
   it('shows an unbound folder state for an empty raw envelope without reading or writing agent files', async () => {
     vi.mocked(callOperation).mockResolvedValue({ id: 1, project_dir: null, project_folder_issue: 'Set the project folder once in project setup.' })
@@ -52,7 +57,7 @@ describe('Agents list and native editor', () => {
   })
   it('lists actual domains, opens full instructions and protects dirty drafts from refresh', async () => {
     const w = setup(); await flushPromises()
-    expect(w.text()).toContain('/fixture/project')
+    expect(w.text()).not.toContain('/fixture/project')
     await w.get('.agent-row').trigger('click'); await flushPromises()
     expect(w.get('textarea').element.value).toBe('Find opportunities')
     expect(w.findAll('textarea')[1]!.element.value).toBe('Full native instructions')
@@ -84,7 +89,7 @@ describe('Agents list and native editor', () => {
     await w.findAll('button').find(button => button.text() === 'Add agent')!.trigger('click')
     expect(w.get('aside').text()).toContain('Saving starts nothing')
     expect(w.text()).toContain('inherit task, project, then agent app settings')
-    expect(vi.mocked(callOperation).mock.calls.map(([name]) => name)).toEqual(['project.get', 'projectAgent.list'])
+    expect(vi.mocked(callOperation).mock.calls.map(([name]) => name)).toEqual(['project.get', 'projectAgent.list', 'hostMcp.status'])
   })
   it('retains a dirty draft when route navigation is cancelled and leaves only after explicit discard', async () => {
     setup(); wrapper!.unmount()
@@ -162,7 +167,7 @@ describe('Agents list and native editor', () => {
     wrapper = mount(ProjectAgents, { props: { projectId: 1 } })
     await wrapper.setProps({ projectId: 2 }); await flushPromises()
     resolveOld({ id: 1, project_dir: '/first' }); await flushPromises()
-    expect(wrapper.text()).toContain('/second')
+    expect(wrapper.text()).not.toContain('Project folder:')
     expect(wrapper.text()).not.toContain('/first')
     expect(callOperation).toHaveBeenCalledWith('projectAgent.list', expect.objectContaining({ project_id: 2, project_dir: '/second' }))
     expect(callOperation).not.toHaveBeenCalledWith('projectAgent.list', expect.objectContaining({ project_id: 2, project_dir: '/first' }))
@@ -174,5 +179,75 @@ describe('Agents list and native editor', () => {
     wrapper.unmount(); wrapper = undefined
     resolve({ id: 1, project_dir: '/fixture/project' }); await flushPromises()
     expect(callOperation).toHaveBeenCalledTimes(1)
+  })
+  it('renders the selected host catalog alongside inherited, saved unavailable and custom choices', async () => {
+    const saved = { ...row, fields: { ...row.fields, model: 'retired-model' } }
+    const w = setup([saved]); await flushPromises()
+    await w.get('.agent-row').trigger('click'); await flushPromises()
+    const field = w.findAllComponents(UiFormField).find(item => item.props('label') === 'Model')!
+    await field.get('[role="combobox"]').trigger('click')
+    expect(field.findAll('[role="option"]').map(option => option.text())).toEqual([
+      'Default (inherited)', 'catalog-model', 'second-model', 'retired-model (not in catalog)', 'Custom model…',
+    ])
+    expect(w.text()).toContain('Codex project file')
+    expect(w.findAllComponents(UiFormField).some(item => item.props('label') === 'Agent app')).toBe(false)
+    expect(w.text()).not.toContain('Project folder:')
+    expect(w.text()).not.toContain('/fixture/project')
+    expect(w.text()).toContain(saved.source_ref.source_path)
+  })
+  it('keeps custom model and instruction edits through catalog loading, failure and retry', async () => {
+    const w = setup(); await flushPromises()
+    const original = vi.mocked(callOperation).getMockImplementation()!
+    let reject!: (cause: unknown) => void
+    vi.mocked(callOperation).mockImplementation((operation, args, options) => operation === 'hostMcp.status'
+      ? new Promise((_resolve, fail) => { reject = fail }) : original(operation, args, options))
+    await w.get('.agent-row').trigger('click'); await flushPromises()
+    const field = (label: string) => w.findAllComponents(UiFormField).find(item => item.props('label') === label)!
+    expect(w.text()).toContain('Loading model catalog…')
+    expect(field('Model').get('[role="combobox"]').attributes('disabled')).toBeUndefined()
+    field('Model').getComponent(UiSelect).vm.$emit('update:modelValue', '__custom__'); await flushPromises()
+    await field('Custom model').get('input').setValue('unsaved-model')
+    await field('Instructions').get('textarea').setValue('Unsaved full instructions')
+    reject(new Error('Catalog offline')); await flushPromises()
+    expect(w.text()).toContain('Catalog offline')
+    vi.mocked(callOperation).mockImplementation((operation, args, options) => operation === 'hostMcp.status'
+      ? Promise.resolve(catalog) : original(operation, args, options))
+    await w.findAll('button').find(button => button.text() === 'Retry models')!.trigger('click'); await flushPromises()
+    expect(field('Custom model').get<HTMLInputElement>('input').element.value).toBe('unsaved-model')
+    expect(field('Instructions').get<HTMLTextAreaElement>('textarea').element.value).toBe('Unsaved full instructions')
+    expect(w.text()).toContain('Unsaved changes')
+    expect(field('Model').getComponent(UiSelect).props('options')).toContainEqual({ value: 'catalog-model', label: 'catalog-model' })
+    expect(w.text()).not.toContain('Catalog offline')
+  })
+  it.each(['catalog-model', null])('round trips model %s using the existing source digest guards', async model => {
+    const saved = { ...row, fields: { ...row.fields, model: 'retired-model' as string | null } }
+    const w = setup([saved]); await flushPromises()
+    await w.get('.agent-row').trigger('click'); await flushPromises()
+    const field = () => w.findAllComponents(UiFormField).find(item => item.props('label') === 'Model')!
+    await field().get('[role="combobox"]').trigger('click')
+    await field().findAll('[role="option"]').find(option => option.text() === (model ?? 'Default (inherited)'))!.trigger('click')
+    const readback = { ...saved, digest: 'b'.repeat(64), fields: { ...saved.fields, model } }
+    vi.mocked(callOperation).mockResolvedValueOnce({ project_id: 1, data: readback })
+    await w.get('form').trigger('submit'); await flushPromises()
+    expect(callOperation).toHaveBeenCalledWith('projectAgent.update', expect.objectContaining({
+      source_ref: saved.source_ref, expected_digest: saved.digest, expected_registration_digest: null, patch: { model },
+    }))
+    expect(field().getComponent(UiSelect).props('modelValue')).toBe(model ?? '')
+    expect(w.text()).toContain('No changes')
+    vi.mocked(callOperation).mockResolvedValueOnce(readback)
+    await w.get('.agent-row').trigger('click'); await flushPromises()
+    expect(field().getComponent(UiSelect).props('modelValue')).toBe(model ?? '')
+  })
+  it('explains a missing host catalog and keeps inherited/custom settings usable', async () => {
+    const w = setup(); await flushPromises()
+    const original = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation((operation, args, options) => operation === 'hostMcp.status'
+      ? Promise.resolve({ ok: true, items: [{ host_key: 'codex' }] }) : original(operation, args, options))
+    await w.get('.agent-row').trigger('click'); await flushPromises()
+    expect(w.text()).toContain('Model catalog unavailable')
+    expect(w.findAll('button').some(button => button.text() === 'Retry models')).toBe(true)
+    const model = w.findAllComponents(UiFormField).find(item => item.props('label') === 'Model')!
+    expect(model.get('[role="combobox"]').attributes('disabled')).toBeUndefined()
+    expect(model.getComponent(UiSelect).props('options')).toContainEqual({ value: '', label: 'Default (inherited)' })
   })
 })

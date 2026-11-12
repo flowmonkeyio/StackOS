@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { TrackerSnapshot, TrackerTask, TrackerTicket } from '@/lib/task-tracker/types'
-import { parseBoardFilters } from './boardFilters'
+import { defaultBoardFilters, normalizeBoardFilters, updateBoardFilter } from './boardFilters'
 
 import {
   buildFilteredTrackerSnapshot,
@@ -23,7 +23,7 @@ describe('task tracker view model', () => {
       makeTask({ id: 4, key: 'last', order_index: 7, created_at: '2026-11-03T00:00:00Z' }),
     ]
     const rows = buildTaskProgressRows(tasks, new Map(), emptyFilters())
-    expect(projectBoardRows(rows, parseBoardFilters({})).map(row => row.key)).toEqual(['tie', 'new', 'old', 'last'])
+    expect(projectBoardRows(rows, defaultBoardFilters()).map(row => row.key)).toEqual(['tie', 'new', 'old', 'last'])
     expect(rows.map(row => row.key)).toEqual(['last', 'tie', 'new', 'old'])
   })
 
@@ -47,7 +47,7 @@ describe('task tracker view model', () => {
     }))
     tasks.push(makeTask({ key: 'reopened', status: 'in-progress', completed_at: dates.old, order_index: 50 }))
     const rows = buildTaskProgressRows(tasks, new Map(), emptyFilters())
-    expect(projectBoardRows(rows, parseBoardFilters({ status: 'all', completed }), new Date('2026-11-10T12:00:00Z')).map(row => row.key)).toEqual([...expected, 'reopened'])
+    expect(projectBoardRows(rows, normalizeBoardFilters({ clauses: [], completed, hideEmptyColumns: false }), new Date('2026-11-10T12:00:00Z')).map(row => row.key)).toEqual([...expected, 'reopened'])
   })
 
   it('combines clauses against index summaries and full tickets, including negation and legacy restrictions', () => {
@@ -55,13 +55,16 @@ describe('task tracker view model', () => {
       total_count: 1, terminal_count: 0, in_progress_count: 0, blocked_count: 1,
       status_counts: { failed: 1 }, assignees: ['Reviewer'], search_text: 'Needle evidence',
     } })
-    const state = parseBoardFilters({ search: 'needle', priority: 'p1', status: 'aborted', status_op: 'is-not',
-      workflow: 'engineering.delivery', assignee: 'Reviewer', ticket_status: 'failed', focus: 'blocked' })
+    const state = normalizeBoardFilters({ ...defaultBoardFilters(), clauses: [
+      { field: 'text', value: 'needle' }, ...defaultBoardFilters().clauses,
+      { field: 'priority', operator: 'is', values: ['p1'] }, { field: 'workflow', operator: 'is', value: 'engineering.delivery' },
+      { field: 'assignee', operator: 'is', value: 'Reviewer' }, { field: 'ticket-status', value: 'failed' }, { field: 'blocked' },
+    ] })
     const rows = buildTaskProgressRows([task], new Map(), emptyFilters())
     expect(projectBoardRows(rows, state)).toHaveLength(1)
-    expect(projectBoardRows(rows, parseBoardFilters({ assignee: 'Reviewer', assignee_op: 'is-not' }))).toEqual([])
-    expect(projectBoardRows(rows, parseBoardFilters({ workflow: 'engineering.delivery', workflow_op: 'is-not' }))).toEqual([])
-    expect(projectBoardRows(rows, parseBoardFilters({ priority: 'p1', priority_op: 'is-not' }))).toEqual([])
+    expect(projectBoardRows(rows, updateBoardFilter(defaultBoardFilters(), { field: 'assignee', operator: 'is-not', value: 'Reviewer' }))).toEqual([])
+    expect(projectBoardRows(rows, updateBoardFilter(defaultBoardFilters(), { field: 'workflow', operator: 'is-not', value: 'engineering.delivery' }))).toEqual([])
+    expect(projectBoardRows(rows, updateBoardFilter(defaultBoardFilters(), { field: 'priority', operator: 'is-not', values: ['p1'] }))).toEqual([])
     const ticket = makeTicket({ status: 'failed', assignee: 'Reviewer', title: 'Needle evidence' })
     const blocked = makeTicket({ id: 2, key: 'blocked', status: 'in-progress', blocker_reason: 'Waiting' })
     expect(projectBoardRows(buildTaskProgressRows([{ ...task, ticket_summary: null }], groupTicketsByTask([ticket, blocked]), emptyFilters()), state)).toHaveLength(1)

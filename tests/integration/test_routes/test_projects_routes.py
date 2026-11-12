@@ -148,146 +148,6 @@ def test_schedule_create_then_remove(api: TestClient, project_id: int) -> None:
     assert api.get(f"/api/v1/projects/{project_id}/schedules").json() == []
 
 
-@pytest.mark.parametrize("surface", ["legacy", "operation"])
-def test_schedule_role_null_survives_http_storage(api, project_id, tmp_path, surface):
-    from sqlmodel import Session
-
-    from stackos.db.models import ScheduledJob
-
-    execution = {"project_dir": str(tmp_path), "delivery_agent": {"model": None}}
-    config = {"kind": "role-clear", "cron_expr": "0 9 * * *", "execution_json": execution}
-    if surface == "legacy":
-        response = api.post(f"/api/v1/projects/{project_id}/schedules", json=config)
-    else:
-        response = api.post(
-            "/api/v1/operations/schedule.set/call",
-            json={"arguments": {"project_id": project_id, **config}},
-        )
-    assert response.status_code == 200, response.text
-    with Session(api.app.state.engine) as session:
-        assert session.get(ScheduledJob, response.json()["data"]["id"]).execution_json == execution
-
-
-@pytest.mark.parametrize("surface", ["legacy", "operation"])
-def test_schedule_source_references_round_trip_and_revalidate_on_http_save(
-    api, project_id, tmp_path, surface
-):
-    from sqlmodel import Session, select
-
-    from stackos.db.models import ScheduledJob
-    from tests.integration.test_repositories.test_workflow_schedule_agents import (
-        assert_no_admission,
-        configuration,
-    )
-
-    with Session(api.app.state.engine) as session:
-        config = configuration(session, project_id, tmp_path)
-    execution = config["execution_json"]
-    execution["step_agent_assignments"] = {"step0": "role0"}
-    execution["agents"]["role0"]["model"] = None
-
-    def save():
-        if surface == "legacy":
-            return api.post(f"/api/v1/projects/{project_id}/schedules", json=config)
-        return api.post(
-            "/api/v1/operations/schedule.set/call",
-            json={"arguments": {"project_id": project_id, **config}},
-        )
-
-    response = save()
-    assert response.status_code == 200, response.text
-    ref = execution["agents"]["role0"]["source_ref"]
-    (tmp_path / ref["source_path"]).unlink()
-    rejected = save()
-    assert rejected.status_code == 422, rejected.text
-    with Session(api.app.state.engine) as session:
-        row = session.exec(select(ScheduledJob)).one()
-        assert row.execution_json == execution
-        assert not row.enabled
-        assert_no_admission(session)
-
-
-@pytest.mark.parametrize("surface", ["legacy", "operation"])
-@pytest.mark.parametrize("enabled", [False, True])
-@pytest.mark.parametrize("selection", ["missing_source", "copied_codex"])
-def test_schedule_http_save_validates_unassigned_selections(
-    api, project_id, tmp_path, surface, enabled, selection
-):
-    from sqlmodel import Session, select
-
-    from stackos.db.models import ScheduledJob
-    from tests.integration.test_repositories.test_workflow_schedule_agents import (
-        assert_no_admission,
-        configuration,
-    )
-
-    with Session(api.app.state.engine) as session:
-        config = configuration(session, project_id, tmp_path, count=2, ambiguous=True)
-    config["enabled"] = enabled
-    execution = config["execution_json"]
-    execution["step_agent_assignments"] = {"step0": "role0"}
-    ref = execution["agents"]["role1"]["source_ref"]
-    (tmp_path / ref["source_path"]).unlink()
-    if selection == "copied_codex":
-        execution["agents"]["role1"] = {"name": "copied", "instructions": "Duplicate Codex prompt"}
-    if surface == "legacy":
-        response = api.post(f"/api/v1/projects/{project_id}/schedules", json=config)
-    else:
-        response = api.post(
-            "/api/v1/operations/schedule.set/call",
-            json={"arguments": {"project_id": project_id, **config}},
-        )
-    assert response.status_code == 422, response.text
-    with Session(api.app.state.engine) as session:
-        assert session.exec(select(ScheduledJob)).all() == []
-        assert_no_admission(session)
-
-
-@pytest.mark.parametrize("surface", ["legacy", "operation"])
-@pytest.mark.parametrize("enabled", [False, True])
-@pytest.mark.parametrize("role", ["delivery_agent", "review_agent"])
-@pytest.mark.parametrize("invalid", ["copied_codex", "missing_source"])
-def test_schedule_http_save_validates_shadowed_map_selections(
-    api, project_id, tmp_path, surface, enabled, role, invalid
-):
-    from sqlmodel import Session, select
-
-    from stackos.db.models import ScheduledJob
-    from tests.integration.test_repositories.test_workflow_schedule_agents import (
-        assert_no_admission,
-        configuration,
-    )
-
-    with Session(api.app.state.engine) as session:
-        config = configuration(session, project_id, tmp_path)
-    config["enabled"] = enabled
-    execution = config["execution_json"]
-    ref = execution["agents"]["role0"]["source_ref"]
-    execution[role] = {"source_ref": ref}
-    execution["agents"][role] = (
-        {"name": "copied", "instructions": "Duplicate Codex prompt"}
-        if invalid == "copied_codex"
-        else {
-            "source_ref": {
-                **ref,
-                "native_name": "missing",
-                "source_path": ".codex/agents/missing.toml",
-            }
-        }
-    )
-    if surface == "legacy":
-        response = api.post(f"/api/v1/projects/{project_id}/schedules", json=config)
-    else:
-        response = api.post(
-            "/api/v1/operations/schedule.set/call",
-            json={"arguments": {"project_id": project_id, **config}},
-        )
-    assert response.status_code == 422, response.text
-    with Session(api.app.state.engine) as session:
-        assert session.exec(select(ScheduledJob)).all() == []
-        assert_no_admission(session)
-
-
 def test_schedule_mutations_reject_wrong_project(api: TestClient, project_id: int) -> None:
     created = api.post(
         f"/api/v1/projects/{project_id}/schedules",
@@ -303,6 +163,50 @@ def test_schedule_mutations_reject_wrong_project(api: TestClient, project_id: in
     )
     assert api.delete(f"/api/v1/projects/{project_id + 1}/schedules/{job_id}").status_code == 404
     assert api.get(f"/api/v1/projects/{project_id}/schedules").json()[0]["enabled"] is False
+
+
+@pytest.mark.parametrize("surface", ["legacy", "operation"])
+@pytest.mark.parametrize("workflow", [None, "core.project-memory-review"])
+def test_schedule_goal_context_round_trip(api, project_id, surface, workflow):
+    config = {
+        "kind": "main",
+        "name": "Main goal",
+        "goal": "Inspect benign project context",
+        "cron_expr": "0 9 * * *",
+        "timezone": "UTC",
+        "template_key": workflow,
+        "inputs_json": {"resource_ref": "fixture"},
+        "execution_json": {"host_key": "codex"},
+    }
+    if surface == "legacy":
+        response = api.post(f"/api/v1/projects/{project_id}/schedules", json=config)
+    else:
+        response = api.post(
+            "/api/v1/operations/schedule.set/call",
+            json={"arguments": {"project_id": project_id, **config, "response_mode": "raw"}},
+        )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["goal"] == config["goal"]
+    assert data["inputs_json"] == config["inputs_json"]
+    assert data["template_key"] == workflow and not data["enabled"]
+
+
+@pytest.mark.parametrize("surface", ["legacy", "operation"])
+@pytest.mark.parametrize(
+    "field", ["agents", "delivery_agent", "review_agent", "step_agent_assignments"]
+)
+def test_schedule_http_rejects_replaced_role_configuration(api, project_id, surface, field):
+    config = {"kind": "old", "cron_expr": "0 9 * * *", "execution_json": {field: {}}}
+    if surface == "legacy":
+        response = api.post(f"/api/v1/projects/{project_id}/schedules", json=config)
+    else:
+        response = api.post(
+            "/api/v1/operations/schedule.set/call",
+            json={"arguments": {"project_id": project_id, **config}},
+        )
+    assert response.status_code == 422, response.text
+    assert api.get(f"/api/v1/projects/{project_id}/schedules").json() == []
 
 
 def test_incomplete_schedule_cannot_enable(api: TestClient, project_id: int) -> None:

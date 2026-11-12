@@ -6765,24 +6765,14 @@ export interface components {
         RunStatus: RunStatus;
         /**
          * ScheduleExecution
-         * @description Existing handoff settings, without occurrence-specific lifecycle arguments.
+         * @description Native launch settings; project_dir only fences a saved legacy target.
          */
         ScheduleExecution: {
-            /** Agents */
-            agents?: {
-                [key: string]: components["schemas"]["TaskDeliveryAgentOverride"];
-            } | null;
-            delivery_agent?: components["schemas"]["TaskDeliveryAgentOverride"] | null;
             /** Host Key */
             host_key?: string | null;
             mcp_config_ref?: components["schemas"]["TaskMcpConfigRef"] | null;
             /** Project Dir */
-            project_dir: string;
-            review_agent?: components["schemas"]["TaskDeliveryAgentOverride"] | null;
-            /** Step Agent Assignments */
-            step_agent_assignments?: {
-                [key: string]: string;
-            } | null;
+            project_dir?: string | null;
         };
         /**
          * ScheduleListInput
@@ -6926,6 +6916,11 @@ export interface components {
              */
             expected_etag: string | null;
             /**
+             * Goal
+             * @default null
+             */
+            goal: string | null;
+            /**
              * Idempotency Key
              * @default null
              */
@@ -7015,6 +7010,8 @@ export interface components {
              */
             enabled: boolean;
             execution_json?: components["schemas"]["ScheduleExecution"] | null;
+            /** Goal */
+            goal?: string | null;
             /** Inputs Json */
             inputs_json?: {
                 [key: string]: unknown;
@@ -7035,6 +7032,8 @@ export interface components {
             /** Enabled */
             enabled: boolean;
             execution_json: components["schemas"]["ScheduleExecution"] | null;
+            /** Goal */
+            goal: string | null;
             /** Id */
             id: number;
             /** Inputs Json */
@@ -7062,22 +7061,67 @@ export interface components {
             /** Timezone */
             timezone: string | null;
         };
+        /** ScheduledNativeExecutionOut */
+        ScheduledNativeExecutionOut: {
+            /** Agent */
+            agent: string;
+            /** Host Key */
+            host_key: string;
+            /** Invocation Id */
+            invocation_id: string;
+            /**
+             * Live Usage
+             * @default null
+             */
+            live_usage: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Model
+             * @default null
+             */
+            model: string | null;
+            /** Request Id */
+            request_id: number;
+            /** Started At */
+            started_at: string;
+            /**
+             * Thread Id
+             * @default null
+             */
+            thread_id: string | null;
+        };
         /** ScheduledRunOut */
         ScheduledRunOut: {
-            active_execution: components["schemas"]["ActiveExecutionOut"] | null;
+            /** Active Execution */
+            active_execution: components["schemas"]["ScheduledNativeExecutionOut"] | components["schemas"]["ActiveExecutionOut"] | null;
             agent_stats: components["schemas"]["AgentStatsMetricsOut"] | null;
             /** Duration Seconds */
             duration_seconds: number | null;
             /** Ended At */
             ended_at: string | null;
+            /**
+             * Error
+             * @default null
+             */
+            error: string | null;
+            /** @default null */
+            native_execution: components["schemas"]["ScheduledNativeExecutionOut"] | null;
+            /**
+             * Outcome Status
+             * @default null
+             */
+            outcome_status: string | null;
             /** Project Id */
             project_id: number;
             /** Request Id */
             request_id: number;
+            /** Request Status */
+            request_status: string;
             /** Run Id */
             run_id: number | null;
             /** Run Plan Id */
-            run_plan_id: number;
+            run_plan_id: number | null;
             /** Schedule Id */
             schedule_id: number;
             /** Schedule Name */
@@ -7086,10 +7130,22 @@ export interface components {
             started_at: string | null;
             /** Status */
             status: string;
+            /**
+             * Summary
+             * @default null
+             */
+            summary: string | null;
             /** Task Key */
             task_key: string | null;
             /** Template Key */
             template_key: string | null;
+            /**
+             * Usage
+             * @default null
+             */
+            usage: {
+                [key: string]: unknown;
+            } | null;
             /** Workflow Title */
             workflow_title: string | null;
         };
@@ -7196,21 +7252,43 @@ export interface components {
          * @description Task choices may omit fields supplied by project defaults.
          */
         TaskDeliveryAgentOverride: {
-            /** Host Key */
-            host_key?: string | null;
-            /** Instructions */
-            instructions?: string | null;
-            /** Model */
-            model?: string | null;
-            /** Model Reasoning Effort */
-            model_reasoning_effort?: string | null;
-            /** Name */
-            name?: string | null;
-            /** Profile */
-            profile?: string | null;
-            /** Provider */
-            provider?: string | null;
-            source_ref?: components["schemas"]["AgentSourceRef"] | null;
+            /**
+             * Host Key
+             * @default null
+             */
+            host_key: string | null;
+            /**
+             * Instructions
+             * @default null
+             */
+            instructions: string | null;
+            /**
+             * Model
+             * @default null
+             */
+            model: string | null;
+            /**
+             * Model Reasoning Effort
+             * @default null
+             */
+            model_reasoning_effort: string | null;
+            /**
+             * Name
+             * @default null
+             */
+            name: string | null;
+            /**
+             * Profile
+             * @default null
+             */
+            profile: string | null;
+            /**
+             * Provider
+             * @default null
+             */
+            provider: string | null;
+            /** @default null */
+            source_ref: components["schemas"]["AgentSourceRef"] | null;
         };
         /**
          * TaskDeliveryDefaults
@@ -9538,6 +9616,7 @@ export type SchemaScheduleSetInput = components['schemas']['ScheduleSetInput'];
 export type SchemaScheduleToggleInput = components['schemas']['ScheduleToggleInput'];
 export type SchemaScheduleUpsertRequest = components['schemas']['ScheduleUpsertRequest'];
 export type SchemaScheduledJobOut = components['schemas']['ScheduledJobOut'];
+export type SchemaScheduledNativeExecutionOut = components['schemas']['ScheduledNativeExecutionOut'];
 export type SchemaScheduledRunOut = components['schemas']['ScheduledRunOut'];
 export type SchemaSitemapFetchRequest = components['schemas']['SitemapFetchRequest'];
 export type SchemaSitemapFetchResponse = components['schemas']['SitemapFetchResponse'];

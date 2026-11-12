@@ -1270,18 +1270,45 @@ since schema stamping otherwise skips data migrations.
 Upgrade leaves statuses, priorities, workflow snapshots and tracker settings
 unchanged; downgrade does not reverse saved operator order.
 
-Real priority/order edits emit `tracker.task.changed` into the existing timeline
-and `tracker-status` SSE transport, including task scope and `changed_fields`.
-Relative movement with an unchanged integer uses `order`; changed integers use
-`order_index`. Existing agent priority patches emit the same genuine task-change
-event. These events invalidate readers without masquerading as status changes
-or adding a polling path. UI callers retain the immutable intent for transport
+Real priority edits emit `tracker.task.changed` into the existing timeline and
+`tracker-status` SSE transport. A reorder emits exactly one
+`tracker.tasks.changed` event, regardless of how many ranks change. Its source
+is `tracker` with the tracker ID; typed metadata contains `tracker_id`, the
+accepted tracker `rev`, `affected_task_keys`, the union of `changed_fields`, and
+`affected_tasks`. Each structured member contains `task_id`, `task_key`,
+`changed_fields` and `url_path`. Relative movement with an unchanged integer
+uses `order`; changed integers use `order_index`. The event, all ranks, one
+revision and the intent-bound retry receipt commit in the same transaction;
+independent readers see the notification only after commit. A rollback, no-op
+or replay produces no new notification. Existing agent priority patches and
+single-task history retain `tracker.task.changed`.
+
+Task-scoped timeline/latest-event readers match exact keys in the structured
+batch members; task activity also checks the persisted task ID. Membership uses
+an existence query before pagination so each batch appears once per affected
+task. Top-level lookalikes, nested keys, display text and the key summary array
+do not establish batch membership. Project scope applies independently. A batch
+remains one SSE frame within the normal 50-event page cadence, and subsequent
+single-task events retain their own IDs and visibility. Consumers use the batch
+revision and member keys to invalidate relevant projections and coordinate
+save responses with SSE.
+
+These events invalidate readers without masquerading as status changes or
+adding a polling path. UI callers retain the immutable intent for transport
 retry, reconcile after conflicts, and check project ownership before applying a
 late response. The card and navigation consumers own that interaction state.
 
-Work's existing project-index loader shares one in-flight read and one queued
-latest read across live events, manual refresh and post-save reconciliation.
-Background reads retain the current board. Focused graph/detail readers keep
+Work's existing project-index loader owns revision coverage for save responses
+and live notifications. A response already covering the accepted `rev`, including
+an in-flight read started before the save, is reused; only an older response
+requires another read. Delayed notifications for that revision do not reload
+the index, while later revisions still reconcile. Unversioned invalidations and
+explicit refresh share one in-flight read and one queued latest read.
+Structured batch members scope selected-task refreshes and graph highlights;
+unrelated tasks/projects do not refresh focused readers. Graph and detail reads
+also reuse their own covered or in-flight responses.
+Initial and explicit refresh show loading; background reconciliation retains
+the current board and does not toggle the global loading control. Focused readers keep
 their own loading state and do not hold that queue open. Board writes and index
 reads have 15-second abort deadlines; scope exit aborts them and ignores late
 outcomes. Pending edits block only conflicting edits in the same status column,
@@ -1814,30 +1841,42 @@ theme changes and device pixel ratio changes. Its observers and listeners are
 released on unmount. The compact summary adds no fit-based visibility gate or
 refresh timer.
 
-## Board URL state
+## Board local preferences
 
-`TaskTrackerView` owns Board filter and display state through the current URL.
-The pure `task-tracker/boardFilters.ts` parser, serializer and update/remove/clear
-commands provide one typed clause model to the controls and Board projection.
-There is no saved filter store. History and reload read the same query state;
-changing filters preserves the open detail identity and its draft.
+`TaskTrackerView` owns the existing `BoardFilterState` through explicit control
+commands in `task-tracker/boardFilters.ts`. One small localStorage record per
+project, `stackos:work-board-filters:<project_id>`, saves clauses, completed
+visibility and hide-empty columns. Plain Work navigation, reload and app
+reopening restore the same preferences. Project switching restores the target
+project's record instead of carrying preferences from the previous project.
+Storage access and parsing are guarded; absent, malformed or invalid records
+use the existing defaults. Storage failure leaves controls usable in memory.
+There are no Vue watchers or server/account preference settings.
 
-| Query | Meaning |
+| Preference | Meaning |
 | --- | --- |
-| `search` | Text substring across task and ticket/index search fields, case insensitive |
-| `status`, `priority` | Comma-separated or repeated values; OR within a field, AND between clauses |
-| `status_op`, `priority_op` | `is` (default) or `is-not`; priorities are `p0` through `p3` |
-| `workflow`, `assignee` | One workflow key or assignee; corresponding `_op` accepts `is` or `is-not` |
-| `ticket_status`, `focus=blocked` | Legacy Home restrictions represented as removable clauses |
+| Text | Substring across task and ticket/index search fields, case insensitive |
+| Status, priority | OR within a field, AND between clauses; `is` or `is-not`; priorities are `p0` through `p3` |
+| Workflow, assignee | One workflow key or assignee with `is` or `is-not` |
+| Ticket status, blocked | Removable ticket-status and blocked clauses |
 | `completed` | `all`, `past-day`, `past-week`, `past-month`, or `none` |
-| `hide_empty=1` | Hide columns without any projected tasks |
+| `hideEmptyColumns` | Hide columns without any projected tasks |
 
 Missing status/completed choices default to Status is not Aborted and Completed
-Past week. Explicit `status=all&completed=all` keeps Clear all unrestricted on
-reload; clearing filters retains the empty-column display choice. Invalid
-enum values are ignored, with missing/invalid status and completion choices
-using the same defaults. Complete selected explicitly with Completed None
-reconciles to All in the control state and subsequent URL writes.
+Past week. Clear all saves empty clauses and Completed All, retaining the
+empty-column display choice. Complete selected explicitly with Completed None
+reconciles to All in controls and storage readback.
+
+Filter edits do not navigate or create history entries. URL `view`, `task`,
+`detail` and `ticket` continue to own Board/Graph placement and inspection;
+changing a filter preserves an open detail draft. Old filter query parameters
+are no longer read or written. Home ticket-count links use a one-shot
+`work_entry=tickets:<status>` navigation intent, generated/interpreted by the
+same board helper. It replaces conflicting saved clauses with the existing
+default view plus the requested ticket-status clause, saves the result and
+removes the intent with route replacement while preserving navigation identities.
+Plain links restore saved choices. Graph task selection and graph-only filters
+retain their existing owners and do not depend on Board preferences.
 
 Completion windows apply only to tasks whose actual status is `complete`,
 using `completed_at` and the existing StackOS UTC timestamp parser. Windows
@@ -1847,9 +1886,9 @@ including reopened tasks, are unaffected by completion dates.
 
 Board rows sort by persisted `order_index`, then newest `created_at` and
 descending ID, matching the reorder repository. Graph's picker retains its
-unfiltered newest-first order. Project switching preserves view, status,
-priority, completion/display choices and portable legacy restrictions, and
-clears text, workflow, assignee and task/ticket selections.
+unfiltered newest-first order. Project switching preserves Board/Graph view
+placement and restores the destination project's local Board preferences.
+Task/ticket selections and one-shot entry intents are cleared.
 
 ## UI
 
@@ -1881,7 +1920,7 @@ The Work UI provides two views, Board and Graph. It renders:
   dependency context remains in inspection. Only `complete` tickets count as
   complete; other terminal statuses do not. Search, workflow and assignee filters
   narrow the Board.
-  Task-status filters apply to tasks; `ticket_status` links explicitly filter
+  Task-status filters apply to tasks; Home ticket-count entry links explicitly filter
   tasks containing tickets with that status.
 - a small semantic info `Automated` badge on Board cards, the Graph toolbar,
   and beside status in task details when the task has a persisted

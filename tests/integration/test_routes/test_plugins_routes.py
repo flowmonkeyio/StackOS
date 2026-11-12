@@ -20,6 +20,10 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
         for plugin in compact_plugins.json()
     )
     assert len(compact_plugins.content) < len(plugins.content)
+    for response in (plugins, compact_plugins):
+        by_slug = {plugin["slug"]: plugin for plugin in response.json()}
+        for slug in ("trackbooth", "shopify", "linear", "publishing"):
+            assert by_slug[slug]["manifest_json"]["ui"] is None
 
     catalog = api.get("/api/v1/catalog/utils")
     assert catalog.status_code == 200
@@ -142,9 +146,7 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
 
     trackbooth_catalog = api.get("/api/v1/catalog/trackbooth")
     assert trackbooth_catalog.status_code == 200
-    assert trackbooth_catalog.json()["plugin"]["manifest_json"]["ui"]["nav"]["section"] == (
-        "Trackbooth"
-    )
+    assert trackbooth_catalog.json()["plugin"]["manifest_json"]["ui"] is None
     assert {p["key"] for p in trackbooth_catalog.json()["providers"]} == {"trackbooth"}
     trackbooth_action_keys = {a["key"] for a in trackbooth_catalog.json()["actions"]}
     assert len(trackbooth_action_keys) == 3
@@ -169,9 +171,7 @@ def test_plugin_catalog_routes(api: TestClient) -> None:
 
     publishing_catalog = api.get("/api/v1/catalog/publishing")
     assert publishing_catalog.status_code == 200
-    assert publishing_catalog.json()["plugin"]["manifest_json"]["ui"]["nav"]["section"] == (
-        "Publishing"
-    )
+    assert publishing_catalog.json()["plugin"]["manifest_json"]["ui"] is None
     assert {p["key"] for p in publishing_catalog.json()["providers"]} >= {
         "wordpress",
         "ghost",

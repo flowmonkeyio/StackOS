@@ -47,12 +47,23 @@ describe('shared Abort run action', () => {
     let resolve!: (value: unknown) => void
     call.mockImplementation(() => new Promise(done => { resolve = done }))
     const { wrapper, refresh } = await render(automated)
+    await flushPromises()
     expect(popup().text()).toContain(target.title)
     expect(popup().text()).toContain(automated ? 'Stops only StackOS-owned automated invocations' : 'Changes run status only')
     expect(popup().text()).toContain('Future schedules stay enabled')
-    await confirm().trigger('click')
+    const action = confirm()
+    const actionButton = action.element as HTMLButtonElement
+    actionButton.focus()
+    await action.trigger('click')
     await flushPromises()
     expect(popup().text()).toContain('Aborting…')
+    const frame = popup().get('[role="dialog"]').element
+    expect(frame.contains(document.activeElement)).toBe(true)
+    expect(document.activeElement?.matches(':disabled')).toBe(false)
+    for (const shiftKey of [false, true]) {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true }))
+      expect(frame.contains(document.activeElement)).toBe(true)
+    }
     expect(wrapper.get('button[aria-label^="Run actions"]').attributes('disabled')).toBeDefined()
     await popup().get('[role="dialog"]').trigger('keydown', { key: 'Escape' })
     expect(popup().find('[role="dialog"]').exists()).toBe(true)

@@ -90,6 +90,7 @@ function open(channel: Channel): void {
     },
     onEvent: (event) => {
       if (!current()) return
+      if (channel.projectId !== null && event.project_id != null && event.project_id !== channel.projectId) return
       // Its usage frame already refreshed every consumer. Receipt-only writes
       // do not require a second whole-page Work/status reload.
       if (event.event_type !== 'tracker.usage.changed') channel.listeners.forEach((listener) => listener.status?.(event))

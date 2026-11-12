@@ -413,7 +413,8 @@ def operation_specs() -> list[OperationSpec]:
             ),
             prerequisites=(
                 "Pass project_id.",
-                "Use claimable=true to include new requests and expired leases only.",
+                "Use claimable=true for new requests and expired leases without admitted "
+                "native work.",
                 "Use limit and after_id to keep the response bounded.",
             ),
             returns=("A cursor-paginated Page of sanitized AgentRequestOut records.",),
@@ -513,7 +514,8 @@ def operation_specs() -> list[OperationSpec]:
                 "Pass project_id, request_id, claimed_by, and idempotency_key.",
                 "Use the same idempotency_key when retrying a network-lost claim call.",
                 "Store the returned claim_token only in the agent's active execution context.",
-                "Expired claims are reclaimable.",
+                "Expired claims without admitted native execution are reclaimable; admitted "
+                "native requests require explicit resolution and are never relaunched here.",
             ),
             returns=("A WriteEnvelope containing AgentRequestClaimOut with claim_token.",),
             examples=(
@@ -543,7 +545,10 @@ def operation_specs() -> list[OperationSpec]:
                 "request as claimable.",
                 "A request was claimed during planning but no run plan should be linked yet.",
             ),
-            prerequisites=("Pass project_id, request_id, and the active claim_token.",),
+            prerequisites=(
+                "Pass project_id, request_id, and the active claim_token.",
+                "Admitted native requests cannot be released for relaunch.",
+            ),
             returns=("A WriteEnvelope containing the released AgentRequestOut.",),
             examples=(
                 OperationExample(
@@ -611,6 +616,7 @@ def operation_specs() -> list[OperationSpec]:
             prerequisites=(
                 "Pass project_id, request_id, claimed_by, and idempotency_key.",
                 "Pass either run_plan_json or template_key.",
+                "A request already admitted to native execution cannot be prepared again.",
                 "The operation does not infer intent, start a model, execute actions, "
                 "or send replies.",
                 "Use runPlan.start and runPlan.claimStep after this operation when the "
@@ -657,6 +663,9 @@ def operation_specs() -> list[OperationSpec]:
             prerequisites=(
                 "Pass project_id, request_id, and the active claim_token.",
                 "status must be resolved or failed.",
+                "Native requests require retained exit evidence and the original claim token; "
+                "resolved also requires a successful, uncancelled native result and identity.",
+                "native_execution metadata is daemon-owned and cannot be supplied here.",
                 "Keep metadata_json concise and secret-free; StackOS redacts defensively.",
             ),
             returns=("A WriteEnvelope containing the terminal AgentRequestOut.",),
@@ -689,6 +698,7 @@ def operation_specs() -> list[OperationSpec]:
             prerequisites=(
                 "Pass project_id, request_id, and ignored_by.",
                 "Pass claim_token when the request is already claimed.",
+                "Admitted native requests require terminal resolution instead of ignoring.",
                 "Keep metadata_json concise and secret-free; StackOS redacts defensively.",
             ),
             returns=("A WriteEnvelope containing the ignored AgentRequestOut.",),

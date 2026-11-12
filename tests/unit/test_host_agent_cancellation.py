@@ -157,14 +157,18 @@ def test_real_owned_group_stops_parent_child_and_leaves_other_tasks_and_external
     # The parent owns and reaps its child even on forced parent termination: child exits
     # first on TERM; the parent's TERM handler reaps it then either exits or waits for KILL.
     script = (
-        "import subprocess,sys,signal,time\n"
+        "import os,subprocess,sys,signal,time\n"
         f"child=subprocess.Popen([sys.executable,'-c',{child_code!r}],stdout=subprocess.PIPE)\n"
         "child.stdout.readline()\nchild.stdout.close()\n"
         "def stop(*args):\n"
         " child.wait(timeout=2)\n"
         + (" signal.signal(signal.SIGTERM,signal.SIG_IGN)\n" if force else " sys.exit(0)\n")
         + "signal.signal(signal.SIGTERM,stop)\n"
-        + f"open({str(tmp_path / 'ready')!r},'w').write(str(child.pid))\n"
+        # Publish readiness after closing the writer. A signal during a temporary
+        # TextIOWrapper's destructor can swallow SystemExit and force a false KILL.
+        + f"with open({str(tmp_path / 'ready.pending')!r},'w') as marker:\n"
+        + " marker.write(str(child.pid))\n"
+        + f"os.replace({str(tmp_path / 'ready.pending')!r},{str(tmp_path / 'ready')!r})\n"
         + "while True: time.sleep(1)\n"
     )
     definition = service._definition_by_key("codex")

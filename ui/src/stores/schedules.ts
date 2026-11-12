@@ -38,6 +38,8 @@ export const useSchedulesStore = defineStore('schedules', () => {
     if (!updates) return
     const tasks = new Map(updates.tasks.map(task => [task.key, task]))
     for (const row of runs.value) {
+      // Linked child tasks cannot replace a request-owned main thread's usage.
+      if (row.native_execution) continue
       const task = row.task_key ? tasks.get(row.task_key) : undefined
       if (task) {
         row.agent_stats = task.agent_stats ?? null

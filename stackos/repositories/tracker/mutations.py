@@ -39,6 +39,7 @@ from stackos.repositories.base import (
     validate_transition,
 )
 from stackos.repositories.run_plan_state import TERMINAL_PLAN_STATUSES, TERMINAL_RUN_STATUSES
+from stackos.repositories.tracker.events import TrackerTaskChange, _tracker_task_path
 from stackos.repositories.tracker.ordering import next_task_position
 from stackos.repositories.tracker.schema import (
     TrackerListItemResultOut,
@@ -548,17 +549,6 @@ class TrackerMutationMixin:
             for row in changed_rows:
                 row.updated_at = max(_utcnow(), row.updated_at + timedelta(microseconds=1))
                 self._s.add(row)
-                self._record_tracker_task_change_event(
-                    row,
-                    [
-                        "priority_key"
-                        if priority_edit
-                        else "order_index"
-                        if row.id in rank_changes
-                        else "order"
-                    ],
-                    actor=actor,
-                )
             if changed_rows:
                 self._record_revision(
                     tracker,
@@ -573,6 +563,26 @@ class TrackerMutationMixin:
                     patch_json=intent,
                     metadata_json={"operation": operation, "idempotency_key": idempotency_key},
                 )
+                if priority_edit:
+                    self._record_tracker_task_change_event(task, ["priority_key"], actor=actor)
+                else:
+                    self._record_tracker_tasks_change_event(
+                        project_id=project_id,
+                        tracker_id=_required_id(tracker.id, "tracker"),
+                        rev=tracker.rev,
+                        changes=[
+                            TrackerTaskChange(
+                                task_id=_required_id(row.id, "task"),
+                                task_key=row.key,
+                                changed_fields=[
+                                    "order_index" if row.id in rank_changes else "order"
+                                ],
+                                url_path=_tracker_task_path(row),
+                            )
+                            for row in changed_rows
+                        ],
+                        actor=actor,
+                    )
             result = Envelope(
                 data=TrackerTaskBoardOut(
                     task=self._task_out(task),
