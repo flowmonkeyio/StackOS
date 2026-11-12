@@ -921,6 +921,13 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
         return _compact_workflow_template_describe(data)
     if operation_name == "workflowTemplate.authoringGuide":
         return _compact_workflow_authoring_guide(data)
+    if operation_name in {"agentPreset.describe", "skillPreset.describe"}:
+        out = _compact_mapping(data)
+        # Description packets use the same actionable adaptation projection as
+        # workflow resolution, rather than the generic nested-field allowlist.
+        if "project_adaptation" in data:
+            out["project_adaptation"] = _compact_adaptation(data["project_adaptation"])
+        return out
     if operation_name == "agentPreset.resolveForWorkflow":
         return _compact_agent_preset_resolution(data)
     if operation_name == "skillPreset.resolveForWorkflow":

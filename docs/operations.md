@@ -439,6 +439,14 @@ returned payload.
 - `raw`/`standard`/`verbose`: full redacted daemon payload.
 - `ack`: minimal success envelope for safe internal writes only.
 
+Compact `agentPreset.describe` and `skillPreset.describe` responses use the
+same adaptation projection as workflow preset resolution. The top-level
+`project_adaptation` packet retains bounded adaptation instructions and source
+references (`ref`, `purpose`, `required`, and conditional `when`), alongside the
+preset's source/version identity. Read the same operation with
+`response_mode="raw"` for the complete contract when compact text or lists are
+truncated. References provide guidance; they grant no execution authority.
+
 Errors are never compacted. Validation failures, grant denials, auth/setup
 diagnostics, and provider partial failures keep structured repair context so an
 agent can decide whether to retry, claim a step, reconnect a provider, or stop.

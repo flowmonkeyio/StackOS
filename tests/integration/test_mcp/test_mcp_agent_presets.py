@@ -2,7 +2,66 @@
 
 from __future__ import annotations
 
+import pytest
+
 from .conftest import MCPClient
+
+
+@pytest.mark.parametrize(
+    "operation,arguments,groups",
+    [
+        ("agentPreset.describe", {"key": "stackos.sdlc.delivery"}, []),
+        ("skillPreset.describe", {"key": "stackos.sdlc.delivery-orchestrator"}, []),
+        (
+            "agentPreset.resolveForWorkflow",
+            {"workflow_key": "engineering.tracked-delivery", "plugin_slug": "engineering"},
+            ["required_agents", "recommended_agents", "required_skill_presets"],
+        ),
+        (
+            "skillPreset.resolveForWorkflow",
+            {"workflow_key": "engineering.tracked-delivery", "plugin_slug": "engineering"},
+            ["required_skill_presets"],
+        ),
+    ],
+)
+def test_compact_preset_operations_preserve_actionable_adaptation(
+    mcp_client: MCPClient, operation: str, arguments: dict, groups: list[str]
+) -> None:
+    raw = mcp_client.call_tool_structured(operation, {**arguments, "response_mode": "raw"})
+    compact = mcp_client.call_tool_structured(operation, {**arguments, "response_mode": "compact"})
+    assert compact["ok"] is True
+    assert compact["operation"] == operation
+    compact = compact["data"]
+    pairs = [(raw, compact)]
+    if groups:
+        pairs = []
+        for group in groups:
+            assert len(raw[group]) == len(compact[group]) > 0
+            pairs.extend(zip(raw[group], compact[group], strict=True))
+    for full, bounded in pairs:
+        expected = full["project_adaptation"]
+        actual = bounded["project_adaptation"]
+        assert actual["adaptation_status"] == expected["adaptation_status"] == "required"
+        assert actual["adaptation_required"] is expected["adaptation_required"] is True
+        assert actual["do_not_use_verbatim"] is True
+        assert actual["instruction"] == expected["instruction"]
+        assert expected["required_agent_action"].startswith(
+            actual["required_agent_action"].removesuffix("...")
+        )
+        assert actual["prompt_assembly_order"] == expected["prompt_assembly_order"]
+        for field in ("required_context_refs", "conditional_context_refs"):
+            assert actual[field] == expected[field]
+            assert actual[field]
+            assert all(
+                item["ref"] and item["purpose"] and item["required"] for item in actual[field]
+            )
+        assert all(item["when"] for item in actual["conditional_context_refs"])
+        summary = full["preset"]["summary"]
+        identity = bounded["preset"] if groups else bounded["preset"]["summary"]
+        for field in ("key", "version", "source", "plugin_slug"):
+            assert identity[field] == summary[field]
+    # A compact read must leave the canonical response available without loss.
+    assert mcp_client.call_tool_structured(operation, {**arguments, "response_mode": "raw"}) == raw
 
 
 def test_engineering_compact_recovery_summary_keeps_automatic_caller_active(
@@ -249,7 +308,7 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     )
     expected_versions = {
         "stackos.sdlc.requirements-flow-definer": "0.6.5",
-        "stackos.sdlc.planning": "0.7.14",
+        "stackos.sdlc.planning": "0.7.15",
         "stackos.sdlc.delivery": "0.7.15",
         "stackos.sdlc.delivery-reviewer": "0.6.14",
     }
@@ -348,7 +407,7 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     compact_skill_binding = compact["required_skill_presets"][0]
     compact_skill = compact_skill_binding["preset"]
     full_skill = raw["required_skill_presets"][0]["preset"]
-    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.15"
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.16"
     full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
     # Skill lists are bounded navigation; raw retains the full contract.
     assert len(compact_skill["must_do"]) == 25

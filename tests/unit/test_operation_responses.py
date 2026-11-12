@@ -655,15 +655,21 @@ def test_run_plan_inventory_does_not_include_saved_step_results(operation: str) 
 @pytest.mark.parametrize(
     "operation,role_field",
     [
+        ("agentPreset.describe", None),
+        ("skillPreset.describe", None),
         ("agentPreset.resolveForWorkflow", "required_agents"),
         ("agentPreset.resolveForWorkflow", "required_skill_presets"),
         ("skillPreset.resolveForWorkflow", "required_skill_presets"),
     ],
 )
 def test_preset_compact_adaptation_preserves_context_references(
-    operation: str, role_field: str
+    operation: str, role_field: str | None
 ) -> None:
     adaptation = {
+        "adaptation_required": True,
+        "adaptation_status": "required",
+        "instruction": "Read the raw preset and adapt it before use.",
+        "required_agent_action": "Resolve the referenced project sources.",
         "required_context_refs": [
             {
                 "ref": "project:external-record",
@@ -680,13 +686,59 @@ def test_preset_compact_adaptation_preserves_context_references(
             }
         ],
     }
-    payload = {role_field: [{"project_adaptation": adaptation}]}
+    payload = (
+        {role_field: [{"project_adaptation": adaptation}]}
+        if role_field
+        else {"project_adaptation": adaptation}
+    )
 
     compact = shape_operation_response(
         _spec(operation, mutating=False), payload, response_mode="compact"
     )["data"]
 
-    assert compact[role_field][0]["project_adaptation"] == adaptation
+    packet = compact[role_field][0] if role_field else compact
+    assert packet["project_adaptation"] == adaptation
+
+
+@pytest.mark.parametrize("operation", ["agentPreset.describe", "skillPreset.describe"])
+def test_preset_description_adaptation_stays_bounded_and_excludes_private_fields(operation):
+    reference = {
+        "ref": "project:rules",
+        "purpose": "p" * 1000,
+        "required": True,
+        "when": "w" * 1000,
+        "private_note": "excluded",
+        "private_ref": "excluded-reference",
+    }
+    payload = {
+        "project_adaptation": {
+            "instruction": "i" * 1000,
+            "required_context_refs": [reference.copy() for _ in range(30)],
+            "conditional_context_refs": [reference.copy()],
+            "private_ref": "excluded-adaptation",
+        },
+        "ref": "not-a-global-keep-field",
+        "when": "not-a-global-keep-field",
+    }
+    spec = _spec(operation, mutating=False)
+    compact = shape_operation_response(spec, payload, response_mode="compact")["data"]
+    adaptation = compact["project_adaptation"]
+    assert len(adaptation["instruction"]) == 803
+    assert adaptation["instruction"].endswith("...")
+    assert len(adaptation["required_context_refs"]) == 25
+    for field in ("required_context_refs", "conditional_context_refs"):
+        for item in adaptation[field]:
+            assert set(item) == {"ref", "purpose", "required", "when"}
+            assert item["ref"] == "project:rules"
+            assert len(item["purpose"]) == 803
+            assert len(item["when"]) == 803
+    assert "private_ref" not in adaptation
+    assert "ref" not in compact
+    assert "when" not in compact
+    # Shaping neither mutates canonical raw data nor changes raw replay content.
+    assert shape_operation_response(spec, payload, response_mode="raw") == payload
+    assert len(payload["project_adaptation"]["required_context_refs"]) == 30
+    assert payload["project_adaptation"]["required_context_refs"][0] == reference
 
 
 def test_tracker_get_compact_summarizes_snapshot_without_full_rows() -> None:
