@@ -3,20 +3,23 @@
 const assert = require("node:assert/strict");
 const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 const desktopDir = path.resolve(__dirname, "..");
-const generatedConfigPath = path.join(desktopDir, ".electron-builder.generated.json");
-const generatedUpdateConfigPath = path.join(desktopDir, ".update-config.generated.json");
+const configRoot = fs.mkdtempSync(path.join(os.tmpdir(), "stackos-build-config-test-"));
+let generatedConfigPath = "";
+let generatedUpdateConfigPath = "";
 
 function cleanup() {
-  fs.rmSync(generatedConfigPath, { force: true });
-  fs.rmSync(generatedUpdateConfigPath, { force: true });
+  for (const entry of fs.readdirSync(configRoot)) {
+    fs.rmSync(path.join(configRoot, entry), { recursive: true, force: true });
+  }
 }
 
 function runBuild(env, options = {}) {
   const writeConfig = options.writeConfig !== false;
-  return spawnSync(process.execPath, ["scripts/build-mac.mjs"], {
+  const result = spawnSync(process.execPath, ["scripts/build-mac.mjs"], {
     cwd: desktopDir,
     env: {
       ...process.env,
@@ -41,11 +44,18 @@ function runBuild(env, options = {}) {
       APPLE_KEYCHAIN: "",
       TDLIB_INPUT_VARIANT: "",
       ...env,
+      STACKOS_DESKTOP_CONFIG_ROOT: configRoot,
       STACKOS_DESKTOP_BUILD_DRY_RUN: "1",
       STACKOS_DESKTOP_DRY_RUN_WRITE_CONFIG: writeConfig ? "1" : ""
     },
     encoding: "utf8"
   });
+  generatedConfigPath = result.stdout.match(/^generatedConfig=(.*)$/m)?.[1] || "";
+  generatedUpdateConfigPath = result.stdout.match(/^generatedUpdateConfig=(.*)$/m)?.[1] || "";
+  for (const generatedPath of [generatedConfigPath, generatedUpdateConfigPath].filter(Boolean)) {
+    assert.equal(path.dirname(path.dirname(generatedPath)), configRoot);
+  }
+  return result;
 }
 
 cleanup();
@@ -117,7 +127,7 @@ try {
   assert.deepEqual(generatedUpdateConfig, { updateUrl: localUrl });
   assert.ok(
     generatedConfig.extraResources.some(
-      (entry) => entry.from === ".update-config.generated.json" && entry.to === "update-config.json"
+      (entry) => entry.from === generatedUpdateConfigPath && entry.to === "update-config.json"
     )
   );
 
@@ -215,5 +225,5 @@ try {
 
   console.log("desktop build mac config test ok");
 } finally {
-  cleanup();
+  fs.rmSync(configRoot, { recursive: true, force: true });
 }

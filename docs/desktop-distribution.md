@@ -417,6 +417,22 @@ STACKOS_UPDATE_URL="https://stackos.flowmonkey.io/StackOS/" \
 node desktop/scripts/build-mac.mjs
 ```
 
+Each build writes generated Electron and update configuration into its own
+temporary directory and keeps it until the build's children finish. Normal
+success and failure remove only that invocation's directory. Config tests use
+their own temporary roots, so running desktop doctor cannot remove a build's
+configuration. Payload, icon and distribution outputs still require exclusive
+ownership as described above.
+
+Dry runs do not write files by default. Set
+`STACKOS_DESKTOP_DRY_RUN_WRITE_CONFIG=1` to inspect generated configuration;
+successful dry runs print `generatedConfig` and `generatedUpdateConfig` paths
+and leave those files for the caller to remove. Optionally set
+`STACKOS_DESKTOP_CONFIG_ROOT` to an existing caller-owned directory to contain
+the unique invocation directories (the default is the OS temporary directory).
+The update resource uses an absolute source path, while its packaged name stays
+`update-config.json`. Signing inputs and release commands are unchanged.
+
 For an unsigned local smoke where release metadata should still be generated,
 make the bypass explicit:
 
