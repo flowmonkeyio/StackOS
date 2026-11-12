@@ -9,6 +9,7 @@ from copy import deepcopy
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from pydantic import TypeAdapter
 from pydantic import ValidationError as PydanticValidationError
 from sqlalchemy import update
 from sqlalchemy.orm.attributes import set_committed_value
@@ -121,6 +122,16 @@ _WORKFLOW_MIRROR_OWNED_TICKET_FIELDS = frozenset(
         "parent_ticket_key",
         "source_json",
     }
+)
+_TICKET_TEXT_PATCH_FIELDS = (
+    "title",
+    "goal",
+    "assignee",
+    "priority_key",
+    "lane_key",
+    "blocker_reason",
+    "outcome",
+    "effort",
 )
 
 
@@ -1049,7 +1060,9 @@ class TrackerMutationMixin:
         commit: bool = True,
         dry_run: bool = False,
     ) -> Envelope[TrackerMutationOut]:
-        tracker = self.ensure_tracker(project_id=project_id)
+        tracker = self._tracker_or_none(project_id=project_id)
+        if tracker is None:
+            raise NotFoundError("tracker ticket not found", data={"ticket_key": ticket_key})
         ticket = self._ticket_by_key(tracker.id, ticket_key)
         task = self._s.get(TrackerTask, ticket.task_id)
         if task is None:
@@ -1511,16 +1524,7 @@ class TrackerMutationMixin:
                         ticket.blocker_reason = None
                 else:
                     ticket.completed_at = None
-        for field in (
-            "title",
-            "goal",
-            "assignee",
-            "priority_key",
-            "lane_key",
-            "blocker_reason",
-            "outcome",
-            "effort",
-        ):
+        for field in _TICKET_TEXT_PATCH_FIELDS:
             if field in patch_json:
                 value = patch_json[field]
                 setattr(ticket, field, _clean_text(value) if isinstance(value, str) else value)
@@ -1573,6 +1577,24 @@ class TrackerMutationMixin:
         """Validate without changing rows, timestamps, revisions or emitting events."""
         self._validate_ticket_patch_fields(patch_json)
         self._validate_workflow_mirror_ticket_patch_fields(ticket, patch_json)
+        for field in _TICKET_TEXT_PATCH_FIELDS:
+            if field not in patch_json:
+                continue
+            value = patch_json[field]
+            if isinstance(value, str):
+                value = _clean_text(value)
+            try:
+                TypeAdapter(TrackerTicket.model_fields[field].rebuild_annotation()).validate_python(
+                    value, strict=True
+                )
+            except PydanticValidationError as exc:
+                raise ValidationError(
+                    "invalid tracker ticket patch value",
+                    data={
+                        "field": field,
+                        "errors": exc.errors(include_input=False, include_url=False),
+                    },
+                ) from exc
         if "status" in patch_json:
             try:
                 new_status = _status_value(str(patch_json["status"]))

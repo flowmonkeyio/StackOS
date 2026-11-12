@@ -9,6 +9,8 @@ from stackos.db.models import (
     RunPlanStep,
     RunPlanStepStatus,
     TaskTracker,
+    TaskTrackerLane,
+    TaskTrackerPriority,
     TrackerItemStatus,
     TrackerRevision,
     TrackerSourceKind,
@@ -61,6 +63,131 @@ def _seed_ticket_create_state(session: Session, project_id: int) -> None:
         title="Existing research",
         references_json=[{"ref": "existing-source", "title": "Keep this"}],
     )
+
+
+@pytest.mark.parametrize("as_list", [False, True])
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("title", None),
+        ("title", []),
+        ("effort", {}),
+        ("goal", None),
+        ("title", "x" * 301),
+        ("effort", "x" * 41),
+    ],
+)
+def test_ticket_patch_scalar_constraints_reject_before_mutation(
+    session, project_id, as_list, field, value
+):
+    _seed_ticket_create_state(session, project_id)
+    repo = TrackerRepository(session)
+    before = _ticket_create_state(session.get_bind(), project_id)
+    events_before = ContextRepository(session).timeline(project_id=project_id).model_dump()
+    patch = {"status": "in-progress", field: value}
+    errors = []
+    for dry_run in (True, False):
+        if as_list:
+            result = repo.update_ticket_list(
+                project_id=project_id,
+                updates_json=[{"ticket_key": "existing", "patch_json": patch}],
+                dry_run=dry_run,
+            ).data
+            assert result.valid is False
+            errors.append(result.results[0].error_data)
+        else:
+            with pytest.raises(ValidationError) as exc:
+                repo.update_ticket(
+                    project_id=project_id, ticket_key="existing", patch_json=patch, dry_run=dry_run
+                )
+            errors.append(exc.value.data)
+        session.commit()
+        assert _ticket_create_state(session.get_bind(), project_id) == before
+        assert (
+            ContextRepository(session).timeline(project_id=project_id).model_dump() == events_before
+        )
+    assert errors[0] == errors[1]
+    assert errors[0]["field"] == field
+    # The multi-entity caller shares the same pre-mutation value checks.
+    with pytest.raises(ValidationError) as exc:
+        repo.patch(project_id=project_id, patch_json={"tickets": {"existing": patch}})
+    assert exc.value.data == errors[0]
+    assert not session.new and not session.dirty and not session.deleted
+    session.commit()
+    assert _ticket_create_state(session.get_bind(), project_id) == before
+
+
+@pytest.mark.parametrize("as_list", [False, True])
+def test_ticket_patch_scalar_constraints_preserve_nullable_and_cleaned_values(
+    session, project_id, as_list
+):
+    _seed_ticket_create_state(session, project_id)
+    repo = TrackerRepository(session)
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="existing",
+        patch_json={
+            "assignee": "agent",
+            "blocker_reason": "Waiting",
+            "outcome": "Pending",
+            "effort": "M",
+        },
+    )
+    patch = {
+        "title": " " + "x" * 300 + " ",
+        "goal": "",
+        "priority_key": "p2",
+        "lane_key": "review",
+        "assignee": None,
+        "blocker_reason": None,
+        "outcome": None,
+        "effort": None,
+    }
+    before = _ticket_create_state(session.get_bind(), project_id)
+    for dry_run in (True, False):
+        if as_list:
+            result = repo.update_ticket_list(
+                project_id=project_id,
+                updates_json=[{"ticket_key": "existing", "patch_json": patch}],
+                dry_run=dry_run,
+            ).data
+        else:
+            result = repo.update_ticket(
+                project_id=project_id, ticket_key="existing", patch_json=patch, dry_run=dry_run
+            ).data
+        assert result.valid
+        if dry_run:
+            assert _ticket_create_state(session.get_bind(), project_id) == before
+    ticket = repo.brief(project_id=project_id, ticket_key="existing").ticket
+    for field, value in patch.items():
+        assert getattr(ticket, field) == (value.strip() if isinstance(value, str) else value)
+
+
+@pytest.mark.parametrize("dry_run", [True, False])
+def test_missing_tracker_ticket_lookup_never_initializes(session, project_id, dry_run):
+    repo = TrackerRepository(session)
+    before = _ticket_create_state(session.get_bind(), project_id)
+    config_before = {
+        model: [row.model_dump() for row in session.exec(select(model)).all()]
+        for model in (TaskTrackerLane, TaskTrackerPriority)
+    }
+    assert before["TaskTracker"] == []
+    with pytest.raises(NotFoundError, match="tracker ticket not found") as exc:
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="missing",
+            patch_json={"status": "in-progress"},
+            dry_run=dry_run,
+        )
+    assert exc.value.data == {"ticket_key": "missing"}
+    assert not session.new and not session.dirty and not session.deleted
+    session.commit()
+    assert _ticket_create_state(session.get_bind(), project_id) == before
+    with Session(session.get_bind()) as reader:
+        assert {
+            model: [row.model_dump() for row in reader.exec(select(model)).all()]
+            for model in (TaskTrackerLane, TaskTrackerPriority)
+        } == config_before
 
 
 @pytest.mark.parametrize("as_list", [False, True])

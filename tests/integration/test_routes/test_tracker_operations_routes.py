@@ -21,6 +21,52 @@ def _operation_data(response):
     return body.get("data", body)
 
 
+@pytest.mark.parametrize("as_list", [False, True])
+@pytest.mark.parametrize("mode", ["raw", "compact", "ack"])
+@pytest.mark.parametrize(("field", "value"), [("title", None), ("title", []), ("effort", {})])
+def test_ticket_patch_scalar_constraints_rest(api, project_id, as_list, mode, field, value):
+    engine = api.app.state.engine
+    with Session(engine) as session:
+        _seed_ticket_create_state(session, project_id)
+    before = _ticket_create_state(engine, project_id)
+    patch = {"status": "in-progress", field: value}
+    args = {"project_id": project_id, "response_mode": mode}
+    if as_list:
+        args["updates_json"] = [{"ticket_key": "existing", "patch_json": patch}]
+    else:
+        args.update(ticket_key="existing", patch_json=patch)
+    errors = []
+    for dry_run in (True, False):
+        response = api.post(
+            "/api/v1/operations/tracker.updateTicket/call",
+            json={"arguments": {**args, "dry_run": dry_run}},
+        )
+        assert response.status_code == (200 if as_list else 422), response.text
+        if as_list:
+            data = _operation_data(response)
+            assert data["valid"] is False
+            errors.append(data["results"][0]["error_data"])
+        else:
+            errors.append(response.json()["data"])
+        assert _ticket_create_state(engine, project_id) == before
+    assert errors[0] == errors[1]
+    assert errors[0]["field"] == field
+    # The retained multi-entity caller must use the same validator before any ticket edits.
+    response = api.post(
+        "/api/v1/operations/tracker.patch/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "response_mode": mode,
+                "patch_json": {"tickets": {"existing": patch}},
+            }
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["data"] == errors[0]
+    assert _ticket_create_state(engine, project_id) == before
+
+
 @pytest.mark.parametrize("mode", ["raw", "compact", "ack"])
 @pytest.mark.parametrize("as_list", [False, True])
 def test_ticket_transition_preview_apply_rest_parity(api, project_id, mode, as_list):
