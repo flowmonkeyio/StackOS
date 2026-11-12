@@ -106,9 +106,9 @@ class ProjectCleanupService:
             project_id=project_id, data_dir=self.settings.data_dir
         )
         with ExitStack() as locks:
-            # Reserve before opening the project lock: final purge can retire that
-            # lock under the same SQLite writer boundary without a retry opening
-            # a replacement inode while the old cleanup is still using it.
+            # Reserve/recheck before opening the project lock. Committed purge
+            # removes the project identity before retiring the pathname, so a
+            # stale retry cannot recreate the lock after that commit.
             self.session.exec(
                 update(Project).where(col(Project.id) == project_id).values(id=Project.id)
             )
@@ -182,11 +182,16 @@ class ProjectCleanupService:
                     ScheduledJobRepository(self.session)._reconcile(project_id, job.id)
                 self._clean_files(project_id)
                 self._purge(project_id, operation_id=operation_id)
+                # Retire the pathname only after purge commits. A failed purge
+                # must keep the same inode locked through rollback and error
+                # persistence. New deletes reserve/recheck the row before they
+                # can open this file, so committed deletion closes that race.
+                _remove_owned(self._cleanup_lock_path(project_id), set(), self.settings.state_dir)
             except Exception as exc:
                 self.session.rollback()
                 retained = self._project(project_id)
                 if retained is None:
-                    raise  # A failed final commit must not masquerade as retryable.
+                    raise  # A committed purge cannot masquerade as retryable.
                 # Do not persist raw paths, provider data, or exception messages.
                 retained.cleanup_json = {
                     "operation_id": operation_id,
@@ -326,7 +331,7 @@ class ProjectCleanupService:
 
     def _cleanup_lock_path(self, project_id: int) -> Path:
         # Reuse the existing flock writer boundary outside the roots it removes.
-        # IDs are permanent; final purge retires this file under the DB reserve.
+        # IDs are permanent; callers reserve/recheck the row before opening it.
         return self.settings.state_dir / "project-cleanup" / f"{project_id}.writer.lock"
 
     def _asset_path(self, uri: str) -> Path | None:
@@ -565,7 +570,6 @@ class ProjectCleanupService:
                 "project became busy before final purge", data={"blockers": blockers}
             )
         self._handoff_shared_files(project_id)
-        _remove_owned(self._cleanup_lock_path(project_id), set(), self.settings.state_dir)
         s.exec(delete(DurableActionJob).where(col(DurableActionJob.project_id) == project_id))
         for model, column in (
             (AgentSession, AgentSession.project_id),

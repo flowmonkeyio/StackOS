@@ -190,7 +190,7 @@ class RunPlanRepository:
         metadata_json: dict[str, Any] | None = None,
         _commit: bool = True,
     ) -> Envelope[RunPlanOut]:
-        self._require_project(project_id)
+        self._require_project(project_id, reserve=False)
         loaded: LoadedWorkflowTemplate | None = None
         if template_key is not None:
             loaded = self._load_template(
@@ -233,6 +233,9 @@ class RunPlanRepository:
         if snapshot_id is not None:
             self._require_context_snapshot(project_id, snapshot_id)
 
+        # Cold template/catalog loading can commit this Session. Revalidate
+        # after setup and reserve through the plan, steps and tracker writes.
+        self._require_project(project_id)
         now = _utcnow()
         row = RunPlan(
             project_id=project_id,
@@ -520,6 +523,9 @@ class RunPlanRepository:
     ) -> Envelope[RunPlanReopenOut]:
         plan = self._fetch_plan(run_plan_id)
         self._require_plan_project(plan, project_id)
+        # Dispatcher admission may precede a committed cleanup fence. Reopen
+        # is a new producer of running work, including through tracker.reopen.
+        self._require_project(plan.project_id)
         reason = str(reason or "").strip()
         if not reason:
             raise ValidationError("reason is required to reopen a run plan")
@@ -1102,10 +1108,10 @@ class RunPlanRepository:
             source=source,
         )
 
-    def _require_project(self, project_id: int) -> None:
+    def _require_project(self, project_id: int, *, reserve: bool = True) -> None:
         from stackos.repositories.projects import ProjectRepository
 
-        ProjectRepository(self._s).require_available(project_id, reserve=True)
+        ProjectRepository(self._s).require_available(project_id, reserve=reserve)
 
     @staticmethod
     def _require_plan_project(plan: RunPlan, project_id: int | None) -> None:

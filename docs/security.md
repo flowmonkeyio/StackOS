@@ -116,11 +116,16 @@ fence. Custody recovery, schedule reconciliation, file removal and final purge
 retain the existing project writer locks without holding the global lock.
 A project-specific lock uses the existing flock writer boundary in private
 runtime state, outside the managed roots being removed. Final purge reserves
-the project row, rechecks the fence and blockers, then retires that lock in the
-same writer transaction as deletion. Concurrent retries cannot replace the lock
-while purge is using it; no deleted-project lock file remains after success.
+the project row and rechecks the fence and blockers. The lock pathname survives
+failed purge rollback and incomplete-state persistence; it is retired only after
+successful purge commit, while the original flock is still held. Concurrent
+retries reserve and recheck the row before opening the lock, so they cannot
+replace its inode during failure handling or reopen it after committed deletion.
+No deleted-project lock file remains after success.
 Admission writers reserve the project row through their write, so a check made
-before fencing cannot authorize a late write.
+before fencing cannot authorize a late write. Run-plan creation reserves after
+catalog/template setup commits; reopen and recovery reserve at their retained
+lifecycle owners before reactivating an existing run.
 
 The project row and source records remain while managed files are removed.
 Pending/incomplete projects remain discoverable through the full catalog and
