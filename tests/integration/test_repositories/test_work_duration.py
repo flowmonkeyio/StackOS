@@ -11,7 +11,11 @@ from stackos.host_mcp import service
 from stackos.operations.registry import build_operation_registry
 from stackos.operations.responses import shape_operation_response
 from stackos.repositories.tracker import TrackerRepository
-from stackos.repositories.tracker.agent_stats import usage_refresh
+from stackos.repositories.tracker.agent_stats import (
+    query_task_agent_stats,
+    query_ticket_agent_stats,
+    usage_refresh,
+)
 from tests.integration.test_repositories.test_ticket_overviews import _ticket
 
 EPOCH = datetime(2026, 1, 1, tzinfo=UTC)
@@ -359,3 +363,184 @@ def test_scheduled_run_uses_canonical_work_time(session, project_id):
     assert scheduled.duration_seconds == scheduled.work_duration.total_seconds == 10
     assert scheduled.work_duration.coverage == "complete"
     assert scheduled.started_at is None and scheduled.ended_at is None
+
+
+def test_unknown_child_history_remains_partial_in_every_task_projection(session, project_id):
+    store(session, project_id, "known", {"attempt": 1, "delivery": receipt(0, 10)})
+    store(session, project_id, "unrecorded", {})
+    repo = TrackerRepository(session)
+    brief = repo.brief(project_id=project_id, ticket_key="unrecorded")
+    full = repo.get(project_id=project_id)
+    index = repo.get(project_id=project_id, task_index_only=True, include_graph=False)
+    filtered = repo.get(project_id=project_id, ticket_keys=["known"])
+    tasks = [brief.task, *full.tasks, *index.tasks, *filtered.tasks]
+    assert brief.ticket.work_duration.coverage == "unavailable"
+    for task in tasks:
+        assert task.work_duration.total_seconds == 10
+        assert task.work_duration.coverage == "partial"
+        assert task.work_duration.issues == ["no_recorded_invocations"]
+        assert task.work_duration.unavailable_intervals == 0
+    for mode in ("raw", "compact"):
+        payload = shape_operation_response(
+            build_operation_registry().get("tracker.get"),
+            full.model_dump(mode="json"),
+            response_mode=mode,
+        )
+        payload = payload.get("data", payload)
+        assert payload["tasks"][0]["work_duration"]["coverage"] == "partial"
+    node = next(node for node in full.graph.nodes if node.type == "task")
+    assert node.data["work_duration"]["total_seconds"] == 10
+    assert node.data["work_duration"]["coverage"] == "partial"
+    refreshed = usage_refresh(session, project_id, None)
+    assert refreshed["tasks"][0]["work_duration"]["coverage"] == "partial"
+
+
+@pytest.mark.parametrize("level", ["ticket", "task", "refresh"])
+@pytest.mark.parametrize("handoff_at", ["before_copy", "after_copy", "before_commit"])
+def test_final_timing_survives_receipt_handoff_and_retirement(
+    session, project_id, monkeypatch, level, handoff_at
+):
+    from sqlmodel import Session
+
+    from stackos.task_delivery import _record_execution_transition
+
+    start = (datetime.now(UTC) - timedelta(seconds=10)).isoformat()
+    finish = (datetime.fromisoformat(start) + timedelta(seconds=9)).isoformat()
+    call = service.ActiveInvocation(
+        "timing-retirement",
+        service.AgentExecutionScope(project_id, "overview", "racing", "worker", 1, "delivery"),
+        "codex",
+        None,
+        start,
+    )
+    row = store(
+        session,
+        project_id,
+        "racing",
+        {
+            "attempt": 1,
+            "delivery": {
+                "launch": {"started_at": start},
+                "execution": call.projection(),
+            },
+        },
+    )
+    service._active_invocations[call.invocation_id] = call
+    original = service.invocation_timings
+
+    def crossing():
+        before = original()
+        service._finish(call, None, finished_at=finish)
+        monkeypatch.setattr(service, "invocation_timings", original)
+        if handoff_at != "before_commit":
+            _record_execution_transition(lambda: Session(session.get_bind()), call, False)
+            service._unregister(call)
+        return before if handoff_at == "after_copy" else original()
+
+    monkeypatch.setattr(service, "invocation_timings", crossing)
+    durations = {}
+    try:
+        if level == "ticket":
+            query_ticket_agent_stats(session, ticket_ids={row.id}, work_durations=durations)
+            actual = durations[row.id]
+        elif level == "task":
+            query_task_agent_stats(
+                session,
+                tracker_id=row.tracker_id,
+                task_ids={row.task_id},
+                task_keys={row.task_id: "overview"},
+                work_durations=durations,
+            )
+            actual = durations[row.task_id]
+        else:
+            refreshed = usage_refresh(session, project_id, None)
+            for scope in ("tasks", "tickets"):
+                duration = refreshed[scope][0]["work_duration"]
+                assert duration["total_seconds"] == 9
+                assert duration["coverage"] == "complete"
+                assert duration["live"] == []
+        if level != "refresh":
+            assert actual.total_seconds == 9
+            assert actual.coverage == "complete"
+            assert actual.live == []
+        if handoff_at == "before_commit":
+            _record_execution_transition(lambda: Session(session.get_bind()), call, False)
+            service._unregister(call)
+            final = TrackerRepository(session).brief(project_id=project_id, ticket_key="racing")
+            assert final.ticket.work_duration.total_seconds == 9
+            assert final.task.work_duration.total_seconds == 9
+            assert final.ticket.work_duration.live == []
+    finally:
+        service._unregister(call)
+
+
+def test_retirement_after_sql_preserves_the_bounded_owned_observation(
+    session, project_id, monkeypatch
+):
+    from sqlmodel import Session
+
+    from stackos.task_delivery import _record_execution_transition
+
+    start = (datetime.now(UTC) - timedelta(seconds=10)).isoformat()
+    call = service.ActiveInvocation(
+        "after-sql",
+        service.AgentExecutionScope(project_id, "overview", "after-sql", "worker", 1, "delivery"),
+        "codex",
+        None,
+        start,
+    )
+    row = store(
+        session,
+        project_id,
+        "after-sql",
+        {
+            "attempt": 1,
+            "delivery": {
+                "launch": {"started_at": start},
+                "execution": call.projection(),
+            },
+        },
+    )
+    ticket_id = row.id
+    service._active_invocations[call.invocation_id] = call
+    snapshots = []
+    original_timings = service.invocation_timings
+    original_execute = session.execute
+    armed = True
+
+    def remember():
+        snapshot = original_timings()
+        snapshots.append(snapshot)
+        return snapshot
+
+    def crossing(*args, **kwargs):
+        nonlocal armed
+        result = original_execute(*args, **kwargs)
+        if not armed:
+            return result
+        armed = False
+        rows = result.all()
+        service._finish(call, None)
+        _record_execution_transition(lambda: Session(session.get_bind()), call, False)
+        service._unregister(call)
+        return SimpleNamespace(all=lambda: rows)
+
+    monkeypatch.setattr(service, "invocation_timings", remember)
+    monkeypatch.setattr(session, "execute", crossing)
+    durations = {}
+    try:
+        query_ticket_agent_stats(session, ticket_ids={ticket_id}, work_durations=durations)
+        observed = snapshots[0][0]["observed_at"]
+        actual = durations[ticket_id]
+        assert (
+            actual.total_seconds
+            == (datetime.fromisoformat(observed) - datetime.fromisoformat(start)).total_seconds()
+        )
+        assert actual.observed_at == observed
+        assert actual.coverage == "complete"
+        assert service.active_execution(project_id, "overview", row.key) is None
+        query_ticket_agent_stats(session, ticket_ids={ticket_id}, work_durations=durations)
+        assert durations[ticket_id].total_seconds >= actual.total_seconds
+        assert durations[ticket_id].live == []
+    finally:
+        service._unregister(call)

@@ -11,7 +11,11 @@ from stackos.db.models import ProjectEvent, TrackerItemStatus, TrackerTask, Trac
 from stackos.events import StackOSEvent, StackOSEventSource
 from stackos.host_mcp.service import ActiveInvocation
 from stackos.repositories.project_events import StackOSEventEmitter
-from stackos.repositories.tracker.agent_stats import invocation_receipts, summarize_receipts
+from stackos.repositories.tracker.agent_stats import (
+    invocation_receipts,
+    invocation_timing_facts,
+    summarize_receipts,
+)
 from stackos.repositories.tracker.ordering import next_task_position
 
 TRACKER_TASK_STATUS_CHANGED = "tracker.task.status_changed"
@@ -90,7 +94,9 @@ class TrackerEventMixin:
         after = summarize_receipts(
             invocation_receipts(ticket.completion_evidence_json), include_history=True
         )
-        if before == after:
+        if before == after and invocation_timing_facts(before_evidence) == invocation_timing_facts(
+            ticket.completion_evidence_json
+        ):
             return
         StackOSEventEmitter(self._s).emit(
             StackOSEvent(

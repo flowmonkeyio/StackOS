@@ -743,6 +743,11 @@ Closed intervals use `launch.started_at` and the native exit's canonical
 `finished_at`. The execution owner records that finish during the synchronous
 receipt handoff, including failures and cancellation. A transient registry copy
 can supply the same closed endpoint until the durable receipt is committed.
+Reads capture one bounded timing copy before selecting fresh SQL receipts;
+retirement after that copy cannot erase the last supported observation. Open
+intervals stop at the copy's observation time, and a freshly selected canonical
+finish replaces it. Shared task/ticket stream refresh uses the same request copy;
+no registry lock is held across SQL and no second invocation history is retained.
 Only an exact currently owned invocation matching project, task, ticket,
 attempt, phase and recorded execution identity supplies an open interval,
 bounded at `observed_at`. Final receipts supersede that copy once. No token
@@ -761,6 +766,13 @@ entirely unrecorded scope has a null total with `no_recorded_invocations`;
 a recorded zero-length interval has measured zero. Lifecycle dates, usage
 checkpoints and token silence never fill gaps. This is invocation wall time,
 including any unobserved machine sleep, and does not claim CPU-active time.
+Every included ticket without receipt history retains `no_recorded_invocations`
+in a task aggregate, so a measured sibling total has partial coverage. Unknown
+history adds no interval to `unavailable_intervals`; that count describes
+retained receipts with unusable endpoints, not a guessed number of missing calls.
+The existing `tracker.usage.changed` notification also invalidates timing-only
+receipt changes, with unchanged durable timing/usage inputs suppressed. Existing
+connected streams receive corrected work time without a poller or reconnection.
 
 `schedule.runs` carries the canonical task `work_duration` and its measured
 `total_seconds` as `duration_seconds`; its separate lifecycle dates retain their

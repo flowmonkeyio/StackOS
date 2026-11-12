@@ -843,6 +843,117 @@ def test_native_exit_hands_usage_to_receipt_before_return_without_active_resourc
 
 
 @pytest.mark.asyncio
+async def test_timing_only_corrections_reach_connected_scoped_stream_without_noop_events(
+    session, project_id
+):
+    import asyncio
+
+    from stackos.api.context import _timeline_stream
+    from stackos.repositories.projects import ProjectRepository
+    from tests.integration.test_repositories.test_work_duration import receipt, store
+
+    own = store(session, project_id, "timing-only", {"attempt": 1, "delivery": receipt(0, 10)})
+    foreign_project = (
+        ProjectRepository(session)
+        .create(slug="other-timing", name="Other", domain="other.test")
+        .data
+    )
+    foreign = store(
+        session,
+        foreign_project.id,
+        "foreign-timing",
+        {
+            "attempt": 1,
+            "delivery": receipt(0, 10),
+        },
+    )
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="other-task", title="Other task")
+    repo.create_ticket(
+        project_id=project_id, task_key="other-task", key="other-timing", title="Other timing"
+    )
+    initial_evidence = deepcopy(own.completion_evidence_json)
+    for key in (own.key, "other-timing"):
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key=key,
+            patch_json={"completion_evidence_json": deepcopy(initial_evidence)},
+        )
+    context = ContextRepository(session)
+
+    async def disconnected():
+        return False
+
+    iterator = _timeline_stream(
+        project_id,
+        SimpleNamespace(is_disconnected=disconnected),
+        "overview",
+        None,
+        25,
+        1,
+        15000,
+        None,
+        False,
+        session.get_bind(),
+    ).body_iterator
+    try:
+        initial = json.loads((await anext(iterator)).split("data: ", 1)[1])
+        assert initial["updates"]["tasks"][0]["work_duration"]["total_seconds"] == 10
+        cursor = context.latest_tracker_status_event_id(project_id=project_id, task_key="overview")
+        for pid, key, end in (
+            (foreign_project.id, foreign.key, 999),
+            (project_id, "other-timing", 999),
+            (project_id, own.key, 20),
+        ):
+            repo.update_ticket(
+                project_id=pid,
+                ticket_key=key,
+                patch_json={
+                    "completion_evidence_json": {
+                        "automatic_delivery": {
+                            "attempt": 1,
+                            "delivery": receipt(0, end),
+                        }
+                    }
+                },
+            )
+        frame = await asyncio.wait_for(anext(iterator), timeout=1)
+        assert frame.startswith("event: tracker-usage\n")
+        current = json.loads(frame.split("data: ", 1)[1])
+        assert current["executions"] == []
+        assert [task["key"] for task in current["updates"]["tasks"]] == ["overview"]
+        assert [ticket["key"] for ticket in current["updates"]["tickets"]] == [own.key]
+        assert current["updates"]["tasks"][0]["work_duration"]["total_seconds"] == 20
+        assert current["updates"]["tickets"][0]["work_duration"]["total_seconds"] == 20
+        assert (
+            current["updates"]["tickets"][0]["agent_stats"]
+            == initial["updates"]["tickets"][0]["agent_stats"]
+        )
+        events = context.tracker_status_timeline(
+            project_id=project_id, task_key="overview", after_id=cursor
+        ).items
+        assert [event.event_type for event in events] == ["tracker.usage.changed"]
+        assert events[0].metadata_json["ticket_key"] == own.key
+        last = events[-1].id
+        unchanged = {"automatic_delivery": {"attempt": 1, "delivery": receipt(0, 20)}}
+        # A nested result packet does not change the existing final marker,
+        # durable timing facts, metrics or coverage; it must not wake the feed.
+        unchanged["automatic_delivery"]["delivery"]["result"] = {"detail": "unrelated"}
+        for completion in (deepcopy(unchanged), deepcopy(unchanged)):
+            repo.update_ticket(
+                project_id=project_id,
+                ticket_key=own.key,
+                patch_json={"completion_evidence_json": completion},
+            )
+            assert (
+                context.latest_tracker_status_event_id(project_id=project_id, task_key="overview")
+                == last
+            )
+    finally:
+        await iterator.aclose()
+
+
+@pytest.mark.asyncio
 async def test_receipt_only_commit_refreshes_existing_and_reconnected_streams(session, project_id):
     import asyncio
 

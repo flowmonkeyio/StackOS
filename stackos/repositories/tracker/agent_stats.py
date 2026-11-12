@@ -64,6 +64,23 @@ def _receipt_items(
     return unique
 
 
+def invocation_timing_facts(evidence: Any) -> dict[tuple[int | None, str], tuple[Any, ...]]:
+    """Durable duration inputs for stream invalidation, without a moving clock or usage."""
+    facts = {}
+    for identity, receipt in _receipt_items(evidence, require_launch=False).items():
+        launch = receipt.get("launch")
+        execution = receipt.get("execution")
+        facts[identity] = (
+            launch.get("started_at") if isinstance(launch, dict) else None,
+            receipt.get("finished_at"),
+            any(key in receipt for key in ("finished_at", "exit_code", "result")),
+            tuple(execution.get(key) for key in ExecutionIdentityOut.model_fields)
+            if isinstance(execution, dict)
+            else None,
+        )
+    return facts
+
+
 def work_duration(
     sources: Iterable[tuple[str, Any]],
     *,
@@ -85,7 +102,12 @@ def work_duration(
         if not isinstance(automatic, dict):
             automatic = {}
         current = [automatic.get(phase) for phase in ("delivery", "review")]
-        for (attempt, phase), receipt in _receipt_items(evidence, require_launch=False).items():
+        receipts = _receipt_items(evidence, require_launch=False)
+        if not receipts:
+            # Preserve this included ticket's unknown history in a task union.
+            # It contributes no invented interval and is never evidence of zero.
+            issues.add("no_recorded_invocations")
+        for (attempt, phase), receipt in receipts.items():
             launch = receipt.get("launch")
             start = _instant(launch.get("started_at")) if isinstance(launch, dict) else None
             end = _instant(receipt.get("finished_at"))
@@ -130,7 +152,14 @@ def work_duration(
                         reason = "invalid_order"
                     elif actual_start > observed_at:
                         reason = "future_endpoint"
-                    end = _instant(owned.get("finished_at")) or observed_at
+                    # The request owns this pre-SQL registry copy. Never extend
+                    # it past its actual observation when the call can retire
+                    # while SQL reads the final receipt. Durable finishes win.
+                    end = (
+                        _instant(owned.get("finished_at"))
+                        or _instant(owned.get("observed_at"))
+                        or observed_at
+                    )
             if reason is None and start is not None and end is not None:
                 if end < start:
                     reason = "invalid_order"
@@ -152,11 +181,11 @@ def work_duration(
         issues.add("no_recorded_invocations")
     return WorkDurationOut(
         total_seconds=total if intervals else None,
-        observed_at=(
-            observed_at.isoformat() if live else endpoint.isoformat() if endpoint else None
-        ),
+        observed_at=endpoint.isoformat() if endpoint else None,
         endpoint_at=endpoint.isoformat() if endpoint else None,
-        coverage=("partial" if missing else "complete") if intervals else "unavailable",
+        coverage=("partial" if missing or "no_recorded_invocations" in issues else "complete")
+        if intervals
+        else "unavailable",
         recorded_intervals=len(intervals),
         unavailable_intervals=missing,
         issues=sorted(issues),
@@ -421,12 +450,15 @@ def query_task_agent_stats(
     provisional: ProvisionalUsage | None = None,
     work_durations: dict[int, WorkDurationOut] | None = None,
     task_keys: dict[int, str] | None = None,
+    timing_snapshot: list[dict[str, Any]] | None = None,
 ) -> dict[int, AgentStatsMetricsOut]:
     """Batch whole-task totals, independent of visible tickets or graph filters."""
     if not task_ids:
         return {}
     if provisional is None:
         provisional = provisional_usage()
+    if work_durations is not None and timing_snapshot is None:
+        timing_snapshot = host_service.invocation_timings()
     receipts_by_task: dict[int, list[dict[str, Any]]] = defaultdict(list)
     duration_sources: dict[int, list[tuple[str, Any]]] = defaultdict(list)
     projects: dict[int, int] = {}
@@ -451,14 +483,13 @@ def query_task_agent_stats(
     if work_durations is not None:
         # Share the fresh scalar receipt read with usage, but never its
         # token eligibility filter or provisional usage substitutions.
-        timings = host_service.invocation_timings()
         observed_at = datetime.now(UTC)
         for task_id in task_ids:
             work_durations[task_id] = work_duration(
                 duration_sources[task_id],
                 live_calls=[
                     call
-                    for call in timings
+                    for call in timing_snapshot or []
                     if call.get("project_id") == projects.get(task_id)
                     and call.get("task_key") == (task_keys or {}).get(task_id)
                 ],
@@ -476,12 +507,15 @@ def query_ticket_agent_stats(
     ticket_ids: set[int],
     provisional: ProvisionalUsage | None = None,
     work_durations: dict[int, WorkDurationOut] | None = None,
+    timing_snapshot: list[dict[str, Any]] | None = None,
 ) -> dict[int, AgentStatsMetricsOut]:
     """Fresh scalar evidence avoids stale ORM rows loaded before native exit."""
     if not ticket_ids:
         return {}
     if provisional is None:
         provisional = provisional_usage()
+    if work_durations is not None and timing_snapshot is None:
+        timing_snapshot = host_service.invocation_timings()
     statement = (
         select(
             col(TrackerTicket.id),
@@ -494,7 +528,6 @@ def query_ticket_agent_stats(
         .where(col(TrackerTicket.id).in_(ticket_ids))
     )
     rows = session.execute(statement).all()
-    timings = host_service.invocation_timings() if work_durations is not None else []
     observed_at = datetime.now(UTC)
     metrics = {}
     for ticket_id, project_id, key, evidence, task_key in rows:
@@ -510,7 +543,7 @@ def query_ticket_agent_stats(
                 [(key, evidence)],
                 live_calls=[
                     call
-                    for call in timings
+                    for call in timing_snapshot or []
                     if call.get("project_id") == project_id and call.get("task_key") == task_key
                 ],
                 observed_at=observed_at,
@@ -534,6 +567,7 @@ def usage_refresh(
     # otherwise this request owns its counter copy through projection. No DB I/O
     # runs under the registry lock and no finished-call history is retained.
     provisional = provisional_usage(project_id)
+    timing_snapshot = host_service.invocation_timings()
     task_keys = {call["task_key"] for call in calls or []}
     ticket_keys = {call["ticket_key"] for call in calls or []}
     tasks = (
@@ -569,6 +603,7 @@ def usage_refresh(
                 provisional=provisional,
                 work_durations=task_durations,
                 task_keys={task.id: task.key for task in tasks if task.id is not None},
+                timing_snapshot=timing_snapshot,
             )
         )
     task_by_id = {task.id: task for task in tasks}
@@ -596,6 +631,7 @@ def usage_refresh(
         ticket_ids={ticket.id for ticket in tickets if ticket.id is not None},
         provisional=provisional,
         work_durations=ticket_durations,
+        timing_snapshot=timing_snapshot,
     )
     return {
         "tasks": [

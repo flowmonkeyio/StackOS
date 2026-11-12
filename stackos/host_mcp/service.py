@@ -256,6 +256,7 @@ def usage_executions(project_id: int | None = None) -> list[dict[str, Any]]:
 def invocation_timings() -> list[dict[str, Any]]:
     """Copy owned timing through the synchronous final-receipt handoff, without I/O."""
     with _active_invocations_lock:
+        observed_at = datetime.now(UTC).isoformat()
         return [
             {
                 "project_id": call.scope.project_id,
@@ -263,6 +264,7 @@ def invocation_timings() -> list[dict[str, Any]]:
                 "attempt": call.scope.attempt,
                 "phase": call.scope.phase,
                 "finished_at": call.finished_at,
+                "observed_at": observed_at,
                 **{
                     key: value
                     for key, value in call.projection(include_usage=False).items()
