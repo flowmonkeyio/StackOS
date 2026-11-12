@@ -173,9 +173,12 @@ priority and elapsed renderers, fixed list-wide zones and container breakpoints.
 Manual rows reserve the same geometry without automated usage; current/Last
 identity and Live retain the canonical feed semantics. Each row links directly
 to the selected task graph. Global rows include canonical project names;
-project rows omit redundant names. `HomeConnectionsSection.vue` retains the
-existing account-row presentation after Usage and uses the existing scoped
-account owners; it does not probe providers.
+project rows omit redundant names. `HomeConnectionsSection.vue` renders a compact
+directory after Usage using the existing scoped account owners; it does not probe
+providers. Its 48px entries use normalized 24px provider marks, concise account
+names and canonical status icons with accessible labels. Identical provider/account
+names retain stable account numbers. Hover/focus discloses full identity and state;
+Manage connections in the header reaches the existing global or project owner.
 
 Both Home pages share `views/home/AgentActivitySection.vue`: Input / Cache /
 Output headlines, date controls, daily chart with input detail, and an accessible

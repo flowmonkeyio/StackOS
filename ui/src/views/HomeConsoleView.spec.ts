@@ -77,7 +77,7 @@ describe('project Home active work', () => {
       expect(wrapper.text()).not.toContain('Delivered report')
       expect(wrapper.text()).not.toContain('Tickets by status')
       expect(wrapper.text()).not.toContain('Configured workflows')
-      expect(wrapper.text()).toContain('Test failed')
+      expect(wrapper.find('[aria-label="Connected tools"] [role="img"][aria-label="Test failed"]').exists()).toBe(true)
       expect(wrapper.get('a[href="/projects/1/connections?section=services"]').text()).toBe('Manage connections')
       expect(wrapper.find('.active-task-row__project').exists()).toBe(false)
       const active = wrapper.get('[aria-label="Active tasks"]')
