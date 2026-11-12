@@ -1,4 +1,3 @@
-import type { LocationQuery, LocationQueryRaw } from 'vue-router'
 import { trackerStatus } from '@/design/status'
 import type { TrackerStatus } from '@/lib/task-tracker/types'
 
@@ -30,32 +29,56 @@ export const completedOptions: { value: CompletedWindow; label: string }[] = [
 const statuses = Object.keys(trackerStatus) as TrackerStatus[]
 const priorities: TaskPriority[] = ['p0', 'p1', 'p2', 'p3']
 const clauseFields: BoardFilterField[] = ['text', 'status', 'priority', 'workflow', 'assignee', 'ticket-status', 'blocked']
-const queryKeys = ['search', 'status', 'status_op', 'priority', 'priority_op', 'workflow', 'workflow_op', 'assignee', 'assignee_op', 'ticket_status', 'focus', 'completed', 'hide_empty']
 const text = (value: unknown): string => typeof value === 'string' ? value.trim() : ''
-const operator = (value: unknown): FilterOperator => value === 'is-not' ? 'is-not' : 'is'
 
-function list<T extends string>(value: LocationQuery[string], allowed: T[]): T[] {
-  const entries = (Array.isArray(value) ? value : [value]).flatMap(item => typeof item === 'string' ? item.split(',') : [])
-  return allowed.filter(item => entries.includes(item))
+export function defaultBoardFilters(): BoardFilterState {
+  return { clauses: [{ field: 'status', operator: 'is-not', values: ['aborted'] }], completed: 'past-week', hideEmptyColumns: false }
 }
 
-/** The route is the only owner. Missing keys use defaults; explicit `all` stays unrestricted. */
-export function parseBoardFilters(query: LocationQuery): BoardFilterState {
+/** Storage is untrusted. An invalid record leaves the existing defaults intact. */
+export function normalizeBoardFilters(value: unknown): BoardFilterState {
+  if (!value || typeof value !== 'object') return defaultBoardFilters()
+  const state = value as Partial<BoardFilterState>
+  if (!Array.isArray(state.clauses) || !completedOptions.some(option => option.value === state.completed)
+    || typeof state.hideEmptyColumns !== 'boolean') return defaultBoardFilters()
   const clauses: BoardFilterClause[] = []
-  if (text(query.search)) clauses.push({ field: 'text', value: text(query.search) })
-  const selectedStatuses = list(query.status, statuses)
-  if (selectedStatuses.length) clauses.push({ field: 'status', operator: operator(query.status_op), values: selectedStatuses })
-  else if (query.status !== 'all') clauses.push({ field: 'status', operator: 'is-not', values: ['aborted'] })
-  const selectedPriorities = list(query.priority, priorities)
-  if (selectedPriorities.length) clauses.push({ field: 'priority', operator: operator(query.priority_op), values: selectedPriorities })
-  for (const field of ['workflow', 'assignee'] as const) {
-    if (text(query[field])) clauses.push({ field, operator: operator(query[`${field}_op`]), value: text(query[field]) })
+  for (const clause of state.clauses) {
+    if (!clause || typeof clause !== 'object' || !clauseFields.includes(clause.field)
+      || clauses.some(item => item.field === clause.field)) return defaultBoardFilters()
+    if (['status', 'priority', 'workflow', 'assignee'].includes(clause.field)
+      && (!('operator' in clause) || (clause.operator !== 'is' && clause.operator !== 'is-not'))) return defaultBoardFilters()
+    if (clause.field === 'blocked') clauses.push({ field: 'blocked' })
+    else if (clause.field === 'ticket-status') {
+      if (!statuses.includes(clause.value)) return defaultBoardFilters()
+      clauses.push({ field: clause.field, value: clause.value })
+    } else if (clause.field === 'status' || clause.field === 'priority') {
+      const allowed: readonly string[] = clause.field === 'status' ? statuses : priorities
+      if (!Array.isArray(clause.values) || !clause.values.length || clause.values.some(item => !allowed.includes(item))) return defaultBoardFilters()
+      clauses.push({ ...clause, values: [...new Set(clause.values)] } as BoardFilterClause)
+    } else {
+      if (!text(clause.value)) return defaultBoardFilters()
+      clauses.push({ ...clause })
+    }
   }
-  const ticketStatus = list(query.ticket_status, statuses)[0]
-  if (ticketStatus) clauses.push({ field: 'ticket-status', value: ticketStatus })
-  if (query.focus === 'blocked') clauses.push({ field: 'blocked' })
-  const completed = completedOptions.find(option => option.value === query.completed)?.value ?? 'past-week'
-  return reconcileBoardFilters({ clauses, completed, hideEmptyColumns: query.hide_empty === '1' })
+  return reconcileBoardFilters({ clauses, completed: state.completed!, hideEmptyColumns: state.hideEmptyColumns })
+}
+
+export function readBoardFilters(projectId: number): BoardFilterState {
+  try { return normalizeBoardFilters(JSON.parse(window.localStorage.getItem(`stackos:work-board-filters:${projectId}`) ?? 'null')) }
+  catch { return defaultBoardFilters() }
+}
+
+export function saveBoardFilters(projectId: number, state: BoardFilterState): void {
+  try { window.localStorage.setItem(`stackos:work-board-filters:${projectId}`, JSON.stringify(state)) }
+  catch { /* Local preferences remain usable when storage is unavailable. */ }
+}
+
+/** Home links carry a one-shot navigation intent, never a saved preference query. */
+export function boardTicketEntry(status: TrackerStatus): string { return `tickets:${status}` }
+
+export function boardFiltersFromEntry(entry: unknown): BoardFilterState | null {
+  const status = statuses.find(value => entry === boardTicketEntry(value))
+  return status ? updateBoardFilter(defaultBoardFilters(), { field: 'ticket-status', value: status }) : null
 }
 
 function reconcileBoardFilters(state: BoardFilterState): BoardFilterState {
@@ -65,25 +88,6 @@ function reconcileBoardFilters(state: BoardFilterState): BoardFilterState {
     clauses: clauseFields.flatMap(field => state.clauses.filter(clause => clause.field === field)),
     completed: completeSelected && state.completed === 'none' ? 'all' : state.completed,
   }
-}
-
-/** Managed keys include removals so merging this into the route cannot retain a hidden clause. */
-export function boardFilterQuery(state: BoardFilterState): LocationQueryRaw {
-  const next = reconcileBoardFilters(state)
-  const query: LocationQueryRaw = Object.fromEntries(queryKeys.map(key => [key, undefined]))
-  query.status = 'all'
-  query.completed = next.completed
-  query.hide_empty = next.hideEmptyColumns ? '1' : undefined
-  for (const clause of next.clauses) {
-    if (clause.field === 'text') query.search = clause.value
-    else if (clause.field === 'blocked') query.focus = 'blocked'
-    else if (clause.field === 'ticket-status') query.ticket_status = clause.value
-    else {
-      query[clause.field] = 'values' in clause ? clause.values.join(',') : clause.value
-      query[`${clause.field}_op`] = clause.operator === 'is-not' ? 'is-not' : undefined
-    }
-  }
-  return query
 }
 
 export function removeBoardFilter(state: BoardFilterState, field: BoardFilterField): BoardFilterState {

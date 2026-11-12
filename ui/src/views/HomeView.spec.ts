@@ -101,7 +101,7 @@ describe('HomeView', () => {
     expect(overview.findComponent({ name: 'TicketStatusChart' }).attributes('summary-aside')).toBeUndefined()
     expect(wrapper.text()).not.toContain('Latest action calls')
     expect(
-      wrapper.get('a[href="/projects/1/tasks?ticket_status=in-progress"]').text(),
+      wrapper.findAll('a').find(link => link.attributes('href') === '/projects/1/tasks?work_entry=tickets%3Ain-progress')!.text(),
     ).toContain('In Progress 1')
     overview.vm.$emit('select', 'in-progress')
     await flushPromises()

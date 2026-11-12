@@ -1841,30 +1841,42 @@ theme changes and device pixel ratio changes. Its observers and listeners are
 released on unmount. The compact summary adds no fit-based visibility gate or
 refresh timer.
 
-## Board URL state
+## Board local preferences
 
-`TaskTrackerView` owns Board filter and display state through the current URL.
-The pure `task-tracker/boardFilters.ts` parser, serializer and update/remove/clear
-commands provide one typed clause model to the controls and Board projection.
-There is no saved filter store. History and reload read the same query state;
-changing filters preserves the open detail identity and its draft.
+`TaskTrackerView` owns the existing `BoardFilterState` through explicit control
+commands in `task-tracker/boardFilters.ts`. One small localStorage record per
+project, `stackos:work-board-filters:<project_id>`, saves clauses, completed
+visibility and hide-empty columns. Plain Work navigation, reload and app
+reopening restore the same preferences. Project switching restores the target
+project's record instead of carrying preferences from the previous project.
+Storage access and parsing are guarded; absent, malformed or invalid records
+use the existing defaults. Storage failure leaves controls usable in memory.
+There are no Vue watchers or server/account preference settings.
 
-| Query | Meaning |
+| Preference | Meaning |
 | --- | --- |
-| `search` | Text substring across task and ticket/index search fields, case insensitive |
-| `status`, `priority` | Comma-separated or repeated values; OR within a field, AND between clauses |
-| `status_op`, `priority_op` | `is` (default) or `is-not`; priorities are `p0` through `p3` |
-| `workflow`, `assignee` | One workflow key or assignee; corresponding `_op` accepts `is` or `is-not` |
-| `ticket_status`, `focus=blocked` | Legacy Home restrictions represented as removable clauses |
+| Text | Substring across task and ticket/index search fields, case insensitive |
+| Status, priority | OR within a field, AND between clauses; `is` or `is-not`; priorities are `p0` through `p3` |
+| Workflow, assignee | One workflow key or assignee with `is` or `is-not` |
+| Ticket status, blocked | Removable ticket-status and blocked clauses |
 | `completed` | `all`, `past-day`, `past-week`, `past-month`, or `none` |
-| `hide_empty=1` | Hide columns without any projected tasks |
+| `hideEmptyColumns` | Hide columns without any projected tasks |
 
 Missing status/completed choices default to Status is not Aborted and Completed
-Past week. Explicit `status=all&completed=all` keeps Clear all unrestricted on
-reload; clearing filters retains the empty-column display choice. Invalid
-enum values are ignored, with missing/invalid status and completion choices
-using the same defaults. Complete selected explicitly with Completed None
-reconciles to All in the control state and subsequent URL writes.
+Past week. Clear all saves empty clauses and Completed All, retaining the
+empty-column display choice. Complete selected explicitly with Completed None
+reconciles to All in controls and storage readback.
+
+Filter edits do not navigate or create history entries. URL `view`, `task`,
+`detail` and `ticket` continue to own Board/Graph placement and inspection;
+changing a filter preserves an open detail draft. Old filter query parameters
+are no longer read or written. Home ticket-count links use a one-shot
+`work_entry=tickets:<status>` navigation intent, generated/interpreted by the
+same board helper. It replaces conflicting saved clauses with the existing
+default view plus the requested ticket-status clause, saves the result and
+removes the intent with route replacement while preserving navigation identities.
+Plain links restore saved choices. Graph task selection and graph-only filters
+retain their existing owners and do not depend on Board preferences.
 
 Completion windows apply only to tasks whose actual status is `complete`,
 using `completed_at` and the existing StackOS UTC timestamp parser. Windows
@@ -1908,7 +1920,7 @@ The Work UI provides two views, Board and Graph. It renders:
   dependency context remains in inspection. Only `complete` tickets count as
   complete; other terminal statuses do not. Search, workflow and assignee filters
   narrow the Board.
-  Task-status filters apply to tasks; `ticket_status` links explicitly filter
+  Task-status filters apply to tasks; Home ticket-count entry links explicitly filter
   tasks containing tickets with that status.
 - a small semantic info `Automated` badge on Board cards, the Graph toolbar,
   and beside status in task details when the task has a persisted

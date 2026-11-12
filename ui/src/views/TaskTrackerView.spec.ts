@@ -6,6 +6,7 @@ import type { TrackerSnapshot, TrackerTask, TrackerTicket } from '@/lib/task-tra
 import { agentStatsFixture } from './home/agentStatsFixtures'
 import TaskTrackerView from './TaskTrackerView.vue'
 import { ApiError } from '@/lib/client'
+import { defaultBoardFilters, saveBoardFilters } from './task-tracker/boardFilters'
 
 const mocks = vi.hoisted(() => ({ callOperation: vi.fn(), close: vi.fn(), stream: vi.fn() }))
 vi.mock('@/lib/operations', () => ({ callOperation: mocks.callOperation }))
@@ -249,7 +250,8 @@ describe('Work board navigation', () => {
     let finish!: (value: unknown) => void
     mocks.callOperation.mockImplementation((name, args, options) => name === 'tracker.reorderTask'
       ? new Promise(resolve => { finish = resolve }) : read(name, args, options))
-    const { wrapper, board } = await render('/projects/7/tasks?search=Visible&completed=all', false, false, true)
+    saveBoardFilters(7, { clauses: [{ field: 'text', value: 'Visible' }], completed: 'all', hideEmptyColumns: false })
+    const { wrapper, board } = await render('/projects/7/tasks', false, false, true)
     const order = () => board().findAll('[data-task-key]').map(card => card.attributes('data-task-key'))
     expect(order()).toEqual(['a', 'b', 'c'])
     await board().get('[data-reorder-handle]').trigger('click')
@@ -520,7 +522,8 @@ describe('Work board navigation', () => {
   })
 
   it('retains visible inert Board content, filter and scroll while the popup pages real reads, then restores its opener on Escape', async () => {
-    const { wrapper, board, router } = await render('/projects/7/tasks?search=Alpha', true)
+    saveBoardFilters(7, { ...defaultBoardFilters(), clauses: [{ field: 'text', value: 'Alpha' }] })
+    const { wrapper, board, router } = await render('/projects/7/tasks', true)
     const instance = board().vm
     const workspace = wrapper.get<HTMLElement>('.tracker-board-workspace').element
     workspace.scrollTop = 123
@@ -535,7 +538,8 @@ describe('Work board navigation', () => {
     expect(mocks.callOperation).toHaveBeenCalledWith('tracker.taskActivity', expect.objectContaining({ project_id: 7, task_key: taskA.key }))
     await popup().get('[role="dialog"]').trigger('keydown', { key: 'Escape' })
     await flushPromises()
-    expect(router.currentRoute.value.query).toEqual({ search: 'Alpha' })
+    expect(router.currentRoute.value.query).toEqual({})
+    expect(board().props('rows').map((row: { key: string }) => row.key)).toEqual(['task-a'])
     expect(wrapper.get('.tracker-page-shell').attributes('inert')).toBeUndefined()
     expect(workspace.scrollTop).toBe(123)
     expect(document.activeElement).toBe(opener.element)
@@ -653,6 +657,7 @@ describe('Work board navigation', () => {
     vi.setSystemTime(new Date('2026-11-10T12:00:00Z'))
     setActivePinia(createPinia())
     sessionStorage.clear()
+    localStorage.clear()
     mocks.callOperation.mockReset()
     mocks.close.mockReset()
     mocks.stream.mockReset().mockReturnValue({ close: mocks.close })
@@ -660,13 +665,40 @@ describe('Work board navigation', () => {
   })
   afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers() })
 
-  it('uses URL clauses for filters/display, history and reload without changing Graph picker order', async () => {
+  it('restores project-local preferences through plain navigation and remount without query state', async () => {
+    const { wrapper, router, controls } = await render()
+    controls().vm.$emit('update:filter', { field: 'text', value: 'Alpha' })
+    controls().vm.$emit('update:display', { completed: 'none', hideEmptyColumns: true })
+    await flushPromises()
+    const saved = controls().props('boardFilters')
+    expect(router.currentRoute.value.query).toEqual({})
+    await router.push('/other')
+    await router.push('/projects/7/tasks')
+    await flushPromises()
+    expect(controls().props('boardFilters')).toEqual(saved)
+    await router.push('/projects/8/tasks')
+    await flushPromises()
+    expect(controls().props('boardFilters')).toMatchObject({ completed: 'past-week', hideEmptyColumns: false })
+    controls().vm.$emit('update:filter', { field: 'text', value: 'Beta' })
+    await flushPromises()
+    await router.push('/projects/7/tasks')
+    await flushPromises()
+    expect(controls().props('boardFilters')).toEqual(saved)
+    wrapper.unmount()
+    const reopened = await render()
+    expect(reopened.controls().props('boardFilters')).toEqual(saved)
+    reopened.wrapper.unmount()
+  })
+
+  it('persists all controls and Clear all without navigation history or changing Graph picker order', async () => {
     dataMock([
       { ...taskA, priority_key: 'p0', order_index: 1, source_json: { template_key: 'engineering.delivery' }, owner: 'Operator' },
       { ...taskB, priority_key: 'p2', order_index: 0, created_at: '2026-11-01T12:00:00Z' },
       trackerTask({ id: 3, key: 'aborted', title: 'Aborted task', status: 'aborted', priority_key: 'p0' }),
     ], [ticketA, ticketB])
     const { wrapper, router, controls, board } = await render()
+    const push = vi.spyOn(router, 'push')
+    const replace = vi.spyOn(router, 'replace')
     const keys = () => board().props('rows').map((row: { key: string }) => row.key)
     expect(keys()).toEqual(['task-b', 'task-a'])
     expect(controls().props('boardFilters').completed).toBe('past-week')
@@ -683,18 +715,20 @@ describe('Work board navigation', () => {
     controls().vm.$emit('update:display', { hideEmptyColumns: true, completed: 'none' })
     await flushPromises()
     expect(board().props('hideEmptyColumns')).toBe(true)
-    expect(router.currentRoute.value.query).toMatchObject({ search: 'Alpha', priority: 'p0', workflow: 'engineering.delivery', assignee: 'Operator', completed: 'none', hide_empty: '1' })
+    expect(router.currentRoute.value.query).toEqual({})
+    expect(push).not.toHaveBeenCalled()
+    expect(replace).not.toHaveBeenCalled()
+    const saved = controls().props('boardFilters')
+    await router.push('/other')
+    await router.push('/projects/7/tasks')
+    await flushPromises()
+    expect(controls().props('boardFilters')).toEqual(saved)
+    expect(keys()).toEqual(['task-a'])
     controls().vm.$emit('clear')
     await flushPromises()
     expect(keys()).toEqual(['task-b', 'aborted', 'task-a'])
     expect(controls().props('boardFilters')).toMatchObject({ clauses: [], completed: 'all' })
-    expect(router.currentRoute.value.query).toEqual({ status: 'all', completed: 'all', hide_empty: '1' })
-    router.back()
-    await flushPromises()
-    expect(keys()).toEqual(['task-a'])
-    expect(controls().props('boardFilters').completed).toBe('none')
-    router.forward()
-    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({})
     const url = router.currentRoute.value.fullPath
     wrapper.unmount()
     const reloaded = await render(url)
@@ -703,25 +737,61 @@ describe('Work board navigation', () => {
     reloaded.wrapper.unmount()
   })
 
-  it('removes legacy restrictions and reconciles Complete plus None in the route consumer', async () => {
-    const { wrapper, router, controls } = await render('/projects/7/tasks?ticket_status=complete&focus=blocked&completed=none')
+  it('consumes explicit Home intent once, preserving navigation identities and persisting removal', async () => {
+    saveBoardFilters(7, { clauses: [{ field: 'text', value: 'conflicting saved search' }], completed: 'none', hideEmptyColumns: true })
+    const { wrapper, router, controls } = await render('/projects/7/tasks?work_entry=tickets:complete&detail=task-b&ticket=ticket-b')
+    expect(controls().props('boardFilters').clauses).toContainEqual({ field: 'ticket-status', value: 'complete' })
+    expect(router.currentRoute.value.query).toEqual({ detail: 'task-b', ticket: 'ticket-b' })
     controls().vm.$emit('removeFilter', 'ticket-status')
     await flushPromises()
-    expect(router.currentRoute.value.query.ticket_status).toBeUndefined()
-    expect(router.currentRoute.value.query.focus).toBe('blocked')
-    controls().vm.$emit('removeFilter', 'blocked')
+    controls().vm.$emit('update:display', { completed: 'none' })
     await flushPromises()
     controls().vm.$emit('update:filter', { field: 'status', operator: 'is', values: ['complete'] })
     await flushPromises()
-    expect(router.currentRoute.value.query.completed).toBe('all')
     expect(controls().props('boardFilters').completed).toBe('all')
+    await router.push('/projects/7/tasks?work_entry=tickets:failed')
+    await flushPromises()
+    expect(controls().props('boardFilters').clauses).toContainEqual({ field: 'ticket-status', value: 'failed' })
+    controls().vm.$emit('removeFilter', 'ticket-status')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({})
+    wrapper.unmount()
+    const reopened = await render()
+    expect(reopened.controls().props('boardFilters')).toEqual(defaultBoardFilters())
+    reopened.wrapper.unmount()
+  })
+
+  it('ignores superseded filter queries and keeps controls usable with unavailable storage', async () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('disabled') })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('quota') })
+    const { wrapper, controls, board } = await render('/projects/7/tasks?search=Beta&status=complete&completed=none&hide_empty=1')
+    expect(controls().props('boardFilters')).toEqual(defaultBoardFilters())
+    controls().vm.$emit('update:filter', { field: 'text', value: 'Alpha' })
+    await flushPromises()
+    expect(board().props('rows').map((row: { key: string }) => row.key)).toEqual(['task-a'])
+    wrapper.unmount()
+    vi.restoreAllMocks()
+    localStorage.setItem('stackos:work-board-filters:7', '{')
+    const malformed = await render()
+    expect(malformed.controls().props('boardFilters')).toEqual(defaultBoardFilters())
+    malformed.wrapper.unmount()
+  })
+
+  it('preserves combined Graph/detail navigation when consuming a same-page entry intent', async () => {
+    const { wrapper, router, dialog, controls } = await render()
+    await router.push('/projects/7/tasks?work_entry=tickets:complete&view=graph&task=task-a&detail=task-b&ticket=ticket-b')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ view: 'graph', task: 'task-a', detail: 'task-b', ticket: 'ticket-b' })
+    expect(controls().props('activeTaskKey')).toBe('task-a')
+    expect(dialog().props('task')?.key).toBe('task-b')
+    expect(dialog().props('ticketKey')).toBe('ticket-b')
     wrapper.unmount()
   })
 
   it('retains the open task and draft when a new filter excludes it', async () => {
-    const { wrapper, router, dialog } = await render('/projects/7/tasks?detail=task-a', true)
+    const { wrapper, controls, dialog } = await render('/projects/7/tasks?detail=task-a', true)
     await popup().get('textarea').setValue('Keep my draft')
-    await router.push({ query: { ...router.currentRoute.value.query, search: 'Beta' } })
+    controls().vm.$emit('update:filter', { field: 'text', value: 'Beta' })
     await flushPromises()
     expect(dialog().props('task')?.key).toBe('task-a')
     expect(popup().get('textarea').element.value).toBe('Keep my draft')
@@ -800,7 +870,7 @@ describe('Work board navigation', () => {
     expect(dialog().props('tickets').map((ticket: TrackerTicket) => ticket.key)).toEqual(['ticket-b'])
     dialog().vm.$emit('viewDependencies', 'task-b')
     await flushPromises()
-    expect(router.currentRoute.value.query).toMatchObject({ view: 'graph', task: 'task-b', search: 'Beta' })
+    expect(router.currentRoute.value.query).toEqual({ view: 'graph', task: 'task-b' })
     expect(dialog().props('modelValue')).toBe(false)
     expect(wrapper.findComponent({ name: 'TrackerGraphPanel' }).props('activeTaskTitle')).toBe('Beta task')
     wrapper.findComponent({ name: 'UiSegmentedControl' }).vm.$emit('select', 'board')
@@ -813,7 +883,8 @@ describe('Work board navigation', () => {
 
   it('refreshes the index on Graph return and preserves the mounted Board scroll and URL', async () => {
     dataMock()
-    const { wrapper, router, controls, board } = await render('/projects/7/tasks?search=Alpha&completed=all')
+    saveBoardFilters(7, { clauses: [{ field: 'text', value: 'Alpha' }], completed: 'all', hideEmptyColumns: false })
+    const { wrapper, router, controls, board } = await render()
     const boardElement = board().element as HTMLElement
     boardElement.scrollLeft = 320
     boardElement.scrollTop = 120
@@ -826,7 +897,8 @@ describe('Work board navigation', () => {
     expect(boardElement.scrollLeft).toBe(320)
     expect(boardElement.scrollTop).toBe(120)
     expect(board().props('rows')[0].task.title).toBe('Alpha updated from another task')
-    expect(router.currentRoute.value.query).toMatchObject({ search: 'Alpha', completed: 'all' })
+    expect(router.currentRoute.value.query).toEqual({})
+    expect(controls().props('boardFilters').clauses).toContainEqual({ field: 'text', value: 'Alpha' })
     expect(controls().props('taskOptions').map((option: { value: string }) => option.value)).toEqual(['task-b', 'task-a'])
     wrapper.unmount()
   })
@@ -849,7 +921,8 @@ describe('Work board navigation', () => {
   })
 
   it('offers every task in the map picker even when Board filters exclude it', async () => {
-    const { wrapper, controls, board } = await render('/projects/7/tasks?search=Alpha')
+    saveBoardFilters(7, { ...defaultBoardFilters(), clauses: [{ field: 'text', value: 'Alpha' }] })
+    const { wrapper, controls, board } = await render()
     wrapper.findComponent({ name: 'UiSegmentedControl' }).vm.$emit('select', 'graph')
     await flushPromises()
     expect(controls().props('taskOptions').map((option: {value: string}) => option.value)).toContain('task-b')
@@ -898,7 +971,8 @@ describe('Work board navigation', () => {
     expect(router.currentRoute.value.query.task).toBe('task-b')
     router.back()
     await vi.waitFor(() => expect(controls().props('viewMode')).toBe('board'))
-    expect(router.currentRoute.value.query.search).toBe('Alpha')
+    expect(router.currentRoute.value.query.search).toBeUndefined()
+    expect(controls().props('boardFilters').clauses).toContainEqual({ field: 'text', value: 'Alpha' })
     wrapper.unmount()
   })
 
@@ -1117,7 +1191,7 @@ describe('Work board navigation', () => {
   })
 
   it('labels ticket count links explicitly while grouping by each task’s own status', async () => {
-    const { wrapper, board, controls } = await render('/projects/7/tasks?ticket_status=complete')
+    const { wrapper, board, controls } = await render('/projects/7/tasks?work_entry=tickets:complete')
     expect(controls().props('boardFilters').clauses).toContainEqual({ field: 'ticket-status', value: 'complete' })
     expect(board().props('rows').map((row: {key: string}) => row.key)).toEqual(['task-b'])
     wrapper.unmount()

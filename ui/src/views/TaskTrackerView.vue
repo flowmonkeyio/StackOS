@@ -28,7 +28,7 @@ import { useStackOsResourcesStore } from '@/stores/stackosResources'
 import type { LibrarySource } from '@/lib/librarySources'
 import type { ViewMode } from './task-tracker/viewTypes'
 import { buildAssigneeOptions, buildTaskProgressRows, buildWorkflowOptions, groupTicketsByTask, mergeFocusedTrackerSnapshot, projectBoardRows } from './task-tracker/viewModel'
-import { boardFilterQuery, clearBoardFilters, parseBoardFilters, removeBoardFilter, updateBoardDisplay, updateBoardFilter } from './task-tracker/boardFilters'
+import { boardFiltersFromEntry, clearBoardFilters, readBoardFilters, removeBoardFilter, saveBoardFilters, updateBoardDisplay, updateBoardFilter } from './task-tracker/boardFilters'
 import type { BoardFilterClause, BoardFilterField, BoardFilterState } from './task-tracker/boardFilters'
 import { useTaskBoardEdits } from './task-tracker/useTaskBoardEdits'
 
@@ -43,7 +43,7 @@ const error = ref<string | null>(null)
 const mapTaskStorageKey = `stackos:work-map-task:${projectId.value}`
 const mapTaskKey = ref(queryText(route.query.task) || rememberedMapTask())
 const viewMode = computed<ViewMode>(() => route.query.view === 'graph' ? 'graph' : 'board')
-const boardFilters = computed(() => parseBoardFilters(route.query))
+const boardFilters = ref(readBoardFilters(viewProjectId))
 const viewOptions = [{ key: 'board', label: 'Board' }, { key: 'graph', label: 'Graph' }]
 const detailTaskKey = computed(() => queryText(route.query.detail))
 const detailTicketKey = computed(() => queryText(route.query.ticket))
@@ -365,16 +365,27 @@ function viewDependencies(taskKey: string): void {
   navigate({ view: 'graph', task: taskKey, detail: undefined, ticket: undefined })
 }
 function clearFilters(): void {
-  navigate(boardFilterQuery(clearBoardFilters(boardFilters.value)))
+  setBoardFilters(clearBoardFilters(boardFilters.value))
 }
 function updateFilter(clause: BoardFilterClause): void {
-  navigate(boardFilterQuery(updateBoardFilter(boardFilters.value, clause)))
+  setBoardFilters(updateBoardFilter(boardFilters.value, clause))
 }
 function removeFilter(field: BoardFilterField): void {
-  navigate(boardFilterQuery(removeBoardFilter(boardFilters.value, field)))
+  setBoardFilters(removeBoardFilter(boardFilters.value, field))
 }
 function updateDisplay(changes: Partial<Pick<BoardFilterState, 'completed' | 'hideEmptyColumns'>>): void {
-  navigate(boardFilterQuery(updateBoardDisplay(boardFilters.value, changes)))
+  setBoardFilters(updateBoardDisplay(boardFilters.value, changes))
+}
+function setBoardFilters(state: BoardFilterState): void {
+  if (!currentScope()) return
+  boardFilters.value = state
+  saveBoardFilters(viewProjectId, state)
+}
+function consumeBoardEntry(): void {
+  if (!currentScope() || !('work_entry' in route.query)) return
+  const state = boardFiltersFromEntry(route.query.work_entry)
+  if (state) setBoardFilters(state)
+  navigate({ work_entry: undefined }, true)
 }
 function queryText(value: unknown): string { return typeof value === 'string' ? value : '' }
 function rememberedMapTask(): string {
@@ -394,7 +405,9 @@ function mapNeedsCanonicalRoute(): boolean {
   return viewMode.value === 'graph' && Boolean(activeTaskRow.value) && queryText(route.query.task) !== mapTaskKey.value
 }
 const removeRouteListener = router.afterEach(async (to, from, failure) => {
-  if (failure || to.path !== from.path || !currentScope() || !snapshot.value) return
+  if (failure || to.path !== from.path || !currentScope()) return
+  consumeBoardEntry()
+  if (!snapshot.value) return
   const mapChanged = to.query.view !== from.query.view || to.query.task !== from.query.task
   if (viewMode.value === 'graph' && mapChanged) {
     mapTaskKey.value = resolveMapTaskKey()
@@ -424,6 +437,7 @@ const removeRouteListener = router.afterEach(async (to, from, failure) => {
     }
   }
 })
+consumeBoardEntry()
 useProjectScopedLoader({
   projectId, load: () => load(),
   onScopeExit: () => {

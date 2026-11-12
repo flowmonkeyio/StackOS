@@ -22,7 +22,7 @@ const priorities = ['p0', 'p1', 'p2', 'p3'].map(value => ({ value, label: value.
 const options = computed(() => props.field === 'workflow' ? props.workflowOptions : props.assigneeOptions)
 const singleOptions = computed(() => {
   const choices = options.value.filter(option => option.value !== '')
-  // Keep an applied URL value editable even if it disappeared from the current index.
+  // Keep an applied value editable even if it disappeared from the current index.
   return value.value && !choices.some(option => option.value === value.value)
     ? [{ value: value.value, label: value.value }, ...choices] : choices
 })

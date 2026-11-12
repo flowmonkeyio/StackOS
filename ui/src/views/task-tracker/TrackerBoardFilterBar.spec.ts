@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import TrackerBoardFilterBar from './TrackerBoardFilterBar.vue'
-import { parseBoardFilters } from './boardFilters'
+import { defaultBoardFilters } from './boardFilters'
+import type { BoardFilterState } from './boardFilters'
 import { UiButton, UiPopover } from '@/components/ui'
 
 let available = 480
@@ -21,9 +22,13 @@ beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({ width: 160 } as DOMRect))
 })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); disconnect.mockClear() })
-function render(query = {}) {
+function textFilters(value: string): BoardFilterState {
+  const defaults = defaultBoardFilters()
+  return { ...defaults, clauses: [{ field: 'text', value }, ...defaults.clauses], completed: 'all' }
+}
+function render(filters: Partial<BoardFilterState> = {}) {
   return mount(TrackerBoardFilterBar, { attachTo: document.body, props: {
-    filters: parseBoardFilters(query), workflowOptions: [{ value: 'engineering', label: 'Tracked delivery' }],
+    filters: { ...defaultBoardFilters(), ...filters }, workflowOptions: [{ value: 'engineering', label: 'Tracked delivery' }],
     assigneeOptions: [{ value: 'Codex Main', label: 'Codex Main' }], taskRowsCount: 3, tasksCount: 12, indexAvailable: true,
   } })
 }
@@ -58,7 +63,11 @@ describe('Board filter controls', () => {
   })
   it('anchors every applied clause and Completed to its own chip', async () => {
     available = 2000
-    const wrapper = render({ search: 'server', status: 'in-progress', priority: 'p1', workflow: 'engineering', assignee: 'Codex Main', ticket_status: 'complete', focus: 'blocked' })
+    const wrapper = render({ clauses: [
+      { field: 'text', value: 'server' }, { field: 'status', operator: 'is', values: ['in-progress'] },
+      { field: 'priority', operator: 'is', values: ['p1'] }, { field: 'workflow', operator: 'is', value: 'engineering' },
+      { field: 'assignee', operator: 'is', value: 'Codex Main' }, { field: 'ticket-status', value: 'complete' }, { field: 'blocked' },
+    ] })
     await nextTick()
     const chips = wrapper.findAll('.board-filter-bar__chips .board-filter-bar__edit')
     expect(chips).toHaveLength(8)
@@ -73,7 +82,7 @@ describe('Board filter controls', () => {
   })
   it('keeps an overflow editor anchored and returns focus after resize moves its chip', async () => {
     available = 80
-    const wrapper = render({ search: 'server', completed: 'all' })
+    const wrapper = render(textFilters('server'))
     await nextTick()
     await button(wrapper, '+2 filters').trigger('click')
     const chip = wrapper.get('[aria-label="Edit Text: server"]')
@@ -89,7 +98,7 @@ describe('Board filter controls', () => {
     wrapper.unmount()
   })
   it('uses the surviving overflow trigger when a visible chip moves into closed overflow', async () => {
-    const wrapper = render({ search: 'server', completed: 'all' })
+    const wrapper = render(textFilters('server'))
     await nextTick()
     await wrapper.get('[aria-label="Edit Text: server"]').trigger('click')
     await wrapper.get('input[type="search"]').setValue('retained draft')
@@ -104,7 +113,7 @@ describe('Board filter controls', () => {
     wrapper.unmount()
   })
   it('anchors an applied editor at the clicked chip instead of the Filter button', async () => {
-    const wrapper = render({ search: 'server', completed: 'all' })
+    const wrapper = render(textFilters('server'))
     await nextTick()
     const chip = wrapper.get('[aria-label="Edit Text: server"]')
     await chip.trigger('click')
@@ -120,7 +129,7 @@ describe('Board filter controls', () => {
     await wrapper.get('input[type="search"]').setValue('server')
     await wrapper.get('form').trigger('submit')
     expect(wrapper.emitted('update:filter')?.[0]).toEqual([{ field: 'text', value: 'server' }])
-    await wrapper.setProps({ filters: parseBoardFilters({ search: 'server', status: 'all', completed: 'all' }) })
+    await wrapper.setProps({ filters: { clauses: [{ field: 'text', value: 'server' }], completed: 'all', hideEmptyColumns: false } })
     await wrapper.get('[aria-label="Edit Text: server"]').trigger('click')
     expect((wrapper.get('input').element as HTMLInputElement).value).toBe('server')
     await wrapper.get('input').setValue('')
@@ -156,7 +165,11 @@ describe('Board filter controls', () => {
   })
 
   it('collapses clauses on resize and uses the same editor/removal commands in overflow', async () => {
-    const wrapper = render({ search: 'a very long filter value', priority: 'p1', workflow: 'engineering', ticket_status: 'complete', focus: 'blocked' })
+    const wrapper = render({ clauses: [
+      { field: 'text', value: 'a very long filter value' }, ...defaultBoardFilters().clauses,
+      { field: 'priority', operator: 'is', values: ['p1'] }, { field: 'workflow', operator: 'is', value: 'engineering' },
+      { field: 'ticket-status', value: 'complete' }, { field: 'blocked' },
+    ] })
     await nextTick()
     expect(wrapper.findAll('.board-filter-bar__chips > .board-filter-bar__chip')).toHaveLength(2)
     expect(button(wrapper, '+5 filters').exists()).toBe(true)

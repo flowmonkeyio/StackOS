@@ -59,7 +59,7 @@ describe('projectSwitchDestination', () => {
       ),
     ).toEqual({
       path: '/projects/7/tasks',
-      query: { view: 'stories', status: 'in-progress' },
+      query: { view: 'stories' },
       hash: '#work-list',
     })
   })
@@ -81,18 +81,18 @@ describe('projectSwitchDestination', () => {
     })
   })
 
-  it('keeps portable Board clauses/display while clearing project-specific filters and identities', () => {
+  it('keeps only Board/Graph placement while project-local preferences and entry intents stay isolated', () => {
     expect(projectSwitchDestination({
       path: '/projects/1/tasks', hash: '',
       query: {
         view: 'graph', status: 'complete,failed', status_op: 'is-not', priority: 'p0,p1', priority_op: 'is',
         completed: 'all', hide_empty: '1', ticket_status: 'failed', focus: 'blocked',
         search: 'old text', workflow: 'old workflow', workflow_op: 'is-not', assignee: 'old agent', assignee_op: 'is',
-        task: 'old-task', detail: 'old-task', ticket: 'old-ticket',
+        task: 'old-task', detail: 'old-task', ticket: 'old-ticket', work_entry: 'tickets:failed',
       },
     }, 7)).toEqual({
       path: '/projects/7/tasks', hash: '',
-      query: { view: 'graph', status: 'complete,failed', status_op: 'is-not', priority: 'p0,p1', priority_op: 'is', completed: 'all', hide_empty: '1', ticket_status: 'failed', focus: 'blocked' },
+      query: { view: 'graph' },
     })
   })
 
