@@ -2108,7 +2108,10 @@ def test_started_plan_cannot_be_started_again_or_return_token(
     assert "run_token" not in str(exc_info.value.data)
 
 
-def test_run_plan_late_writes_reject_secrets(session: Session, project_id: int) -> None:
+@pytest.mark.parametrize("workflow_shaped", [False, True])
+def test_run_plan_late_writes_reject_secrets(
+    session: Session, project_id: int, workflow_shaped: bool
+) -> None:
     repo = RunPlanRepository(session)
     plan = repo.create(project_id=project_id, run_plan_json=_run_plan_json()).data
     started = repo.start(plan.id, project_id=project_id).data
@@ -2118,15 +2121,18 @@ def test_run_plan_late_writes_reject_secrets(session: Session, project_id: int) 
         approval_status=ApprovalRequestStatus.APPROVED,
     )
     repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="create-campaign")
+    payload = {"metadata": {"operator_authorization": "synthetic-material"}}
 
     with pytest.raises(ValidationError) as meta_exc:
-        repo.update(run_plan_id=plan.id, metadata_json={"api_key": "secret"})
+        repo.update(
+            run_plan_id=plan.id, metadata_json=payload if workflow_shaped else {"api_key": "secret"}
+        )
     with pytest.raises(ValidationError) as decision_exc:
         repo.update(
             run_plan_id=plan.id,
             approval_key="launch-review",
             approval_status=ApprovalRequestStatus.APPROVED,
-            decision_json={"authorization": "Bearer abc"},
+            decision_json=payload if workflow_shaped else {"authorization": "Bearer abc"},
         )
     with pytest.raises(ValidationError) as result_exc:
         repo.record_step(
@@ -2134,7 +2140,7 @@ def test_run_plan_late_writes_reject_secrets(session: Session, project_id: int) 
             run_id=started.run_id,
             step_id="create-campaign",
             status=RunPlanStepStatus.SUCCESS,
-            result_json={"refresh_token": "secret"},
+            result_json=payload if workflow_shaped else {"refresh_token": "secret"},
         )
 
     assert "must not contain secrets" in str(meta_exc.value)

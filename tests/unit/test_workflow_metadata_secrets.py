@@ -89,3 +89,17 @@ def test_operator_instruction_name_is_not_an_action_payload_exemption():
     assert find_run_plan_secret_paths(
         {"action_payloads": {"operator_authorization": "synthetic-material"}}
     ) == ["$.action_payloads.operator_authorization"]
+
+
+@pytest.mark.parametrize("alias", ["metadata", "metadata_json"])
+def test_generic_scanners_never_infer_workflow_ownership(alias):
+    from stackos.workflows.run_plan_schema import (
+        ensure_run_plan_has_no_secrets,
+        find_run_plan_secret_paths,
+    )
+
+    payload = {alias: {"operator_authorization": "synthetic-material"}}
+    assert find_run_plan_secret_paths(payload) == [f"$.{alias}.operator_authorization"]
+    with pytest.raises(ValueError, match="must not contain secrets"):
+        ensure_run_plan_has_no_secrets(payload)
+    assert find_run_plan_secret_paths(payload, workflow_metadata=True) == []

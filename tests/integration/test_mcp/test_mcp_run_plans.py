@@ -1412,3 +1412,34 @@ def test_run_plan_validate_operator_metadata_keeps_secret_guard(mcp_client: MCPC
         else:
             assert validation["errors"][0]["code"] == "value_error"
             assert "synthetic-material" not in str(validation)
+
+
+def test_run_plan_operator_metadata_create_update_roundtrip(
+    mcp_client: MCPClient, seeded_project: dict
+) -> None:
+    project_id = seeded_project["data"]["id"]
+    plan = _plan_json()
+    plan["metadata"]["operator_authorization"] = "Proceed with reviewed delivery."
+    created = mcp_client.call_tool_structured(
+        "runPlan.create", {"project_id": project_id, "run_plan_json": plan, "response_mode": "raw"}
+    )
+    args = {"project_id": project_id, "run_plan_id": created["data"]["id"], "response_mode": "raw"}
+    before = mcp_client.call_tool_structured("runPlan.get", args)
+    assert plan["metadata"].items() <= before["metadata_json"].items()
+    metadata = {
+        **before["metadata_json"],
+        "operator_authorization": "Proceed with delivery and checks.",
+    }
+    updated = mcp_client.call_tool_structured("runPlan.update", {**args, "metadata_json": metadata})
+    assert updated["data"]["metadata_json"] == metadata
+    assert mcp_client.call_tool_structured("runPlan.get", args)["metadata_json"] == metadata
+    for bad in [
+        {"operator_authorization": {"password": "synthetic-material"}},
+        {"operator_authorization": "Bearer synthetic-material"},
+        {"Authorization": "synthetic-material"},
+    ]:
+        rejected = mcp_client.call_tool_error("runPlan.update", {**args, "metadata_json": bad})
+        assert rejected["code"] == -32602
+        assert rejected["data"]["paths"]
+        assert "synthetic-material" not in str(rejected)
+        assert mcp_client.call_tool_structured("runPlan.get", args)["metadata_json"] == metadata

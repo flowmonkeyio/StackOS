@@ -99,8 +99,8 @@ def _jsonable(value: Any) -> Any:
     return jsonable(value)
 
 
-def _ensure_no_secrets(value: Any, *, label: str) -> None:
-    paths = find_run_plan_secret_paths(value)
+def _ensure_no_secrets(value: Any, *, label: str, workflow_metadata: bool = False) -> None:
+    paths = find_run_plan_secret_paths(value, workflow_metadata=workflow_metadata)
     if paths:
         raise ValidationError(
             f"{label} must not contain secrets as raw values; use credential_ref for provider "
@@ -668,7 +668,9 @@ class RunPlanRepository:
         # Validate the complete patch before dirtying ORM rows. A caller may commit
         # this session after a rejection, including operation idempotency cleanup.
         if metadata_json is not None:
-            _ensure_no_secrets(metadata_json, label="run plan metadata")
+            _ensure_no_secrets(
+                {"metadata_json": metadata_json}, label="run plan metadata", workflow_metadata=True
+            )
             metadata_json = _jsonable(metadata_json)
         approval = None
         if approval_key is not None or approval_status is not None:

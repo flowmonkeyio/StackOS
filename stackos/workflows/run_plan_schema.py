@@ -71,7 +71,7 @@ def _is_secret_key(key: str) -> bool:
     return any(part in normalized for part in _SECRET_KEY_PARTS)
 
 
-def _secret_paths(value: Any, *, path: str = "$") -> list[str]:
+def _secret_paths(value: Any, *, path: str = "$", workflow_metadata: bool = False) -> list[str]:
     if is_secret_ref_marker(value):
         return []
     paths: list[str] = []
@@ -83,28 +83,32 @@ def _secret_paths(value: Any, *, path: str = "$") -> list[str]:
             opaque_secret_ref = normalized_key == "secret_ref" and is_opaque_secret_ref(raw_value)
             if (
                 _is_secret_key(key)
-                and not is_operator_authorization_metadata(key, path=path)
+                and not (workflow_metadata and is_operator_authorization_metadata(key, path=path))
                 and not is_secret_ref_marker(raw_value)
                 and not opaque_secret_ref
             ):
                 paths.append(child_path)
-            paths.extend(_secret_paths(raw_value, path=child_path))
+            paths.extend(
+                _secret_paths(raw_value, path=child_path, workflow_metadata=workflow_metadata)
+            )
     elif isinstance(value, list):
         for index, item in enumerate(value):
-            paths.extend(_secret_paths(item, path=f"{path}[{index}]"))
+            paths.extend(
+                _secret_paths(item, path=f"{path}[{index}]", workflow_metadata=workflow_metadata)
+            )
     elif isinstance(value, str) and redact_secret_text(value) != value:
         paths.append(path)
     return paths
 
 
-def find_run_plan_secret_paths(value: Any) -> list[str]:
-    """Return paths that look like raw secrets in run-plan input."""
-    return _secret_paths(value)
+def find_run_plan_secret_paths(value: Any, *, workflow_metadata: bool = False) -> list[str]:
+    """Scan strictly unless the caller owns validated workflow metadata."""
+    return _secret_paths(value, workflow_metadata=workflow_metadata)
 
 
-def ensure_run_plan_has_no_secrets(value: Any) -> None:
+def ensure_run_plan_has_no_secrets(value: Any, *, workflow_metadata: bool = False) -> None:
     """Raise ``ValueError`` if run-plan input contains raw secrets."""
-    paths = find_run_plan_secret_paths(value)
+    paths = find_run_plan_secret_paths(value, workflow_metadata=workflow_metadata)
     if paths:
         raise ValueError(
             "run plans must not contain secrets as raw values; use credential_ref for "
@@ -330,7 +334,9 @@ class RunPlanSpec(BaseModel):
             raise ValueError("cyclic step dependencies are not allowed: " + " -> ".join(cycle))
 
         validate_run_plan_mcp_tool_grants(self.grant_snapshot_json, step_ids=step_ids)
-        ensure_run_plan_has_no_secrets(self.model_dump(mode="python", exclude_none=True))
+        ensure_run_plan_has_no_secrets(
+            self.model_dump(mode="python", exclude_none=True), workflow_metadata=True
+        )
         return self
 
 
