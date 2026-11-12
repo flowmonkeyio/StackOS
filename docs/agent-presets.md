@@ -338,6 +338,16 @@ and stop conditions. Read the full targeted `tracker.brief` with
 the specialist a bounded packet. Keep durable facts in existing run/ticket
 context and evidence, and reference them from schema-valid phase outputs.
 
+For a required cross-task input, planning names the producer task/ticket,
+independent acceptance evidence (or pending producer work), applicability, target
+integration owner, receiving source/artifact identity and affected checks. Main
+checks the actual receiving tree/environment before dependent dispatch or resume:
+unfinished producer work and accepted-but-absent source are distinct prerequisites.
+Reuse the existing owner handoff and main-owned admission/recheck; hold only the
+affected work. Already available accepted inputs need no extra wait or duplicate
+implementation ticket. Optional unrelated changes remain nonblocking followups;
+this grants no automatic merge or sibling-write authority.
+
 Plans, listed paths, design and proof are fallible evidence, not exhaustive
 boundaries. Each agent owns its assigned outcome, investigates obstacles and
 takes the smallest proportionate action within existing authority and role to
@@ -537,6 +547,14 @@ The orchestration revision rechecked [Codex review rules](https://developers.ope
 on 2026-11-11 for scoped invariants, safe alternatives and unrelated-change
 restraint. Its bounded recovery/browser exercise is source-use evidence, not
 measured production prevention or installed activation.
+
+The source-prerequisite revision rechecked the same official Codex guidance on
+2026-11-12. Applicability is limited to concise scoped instructions and the
+violation/safe/unrelated exercise: unfinished production, accepted source absent
+from the receiver, admitted source with affected proof, and already available or
+optional inputs. This does not establish behavior in other harnesses, saved
+adoption, production prevention or installed activation. Preserve frozen native
+sessions, history, repair allowance and exact operator/manual exception scope.
 
 The bounded automated planning permission was reviewed on 2026-11-09 against
 [Codex instruction discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md)

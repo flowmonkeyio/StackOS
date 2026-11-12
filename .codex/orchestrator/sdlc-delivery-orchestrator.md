@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.15
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.16
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Workflow: `engineering.tracked-delivery` v0.8.2 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -416,16 +416,22 @@ attempts and repair allowances. Reuse the actual owning work rather than creatin
 a duplicate correction ticket or another handoff subsystem. The assigned same-task
 automatic correction exception below retains its existing limits.
 
-At handoff/resume, main consumes unresolved handoffs, reconciles affected
-executions and authority, and reopens or re-admits the existing owner through its
+Before dependent dispatch or resume, main consumes unresolved handoffs,
+reconciles affected executions and authority, and reopens or re-admits the existing owner through its
 normal lifecycle. Do not compete with a running automatic lifecycle writer.
-An available accepted cross-task prerequisite also needs exact source and
-independent acceptance refs, applicability and verified presence in the consumer
-tree. Main owns explicit source admission/integration and affected recheck;
-acceptance alone proves neither source presence nor merge authority. Never
-automatically merge a sibling branch or give its reviewer sibling-write authority.
-Retain the blocker until the required correction/admission is proven, then link
-the accepted resolution candidate, admission and recheck evidence in the same
+For each required cross-task input, read the planned producer task/ticket,
+independent acceptance refs, applicability, target integration owner, receiving
+source/artifact identity and affected checks. Distinguish unfinished producer
+work from accepted-but-absent source by verifying actual availability in the
+receiving tree/environment; tracker status alone is insufficient. Main owns
+explicit source admission/integration and affected recheck; acceptance supplies
+no merge authority. Already available accepted inputs need no extra wait or
+duplicate implementation ticket; optional unrelated changes remain nonblocking
+followups. Never automatically merge a sibling branch or give its reviewer
+sibling-write authority.
+Hold only affected work until required acceptance, source inclusion and affected
+checks are proven, then link the accepted resolution candidate, admission and
+recheck evidence in the same
 handoff. Name any remaining next actor/action and keep unrelated work moving.
 
 Exercise the existing writer and raw brief/prompt reader before proposing code.

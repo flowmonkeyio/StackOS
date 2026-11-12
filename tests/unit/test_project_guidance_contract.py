@@ -99,6 +99,39 @@ def test_family_aliases_keep_one_shared_adaptation() -> None:
         assert len({id(role["project_adaptation"]) for role in roles}) == 1
 
 
+@pytest.mark.parametrize("owner", ["planning", "orchestrator"])
+def test_cross_task_inputs_reach_planning_and_dispatch_consumers(owner: str) -> None:
+    if owner == "planning":
+        preset = AgentPresetLoader().describe_preset(key="stackos.sdlc.planning").preset
+        source = " ".join(preset.prompt_contract.must_do)
+        local = tomllib.loads((ROOT / ".codex/agents/sdlc-planning.toml").read_text())[
+            "developer_instructions"
+        ]
+    else:
+        preset = (
+            SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
+        )
+        source = " ".join(preset.operating_contract.must_do)
+        local = (ROOT / ".codex/orchestrator/sdlc-delivery-orchestrator.md").read_text()
+
+    # Availability/parity only; the bounded Git-tree exercise proves application.
+    for contract in (source, local):
+        text = " ".join(contract.lower().split())
+        for required in (
+            "producer task/ticket",
+            "independent acceptance",
+            "target integration owner",
+            "receiving source/artifact identity",
+            "affected checks",
+            "before dependent dispatch or resume",
+            "unfinished producer",
+            "accepted-but-absent",
+            "already available",
+            "optional unrelated",
+        ):
+            assert required in text, (owner, required)
+
+
 def _assert_bounded_correction_method(text: str) -> None:
     text = " ".join(text.lower().split())
     for obligation in (
