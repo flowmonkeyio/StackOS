@@ -457,11 +457,17 @@ def _select_work(repo, plans, project_id, task_key, state):
             if bound.status != RunPlanStepStatus.RUNNING:
                 continue
         if ticket.kind == TrackerTicketKind.GROUP:
-            status = (
-                "complete"
-                if all(c.status == TrackerItemStatus.COMPLETE for c in children)
-                else "in-progress"
+            settled = all(
+                child.status == TrackerItemStatus.COMPLETE or _excluded_child(child, tickets_by_key)
+                for child in children
             )
+            # Empty groups retain structural completion. An all-excluded
+            # group has no successful current work to roll up.
+            has_success = not children or any(
+                child.parent_ticket_id == ticket.id and child.status == TrackerItemStatus.COMPLETE
+                for child in children
+            )
+            status = "complete" if settled and has_success else "in-progress"
             if ticket.status != status:
                 repo.update_ticket(
                     project_id=project_id,

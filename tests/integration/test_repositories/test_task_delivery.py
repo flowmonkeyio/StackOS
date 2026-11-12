@@ -3383,6 +3383,165 @@ def test_excluded_parent_does_not_hide_nested_required_work_or_complete_group(se
     )
 
 
+@pytest.mark.parametrize("excluded_status", ["skipped", "aborted", "deferred"])
+def test_mixed_group_settles_required_work_without_completing_excluded_child(
+    session, project_id, excluded_status
+):
+    from stackos import task_delivery
+
+    repo, plans, task_key, parent, scope, state = disposition_workflow(session, project_id)
+    task_delivery._select_work(repo, plans, project_id, task_key, state)
+    repo.update_ticket(project_id=project_id, ticket_key="required", patch_json={"kind": "group"})
+    repo.create_ticket(
+        project_id=project_id,
+        task_key=task_key,
+        key="nested-required",
+        title="Required work in group",
+        parent_ticket_key="required",
+        dependency_keys=["required"],
+        run_plan_id=state["run_plan_id"],
+        run_plan_step_id=plans.get_step(state["run_plan_id"], "verify").id,
+    )
+    repo.update_ticket(
+        project_id=project_id, ticket_key="optional", patch_json={"parent_ticket_key": "required"}
+    )
+    assert task_delivery._select_work(repo, plans, project_id, task_key, state) == (
+        None,
+        None,
+        True,
+    )
+    for status in ("in-progress", "complete"):
+        repo.update_ticket(
+            project_id=project_id, ticket_key="nested-required", patch_json={"status": status}
+        )
+    scope.update(
+        parent_ticket_key="required",
+        resume_owner_ref="team:main",
+        resume_condition="Later scope admission",
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="optional",
+        patch_json={"status": excluded_status, "metadata_json": {"delivery_scope": scope}},
+    )
+    assert task_delivery._select_work(repo, plans, project_id, task_key, state) == (
+        None,
+        None,
+        True,
+    )
+    assert repo.brief(project_id=project_id, ticket_key="required").ticket.status == "complete"
+    assert repo.brief(project_id=project_id, ticket_key="optional").ticket.status == excluded_status
+    chosen, step, changed = task_delivery._select_work(repo, plans, project_id, task_key, state)
+    assert (chosen.key, step.step_id, changed) == (parent, "verify", False)
+    # Group settlement does not waive a real downstream success dependency.
+    reviewer = f"{task_key}-review"
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key=reviewer,
+        patch_json={"add_dependency_keys": ["required", "optional"]},
+    )
+    assert (
+        "required" not in repo.brief(project_id=project_id, ticket_key=reviewer).ticket.blocked_by
+    )
+    assert "optional" in repo.brief(project_id=project_id, ticket_key=reviewer).ticket.blocked_by
+    # Clearing a nested decision still reinstates the obligation at the verifier.
+    repo.update_ticket(
+        project_id=project_id, ticket_key="optional", patch_json={"metadata_json": None}
+    )
+    assert task_delivery._select_work(repo, plans, project_id, task_key, state) == (
+        None,
+        None,
+        False,
+    )
+
+
+@pytest.mark.parametrize("bound", [True, False])
+def test_recovery_clears_reactivated_exclusion_without_losing_decision_history(
+    session, project_id, bound
+):
+    from stackos import task_delivery
+    from stackos.db.models import TrackerTicket
+
+    repo, plans, task_key, parent, scope, state = disposition_workflow(session, project_id)
+    task_delivery._select_work(repo, plans, project_id, task_key, state)
+    for status in ("in-progress", "complete"):
+        repo.update_ticket(
+            project_id=project_id, ticket_key="required", patch_json={"status": status}
+        )
+    repo.create_ticket(
+        project_id=project_id,
+        task_key=task_key,
+        key="withdrawn",
+        title="Already withdrawn",
+        status="aborted",
+        parent_ticket_key=parent,
+        run_plan_id=state["run_plan_id"],
+        run_plan_step_id=plans.get_step(state["run_plan_id"], "verify").id,
+        metadata_json={"delivery_scope": scope},
+    )
+    if not bound:
+        # Existing recovery supports legacy run-linked children without a bound step.
+        row = session.exec(select(TrackerTicket).where(TrackerTicket.key == "optional")).one()
+        row.run_plan_step_id = None
+        session.add(row)
+        session.commit()
+    plans.abort(
+        run_plan_id=state["run_plan_id"],
+        project_id=project_id,
+        reason="daemon-restart-orphan",
+        actor="system",
+    )
+    optional = repo.brief(project_id=project_id, ticket_key="optional").ticket
+    assert optional.status == "aborted" and "workflow_auto_abort" in optional.metadata_json
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="optional",
+        patch_json={
+            "metadata_json": {**optional.metadata_json, "keep": 1, "delivery_scope": scope}
+        },
+    )
+    plans.recover(
+        run_plan_id=state["run_plan_id"],
+        project_id=project_id,
+        step_id="verify",
+        step_status=RunPlanStepStatus.PENDING,
+        reason="tracker graph topology repair",
+    )
+    optional = repo.brief(project_id=project_id, ticket_key="optional").ticket
+    assert optional.status == "not-started"
+    assert optional.metadata_json == {"keep": 1}
+    withdrawn = repo.brief(project_id=project_id, ticket_key="withdrawn").ticket
+    assert withdrawn.status == "aborted" and withdrawn.metadata_json == {"delivery_scope": scope}
+    revisions = session.exec(
+        select(TrackerRevision).where(TrackerRevision.entity_key == "optional")
+    ).all()
+    assert any(
+        ((r.after_json or {}).get("metadata_json") or {}).get("delivery_scope") == scope
+        for r in revisions
+    )
+    task_delivery._select_work(repo, plans, project_id, task_key, state)
+    repo.update_ticket(
+        project_id=project_id, ticket_key="optional", patch_json={"status": "skipped"}
+    )
+    assert task_delivery._select_work(repo, plans, project_id, task_key, state) == (
+        None,
+        None,
+        False,
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="optional",
+        patch_json={
+            "metadata_json": {
+                "keep": 1,
+                "delivery_scope": {**scope, "source_ref": "operator-decision:fresh-scope"},
+            }
+        },
+    )
+    chosen, step, changed = task_delivery._select_work(repo, plans, project_id, task_key, state)
+    assert (chosen.key, step.step_id, changed) == (parent, "verify", False)
+
+
 @pytest.mark.parametrize("verdict", ["success", "blocked"])
 def test_verifier_receives_exclusions_separately_from_accepted_sources(
     session, project_id, tmp_path, monkeypatch, verdict

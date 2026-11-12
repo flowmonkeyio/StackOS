@@ -734,6 +734,9 @@ class TrackerMirrorMixin:
     def _consume_auto_abort_marker(ticket: TrackerTicket) -> None:
         metadata = dict(ticket.metadata_json or {})
         metadata.pop("workflow_auto_abort", None)
+        # Recovery reintroduces this obligation; a later status-only update
+        # must not revive the decision from before reactivation.
+        metadata.pop("delivery_scope", None)
         ticket.metadata_json = metadata or None
 
 

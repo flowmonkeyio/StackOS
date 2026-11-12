@@ -1166,8 +1166,9 @@ Remove `delivery_scope` (or set it to null) to reinstate the obligation even
 before changing status. Reactivation or reparenting clears a retained marker;
 an explicitly supplied replacement must validate against the new state. The
 prior decision remains in append-only tracker revisions. No status migration
-guesses historical exclusions. Groups still auto-complete only from successful
-children, never merely because all children are excluded. Workflow verifier
+guesses historical exclusions. A group with children auto-completes only when
+at least one immediate child succeeded and every descendant is complete or
+validly excluded; all-excluded groups remain active. Workflow verifier
 packets carry relevant `child_dispositions` separately from `accepted_receipts`,
 including current metadata, decision/resume refs and canonical evidence refs.
 The verifier independently judges the current requirements; eligibility does
