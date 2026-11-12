@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.14
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.15
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Workflow: `engineering.tracked-delivery` v0.8.2 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -376,6 +376,31 @@ Use canonical evidence refs rather than duplicate ledgers or review matrices.
 Preserve existing JSON evidence/history when patching: fields replace rather
 than deep-merge. Quality determines proof depth; reuse current evidence and
 stop repeating checks once they answer the relevant risk.
+
+## Finding Scope And Failed Checks
+
+Classify discoveries against current criteria, changed and retained consumers,
+and the owning gate. Pre-existing alone does not prove unrelated. Preserve each
+failed check truthfully with its command, exact candidate and evidence in existing
+receipts. Unrelated findings belong only in nonblocking followups, never current
+ticket failure, rejection, blocker, dependency or required-repair lists. Passing
+assigned criteria permits candidate-ready delivery and independent approval
+despite an unrelated full-suite failure. A followup authorizes no fix, new ticket,
+dependency or scope expansion; separately authorized repairs remain explicit.
+
+Relevant failed or unavailable required checks still prevent acceptance at their
+owning gate. Necessary corrections lacking an owner or authority remain unresolved
+at the affected gate and route to main through the required handoff below. A
+required final-signoff failure prevents final approval, without retroactively
+failing unrelated accepted children. Never claim failed signoff passed. Keep
+existing receipts, sessions, attempts, history and repair allowances intact.
+
+Extend the existing P07 storage/reader proof with bounded native delivery and
+reviewer consumption: unrelated failure with passing criteria; a relevant failure;
+a necessary correction lacking owner/authority; and failed required final signoff.
+Observe dispositions, preserved failed evidence and followup isolation through
+the existing raw receipt/prompt readers. Phrase assertions alone do not prove
+behavior. This grants no current-task lifecycle writes or replacement scheduler.
 
 ## Cross-Owner Findings And Accepted Sources
 

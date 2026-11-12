@@ -871,8 +871,8 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
         "planning": "0.7.14",
         "architecture": "0.6.5",
         "test-designer": "0.6.8",
-        "delivery": "0.7.14",
-        "delivery-reviewer": "0.6.13",
+        "delivery": "0.7.15",
+        "delivery-reviewer": "0.6.14",
     }
     presets = {
         key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset for key in expected_versions
@@ -1132,7 +1132,7 @@ def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
         "EXECUTE relevant tests, lint and area checks",
         "current requirements/amendments, the whole diff",
         "actual affected consumers and project rules",
-        "Failed or unavailable required proof prevents candidate-ready",
+        "Failed or unavailable proof required by the assigned gate prevents candidate-ready",
         "artifact hygiene",
         "original omissions from later amendments",
     ):

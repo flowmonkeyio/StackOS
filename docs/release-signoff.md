@@ -51,6 +51,23 @@ activation need their own evidence. Pending later use stays pending; one fixture
 cannot establish production prevention. Final integrated signoff remains required
 even when ticket-local guidance checks pass.
 
+Classify each failure against the assigned criteria, affected consumers and owning
+gate. Pre-existing alone does not establish that a defect is unrelated. An ordinary
+ticket whose criteria pass can return candidate-ready and receive independent
+approval when an extra full-suite check exposes an unrelated defect. Preserve the
+failed command, exact candidate and evidence in the existing receipt and nonblocking
+followups; do not turn it into that ticket's failure, rejection, blocker, dependency
+or required repair. A followup grants no authority to fix or create work; separate
+repair authorization remains explicit. Necessary corrections without an owner or
+authority remain unresolved at the affected gate and route to main.
+
+Relevant failed or unavailable required checks still prevent acceptance at their
+owning gate. If complete signoff is required by the current gate, a failed check
+prevents final approval. Never describe a failed signoff command as passed or
+retroactively fail unrelated accepted children. Preserve the observation and route
+its required correction through existing ownership, without a new scheduler or
+weakened final-signoff requirement.
+
 At each gate, identify evidence executed on the current candidate, unchanged
 proof reused with covered-scope/prerequisite/environment justification, stale
 changed-consumer proof needing rerun and required never-executed checks. Reuse

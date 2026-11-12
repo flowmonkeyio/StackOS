@@ -250,8 +250,8 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     expected_versions = {
         "stackos.sdlc.requirements-flow-definer": "0.6.5",
         "stackos.sdlc.planning": "0.7.14",
-        "stackos.sdlc.delivery": "0.7.14",
-        "stackos.sdlc.delivery-reviewer": "0.6.13",
+        "stackos.sdlc.delivery": "0.7.15",
+        "stackos.sdlc.delivery-reviewer": "0.6.14",
     }
     assert set(actual) == set(expected) == set(expected_versions)
     for key, item in actual.items():
@@ -314,9 +314,11 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     full_reviewer = expected["stackos.sdlc.delivery-reviewer"]["preset"]["preset"][
         "prompt_contract"
     ]
-    # Navigation may truncate a long rule; raw remains the execution contract.
-    assert len(reviewer["must_do"]) == len(full_reviewer["must_do"])
-    for brief_rule, full_rule in zip(reviewer["must_do"], full_reviewer["must_do"], strict=True):
+    # Navigation bounds rule lists as well as prose; raw retains every rule.
+    assert len(reviewer["must_do"]) == min(25, len(full_reviewer["must_do"]))
+    for brief_rule, full_rule in zip(
+        reviewer["must_do"], full_reviewer["must_do"][:25], strict=True
+    ):
         assert full_rule.startswith(brief_rule.removesuffix("..."))
     for requirement in (
         "planned specs and integration checks",
@@ -337,14 +339,16 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     full_delivery = expected["stackos.sdlc.delivery"]["preset"]["preset"]["prompt_contract"]
     assert "discovered gap" in " ".join(full_delivery["must_do"])
     assert "necessary and proportionate" in " ".join(full_delivery["must_do"])
-    assert len(delivery["must_do"]) == len(full_delivery["must_do"])
-    for brief_rule, full_rule in zip(delivery["must_do"], full_delivery["must_do"], strict=True):
+    assert len(delivery["must_do"]) == min(25, len(full_delivery["must_do"]))
+    for brief_rule, full_rule in zip(
+        delivery["must_do"], full_delivery["must_do"][:25], strict=True
+    ):
         assert full_rule.startswith(brief_rule.removesuffix("..."))
     assert "new descendant commit" in " ".join(delivery["must_do"])
     compact_skill_binding = compact["required_skill_presets"][0]
     compact_skill = compact_skill_binding["preset"]
     full_skill = raw["required_skill_presets"][0]["preset"]
-    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.14"
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.15"
     full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
     # Skill lists are bounded navigation; raw retains the full contract.
     assert len(compact_skill["must_do"]) == 25
