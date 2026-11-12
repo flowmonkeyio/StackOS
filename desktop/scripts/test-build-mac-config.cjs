@@ -77,8 +77,7 @@ try {
   assert.equal(noUrl.status, 0, noUrl.stderr);
   assert.match(noUrl.stdout, /desktop mac build config dry run ok/);
   assert.match(noUrl.stdout, /releaseIntent=false/);
-  assert.equal(fs.existsSync(generatedConfigPath), false);
-  assert.equal(fs.existsSync(generatedUpdateConfigPath), false);
+  assert.deepEqual(fs.readdirSync(configRoot), []);
 
   cleanup();
   const unsignedDev = runBuild({
@@ -112,8 +111,7 @@ try {
   const localNoWrite = runBuild({ STACKOS_UPDATE_URL: localUrl }, { writeConfig: false });
   assert.equal(localNoWrite.status, 0, localNoWrite.stderr);
   assert.match(localNoWrite.stdout, /generatedConfig=$/m);
-  assert.equal(fs.existsSync(generatedConfigPath), false);
-  assert.equal(fs.existsSync(generatedUpdateConfigPath), false);
+  assert.deepEqual(fs.readdirSync(configRoot), []);
 
   cleanup();
   const local = runBuild({ STACKOS_UPDATE_URL: localUrl });
