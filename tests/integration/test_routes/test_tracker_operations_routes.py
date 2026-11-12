@@ -21,6 +21,167 @@ def _operation_data(response):
     return body.get("data", body)
 
 
+@pytest.mark.parametrize("mode", ["raw", "compact", "ack"])
+@pytest.mark.parametrize("as_list", [False, True])
+def test_ticket_transition_preview_apply_rest_parity(api, project_id, mode, as_list):
+    from stackos.repositories.tracker import TrackerRepository
+
+    engine = api.app.state.engine
+    with Session(engine) as session:
+        repo = TrackerRepository(session)
+        repo.create_task(project_id=project_id, key="parity", title="Parity")
+        repo.create_ticket(project_id=project_id, task_key="parity", key="dep", title="Dependency")
+        repo.create_ticket(
+            project_id=project_id, task_key="parity", key="target", title="Target", status="skipped"
+        )
+    before = _ticket_create_state(engine, project_id)
+    patch = {"status": "aborted", "add_dependency_keys": ["dep"], "title": "Rejected"}
+    args = {"project_id": project_id, "response_mode": mode}
+    if as_list:
+        args["updates_json"] = [{"ticket_key": "target", "patch_json": patch}]
+    else:
+        args.update(ticket_key="target", patch_json=patch)
+    responses = []
+    for dry_run in (True, False):
+        response = api.post(
+            "/api/v1/operations/tracker.updateTicket/call",
+            json={"arguments": {**args, "dry_run": dry_run}},
+        )
+        assert response.status_code == (200 if as_list else 409), response.text
+        responses.append(response.json())
+        assert _ticket_create_state(engine, project_id) == before
+    if as_list:
+        preview, applied = [body["data"] for body in responses]
+        assert preview["valid"] is applied["valid"] is False
+        assert preview["errors"] == applied["errors"]
+        assert preview["results"][0]["error_data"] == applied["results"][0]["error_data"]
+        detail = preview["results"][0]["error_data"]
+    else:
+        assert responses[0] == responses[1]
+        detail = responses[0]["data"]
+    assert detail["current"] == "skipped"
+    assert detail["attempted"] == "aborted"
+    assert detail["allowed"] == ["in-progress", "not-started"]
+
+
+def test_ticket_preview_rest_accepts_owner_and_rejects_mirror_writes(api, project_id):
+    from stackos.repositories.run_plans import RunPlanRepository
+    from stackos.repositories.tracker import TrackerRepository
+
+    engine = api.app.state.engine
+    with Session(engine) as session:
+        plan = (
+            RunPlanRepository(session)
+            .create(
+                project_id=project_id,
+                run_plan_json={
+                    "schema_version": "stackos.run-plan.v1",
+                    "key": "parity-mirror",
+                    "title": "Mirror parity",
+                    "steps": [{"id": "prepare", "title": "Prepare"}],
+                },
+            )
+            .data
+        )
+    mirror_key = f"workflow-{plan.id}-prepare"
+    before = _ticket_create_state(engine, project_id)
+    for patch in ({"title": "Hijacked"}, {"status": "complete"}, {"kind": "invalid"}):
+        errors = []
+        for dry_run in (True, False):
+            response = api.post(
+                "/api/v1/operations/tracker.updateTicket/call",
+                json={
+                    "arguments": {
+                        "project_id": project_id,
+                        "ticket_key": mirror_key,
+                        "patch_json": patch,
+                        "dry_run": dry_run,
+                        "response_mode": "compact",
+                    }
+                },
+            )
+            assert response.status_code == 422, response.text
+            errors.append(response.json())
+            assert _ticket_create_state(engine, project_id) == before
+        assert errors[0] == errors[1]
+        assert errors[0]["data"]["run_plan_id"] == plan.id
+
+    # The owning run-plan operation still advances its mirror through the real adapter.
+    response = api.post(
+        "/api/v1/operations/runPlan.start/call",
+        json={"arguments": {"project_id": project_id, "run_plan_id": plan.id}},
+    )
+    assert response.status_code == 200, response.text
+    run_token = response.json()["data"]["run_token"]
+    response = api.post(
+        "/api/v1/operations/runPlan.claimStep/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "run_plan_id": plan.id,
+                "step_id": "prepare",
+                "run_token": run_token,
+            }
+        },
+    )
+    assert response.status_code == 200, response.text
+    response = api.post(
+        "/api/v1/operations/runPlan.recordStep/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "run_plan_id": plan.id,
+                "step_id": "prepare",
+                "run_token": run_token,
+                "status": "success",
+                "result_json": {"summary": "Done"},
+            }
+        },
+    )
+    assert response.status_code == 200, response.text
+    with Session(engine) as session:
+        assert (
+            TrackerRepository(session)
+            .brief(project_id=project_id, ticket_key=mirror_key)
+            .ticket.status.value
+            == "complete"
+        )
+
+
+@pytest.mark.parametrize("as_list", [False, True])
+def test_ticket_preview_apply_rest_valid_transition_and_dependency(api, project_id, as_list):
+    from stackos.repositories.tracker import TrackerRepository
+
+    engine = api.app.state.engine
+    with Session(engine) as session:
+        repo = TrackerRepository(session)
+        repo.create_task(project_id=project_id, key="parity", title="Parity")
+        for key, status in (("dep", "not-started"), ("target", "skipped")):
+            repo.create_ticket(
+                project_id=project_id, task_key="parity", key=key, title=key, status=status
+            )
+    before = _ticket_create_state(engine, project_id)
+    patch = {"status": "in-progress", "add_dependency_keys": ["dep"]}
+    args = {"project_id": project_id, "response_mode": "raw"}
+    if as_list:
+        args["updates_json"] = [{"ticket_key": "target", "patch_json": patch}]
+    else:
+        args.update(ticket_key="target", patch_json=patch)
+    for dry_run in (True, False):
+        response = api.post(
+            "/api/v1/operations/tracker.updateTicket/call",
+            json={"arguments": {**args, "dry_run": dry_run}},
+        )
+        assert response.status_code == 200, response.text
+        assert _operation_data(response)["valid"] is True
+        if dry_run:
+            assert _ticket_create_state(engine, project_id) == before
+    with Session(engine) as session:
+        ticket = TrackerRepository(session).brief(project_id=project_id, ticket_key="target").ticket
+        assert ticket.status.value == "in-progress"
+        assert ticket.dependency_keys == ["dep"]
+
+
 @pytest.mark.parametrize("mode", ["compact", "raw"])
 def test_correction_intent_rest_roundtrip_and_invalid_write_is_atomic(api, project_id, mode):
     from stackos.repositories.tracker import TrackerRepository

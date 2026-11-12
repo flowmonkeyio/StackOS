@@ -793,8 +793,8 @@ class TrackerUpdateTicketInput(MCPInput):
     dry_run: bool = Field(
         default=False,
         description=(
-            "Preview dependency-changing patch_json or updates_json without writing. "
-            "Returns dependency diffs for dependency fields and leaves ordinary updates quiet."
+            "Validate the exact patch_json or ordered updates_json without writing. "
+            "Uses apply's transition and invariant rules and returns dependency diffs."
         ),
     )
     actor: str | None = None

@@ -28,7 +28,6 @@ from stackos.db.models import (
     TrackerSourceKind,
     TrackerTask,
     TrackerTicket,
-    TrackerTicketDependency,
     TrackerTicketKind,
 )
 from stackos.repositories.base import (
@@ -42,6 +41,7 @@ from stackos.repositories.run_plan_state import TERMINAL_PLAN_STATUSES, TERMINAL
 from stackos.repositories.tracker.ordering import next_task_position
 from stackos.repositories.tracker.schema import (
     TrackerCorrectionIntent,
+    TrackerDependencyPreviewOut,
     TrackerListItemResultOut,
     TrackerMutationOut,
     TrackerReopenOut,
@@ -49,6 +49,7 @@ from stackos.repositories.tracker.schema import (
     TrackerTaskContentOut,
     TrackerTaskInputOut,
 )
+from stackos.repositories.tracker.ticket_list_specs import ticket_reference_ref
 from stackos.repositories.tracker.utils import (
     TERMINAL_TRACKER_STATUSES,
     _clean_text,
@@ -1053,10 +1054,8 @@ class TrackerMutationMixin:
         task = self._s.get(TrackerTask, ticket.task_id)
         if task is None:
             raise NotFoundError("ticket task not found", data={"ticket_key": ticket_key})
-        self._validate_ticket_patch_fields(patch_json)
         if dry_run:
-            self._validate_workflow_ticket_patch_status(ticket, patch_json)
-            dependency_preview = self._preview_dependency_patch(tracker, ticket, patch_json)
+            dependency_preview = self._validate_ticket_patch(tracker, ticket, patch_json)
             warnings = dependency_preview.warnings if dependency_preview is not None else []
             return Envelope(
                 data=TrackerMutationOut(
@@ -1493,19 +1492,11 @@ class TrackerMutationMixin:
         ticket: TrackerTicket,
         patch_json: dict[str, Any],
     ) -> None:
-        self._validate_ticket_patch_fields(patch_json)
-        self._validate_workflow_mirror_ticket_patch_fields(ticket, patch_json)
+        dependency_preview = self._validate_ticket_patch(tracker, ticket, patch_json)
         now = _utcnow()
         if "status" in patch_json:
             new_status = _status_value(str(patch_json["status"]))
             if ticket.status != new_status:
-                self._validate_workflow_ticket_status_change(ticket, new_status)
-                validate_transition(
-                    ticket.status,
-                    new_status,
-                    TRACKER_ITEM_STATUS_TRANSITIONS,
-                    label="tracker_ticket.status",
-                )
                 ticket.status = new_status
                 if new_status == TrackerItemStatus.IN_PROGRESS:
                     ticket.started_at = ticket.started_at or now
@@ -1553,69 +1544,75 @@ class TrackerMutationMixin:
         ):
             if field in patch_json:
                 setattr(ticket, field, redact_secrets(_jsonable(patch_json[field])))
-        if "dependency_keys" in patch_json:
-            if "add_dependency_keys" in patch_json or "remove_dependency_keys" in patch_json:
-                raise ValidationError(
-                    "dependency_keys cannot be combined with add_dependency_keys or "
-                    "remove_dependency_keys"
-                )
-            if not isinstance(patch_json["dependency_keys"], list):
-                raise ValidationError("dependency_keys must be a list")
+        if dependency_preview is not None:
+            final_keys = dependency_preview.final_dependency_keys
             for dep in self._dependency_rows_for_ticket(ticket.id):
-                self._s.delete(dep)
+                dependency = self._s.get(TrackerTicket, dep.depends_on_ticket_id)
+                if dependency is not None and dependency.key not in final_keys:
+                    self._s.delete(dep)
             self._s.flush()
-            for dependency_key in patch_json["dependency_keys"]:
-                dependency = self._ticket_by_key(tracker.id, str(dependency_key))
-                self._add_dependency(tracker, ticket, dependency)
-        if "add_dependency_keys" in patch_json:
-            if not isinstance(patch_json["add_dependency_keys"], list):
-                raise ValidationError("add_dependency_keys must be a list")
-            for dependency_key in dict.fromkeys(
-                str(key) for key in patch_json["add_dependency_keys"]
-            ):
+            for dependency_key in final_keys:
                 dependency = self._ticket_by_key(tracker.id, dependency_key)
                 self._add_dependency(tracker, ticket, dependency)
-        if "remove_dependency_keys" in patch_json:
-            if not isinstance(patch_json["remove_dependency_keys"], list):
-                raise ValidationError("remove_dependency_keys must be a list")
-            for dependency_key in dict.fromkeys(
-                str(key) for key in patch_json["remove_dependency_keys"]
-            ):
-                dependency = self._ticket_by_key(tracker.id, dependency_key)
-                edge = self._s.exec(
-                    select(TrackerTicketDependency).where(
-                        TrackerTicketDependency.ticket_id == ticket.id,
-                        TrackerTicketDependency.depends_on_ticket_id == dependency.id,
-                    )
-                ).first()
-                if edge is None:
-                    raise ValidationError(
-                        "ticket dependency edge does not exist",
-                        data={"ticket_key": ticket.key, "depends_on": dependency.key},
-                    )
-                self._s.delete(edge)
         if "references_json" in patch_json:
-            if not isinstance(patch_json["references_json"], list):
-                raise ValidationError("references_json must be a list")
             for reference in patch_json["references_json"]:
-                if not isinstance(reference, dict):
-                    raise ValidationError("references_json entries must be objects")
                 self._add_reference(tracker, ticket, reference)
         if ticket.status in TERMINAL_TRACKER_STATUSES:
             ticket.lane_key = "done"
         ticket.updated_at = now
         self._s.add(ticket)
 
-    def _validate_workflow_ticket_patch_status(
+    def _validate_ticket_patch(
         self,
+        tracker: TaskTracker,
         ticket: TrackerTicket,
         patch_json: dict[str, Any],
-    ) -> None:
-        if "status" not in patch_json:
-            return
-        new_status = _status_value(str(patch_json["status"]))
-        if ticket.status != new_status:
-            self._validate_workflow_ticket_status_change(ticket, new_status)
+        *,
+        dependency_overrides: dict[int, list[int]] | None = None,
+    ) -> TrackerDependencyPreviewOut | None:
+        """Validate without changing rows, timestamps, revisions or emitting events."""
+        self._validate_ticket_patch_fields(patch_json)
+        self._validate_workflow_mirror_ticket_patch_fields(ticket, patch_json)
+        if "status" in patch_json:
+            try:
+                new_status = _status_value(str(patch_json["status"]))
+            except ValueError as exc:
+                raise ValidationError(
+                    "invalid tracker ticket status",
+                    data={
+                        "field": "status",
+                        "allowed": [status.value for status in TrackerItemStatus],
+                    },
+                ) from exc
+            if ticket.status != new_status:
+                self._validate_workflow_ticket_status_change(ticket, new_status)
+                validate_transition(
+                    ticket.status,
+                    new_status,
+                    TRACKER_ITEM_STATUS_TRANSITIONS,
+                    label="tracker_ticket.status",
+                )
+        if "kind" in patch_json:
+            try:
+                TrackerTicketKind(str(patch_json["kind"]))
+            except ValueError as exc:
+                raise ValidationError(
+                    "invalid tracker ticket kind",
+                    data={"field": "kind", "allowed": [kind.value for kind in TrackerTicketKind]},
+                ) from exc
+        if patch_json.get("parent_ticket_key"):
+            self._ticket_by_key(tracker.id, str(patch_json["parent_ticket_key"]))
+        dependency_preview = self._preview_dependency_patch(
+            tracker, ticket, patch_json, dependency_overrides=dependency_overrides
+        )
+        if "references_json" in patch_json:
+            if not isinstance(patch_json["references_json"], list):
+                raise ValidationError("references_json must be a list")
+            for reference in patch_json["references_json"]:
+                if not isinstance(reference, dict):
+                    raise ValidationError("references_json entries must be objects")
+                ticket_reference_ref(reference)
+        return dependency_preview
 
     def _validate_workflow_mirror_ticket_patch_fields(
         self,

@@ -12,6 +12,7 @@ from sqlmodel import select
 
 from stackos.db.models import (
     TaskTracker,
+    TrackerItemStatus,
     TrackerTask,
     TrackerTicket,
     TrackerTicketDependency,
@@ -331,6 +332,7 @@ class TrackerBulkMixin:
                         if isinstance(item.get("ticket_id"), int)
                         else None,
                         error=str(exc),
+                        error_data=getattr(exc, "data", None),
                     )
                 )
 
@@ -499,6 +501,8 @@ class TrackerBulkMixin:
         tickets: list[TrackerTicket] = []
         total_added = 0
         total_removed = 0
+        projected_tickets: dict[int, TrackerTicket] = {}
+        dependency_overrides: dict[int, list[int]] = {}
         for index, item in enumerate(updates_json):
             if not isinstance(item, dict):
                 results.append(
@@ -536,13 +540,30 @@ class TrackerBulkMixin:
                 )
                 continue
             try:
-                self._validate_ticket_patch_fields(patch_json)
                 ticket = self._ticket_from_list_update(tracker.id, item)
-                self._validate_workflow_ticket_patch_status(ticket, patch_json)
-                dependency_preview = self._preview_dependency_patch(tracker, ticket, patch_json)
+                ticket_id = _required_id(ticket.id, "ticket")
+                ticket = projected_tickets.get(ticket_id, ticket)
+                dependency_preview = self._validate_ticket_patch(
+                    tracker, ticket, patch_json, dependency_overrides=dependency_overrides
+                )
                 if dependency_preview is not None:
                     total_added += len(dependency_preview.added_dependency_keys)
                     total_removed += len(dependency_preview.removed_dependency_keys)
+                    dependency_overrides[ticket_id] = [
+                        _required_id(self._ticket_by_key(tracker.id, key).id, "ticket")
+                        for key in dependency_preview.final_dependency_keys
+                    ]
+                # Only validation-relevant state is projected, on detached copies.
+                # Later items see prior successes, just like per-item apply/savepoints.
+                projected = TrackerTicket(**ticket.model_dump())
+                if "status" in patch_json:
+                    projected.status = TrackerItemStatus(str(patch_json["status"]))
+                if "parent_ticket_key" in patch_json:
+                    parent_key = patch_json["parent_ticket_key"]
+                    projected.parent_ticket_id = (
+                        self._ticket_by_key(tracker.id, str(parent_key)).id if parent_key else None
+                    )
+                projected_tickets[ticket_id] = projected
                 tickets.append(ticket)
                 results.append(
                     TrackerListItemResultOut(
@@ -565,6 +586,7 @@ class TrackerBulkMixin:
                         if isinstance(item.get("ticket_id"), int)
                         else None,
                         error=str(exc),
+                        error_data=getattr(exc, "data", None),
                     )
                 )
 
@@ -600,6 +622,8 @@ class TrackerBulkMixin:
         tracker: TaskTracker,
         ticket: TrackerTicket,
         patch_json: dict[str, Any],
+        *,
+        dependency_overrides: dict[int, list[int]] | None = None,
     ) -> TrackerDependencyPreviewOut | None:
         if not any(field in patch_json for field in DEPENDENCY_PATCH_FIELDS):
             return None
@@ -615,6 +639,8 @@ class TrackerBulkMixin:
         current_ids = [
             row.depends_on_ticket_id for row in current_rows if row.depends_on_ticket_id is not None
         ]
+        if dependency_overrides is not None and ticket.id in dependency_overrides:
+            current_ids = dependency_overrides[ticket.id]
         current_keys = self._dependency_keys_from_ids(current_ids)
         final_ids = list(current_ids)
         requested_by_id: dict[int, str] = {
@@ -633,6 +659,18 @@ class TrackerBulkMixin:
                 requested_by_id[dependency_id] = dependency.key
         else:
             mode = "add-remove"
+            for dependency_key in self._dependency_patch_keys(patch_json, "add_dependency_keys"):
+                dependency = self._ticket_by_key(tracker.id, dependency_key)
+                dependency_id = _required_id(dependency.id, "ticket")
+                if dependency_id not in final_ids:
+                    final_ids.append(dependency_id)
+                requested_by_id[dependency_id] = dependency.key
+            if patch_json.get("add_dependency_keys") and patch_json.get("remove_dependency_keys"):
+                # Preserve the canonical add-before-remove checks: a later removal
+                # cannot authorize adding a self edge or a cycle, even transiently.
+                self._validate_dependency_preview_graph(
+                    tracker, ticket, final_ids, dependency_overrides=dependency_overrides
+                )
             for dependency_key in self._dependency_patch_keys(patch_json, "remove_dependency_keys"):
                 dependency = self._ticket_by_key(tracker.id, dependency_key)
                 dependency_id = _required_id(dependency.id, "ticket")
@@ -643,14 +681,10 @@ class TrackerBulkMixin:
                     )
                 final_ids = [item for item in final_ids if item != dependency_id]
                 requested_by_id[dependency_id] = dependency.key
-            for dependency_key in self._dependency_patch_keys(patch_json, "add_dependency_keys"):
-                dependency = self._ticket_by_key(tracker.id, dependency_key)
-                dependency_id = _required_id(dependency.id, "ticket")
-                if dependency_id not in final_ids:
-                    final_ids.append(dependency_id)
-                requested_by_id[dependency_id] = dependency.key
 
-        self._validate_dependency_preview_graph(tracker, ticket, final_ids)
+        self._validate_dependency_preview_graph(
+            tracker, ticket, final_ids, dependency_overrides=dependency_overrides
+        )
         final_keys = [
             requested_by_id.get(dependency_id) or self._dependency_keys_from_ids([dependency_id])[0]
             for dependency_id in final_ids
@@ -715,6 +749,8 @@ class TrackerBulkMixin:
         tracker: TaskTracker,
         ticket: TrackerTicket,
         final_dependency_ids: list[int],
+        *,
+        dependency_overrides: dict[int, list[int]] | None = None,
     ) -> None:
         ticket_id = _required_id(ticket.id, "ticket")
         if ticket_id in final_dependency_ids:
@@ -733,6 +769,8 @@ class TrackerBulkMixin:
             if row_ticket_id is None or depends_on_id is None or row_ticket_id == ticket_id:
                 continue
             adjacency.setdefault(row_ticket_id, set()).add(depends_on_id)
+        for projected_id, dependencies in (dependency_overrides or {}).items():
+            adjacency[projected_id] = set(dependencies)
         adjacency[ticket_id] = set(final_dependency_ids)
         for dependency_id in final_dependency_ids:
             if self._dependency_graph_reaches(adjacency, dependency_id, ticket_id):

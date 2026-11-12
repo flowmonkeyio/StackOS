@@ -1548,6 +1548,17 @@ parallel tracker endpoints for list behavior.
    kept dependency keys, plus advisory warnings for suspicious bulk removals.
    Dry-run preview does not write tickets, dependencies, history, timestamps, or
    tracker revisions.
+   Preview and apply use the same read-only ticket validation for status
+   transitions, workflow mirror ownership, field values, references and dependency
+   changes. A skipped ticket cannot move directly to aborted; both paths return
+   the canonical transition error with the current, attempted and allowed
+   statuses. Preview validates list items in order against earlier successful
+   items, including their dependency changes; failed items leave that projected
+   state unchanged. Apply retains per-item savepoints and outcomes. List errors
+   preserve structured repair context in `results[].error_data`,
+   including in compact and ack responses. This does not change create-list
+   atomicity or make list updates all-or-none. Revalidate after any intervening
+   state change before applying the exact previewed payload.
 6. When an operator rejects or aborts a task or workflow run, call
    `tracker.rejectTask` with either `task_key` or `run_plan_id` plus a reason.
    It is a task-level operation: the task is marked aborted/rejected and every

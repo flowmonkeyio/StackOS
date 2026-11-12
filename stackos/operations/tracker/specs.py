@@ -936,10 +936,13 @@ def operation_specs() -> list[OperationSpec]:
                 "dependencies. Pass updates_json when several tickets need independent "
                 "patch-only updates by ticket_key or ticket_id. For dependency changes, "
                 "prefer add_dependency_keys/remove_dependency_keys unless replacing the "
-                "whole dependency list. Add dry_run=true to preview dependency diffs "
-                "without writing before a larger cleanup. Scoped proof recovery may "
-                "explicitly set context_json.correction.work_intent=evidence_only with "
-                "candidate_commit_sha and target_attempt; preserve existing context, "
+                "whole dependency list. Add dry_run=true to validate the exact patch "
+                "and preview dependency diffs without writing. Preview and apply share "
+                "transition and workflow-mirror guards; list previews account for prior "
+                "successful items and retain per-item apply outcomes. Update-list errors "
+                "include structured repair context in results[].error_data. Scoped proof "
+                "recovery may explicitly set context_json.correction.work_intent=evidence_only "
+                "with candidate_commit_sha and target_attempt; preserve existing context, "
                 "sessions, history and repair_count. Source repair remains conservative."
             ),
             examples=(

@@ -19,7 +19,7 @@ from stackos.db.models import (
     TrackerTicketLink,
     TrackerTicketReference,
 )
-from stackos.repositories.base import ConflictError, ValidationError
+from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
 from stackos.repositories.tracker.events import (
@@ -61,6 +61,245 @@ def _seed_ticket_create_state(session: Session, project_id: int) -> None:
         title="Existing research",
         references_json=[{"ref": "existing-source", "title": "Keep this"}],
     )
+
+
+@pytest.mark.parametrize("as_list", [False, True])
+@pytest.mark.parametrize(
+    ("current", "requested", "legal"),
+    [
+        ("skipped", "aborted", False),
+        ("skipped", "in-progress", True),
+        ("complete", "aborted", False),
+        ("failed", "aborted", True),
+        ("deferred", "skipped", True),
+        ("skipped", "skipped", True),
+    ],
+)
+def test_ticket_preview_apply_transition_parity(
+    session: Session, project_id: int, as_list: bool, current: str, requested: str, legal: bool
+) -> None:
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="parity", title="Parity")
+    repo.create_ticket(project_id=project_id, task_key="parity", key="dep", title="Dependency")
+    repo.create_ticket(
+        project_id=project_id, task_key="parity", key="target", title="Target", status=current
+    )
+    tracker = session.exec(select(TaskTracker).where(TaskTracker.project_id == project_id)).one()
+    before = _ticket_create_state(session.get_bind(), project_id)
+    events_before = ContextRepository(session).timeline(project_id=project_id).model_dump()
+    patch = {"status": requested, "title": "Changed", "add_dependency_keys": ["dep"]}
+
+    def update(dry_run):
+        if as_list:
+            return repo.update_ticket_list(
+                project_id=project_id,
+                updates_json=[{"ticket_key": "target", "patch_json": patch}],
+                dry_run=dry_run,
+            ).data
+        return repo.update_ticket(
+            project_id=project_id, ticket_key="target", patch_json=patch, dry_run=dry_run
+        ).data
+
+    if not legal and not as_list:
+        with pytest.raises(ConflictError) as preview_error:
+            update(True)
+        with pytest.raises(ConflictError) as apply_error:
+            update(False)
+        assert preview_error.value.data == apply_error.value.data
+        assert preview_error.value.data["current"] == current
+        assert preview_error.value.data["attempted"] == requested
+    else:
+        preview = update(True)
+        assert preview.valid is legal
+        assert _ticket_create_state(session.get_bind(), project_id) == before
+        assert (
+            ContextRepository(session).timeline(project_id=project_id).model_dump() == events_before
+        )
+        assert tracker.rev == before["TaskTracker"][0]["rev"]
+        applied = update(False)
+        assert applied.valid is legal
+        if not legal:
+            assert preview.errors == applied.errors
+            assert preview.results[0].error_data == applied.results[0].error_data
+            assert preview.results[0].error_data["current"] == current
+        else:
+            ticket = repo.brief(project_id=project_id, ticket_key="target").ticket
+            assert ticket.status.value == requested
+            assert ticket.dependency_keys == ["dep"]
+            events = (
+                ContextRepository(session)
+                .timeline(project_id=project_id, event_type=TRACKER_TICKET_STATUS_CHANGED)
+                .items
+            )
+            assert len(events) == (current != requested)
+            assert tracker.rev == before["TaskTracker"][0]["rev"] + 1
+    if not legal:
+        session.commit()  # A caller's later commit must not persist rejected work.
+        assert tracker.rev == before["TaskTracker"][0]["rev"]
+        assert _ticket_create_state(session.get_bind(), project_id) == before
+        assert (
+            ContextRepository(session).timeline(project_id=project_id).model_dump() == events_before
+        )
+
+
+@pytest.mark.parametrize("as_list", [False, True])
+@pytest.mark.parametrize("patch", [{"title": "Hijacked"}, {"status": "complete"}])
+def test_ticket_preview_apply_mirror_guard_parity(session, project_id, as_list, patch):
+    plan = (
+        RunPlanRepository(session)
+        .create(
+            project_id=project_id,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "parity-plan",
+                "title": "Parity plan",
+                "steps": [{"id": "prepare", "title": "Prepare"}],
+            },
+        )
+        .data
+    )
+    key = workflow_step_ticket_key(plan.id, "prepare")
+    repo = TrackerRepository(session)
+    before = _ticket_create_state(session.get_bind(), project_id)
+    errors = []
+    for dry_run in (True, False):
+        if as_list:
+            result = repo.update_ticket_list(
+                project_id=project_id,
+                updates_json=[{"ticket_key": key, "patch_json": patch}],
+                dry_run=dry_run,
+            ).data
+            assert result.valid is False
+            errors.append(result.results[0].error_data)
+        else:
+            with pytest.raises(ValidationError) as exc:
+                repo.update_ticket(
+                    project_id=project_id, ticket_key=key, patch_json=patch, dry_run=dry_run
+                )
+            errors.append(exc.value.data)
+    assert errors[0] == errors[1]
+    assert errors[0]["run_plan_id"] == plan.id
+    session.commit()
+    assert _ticket_create_state(session.get_bind(), project_id) == before
+
+
+def test_ticket_list_preview_tracks_prior_status_and_dependency_updates(session, project_id):
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="sequential", title="Sequential")
+    for key in ("a", "b"):
+        repo.create_ticket(project_id=project_id, task_key="sequential", key=key, title=key)
+    updates = [
+        {"ticket_key": "a", "patch_json": {"status": "skipped", "dependency_keys": ["b"]}},
+        {"ticket_key": "a", "patch_json": {"status": "aborted"}},
+        {"ticket_key": "b", "patch_json": {"dependency_keys": ["a"]}},
+        {"ticket_key": "a", "patch_json": {"status": "in-progress"}},
+    ]
+    before = _ticket_create_state(session.get_bind(), project_id)
+    preview = repo.update_ticket_list(
+        project_id=project_id, updates_json=updates, dry_run=True
+    ).data
+    assert [item.action for item in preview.results] == ["validated", "error", "error", "validated"]
+    assert _ticket_create_state(session.get_bind(), project_id) == before
+    applied = repo.update_ticket_list(project_id=project_id, updates_json=updates).data
+    assert [item.action for item in applied.results] == ["updated", "error", "error", "updated"]
+    assert preview.errors == applied.errors
+    assert (
+        repo.brief(project_id=project_id, ticket_key="a").ticket.status
+        == TrackerItemStatus.IN_PROGRESS
+    )
+    assert repo.brief(project_id=project_id, ticket_key="b").ticket.dependency_keys == []
+    assert applied.rev == before["TaskTracker"][0]["rev"] + 2
+    events = (
+        ContextRepository(session)
+        .timeline(project_id=project_id, event_type=TRACKER_TICKET_STATUS_CHANGED)
+        .items
+    )
+    assert [
+        (item.metadata_json["ticket_key"], item.metadata_json["new_status"]) for item in events
+    ] == [("a", "skipped"), ("a", "in-progress")]
+
+
+def test_invalid_ticket_list_preserves_all_rows_events_and_revision(session, project_id):
+    _seed_ticket_create_state(session, project_id)
+    repo = TrackerRepository(session)
+    repo.create_ticket(
+        project_id=project_id, task_key="atomic", key="skipped", title="Skipped", status="skipped"
+    )
+    tracker = session.exec(select(TaskTracker).where(TaskTracker.project_id == project_id)).one()
+    before = _ticket_create_state(session.get_bind(), project_id)
+    events_before = ContextRepository(session).timeline(project_id=project_id).model_dump()
+    updates = [
+        {
+            "ticket_key": "existing",
+            "patch_json": {
+                "status": "complete",
+                "add_dependency_keys": ["skipped"],
+                "references_json": [{"ref": "valid"}, {"path": "invalid"}],
+            },
+        },
+        {"ticket_key": "skipped", "patch_json": {"status": "aborted", "title": "Invalid"}},
+    ]
+    results = []
+    for dry_run in (True, False):
+        results.append(
+            repo.update_ticket_list(
+                project_id=project_id, updates_json=updates, dry_run=dry_run
+            ).data
+        )
+        assert tracker.rev == before["TaskTracker"][0]["rev"]
+        session.commit()
+        assert _ticket_create_state(session.get_bind(), project_id) == before
+        assert (
+            ContextRepository(session).timeline(project_id=project_id).model_dump() == events_before
+        )
+    assert results[0].errors == results[1].errors
+    assert [item.action for item in results[1].results] == ["error", "error"]
+
+
+@pytest.mark.parametrize(
+    ("patch", "legal", "dependencies"),
+    [
+        ({"dependency_keys": ["target"]}, False, []),
+        ({"add_dependency_keys": ["target"], "remove_dependency_keys": ["target"]}, False, []),
+        ({"remove_dependency_keys": ["dep"]}, False, []),
+        ({"add_dependency_keys": ["dep"], "remove_dependency_keys": ["dep"]}, True, []),
+        ({"dependency_keys": ["dep"], "add_dependency_keys": []}, False, []),
+        ({"references_json": [{"ref": "valid"}, {"path": "invalid"}]}, False, []),
+        ({"kind": "invalid"}, False, []),
+        ({"status": "invalid"}, False, []),
+        ({"parent_ticket_key": "missing"}, False, []),
+    ],
+)
+def test_ticket_preview_apply_invariant_parity(session, project_id, patch, legal, dependencies):
+    _seed_ticket_create_state(session, project_id)
+    repo = TrackerRepository(session)
+    repo.create_ticket(project_id=project_id, task_key="atomic", key="dep", title="Dep")
+    repo.create_ticket(project_id=project_id, task_key="atomic", key="target", title="Target")
+    # Both modes must validate before changing status, metadata, references or edges.
+    patch = {"status": "in-progress", "title": "Changed", **patch}
+    before = _ticket_create_state(session.get_bind(), project_id)
+    errors = []
+    for dry_run in (True, False):
+        try:
+            repo.update_ticket(
+                project_id=project_id, ticket_key="target", patch_json=patch, dry_run=dry_run
+            )
+        except (ConflictError, NotFoundError, ValidationError, ValueError) as exc:
+            assert not legal
+            errors.append((str(exc), getattr(exc, "data", None)))
+        else:
+            assert legal
+        if dry_run or not legal:
+            session.commit()
+            assert _ticket_create_state(session.get_bind(), project_id) == before
+    if legal:
+        assert (
+            repo.brief(project_id=project_id, ticket_key="target").ticket.dependency_keys
+            == dependencies
+        )
+    else:
+        assert len(errors) == 2
+        assert errors[0] == errors[1]
 
 
 @pytest.mark.parametrize("single", [False, True])
@@ -1552,8 +1791,9 @@ def test_tracker_ticket_list_update_dry_run_reports_dependency_diffs_and_errors(
 
     assert preview.dry_run is True
     assert preview.rev == before
-    assert preview.valid is True
-    assert [result.action for result in preview.results] == ["validated", "validated"]
+    assert preview.valid is False
+    assert [result.action for result in preview.results] == ["validated", "error"]
+    assert preview.results[1].error == "ticket dependency edge does not exist"
     assert preview.results[0].dependency_preview is not None
     assert preview.results[0].dependency_preview.removed_dependency_keys == [
         "bulk-preview-a",
@@ -1563,7 +1803,7 @@ def test_tracker_ticket_list_update_dry_run_reports_dependency_diffs_and_errors(
     ]
     assert preview.results[0].dependency_preview.final_dependency_keys == []
     assert preview.warnings == [
-        "dependency preview removes 5 edges and adds 0; review direction before applying"
+        "dependency preview removes 4 edges and adds 0; review direction before applying"
     ]
 
     after = repo.get(

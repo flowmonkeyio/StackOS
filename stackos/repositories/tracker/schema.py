@@ -501,6 +501,7 @@ class TrackerListItemResultOut(BaseModel):
     dependency_preview: TrackerDependencyPreviewOut | None = None
     ticket: TrackerTicketOut | None = None
     error: str | None = None
+    error_data: dict[str, Any] | None = None
 
 
 class TrackerTaskInputOut(BaseModel):
