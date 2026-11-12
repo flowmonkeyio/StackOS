@@ -550,9 +550,6 @@ class TrackerQueryMixin:
                 )
                 bypassing_gate_children = self._workflow_bypassing_gate_child_keys(siblings)
                 ticket_is_gate_child = is_workflow_gate_child(
-                    key=ticket.key,
-                    title=ticket.title,
-                    goal=ticket.goal,
                     lane_key=ticket.lane_key,
                 )
                 if ticket_is_gate_child or ticket.key in bypassing_gate_children:
@@ -561,8 +558,9 @@ class TrackerQueryMixin:
                             "key": "workflow-child-gate-contained",
                             "passed": ticket.key not in bypassing_gate_children,
                             "detail": (
-                                f"Workflow child {ticket.key} looks like verification, docs, "
-                                "signoff, or release work. It must be downstream of a sibling "
+                                f"Workflow child {ticket.key} declares gate lane "
+                                f"{ticket.lane_key}. "
+                                "It must be downstream of every sibling "
                                 f"delivery child under {parent.key}, not ready beside it."
                             ),
                         }
@@ -712,9 +710,6 @@ class TrackerQueryMixin:
             child_id
             for child_id, child in children_by_id.items()
             if is_workflow_gate_child(
-                key=child.key,
-                title=child.title,
-                goal=child.goal,
                 lane_key=child.lane_key,
             )
         }

@@ -265,7 +265,8 @@ class TrackerGraphMixin:
             )
             dependency_count = len(dependencies_by_ticket.get(ticket.key, []))
             if (
-                looks_like_pre_gate
+                is_workflow_gate_child(lane_key=ticket.lane_key)
+                and looks_like_pre_gate
                 and dependency_count >= 2
                 and (ticket.run_plan_id is None or ticket.status != TrackerItemStatus.NOT_STARTED)
             ):
@@ -342,9 +343,6 @@ class TrackerGraphMixin:
                 child.key
                 for child in children
                 if is_workflow_gate_child(
-                    key=child.key,
-                    title=child.title,
-                    goal=child.goal,
                     lane_key=child.lane_key,
                 )
             }

@@ -1825,6 +1825,16 @@ signals: missing child bridges, detached child branches, next-step handoff gaps,
 and open children under a workflow step should be investigated and may be
 blocking for tracker audit or release closeout when they hide required work.
 
+Workflow gate diagnostics use the declared child attachment, gate lane
+(`verification`, `review`, `release`, `docs`, or `qa`), and dependency paths.
+An ordinary implementation ticket can discuss review, tests, verification, or
+release without acquiring a gate role. Unrecognized lanes do not imply a gate;
+missing activation, reachability, and terminal-child handoffs are still checked
+for every attached child. The generic pre-implementation direction advisory is
+limited to declared gate lanes and asks for review rather than asserting a
+dependency defect. Diagnostics do not change runtime dependency eligibility or
+replace run-plan lifecycle checks.
+
 ### Live usage during native calls
 
 The host execution service extends the same active-call registry with one

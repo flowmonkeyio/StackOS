@@ -5,32 +5,20 @@ from __future__ import annotations
 from collections.abc import Hashable, Iterable
 
 _WORKFLOW_GATE_LANES = {"verification", "review", "release", "docs", "qa"}
-_WORKFLOW_GATE_KEYWORDS = (
-    "qa",
-    "review",
-    "release",
-    "sign-off",
-    "signoff",
-    "sign off",
-    "test",
-    "verification",
-    "verify",
-)
 
 
 def is_workflow_gate_child(
     *,
-    key: str,
-    title: str,
-    goal: str,
     lane_key: str,
 ) -> bool:
-    """Return whether a workflow child represents a downstream delivery gate."""
+    """Identify a declared gate lane within the caller's workflow child scope.
 
-    if lane_key in _WORKFLOW_GATE_LANES:
-        return True
-    haystack = " ".join((key, title, goal, lane_key)).lower()
-    return any(keyword in haystack for keyword in _WORKFLOW_GATE_KEYWORDS)
+    Attachment supplies provenance; dependency paths establish containment.
+    Unrecognized lanes have no declared gate role. Free-form ticket prose and
+    assignee names cannot supply that missing declaration.
+    """
+
+    return lane_key in _WORKFLOW_GATE_LANES
 
 
 def dependency_path_exists[Node: Hashable](

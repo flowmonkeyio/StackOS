@@ -1433,6 +1433,216 @@ def test_tracker_graph_allows_post_delivery_review_dependencies(
     assert snapshot.graph.warnings == []
 
 
+def _workflow_graph_fixture(session: Session, project_id: int):
+    run_plans = RunPlanRepository(session)
+    plan = run_plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "tracker.structural-warnings.run",
+            "title": "Structural warnings",
+            "steps": [
+                {"id": "deliver", "title": "Deliver"},
+                {"id": "handoff", "title": "Handoff", "depends_on": ["deliver"]},
+            ],
+        },
+        created_by="codex",
+    ).data
+    started = run_plans.start(plan.id, project_id=project_id).data
+    run_plans.claim_step(
+        run_plan_id=plan.id, run_id=started.run_id, step_id="deliver", claimed_by="codex"
+    )
+    step = session.exec(
+        select(RunPlanStep).where(
+            RunPlanStep.run_plan_id == plan.id, RunPlanStep.step_id == "deliver"
+        )
+    ).one()
+    tracker = TrackerRepository(session)
+    parent = workflow_step_ticket_key(plan.id, "deliver")
+    handoff = workflow_step_ticket_key(plan.id, "handoff")
+    for key in ("impl-a", "impl-b"):
+        tracker.create_ticket(
+            project_id=project_id,
+            task_key=f"workflow-{plan.id}",
+            parent_ticket_key=parent,
+            run_plan_id=plan.id,
+            run_plan_step_id=step.id,
+            key=key,
+            title=key,
+            lane_key="implementation",
+            dependency_keys=[parent],
+        )
+    return tracker, plan, step, parent, handoff
+
+
+@pytest.mark.parametrize("key", ["guidance", "review-guidance", "verification-guidance"])
+def test_workflow_gate_diagnostics_ignore_ordinary_ticket_prose(session, project_id, key):
+    tracker, plan, step, parent, handoff = _workflow_graph_fixture(session, project_id)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=parent,
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        key=key,
+        title="Update agent guidance",
+        lane_key="implementation",
+        dependency_keys=[parent],
+    )
+    tracker.update_ticket(
+        project_id=project_id,
+        ticket_key=handoff,
+        patch_json={"dependency_keys": [parent, "impl-a", "impl-b", key]},
+    )
+
+    for title, goal in (
+        ("Update agent guidance", "Clarify the delivery contract."),
+        ("Update review guidance before implementation", "Verify tests and release signoff."),
+    ):
+        tracker.update_ticket(
+            project_id=project_id, ticket_key=key, patch_json={"title": title, "goal": goal}
+        )
+        child_checks = {
+            check["key"]: check
+            for check in tracker.verify(project_id=project_id, ticket_key=key).checks
+        }
+        assert "workflow-child-gate-contained" not in child_checks
+        parent_checks = {
+            check["key"]: check
+            for check in tracker.verify(project_id=project_id, ticket_key=parent).checks
+        }
+        assert parent_checks["workflow-step-gate-children-contained"]["passed"] is True
+        snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
+        assert snapshot.graph is not None
+        assert snapshot.graph.warnings == []
+        assert key in {
+            ticket.key
+            for ticket in tracker.next(
+                project_id=project_id, task_key=f"workflow-{plan.id}"
+            ).tickets
+        }
+
+
+@pytest.mark.parametrize("lane", ["verification", "review", "release", "docs", "qa"])
+def test_workflow_declared_gate_bypass_and_handoff_remain_structural(session, project_id, lane):
+    tracker, plan, step, parent, handoff = _workflow_graph_fixture(session, project_id)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=parent,
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        key="checkpoint",
+        title="Checkpoint",
+        lane_key=lane,
+        dependency_keys=["impl-a"],
+    )
+    checks = {
+        check["key"]: check
+        for check in tracker.verify(project_id=project_id, ticket_key="checkpoint").checks
+    }
+    assert checks["workflow-child-gate-contained"]["passed"] is False
+    parent_checks = {
+        check["key"]: check
+        for check in tracker.verify(project_id=project_id, ticket_key=parent).checks
+    }
+    assert parent_checks["workflow-step-gate-children-contained"]["passed"] is False
+    handoff_checks = {
+        check["key"]: check
+        for check in tracker.verify(project_id=project_id, ticket_key=handoff).checks
+    }
+    assert handoff_checks["workflow-next-step-terminal-children"]["passed"] is False
+    snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
+    assert snapshot.graph is not None
+    assert any("can bypass delivery work" in warning for warning in snapshot.graph.warnings)
+    assert any("terminal child tickets" in warning for warning in snapshot.graph.warnings)
+
+    tracker.update_ticket(
+        project_id=project_id,
+        ticket_key="checkpoint",
+        patch_json={"dependency_keys": ["impl-a", "impl-b"]},
+    )
+    tracker.update_ticket(
+        project_id=project_id,
+        ticket_key=handoff,
+        patch_json={"dependency_keys": [parent, "checkpoint"]},
+    )
+    repaired = tracker.verify(project_id=project_id, ticket_key="checkpoint")
+    assert next(c for c in repaired.checks if c["key"] == "workflow-child-gate-contained")["passed"]
+    for ticket_key, check_key in (
+        (parent, "workflow-step-gate-children-contained"),
+        (handoff, "workflow-next-step-terminal-children"),
+    ):
+        checks = tracker.verify(project_id=project_id, ticket_key=ticket_key).checks
+        assert next(c for c in checks if c["key"] == check_key)["passed"] is True
+    snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
+    assert snapshot.graph is not None
+    assert snapshot.graph.warnings == []
+    # Diagnostics do not complete prerequisites or make the gate runtime-eligible.
+    assert "checkpoint" not in {
+        ticket.key
+        for ticket in tracker.next(project_id=project_id, task_key=f"workflow-{plan.id}").tickets
+    }
+
+
+def test_workflow_detached_child_warns_without_any_gate_words(session, project_id):
+    tracker, plan, step, parent, _ = _workflow_graph_fixture(session, project_id)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key=f"workflow-{plan.id}",
+        parent_ticket_key=parent,
+        run_plan_id=plan.id,
+        run_plan_step_id=step.id,
+        key="detached",
+        title="Detached",
+        lane_key="planning",
+    )
+    for key in ("impl-a", "impl-b"):
+        tracker.update_ticket(
+            project_id=project_id, ticket_key=key, patch_json={"dependency_keys": []}
+        )
+    checks = {
+        check["key"]: check
+        for check in tracker.verify(project_id=project_id, ticket_key="detached").checks
+    }
+    assert checks["workflow-step-child-bridge"]["passed"] is False
+    assert checks["workflow-child-reachable-from-step"]["passed"] is False
+    assert "workflow-child-gate-contained" not in checks
+    parent_checks = {
+        check["key"]: check
+        for check in tracker.verify(project_id=project_id, ticket_key=parent).checks
+    }
+    assert parent_checks["workflow-step-child-bridge"]["passed"] is False
+    assert parent_checks["workflow-step-children-reachable"]["passed"] is False
+    snapshot = tracker.get(project_id=project_id, run_plan_id=plan.id)
+    assert snapshot.graph is not None
+    assert any(
+        "detached" in warning and "not reachable" in warning for warning in snapshot.graph.warnings
+    )
+    assert any("no activation bridge" in warning for warning in snapshot.graph.warnings)
+    assert parent in checks["workflow-child-reachable-from-step"]["detail"]
+
+
+def test_graph_direction_advisory_does_not_infer_gate_from_ordinary_prose(session, project_id):
+    tracker = TrackerRepository(session)
+    tracker.create_task(
+        project_id=project_id, key="ordinary", title="Review guidance before delivery"
+    )
+    for key in ("first", "second"):
+        tracker.create_ticket(project_id=project_id, task_key="ordinary", key=key, title=key)
+    tracker.create_ticket(
+        project_id=project_id,
+        task_key="ordinary",
+        key="review-guidance",
+        title="Update review guidance before implementation",
+        lane_key="implementation",
+        dependency_keys=["first", "second"],
+    )
+    snapshot = tracker.get(project_id=project_id, task_key="ordinary")
+    assert snapshot.graph is not None
+    assert snapshot.graph.warnings == []
+
+
 def test_workflow_parent_dependency_activates_child_while_step_is_running(
     session: Session,
     project_id: int,
