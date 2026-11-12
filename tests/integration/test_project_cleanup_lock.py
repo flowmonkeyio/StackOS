@@ -62,9 +62,11 @@ def test_slow_cleanup_releases_launch_boundary_and_retains_project_fence(
 
     def cleanup():
         with Session(engine) as session:
-            return asyncio.run(ProjectCleanupService(session, settings).delete(
-                target.id, confirmation=confirmation(target)
-            ))
+            return asyncio.run(
+                ProjectCleanupService(session, settings).delete(
+                    target.id, confirmation=confirmation(target)
+                )
+            )
 
     def launch(pid):
         def allowed():
@@ -77,7 +79,9 @@ def test_slow_cleanup_releases_launch_boundary_and_retains_project_fence(
 
         process = ManagedProcessControl(allowed).spawn(
             [sys.executable, "-c", "print('launched')"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
         stdout, stderr = process.communicate(timeout=5)
         assert process.returncode == 0, stderr
@@ -104,9 +108,11 @@ def test_slow_cleanup_releases_launch_boundary_and_retains_project_fence(
             late.result(timeout=2)
             # A simultaneous retry cannot enter recovery or change operation ID.
             with Session(engine) as retry_session:
-                concurrent = asyncio.run(ProjectCleanupService(retry_session, settings).delete(
-                    target.id, confirmation=confirmation(target)
-                ))
+                concurrent = asyncio.run(
+                    ProjectCleanupService(retry_session, settings).delete(
+                        target.id, confirmation=confirmation(target)
+                    )
+                )
             assert concurrent.status == "blocked"
             assert "managed_storage_writer" in concurrent.blockers
             with Session(engine) as observer:
@@ -128,9 +134,11 @@ def test_slow_cleanup_releases_launch_boundary_and_retains_project_fence(
                 RunRepository(observer).start(project_id=target.id, kind=RunKind.MAINTENANCE)
         monkeypatch.undo()
         with Session(engine) as restarted:
-            retry = asyncio.run(ProjectCleanupService(restarted, settings).delete(
-                target.id, confirmation=confirmation(target)
-            ))
+            retry = asyncio.run(
+                ProjectCleanupService(restarted, settings).delete(
+                    target.id, confirmation=confirmation(target)
+                )
+            )
         assert retry.status == "deleted" and retry.operation_id == result.operation_id
     assert not owned.exists()
     assert foreign.read_text() == "sentinel"
@@ -140,10 +148,16 @@ def test_slow_cleanup_releases_launch_boundary_and_retains_project_fence(
 @pytest.mark.asyncio
 async def test_pending_cleanup_rejects_claim_of_preexisting_request(fixture, monkeypatch):
     s, settings, target, _ = fixture
-    request = AgentRequestRepository(s).create(
-        project_id=target.id, request_key="before-fence", title="Fixture",
-        source_kind="manual",
-    ).data
+    request = (
+        AgentRequestRepository(s)
+        .create(
+            project_id=target.id,
+            request_key="before-fence",
+            title="Fixture",
+            source_kind="manual",
+        )
+        .data
+    )
     service = ProjectCleanupService(s, settings)
 
     def claim_after_fence(pid):
@@ -157,21 +171,35 @@ async def test_pending_cleanup_rejects_claim_of_preexisting_request(fixture, mon
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("producer", [
-    "request", "artifact", "resource", "profile", "browser_session", "schedule",
-    "run", "plan", "action", "durable_claim", "finance",
-])
-async def test_actual_producer_entry_points_reject_committed_fence(
-    fixture, monkeypatch, producer
-):
+@pytest.mark.parametrize(
+    "producer",
+    [
+        "request",
+        "artifact",
+        "resource",
+        "profile",
+        "browser_session",
+        "schedule",
+        "run",
+        "plan",
+        "action",
+        "durable_claim",
+        "finance",
+    ],
+)
+async def test_actual_producer_entry_points_reject_committed_fence(fixture, monkeypatch, producer):
     from types import SimpleNamespace
 
     from stackos.plugins.builtin_finance import FinanceConsole
 
     s, settings, target, _ = fixture
-    profile = BrowserRepository(s).create_profile(
-        project_id=target.id, profile_key="fixture", name="Fixture", metadata_json=None
-    ).data
+    profile = (
+        BrowserRepository(s)
+        .create_profile(
+            project_id=target.id, profile_key="fixture", name="Fixture", metadata_json=None
+        )
+        .data
+    )
     service = ProjectCleanupService(s, settings)
 
     async def denied(pid):
@@ -189,7 +217,9 @@ async def test_actual_producer_entry_points_reject_committed_fence(
                         )
                     case "resource":
                         ResourceRepository(writer).upsert_record(
-                            project_id=pid, plugin_slug="core", resource_key="learning",
+                            project_id=pid,
+                            plugin_slug="core",
+                            resource_key="learning",
                             data_json={"body": "Fixture"},
                         )
                     case "profile":
@@ -200,7 +230,9 @@ async def test_actual_producer_entry_points_reject_committed_fence(
                         repo = BrowserRepository(writer)
                         row = repo.get_profile(project_id=pid, profile_ref=profile.profile_ref)
                         repo.create_or_update_session(
-                            project_id=pid, profile=row, metadata_json=None,
+                            project_id=pid,
+                            profile=row,
+                            metadata_json=None,
                             session_ref=repo.session_ref(
                                 project_id=pid, profile_key="fixture", session_key="late"
                             ),
@@ -278,21 +310,24 @@ def test_admission_that_reserved_before_fence_wins_without_blocking_other_launch
 
     def writer():
         with Session(engine) as session:
+
             def before_commit(session, flush_context, instances):
                 admitted.set()  # Run.start already reserved the project row.
                 assert release.wait(10)
 
             event.listen(session, "before_flush", before_commit, once=True)
-            return RunRepository(session).start(
-                project_id=target.id, kind=RunKind.MAINTENANCE
-            ).data.id
+            return (
+                RunRepository(session).start(project_id=target.id, kind=RunKind.MAINTENANCE).data.id
+            )
 
     def cleanup():
         cleanup_thread.append(get_ident())
         with Session(engine) as session:
-            return asyncio.run(ProjectCleanupService(session, settings).delete(
-                target.id, confirmation=confirmation(target)
-            ))
+            return asyncio.run(
+                ProjectCleanupService(session, settings).delete(
+                    target.id, confirmation=confirmation(target)
+                )
+            )
 
     def unrelated_launch():
         def allowed():
@@ -302,7 +337,9 @@ def test_admission_that_reserved_before_fence_wins_without_blocking_other_launch
 
         child = ManagedProcessControl(allowed).spawn(
             [sys.executable, "-c", "pass"],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
         )
         child.communicate(timeout=5)
         assert child.returncode == 0
@@ -324,9 +361,14 @@ def test_admission_that_reserved_before_fence_wins_without_blocking_other_launch
         assert ProjectRepository(s).get(target.id).cleanup_json is None
         assert ProjectRepository(s).get(target.id).is_active
         RunRepository(s).finish(run_id, status="success")
-        assert asyncio.run(ProjectCleanupService(s, settings).delete(
-            target.id, confirmation=confirmation(target)
-        )).status == "deleted"
+        assert (
+            asyncio.run(
+                ProjectCleanupService(s, settings).delete(
+                    target.id, confirmation=confirmation(target)
+                )
+            ).status
+            == "deleted"
+        )
     finally:
         release.set()
         event.remove(engine, "before_cursor_execute", observe_update)
@@ -341,9 +383,11 @@ def test_duplicate_request_releases_admission_reservation(fixture):
 
     def unrelated_write():
         with Session(s.get_bind()) as writer:
-            return AgentRequestRepository(writer).create(
-                project_id=other.id, request_key="other", title="Fixture"
-            ).data.project_id
+            return (
+                AgentRequestRepository(writer)
+                .create(project_id=other.id, request_key="other", title="Fixture")
+                .data.project_id
+            )
 
     with ThreadPoolExecutor(max_workers=1) as pool:
         future = pool.submit(unrelated_write)

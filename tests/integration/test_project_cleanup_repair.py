@@ -89,9 +89,11 @@ def test_failed_purge_retains_exclusion_through_rollback_and_error_persistence(
     with Session(engine) as restarted:
         row = ProjectRepository(restarted).get(target.id)
         assert not row.is_active and row.cleanup_json["status"] == "incomplete"
-        final = asyncio.run(ProjectCleanupService(restarted, settings).delete(
-            target.id, confirmation=confirmation(target)
-        ))
+        final = asyncio.run(
+            ProjectCleanupService(restarted, settings).delete(
+                target.id, confirmation=confirmation(target)
+            )
+        )
     assert final.status == "deleted" and final.operation_id == first_result.operation_id
     assert not path.exists() and foreign.read_text() == "sentinel"
 
@@ -114,7 +116,8 @@ def test_cold_template_load_rechecks_cleanup_before_plan_write(fixture, monkeypa
         with Session(session.get_bind()) as writer:
             try:
                 result = RunPlanRepository(writer).create(
-                    project_id=target.id, template_key="core.project-memory-review",
+                    project_id=target.id,
+                    template_key="core.project-memory-review",
                     inputs_json={"goal": "Disposable fixture"},
                 )
             except ConflictError:
@@ -141,13 +144,19 @@ def test_cold_template_load_rechecks_cleanup_before_plan_write(fixture, monkeypa
         assert not observer.exec(select(RunPlan).where(RunPlan.project_id == target.id)).all()
         repo = RunPlanRepository(observer)
         warm = repo.create(
-            project_id=other.id, template_key="core.project-memory-review",
+            project_id=other.id,
+            template_key="core.project-memory-review",
             inputs_json={"goal": "Warm template control"},
         ).data
-        adhoc = repo.create(project_id=other.id, run_plan_json={
-            "schema_version": "stackos.run-plan.v1", "key": "adhoc-control",
-            "title": "Ad-hoc control", "steps": [{"id": "work", "title": "Work"}],
-        }).data
+        adhoc = repo.create(
+            project_id=other.id,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "adhoc-control",
+                "title": "Ad-hoc control",
+                "steps": [{"id": "work", "title": "Work"}],
+            },
+        ).data
         assert warm.project_id == adhoc.project_id == other.id
 
 
@@ -176,9 +185,11 @@ def test_committed_purge_prevents_retry_from_reopening_lock_before_retirement(fi
             path = ProjectCleanupService(session, settings)._cleanup_lock_path(target.id)
             held_inode = path.stat().st_ino
             with Session(session.get_bind()) as retry:
-                result = asyncio.run(ProjectCleanupService(retry, settings).delete(
-                    target.id, confirmation=confirmation(target)
-                ))
+                result = asyncio.run(
+                    ProjectCleanupService(retry, settings).delete(
+                        target.id, confirmation=confirmation(target)
+                    )
+                )
             assert result.status == "missing"
             assert path.stat().st_ino == held_inode
         finally:

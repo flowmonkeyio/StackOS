@@ -16,20 +16,33 @@ from stackos.repositories.run_plans import RunPlanRepository
 def terminal_plan(engine, pid, operation):
     with Session(engine) as session:
         repo = RunPlanRepository(session)
-        plan = repo.create(project_id=pid, run_plan_json={
-            "schema_version": "stackos.run-plan.v1", "key": "cleanup-reactivation",
-            "title": "Cleanup fixture", "steps": [{"id": "work", "title": "Work"}],
-        }).data
+        plan = repo.create(
+            project_id=pid,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "cleanup-reactivation",
+                "title": "Cleanup fixture",
+                "steps": [{"id": "work", "title": "Work"}],
+            },
+        ).data
         started = repo.start(plan.id, project_id=pid).data
         repo.claim_step(
             run_plan_id=plan.id, run_id=started.run_id, step_id="work", claimed_by="fixture"
         )
         repo.record_step(
-            run_plan_id=plan.id, run_id=started.run_id, step_id="work",
-            status=(RunPlanStepStatus.FAILED if operation == "runPlan.recover"
-                    else RunPlanStepStatus.SUCCESS),
-            error=("Blocked by tracker graph warnings; daemon rejects blocked status."
-                   if operation == "runPlan.recover" else None),
+            run_plan_id=plan.id,
+            run_id=started.run_id,
+            step_id="work",
+            status=(
+                RunPlanStepStatus.FAILED
+                if operation == "runPlan.recover"
+                else RunPlanStepStatus.SUCCESS
+            ),
+            error=(
+                "Blocked by tracker graph warnings; daemon rejects blocked status."
+                if operation == "runPlan.recover"
+                else None
+            ),
         )
         return plan.id, started.run_id
 
@@ -40,16 +53,24 @@ def snapshot(engine, plan_id, run_id):
         run = session.get(Run, run_id)
         steps = session.exec(select(RunPlanStep).where(RunPlanStep.run_plan_id == plan_id)).all()
         return (
-            plan.status, plan.completed_at, plan.metadata_json,
-            run.status, run.ended_at, run.error, run.metadata_json,
+            plan.status,
+            plan.completed_at,
+            plan.metadata_json,
+            run.status,
+            run.ended_at,
+            run.error,
+            run.metadata_json,
             [(step.status, step.result_json, step.error, step.completed_at) for step in steps],
         )
 
 
 def arguments(pid, plan_id, operation):
     result = {
-        "project_id": pid, "run_plan_id": plan_id, "step_id": "work",
-        "reason": "Recover old daemon blocked-status bug.", "response_mode": "raw",
+        "project_id": pid,
+        "run_plan_id": plan_id,
+        "step_id": "work",
+        "reason": "Recover old daemon blocked-status bug.",
+        "response_mode": "raw",
     }
     if operation == "runPlan.recover":
         result["step_status"] = "blocked"
@@ -69,9 +90,11 @@ def test_reactivation_rejects_cleanup_after_initial_mcp_check(
     before = snapshot(engine, plan_id, run_id)
     args = arguments(pid, plan_id, operation)
     with Session(engine) as session:
-        foreign = ProjectRepository(session).create(
-            slug="foreign-reactivation", name="Foreign", domain="test"
-        ).data
+        foreign = (
+            ProjectRepository(session)
+            .create(slug="foreign-reactivation", name="Foreign", domain="test")
+            .data
+        )
     foreign_response = mcp_client.call_tool(operation, {**args, "project_id": foreign.id})
     foreign_result = foreign_response["result"]
     assert foreign_result["isError"]
@@ -101,14 +124,24 @@ def test_reactivation_rejects_cleanup_after_initial_mcp_check(
             with Session(engine) as session:
                 cleanup = ProjectCleanupService(session, settings)
                 monkeypatch.setattr(cleanup, "_clean_files", fail_files)
-                result = asyncio.run(cleanup.delete(pid, confirmation={
-                    "permanent": True, "project_id": pid, "project_slug": target["slug"],
-                }))
+                result = asyncio.run(
+                    cleanup.delete(
+                        pid,
+                        confirmation={
+                            "permanent": True,
+                            "project_id": pid,
+                            "project_slug": target["slug"],
+                        },
+                    )
+                )
                 assert result.status == "incomplete"
         finally:
             proceed.set()
-        envelope = (future.result(timeout=5) if future is not None
-                    else mcp_client.call_tool(operation, args))
+        envelope = (
+            future.result(timeout=5)
+            if future is not None
+            else mcp_client.call_tool(operation, args)
+        )
     response = envelope["result"]
     assert response["isError"]
     assert response["structuredContent"]["message"] == "ConflictError"
