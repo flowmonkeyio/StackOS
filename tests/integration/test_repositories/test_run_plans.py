@@ -13,6 +13,7 @@ from stackos.db.models import (
     ApprovalRequestStatus,
     ContextSnapshot,
     Run,
+    RunPlan,
     RunPlanStatus,
     RunPlanStep,
     RunPlanStepStatus,
@@ -726,6 +727,224 @@ def test_reopen_completed_run_plan_revives_run_and_tracker_mirror(
         claimed_by="agent",
     ).data
     assert claimed.status == RunPlanStepStatus.RUNNING
+
+
+@pytest.mark.parametrize("resume", ["reopen", "recover"])
+def test_current_workflow_outcome_retains_abort_and_delivery_history(
+    session: Session,
+    project_id: int,
+    resume: str,
+) -> None:
+    repo = RunPlanRepository(session)
+    tracker = TrackerRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": f"current-outcome-{resume}",
+            "title": "Current outcome fixture",
+            "steps": [{"id": "closeout", "title": "Closeout"}],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    task_key = f"workflow-{plan.id}"
+    retained = {
+        "automatic_delivery": {"attempts": [{"attempt": 1, "usage": {"total": 42}}]},
+        "operator_evidence": {"ref": "keep-this"},
+    }
+    tracker.update_task(
+        project_id=project_id,
+        task_key=task_key,
+        patch_json={
+            "context_json": {"unrelated": {"keep": True}},
+            "completion_evidence_json": retained,
+        },
+    )
+    repo.abort(run_plan_id=plan.id, project_id=project_id, reason="daemon-restart-orphan")
+    aborted = tracker.get(project_id=project_id, task_key=task_key).tasks[0]
+    assert aborted.completion_evidence_json["reason"] == "daemon-restart-orphan"
+    if resume == "reopen":
+        repo.reopen(
+            run_plan_id=plan.id,
+            project_id=project_id,
+            step_id="closeout",
+            reason="Finish the accepted outcome",
+        )
+    else:
+        repo.recover(
+            run_plan_id=plan.id,
+            project_id=project_id,
+            step_id="closeout",
+            step_status=RunPlanStepStatus.PENDING,
+            reason="Resume after restart",
+        )
+    active = tracker.get(project_id=project_id, task_key=task_key).tasks[0]
+    assert active.status == TrackerItemStatus.IN_PROGRESS
+    assert active.completion_evidence_json == {**retained, "run_plan_id": plan.id}
+
+    for summary in ("Accepted first closeout", "Accepted revised closeout"):
+        repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="closeout")
+        repo.record_step(
+            run_plan_id=plan.id,
+            run_id=started.run_id,
+            step_id="closeout",
+            status=RunPlanStepStatus.SUCCESS,
+            result_json={"summary": summary, "evidence_ref": "accepted-proof"},
+        )
+        # Both list and task-detail projections expose the canonical current evidence.
+        for task in (
+            tracker.get(project_id=project_id, task_key=task_key).tasks[0],
+            next(t for t in tracker.get(project_id=project_id).tasks if t.key == task_key),
+        ):
+            evidence = task.completion_evidence_json
+            assert task.status == TrackerItemStatus.COMPLETE
+            assert evidence["summary"] == summary
+            assert "reason" not in evidence
+            assert evidence["automatic_delivery"] == retained["automatic_delivery"]
+            assert evidence["operator_evidence"] == retained["operator_evidence"]
+            assert evidence["run_plan_outcome"]["step_id"] == "closeout"
+            assert evidence["run_plan_outcome"]["run_id"] == started.run_id
+            assert evidence["run_plan_outcome"]["result_json"]["summary"] == summary
+            assert task.context_json == {"unrelated": {"keep": True}}
+        if summary == "Accepted first closeout":
+            repo.reopen(
+                run_plan_id=plan.id,
+                project_id=project_id,
+                step_id="closeout",
+                reason="Recheck changed evidence",
+            )
+            active = tracker.get(project_id=project_id, task_key=task_key).tasks[0]
+            assert "summary" not in active.completion_evidence_json
+            assert "run_plan_outcome" not in active.completion_evidence_json
+
+    revisions = tracker.history(project_id=project_id, limit=100).items
+    history = [r.before_json for r in revisions if r.entity_key == task_key and r.before_json]
+    assert any(
+        r["completion_evidence_json"].get("reason") == "daemon-restart-orphan"
+        for r in history
+        if r.get("completion_evidence_json")
+    )
+    assert any(
+        r["completion_evidence_json"].get("summary") == "Accepted first closeout"
+        for r in history
+        if r.get("completion_evidence_json")
+    )
+    activity = tracker.task_activity(project_id=project_id, task_key=task_key, limit=100)
+    assert any(
+        item.kind == "tracker.outcome.changed" and "daemon-restart-orphan" in item.summary
+        for item in activity.items
+    )
+
+
+@pytest.mark.parametrize("result", [None, {}, {"release_summary": {"decision": "ready"}}])
+def test_workflow_outcome_requires_accepted_result(
+    session: Session,
+    project_id: int,
+    result: dict | None,
+) -> None:
+    repo = RunPlanRepository(session)
+    tracker = TrackerRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "outcome-evidence",
+            "title": "Evidence fixture",
+            "steps": [{"id": "finish", "title": "Finish"}],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="finish")
+    repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="finish",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json=result,
+    )
+    task = tracker.get(project_id=project_id, task_key=f"workflow-{plan.id}").tasks[0]
+    assert task.status == TrackerItemStatus.COMPLETE
+    evidence = task.completion_evidence_json or {}
+    if result:
+        assert evidence["run_plan_outcome"]["result_json"] == result
+        assert evidence["summary"] == "Run plan completed; accepted Finish result."
+        # Reconcile a legacy stale summary even when the visible status is already complete.
+        tracker.update_task(
+            project_id=project_id,
+            task_key=task.key,
+            patch_json={
+                "completion_evidence_json": {
+                    "summary": "Run plan aborted before completion.",
+                    "reason": "old abort",
+                    "run_plan_id": plan.id,
+                    "automatic_delivery": {"attempt": 2},
+                }
+            },
+        )
+        tracker.mirror_run_plan_status(plan=session.get(RunPlan, plan.id))
+        session.commit()
+        reconciled = tracker.get(project_id=project_id, task_key=task.key).tasks[0]
+        assert reconciled.completion_evidence_json["summary"] == evidence["summary"]
+        assert reconciled.completion_evidence_json["automatic_delivery"] == {"attempt": 2}
+        assert "reason" not in reconciled.completion_evidence_json
+        revision_count = len(tracker.history(project_id=project_id, limit=100).items)
+        tracker.mirror_run_plan_status(plan=session.get(RunPlan, plan.id))
+        session.commit()
+        assert len(tracker.history(project_id=project_id, limit=100).items) == revision_count
+    else:
+        assert "summary" not in evidence
+        assert "run_plan_outcome" not in evidence
+
+
+@pytest.mark.parametrize("final_status", [RunPlanStepStatus.PENDING, RunPlanStepStatus.SKIPPED])
+def test_workflow_status_alone_does_not_project_success(
+    session: Session,
+    project_id: int,
+    final_status: RunPlanStepStatus,
+) -> None:
+    repo = RunPlanRepository(session)
+    tracker = TrackerRepository(session)
+    plan = repo.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "missing-accepted-closeout",
+            "title": "Missing closeout",
+            "steps": [
+                {"id": "prepare", "title": "Prepare"},
+                {"id": "finish", "title": "Finish", "depends_on": ["prepare"]},
+            ],
+        },
+    ).data
+    started = repo.start(plan.id, project_id=project_id).data
+    repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="prepare")
+    repo.record_step(
+        run_plan_id=plan.id,
+        run_id=started.run_id,
+        step_id="prepare",
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"summary": "Earlier success"},
+    )
+    if final_status == RunPlanStepStatus.SKIPPED:
+        repo.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="finish")
+        repo.record_step(
+            run_plan_id=plan.id,
+            run_id=started.run_id,
+            step_id="finish",
+            status=final_status,
+            result_json={"summary": "Closeout was skipped"},
+        )
+    else:
+        # Synthetic legacy inconsistency: a completed plan with no accepted final step.
+        row = session.get(RunPlan, plan.id)
+        row.status = RunPlanStatus.COMPLETED
+        session.add(row)
+        tracker.mirror_run_plan_status(plan=row)
+        session.commit()
+    task = tracker.get(project_id=project_id, task_key=f"workflow-{plan.id}").tasks[0]
+    assert task.status == TrackerItemStatus.COMPLETE
+    assert "summary" not in (task.completion_evidence_json or {})
+    assert "run_plan_outcome" not in (task.completion_evidence_json or {})
 
 
 def test_blocked_step_keeps_run_plan_recoverable(

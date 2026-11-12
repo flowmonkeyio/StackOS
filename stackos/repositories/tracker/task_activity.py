@@ -21,7 +21,11 @@ from stackos.repositories.tracker.inspection_scope import (
     validate_limit,
 )
 
-_TASK_PATHS = [f"metadata_json.delivery.{field}" for field in ("status", "phase", "ticket_key")]
+_OUTCOME_PATHS = [f"completion_evidence_json.{field}" for field in ("summary", "reason")]
+_TASK_PATHS = [
+    *(f"metadata_json.delivery.{field}" for field in ("status", "phase", "ticket_key")),
+    *_OUTCOME_PATHS,
+]
 _RECEIPT_PATHS = [
     f"completion_evidence_json.automatic_delivery.{phase}.{field}"
     for phase in ("delivery", "review")
@@ -186,7 +190,12 @@ class TaskActivityMixin:
                     source_kind="tracker_revision",
                     source_id=rev.id,
                     occurred_at=rev.created_at,
-                    kind="tracker.delivery.changed",
+                    kind=(
+                        "tracker.outcome.changed"
+                        if rev.entity_kind == "task"
+                        and any(change["path"] in _OUTCOME_PATHS for change in changes)
+                        else "tracker.delivery.changed"
+                    ),
                     task_key=task_key,
                     ticket_key=scope.tickets[rev.entity_id].key
                     if rev.entity_kind == "ticket"

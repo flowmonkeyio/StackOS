@@ -1097,6 +1097,25 @@ for real execution blockers; graph warnings should usually be reviewed,
 triaged, and repaired as tracker hygiene without freezing unrelated progress.
 Use `failed` only for attempted unsuccessful work that should terminally fail
 the run plan.
+
+The task's current `completion_evidence_json.summary` follows the final accepted
+run-plan step result. `run_plan_outcome` retains that result with its run, step,
+and completion refs. A completed status without a successful final step and
+nonempty result does not manufacture a success summary; a skipped final step
+does not promote an earlier result to closeout evidence. Structured results
+remain intact even when they have no top-level summary.
+
+Abort, reopen, recovery, and completion update only mirror-owned current outcome
+fields. Earlier summaries and abort reasons remain in append-only tracker
+revisions (`tracker.history` and task activity); unrelated context and nested
+automatic-delivery attempts, usage, sessions, and receipts remain intact.
+Reopen/recovery removes the prior current summary while work is active.
+Existing stale records require explicit, selected-record reconciliation through
+normal operations after current canonical results have been reviewed. Read the
+exact task and run-plan state, preserve the complete evidence object, patch only
+the current outcome fields, and read back both current evidence and history.
+Do not reopen completed work or rewrite historical receipts to repair a summary.
+
 Completed or failed workflow run plans cannot be rejected through tracker
 state; call `tracker.reopen` when more work should continue in the same
 canonical workflow, or inspect `runPlan.get`/`runPlan.checkConsistency` when the
