@@ -2810,6 +2810,110 @@ def test_two_tickets_run_in_order_after_submission_returns(
     )
 
 
+@pytest.mark.parametrize("explicit", [False, True])
+def test_secret_named_ticket_assignment_survives_admission_reload_and_launch(
+    session, project_id, tmp_path, monkeypatch, explicit
+):
+    from stackos import task_delivery
+
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="deliver", title="Deliver")
+    key = "ci-811-metadata-secret"
+    repo.create_ticket(project_id=project_id, task_key="deliver", key=key, title="Metadata")
+    scheduler = QueuedScheduler()
+    calls = []
+
+    def launch(host, directory, instructions, prompt, schema, **kwargs):
+        packet = json.loads(prompt)
+        assert packet["brief"]["ticket"]["key"] == key
+        phase = packet["phase"]
+        calls.append(phase)
+        assert instructions.startswith(
+            "Build the ticket." if phase == "delivery" else "Review the ticket."
+        )
+        sha = (
+            commit(tmp_path, "metadata-fix")
+            if phase == "delivery"
+            else git(tmp_path, "rev-parse", "HEAD")
+        )
+        return scenario_result(
+            0, thread_id=phase, result=generic_result(outputs={"commit_sha": sha})
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        **({"agent_assignments": {key: "delivery_agent"}} if explicit else {}),
+    )
+    # A new session and the actual runner must consume the persisted map, not
+    # start_delivery's pre-redaction return or an ORM identity-map copy.
+    with Session(session.get_bind()) as reloaded:
+        state = (
+            TrackerRepository(reloaded)
+            .get(project_id=project_id, task_key="deliver")
+            .tasks[0]
+            .metadata_json["delivery"]
+        )
+        assert state["agent_assignments"][key] == "delivery_agent"
+        assert state["agents"][state["agent_assignments"][key]]["name"] == "project-builder"
+    scheduler.run()
+    assert calls == ["delivery", "review"]
+    session.expire_all()
+    state = repo.get(project_id=project_id, task_key="deliver").tasks[0].metadata_json["delivery"]
+    assert state["status"] == "complete"
+    assert state["agent_assignments"][key] == "delivery_agent"
+
+
+def test_task_assignment_preservation_does_not_exempt_secret_metadata(session, project_id):
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="deliver", title="Deliver")
+    key = "ci-811-metadata-secret"
+    repo.create_ticket(project_id=project_id, task_key="deliver", key=key, title="Metadata")
+    repo.create_task(project_id=project_id, key="foreign", title="Foreign")
+    repo.create_ticket(
+        project_id=project_id, task_key="foreign", key="foreign-secret", title="Foreign"
+    )
+    metadata = {
+        "password": "synthetic-material",
+        "delivery": {
+            "agents": {"delivery_agent": {"name": "builder", "instructions": "Build."}},
+            "agent_assignments": {
+                key: "delivery_agent",
+                "unknown-secret": "delivery_agent",
+                "foreign-secret": "delivery_agent",
+                "password": "synthetic-material",
+            },
+            "Authorization": "synthetic-material",
+            "nested": {key: "synthetic-material"},
+        },
+    }
+    repo.update_task(
+        project_id=project_id, task_key="deliver", patch_json={"metadata_json": metadata}
+    )
+    session.expire_all()
+    stored = repo.get(project_id=project_id, task_key="deliver").tasks[0].metadata_json
+    assert stored["delivery"]["agent_assignments"][key] == "delivery_agent"
+    assert stored["delivery"]["agent_assignments"]["unknown-secret"] == "[redacted]"
+    assert stored["delivery"]["agent_assignments"]["foreign-secret"] == "[redacted]"
+    assert "synthetic-material" not in json.dumps(stored)
+    for bad in ["Bearer synthetic-material", {"password": "synthetic-material"}, "unknown-role"]:
+        metadata["delivery"]["agent_assignments"][key] = bad
+        repo.update_task(
+            project_id=project_id, task_key="deliver", patch_json={"metadata_json": metadata}
+        )
+        session.expire_all()
+        stored = repo.get(project_id=project_id, task_key="deliver").tasks[0].metadata_json
+        assert stored["delivery"]["agent_assignments"][key] == "[redacted]"
+        assert "synthetic-material" not in json.dumps(stored)
+    assert (
+        repo.brief(project_id=project_id, ticket_key="foreign-secret").ticket.status
+        == "not-started"
+    )
+
+
 @pytest.mark.parametrize("failure", ["delivery", "review", "reject", "blocked"])
 def test_failure_stops_before_next_ticket(
     session: Session,

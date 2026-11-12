@@ -378,6 +378,27 @@ def test_workflow_template_validate_rejects_secrets(mcp_client: MCPClient) -> No
     assert "must not contain secrets" in validation["errors"][0]["message"]
 
 
+def test_workflow_template_validate_operator_metadata_keeps_secret_guard(mcp_client: MCPClient):
+    template = _template_json()
+    for value, valid in [
+        ("Proceed with reviewed delivery.", True),
+        ({"password": "synthetic-material"}, False),
+        ("Bearer synthetic-material", False),
+    ]:
+        template["metadata"] = {"operator_authorization": value}
+        validation = _operation_data(
+            mcp_client.call_tool_structured(
+                "workflowTemplate.validate", {"template_json": template, "response_mode": "raw"}
+            )
+        )
+        assert validation["valid"] is valid
+        if valid:
+            assert validation["template"]["metadata_json"] == template["metadata"]
+        else:
+            assert validation["errors"][0]["code"] == "value_error"
+            assert "synthetic-material" not in str(validation)
+
+
 def test_workflow_template_validate_rejects_ambiguous_key_aliases(
     mcp_client: MCPClient,
 ) -> None:

@@ -22,6 +22,7 @@ from pydantic import (
 )
 
 from stackos.artifacts import redact_secret_text
+from stackos.workflows.secret_policy import is_operator_authorization_metadata
 
 WORKFLOW_TEMPLATE_SCHEMA_VERSION = "stackos.workflow-template.v1"
 MAX_TEMPLATE_CONTEXT_ITEMS = 50
@@ -49,6 +50,8 @@ _SECRET_KEY_PARTS = (
     "api_key",
     "apikey",
     "authorization",
+    "authentication",
+    "bearer",
     "client_secret",
     "credential",
     "password",
@@ -100,7 +103,7 @@ def _secret_paths(value: Any, *, path: str = "$") -> list[str]:
         for raw_key, raw_value in value.items():
             key = str(raw_key)
             child_path = f"{path}.{key}"
-            if _is_secret_key(key):
+            if _is_secret_key(key) and not is_operator_authorization_metadata(key, path=path):
                 paths.append(child_path)
             paths.extend(_secret_paths(raw_value, path=child_path))
     elif isinstance(value, list):

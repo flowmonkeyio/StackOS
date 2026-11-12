@@ -29,6 +29,7 @@ from stackos.workflows.run_plan_grants import (
     parse_run_plan_mcp_tool_grants,
     validate_run_plan_mcp_tool_grants,
 )
+from stackos.workflows.secret_policy import is_operator_authorization_metadata
 from stackos.workflows.template_schema import ActionContractSpec
 
 if TYPE_CHECKING:
@@ -44,6 +45,8 @@ _SECRET_KEY_PARTS = (
     "api_key",
     "apikey",
     "authorization",
+    "authentication",
+    "bearer",
     "client_secret",
     "credential",
     "password",
@@ -80,6 +83,7 @@ def _secret_paths(value: Any, *, path: str = "$") -> list[str]:
             opaque_secret_ref = normalized_key == "secret_ref" and is_opaque_secret_ref(raw_value)
             if (
                 _is_secret_key(key)
+                and not is_operator_authorization_metadata(key, path=path)
                 and not is_secret_ref_marker(raw_value)
                 and not opaque_secret_ref
             ):

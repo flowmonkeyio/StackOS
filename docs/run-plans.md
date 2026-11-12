@@ -28,6 +28,15 @@ granted actions, and recording results.
 8. Inspect execution through `runPlan.get`, `runPlan.checkConsistency`,
    `run.get`, and `run.list`.
 
+The exact `operator_authorization` field in plan metadata (including step
+metadata) may record a nonsecret operator instruction. Workflow template root
+metadata accepts the same field. This does not grant execution authority or
+exempt its contents from secret validation: nested credential fields, bearer
+text, passwords and private keys still reject. Other authorization-like field
+names retain their secret checks. Opaque credential selectors and exact
+`$secret_ref` markers keep their existing run-plan paths; templates still cannot
+embed concrete credentials.
+
 `runPlan.create` also mirrors the plan into the project task tracker: one task
 for the run plan and one ticket per concrete step. Agents can use
 `tracker.next`, `tracker.brief`, and `tracker.verify` to navigate work without

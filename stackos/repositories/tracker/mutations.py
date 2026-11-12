@@ -1447,6 +1447,39 @@ class TrackerMutationMixin:
                 },
             )
 
+    def _redact_task_metadata(self, task: TrackerTask, metadata: Any) -> Any:
+        """Preserve verified ticket-to-role selectors, not arbitrary metadata."""
+        from stackos.operations.tracker.schemas import AgentRole
+
+        safe = redact_secrets(metadata)
+        delivery = metadata.get("delivery") if isinstance(metadata, dict) else None
+        if not isinstance(delivery, dict):
+            return safe
+        assignments = delivery.get("agent_assignments")
+        agents = safe["delivery"].get("agents")
+        if not isinstance(assignments, dict) or not isinstance(agents, dict):
+            return safe
+        ticket_keys = set(
+            self._s.exec(
+                select(TrackerTicket.key).where(
+                    TrackerTicket.task_id == task.id,
+                    TrackerTicket.tracker_id == task.tracker_id,
+                )
+            )
+        )
+        for key, role in assignments.items():
+            try:
+                TypeAdapter(AgentRole).validate_python(role)
+            except PydanticValidationError:
+                continue
+            if key in ticket_keys and isinstance(agents.get(role), dict):
+                # Admission already checks these selectors. Recheck their actual
+                # owners here before restoring the reference after generic
+                # key-based redaction. Agent contents and all other metadata
+                # retain normal redaction, including nested secret-like keys.
+                safe["delivery"]["agent_assignments"][key] = role
+        return safe
+
     def _apply_task_patch(self, task: TrackerTask, patch_json: dict[str, Any]) -> None:
         self._validate_task_patch_fields(patch_json)
         self._validate_workflow_task_patch(task, patch_json)
@@ -1492,7 +1525,14 @@ class TrackerMutationMixin:
             "metadata_json",
         ):
             if field in patch_json:
-                setattr(task, field, redact_secrets(_jsonable(patch_json[field])))
+                value = _jsonable(patch_json[field])
+                setattr(
+                    task,
+                    field,
+                    self._redact_task_metadata(task, value)
+                    if field == "metadata_json"
+                    else redact_secrets(value),
+                )
         if task.status in TERMINAL_TRACKER_STATUSES:
             task.lane_key = "done"
         if task.priority_key != old_priority:

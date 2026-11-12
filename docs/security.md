@@ -239,6 +239,17 @@ before persistence. Secret-like keys such as `api_key`, `access_token`,
 `refresh_token`, `authorization`, and nested equivalents are stored as
 `[redacted]`.
 
+Workflow validation distinguishes the exact `operator_authorization` instruction
+field in supported metadata from authentication material. Both template and
+run-plan validators still inspect that field's contents and nested keys; it is
+not an exemption for raw secrets. Tracker task metadata similarly preserves
+`delivery.agent_assignments` references only when the key identifies an actual
+ticket in that task and the value is a valid role identifier bound in the
+sanitized `delivery.agents` map. Ticket identifiers containing words such as
+`secret` are selectors in this map. Unknown mappings, credential-bearing values,
+agent contents and other metadata retain normal redaction. This persistence
+rule does not replace delivery admission's role and independent-review checks.
+
 Telegram's shared application hash is encrypted as daemon-held configuration.
 Native Accounts keep their own bot tokens, TDLib database keys, and proxy
 authentication in encrypted Account backing.

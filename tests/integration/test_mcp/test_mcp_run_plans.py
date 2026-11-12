@@ -1392,3 +1392,23 @@ def test_run_plan_validate_rejects_secrets(mcp_client: MCPClient) -> None:
 
     assert validation["valid"] is False
     assert "must not contain secrets" in validation["errors"][0]["message"]
+
+
+def test_run_plan_validate_operator_metadata_keeps_secret_guard(mcp_client: MCPClient) -> None:
+    plan = _plan_json()
+    plan["metadata"]["operator_authorization"] = "Proceed with reviewed delivery."
+    for value, valid in [
+        ("Proceed with reviewed delivery.", True),
+        ({"password": "synthetic-material"}, False),
+        ("Bearer synthetic-material", False),
+    ]:
+        plan["metadata"]["operator_authorization"] = value
+        validation = mcp_client.call_tool_structured(
+            "runPlan.validate", {"run_plan_json": plan, "response_mode": "raw"}
+        )
+        assert validation["valid"] is valid
+        if valid:
+            assert validation["plan"]["metadata_json"] == plan["metadata"]
+        else:
+            assert validation["errors"][0]["code"] == "value_error"
+            assert "synthetic-material" not in str(validation)
