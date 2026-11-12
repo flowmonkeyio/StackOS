@@ -3145,6 +3145,340 @@ def test_reclaimed_blocked_mirror_is_selected_before_success(session, project_id
     assert plans.get(plan.id).steps[1].status == RunPlanStepStatus.PENDING
 
 
+def disposition_workflow(session, project_id):
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "schema_version": "stackos.run-plan.v1",
+            "key": "explicit-child-scope",
+            "title": "Explicit child scope",
+            "steps": [
+                {"id": "verify", "title": "Verify current requirements"},
+                {"id": "review", "title": "Review", "depends_on": ["verify"]},
+            ],
+        },
+    ).data
+    started = plans.start(plan.id, project_id=project_id)
+    task_key = f"workflow-{plan.id}"
+    parent = f"{task_key}-verify"
+    repo = TrackerRepository(session)
+    for key in ("required", "optional"):
+        repo.create_ticket(
+            project_id=project_id,
+            task_key=task_key,
+            key=key,
+            title=key,
+            parent_ticket_key=parent,
+            dependency_keys=[parent],
+            run_plan_id=plan.id,
+            run_plan_step_id=plans.get_step(plan.id, "verify").id,
+        )
+    scope = {
+        "disposition": "excluded",
+        "parent_ticket_key": parent,
+        "reason": "Operator withdrew optional scope from this parent",
+        "source_ref": "operator-decision:scope-2",
+    }
+    state = {"run_plan_id": plan.id, "controller_run_id": started.run_id}
+    return repo, plans, task_key, parent, scope, state
+
+
+@pytest.mark.parametrize("status", ["skipped", "aborted", "deferred"])
+def test_explicit_child_disposition_settles_only_containment(session, project_id, status):
+    from stackos import task_delivery
+
+    repo, plans, task_key, parent, scope, state = disposition_workflow(session, project_id)
+    # The selector activates the actual parent before its first child can run.
+    assert task_delivery._select_work(repo, plans, project_id, task_key, state) == (
+        None,
+        None,
+        True,
+    )
+    assert "required" in {
+        t.key for t in repo.delivery_ready(project_id=project_id, task_key=task_key)
+    }
+    for value in ("in-progress", "complete"):
+        repo.update_ticket(
+            project_id=project_id, ticket_key="required", patch_json={"status": value}
+        )
+    repo.update_ticket(project_id=project_id, ticket_key="optional", patch_json={"status": status})
+    assert task_delivery._select_work(repo, plans, project_id, task_key, state) == (
+        None,
+        None,
+        False,
+    )
+    if status == "deferred":
+        scope.update(resume_owner_ref="team:main", resume_condition="Operator admits next scope")
+    patch = {"metadata_json": {"unrelated": 1, "delivery_scope": scope}}
+    before = repo.brief(project_id=project_id, ticket_key="optional").ticket
+    repo.update_ticket(project_id=project_id, ticket_key="optional", patch_json=patch, dry_run=True)
+    assert repo.brief(project_id=project_id, ticket_key="optional").ticket.metadata_json is None
+    repo.update_ticket(project_id=project_id, ticket_key="optional", patch_json=patch)
+    selected, step, changed = task_delivery._select_work(repo, plans, project_id, task_key, state)
+    assert (selected.key, step.step_id, changed) == (parent, "verify", False)
+    optional = repo.brief(project_id=project_id, ticket_key="optional").ticket
+    assert optional.status == status
+    assert optional.parent_ticket_id == before.parent_ticket_id
+    assert optional.metadata_json == patch["metadata_json"]
+    # A real blocks edge is never satisfied by the disposition.
+    reviewer = f"{task_key}-review"
+    repo.update_ticket(
+        project_id=project_id, ticket_key=reviewer, patch_json={"add_dependency_keys": ["optional"]}
+    )
+    assert "optional" in repo.brief(project_id=project_id, ticket_key=reviewer).ticket.blocked_by
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key=reviewer,
+        patch_json={"remove_dependency_keys": ["optional"]},
+    )
+    assert (
+        "optional" not in repo.brief(project_id=project_id, ticket_key=reviewer).ticket.blocked_by
+    )
+    repo.update_ticket(
+        project_id=project_id, ticket_key="optional", patch_json={"metadata_json": {"unrelated": 1}}
+    )
+    assert task_delivery._select_work(repo, plans, project_id, task_key, state) == (
+        None,
+        None,
+        False,
+    )
+    revisions = session.exec(
+        select(TrackerRevision).where(TrackerRevision.entity_key == "optional")
+    ).all()
+    assert any(
+        ((r.before_json or {}).get("metadata_json") or {}).get("delivery_scope") == scope
+        for r in revisions
+    )
+
+
+@pytest.mark.parametrize(
+    "defect",
+    [
+        "reason",
+        "source_ref",
+        "wrong-parent",
+        "self-parent",
+        "foreign-task",
+        "shape",
+        "resume-owner",
+        "resume-condition",
+        "active",
+        "failed",
+    ],
+)
+def test_child_disposition_rejects_invalid_marker_without_writes(session, project_id, defect):
+    repo, _plans, _task_key, parent, scope, _state = disposition_workflow(session, project_id)
+    status = "deferred" if defect.startswith("resume-") else "skipped"
+    if defect in {"reason", "source_ref"}:
+        scope[defect] = " "
+    elif defect == "wrong-parent":
+        scope["parent_ticket_key"] = "required"
+    elif defect == "self-parent":
+        parent = "optional"
+        scope["parent_ticket_key"] = parent
+    elif defect == "foreign-task":
+        repo.create_task(project_id=project_id, key="foreign", title="Foreign")
+        repo.create_ticket(
+            project_id=project_id, task_key="foreign", key="foreign-parent", title="Foreign"
+        )
+        parent = "foreign-parent"
+        scope["parent_ticket_key"] = parent
+    elif defect == "shape":
+        scope = []
+    elif defect.startswith("resume-"):
+        scope.update(resume_owner_ref="team:main", resume_condition="Later admission")
+        scope.pop("resume_owner_ref" if defect == "resume-owner" else "resume_condition")
+    elif defect in {"active", "failed"}:
+        status = "in-progress" if defect == "active" else "failed"
+    patch = {"status": status, "metadata_json": {"delivery_scope": scope}}
+    if defect in {"foreign-task", "self-parent"}:
+        patch["parent_ticket_key"] = parent
+    before = repo.brief(project_id=project_id, ticket_key="optional").ticket.model_dump()
+    for dry_run in (True, False):
+        with pytest.raises(ValidationError, match="delivery_scope"):
+            repo.update_ticket(
+                project_id=project_id, ticket_key="optional", patch_json=patch, dry_run=dry_run
+            )
+        session.commit()  # Invalid mutations cannot hide behind a caller rollback.
+        assert (
+            repo.brief(project_id=project_id, ticket_key="optional").ticket.model_dump() == before
+        )
+
+
+@pytest.mark.parametrize("change", ["reactivate", "reparent"])
+def test_child_disposition_clears_on_reactivation_or_reparent(session, project_id, change):
+    repo, _plans, _task_key, _parent, scope, _state = disposition_workflow(session, project_id)
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="optional",
+        patch_json={"status": "skipped", "metadata_json": {"keep": 1, "delivery_scope": scope}},
+    )
+    patch = (
+        {"status": "not-started"} if change == "reactivate" else {"parent_ticket_key": "required"}
+    )
+    repo.update_ticket(project_id=project_id, ticket_key="optional", patch_json=patch)
+    optional = repo.brief(project_id=project_id, ticket_key="optional").ticket
+    assert optional.metadata_json == {"keep": 1}
+    revisions = session.exec(
+        select(TrackerRevision).where(TrackerRevision.entity_key == "optional")
+    ).all()
+    assert any(
+        ((r.before_json or {}).get("metadata_json") or {}).get("delivery_scope") == scope
+        for r in revisions
+    )
+
+
+def test_excluded_parent_does_not_hide_nested_required_work_or_complete_group(session, project_id):
+    from stackos import task_delivery
+
+    repo, plans, task_key, _parent, scope, state = disposition_workflow(session, project_id)
+    task_delivery._select_work(repo, plans, project_id, task_key, state)
+    repo.update_ticket(project_id=project_id, ticket_key="required", patch_json={"kind": "group"})
+    repo.create_ticket(
+        project_id=project_id,
+        task_key=task_key,
+        key="nested",
+        title="Nested",
+        parent_ticket_key="required",
+        status="failed",
+        run_plan_id=state["run_plan_id"],
+        run_plan_step_id=plans.get_step(state["run_plan_id"], "verify").id,
+    )
+    for key in ("required", "optional"):
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key=key,
+            patch_json={"status": "skipped", "metadata_json": {"delivery_scope": scope}},
+        )
+    assert task_delivery._select_work(repo, plans, project_id, task_key, state) == (
+        None,
+        None,
+        False,
+    )
+    repo.update_ticket(
+        project_id=project_id, ticket_key="required", patch_json={"status": "not-started"}
+    )
+    repo.update_ticket(
+        project_id=project_id, ticket_key="nested", patch_json={"status": "in-progress"}
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="nested",
+        patch_json={
+            "status": "skipped",
+            "metadata_json": {"delivery_scope": {**scope, "parent_ticket_key": "required"}},
+        },
+    )
+    assert task_delivery._select_work(repo, plans, project_id, task_key, state) == (
+        None,
+        None,
+        True,
+    )
+    assert repo.brief(project_id=project_id, ticket_key="required").ticket.status == "in-progress"
+    assert task_delivery._select_work(repo, plans, project_id, task_key, state) == (
+        None,
+        None,
+        False,
+    )
+
+
+@pytest.mark.parametrize("verdict", ["success", "blocked"])
+def test_verifier_receives_exclusions_separately_from_accepted_sources(
+    session, project_id, tmp_path, monkeypatch, verdict
+):
+    from stackos import task_delivery
+
+    repo, plans, task_key, parent, scope, state = disposition_workflow(session, project_id)
+    plans.claim_step(
+        run_plan_id=state["run_plan_id"], run_id=state["controller_run_id"], step_id="verify"
+    )
+    scope.update(resume_owner_ref="team:main", resume_condition="Later operator admission")
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="optional",
+        patch_json={"status": "deferred", "metadata_json": {"delivery_scope": scope}},
+    )
+    reviewer = f"{task_key}-review"
+    repo.update_ticket(
+        project_id=project_id, ticket_key=reviewer, patch_json={"add_dependency_keys": ["required"]}
+    )
+    calls = []
+
+    def launch(_host, _directory, _instructions, prompt, _schema, **kwargs):
+        packet = json.loads(prompt)
+        key = packet["brief"]["ticket"]["key"]
+        calls.append((key, packet["phase"]))
+        if key in {parent, reviewer}:
+            excluded = packet["child_dispositions"]
+            assert [item["key"] for item in excluded] == ["optional"]
+            assert excluded[0]["status"] == "deferred"
+            assert excluded[0]["metadata_json"]["delivery_scope"] == scope
+            assert excluded[0]["parent_ticket_key"] == parent
+            assert excluded[0]["evidence_ref"]["tool_name"] == "tracker.brief"
+            assert "optional" not in {r["key"] for r in packet["accepted_receipts"]}
+            assert "required" in {r["key"] for r in packet["accepted_receipts"]}
+        return AgentRunResult(
+            0,
+            thread_id=f"{key}-{packet['phase']}",
+            result=generic_result(
+                verdict if key == parent else "success",
+                outputs={"commit_sha": git(tmp_path, "rev-parse", "HEAD")},
+            ),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=task_key,
+        run_plan_id=state["run_plan_id"],
+        step_id="verify",
+    )
+    scheduler.run()
+    session.expire_all()
+    assert calls[:3] == [("required", "delivery"), ("required", "review"), (parent, "delivery")]
+    assert calls[3:] == ([(reviewer, "delivery")] if verdict == "success" else [])
+    assert plans.get(state["run_plan_id"]).status == (
+        "completed" if verdict == "success" else "started"
+    )
+    task = repo.get(project_id=project_id, task_key=task_key).tasks[0]
+    assert task.metadata_json["delivery"]["status"] == (
+        "complete" if verdict == "success" else "stopped"
+    )
+    assert repo.brief(project_id=project_id, ticket_key="optional").ticket.status == "deferred"
+
+
+@pytest.mark.parametrize("defect", ["wrong-parent", "reason", "resume", "failed", "pending"])
+def test_legacy_invalid_disposition_cannot_release_parent(session, project_id, defect):
+    from stackos import task_delivery
+    from stackos.db.models import TrackerTicket
+
+    repo, plans, task_key, _parent, scope, state = disposition_workflow(session, project_id)
+    task_delivery._select_work(repo, plans, project_id, task_key, state)
+    for status in ("in-progress", "complete"):
+        repo.update_ticket(
+            project_id=project_id, ticket_key="required", patch_json={"status": status}
+        )
+    row = session.exec(select(TrackerTicket).where(TrackerTicket.key == "optional")).one()
+    row.status = {"resume": "deferred", "failed": "failed", "pending": "not-started"}.get(
+        defect, "skipped"
+    )
+    if defect == "wrong-parent":
+        scope["parent_ticket_key"] = "required"
+    if defect == "reason":
+        scope.pop("reason")
+    row.metadata_json = {"delivery_scope": scope}
+    session.add(row)
+    session.commit()
+    selected, step, changed = task_delivery._select_work(repo, plans, project_id, task_key, state)
+    assert step is None and changed is False
+    assert selected is None or selected.key == "optional"  # Pending work remains executable.
+
+
 def workflow_task(session, project_id, *, running=True):
     plans = RunPlanRepository(session)
     plan = plans.create(

@@ -21,6 +21,68 @@ def _operation_data(response):
     return body.get("data", body)
 
 
+@pytest.mark.parametrize("mode", ["raw", "compact", "ack"])
+def test_delivery_scope_owner_and_foreign_parent_rest(api, project_id, mode):
+    from stackos.repositories.tracker import TrackerRepository
+
+    engine = api.app.state.engine
+    with Session(engine) as session:
+        repo = TrackerRepository(session)
+        for key in ("owned", "foreign"):
+            repo.create_task(project_id=project_id, key=key, title=key)
+            repo.create_ticket(project_id=project_id, task_key=key, key=f"{key}-parent", title=key)
+        repo.create_ticket(
+            project_id=project_id,
+            task_key="owned",
+            key="child",
+            title="Child",
+            parent_ticket_key="owned-parent",
+        )
+    scope = {
+        "disposition": "excluded",
+        "parent_ticket_key": "foreign-parent",
+        "reason": "Explicit scope decision",
+        "source_ref": "operator:scope-2",
+    }
+    invalid = {
+        "status": "skipped",
+        "parent_ticket_key": "foreign-parent",
+        "metadata_json": {"delivery_scope": scope},
+    }
+    before = _ticket_create_state(engine, project_id)
+    for operation, args in (
+        ("tracker.updateTicket", {"ticket_key": "child", "patch_json": invalid, "dry_run": True}),
+        ("tracker.updateTicket", {"ticket_key": "child", "patch_json": invalid}),
+        ("tracker.patch", {"patch_json": {"tickets": {"child": invalid}}}),
+    ):
+        response = api.post(
+            f"/api/v1/operations/{operation}/call",
+            json={"arguments": {"project_id": project_id, "response_mode": mode, **args}},
+        )
+        assert response.status_code == 422, response.text
+        assert response.json()["data"]["field"] == "metadata_json.delivery_scope"
+        assert _ticket_create_state(engine, project_id) == before
+    scope["parent_ticket_key"] = "owned-parent"
+    valid = {"status": "skipped", "metadata_json": {"delivery_scope": scope}}
+    response = api.post(
+        "/api/v1/operations/tracker.updateTicket/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "ticket_key": "child",
+                "patch_json": valid,
+                "response_mode": mode,
+            }
+        },
+    )
+    assert response.status_code == 200, response.text
+    with Session(engine) as session:
+        child = TrackerRepository(session).brief(project_id=project_id, ticket_key="child").ticket
+        assert child.parent_ticket_key == "owned-parent"
+        assert child.status == "skipped"
+        assert child.metadata_json == valid["metadata_json"]
+
+
 @pytest.mark.parametrize("as_list", [False, True])
 @pytest.mark.parametrize("mode", ["raw", "compact", "ack"])
 @pytest.mark.parametrize(

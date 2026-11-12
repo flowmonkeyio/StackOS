@@ -450,6 +450,15 @@ class TrackerBulkMixin:
             if (issue := self_dependency_issue(spec)) is not None:
                 errors.append(issue)
             try:
+                self._validate_delivery_scope(
+                    tracker,
+                    task.id,
+                    spec["metadata_json"],
+                    spec["status"],
+                    spec["parent_ticket_key"],
+                    new_parent_keys=set(by_key),
+                    ticket_key=spec["key"],
+                )
                 self._validate_workflow_ticket_initial_status(
                     key=spec["key"],
                     status=spec["status"],
@@ -462,7 +471,7 @@ class TrackerBulkMixin:
                     TrackerListIssueOut(
                         index=spec["index"],
                         key=spec["key"],
-                        field="status",
+                        field=exc.data.get("field", "status"),
                         message=str(exc),
                     )
                 )
@@ -556,6 +565,7 @@ class TrackerBulkMixin:
                 # Only validation-relevant state is projected, on detached copies.
                 # Later items see prior successes, just like per-item apply/savepoints.
                 projected = TrackerTicket(**ticket.model_dump())
+                projected.metadata_json = self._ticket_metadata_after_patch(ticket, patch_json)
                 if "status" in patch_json:
                     projected.status = TrackerItemStatus(str(patch_json["status"]))
                 if "parent_ticket_key" in patch_json:

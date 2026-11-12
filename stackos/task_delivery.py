@@ -46,7 +46,10 @@ from stackos.repositories.base import ConflictError, NotFoundError, ValidationEr
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
 from stackos.repositories.tracker.events import record_execution_change
-from stackos.repositories.tracker.schema import TrackerCorrectionIntent
+from stackos.repositories.tracker.schema import (
+    TrackerCorrectionIntent,
+    TrackerDeliveryScopeExclusion,
+)
 from stackos.repositories.tracker.setup import _delivery_role_defaults
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
 
@@ -384,9 +387,32 @@ def _workflow_step(plans, state, ticket):
     )
 
 
+def _excluded_child(ticket, tickets_by_key):
+    """Legacy/malformed markers remain obligations; scope is attachment-specific."""
+    parent = tickets_by_key.get(ticket.parent_ticket_key)
+    if (
+        parent is None
+        or parent.id == ticket.id
+        or parent.id != ticket.parent_ticket_id
+        or parent.task_id != ticket.task_id
+        or parent.project_id != ticket.project_id
+    ):
+        return False
+    try:
+        return (
+            TrackerDeliveryScopeExclusion.from_metadata(
+                ticket.metadata_json, status=ticket.status, parent_ticket_key=parent.key
+            )
+            is not None
+        )
+    except ValueError:
+        return False
+
+
 def _select_work(repo, plans, project_id, task_key, state):
     """Activate containers through their owner; dispatch only executable work."""
     tickets = repo.get(project_id=project_id, task_key=task_key, include_graph=False).tickets
+    tickets_by_key = {ticket.key: ticket for ticket in tickets}
     for ticket in repo.delivery_ready(project_id=project_id, task_key=task_key):
         step = _workflow_step(plans, state, ticket)
         children = _descendants(tickets, ticket.key)
@@ -412,7 +438,11 @@ def _select_work(repo, plans, project_id, task_key, state):
                 return None, None, True
             if step.status != RunPlanStepStatus.RUNNING:
                 continue
-            if any(child.status != TrackerItemStatus.COMPLETE for child in children):
+            if any(
+                child.status != TrackerItemStatus.COMPLETE
+                and not _excluded_child(child, tickets_by_key)
+                for child in children
+            ):
                 continue
             return (
                 ticket,
@@ -674,7 +704,7 @@ def _ticket_prompt_copy(ticket: dict[str, Any], *, current: bool = False) -> dic
     return result
 
 
-def _relevant_receipts(packet: dict[str, Any]) -> list[dict[str, Any]]:
+def _relevant_receipts(packet: dict[str, Any], *, excluded: bool = False) -> list[dict[str, Any]]:
     """Ordinary work needs direct prerequisites; mirrors need their dependency scope."""
     ticket = packet["brief"]["ticket"]
     # A direct prerequisite can belong to another task in this project. The
@@ -689,6 +719,8 @@ def _relevant_receipts(packet: dict[str, Any]) -> list[dict[str, Any]]:
             if item.get("status") == "complete"
         }.values()
     )
+    dispositions = packet.get("child_dispositions", [])
+    scoped_items = [*completed, *dispositions]
     relevant = set(ticket.get("dependency_keys", []))
     step = packet.get("workflow_step")
     if step is not None:
@@ -698,7 +730,7 @@ def _relevant_receipts(packet: dict[str, Any]) -> list[dict[str, Any]]:
             # mirrors retain that same scope even when a child has no parent link.
             bound_step_ids = {step["id"]} | {
                 item["run_plan_step_id"]
-                for item in completed
+                for item in scoped_items
                 if item["key"] in relevant
                 and item.get("source_kind") == "workflow"
                 and item.get("parent_ticket_key") is None
@@ -710,20 +742,24 @@ def _relevant_receipts(packet: dict[str, Any]) -> list[dict[str, Any]]:
             }
             expanded = relevant | {
                 item["key"]
-                for item in completed
+                for item in scoped_items
                 if item.get("parent_ticket_key") in containers | relevant
                 or item.get("run_plan_step_id") in bound_step_ids
             }
             expanded |= {
                 key
-                for item in completed
+                for item in scoped_items
                 if item["key"] in expanded
                 for key in item.get("dependency_keys", [])
             }
             if expanded == relevant:
                 break
             relevant = expanded
-    return [item for item in completed if item["key"] in relevant and item["key"] != ticket["key"]]
+    return [
+        item
+        for item in (dispositions if excluded else completed)
+        if item["key"] in relevant and item["key"] != ticket["key"]
+    ]
 
 
 def _work_prompt_copy(value: dict[str, Any]) -> dict[str, Any]:
@@ -745,7 +781,12 @@ def _work_prompt_copy(value: dict[str, Any]) -> dict[str, Any]:
     context = task.get("context_json")
     if isinstance(context, dict):
         context.pop("followups", None)
+    dispositions = _relevant_receipts(packet, excluded=True)
     packet["accepted_receipts"] = [_ticket_prompt_copy(item) for item in _relevant_receipts(packet)]
+    packet["child_dispositions"] = [
+        {**_ticket_prompt_copy(item), "metadata_json": deepcopy(item["metadata_json"])}
+        for item in dispositions
+    ]
     brief["ticket"] = _ticket_prompt_copy(brief["ticket"], current=True)
     for relation in ("dependencies", "dependents"):
         # Outcomes are supplied once in accepted_receipts. The brief retains navigation.
@@ -1489,8 +1530,10 @@ def run_delivery(
                     return
                 state = (task.metadata_json or {})["delivery"]
                 snapshot = repo.get(project_id=project_id, task_key=task_key, include_graph=False)
+                tickets_by_key = {t.key: t for t in snapshot.tickets}
                 if snapshot.tickets and all(
-                    t.status == TrackerItemStatus.COMPLETE for t in snapshot.tickets
+                    t.status == TrackerItemStatus.COMPLETE or _excluded_child(t, tickets_by_key)
+                    for t in snapshot.tickets
                 ):
                     _update_delivery(
                         repo, project_id, task_key, status="complete", ticket_key=None, reason=None
@@ -1672,12 +1715,19 @@ def run_delivery(
                     )
                     evidence[phase]["occurrence"] = occurrence
                     _save_evidence(repo, project_id, ticket_key, evidence)
+                    task_tickets = repo.get(
+                        project_id=project_id, task_key=task_key, include_graph=False
+                    ).tickets
                     completed_tickets = [
                         t.model_dump(mode="json")
-                        for t in repo.get(
-                            project_id=project_id, task_key=task_key, include_graph=False
-                        ).tickets
+                        for t in task_tickets
                         if t.status == TrackerItemStatus.COMPLETE
+                    ]
+                    tickets_by_key = {t.key: t for t in task_tickets}
+                    child_dispositions = [
+                        t.model_dump(mode="json")
+                        for t in task_tickets
+                        if _excluded_child(t, tickets_by_key)
                     ]
                     # Progress detection must retain the full set even when a ticket
                     # is outside the model's current prerequisite/integration scope.
@@ -1754,6 +1804,7 @@ def run_delivery(
                                 if workflow_step
                                 else None,
                                 "accepted_receipts": completed_tickets,
+                                "child_dispositions": child_dispositions,
                             }
                         )
                     ),

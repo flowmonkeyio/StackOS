@@ -42,6 +42,7 @@ from stackos.repositories.run_plan_state import TERMINAL_PLAN_STATUSES, TERMINAL
 from stackos.repositories.tracker.ordering import next_task_position
 from stackos.repositories.tracker.schema import (
     TrackerCorrectionIntent,
+    TrackerDeliveryScopeExclusion,
     TrackerDependencyPreviewOut,
     TrackerListItemResultOut,
     TrackerMutationOut,
@@ -344,6 +345,14 @@ class TrackerMutationMixin:
                 run_plan_step_id=run_plan_step_id,
                 created_by=created_by,
                 now=now,
+            )
+            self._validate_delivery_scope(
+                tracker,
+                task.id,
+                ticket.metadata_json,
+                ticket.status,
+                parent_ticket_key,
+                ticket_key=ticket.key,
             )
             for dependency_key in dependency_keys or []:
                 dependency = self._ticket_by_key(tracker.id, dependency_key)
@@ -1516,6 +1525,7 @@ class TrackerMutationMixin:
         patch_json: dict[str, Any],
     ) -> None:
         dependency_preview = self._validate_ticket_patch(tracker, ticket, patch_json)
+        metadata = self._ticket_metadata_after_patch(ticket, patch_json)
         now = _utcnow()
         if "status" in patch_json:
             new_status = _status_value(str(patch_json["status"]))
@@ -1549,6 +1559,7 @@ class TrackerMutationMixin:
         for field in _TICKET_JSON_PATCH_FIELDS:
             if field in patch_json:
                 setattr(ticket, field, redact_secrets(_jsonable(patch_json[field])))
+        ticket.metadata_json = metadata
         if dependency_preview is not None:
             final_keys = dependency_preview.final_dependency_keys
             for dep in self._dependency_rows_for_ticket(ticket.id):
@@ -1639,6 +1650,21 @@ class TrackerMutationMixin:
                 ) from exc
         if patch_json.get("parent_ticket_key"):
             self._ticket_by_key(tracker.id, str(patch_json["parent_ticket_key"]))
+        if {"status", "parent_ticket_key", "metadata_json"} & patch_json.keys():
+            parent = (
+                self._s.get(TrackerTicket, ticket.parent_ticket_id)
+                if ticket.parent_ticket_id is not None
+                else None
+            )
+            parent_key = patch_json.get("parent_ticket_key", parent.key if parent else None)
+            self._validate_delivery_scope(
+                tracker,
+                ticket.task_id,
+                self._ticket_metadata_after_patch(ticket, patch_json),
+                str(patch_json.get("status", ticket.status)),
+                parent_key,
+                ticket_key=ticket.key,
+            )
         dependency_preview = self._preview_dependency_patch(
             tracker, ticket, patch_json, dependency_overrides=dependency_overrides
         )
@@ -1650,6 +1676,60 @@ class TrackerMutationMixin:
                     raise ValidationError("references_json entries must be objects")
                 ticket_reference_ref(reference)
         return dependency_preview
+
+    def _ticket_metadata_after_patch(
+        self, ticket: TrackerTicket, patch_json: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        metadata = redact_secrets(_jsonable(patch_json.get("metadata_json", ticket.metadata_json)))
+        if "metadata_json" not in patch_json and metadata and "delivery_scope" in metadata:
+            parent = (
+                self._s.get(TrackerTicket, ticket.parent_ticket_id)
+                if ticket.parent_ticket_id is not None
+                else None
+            )
+            parent_key = parent.key if parent else None
+            reparented = (
+                "parent_ticket_key" in patch_json and patch_json["parent_ticket_key"] != parent_key
+            )
+            reactivated = "status" in patch_json and str(patch_json["status"]) not in {
+                "skipped",
+                "aborted",
+                "deferred",
+            }
+            if reparented or reactivated:
+                metadata = {
+                    key: value for key, value in metadata.items() if key != "delivery_scope"
+                }
+        return metadata
+
+    def _validate_delivery_scope(
+        self,
+        tracker: TaskTracker,
+        task_id: int | None,
+        metadata: dict[str, Any] | None,
+        status: str,
+        parent_key: str | None,
+        *,
+        new_parent_keys: set[str] | None = None,
+        ticket_key: str | None = None,
+    ) -> None:
+        try:
+            scope = TrackerDeliveryScopeExclusion.from_metadata(
+                metadata, status=status, parent_ticket_key=parent_key
+            )
+            if scope is None:
+                return
+            if parent_key == ticket_key:
+                raise ValueError("delivery_scope requires a distinct parent ticket")
+            if parent_key not in (new_parent_keys or set()):
+                parent = self._ticket_by_key(tracker.id, str(parent_key), missing_ok=True)
+                if parent is None or parent.task_id != task_id:
+                    raise ValueError("delivery_scope parent must belong to the same task")
+        except ValueError as exc:
+            raise ValidationError(
+                "invalid metadata_json.delivery_scope",
+                data={"field": "metadata_json.delivery_scope", "reason": str(exc)},
+            ) from exc
 
     def _validate_workflow_mirror_ticket_patch_fields(
         self,

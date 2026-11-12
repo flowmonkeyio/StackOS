@@ -1693,6 +1693,75 @@ def test_tracker_atomic_updates_reject_unknown_patch_fields(
     assert snapshot.tickets[0].status == TrackerItemStatus.NOT_STARTED
 
 
+def test_delivery_scope_creation_and_list_preview_share_validation(session, project_id):
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="scope", title="Scope")
+    scope = {
+        "disposition": "excluded",
+        "parent_ticket_key": "parent",
+        "reason": "Operator withdrew optional scope",
+        "source_ref": "operator:scope-2",
+    }
+    payload = {
+        "task_key": "scope",
+        "tickets": [
+            {"key": "parent", "title": "Parent", "kind": "group"},
+            {
+                "key": "optional",
+                "title": "Optional",
+                "status": "skipped",
+                "parent_ticket_key": "parent",
+                "metadata_json": {"delivery_scope": scope},
+            },
+        ],
+    }
+    assert repo.validate_ticket_list(project_id=project_id, ticket_list_json=payload).valid
+    assert repo.create_ticket_list(project_id=project_id, ticket_list_json=payload).data.valid
+    scope["source_ref"] = " "
+    payload["tickets"] = [{**payload["tickets"][1], "key": "invalid"}]
+    for result in (
+        repo.validate_ticket_list(project_id=project_id, ticket_list_json=payload),
+        repo.create_ticket_list(project_id=project_id, ticket_list_json=payload).data,
+    ):
+        assert result.valid is False
+        assert result.errors[0].field == "metadata_json.delivery_scope"
+    with pytest.raises(ValidationError, match="delivery_scope"):
+        repo.create_ticket(
+            project_id=project_id,
+            task_key="scope",
+            key="invalid",
+            title="Invalid",
+            status="skipped",
+            parent_ticket_key="parent",
+            metadata_json={"delivery_scope": scope},
+        )
+    session.commit()
+    assert {t.key for t in repo.get(project_id=project_id, task_key="scope").tickets} == {
+        "parent",
+        "optional",
+    }
+    # A retained skipped marker cannot silently become a deferred exclusion
+    # without the newly required future-owner context, including sequential lists.
+    changes = [
+        {"ticket_key": "optional", "patch_json": {"status": "not-started"}},
+        {"ticket_key": "optional", "patch_json": {"status": "deferred"}},
+    ]
+    preview = repo.update_ticket_list(
+        project_id=project_id, updates_json=changes, dry_run=True
+    ).data
+    applied = repo.update_ticket_list(project_id=project_id, updates_json=changes).data
+    assert preview.valid and applied.valid
+    assert repo.brief(project_id=project_id, ticket_key="optional").ticket.metadata_json == {}
+    # Explicitly reinstating the marker on deferred work still requires resume context.
+    scope["source_ref"] = "operator:scope-2"
+    patch = {"metadata_json": {"delivery_scope": scope}}
+    for dry_run in (True, False):
+        with pytest.raises(ValidationError, match="delivery_scope"):
+            repo.update_ticket(
+                project_id=project_id, ticket_key="optional", patch_json=patch, dry_run=dry_run
+            )
+
+
 def test_tracker_ticket_list_import_review_update_and_evidence(
     session: Session,
     project_id: int,

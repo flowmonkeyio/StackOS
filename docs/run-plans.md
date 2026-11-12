@@ -42,7 +42,9 @@ The tracker packet does not grant execution by itself.
 For explicit taskwide `tracker.startDelivery` handoff, the running step is entry
 context rather than a traversal limit. The existing generic runner selects all
 remaining dependency-ready task work. It claims mirrors through RunPlanRepository,
-waits for accepted descendants, and launches each remaining frozen contract once.
+waits for accepted required descendants or valid [explicit child exclusions](task-tracker.md#workflow-mirroring),
+and launches each remaining frozen contract once. Exclusions settle containment
+without satisfying success dependencies or becoming accepted source.
 Zero-child mirrors launch directly; groups never launch. The selected agent
 returns declared outputs without claiming or recording its own step. Only the
 run-plan owner validates frozen schemas and writes mirror/plan/run terminal state.

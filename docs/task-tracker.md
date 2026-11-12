@@ -210,7 +210,8 @@ on a containing group activates its children while the group is running, using
 the same `activates` semantics as workflow parents.
 
 Mirrors claim their bound step through `RunPlanRepository`, wait for accepted
-descendant/bound-child work, then launch their remaining frozen contract once.
+descendant/bound-child work or valid explicit exclusions, then launch their
+remaining frozen contract once.
 Zero-child mirrors launch directly. The packet contains the full frozen
 `RunPlanStepOut`, inputs, context, dependency results, projected tracker brief,
 relevant accepted outcomes and current operator inputs. It is not reconstructed
@@ -1130,6 +1131,48 @@ Containment remains parentage, not a readiness edge. Evidence invalidation and
 supersession are recorded in workflow/evidence contracts rather than overloaded
 onto blocking readiness.
 
+Main can record an explicit scope exclusion through the existing tracker
+metadata patch. Merge other metadata fields when updating it:
+
+```json
+{
+  "status": "deferred",
+  "metadata_json": {
+    "delivery_scope": {
+      "disposition": "excluded",
+      "parent_ticket_key": "workflow-1-verify-delivery",
+      "reason": "Operator moved optional work outside this parent's current scope",
+      "source_ref": "operator-decision:scope-2",
+      "resume_owner_ref": "team:main",
+      "resume_condition": "Operator admits the later scope"
+    }
+  }
+}
+```
+
+The shared tracker mutation validator requires the exact attached parent in the
+same task, a nonempty reason and decision source reference, and skipped, aborted
+or deferred status. Deferred exclusions also require both resume fields. Preview
+and apply enforce the same contract; single and list creation validate it too.
+Bare terminal status, failed/pending work, malformed historical markers and
+unresolved nested obligations still hold the workflow verifier. Each nested
+exclusion names its own immediate parent. A valid exclusion settles containment
+only: the child retains its status, attachment, evidence and revision history.
+Explicit `blocks` edges stay success-only until main reconciles obsolete edges
+through existing dependency mutation. Exclusion is neither accepted source nor
+permission to change scope or perform an action.
+
+Remove `delivery_scope` (or set it to null) to reinstate the obligation even
+before changing status. Reactivation or reparenting clears a retained marker;
+an explicitly supplied replacement must validate against the new state. The
+prior decision remains in append-only tracker revisions. No status migration
+guesses historical exclusions. Groups still auto-complete only from successful
+children, never merely because all children are excluded. Workflow verifier
+packets carry relevant `child_dispositions` separately from `accepted_receipts`,
+including current metadata, decision/resume refs and canonical evidence refs.
+The verifier independently judges the current requirements; eligibility does
+not complete a step or waive missing outcomes.
+
 For workflow-backed delivery, graph readiness should be visible:
 
 - every independent first child ticket for a workflow step has an `activates`
@@ -1677,9 +1720,10 @@ scope-work
 New engineering plans attach implementation tickets to `verify-delivery`.
 After readiness, claim that step as the automatic handoff entry. Its first
 children activate from the mirror; terminal children block `review-delivery`.
-The runner accepts all attached children before dispatching the verification
-agent, so children must not block their own mirror. Terminal-managed delivery
-accepts the same children before running integrated verification. Delivery
+The runner accepts required attached children and accounts for valid explicit
+exclusions before dispatching the verification agent, so children must not block
+their own mirror. Terminal-managed delivery reconciles the same scope and
+evidence before running integrated verification. Delivery
 commits and review evidence remain on each ticket without a summary-only step.
 
 The tracker is the durable execution map. It is not the proof that work is

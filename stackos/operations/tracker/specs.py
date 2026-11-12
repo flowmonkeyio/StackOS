@@ -943,9 +943,36 @@ def operation_specs() -> list[OperationSpec]:
                 "include structured repair context in results[].error_data. Scoped proof "
                 "recovery may explicitly set context_json.correction.work_intent=evidence_only "
                 "with candidate_commit_sha and target_attempt; preserve existing context, "
-                "sessions, history and repair_count. Source repair remains conservative."
+                "sessions, history and repair_count. Source repair remains conservative. "
+                "Main-owned metadata_json.delivery_scope can exclude skipped/aborted work "
+                "from its exact same-task parent's containment with disposition=excluded, "
+                "parent_ticket_key, reason and source_ref; deferred also requires "
+                "resume_owner_ref and resume_condition. This never satisfies blocks edges "
+                "or grants authority. Clear the marker to reinstate the obligation; "
+                "reactivation/reparenting clears a retained marker."
             ),
             examples=(
+                OperationExample(
+                    title="Record an explicit deferred child scope decision",
+                    arguments={
+                        "project_id": 1,
+                        "ticket_key": "optional-followup",
+                        "patch_json": {
+                            "status": "deferred",
+                            "metadata_json": {
+                                "delivery_scope": {
+                                    "disposition": "excluded",
+                                    "parent_ticket_key": "workflow-1-verify-delivery",
+                                    "reason": "Operator moved this optional work to a later scope",
+                                    "source_ref": "operator-decision:scope-2",
+                                    "resume_owner_ref": "team:main",
+                                    "resume_condition": "Operator admits the later scope",
+                                }
+                            },
+                        },
+                        "dry_run": True,
+                    },
+                ),
                 OperationExample(
                     title="Admit evidence-only work for one exact candidate and attempt",
                     arguments={

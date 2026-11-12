@@ -30,6 +30,39 @@ class TrackerCorrectionIntent(BaseModel):
         return cls.model_validate(correction)
 
 
+class TrackerDeliveryScopeExclusion(BaseModel):
+    """An explicit scope decision; it never satisfies a success dependency."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    disposition: Literal["excluded"]
+    parent_ticket_key: str = Field(pattern=r"\S")
+    reason: str = Field(pattern=r"\S")
+    source_ref: str = Field(pattern=r"\S")
+    resume_owner_ref: str | None = Field(default=None, pattern=r"\S")
+    resume_condition: str | None = Field(default=None, pattern=r"\S")
+
+    @classmethod
+    def from_metadata(
+        cls, metadata: dict[str, Any] | None, *, status: str, parent_ticket_key: str | None
+    ) -> TrackerDeliveryScopeExclusion | None:
+        marker = (metadata or {}).get("delivery_scope")
+        if marker is None:
+            return None
+        scope = cls.model_validate(marker)
+        if status not in {"skipped", "aborted", "deferred"}:
+            raise ValueError(
+                "delivery_scope exclusion requires skipped, aborted or deferred status"
+            )
+        if not parent_ticket_key or scope.parent_ticket_key != parent_ticket_key:
+            raise ValueError("delivery_scope exclusion must name the exact attached parent")
+        if status == "deferred" and not (scope.resume_owner_ref and scope.resume_condition):
+            raise ValueError(
+                "deferred delivery_scope requires resume_owner_ref and resume_condition"
+            )
+        return scope
+
+
 class TrackerLaneOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
