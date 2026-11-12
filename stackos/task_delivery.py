@@ -654,6 +654,7 @@ def _ticket_prompt_copy(ticket: dict[str, Any], *, current: bool = False) -> dic
         not in {
             "agent_stats",
             "active_execution",
+            "work_duration",
             "last_execution",
             "completion_evidence_json",
             "outcome",
@@ -780,7 +781,13 @@ def _work_prompt_copy(value: dict[str, Any]) -> dict[str, Any]:
         packet[key] = receipt
     brief = packet["brief"]
     task = brief.get("task") or {}
-    for key in ("agent_stats", "active_execution", "last_execution", "completion_evidence_json"):
+    for key in (
+        "agent_stats",
+        "active_execution",
+        "work_duration",
+        "last_execution",
+        "completion_evidence_json",
+    ):
         task.pop(key, None)
     if isinstance(task.get("metadata_json"), dict):
         task["metadata_json"].pop("delivery", None)
@@ -1472,6 +1479,8 @@ def _record_execution_transition(
                 # Persist actual identity and bounded observations, never an outcome.
                 # Native result and candidate validation continue below unchanged.
                 receipt["execution"] = call.projection()
+                if not active:
+                    receipt["finished_at"] = call.finished_at
                 if call.usage is not None:
                     receipt["usage"] = deepcopy(call.usage)
                 repo.update_ticket(
@@ -1521,6 +1530,8 @@ def run_delivery(
             receipt = evidence.get(call.scope.phase)
             if isinstance(receipt, dict):
                 receipt["execution"] = call.projection()
+                if not active:
+                    receipt["finished_at"] = call.finished_at
                 if call.usage is not None:
                     receipt["usage"] = deepcopy(call.usage)
         _record_execution_transition(session_factory, call, active)
@@ -1860,6 +1871,11 @@ def run_delivery(
                     "launch": launch,
                     "occurrence": occurrence,
                     **asdict(result),
+                    **(
+                        {"finished_at": observed["finished_at"]}
+                        if "finished_at" in observed
+                        else {}
+                    ),
                     **({"execution": observed["execution"]} if "execution" in observed else {}),
                     "usage": final_usage,
                     "validated_outcome": None,

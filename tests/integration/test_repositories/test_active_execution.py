@@ -683,7 +683,12 @@ async def test_usage_stream_initial_and_reconnect_replace_state_with_safe_projec
         initial = await first()
         assert initial["updates"]["replace"] is True
         assert initial["updates"]["tasks"][0]["agent_stats"]["reported_usage"]["total"] == 105
-        assert set(initial["updates"]["tickets"][0]) == {"key", "agent_stats", "active_execution"}
+        assert set(initial["updates"]["tickets"][0]) == {
+            "key",
+            "agent_stats",
+            "active_execution",
+            "work_duration",
+        }
         evidence["automatic_delivery"]["delivery"].update({"usage": call.usage, "exit_code": 0})
         repo.update_ticket(
             project_id=project_id,

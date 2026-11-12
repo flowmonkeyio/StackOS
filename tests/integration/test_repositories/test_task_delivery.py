@@ -5642,6 +5642,9 @@ def test_native_collector_failure_persists_session_and_available_usage(
     )
     assert ticket.agent_stats.samples[-1].total == receipt["usage"]["measured"]["total"]
     assert ticket.agent_stats.last_execution.agent == receipt["agent"]
+    assert ticket.work_duration.endpoint_at == receipt["finished_at"]
+    assert ticket.work_duration.coverage == "complete"
+    assert ticket.work_duration.total_seconds >= 0
     assert ticket.active_execution is None
     assert len(calls) == 1
 

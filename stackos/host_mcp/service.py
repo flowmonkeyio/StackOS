@@ -65,12 +65,13 @@ class ActiveInvocation:
     samples: deque = field(default_factory=lambda: deque(maxlen=120))
     measured_at: str | None = None
     finished: bool = False
+    finished_at: str | None = None
     process_control: ManagedProcessControl = field(default_factory=ManagedProcessControl)
     # Explicit invocation cancellation is separate from native I/O cleanup stops.
     cancelled: Event = field(default_factory=Event)
     retired: Event = field(default_factory=Event)
 
-    def projection(self) -> dict[str, Any]:
+    def projection(self, *, include_usage: bool = True) -> dict[str, Any]:
         return {
             "invocation_id": self.invocation_id,
             "agent": self.scope.agent,
@@ -87,7 +88,7 @@ class ActiveInvocation:
                 "measured_at": self.measured_at,
                 "samples": deepcopy(list(self.samples)),
             }
-            if self.usage is not None
+            if include_usage and self.usage is not None
             else None,
         }
 
@@ -190,10 +191,15 @@ def _unregister(call: ActiveInvocation) -> None:
 
 
 def _finish(
-    call: ActiveInvocation, result: AgentRunResult | None, resume_thread_id: str | None = None
+    call: ActiveInvocation,
+    result: AgentRunResult | None,
+    resume_thread_id: str | None = None,
+    *,
+    finished_at: str | None = None,
 ) -> None:
     """End native observation; hold only its snapshot for the synchronous receipt handoff."""
     with _active_invocations_lock:
+        call.finished_at = finished_at or datetime.now(UTC).isoformat()
         if result is not None and (
             resume_thread_id is None or result.thread_id == resume_thread_id
         ):
@@ -244,6 +250,26 @@ def usage_executions(project_id: int | None = None) -> list[dict[str, Any]]:
             }
             for call in _active_invocations.values()
             if not call.finished and (project_id is None or call.scope.project_id == project_id)
+        ]
+
+
+def invocation_timings() -> list[dict[str, Any]]:
+    """Copy owned timing through the synchronous final-receipt handoff, without I/O."""
+    with _active_invocations_lock:
+        return [
+            {
+                "project_id": call.scope.project_id,
+                "task_key": call.scope.task_key,
+                "attempt": call.scope.attempt,
+                "phase": call.scope.phase,
+                "finished_at": call.finished_at,
+                **{
+                    key: value
+                    for key, value in call.projection(include_usage=False).items()
+                    if key != "live_usage"
+                },
+            }
+            for call in _active_invocations.values()
         ]
 
 
@@ -468,9 +494,10 @@ def run_agent(
         )
     finally:
         if call is not None and registered:
+            finished_at = datetime.now(UTC).isoformat()
             try:
                 _sample_invocations()
-                _finish(call, result, resume_thread_id)
+                _finish(call, result, resume_thread_id, finished_at=finished_at)
                 # The caller may persist usage after native exit. During that
                 # short handoff reads still have the snapshot, never a live
                 # identity/reader. Cleanup also runs if the callback fails.

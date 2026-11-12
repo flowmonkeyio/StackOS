@@ -202,8 +202,23 @@ class ActiveExecutionOut(ExecutionIdentityOut):
     live_usage: LiveUsageOut | None = None
 
 
+class WorkDurationOut(BaseModel):
+    """Union of recorded invocation wall intervals, never lifecycle elapsed time."""
+
+    total_seconds: float | None = None
+    observed_at: str | None = None
+    endpoint_at: str | None = None
+    coverage: Literal["complete", "partial", "unavailable"] = "unavailable"
+    recorded_intervals: int = 0
+    unavailable_intervals: int = 0
+    issues: list[str] = Field(default_factory=list)
+    # Only these exact owned identities can extend the union after observed_at.
+    live: list[ExecutionIdentityOut] = Field(default_factory=list)
+
+
 class TrackerTaskOut(BaseModel):
     active_execution: ActiveExecutionOut | None = None
+    work_duration: WorkDurationOut | None = None
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -251,6 +266,7 @@ class TrackerDependencyOut(BaseModel):
 
 class TrackerTicketOut(BaseModel):
     active_execution: ActiveExecutionOut | None = None
+    work_duration: WorkDurationOut | None = None
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -623,4 +639,5 @@ __all__ = [
     "TrackerTicketOut",
     "TrackerVerifyOut",
     "TrackerWorkflowHandoffOut",
+    "WorkDurationOut",
 ]

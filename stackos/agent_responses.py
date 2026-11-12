@@ -415,6 +415,9 @@ def compact_tracker_snapshot_ticket(value: Any) -> dict[str, Any]:
 
 
 def _add_agent_stats(result: dict[str, Any], source: dict[str, Any]) -> None:
+    duration = _as_dict(source.get("work_duration"))
+    if duration:
+        result["work_duration"] = deepcopy(duration)
     metrics = _as_dict(source.get("agent_stats"))
     if metrics:
         # This typed safe projection needs its nulls: unknown usage is not zero.

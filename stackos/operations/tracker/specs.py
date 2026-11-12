@@ -509,6 +509,11 @@ def operation_specs() -> list[OperationSpec]:
                 "Work agent_stats.samples retain up to 120 cumulative measured points; "
                 "agent_stats.last_execution is the latest recorded actual identity, "
                 "independent of current activity. "
+                "work_duration is the union of recorded invocation intervals across all own "
+                "tickets for tasks, or one ticket's receipts. It preserves nullable total_seconds, "
+                "observed_at, endpoint_at, exact owned live identities and complete/partial/"
+                "unavailable coverage; lifecycle timestamps and token silence are never "
+                "substitutes. "
                 "Compact responses preserve metrics and their usage/classification coverage."
             ),
             examples=(

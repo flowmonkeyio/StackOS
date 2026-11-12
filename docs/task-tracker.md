@@ -729,6 +729,45 @@ same reviewed manifest is a no-op; concurrent row or native-file changes refuse
 apply and require a fresh reviewed dry-run. Keep the private backup and manifest
 with the apply receipt and reconcile the shared statistics projection afterward.
 
+### Recorded work time
+
+Task and ticket reads expose `work_duration`, including task-index, filtered
+snapshots, graph nodes, briefs and the existing usage-refresh stream. Compact
+responses preserve this typed projection, including nulls. `total_seconds` is
+the union of recorded managed invocation wall intervals. Delivery, review and
+repair receipts use the existing ticket-local attempt/phase identity, with
+current receipts replacing duplicate archived observations. Task totals union
+all their tickets, regardless of visible filters; overlapping work counts once.
+
+Closed intervals use `launch.started_at` and the native exit's canonical
+`finished_at`. The execution owner records that finish during the synchronous
+receipt handoff, including failures and cancellation. A transient registry copy
+can supply the same closed endpoint until the durable receipt is committed.
+Only an exact currently owned invocation matching project, task, ticket,
+attempt, phase and recorded execution identity supplies an open interval,
+bounded at `observed_at`. Final receipts supersede that copy once. No token
+measurement is required. Queued, stopped, complete and reopened gaps add nothing.
+
+`observed_at` is the supported observation endpoint: the current registry
+snapshot time while live, the latest canonical finish when closed, or null
+without a valid interval. Closed/unavailable projections remain stable across
+reads. `endpoint_at` is the latest measured endpoint. `live` lists only the exact owned
+identities that can extend the union after `observed_at`; once none remain,
+clients must freeze the total. `coverage` is `complete`, `partial` or
+`unavailable`, with `recorded_intervals`, `unavailable_intervals` and explicit
+`issues`. Missing/invalid/offset-free historical endpoints, reversed clocks,
+future endpoints and stale execution state are omitted and disclosed. An
+entirely unrecorded scope has a null total with `no_recorded_invocations`;
+a recorded zero-length interval has measured zero. Lifecycle dates, usage
+checkpoints and token silence never fill gaps. This is invocation wall time,
+including any unobserved machine sleep, and does not claim CPU-active time.
+
+`schedule.runs` carries the canonical task `work_duration` and its measured
+`total_seconds` as `duration_seconds`; its separate lifecycle dates retain their
+original meaning. The deterministic independent expectations and real managed
+exit/handoff scenarios live in `test_work_duration.py`. Backend acceptance does
+not require downstream UI delivery.
+
 ### Recorded agent statistics
 
 `tracker.agentStats` reads one project's default tracker with enforced project

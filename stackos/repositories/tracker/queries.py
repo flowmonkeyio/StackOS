@@ -70,6 +70,7 @@ from stackos.repositories.tracker.schema import (
     TrackerTicketOut,
     TrackerVerifyOut,
     TrackerWorkflowHandoffOut,
+    WorkDurationOut,
 )
 from stackos.repositories.tracker.utils import (
     ACTIVATES_DEPENDENCY_TYPE,
@@ -959,16 +960,20 @@ class TrackerQueryMixin:
         include_ticket_summary: bool = False,
     ) -> list[TrackerTaskOut]:
         summaries = self._task_ticket_summaries(tracker_id, rows) if include_ticket_summary else {}
+        durations: dict[int, WorkDurationOut] = {}
         metrics = query_task_agent_stats(
             self._s,
             tracker_id=_required_id(tracker_id, "tracker"),
             task_ids={row.id for row in rows if row.id is not None},
+            work_durations=durations,
+            task_keys={row.id: row.key for row in rows if row.id is not None},
         )
         return [
             TrackerTaskOut.model_validate(row).model_copy(
                 update={
                     "ticket_summary": summaries.get(row.id),
                     "agent_stats": metrics.get(_required_id(row.id, "task")),
+                    "work_duration": durations.get(_required_id(row.id, "task")),
                     "active_execution": _execution_out(row.project_id, row.key),
                 }
             )
@@ -1148,13 +1153,17 @@ class TrackerQueryMixin:
                 "link_count",
                 "agent_stats",
                 "active_execution",
+                "work_duration",
             }
+        )
+        durations: dict[int, WorkDurationOut] = {}
+        metrics = query_ticket_agent_stats(
+            self._s, ticket_ids={_required_id(row.id, "ticket")}, work_durations=durations
         )
         return TrackerTicketOut(
             **base,
-            agent_stats=query_ticket_agent_stats(
-                self._s, ticket_ids={_required_id(row.id, "ticket")}
-            )[_required_id(row.id, "ticket")],
+            work_duration=durations[_required_id(row.id, "ticket")],
+            agent_stats=metrics[_required_id(row.id, "ticket")],
             active_execution=_execution_out(row.project_id, task.key, row.key) if task else None,
             task_key=task.key if task is not None else "",
             parent_ticket_key=parent.key if parent is not None else None,
@@ -1169,7 +1178,8 @@ class TrackerQueryMixin:
         ticket_ids = {row.id for row in rows if row.id is not None}
         if not ticket_ids:
             return []
-        metrics = query_ticket_agent_stats(self._s, ticket_ids=ticket_ids)
+        durations: dict[int, WorkDurationOut] = {}
+        metrics = query_ticket_agent_stats(self._s, ticket_ids=ticket_ids, work_durations=durations)
 
         dependencies = list(
             self._s.exec(
@@ -1235,6 +1245,7 @@ class TrackerQueryMixin:
                     "link_count",
                     "agent_stats",
                     "active_execution",
+                    "work_duration",
                 }
             )
             output.append(
@@ -1244,6 +1255,7 @@ class TrackerQueryMixin:
                     if task
                     else None,
                     agent_stats=metrics[_required_id(row.id, "ticket")],
+                    work_duration=durations[_required_id(row.id, "ticket")],
                     task_key=task.key if task is not None else "",
                     parent_ticket_key=parent.key if parent is not None else None,
                     dependency_keys=[
@@ -1646,12 +1658,12 @@ class TrackerQueryMixin:
     def _task_snapshot(self, task: TrackerTask) -> dict[str, Any]:
         # Derived usage belongs to read projections, never persisted history.
         return TrackerTaskOut.model_validate(task).model_dump(
-            mode="json", exclude={"agent_stats", "active_execution"}
+            mode="json", exclude={"agent_stats", "active_execution", "work_duration"}
         )
 
     def _ticket_snapshot(self, ticket: TrackerTicket) -> dict[str, Any]:
         return self._ticket_out(ticket).model_dump(
-            mode="json", exclude={"agent_stats", "active_execution"}
+            mode="json", exclude={"agent_stats", "active_execution", "work_duration"}
         )
 
     def _count_statuses(self, statuses: list[TrackerItemStatus]) -> dict[str, int]:

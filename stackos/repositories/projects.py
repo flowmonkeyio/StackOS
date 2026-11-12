@@ -40,7 +40,11 @@ from stackos.repositories.base import (
     _normalise_limit,
     cursor_paginate_desc,
 )
-from stackos.repositories.tracker.schema import ActiveExecutionOut, AgentStatsMetricsOut
+from stackos.repositories.tracker.schema import (
+    ActiveExecutionOut,
+    AgentStatsMetricsOut,
+    WorkDurationOut,
+)
 
 
 def _utcnow() -> datetime:
@@ -192,6 +196,7 @@ class ScheduledRunOut(BaseModel):
     started_at: datetime | None
     ended_at: datetime | None
     duration_seconds: float | None
+    work_duration: WorkDurationOut | None = None
     agent_stats: AgentStatsMetricsOut | None
     active_execution: ActiveExecutionOut | None
 
@@ -1095,9 +1100,10 @@ class ScheduledJobRepository:
             status=task.status.value if task else plan.status.value,
             started_at=started,
             ended_at=ended,
-            duration_seconds=max(0, (ended - started).total_seconds())
-            if started and ended
+            duration_seconds=task.work_duration.total_seconds
+            if task and task.work_duration
             else None,
+            work_duration=task.work_duration if task else None,
             agent_stats=task.agent_stats if task else None,
             active_execution=task.active_execution if task else None,
         )

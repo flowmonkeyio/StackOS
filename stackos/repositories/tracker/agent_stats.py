@@ -11,6 +11,7 @@ from sqlalchemy import select, true
 from sqlmodel import Session, col
 
 from stackos.db.models import Project, TaskTracker, TrackerTask, TrackerTicket
+from stackos.host_mcp import service as host_service
 from stackos.host_mcp.result import usage_snapshot
 from stackos.host_mcp.service import ProvisionalUsage, active_execution, provisional_usage
 from stackos.repositories.tracker.schema import (
@@ -23,22 +24,29 @@ from stackos.repositories.tracker.schema import (
     ExecutionIdentityOut,
     TrackerAgentStatsOut,
     UsageSampleOut,
+    WorkDurationOut,
 )
 from stackos.repositories.tracker.utils import DEFAULT_TRACKER_KEY
 
 
-def invocation_receipts(evidence: Any) -> list[dict[str, Any]]:
+def invocation_receipts(evidence: Any, *, require_launch: bool = True) -> list[dict[str, Any]]:
     """Deduplicate current/archive by attempt and phase within one ticket.
 
     Read only the canonical receipt locations, never tracker history, sessions,
     configuration or nested result packets. Current receipts take precedence.
     Legacy missing attempt identity remains unknown, rather than an inferred run.
     """
+    return list(_receipt_items(evidence, require_launch=require_launch).values())
+
+
+def _receipt_items(
+    evidence: Any, *, require_launch: bool = True
+) -> dict[tuple[int | None, str], dict[str, Any]]:
     if not isinstance(evidence, dict):
-        return []
+        return {}
     automatic = evidence.get("automatic_delivery")
     if not isinstance(automatic, dict):
-        return []
+        return {}
     archive = automatic.get("attempts")
     occurrences = [*(archive if isinstance(archive, list) else []), automatic]
     unique = {}
@@ -49,9 +57,111 @@ def invocation_receipts(evidence: Any) -> list[dict[str, Any]]:
         attempt = attempt if type(attempt) is int and attempt > 0 else None
         for phase in ("delivery", "review"):
             receipt = occurrence.get(phase)
-            if isinstance(receipt, dict) and isinstance(receipt.get("launch"), dict):
+            if isinstance(receipt, dict) and (
+                not require_launch or isinstance(receipt.get("launch"), dict)
+            ):
                 unique[attempt, phase] = receipt
-    return list(unique.values())
+    return unique
+
+
+def work_duration(
+    sources: Iterable[tuple[str, Any]],
+    *,
+    live_calls: list[dict[str, Any]],
+    observed_at: datetime,
+) -> WorkDurationOut:
+    """Union ticket-local deduplicated receipts; missing data is never zero-filled.
+
+    Live state must match the current receipt's actual identity. Persisted
+    execution/usage observations alone cannot manufacture an open endpoint.
+    Final receipts win even if an earlier registry snapshot is still present.
+    """
+    intervals: list[tuple[datetime, datetime]] = []
+    live: dict[str, ExecutionIdentityOut] = {}
+    issues: set[str] = set()
+    missing = 0
+    for ticket_key, evidence in sources:
+        automatic = evidence.get("automatic_delivery", {}) if isinstance(evidence, dict) else {}
+        if not isinstance(automatic, dict):
+            automatic = {}
+        current = [automatic.get(phase) for phase in ("delivery", "review")]
+        for (attempt, phase), receipt in _receipt_items(evidence, require_launch=False).items():
+            launch = receipt.get("launch")
+            start = _instant(launch.get("started_at")) if isinstance(launch, dict) else None
+            end = _instant(receipt.get("finished_at"))
+            reason = None
+            owned = None
+            if start is None:
+                reason = "missing_start"
+            elif "finished_at" in receipt or "exit_code" in receipt or "result" in receipt:
+                if end is None:
+                    reason = "missing_finish"
+            else:
+                execution = receipt.get("execution")
+                if isinstance(execution, dict) and any(receipt is item for item in current):
+                    owned = next(
+                        (
+                            call
+                            for call in live_calls
+                            if call.get("ticket_key") == ticket_key
+                            and call.get("attempt") == attempt
+                            and call.get("phase") == phase
+                            and isinstance(call.get("invocation_id"), str)
+                            and bool(call["invocation_id"])
+                            and all(
+                                call.get(key) == execution.get(key)
+                                for key in (
+                                    "invocation_id",
+                                    "started_at",
+                                    "ticket_key",
+                                    "agent",
+                                    "host_key",
+                                    "model",
+                                )
+                            )
+                        ),
+                        None,
+                    )
+                if owned is None:
+                    reason = "stale_live_state" if execution else "missing_finish"
+                else:
+                    actual_start = _instant(owned.get("started_at"))
+                    if actual_start is None or actual_start < start:
+                        reason = "invalid_order"
+                    elif actual_start > observed_at:
+                        reason = "future_endpoint"
+                    end = _instant(owned.get("finished_at")) or observed_at
+            if reason is None and start is not None and end is not None:
+                if end < start:
+                    reason = "invalid_order"
+                elif end > observed_at:
+                    reason = "future_endpoint"
+                else:
+                    intervals.append((start, end))
+                    if owned is not None and owned.get("finished_at") is None:
+                        live[owned["invocation_id"]] = ExecutionIdentityOut.model_validate(owned)
+            if reason:
+                missing += 1
+                issues.add(reason)
+    total = 0.0
+    endpoint = None
+    for start, end in sorted(intervals):
+        total += max(0, (end - max(start, endpoint or start)).total_seconds())
+        endpoint = max(endpoint or end, end)
+    if not intervals and not missing:
+        issues.add("no_recorded_invocations")
+    return WorkDurationOut(
+        total_seconds=total if intervals else None,
+        observed_at=(
+            observed_at.isoformat() if live else endpoint.isoformat() if endpoint else None
+        ),
+        endpoint_at=endpoint.isoformat() if endpoint else None,
+        coverage=("partial" if missing else "complete") if intervals else "unavailable",
+        recorded_intervals=len(intervals),
+        unavailable_intervals=missing,
+        issues=sorted(issues),
+        live=list(live.values()),
+    )
 
 
 def provisional_receipt(
@@ -139,7 +249,7 @@ def _instant(value: Any) -> datetime | None:
     try:
         stamp = datetime.fromisoformat(value)
         return stamp.astimezone(UTC) if stamp.utcoffset() is not None else None
-    except ValueError:
+    except (ValueError, OverflowError):
         return None
 
 
@@ -309,6 +419,8 @@ def query_task_agent_stats(
     tracker_id: int,
     task_ids: set[int],
     provisional: ProvisionalUsage | None = None,
+    work_durations: dict[int, WorkDurationOut] | None = None,
+    task_keys: dict[int, str] | None = None,
 ) -> dict[int, AgentStatsMetricsOut]:
     """Batch whole-task totals, independent of visible tickets or graph filters."""
     if not task_ids:
@@ -316,6 +428,8 @@ def query_task_agent_stats(
     if provisional is None:
         provisional = provisional_usage()
     receipts_by_task: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    duration_sources: dict[int, list[tuple[str, Any]]] = defaultdict(list)
+    projects: dict[int, int] = {}
     statement = select(
         col(TrackerTicket.task_id),
         col(TrackerTicket.project_id),
@@ -325,12 +439,31 @@ def query_task_agent_stats(
         col(TrackerTicket.tracker_id) == tracker_id,
         col(TrackerTicket.task_id).in_(task_ids),
     )
-    for task_id, project_id, ticket_key, evidence in session.execute(statement):
+    rows = session.execute(statement).all()
+    for task_id, project_id, ticket_key, evidence in rows:
+        duration_sources[task_id].append((ticket_key, evidence))
+        projects[task_id] = project_id
         # Deduplication is ticket-local; never add parent/group subtotals.
         receipts_by_task[task_id].extend(
             {**receipt, "ticket_key": ticket_key}
             for receipt in provisional_receipt(project_id, ticket_key, evidence, provisional)
         )
+    if work_durations is not None:
+        # Share the fresh scalar receipt read with usage, but never its
+        # token eligibility filter or provisional usage substitutions.
+        timings = host_service.invocation_timings()
+        observed_at = datetime.now(UTC)
+        for task_id in task_ids:
+            work_durations[task_id] = work_duration(
+                duration_sources[task_id],
+                live_calls=[
+                    call
+                    for call in timings
+                    if call.get("project_id") == projects.get(task_id)
+                    and call.get("task_key") == (task_keys or {}).get(task_id)
+                ],
+                observed_at=observed_at,
+            )
     return {
         task_id: summarize_receipts(receipts_by_task[task_id], include_history=True)
         for task_id in task_ids
@@ -342,28 +475,47 @@ def query_ticket_agent_stats(
     *,
     ticket_ids: set[int],
     provisional: ProvisionalUsage | None = None,
+    work_durations: dict[int, WorkDurationOut] | None = None,
 ) -> dict[int, AgentStatsMetricsOut]:
     """Fresh scalar evidence avoids stale ORM rows loaded before native exit."""
     if not ticket_ids:
         return {}
     if provisional is None:
         provisional = provisional_usage()
-    statement = select(
-        col(TrackerTicket.id),
-        col(TrackerTicket.project_id),
-        col(TrackerTicket.key),
-        col(TrackerTicket.completion_evidence_json),
-    ).where(col(TrackerTicket.id).in_(ticket_ids))
-    return {
-        ticket_id: summarize_receipts(
+    statement = (
+        select(
+            col(TrackerTicket.id),
+            col(TrackerTicket.project_id),
+            col(TrackerTicket.key),
+            col(TrackerTicket.completion_evidence_json),
+            col(TrackerTask.key),
+        )
+        .join(TrackerTask, col(TrackerTask.id) == col(TrackerTicket.task_id))
+        .where(col(TrackerTicket.id).in_(ticket_ids))
+    )
+    rows = session.execute(statement).all()
+    timings = host_service.invocation_timings() if work_durations is not None else []
+    observed_at = datetime.now(UTC)
+    metrics = {}
+    for ticket_id, project_id, key, evidence, task_key in rows:
+        metrics[ticket_id] = summarize_receipts(
             [
                 {**receipt, "ticket_key": key}
                 for receipt in provisional_receipt(project_id, key, evidence, provisional)
             ],
             include_history=True,
         )
-        for ticket_id, project_id, key, evidence in session.execute(statement)
-    }
+        if work_durations is not None:
+            work_durations[ticket_id] = work_duration(
+                [(key, evidence)],
+                live_calls=[
+                    call
+                    for call in timings
+                    if call.get("project_id") == project_id and call.get("task_key") == task_key
+                ],
+                observed_at=observed_at,
+            )
+    return metrics
 
 
 def _text(value: Any) -> str | None:
@@ -403,6 +555,7 @@ def usage_refresh(
         else []
     )
     task_stats = {}
+    task_durations: dict[int, WorkDurationOut] = {}
     for tracker_id in {task.tracker_id for task in tasks}:
         task_stats.update(
             query_task_agent_stats(
@@ -414,6 +567,8 @@ def usage_refresh(
                     if task.id is not None and task.tracker_id == tracker_id
                 },
                 provisional=provisional,
+                work_durations=task_durations,
+                task_keys={task.id: task.key for task in tasks if task.id is not None},
             )
         )
     task_by_id = {task.id: task for task in tasks}
@@ -435,16 +590,19 @@ def usage_refresh(
         if calls is None or ticket_keys
         else []
     )
+    ticket_durations: dict[int, WorkDurationOut] = {}
     ticket_stats = query_ticket_agent_stats(
         session,
         ticket_ids={ticket.id for ticket in tickets if ticket.id is not None},
         provisional=provisional,
+        work_durations=ticket_durations,
     )
     return {
         "tasks": [
             {
                 "key": task.key,
                 "agent_stats": task_stats[task.id].model_dump(mode="json"),
+                "work_duration": task_durations[task.id].model_dump(mode="json"),
                 "active_execution": active_execution(project_id, task.key),
             }
             for task in tasks
@@ -453,6 +611,7 @@ def usage_refresh(
             {
                 "key": ticket.key,
                 "agent_stats": ticket_stats[ticket.id].model_dump(mode="json"),
+                "work_duration": ticket_durations[ticket.id].model_dump(mode="json"),
                 "active_execution": active_execution(
                     project_id, task_by_id[ticket.task_id].key, ticket.key
                 ),

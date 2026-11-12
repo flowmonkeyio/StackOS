@@ -236,7 +236,8 @@ plans (`limit` 1–200, descending request ID cursor `after_id`, optional
 `schedule_name` snapshots; `source_kind` is `schedule`. Rows retain these
 snapshots after configuration rename/removal. The projection returns actual
 request/plan/run IDs, workflow title/key, nullable canonical task key, task
-status, timestamps/derived duration, `agent_stats` and `active_execution` from
+status, lifecycle timestamps, canonical recorded `work_duration` (also exposed
+as nullable `duration_seconds`), `agent_stats` and `active_execution` from
 the tracker. A draft plan has no run ID until started; an unmaterialized or
 skipped tick has no row. There is no schedule occurrence/status/usage ledger.
 Run and claim tokens and arbitrary request metadata are never projected.

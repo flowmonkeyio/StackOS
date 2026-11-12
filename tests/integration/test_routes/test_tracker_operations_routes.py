@@ -21,6 +21,34 @@ def _operation_data(response):
     return body.get("data", body)
 
 
+@pytest.mark.parametrize("mode", ["raw", "compact"])
+def test_work_duration_survives_real_tracker_adapters(api, project_id, mode):
+    from tests.integration.test_repositories.test_work_duration import receipt, store
+
+    with Session(api.app.state.engine) as session:
+        store(session, project_id, "timed", {"attempt": 1, "delivery": receipt(0, 10)})
+        store(session, project_id, "unknown-time", {"attempt": 1, "delivery": receipt(20, None)})
+    for operation, scope in (
+        ("tracker.get", {"task_index_only": True, "include_graph": False}),
+        ("tracker.get", {"include_graph": False}),
+        ("tracker.brief", {"ticket_key": "unknown-time"}),
+    ):
+        response = api.post(
+            f"/api/v1/operations/{operation}/call",
+            json={"arguments": {"project_id": project_id, "response_mode": mode, **scope}},
+        )
+        assert response.status_code == 200, response.text
+        data = _operation_data(response)
+        task = data["task"] if operation == "tracker.brief" else data["tasks"][0]
+        assert task["work_duration"]["total_seconds"] == 10
+        assert task["work_duration"]["coverage"] == "partial"
+        if operation == "tracker.brief":
+            duration = data["ticket"]["work_duration"]
+            assert duration["total_seconds"] is None
+            assert duration["coverage"] == "unavailable"
+            assert duration["issues"] == ["missing_finish"]
+
+
 @pytest.mark.parametrize("mode", ["raw", "compact", "ack"])
 def test_delivery_scope_owner_and_foreign_parent_rest(api, project_id, mode):
     from stackos.repositories.tracker import TrackerRepository

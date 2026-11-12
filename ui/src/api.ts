@@ -7090,6 +7090,8 @@ export interface components {
             task_key: string | null;
             /** Template Key */
             template_key: string | null;
+            /** @default null */
+            work_duration: components["schemas"]["WorkDurationOut"] | null;
             /** Workflow Title */
             workflow_title: string | null;
         };
@@ -8068,6 +8070,8 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /** @default null */
+            work_duration: components["schemas"]["WorkDurationOut"] | null;
         };
         /** TrackerTaskResultsInput */
         TrackerTaskResultsInput: {
@@ -8275,6 +8279,8 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /** @default null */
+            work_duration: components["schemas"]["WorkDurationOut"] | null;
         };
         /**
          * TrackerUpdateTaskContentInput
@@ -8407,6 +8413,47 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /**
+         * WorkDurationOut
+         * @description Union of recorded invocation wall intervals, never lifecycle elapsed time.
+         */
+        WorkDurationOut: {
+            /**
+             * Coverage
+             * @default unavailable
+             * @enum {string}
+             */
+            coverage: WorkDurationOutCoverage;
+            /**
+             * Endpoint At
+             * @default null
+             */
+            endpoint_at: string | null;
+            /** Issues */
+            issues?: string[];
+            /** Live */
+            live?: components["schemas"]["ExecutionIdentityOut"][];
+            /**
+             * Observed At
+             * @default null
+             */
+            observed_at: string | null;
+            /**
+             * Recorded Intervals
+             * @default 0
+             */
+            recorded_intervals: number;
+            /**
+             * Total Seconds
+             * @default null
+             */
+            total_seconds: number | null;
+            /**
+             * Unavailable Intervals
+             * @default 0
+             */
+            unavailable_intervals: number;
         };
         /**
          * WorkflowAgentRequirementSpec
@@ -9582,6 +9629,7 @@ export type SchemaTrackerUpdateTaskPriorityInput = components['schemas']['Tracke
 export type SchemaUiTokenResponse = components['schemas']['UiTokenResponse'];
 export type SchemaUsageSampleOut = components['schemas']['UsageSampleOut'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
+export type SchemaWorkDurationOut = components['schemas']['WorkDurationOut'];
 export type SchemaWorkflowAgentRequirementSpec = components['schemas']['WorkflowAgentRequirementSpec'];
 export type SchemaWorkflowExperienceSpec = components['schemas']['WorkflowExperienceSpec'];
 export type SchemaWorkflowHandoffSpec = components['schemas']['WorkflowHandoffSpec'];
@@ -13350,6 +13398,11 @@ export enum TrackerUpdateTaskPriorityInputResponse_mode {
     raw = "raw",
     standard = "standard",
     verbose = "verbose"
+}
+export enum WorkDurationOutCoverage {
+    complete = "complete",
+    partial = "partial",
+    unavailable = "unavailable"
 }
 export enum WorkflowAgentRequirementSpecRequirement {
     required = "required",
