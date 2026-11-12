@@ -111,6 +111,16 @@ locks, managed-file writer locks and SQLite admission transactions coordinate
 with a project-local `cleanup_json` state. Fresh admission rechecks that state;
 an old Session object or inactive project flag does not authorize a new writer.
 Future project schedules are disabled and reconciled when cleanup is admitted.
+The global native launch lock covers only the quiescence check and committed
+fence. Custody recovery, schedule reconciliation, file removal and final purge
+retain the existing project writer locks without holding the global lock.
+A project-specific lock uses the existing flock writer boundary in private
+runtime state, outside the managed roots being removed. Final purge reserves
+the project row, rechecks the fence and blockers, then retires that lock in the
+same writer transaction as deletion. Concurrent retries cannot replace the lock
+while purge is using it; no deleted-project lock file remains after success.
+Admission writers reserve the project row through their write, so a check made
+before fencing cannot authorize a late write.
 
 The project row and source records remain while managed files are removed.
 Pending/incomplete projects remain discoverable through the full catalog and

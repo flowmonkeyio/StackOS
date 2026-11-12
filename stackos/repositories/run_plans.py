@@ -1105,7 +1105,7 @@ class RunPlanRepository:
     def _require_project(self, project_id: int) -> None:
         from stackos.repositories.projects import ProjectRepository
 
-        ProjectRepository(self._s).require_available(project_id)
+        ProjectRepository(self._s).require_available(project_id, reserve=True)
 
     @staticmethod
     def _require_plan_project(plan: RunPlan, project_id: int | None) -> None:

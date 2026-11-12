@@ -300,7 +300,7 @@ class ResourceRepository:
         provenance_json: dict[str, Any] | None = None,
     ) -> Envelope[ResourceRecordOut]:
         self._sync_catalog()
-        self._require_project(project_id)
+        self._require_project(project_id, reserve=True)
         resource, plugin = self._get_resource_pair(key=resource_key, plugin_slug=plugin_slug)
         row = self._find_record(
             project_id=project_id,
@@ -484,10 +484,10 @@ class ResourceRepository:
             updated_at=row.updated_at,
         )
 
-    def _require_project(self, project_id: int) -> None:
+    def _require_project(self, project_id: int, *, reserve: bool = False) -> None:
         from stackos.repositories.projects import ProjectRepository
 
-        ProjectRepository(self._s).require_available(project_id)
+        ProjectRepository(self._s).require_available(project_id, reserve=reserve)
 
     def _sync_catalog(self) -> None:
         from stackos.repositories.plugins import PluginRepository
@@ -748,7 +748,7 @@ class ArtifactRepository:
             raise ValidationError("uri is required")
         status = self._validate_status(status)
         if project_id is not None:
-            self._require_project(project_id)
+            self._require_project(project_id, reserve=True)
         plugin = self._plugin_row(plugin_slug) if plugin_slug is not None else None
         record = self._s.get(ResourceRecord, resource_record_id) if resource_record_id else None
         if resource_record_id is not None and record is None:
@@ -756,6 +756,7 @@ class ArtifactRepository:
         if record is not None:
             if project_id is None:
                 project_id = record.project_id
+                self._require_project(project_id, reserve=True)
             elif record.project_id != project_id:
                 raise ConflictError(
                     "artifact project does not match resource record project",
@@ -1095,10 +1096,10 @@ class ArtifactRepository:
             raise NotFoundError(f"plugin {plugin_slug!r} not found")
         return row
 
-    def _require_project(self, project_id: int) -> None:
+    def _require_project(self, project_id: int, *, reserve: bool = False) -> None:
         from stackos.repositories.projects import ProjectRepository
 
-        ProjectRepository(self._s).require_available(project_id)
+        ProjectRepository(self._s).require_available(project_id, reserve=reserve)
 
     def _sync_catalog(self) -> None:
         from stackos.repositories.plugins import PluginRepository

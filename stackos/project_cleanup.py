@@ -49,7 +49,7 @@ from stackos.db.models import (
 )
 from stackos.host_mcp.agent_execution import managed_launch_lock
 from stackos.host_mcp.service import usage_executions
-from stackos.repositories.base import ValidationError
+from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.projects import ScheduledJobRepository
 
 
@@ -105,8 +105,10 @@ class ProjectCleanupService:
         states = await self.browser.discover_sessions(
             project_id=project_id, data_dir=self.settings.data_dir
         )
-        with managed_launch_lock, ExitStack() as locks:
-            # Serialize with admissions that reserve the existing project row.
+        with ExitStack() as locks:
+            # Reserve before opening the project lock: final purge can retire that
+            # lock under the same SQLite writer boundary without a retry opening
+            # a replacement inode while the old cleanup is still using it.
             self.session.exec(
                 update(Project).where(col(Project.id) == project_id).values(id=Project.id)
             )
@@ -114,46 +116,72 @@ class ProjectCleanupService:
             if row is None:
                 self.session.rollback()
                 return ProjectCleanupResult(project_id=project_id, status="missing")
-            blockers = self._blockers(project_id)
-            if any(state.owned for state in states.values()) or self.browser.project_busy(
-                project_id=project_id, data_dir=self.settings.data_dir
-            ):
-                blockers.append("browser_session")
+            if row.slug != confirmation["project_slug"]:
+                self.session.rollback()
+                raise ValidationError(
+                    "deletion confirmation does not match the immutable project slug"
+                )
+            cleanup_lock = self._cleanup_lock_path(project_id)
+            _check_ancestors(cleanup_lock, self.settings.state_dir)
+            cleanup_lock.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            blockers = []
             try:
+                locks.enter_context(_writer_lock(cleanup_lock, create=True))
+                # No DB writer transaction or global launch lock spans recursive
+                # discovery. This lock also serializes cleanup after managed
+                # writer lock files have themselves been removed.
+                self.session.rollback()
                 for path in self._writer_locks(project_id):
                     locks.enter_context(_writer_lock(path))
             except BlockingIOError:
-                blockers.append("managed_storage_writer")
-            if blockers:
                 self.session.rollback()
-                return ProjectCleanupResult(
-                    project_id=project_id,
-                    status="blocked",
-                    blockers=sorted(set(blockers)),
-                    operation_id=(row.cleanup_json or {}).get("operation_id"),
+                blockers.append("managed_storage_writer")
+            with managed_launch_lock:
+                # Recheck quiescence and identity after discovery, then commit
+                # the canonical fence before allowing unrelated native launches.
+                self.session.exec(
+                    update(Project).where(col(Project.id) == project_id).values(id=Project.id)
                 )
-            operation_id = (row.cleanup_json or {}).get("operation_id") or uuid4().hex
-            # Persist recovered custody with the admission marker, before any
-            # response files that supply its evidence can be removed.
-            ActionRepository(self.session).recover_generated_file_custody(
-                project_id=project_id, asset_root=self.settings.generated_assets_dir
-            )
-            row.cleanup_json = {"operation_id": operation_id, "status": "pending"}
-            row.is_active = False
-            jobs = self.session.exec(
-                select(ScheduledJob).where(ScheduledJob.project_id == project_id)
-            ).all()
-            for job in jobs:
-                job.enabled = False
-                job.next_run_at = None
-                self.session.add(job)
-            self.session.add(row)
-            self.session.commit()
+                row = self._project(project_id)
+                if row is None:
+                    self.session.rollback()
+                    return ProjectCleanupResult(project_id=project_id, status="missing")
+                blockers.extend(self._blockers(project_id))
+                if any(state.owned for state in states.values()) or self.browser.project_busy(
+                    project_id=project_id, data_dir=self.settings.data_dir
+                ):
+                    blockers.append("browser_session")
+                if blockers:
+                    self.session.rollback()
+                    return ProjectCleanupResult(
+                        project_id=project_id,
+                        status="blocked",
+                        blockers=sorted(set(blockers)),
+                        operation_id=(row.cleanup_json or {}).get("operation_id"),
+                    )
+                operation_id = (row.cleanup_json or {}).get("operation_id") or uuid4().hex
+                row.cleanup_json = {"operation_id": operation_id, "status": "pending"}
+                row.is_active = False
+                jobs = self.session.exec(
+                    select(ScheduledJob).where(ScheduledJob.project_id == project_id)
+                ).all()
+                for job in jobs:
+                    job.enabled = False
+                    job.next_run_at = None
+                    self.session.add(job)
+                self.session.add(row)
+                self.session.commit()
             try:
+                # Recovery can read/hash response files. Persist custody before
+                # deleting those sources, outside the global launch boundary.
+                ActionRepository(self.session).recover_generated_file_custody(
+                    project_id=project_id, asset_root=self.settings.generated_assets_dir
+                )
+                self.session.commit()
                 for job in jobs:
                     ScheduledJobRepository(self.session)._reconcile(project_id, job.id)
                 self._clean_files(project_id)
-                self._purge(project_id)
+                self._purge(project_id, operation_id=operation_id)
             except Exception as exc:
                 self.session.rollback()
                 retained = self._project(project_id)
@@ -295,6 +323,11 @@ class ProjectCleanupService:
         if root.is_symlink():
             return []
         return sorted(root.rglob(".writer.lock")) if root.exists() else []
+
+    def _cleanup_lock_path(self, project_id: int) -> Path:
+        # Reuse the existing flock writer boundary outside the roots it removes.
+        # IDs are permanent; final purge retires this file under the DB reserve.
+        return self.settings.state_dir / "project-cleanup" / f"{project_id}.writer.lock"
 
     def _asset_path(self, uri: str) -> Path | None:
         prefix = "/generated-assets/"
@@ -512,11 +545,27 @@ class ProjectCleanupService:
             _check_ancestors(path, self.settings.data_dir)
             _remove_owned(path, protected, self.settings.data_dir)
 
-    def _purge(self, project_id: int) -> None:
+    def _purge(self, project_id: int, *, operation_id: str) -> None:
         # Pins RESTRICT artifact deletion. Retire owned jobs/pins before the
         # project cascade; SET NULL and non-FK project history needs explicit purge.
         s = self.session
+        s.exec(update(Project).where(col(Project.id) == project_id).values(id=Project.id))
+        row = self._project(project_id)
+        if (
+            row is None
+            or row.is_active
+            or row.cleanup_json != {"operation_id": operation_id, "status": "pending"}
+        ):
+            raise ConflictError("project cleanup fence changed before final purge")
+        blockers = self._blockers(project_id)
+        if self.browser.project_busy(project_id=project_id, data_dir=self.settings.data_dir):
+            blockers.append("browser_session")
+        if blockers:
+            raise ConflictError(
+                "project became busy before final purge", data={"blockers": blockers}
+            )
         self._handoff_shared_files(project_id)
+        _remove_owned(self._cleanup_lock_path(project_id), set(), self.settings.state_dir)
         s.exec(delete(DurableActionJob).where(col(DurableActionJob.project_id) == project_id))
         for model, column in (
             (AgentSession, AgentSession.project_id),
@@ -642,8 +691,10 @@ def _owned_leaves(path: Path, root: Path) -> list[tuple[Path, os.stat_result]]:
 
 
 @contextmanager
-def _writer_lock(path: Path):
-    fd = os.open(path, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK)
+def _writer_lock(path: Path, *, create: bool = False):
+    fd = os.open(
+        path, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK | (os.O_CREAT if create else 0), 0o600
+    )
     try:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:

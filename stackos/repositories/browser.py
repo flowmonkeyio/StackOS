@@ -89,10 +89,10 @@ class BrowserRepository:
     def __init__(self, session: Session) -> None:
         self._s = session
 
-    def require_project(self, project_id: int) -> None:
+    def require_project(self, project_id: int, *, reserve: bool = False) -> None:
         from stackos.repositories.projects import ProjectRepository
 
-        ProjectRepository(self._s).require_available(project_id)
+        ProjectRepository(self._s).require_available(project_id, reserve=reserve)
 
     def profile_ref(self, *, project_id: int, profile_key: str) -> str:
         return f"browser-profile:project-{project_id}:{profile_key}"
@@ -116,7 +116,7 @@ class BrowserRepository:
         name: str,
         metadata_json: dict[str, Any] | None,
     ) -> Envelope[BrowserProfileOut]:
-        self.require_project(project_id)
+        self.require_project(project_id, reserve=True)
         ref = self.profile_ref(project_id=project_id, profile_key=profile_key)
         row = self._s.exec(
             select(BrowserProfile).where(
@@ -181,6 +181,7 @@ class BrowserRepository:
         session_ref: str,
         metadata_json: dict[str, Any] | None,
     ) -> Envelope[BrowserSessionOut]:
+        self.require_project(project_id, reserve=True)
         row = self._s.exec(
             select(BrowserSession).where(
                 col(BrowserSession.project_id) == project_id,

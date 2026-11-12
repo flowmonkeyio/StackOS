@@ -127,7 +127,7 @@ class AgentRequestRepository:
         priority: int = 0,
         metadata_json: dict[str, Any] | None = None,
     ) -> Envelope[AgentRequestOut]:
-        self._require_project(project_id)
+        self._require_project(project_id, reserve=True)
         self._validate_source_record(project_id, source_resource_record_id)
         if not request_key.strip():
             raise ValidationError("request_key is required")
@@ -138,6 +138,8 @@ class AgentRequestRepository:
             )
         ).first()
         if existing is not None:
+            # Idempotent admission also releases the project-row reservation.
+            self._s.commit()
             return Envelope(data=self._out(existing), project_id=project_id)
 
         now = _utcnow()
@@ -254,6 +256,9 @@ class AgentRequestRepository:
                 "lease_seconds must be between 1 and 86400",
                 data={"lease_seconds": lease_seconds},
             )
+        from stackos.repositories.projects import ProjectRepository
+
+        ProjectRepository(self._s).require_available(project_id, reserve=True)
         row = self._fetch(project_id=project_id, request_id=request_id)
         now = _utcnow()
         if row.status == AgentRequestStatus.CLAIMED:
@@ -603,10 +608,10 @@ class AgentRequestRepository:
             updated_at=row.updated_at,
         )
 
-    def _require_project(self, project_id: int) -> None:
+    def _require_project(self, project_id: int, *, reserve: bool = False) -> None:
         from stackos.repositories.projects import ProjectRepository
 
-        ProjectRepository(self._s).require_available(project_id)
+        ProjectRepository(self._s).require_available(project_id, reserve=reserve)
 
     def _validate_source_record(
         self,

@@ -323,7 +323,7 @@ async def test_partial_failure_retains_sources_fences_writes_and_retries_after_r
     method = "_clean_files" if phase == "files" else "_purge"
     original = getattr(service, method)
 
-    def fail(pid):
+    def fail(pid, **kwargs):
         if phase == "files":
             sentinel.unlink()  # Partial file removal is never represented as rollback.
         else:
