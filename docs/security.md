@@ -302,6 +302,11 @@ request envelopes retain the symbolic marker.
 For every value StackOS resolves, the shared action boundary removes exact
 occurrences from connector results, structured errors, metadata, response
 files, and controlled exception text before persistence or return. Connector
+outputs may retain an exact opaque provider-object reference after the repository
+verifies its project, provider, and account ownership. This only protects a
+coincidental substring match: whole-value secrets, keys, unregistered lookalikes,
+foreign references, and references embedded in text remain subject to redaction.
+Connector
 request representations omit payloads entirely. This defense does not claim to
 control telemetry in an external agent host or a provider that transforms or
 partially echoes a value; connectors must still avoid logging input and

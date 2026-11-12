@@ -45,6 +45,33 @@ def test_public_revision_exception_never_bypasses_known_secret_values():
     assert redact_secrets({"SyncToken": "unknown-value"}) == {"SyncToken": "[redacted]"}
 
 
+def test_verified_reference_preservation_is_exact_and_never_preserves_keys_or_secrets():
+    ref = "provider-object:registered-US-reference"
+    source = {
+        ref: "US",
+        "nested": [ref, {"lookalike": "provider-object:unregistered-US-reference"}],
+        "tuple": (ref,),
+        "text": f"ref {ref}",
+    }
+    safe = redact_secret_values(source, ("US",), preserve_value=lambda value: value == ref)
+    assert safe == {
+        "provider-object:registered-[redacted]-reference": "[redacted]",
+        "nested": [ref, {"lookalike": "provider-object:unregistered-[redacted]-reference"}],
+        "tuple": (ref,),
+        "text": "ref provider-object:registered-[redacted]-reference",
+    }
+    assert redact_secret_values(ref, (ref,), preserve_value=lambda _: True) == "[redacted]"
+
+
+def test_reference_verification_is_not_called_for_values_without_a_secret_collision():
+    def unexpected_verification(_value: str) -> bool:
+        raise AssertionError("an unchanged output does not need an ownership lookup")
+
+    assert redact_secret_values(
+        {"value": "provider-object:unchanged"}, ("US",), preserve_value=unexpected_verification
+    ) == {"value": "provider-object:unchanged"}
+
+
 def test_text_bearer_and_private_key_redaction_is_unchanged():
     assert "credential-value" not in redact_secret_text("authorization: Bearer credential-value")
     assert "credential-value" not in redact_secret_text("Bearer credential-value")

@@ -31,6 +31,7 @@ from stackos.config import Settings
 from stackos.db.models import ActionCall, ActionCallStatus
 from stackos.repositories.base import ConflictError, Envelope, ValidationError
 from stackos.repositories.projects import IntegrationBudgetRepository
+from stackos.repositories.provider_refs import ProviderObjectReferenceRepository
 from stackos.repositories.secrets import PayloadSecretRepository
 from stackos.secret_refs import (
     materialize_secret_refs,
@@ -629,6 +630,18 @@ class ActionExecutionMixin:
                 secret_ref=secret_ref,
             ),
         )
+        refs = ProviderObjectReferenceRepository(self._s, project_id=project_id)
+
+        def redact_output(value: Any) -> Any:
+            return redact_secret_values(
+                value,
+                sensitive_values,
+                preserve_value=lambda text: (
+                    credential is not None
+                    and refs.is_owned_ref(credential=credential.credential, value=text)
+                ),
+            )
+
         request = self._connector_request(
             project_id=project_id,
             manifest=manifest,
@@ -688,25 +701,21 @@ class ActionExecutionMixin:
                     ),
                 }
                 if transient
-                else _redact_for_audit(redact_secret_values(exc.output_json, sensitive_values))
+                else _redact_for_audit(redact_output(exc.output_json))
             )
             connector_metadata = (
-                _redact_for_audit(redact_secret_values(exc.metadata_json, sensitive_values))
+                _redact_for_audit(redact_output(exc.metadata_json))
                 if exc.metadata_json and not transient
                 else {}
             )
             failed_metadata = {
-                **(
-                    _redact_for_audit(redact_secret_values(metadata_json, sensitive_values))
-                    if metadata_json
-                    else {}
-                ),
+                **(_redact_for_audit(redact_output(metadata_json)) if metadata_json else {}),
                 **connector_metadata,
             } or None
             safe_error = (
                 "transient provider read failed"
                 if transient
-                else redact_secret_text(redact_secret_values(exc.detail, sensitive_values))
+                else redact_secret_text(redact_output(exc.detail))
             )
             row = self._record_call(
                 project_id=project_id,
@@ -748,7 +757,7 @@ class ActionExecutionMixin:
             safe_error = (
                 "transient provider read failed"
                 if transient
-                else redact_secret_text(redact_secret_values(str(exc), sensitive_values))
+                else redact_secret_text(redact_output(str(exc)))
             )
             row = self._record_call(
                 project_id=project_id,
@@ -770,9 +779,7 @@ class ActionExecutionMixin:
                 }
                 if transient
                 else None,
-                metadata_json=(
-                    redact_secret_values(metadata_json, sensitive_values) if metadata_json else None
-                ),
+                metadata_json=(redact_output(metadata_json) if metadata_json else None),
                 status=ActionCallStatus.FAILED,
                 dry_run=False,
                 cost_cents=estimated_cost_cents,
@@ -792,11 +799,9 @@ class ActionExecutionMixin:
             ) from exc
 
         duration_ms = int((time.perf_counter() - started) * 1000)
-        output_json = _redact_for_audit(redact_secret_values(result.output_json, sensitive_values))
+        output_json = _redact_for_audit(redact_output(result.output_json))
         result_metadata = (
-            _redact_for_audit(redact_secret_values(result.metadata_json, sensitive_values))
-            if result.metadata_json
-            else None
+            _redact_for_audit(redact_output(result.metadata_json)) if result.metadata_json else None
         )
         actual_cost_cents = max(0, result.cost_cents)
         if (
@@ -810,20 +815,14 @@ class ActionExecutionMixin:
                 cost_usd=(actual_cost_cents - estimated_cost_cents) / 100,
             )
         success_metadata = {
-            **(
-                _redact_for_audit(redact_secret_values(metadata_json, sensitive_values))
-                if metadata_json
-                else {}
-            ),
+            **(_redact_for_audit(redact_output(metadata_json)) if metadata_json else {}),
             **(result_metadata or {}),
         } or None
         if effective_output_policy["mode"] == "transient":
             output_bytes = len(_json_bytes(output_json))
             receipt = _transient_output_receipt(output_json, output_bytes=output_bytes)
             transient_metadata = (
-                _redact_for_audit(redact_secret_values(metadata_json, sensitive_values))
-                if metadata_json
-                else None
+                _redact_for_audit(redact_output(metadata_json)) if metadata_json else None
             )
             within_limit = output_bytes <= effective_output_policy["max_inline_bytes"]
             if not within_limit:
@@ -915,7 +914,7 @@ class ActionExecutionMixin:
                 )
         except Exception as exc:
             self._s.rollback()
-            safe_error = redact_secret_text(redact_secret_values(str(exc), sensitive_values))
+            safe_error = redact_secret_text(redact_output(str(exc)))
             # Dispatch already succeeded. Keep this distinction in the durable audit,
             # not only the immediate error, so a resumed agent cannot mistake a local
             # output failure for permission to repeat a provider mutation.

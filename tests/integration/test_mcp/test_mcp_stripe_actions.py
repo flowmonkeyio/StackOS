@@ -754,18 +754,25 @@ def test_stripe_update_direct_uses_secret_refs_and_independent_readback(
     seeded_project: dict,
     httpx_mock: HTTPXMock,
     object_type: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project_id = seeded_project["data"]["id"]
     credential_ref = _seed_stripe_credential(mcp_client, project_id)
     provider_id = "cus_mcp_fixture" if object_type == "customer" else "in_mcp_fixture"
     ref_field = "customer_ref" if object_type == "customer" else "invoice_ref"
-    object_ref = _seed_stripe_object_ref(
-        mcp_client,
-        project_id=project_id,
-        credential_ref=credential_ref,
-        object_type=f"stripe.{object_type}",
-        provider_object_id=provider_id,
-    )
+    # A generated reference can contain a short payload secret by coincidence.
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            "stackos.repositories.provider_refs.secrets.token_urlsafe",
+            lambda _size: "qU13JgxShMa9nfz1LflHW4o4G5US_XRh",
+        )
+        object_ref = _seed_stripe_object_ref(
+            mcp_client,
+            project_id=project_id,
+            credential_ref=credential_ref,
+            object_type=f"stripe.{object_type}",
+            provider_object_id=provider_id,
+        )
 
     def secret(value: str) -> dict[str, str]:
         saved = mcp_client.call_tool_structured(

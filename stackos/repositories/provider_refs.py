@@ -211,6 +211,25 @@ class ProviderObjectReferenceRepository:
         self._s.add(row)
         self._s.flush()
 
+    def is_owned_ref(self, *, credential: Credential, value: str) -> bool:
+        """Verify an exact public output reference before preserving its identity."""
+        try:
+            normalized_ref = self._safe_ref(value)
+            project_id, account_id = self._binding(credential)
+        except (ValidationError, ConflictError, NotFoundError):
+            return False
+        return (
+            self._s.exec(
+                select(ProviderObjectReference.id).where(
+                    ProviderObjectReference.safe_ref == normalized_ref,
+                    ProviderObjectReference.project_id == project_id,
+                    ProviderObjectReference.provider_key == credential.provider_key,
+                    ProviderObjectReference.provider_account_id == account_id,
+                )
+            ).first()
+            is not None
+        )
+
     def _binding(self, credential: Credential) -> tuple[int, str]:
         if credential.id is None:
             raise ConflictError("provider object refs require a persisted Account")
