@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { computed, ref } from 'vue'
-import { TaskDeliveryStateOutStatus } from '@/api'
+import { TaskDeliveryStateOutStatus, WorkDurationOutCoverage } from '@/api'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { usageFeedKey } from '@/composables/useUsageFeed'
 import type { UsageFeedState } from '@/lib/usageUpdates'
@@ -11,6 +11,38 @@ import ActiveTaskRow from './ActiveTaskRow.vue'
 afterEach(() => { document.body.innerHTML = ''; vi.useRealTimers() })
 
 describe('continuous Home task rows', () => {
+  it.each([false, true])('keeps canonical Work time and coverage through live, stopped and final observations (global=%s)', async global => {
+    vi.useFakeTimers().setSystemTime(new Date('2026-11-11T19:22:00Z'))
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
+    await router.push('/')
+    const execution = { invocation_id: 'owned', ticket_key: 'child', agent: 'sdlc_delivery', host_key: 'codex', model: 'exact-model', started_at: '2026-11-11T19:00:00Z', live_usage: null }
+    const work_duration = { coverage: WorkDurationOutCoverage.partial, total_seconds: 840, observed_at: '2026-11-11T19:21:00Z', endpoint_at: '2026-11-11T19:21:00Z', recorded_intervals: 2, unavailable_intervals: 1, live: [execution] }
+    const task = activeTaskFixture({ active_execution: execution, work_duration })
+    const feed = ref<UsageFeedState>({ status: 'live', receivedAt: Date.now() })
+    const wrapper = mount(ActiveTaskRow, { props: { task, global }, global: { plugins: [router], provide: { [usageFeedKey as symbol]: feed } } })
+    try {
+      expect(wrapper.get('[aria-label="Work time: 15m · Partial coverage"]').text()).toBe('15mPartial')
+      expect(vi.getTimerCount()).toBe(0)
+      feed.value = { status: 'reconnecting', receivedAt: Date.now() }
+      await wrapper.vm.$nextTick()
+      expect(wrapper.get('.active-execution-line__elapsed').text()).toBe('14mPartial')
+      await wrapper.setProps({ task: { ...task, active_execution: null, work_duration: { ...work_duration, total_seconds: 960, coverage: WorkDurationOutCoverage.complete, live: [] } } })
+      vi.setSystemTime(new Date('2026-11-12T19:22:00Z'))
+      feed.value = { status: 'live', receivedAt: Date.now() }
+      await wrapper.vm.$nextTick()
+      expect(wrapper.get('[aria-label="Work time: 16m"]').text()).toBe('16m')
+      await wrapper.setProps({ task: { ...task, active_execution: null, work_duration: { ...work_duration, total_seconds: 0, coverage: WorkDurationOutCoverage.complete, live: [] } } })
+      expect(wrapper.get('[aria-label="Work time: 0m"]').text()).toBe('0m')
+      await wrapper.setProps({ task: { ...task, active_execution: null, work_duration: null } })
+      expect(wrapper.get('[aria-label="Work time: N/A · Unavailable"]').text()).toBe('N/A')
+      const navigated = new Promise<void>(resolve => router.afterEach(() => resolve()))
+      await wrapper.get('a').trigger('click')
+      await navigated
+      expect(router.currentRoute.value.fullPath).toBe('/projects/1/tasks?view=graph&task=active-work')
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+  })
+
   it('discloses the full execution identity and owner on focus without navigating or showing the row tooltip', async () => {
     vi.useFakeTimers()
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })

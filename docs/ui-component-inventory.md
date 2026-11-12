@@ -172,9 +172,12 @@ exception is signed off.
 ## View decomposition pattern
 
 Both Home pages mount `views/home/ActiveTaskList.vue`, whose single
-`useActiveTasks` scope supplies the lifecycle projection and feed to
+`useActiveTasks` scope supplies the canonical task projection (including
+`work_duration`) and feed to
 `ActiveTaskRow.vue`. Continuous rows use shared lifetime usage, execution,
-priority and elapsed renderers, fixed list-wide zones and container breakpoints.
+priority and Work time renderers, fixed list-wide zones and container breakpoints.
+Work time and its visible Partial indication share one line so the existing
+execution/Live slots retain their geometry.
 Manual rows reserve the same geometry without automated usage; current/Last
 identity and Live retain the canonical feed semantics. Each row links directly
 to the selected task graph. Global rows include canonical project names;

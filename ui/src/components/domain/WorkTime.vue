@@ -26,13 +26,14 @@ defineExpose({ label })
     class="active-execution-line__elapsed"
     :aria-label="label"
     :title="label"
-  ><span>{{ elapsed }}</span><span
+  ><span class="active-execution-line__time-value">{{ elapsed }}</span><span
     v-if="partial"
     class="active-execution-line__coverage"
   >Partial</span></span>
 </template>
 
 <style scoped>
-.active-execution-line__elapsed { display: grid; width: 80px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.active-execution-line__coverage { color: var(--color-fg-muted); font-size: 10px; }
+.active-execution-line__elapsed { display: flex; justify-content: flex-end; align-items: baseline; gap: 4px; width: 80px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.active-execution-line__time-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.active-execution-line__coverage { flex: none; color: var(--color-fg-muted); font-size: 10px; }
 </style>

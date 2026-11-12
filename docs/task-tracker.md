@@ -1585,7 +1585,10 @@ Both accept `limit` (1–200, default 100) and `after_id` (the returned
 `(project_id, key)`, never the task key or project display name alone. Pages
 include `scope`, `project_id`, `as_of`, project metadata and whitelisted task
 facts from the existing task-index projection: ticket rollup, whole-task usage,
-actual active/Last execution and persisted elapsed source dates. A minimal
+actual active/Last execution, canonical `work_duration` and lifecycle dates.
+Home uses the same measured interval union and complete/partial/unavailable
+coverage as Board, Graph and details; lifecycle dates never substitute for
+missing recorded work. A minimal
 `delivery` object retains validated handoff status, ticket key and recorded stop
 reason without returning frozen instructions, native paths or raw receipts.
 Selected agents alone do not establish automation. Missing usage retains its

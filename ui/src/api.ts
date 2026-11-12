@@ -2375,6 +2375,8 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /** @default null */
+            work_duration: components["schemas"]["WorkDurationOut"] | null;
         };
         /** ActiveTaskProjectOut */
         ActiveTaskProjectOut: {

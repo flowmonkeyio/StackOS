@@ -10,7 +10,7 @@ export function activeTaskFixture(overrides: Partial<SchemaActiveTaskOut> = {}):
     created_at: '2026-11-01T00:00:00Z', updated_at: '2026-11-01T00:00:00Z',
     started_at: '2026-11-01T00:00:00Z', completed_at: null,
     delivery: { status: TaskDeliveryStateOutStatus.queued, ticketKey: 'child', reason: null },
-    active_execution: null, agent_stats: agentStatsFixture().totals,
+    active_execution: null, agent_stats: agentStatsFixture().totals, work_duration: null,
     ticket_summary: { total_count: 7, terminal_count: 2, blocked_count: 0, in_progress_count: 1, search_text: '', status_counts: { complete: 2 } },
     ...overrides,
   }

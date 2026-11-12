@@ -59,6 +59,9 @@ def seed_active_tasks(session, project_id):
         session.add(task)
     session.commit()
     repo.create_ticket(project_id=project_id, task_key="stopped", key="review", title="Review")
+    timed_receipt = _receipt(total=42)
+    timed_receipt["launch"]["started_at"] = "2026-01-01T00:00:00Z"
+    timed_receipt["finished_at"] = "2026-01-01T00:20:00Z"
     repo.update_ticket(
         project_id=project_id,
         ticket_key="review",
@@ -68,7 +71,7 @@ def seed_active_tasks(session, project_id):
             "completion_evidence_json": {
                 "automatic_delivery": {
                     "attempt": 1,
-                    "delivery": _receipt(total=42),
+                    "delivery": timed_receipt,
                 }
             },
         },
@@ -113,7 +116,14 @@ def test_active_membership_scope_paging_and_canonical_facts(session, project_id)
     }
     for item in scoped.items:
         source = index[item.key]
-        for field in ("agent_stats", "active_execution", "ticket_summary", "started_at", "status"):
+        for field in (
+            "agent_stats",
+            "active_execution",
+            "work_duration",
+            "ticket_summary",
+            "started_at",
+            "status",
+        ):
             assert getattr(item, field) == getattr(source, field)
         assert item.project.id == project_id
         assert item.project.name
@@ -122,10 +132,15 @@ def test_active_membership_scope_paging_and_canonical_facts(session, project_id)
     assert stopped.delivery.reason == "Required review blocked"
     assert stopped.ticket_summary.blocked_count == 1
     assert stopped.agent_stats.reported_usage.total == 42
+    assert stopped.work_duration.total_seconds == 1200
+    assert stopped.work_duration.coverage == "complete"
+    assert stopped.work_duration.live == []
     assert next(item for item in scoped.items if item.key == "selected-only").delivery is None
     manual = next(item for item in scoped.items if item.key == "manual")
     assert manual.agent_stats.coverage.usage_status == "empty"
     assert manual.active_execution is None
+    assert manual.work_duration.total_seconds is None
+    assert manual.work_duration.coverage == "unavailable"
     assert "PRIVATE" not in scoped.model_dump_json()
     assert not {"context_json", "metadata_json", "completion_evidence_json"} & set(
         stopped.model_dump()

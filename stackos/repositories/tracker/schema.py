@@ -333,6 +333,7 @@ class ActiveTaskOut(BaseModel):
     ticket_summary: TrackerTaskTicketSummaryOut | None
     agent_stats: AgentStatsMetricsOut | None
     active_execution: ActiveExecutionOut | None
+    work_duration: WorkDurationOut | None = None
 
 
 class ActiveTasksOut(BaseModel):

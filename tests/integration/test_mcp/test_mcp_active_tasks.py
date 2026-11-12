@@ -35,6 +35,13 @@ def test_active_tasks_browser_contract_and_bound_bridge_scope(mcp_client, seeded
             data = _operation_data(result.json())
             assert {item["project_id"] for item in data["items"]} == identities
             assert len(data["items"]) == 5 * len(identities)
+            own = [item for item in data["items"] if item["project_id"] == project_id]
+            stopped = next(item for item in own if item["key"] == "stopped")
+            assert stopped["work_duration"]["total_seconds"] == 1200
+            assert stopped["work_duration"]["coverage"] == "complete"
+            manual = next(item for item in own if item["key"] == "manual")
+            assert manual["work_duration"]["total_seconds"] is None
+            assert manual["work_duration"]["coverage"] == "unavailable"
             assert data.pop("as_of")
             assert data["next_cursor"] is None
             assert "PRIVATE" not in result.text

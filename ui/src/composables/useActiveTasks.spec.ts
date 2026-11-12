@@ -3,6 +3,7 @@ import { defineComponent } from 'vue'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import type { SchemaActiveTaskOut, SchemaActiveTasksOut } from '@/api'
+import { WorkDurationOutCoverage } from '@/api'
 import { callOperation } from '@/lib/operations'
 import { openTrackerStatusStream } from '@/lib/task-tracker/liveEvents'
 import { useProjectsStore, type Project } from '@/stores/projects'
@@ -19,7 +20,7 @@ function task(projectId = 1, key = 'work', delivery: 'queued' | 'stopped' | 'run
     updated_at: '2026-11-01T00:00:00Z', started_at: '2026-11-01T00:00:00Z', completed_at: null,
     project: { id: projectId, name: `Project ${projectId}`, slug: `p${projectId}`, domain: 'test', is_active: true, updated_at: '2026-11-01T00:00:00Z' },
     delivery: { status: delivery, ticketKey: 'child', reason: delivery === 'stopped' ? 'Review blocked' : null },
-    agent_stats: null, active_execution: null, ticket_summary: null,
+    agent_stats: null, active_execution: null, ticket_summary: null, work_duration: null,
   } as SchemaActiveTaskOut
 }
 function page(items: SchemaActiveTaskOut[], projectId: number | null = null, cursor: number | null = null): SchemaActiveTasksOut {
@@ -61,17 +62,21 @@ describe('shared Home active-task reads', () => {
     expect(state.feed.value.status).toBe('live')
     const started = task(1, 'work', 'running')
     started.active_execution = { invocation_id: 'actual', agent: 'reviewer', host_key: 'codex', model: 'exact', started_at: '2026-11-11T00:00:00Z', ticket_key: 'child', live_usage: null }
+    started.work_duration = { coverage: WorkDurationOutCoverage.partial, total_seconds: 840, observed_at: '2026-11-11T00:14:00Z', endpoint_at: '2026-11-11T00:14:00Z', recorded_intervals: 2, unavailable_intervals: 1, live: [started.active_execution] }
     vi.mocked(callOperation).mockResolvedValue(page([started, task(2)]))
     stream().onUsage?.()
     stream().onEvent({ event_type: 'tracker.execution.changed' } as never)
     await flushPromises()
     expect(state.items.value[0]!.active_execution?.invocation_id).toBe('actual')
+    expect(state.items.value[0]!.work_duration).toEqual(started.work_duration)
     expect(callOperation).toHaveBeenCalledTimes(3) // Companions coalesce, no per-row reads.
-    vi.mocked(callOperation).mockResolvedValue(page([task(1, 'work', 'stopped'), task(2)]))
+    const stopped = { ...task(1, 'work', 'stopped'), work_duration: { ...started.work_duration, total_seconds: 960, live: [] } }
+    vi.mocked(callOperation).mockResolvedValue(page([stopped, task(2)]))
     stream().onUsage?.()
     await flushPromises()
     expect(state.items.value[0]!.delivery?.reason).toBe('Review blocked')
     expect(state.items.value[0]!.active_execution).toBeNull()
+    expect(state.items.value[0]!.work_duration?.total_seconds).toBe(960)
     vi.mocked(callOperation).mockResolvedValue(page([task(2)]))
     stream().onEvent({ event_type: 'tracker.task.status_changed' } as never)
     await flushPromises()
