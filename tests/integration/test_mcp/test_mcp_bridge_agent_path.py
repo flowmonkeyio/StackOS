@@ -20,6 +20,7 @@ from stackos.config import Settings
 from stackos.db.connection import make_engine
 from stackos.db.models import AgentSession, Credential, Project, WorkspaceBinding
 from stackos.mcp.bridge import _AGENT_VISIBLE_TOOL_ORDER, AgentBridgeProxy
+from tests.helpers.workspaces import same_remote_worktrees
 
 from .conftest import MODERN_PROTOCOL_VERSION, MCPClient
 from .test_mcp_actions import _mock_action_plan_json
@@ -184,6 +185,161 @@ def _create_project(mcp: MCPClient, slug: str) -> int:
 def _is_bridge_scope_error(envelope: dict[str, Any]) -> bool:
     result = envelope["result"]
     return result["isError"] is True and result["structuredContent"]["code"] == -32007
+
+
+def test_real_worktree_bridges_bind_actual_roots_and_preserve_scope(
+    mcp_client: MCPClient,
+    mcp_settings: Settings,
+    tmp_path: Path,
+) -> None:
+    from stackos.cli.daemon_commands import _mcp_bridge_workspace_hints
+
+    first, second, remote = same_remote_worktrees(tmp_path)
+    owner = _create_project(mcp_client, "approved-worktree-project")
+    foreign = _create_project(mcp_client, "foreign-worktree-project")
+
+    def bridge(root: Path) -> tuple[AgentBridgeProxy, _BridgeHttpClient]:
+        base, client = _bridge(mcp_client)
+        hints = _mcp_bridge_workspace_hints(root, workspace_root=root)
+        assert hints["cwd"] == str(root.resolve())
+        proxy = AgentBridgeProxy(url=base.url, headers=base.headers, **hints)
+        _initialize(proxy, client)
+        return proxy, client
+
+    first_proxy, client = bridge(first)
+    assert first_proxy.git_remote_url == remote
+    _tool_call(first_proxy, client, "workspace.startSession", {"auto_bootstrap": False})
+    original = _structured(
+        _toolbox_call(
+            first_proxy, client, "workspace.connect", {"project_id": owner, "response_mode": "raw"}
+        )
+    )["data"]
+    engine = make_engine(mcp_settings.db_path)
+    with Session(engine) as session:
+        project = session.get(Project, owner)
+        project.primary_workspace_binding_id = original["id"]
+        session.add(project)
+        session.commit()
+
+    second_proxy, client = bridge(second)
+    assert second_proxy.git_remote_url == remote
+    assert second_proxy.repo_fingerprint != first_proxy.repo_fingerprint
+    for mode in ("raw", "compact"):
+        unresolved = _operation_data(
+            _structured(
+                _tool_call(second_proxy, client, "workspace.resolve", {"response_mode": mode})
+            )
+        )
+        assert unresolved["binding"] is None and unresolved["project_id"] is None
+        assert unresolved["needs_connect"]
+        assert unresolved["next_step"]["recommended_tool"] == "workspace.connect"
+        assert unresolved["candidate_projects"][0]["id"] == owner
+        assert unresolved["next_step"]["recommended_arguments"] == {
+            "project_id": "<operator-confirmed project id>"
+        }
+    pending = _operation_data(
+        _structured(
+            _tool_call(second_proxy, client, "workspace.startSession", {"response_mode": "raw"})
+        )
+    )
+    assert pending["needs_connect"] and pending["workspace_binding_id"] is None
+    connected = _structured(
+        _toolbox_call(
+            second_proxy, client, "workspace.connect", {"project_id": owner, "response_mode": "raw"}
+        )
+    )["data"]
+    assert connected["id"] != original["id"]
+
+    for proxy, root, binding in (
+        (first_proxy, first, original),
+        (second_proxy, second, connected),
+    ):
+        resolved = _operation_data(
+            _structured(_tool_call(proxy, client, "workspace.resolve", {"response_mode": "raw"}))
+        )
+        assert resolved["binding"]["id"] == binding["id"]
+        assert resolved["binding"]["last_known_root"] == str(root)
+        started = _operation_data(
+            _structured(
+                _tool_call(
+                    proxy,
+                    client,
+                    "workspace.startSession",
+                    {"auto_bootstrap": False, "response_mode": "raw"},
+                )
+            )
+        )
+        assert started["workspace_binding_id"] == binding["id"]
+        assert started["project_id"] == owner
+        assert proxy.scoped_project_id == owner
+        denied = _toolbox_call(proxy, client, "workspace.connect", {"project_id": foreign})
+        assert _is_bridge_scope_error(denied)
+        denied = _tool_call(proxy, client, "workspace.startSession", {"global_session": True})
+        assert _is_bridge_scope_error(denied)
+        forged = _toolbox_call(
+            proxy,
+            client,
+            "workspace.connect",
+            {"project_id": owner, "last_known_root": str(tmp_path)},
+        )
+        assert _is_bridge_scope_error(forged)
+
+    nested = first / "nested"
+    nested.mkdir()
+    nested_proxy, client = bridge(nested)
+    resolved = _operation_data(
+        _structured(_tool_call(nested_proxy, client, "workspace.resolve", {"response_mode": "raw"}))
+    )
+    assert resolved["binding"]["id"] == original["id"]
+    # An explicit root without Git uses the same path-based bridge contract.
+    no_git = tmp_path / "no-git"
+    no_git.mkdir()
+    no_git_proxy, client = bridge(no_git)
+    assert no_git_proxy.git_remote_url is None
+    _tool_call(no_git_proxy, client, "workspace.startSession", {"auto_bootstrap": False})
+    no_git_binding = _structured(
+        _toolbox_call(
+            no_git_proxy,
+            client,
+            "workspace.connect",
+            {"project_id": foreign, "response_mode": "raw"},
+        )
+    )["data"]
+    assert no_git_binding["last_known_root"] == str(no_git)
+    assert no_git_proxy.scoped_project_id == foreign
+    assert _is_bridge_scope_error(
+        _toolbox_call(no_git_proxy, client, "workspace.connect", {"project_id": owner})
+    )
+
+    # No folder and deliberately global ambient work remain unbound.
+    for hints in ({}, _mcp_bridge_workspace_hints(tmp_path / "missing")):
+        base, client = _bridge(mcp_client)
+        global_proxy = AgentBridgeProxy(url=base.url, headers=base.headers, **hints)
+        _initialize(global_proxy, client)
+        selected = _operation_data(
+            _structured(
+                _tool_call(
+                    global_proxy,
+                    client,
+                    "workspace.startSession",
+                    {"global_session": True, "project_id": owner, "response_mode": "raw"},
+                )
+            )
+        )
+        assert selected["global_session"] and selected["workspace_binding_id"] is None
+        assert global_proxy.scoped_project_id is None
+        assert _is_bridge_scope_error(_toolbox_call(global_proxy, client, "tracker.get"))
+
+    with Session(engine) as session:
+        assert len(session.exec(select(Project)).all()) == 2
+        bindings = session.exec(select(WorkspaceBinding)).all()
+        assert {b.id: (b.project_id, b.last_known_root) for b in bindings} == {
+            original["id"]: (owner, str(first)),
+            connected["id"]: (owner, str(second)),
+            no_git_binding["id"]: (foreign, str(no_git)),
+        }
+        assert session.get(Project, owner).primary_workspace_binding_id == original["id"]
+    engine.dispose()
 
 
 @pytest.mark.parametrize("host", ["chatgpt", "claude"])

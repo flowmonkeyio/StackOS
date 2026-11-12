@@ -230,6 +230,9 @@ def operation_specs() -> list[OperationSpec]:
                 "directory is bootstrapped. Pass project_id to select an existing project or "
                 "omit it for discovery. Global startup never creates a directory binding and "
                 "every later project-scoped call still needs its own explicit project_id."
+                " An unbound directory sharing an existing binding's Git remote waits for "
+                "explicit workspace.connect; the remote cannot select a directory or authorize "
+                "automatic project creation."
             ),
             when_to_use=(
                 "An agent starts work and needs the workspace-bound project_id.",
@@ -279,7 +282,9 @@ def operation_specs() -> list[OperationSpec]:
             ),
             purpose=(
                 "Use this as the read-only first check. It never creates projects or bindings; "
-                "when unbound it returns model-readable bootstrap or project-selection next steps."
+                "a usable directory resolves by its exact or most specific containing binding, "
+                "never by another root's fingerprint or shared Git remote. When unbound it "
+                "returns project candidates and explicit connect/bootstrap next steps."
             ),
             when_to_use=(
                 "An agent starts in a repository and needs to know whether StackOS already "

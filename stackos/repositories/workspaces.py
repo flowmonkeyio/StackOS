@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, or_, select
 
 from stackos.db.models import AgentSession, Project, WorkspaceBinding
 from stackos.repositories.base import Envelope, NotFoundError, ValidationError
@@ -494,7 +494,7 @@ class WorkspaceRepository:
         cwd: str | None = None,
         workspace_alias: str | None = None,
     ) -> WorkspaceResolutionOut:
-        """Resolve a workspace by fingerprint, root directory, then git remote."""
+        """Resolve directory scope; remote identity only suggests project candidates."""
         row: WorkspaceBinding | None = None
         normalized_cwd = _normalize_path(cwd)
         usable_cwd = normalized_cwd if _is_usable_workspace_root(normalized_cwd) else None
@@ -504,7 +504,7 @@ class WorkspaceRepository:
         )
         if _is_filesystem_root_fingerprint(effective_fingerprint):
             effective_fingerprint = None
-        if effective_fingerprint:
+        if effective_fingerprint and not usable_cwd:
             row = self._s.exec(
                 select(WorkspaceBinding).where(
                     WorkspaceBinding.repo_fingerprint == effective_fingerprint
@@ -524,19 +524,40 @@ class WorkspaceRepository:
             ]
             if matching:
                 row = max(matching, key=lambda candidate: len(candidate.last_known_root or ""))
-        if row is None and git_remote_url:
-            row = self._s.exec(
-                select(WorkspaceBinding)
-                .where(WorkspaceBinding.git_remote_url == git_remote_url)
-                .order_by(col(WorkspaceBinding.updated_at).desc())
-            ).first()
         if row is None:
+            hinted_projects = self._hinted_projects(effective_fingerprint, git_remote_url)
+            next_step = _connect_required_next_step(
+                repo_fingerprint=effective_fingerprint,
+                git_remote_url=git_remote_url,
+                cwd=cwd,
+                project_identity_required=(
+                    _derive_project_name(
+                        normalized_repo_name=None,
+                        git_remote_url=git_remote_url,
+                        workspace_root=normalized_cwd,
+                    )
+                    is None
+                ),
+                has_workspace_identity=any((effective_fingerprint, git_remote_url, normalized_cwd)),
+            )
+            if usable_cwd and hinted_projects:
+                next_step = {
+                    "status": "connect_required",
+                    "call_via": "toolbox.call",
+                    "recommended_tool": "workspace.connect",
+                    "why": (
+                        "This directory is unbound. Repository fingerprints and shared Git "
+                        "remotes are only project candidate hints. Confirm the project, then "
+                        "connect this actual directory; no other binding is reused or moved."
+                    ),
+                    "recommended_arguments": {"project_id": "<operator-confirmed project id>"},
+                }
             return WorkspaceResolutionOut(
                 binding=None,
                 project_id=None,
                 needs_connect=True,
                 candidate_workspaces=self._named_workspace_candidates(),
-                candidate_projects=self._project_candidates(),
+                candidate_projects=hinted_projects or self._project_candidates(),
                 repo_hints=_repo_hints(
                     repo_fingerprint=effective_fingerprint,
                     git_remote_url=git_remote_url,
@@ -546,22 +567,7 @@ class WorkspaceRepository:
                 ),
                 ui_paths=_ui_paths(None),
                 setup_state=_setup_state(binding=None, needs_connect=True),
-                next_step=_connect_required_next_step(
-                    repo_fingerprint=effective_fingerprint,
-                    git_remote_url=git_remote_url,
-                    cwd=cwd,
-                    project_identity_required=(
-                        _derive_project_name(
-                            normalized_repo_name=None,
-                            git_remote_url=git_remote_url,
-                            workspace_root=normalized_cwd,
-                        )
-                        is None
-                    ),
-                    has_workspace_identity=any(
-                        (effective_fingerprint, git_remote_url, normalized_cwd)
-                    ),
-                ),
+                next_step=next_step,
             )
 
         out = _workspace_binding_out(row)
@@ -737,6 +743,7 @@ class WorkspaceRepository:
             and normalized_cwd is not None
             and _is_usable_workspace_root(normalized_cwd)
             and has_derived_project_name
+            and not self._hinted_projects(repo_fingerprint, git_remote_url)
         ):
             bootstrap = self.bootstrap(
                 repo_fingerprint=repo_fingerprint,
@@ -806,6 +813,26 @@ class WorkspaceRepository:
     def _project_candidates(self) -> list[WorkspaceProjectCandidateOut]:
         page = ProjectRepository(self._s).list(active_only=False, limit=10)
         return [_project_candidate(project) for project in page.items]
+
+    def _hinted_projects(
+        self, repo_fingerprint: str | None, git_remote_url: str | None
+    ) -> list[WorkspaceProjectCandidateOut]:
+        hints = []
+        if repo_fingerprint:
+            hints.append(col(WorkspaceBinding.repo_fingerprint) == repo_fingerprint)
+        if git_remote_url:
+            hints.append(col(WorkspaceBinding.git_remote_url) == git_remote_url)
+        if not hints:
+            return []
+        projects = self._s.exec(
+            select(Project)
+            .join(WorkspaceBinding, col(WorkspaceBinding.project_id) == col(Project.id))
+            .where(or_(*hints))
+            .distinct()
+            .order_by(col(Project.id))
+            .limit(10)
+        ).all()
+        return [_project_candidate(ProjectOut.model_validate(project)) for project in projects]
 
     def _named_workspace_candidates(self) -> list[NamedWorkspaceCandidateOut]:
         rows = self._s.exec(

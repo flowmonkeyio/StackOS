@@ -342,6 +342,18 @@ instead of the full inventory. After that, call `toolbox.describe` with exact
 sessions, omit injected fields such as `project_id`; the bridge supplies the
 current workspace scope and refuses cross-project calls.
 
+Directory resolution uses the actual root or the most specific containing
+directory binding. A supplied repository fingerprint cannot override that
+directory, and a shared Git remote supplies project candidates only; it never
+selects another worktree's binding. When an unbound directory shares a remote
+with an existing project, startup waits for explicit selection even with
+`auto_bootstrap=true`. Start with `workspace.startSession(auto_bootstrap=false)`,
+then call `workspace.connect` with the approved existing `project_id` and
+`rebind_existing=false` through that directory's bridge. Let the bridge inject
+the actual root and path fingerprint. Resolve and start again to confirm its
+distinct binding; the original project folder and other worktrees stay bound.
+No Git repository is required for directory binding.
+
 In a global session, first call
 `workspace.startSession({"global_session":true,"project_id":42})` for the
 chosen existing project, or omit the ID to discover projects first. Startup

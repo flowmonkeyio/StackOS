@@ -13,6 +13,8 @@ from stackos.db.models import AgentSession, Project, WorkspaceBinding
 from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.workspaces import WorkspaceRepository
+from stackos.workspace_identity import path_fingerprint
+from tests.helpers.workspaces import same_remote_worktrees
 
 
 @pytest.mark.parametrize("selected", [True, False])
@@ -189,7 +191,7 @@ def test_resolve_unknown_workspace_requests_connect(session: Session) -> None:
     assert [project.id for project in resolution.candidate_projects] == [project_id]
 
 
-def test_connect_resolves_by_fingerprint_and_git_remote(session: Session) -> None:
+def test_connect_resolves_by_fingerprint_with_remote_only_a_candidate(session: Session) -> None:
     project_id = _create_project(session)
     repo = WorkspaceRepository(session)
 
@@ -211,7 +213,125 @@ def test_connect_resolves_by_fingerprint_and_git_remote(session: Session) -> Non
     assert by_fingerprint.project_id == project_id
     assert by_fingerprint.binding is not None
     assert by_fingerprint.binding.framework == "nuxt"
-    assert by_remote.project_id == project_id
+    assert by_remote.project_id is None
+    assert by_remote.binding is None
+    assert [candidate.id for candidate in by_remote.candidate_projects] == [project_id]
+
+
+def test_same_remote_worktrees_resolve_and_bind_their_actual_roots(
+    session: Session, tmp_path: Path
+) -> None:
+    first, second, remote = same_remote_worktrees(tmp_path)
+    project_id = _create_project(session)
+    repo = WorkspaceRepository(session)
+    original = repo.connect(
+        project_id=project_id,
+        repo_fingerprint=path_fingerprint(first),
+        git_remote_url=remote,
+        last_known_root=str(first),
+    ).data
+    project = session.get(Project, project_id)
+    assert project is not None
+    project.primary_workspace_binding_id = original.id
+    session.add(project)
+    session.commit()
+
+    for fingerprint in (path_fingerprint(second), original.repo_fingerprint):
+        unresolved = repo.resolve(
+            cwd=str(second), repo_fingerprint=fingerprint, git_remote_url=remote
+        )
+        assert unresolved.binding is None and unresolved.project_id is None
+        assert unresolved.needs_connect
+        assert [c.id for c in unresolved.candidate_projects] == [project_id]
+        assert unresolved.next_step["recommended_tool"] == "workspace.connect"
+
+    # Default startup must wait for an explicit project choice, not create a duplicate.
+    pending = repo.start_session(
+        runtime="codex",
+        cwd=str(second),
+        repo_fingerprint=path_fingerprint(second),
+        git_remote_url=remote,
+    )
+    assert pending.project_id is None and pending.data.needs_connect
+    assert len(repo.list_bindings()) == 1
+    connected = repo.connect(
+        project_id=project_id,
+        repo_fingerprint=path_fingerprint(second),
+        git_remote_url=remote,
+        last_known_root=str(second),
+    ).data
+    assert connected.id != original.id
+    for root, binding in ((first, original), (second, connected)):
+        nested = root / "nested"
+        nested.mkdir()
+        resolved = repo.resolve(cwd=str(nested), git_remote_url=remote)
+        assert resolved.binding.id == binding.id
+        assert resolved.binding.last_known_root == str(root)
+        started = repo.start_session(runtime="codex", cwd=str(root), auto_bootstrap=False)
+        assert started.data.workspace_binding_id == binding.id
+    assert {b.id: b.last_known_root for b in repo.list_bindings(project_id=project_id)} == {
+        original.id: str(first),
+        connected.id: str(second),
+    }
+    session.refresh(project)
+    assert project.primary_workspace_binding_id == original.id
+    assert len(session.exec(select(Project)).all()) == 1
+
+
+def test_directory_binding_wins_over_foreign_fingerprint_and_remote(
+    session: Session, tmp_path: Path
+) -> None:
+    repo = WorkspaceRepository(session)
+    owner = _create_project(session)
+    foreign = (
+        ProjectRepository(session)
+        .create(slug="foreign", name="Foreign", domain="foreign.example", locale="en-US")
+        .data.id
+    )
+    root = tmp_path / "no-git"
+    nested = root / "nested"
+    nested.mkdir(parents=True)
+    outer = repo.connect(
+        project_id=owner, repo_fingerprint=path_fingerprint(root), last_known_root=str(root)
+    ).data
+    inner = repo.connect(
+        project_id=foreign,
+        repo_fingerprint=path_fingerprint(nested),
+        last_known_root=str(nested),
+        git_remote_url="https://example.test/shared.git",
+    ).data
+    resolution = repo.resolve(cwd=str(nested), repo_fingerprint=outer.repo_fingerprint)
+    assert resolution.binding.id == inner.id and resolution.project_id == foreign
+    with pytest.raises(ValidationError, match="must match the workspace binding"):
+        repo.start_session(runtime="codex", cwd=str(nested), project_id=owner)
+    # A directory without Git still resolves; a missing/unbound sibling does not borrow it.
+    assert repo.resolve(cwd=str(root)).binding.id == outer.id
+    assert repo.resolve(cwd=str(tmp_path / "missing")).binding is None
+    for cwd in (None, "/"):
+        assert repo.resolve(cwd=cwd, git_remote_url=inner.git_remote_url).binding is None
+        selected = repo.start_session(
+            runtime="codex",
+            cwd=cwd,
+            git_remote_url=inner.git_remote_url,
+            global_session=True,
+            project_id=owner,
+        )
+        assert selected.data.global_session and selected.data.workspace_binding_id is None
+    assert len(repo.list_bindings()) == 2
+
+
+def test_startup_waits_when_fingerprint_has_no_directory_binding(session: Session) -> None:
+    owner = _create_project(session)
+    repo = WorkspaceRepository(session)
+    binding = repo.connect(project_id=owner, repo_fingerprint="git:legacy-rootless").data
+    started = repo.start_session(
+        runtime="codex", cwd="/tmp/new-directory", repo_fingerprint=binding.repo_fingerprint
+    )
+    assert started.data.needs_connect and started.data.workspace_binding_id is None
+    assert started.data.next_step["recommended_tool"] == "workspace.connect"
+    assert [c.id for c in started.data.candidate_projects] == [owner]
+    assert len(session.exec(select(Project)).all()) == 1
+    assert repo.list_bindings()[0].last_known_root is None
 
 
 def test_bootstrap_creates_project_once_for_workspace_root(session: Session) -> None:
@@ -499,7 +619,9 @@ def test_connect_requires_explicit_rebind_for_existing_project_move(session: Ses
 def test_update_profile_and_start_session_attach_binding(session: Session) -> None:
     project_id = _create_project(session)
     repo = WorkspaceRepository(session)
-    binding = repo.connect(project_id=project_id, repo_fingerprint="git:abc123")
+    binding = repo.connect(
+        project_id=project_id, repo_fingerprint="git:abc123", last_known_root="/tmp/site"
+    )
 
     updated = repo.update_profile(
         binding.data.id,
