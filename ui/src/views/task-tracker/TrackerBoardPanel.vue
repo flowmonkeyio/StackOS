@@ -211,6 +211,7 @@ function priorityItems(row: TaskProgressRow) {
                 />
                 <span class="tracker-board__meta">
                   <ActiveExecutionLine
+                    :metrics-active="metricsActive && (!metricDemandEnabled || demanded.has(row.key))"
                     :item="row.task"
                     :execution="row.task.active_execution"
                     :last-execution="isAutomaticDeliveryTask(row.task) ? row.task.agent_stats?.last_execution : null"

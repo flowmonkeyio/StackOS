@@ -126,6 +126,9 @@ Compact summaries prepare all three metrics together only while visible.
 through the existing feed visibility owner. Same-minute heartbeats and unrelated
 component updates retain geometry and pixels. The Home chart uses the same
 primitive; hidden updates wait until reveal. No per-chart timer is introduced.
+`WorkTime` also uses this shared visibility owner. `ActiveExecutionLine` forwards
+Board/Graph metric demand through `metricsActive`; inactive or offscreen footers
+keep their slot and suspend duration formatting until reveal reads current data.
 
 Project Automations reuses this inline compact renderer for historical task runs.
 `SchedulesTab` owns exactly two shared underline tabs, Automations and Runs;

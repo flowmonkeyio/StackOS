@@ -125,6 +125,10 @@ size, theme and pixel-density observation; its event-driven paints join the
 `usageUpdates` visibility owner in one animation-frame batch, without a new
 timer. Offscreen summaries defer sample preparation with 160px vertical
 overscan. Hidden dirty data does not invalidate unrelated visible charts.
+Canonical `WorkTime` uses the same viewport/document visibility owner and the
+Board/Graph metric demand. Hidden footers retain their fixed slot and last
+formatted value without reading duration or the heartbeat; reveal formats the
+current projection. Only visible live executions consume the shared heartbeat.
 Home's existing Chart.js primitive uses this same size/paint ownership with
 animation and Chart.js responsive scheduling disabled, and defers series work
 until visible. Exact values, unknown coverage and temporal gaps are unchanged.

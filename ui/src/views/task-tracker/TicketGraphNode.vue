@@ -81,6 +81,7 @@ const blocker = computed(() => `Blocked by: ${props.data.blockedBy?.join(', ')}`
     />
     <div class="ticket-graph-node__footer">
       <ActiveExecutionLine
+        :metrics-active="metricsVisible"
         :item="data.lifecycle"
         :execution="data.activeExecution"
         :last-execution="data.taskAutomated ? data.agentStats?.last_execution : null"
