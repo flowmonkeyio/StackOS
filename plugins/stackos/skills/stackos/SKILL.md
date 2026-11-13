@@ -338,14 +338,44 @@ primitive.
   unclear decisions remain unresolved. The selected project scopes the write;
   global calls pass its ID explicitly. No active step grant, replacement run or
   REST handoff is needed. Pending/rejected gates, grants and provider auth remain enforced.
+- Board placement and execution: use `TrackerTaskOut.board_column` for the
+  eight visible columns: Backlog, Todo, In progress, Stopped, Done, Aborted,
+  Failed and Skipped. Backlog is uncommitted backlog; Todo is waiting for
+  development. Terminal lifecycle takes precedence:
+  complete projects to Done; aborted/failed/skipped project to
+  Aborted/Failed/Skipped; deferred projects to Backlog with its resume condition,
+  even with internal lane `done`.
+  For nonterminal work, validated canonical `metadata_json.delivery.status=stopped`
+  projects Stopped; absent live execution alone proves no stop. Queued delivery
+  before its first actual invocation is Todo; running or previously invoked
+  queued work waiting between calls stays In progress. Remaining lifecycle
+  `in-progress` projects In progress, including manually managed work.
+  Existing `TrackerTask.lane_key` persists remaining nonstarted placement:
+  `not-started` + `backlog` is Backlog, other nonstarted lanes are Todo.
+  Legacy lanes remain unchanged. Delivery/review/repair keeps native lifecycle
+  `in-progress` until acceptance.
+  Describe `tracker.placeTask` for explicit Backlog/Todo placement and use its
+  expected status/timestamp and stable idempotency key. It changes lane and
+  arrival rank only on `not-started` work without an open validated handoff.
+  `tracker.reorderTask` orders within the projected column cohort. Neither
+  operation launches, stops, resumes, reopens, completes or aborts work.
+  Before: moving a Backlog card to Todo might be mistaken for permission to
+  start delivery. Now: use `tracker.placeTask(board_column=todo)` for the
+  authorized placement, read back unchanged lifecycle/execution, and require
+  separate explicit `tracker.startDelivery` authority for dispatch. A deferred
+  card requires its normal explicit resume first; a Stopped card requires
+  authorized diagnosis/requeue and handoff, not a move or `aborted` relabel.
+  Preserve mirror ownership and the current assignment's writer restrictions.
 - Tracker lifecycle rules: use `tracker.updateTask(status=...)` only for
   independent tasks. If an independent task has tickets, prefer updating the
   tickets and let StackOS aggregate the parent task. Terminal tracker statuses
   are `complete`, `deferred`, `aborted`, `failed`, and `skipped`; any terminal
-  status moves the item to the done lane. Use `deferred` only when work was not
+  status moves the item to the internal `done` lane, not necessarily the visible
+  Done column. Use `deferred` only when work was not
   executed because of an explicit instruction or external prerequisite, and
   record a named resume condition. Use `aborted` for
-  stopped/rejected/cancelled work, `failed` for attempted unsuccessful work,
+  explicitly cancelled/rejected work, not a recoverable execution stop;
+  use `failed` for attempted unsuccessful work,
   and `skipped` for intentionally not executed work. An attempted failure
   cannot be converted to deferred. Terminal child-ticket updates can aggregate the parent task status, but
   ticket evidence is not copied to the task; read compact `task_rollup` and

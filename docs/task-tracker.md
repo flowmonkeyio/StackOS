@@ -50,6 +50,12 @@ intentionally not executed. Supersession is a relationship or disposition in
 metadata/links, not a lifecycle status; do not use `deferred` as a generic
 replacement for "moved elsewhere."
 
+These lifecycle values are separate from the eight visible Board columns and
+delivery execution state. Backlog is uncommitted backlog; Todo is waiting for
+development. A recoverable delivery stop is not an instruction to set `aborted`.
+Use the [Board membership and operation contract](#board-priority-and-order-writes)
+for placement and the existing explicit handoff/requeue owners for execution.
+
 ## Automated Task Delivery
 
 Explicit workflow abort uses `runPlan.abort` and the shared delivery/native launch
@@ -1513,7 +1519,7 @@ operations exposed through the same registry to REST, CLI and MCP. They use
 the existing task `priority_key` and integer `order_index`, with no separate
 ranking store. The UI client is `lib/stackos/taskBoard.ts`.
 
-Both require `project_id`, `task_key`, `expected_status`, `expected_updated_at`
+All three require `project_id`, `task_key`, `expected_status`, `expected_updated_at`
 and a stable `idempotency_key`. Priority accepts only `priority_key: p0|p1|p2|p3`.
 Reorder accepts `anchor_task_key` and `placement: before|after`. The anchor
 must currently belong to the same project and projected Board column as the moved task.
@@ -2248,10 +2254,12 @@ Task/ticket selections and one-shot entry intents are cleared.
 
 The Work UI provides two views, Board and Graph. It renders:
 
-- Board by default, with seven columns for the current task statuses (empty
-  columns can be hidden through the display choice):
-  `not-started`, `in-progress`, `complete`, `deferred`, `aborted`, `failed`,
-  and `skipped`. Cards cannot be dragged between columns or change status.
+- Board by default, with eight projected columns (empty columns can be hidden
+  through the display choice): Backlog, Todo, In progress, Stopped, Done,
+  Aborted, Failed and Skipped. The [membership contract](#board-priority-and-order-writes)
+  owns their mapping; labels are not lifecycle values. Explicit Backlog/Todo
+  placement uses `tracker.placeTask`; ordering uses `tracker.reorderTask` within
+  the projected column. Neither changes lifecycle or execution authority.
 - a Board / Graph switch in the same top-right page-header position in both
   views. Board has one filter bar: Filter opens Text, Status, Priority,
   Workflow and Assignee editors; applied chips support edit and removal.

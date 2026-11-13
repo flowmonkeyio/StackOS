@@ -1,8 +1,8 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.15
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.16
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
-Workflow: `engineering.tracked-delivery` v0.8.2 source contract
+Workflow: `engineering.tracked-delivery` v0.8.3 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
 
 This is the StackOS repository adaptation, not a subagent. The main agent owns
@@ -38,6 +38,28 @@ evidence and recommendations.
 - Rehydrate this guidance stack, the frozen run, operator amendments, tickets,
   current assignments, candidate identities and evidence after resume,
   handoff or compaction. Conversational memory is not durable work state.
+
+## Board Placement And Execution
+
+Apply the shared contract in `docs/task-tracker.md` under Board priority and
+order writes and the StackOS skill. Backlog is uncommitted backlog; Todo is
+waiting for development; Stopped projects validated canonical delivery state,
+not cancellation. Read `board_column`; lifecycle, lane and execution are separate
+facts. Queued work before its first actual invocation is Todo; already-started
+work waiting between calls stays In progress. Delivery/review/repair keeps native
+lifecycle `in-progress` until acceptance. Deferred work keeps its resume condition.
+
+Before: interpreting a move to Todo as a delivery handoff, or a stop as `aborted`,
+would confuse presentation with authority. Now: use `tracker.placeTask` for an
+authorized eligible nonstarted Backlog/Todo placement, with expected snapshot
+and stable retry identity; read back unchanged lifecycle/execution. Reorder only
+within the projected column cohort. Dispatch requires separate explicit
+`tracker.startDelivery` authority. Deferred resume and stopped-work recovery use
+their existing explicit owners and requeue/handoff path; never drag, relabel or
+set delivery metadata to manufacture execution. Run-plan mirrors, independent
+review, repair allowance and automatic/terminal-managed writer boundaries remain
+unchanged. Source-only guidance changes do not refresh frozen native sessions;
+saved adoption and installed activation retain their separate main-owned proof.
 
 ## Project Boundaries And Calibration
 

@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: engineering.tracked-delivery
 name: Engineering Tracked Delivery
-version: 0.8.2
+version: 0.8.3
 description: Reusable SDLC workflow for requirements, project-native design and proof planning, executable ticket breakdown, delegated delivery with immediate independent review, integrated verification, and truthful release closeout.
 domain: engineering
 owner:
@@ -251,7 +251,20 @@ policies:
     description: Plans, listed paths, design and proof are fallible evidence of the original operator outcome. Agents independently complete necessary omitted consumers, files, wiring, specs and docs, recording the gap, necessity, proportionality, affected consumers and proof without routine main-agent relay. Explicit exclusions, unavailable authority, actual ownership conflicts and materially different outcomes stop affected work for main reconciliation; material outcome changes reopen affected impact, architecture and proof. Unrelated cleanup stays in nonblocking followups.
   - key: status_semantics
     kind: delivery
-    description: Failed means an attempted check or action failed; deferred means work was not executed because of an explicit instruction or external prerequisite and requires a named resume condition.
+    description: >-
+      Failed means an attempted check or action failed; deferred means work was
+      not executed because of an explicit instruction or external prerequisite
+      and requires a named resume condition. Apply the StackOS skill's Board
+      contract separately from lifecycle and execution authority. Backlog is
+      uncommitted backlog; Todo is waiting for development; Stopped is the
+      validated delivery stop projection, not cancellation. tracker.placeTask
+      changes eligible nonstarted lane placement only; placement/reorder never
+      dispatches, stops, resumes, completes or aborts work. Deferred work needs
+      explicit resume authority. Delivery/review/repair remains lifecycle
+      in-progress; queued work before its first actual invocation is Todo,
+      already-started work between calls stays In progress. Native run-plan
+      mirror ownership, explicit handoff/requeue and independent review remain
+      authoritative; presentation labels grant no lifecycle writes.
   - key: main_agent_accountability
     kind: orchestration
     description: Main owns scope admission and final claims. Terminal-managed delivery keeps workflow/tracker writes and acceptance with main. Explicit tracker.startDelivery handoff delegates all remaining dependency-ready task work to StackOS, including integration and frozen workflow gates through assigned agents. Ordinary tickets require independent review; RunPlanRepository alone records mirror/plan/run lifecycle. Specialists return evidence and never complete their own tickets.
