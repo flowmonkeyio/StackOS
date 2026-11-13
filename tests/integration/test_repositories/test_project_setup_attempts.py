@@ -427,12 +427,13 @@ def test_report_preserves_request_owned_execution_and_unrelated_metadata(attempt
     )
 
 
-def test_attempt_operations_are_agent_only_and_keep_repair_response_modes():
+def test_attempt_operations_preserve_agent_reports_and_add_console_start():
     registry = build_operation_registry()
     for name in ("projectSetup.start", "projectSetup.report"):
         spec = registry.get(name)
         assert spec.surfaces.mcp.enabled
-        assert not spec.surfaces.rest.enabled and not spec.surfaces.cli.enabled
+        assert spec.surfaces.rest.enabled == (name == "projectSetup.start")
+        assert not spec.surfaces.cli.enabled
         assert spec.response_policy.allowed_modes == ("compact", "raw")
         assert spec.response_policy.ack_safe is False
 

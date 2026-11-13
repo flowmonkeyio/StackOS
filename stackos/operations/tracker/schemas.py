@@ -26,6 +26,7 @@ from stackos.db.models import (
 )
 from stackos.host_mcp.project_agents import AgentSourceRef
 from stackos.mcp.contract import MCPInput
+from stackos.project_setup_execution import MainAgentPreferences
 from stackos.repositories.tracker.agent_stats import stats_timezone
 from stackos.repositories.tracker.inspection_schema import ResultSourceKind
 from stackos.repositories.tracker.schema import TrackerCorrectionIntent
@@ -104,6 +105,7 @@ class TaskDeliveryDefaults(BaseModel):
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     host_key: str | None = Field(default=None, min_length=1)
+    main_agent: MainAgentPreferences | None = None
     delivery_agent: TaskDeliveryAgentOverride | None = None
     review_agent: TaskDeliveryAgentOverride | None = None
     agents: dict[AgentRole, TaskDeliveryAgentOverride] | None = None
@@ -119,13 +121,17 @@ class TrackerConfigureDeliveryInput(MCPInput):
     model_config = ConfigDict(extra="forbid")
     project_id: int = Field(ge=1)
     delivery: TaskDeliveryDefaults | None = None
+    main_agent: MainAgentPreferences | None = None
     project_dir: str | None = None
     adopt_sources: dict[AgentRole, AgentSourceAdoption] | None = None
     preview: bool = False
 
     @model_validator(mode="after")
     def explicit_setup_mode(self):
-        if self.adopt_sources is not None:
+        if self.main_agent is not None:
+            if self.delivery is not None or self.adopt_sources is not None or self.preview:
+                raise ValueError("main_agent saves launch preferences only")
+        elif self.adopt_sources is not None:
             if not self.adopt_sources or not self.project_dir or self.delivery is not None:
                 raise ValueError("adopt_sources requires project_dir and preserves saved delivery")
         elif self.delivery is None or self.preview:

@@ -154,8 +154,9 @@ workflow run or tracker task, and does not edit local guidance. An unselected gl
 session has no project summary; selected global calls still require explicit project
 IDs. A summary neither changes workspace binding nor grants filesystem access.
 
-`projectSetup.start` and `projectSetup.report` are scoped agent-MCP operations,
-unavailable through REST/CLI or browser-console calls. Existing-session entry uses
+`projectSetup.start` supports existing-session agent-MCP entry and authenticated
+console REST entry with `entry_kind: "managed_ui"`. `projectSetup.report` remains
+agent-MCP only; CLI cannot start setup. Existing-session entry uses
 the session ID returned by startup (`id` in raw; `agent_session_id` in compact).
 The bridge injects and fences `client_session_id`; it must match that session and
 project. For example, through `toolbox.call`:
@@ -208,6 +209,45 @@ The agent asks and receives answers in that session, then reports subsequent wor
 Home can display the question and status without promising an external conversation
 link or accepting a browser answer for this entry kind. Report history retains
 question/progress/result refs; sibling native execution metadata stays untouched.
+
+Managed console entry needs only the selected project and setup/update mode;
+`workflow_keys` can be omitted so the coordinator chooses from the operator goal.
+Optional typed `preferences` contain only `host_key`, `model`, `provider`, `profile`.
+Save these choices through local-admin `tracker.configureDelivery({"project_id":1,
+"main_agent":{"host_key":"codex","model":"gpt-6.1-sol"}})`. That form merges
+only `delivery.main_agent`, preserving specialist roles, unrelated settings and
+already admitted snapshots. `projectSetup.get.launch_preferences` reads saved choices;
+`hostMcp.status.agent_execution` supplies supported and recommended models from the
+existing host catalog. Neither catalog nor recommendation proves account model access.
+An omitted model keeps the native host default; recommendation metadata is advisory.
+
+One managed attempt creates one request-native coordinator, consuming the same
+authoring-guide reference and project setup method as existing-session entry.
+Start/return attaches to active work without exposing its writer token, replacing
+its selection or cancelling it on navigation. The frozen request contains the exact
+folder/binding and host choices. Invalid/missing hosts or unavailable/mismatched
+folders fail before native spawn; no host/model fallback is performed. Managed work
+queues through the existing shared task capacity drain and executor. Native identity,
+usage, immutable execution evidence and checked workflow reports remain on AgentRequest;
+infrastructure setup creates no business run or tracker task.
+
+The coordinator receives a private request claim token. Managed progress reports
+also require its project bridge session, active native invocation and expected
+attempt revision. The first authorized report binds that session; observers and
+foreign/stale/cancelled reports cannot change receipts. Final native output supplies
+a JSON-encoded `SetupReport` through `report_json`; all receipt validation stays with
+the existing setup repository. A finished invocation asking a question releases its
+slot and retains its exact native identity for the continuation owner.
+
+Console-only `projectSetup.cancel({"project_id":1,"request_id":123})` fences that
+managed request through the existing native cancellation owner. Queued work can be
+cancelled before spawn. Running cancellation remains pending until actual native
+retirement; callback lifetime retains the reservation, completed workflow receipts
+and partial-change reports. A timeout, missing in-memory handle or daemon restart
+does not establish exit. Unconfirmed prior-daemon invocations retain their reservation
+and actionable reconciliation diagnostic instead of silently launching replacements.
+The canonical project cleanup guard also retains these managed reservations after
+request lease expiry; confirmed deletion cannot race an unconfirmed native writer.
 Terminal reports revoke writer authority and preserve attempt history.
 
 Both operations support compact/raw and refuse ack. Compact retains claim/attempt

@@ -203,7 +203,7 @@ class SetupQuestion(SetupEvidenceModel):
     question_id: str = Field(min_length=1, max_length=120)
     revision: int = Field(strict=True, ge=1)
     prompt: str = Field(min_length=1, max_length=2000)
-    workflow_keys: list[str] = Field(min_length=1, max_length=100)
+    workflow_keys: list[str] = Field(max_length=100)
     answer_state: Literal["pending"] = "pending"
     response_channel: Literal["existing_agent", "managed_ui"] = "existing_agent"
 
@@ -220,6 +220,7 @@ class SetupReport(SetupEvidenceModel):
     ]
     progress: SetupProgress
     workflow_results: list[SetupWorkflowReport] = Field(default_factory=list, max_length=100)
+    workflow_keys: list[str] | None = Field(default=None, max_length=100)
     question: SetupQuestion | None = None
     recovery_condition: str | None = Field(default=None, max_length=2000)
 
@@ -232,6 +233,17 @@ class SetupReport(SetupEvidenceModel):
         keys = [item.workflow_key for item in self.workflow_results]
         if len(keys) != len(set(keys)):
             raise ValueError("report each workflow only once")
+        if self.workflow_keys is not None and (
+            len(self.workflow_keys) != len(set(self.workflow_keys))
+            or any(not key.strip() or len(key) > 200 for key in self.workflow_keys)
+        ):
+            raise ValueError("select unique nonblank workflow keys")
+        if (
+            self.question
+            and self.question.response_channel == "existing_agent"
+            and not self.question.workflow_keys
+        ):
+            raise ValueError("existing-session questions require selected workflow keys")
         return self
 
 
@@ -251,6 +263,17 @@ class SetupReportReceipt(SetupEvidenceModel):
     checked_at: datetime
 
 
+class SetupManagedExecution(SetupEvidenceModel):
+    settings: dict[str, Any]
+    binding_id: int
+    admission_id: str
+    job_ref: str
+    slot_reserved: bool = False
+    callback_started: bool = False
+    cancel_requested: bool = False
+    diagnostic: str | None = None
+
+
 class SetupAttempt(SetupEvidenceModel):
     """Versioned AgentRequest metadata; native execution evidence stays alongside it."""
 
@@ -263,15 +286,23 @@ class SetupAttempt(SetupEvidenceModel):
     revision: int = 1
     mode: Literal["setup", "update"]
     entry_kind: Literal["existing_agent", "managed_ui"]
-    session_id: int
+    session_id: int | None
     runtime: str
     thread_id: str | None = None
     workflow_keys: list[str]
     observed_receipt_revisions: dict[str, int]
     outcomes: dict[str, SetupWorkflowOutcome] = Field(default_factory=dict)
     status: Literal[
-        "running", "needs_input", "success", "partial", "failed", "interrupted", "cancelled"
+        "queued",
+        "running",
+        "needs_input",
+        "success",
+        "partial",
+        "failed",
+        "interrupted",
+        "cancelled",
     ] = "running"
+    managed: SetupManagedExecution | None = None
     progress: SetupProgress | None = None
     question: SetupQuestion | None = None
     recovery_condition: str | None = None
@@ -302,6 +333,7 @@ class ProjectSetupOut(BaseModel):
     unknown_count: int = 0
     workflows: list[SetupWorkflowOut] = Field(default_factory=list)
     current_attempt: SetupAttempt | None = None
+    launch_preferences: dict[str, Any] = Field(default_factory=dict)
     attempt_diagnostic: str | None = None
     guidance_ref: dict[str, Any] = Field(default_factory=lambda: dict(SETUP_GUIDANCE_REF))
     notice: str | None = None
@@ -517,7 +549,12 @@ class ProjectSetupRepository:
 
     def _current_attempt(self, project_id: int) -> SetupAttempt | None:
         attempts = self._attempts(project_id)
-        active = [a for _, a in attempts if a.status in {"running", "needs_input"}]
+        active = [
+            a
+            for _, a in attempts
+            if a.status in {"queued", "running", "needs_input"}
+            or (a.managed is not None and a.managed.slot_reserved)
+        ]
         if len(active) > 1:
             raise ConflictError(
                 "multiple setup writers require reconciliation", data={"project_id": project_id}
@@ -528,9 +565,10 @@ class ProjectSetupRepository:
         self,
         project_id: int,
         *,
-        session_id: int,
+        session_id: int | None,
         mode: Literal["setup", "update"],
         workflow_keys: list[str],
+        managed: SetupManagedExecution | None = None,
     ) -> SetupStartOut:
         """Reserve the project before admission; attachment never issues writer authority."""
         try:
@@ -545,21 +583,24 @@ class ProjectSetupRepository:
                         "next_action": state.next_action,
                     },
                 )
-            session = self._s.get(AgentSession, session_id)
-            if session is None or session.project_id != project_id:
+            session = self._s.get(AgentSession, session_id) if session_id is not None else None
+            if managed is None and (session is None or session.project_id != project_id):
                 raise ConflictError(
                     "agent session does not belong to the setup project",
                     data={"project_id": project_id},
                 )
             current = self._current_attempt(project_id)
-            if current and current.status in {"running", "needs_input"}:
+            if current and (
+                current.status in {"queued", "running", "needs_input"}
+                or (current.managed is not None and current.managed.slot_reserved)
+            ):
                 self._s.commit()
                 return SetupStartOut(
                     attempt=current, attached=True, next_action="observe_existing_attempt"
                 )
             if (
                 mode not in {"setup", "update"}
-                or not workflow_keys
+                or (not workflow_keys and managed is None)
                 or len(workflow_keys) > 100
                 or any(not key.strip() or len(key) > 200 for key in workflow_keys)
                 or len(set(workflow_keys)) != len(workflow_keys)
@@ -589,14 +630,19 @@ class ProjectSetupRepository:
                 root_request_id=row.id,
                 request_id=row.id,
                 mode=mode,
-                entry_kind="existing_agent",
+                entry_kind="managed_ui" if managed else "existing_agent",
                 session_id=session_id,
-                runtime=session.runtime,
-                thread_id=session.thread_id,
+                runtime=managed.settings["host_key"]
+                if managed
+                else (session.runtime if session else ""),
+                thread_id=session.thread_id if session else None,
+                managed=managed,
+                status="queued" if managed else "running",
                 workflow_keys=workflow_keys,
                 observed_receipt_revisions={
                     key: (receipt.revision if (receipt := self._row(project_id, key)) else 0)
-                    for key in workflow_keys
+                    for key in set(workflow_keys)
+                    | ({item.workflow_key for item in state.workflows} if managed else set())
                 },
             )
             row.metadata_json = {SETUP_NAMESPACE: attempt.model_dump(mode="json")}
@@ -606,7 +652,7 @@ class ProjectSetupRepository:
                 attempt=attempt,
                 attached=False,
                 claim_token=token,
-                next_action="execute_in_existing_session",
+                next_action="observe_managed_setup" if managed else "execute_in_existing_session",
             )
         except Exception:
             self._s.rollback()
@@ -617,10 +663,12 @@ class ProjectSetupRepository:
         project_id: int,
         *,
         request_id: int,
-        session_id: int,
+        session_id: int | None,
         claim_token: str,
         expected_revision: int,
         report: SetupReport,
+        _managed: bool = False,
+        _session_report: bool = False,
     ) -> SetupAttempt:
         try:
             report = SetupReport.model_validate(report.model_dump(mode="json"))
@@ -632,7 +680,7 @@ class ProjectSetupRepository:
             if (
                 current is None
                 or current.request_id != request_id
-                or current.session_id != session_id
+                or (not _managed and current.session_id != session_id)
             ):
                 raise ConflictError(
                     "report does not own the current setup attempt",
@@ -650,10 +698,54 @@ class ProjectSetupRepository:
                         "status": current.status,
                     },
                 )
-            if current.entry_kind != "existing_agent":
+            if (current.entry_kind == "managed_ui") != _managed:
                 raise ConflictError("this reporting entry requires an existing agent session")
+            if report.workflow_keys is not None and not _managed:
+                raise ConflictError("existing-session workflow selection belongs to start")
+            if _managed:
+                if current.managed is None or current.managed.cancel_requested:
+                    raise ConflictError("managed setup reporting is fenced by cancellation")
+                if _session_report:
+                    from stackos.host_mcp.service import active_request_execution
+
+                    owner = self._s.get(AgentSession, session_id)
+                    live = active_request_execution(project_id, request_id)
+                    if (
+                        owner is None
+                        or owner.project_id != project_id
+                        or live is None
+                        or owner.runtime != current.runtime
+                        or current.session_id not in {None, session_id}
+                    ):
+                        raise ConflictError(
+                            "managed report requires the exact active native session"
+                        )
+                    current.session_id = session_id
+                    # Some supported hosts return native session identity only
+                    # at exit. The private claim, active request and first bound
+                    # reporting session already establish this writer's ownership.
+                    current.thread_id = live.get("thread_id") or current.thread_id
+                if not current.workflow_keys:
+                    current.workflow_keys = (
+                        report.workflow_keys
+                        if report.workflow_keys is not None
+                        else list(
+                            dict.fromkeys(
+                                [item.workflow_key for item in report.workflow_results]
+                                + (report.question.workflow_keys if report.question else [])
+                            )
+                        )
+                    )
+                    for key in current.workflow_keys:
+                        current.observed_receipt_revisions.setdefault(key, 0)
+                elif report.workflow_keys is not None and set(report.workflow_keys) != set(
+                    current.workflow_keys
+                ):
+                    raise ConflictError(
+                        "managed workflow selection is already fixed for this attempt"
+                    )
             if report.question is not None and (
-                report.question.response_channel != "existing_agent"
+                report.question.response_channel != current.entry_kind
                 or not set(report.question.workflow_keys).issubset(current.workflow_keys)
             ):
                 raise ValidationError(
@@ -685,9 +777,12 @@ class ProjectSetupRepository:
                     status=item.result.status,
                     result_ref=item.result.result_ref,
                 )
-            if report.status == "success" and any(
-                key not in outcomes or outcomes[key].status != "success"
-                for key in current.workflow_keys
+            if report.status == "success" and (
+                not current.workflow_keys
+                or any(
+                    key not in outcomes or outcomes[key].status != "success"
+                    for key in current.workflow_keys
+                )
             ):
                 raise ValidationError(
                     "every selected workflow needs verified success before attempt success"
@@ -746,7 +841,7 @@ class ProjectSetupRepository:
                 SETUP_NAMESPACE: current.model_dump(mode="json"),
             }
             row.updated_at = datetime.now(UTC).replace(tzinfo=None)
-            if report.status not in {"running", "needs_input"}:
+            if report.status not in {"running", "needs_input"} and not _managed:
                 row.status = (
                     AgentRequestStatus.RESOLVED
                     if report.status == "success"
@@ -908,6 +1003,8 @@ class ProjectSetupRepository:
         return out
 
     def get(self, project_id: int, *, workflow_key: str | None = None) -> ProjectSetupOut:
+        from stackos.repositories.tracker import TrackerRepository
+
         projects = ProjectRepository(self._s)
         row = projects.require_available(project_id)
         project = projects.get(project_id)
@@ -988,6 +1085,9 @@ class ProjectSetupRepository:
             update_count=updates,
             unknown_count=unknown,
             current_attempt=attempt,
+            launch_preferences=TrackerRepository(self._s)
+            .delivery_defaults(project_id=project_id)
+            .get("main_agent", {}),
             attempt_diagnostic=attempt_diagnostic,
             notice=(
                 None

@@ -511,7 +511,7 @@ def _base_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any
 
 def _compact_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any]:
     data = _data(payload)
-    if spec.name in {"projectSetup.start", "projectSetup.report"}:
+    if spec.name in {"projectSetup.start", "projectSetup.report", "projectSetup.cancel"}:
         out = _base_payload(spec, payload)
         body = copy.deepcopy(data)
         out["data"] = body

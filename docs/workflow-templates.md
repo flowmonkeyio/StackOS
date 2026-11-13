@@ -618,6 +618,14 @@ business run or tracker delivery task is invented for infrastructure setup. See 
 [operation contract](operations.md#project-setup-receipts-and-reminders) for admission,
 ownership and response details.
 
+Home's managed entry invokes one request-native coordinator with the same
+`workflowTemplate.authoringGuide` setup-method reference. It freezes the supported
+project agent selection and folder association, queues through shared task capacity,
+and records native session/usage alongside setup reports. Closing Home does not
+cancel work. Cancellation fences the owning invocation and preserves successful
+workflow receipts and partial reports; unknown native retirement stays explicit.
+Managed launch does not create a business workflow run or delivery task.
+
 Failed/unfinished results retain the previous successful sources and separately
 record possible partial edits. They can still be recorded when the selected folder
 becomes unavailable. Available updates compare the receipt with current effective

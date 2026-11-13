@@ -325,6 +325,21 @@ is performed by the runner.
 
 ### Local task capacity
 
+Managed project setup requests use this same local capacity preference, launch
+lock, memory executor and drain. Counts include their queued work and admitted
+callbacks through retirement. They do not create tracker tasks or business runs.
+Setup cancellation and unconfirmed prior-daemon invocations retain their slots
+until the existing native owner establishes retirement; an elapsed timeout is
+insufficient. Completed receipt/report history survives cancellation.
+
+`TaskTracker.config_json.delivery.main_agent` stores typed project launch choices
+(`host_key`, `model`, `provider`, `profile`) independently of specialist contracts.
+Authenticated local-admin REST `tracker.configureDelivery` accepts `main_agent`
+alone to merge those choices without replacing other defaults. This affects future
+managed admissions; queued/running request snapshots remain frozen. Model choices
+and the optional recommendation come from the host capability catalog. An explicit
+unavailable host or invalid choice rejects without substitution.
+
 `tracker.deliveryCapacity` reads the effective `configured_limit`, admitted
 `running_count`, waiting `queued_count`, supported bounds and
 `scope: "local-user-daemon"`. `tracker.setDeliveryCapacity` explicitly saves

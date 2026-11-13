@@ -5264,6 +5264,32 @@ export interface components {
             /** Thread Ref */
             thread_ref: string;
         };
+        /**
+         * MainAgentPreferences
+         * @description Launch choices only; instructions and specialist contracts have other owners.
+         */
+        MainAgentPreferences: {
+            /**
+             * Host Key
+             * @default null
+             */
+            host_key: string | null;
+            /**
+             * Model
+             * @default null
+             */
+            model: string | null;
+            /**
+             * Profile
+             * @default null
+             */
+            profile: string | null;
+            /**
+             * Provider
+             * @default null
+             */
+            provider: string | null;
+        };
         /** MetricSnapshotOut */
         MetricSnapshotOut: {
             /**
@@ -6262,6 +6288,34 @@ export interface components {
              */
             updated_at: string;
         };
+        /** ProjectSetupCancelInput */
+        ProjectSetupCancelInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Id */
+            project_id: number;
+            /** Request Id */
+            request_id: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: ProjectSetupCancelInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
         /** ProjectSetupGetInput */
         ProjectSetupGetInput: {
             /**
@@ -6325,6 +6379,10 @@ export interface components {
             folder_status: ProjectSetupOutFolder_status;
             /** Guidance Ref */
             guidance_ref?: {
+                [key: string]: unknown;
+            };
+            /** Launch Preferences */
+            launch_preferences?: {
                 [key: string]: unknown;
             };
             /** Next Action */
@@ -6404,6 +6462,58 @@ export interface components {
              * @default null
              */
             run_token: string | null;
+        };
+        /** ProjectSetupStartInput */
+        ProjectSetupStartInput: {
+            /**
+             * Client Session Id
+             * @default null
+             */
+            client_session_id: string | null;
+            /**
+             * Entry Kind
+             * @default existing_agent
+             * @enum {string}
+             */
+            entry_kind: ProjectSetupStartInputEntry_kind;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Mode
+             * @default setup
+             * @enum {string}
+             */
+            mode: ProjectSetupStartInputMode;
+            /** @default null */
+            preferences: components["schemas"]["MainAgentPreferences"] | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: ProjectSetupStartInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Session Id
+             * @default null
+             */
+            session_id: number | null;
+            /** Workflow Keys */
+            workflow_keys?: string[];
         };
         /**
          * ProjectUpdateInput
@@ -7463,6 +7573,8 @@ export interface components {
              * @enum {string}
              */
             entry_kind: SetupAttemptEntry_kind;
+            /** @default null */
+            managed: components["schemas"]["SetupManagedExecution"] | null;
             /**
              * Mode
              * @enum {string}
@@ -7512,7 +7624,7 @@ export interface components {
              */
             schema_version: 1;
             /** Session Id */
-            session_id: number;
+            session_id: number | null;
             /**
              * Status
              * @default running
@@ -7526,6 +7638,39 @@ export interface components {
             thread_id: string | null;
             /** Workflow Keys */
             workflow_keys: string[];
+        };
+        /** SetupManagedExecution */
+        SetupManagedExecution: {
+            /** Admission Id */
+            admission_id: string;
+            /** Binding Id */
+            binding_id: number;
+            /**
+             * Callback Started
+             * @default false
+             */
+            callback_started: boolean;
+            /**
+             * Cancel Requested
+             * @default false
+             */
+            cancel_requested: boolean;
+            /**
+             * Diagnostic
+             * @default null
+             */
+            diagnostic: string | null;
+            /** Job Ref */
+            job_ref: string;
+            /** Settings */
+            settings: {
+                [key: string]: unknown;
+            };
+            /**
+             * Slot Reserved
+             * @default false
+             */
+            slot_reserved: boolean;
         };
         /** SetupProgress */
         SetupProgress: {
@@ -7597,6 +7742,23 @@ export interface components {
              * @default null
              */
             version: string | null;
+        };
+        /** SetupStartOut */
+        SetupStartOut: {
+            /** Attached */
+            attached: boolean;
+            attempt: components["schemas"]["SetupAttempt"];
+            /**
+             * Claim Token
+             * @default null
+             */
+            claim_token: string | null;
+            /** Guidance Ref */
+            guidance_ref?: {
+                [key: string]: unknown;
+            };
+            /** Next Action */
+            next_action: string;
         };
         /** SetupWorkflowOut */
         SetupWorkflowOut: {
@@ -7833,6 +7995,8 @@ export interface components {
              * @default null
              */
             host_key: string | null;
+            /** @default null */
+            main_agent: components["schemas"]["MainAgentPreferences"] | null;
             /** @default null */
             review_agent: components["schemas"]["TaskDeliveryAgentOverride"] | null;
         };
@@ -8212,6 +8376,8 @@ export interface components {
              * @default null
              */
             idempotency_key: string | null;
+            /** @default null */
+            main_agent: components["schemas"]["MainAgentPreferences"] | null;
             /**
              * Preview
              * @default false
@@ -9801,6 +9967,34 @@ export interface components {
              */
             run_id: number | null;
         };
+        /** WriteEnvelope[SetupAttempt] */
+        WriteEnvelope_SetupAttempt_: {
+            data: components["schemas"]["SetupAttempt"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
+        /** WriteEnvelope[SetupStartOut] */
+        WriteEnvelope_SetupStartOut_: {
+            data: components["schemas"]["SetupStartOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
         /** WriteEnvelope[TrackerTaskBoardOut] */
         WriteEnvelope_TrackerTaskBoardOut_: {
             data: components["schemas"]["TrackerTaskBoardOut"];
@@ -10241,6 +10435,7 @@ export type SchemaLiveUsageSnapshotOut = components['schemas']['LiveUsageSnapsho
 export type SchemaLoadedWorkflowTemplate = components['schemas']['LoadedWorkflowTemplate'];
 export type SchemaLocalAgentChatCreateMessageInput = components['schemas']['LocalAgentChatCreateMessageInput'];
 export type SchemaLocalAgentChatMessageOut = components['schemas']['LocalAgentChatMessageOut'];
+export type SchemaMainAgentPreferences = components['schemas']['MainAgentPreferences'];
 export type SchemaMetricSnapshotOut = components['schemas']['MetricSnapshotOut'];
 export type SchemaOperationCallIn = components['schemas']['OperationCallIn'];
 export type SchemaOperationDescribeOut = components['schemas']['OperationDescribeOut'];
@@ -10284,9 +10479,11 @@ export type SchemaProjectFileOwnershipResult = components['schemas']['ProjectFil
 export type SchemaProjectMoveInput = components['schemas']['ProjectMoveInput'];
 export type SchemaProjectOut = components['schemas']['ProjectOut'];
 export type SchemaProjectPluginOut = components['schemas']['ProjectPluginOut'];
+export type SchemaProjectSetupCancelInput = components['schemas']['ProjectSetupCancelInput'];
 export type SchemaProjectSetupGetInput = components['schemas']['ProjectSetupGetInput'];
 export type SchemaProjectSetupOut = components['schemas']['ProjectSetupOut'];
 export type SchemaProjectSetupRemindersInput = components['schemas']['ProjectSetupRemindersInput'];
+export type SchemaProjectSetupStartInput = components['schemas']['ProjectSetupStartInput'];
 export type SchemaProjectUpdateInput = components['schemas']['ProjectUpdateInput'];
 export type SchemaProjectUpdateRequest = components['schemas']['ProjectUpdateRequest'];
 export type SchemaProviderOut = components['schemas']['ProviderOut'];
@@ -10316,10 +10513,12 @@ export type SchemaScheduledNativeExecutionOut = components['schemas']['Scheduled
 export type SchemaScheduledRunOut = components['schemas']['ScheduledRunOut'];
 export type SchemaSetDeliveryCapacityInput = components['schemas']['SetDeliveryCapacityInput'];
 export type SchemaSetupAttempt = components['schemas']['SetupAttempt'];
+export type SchemaSetupManagedExecution = components['schemas']['SetupManagedExecution'];
 export type SchemaSetupProgress = components['schemas']['SetupProgress'];
 export type SchemaSetupQuestion = components['schemas']['SetupQuestion'];
 export type SchemaSetupReportReceipt = components['schemas']['SetupReportReceipt'];
 export type SchemaSetupSource = components['schemas']['SetupSource'];
+export type SchemaSetupStartOut = components['schemas']['SetupStartOut'];
 export type SchemaSetupWorkflowOut = components['schemas']['SetupWorkflowOut'];
 export type SchemaSetupWorkflowOutcome = components['schemas']['SetupWorkflowOutcome'];
 export type SchemaSitemapFetchRequest = components['schemas']['SitemapFetchRequest'];
@@ -10398,6 +10597,8 @@ export type SchemaWriteEnvelopeProjectOut = components['schemas']['WriteEnvelope
 export type SchemaWriteEnvelopeProjectSetupOut = components['schemas']['WriteEnvelope_ProjectSetupOut_'];
 export type SchemaWriteEnvelopeScheduleRemovalOut = components['schemas']['WriteEnvelope_ScheduleRemovalOut_'];
 export type SchemaWriteEnvelopeScheduledJobOut = components['schemas']['WriteEnvelope_ScheduledJobOut_'];
+export type SchemaWriteEnvelopeSetupAttempt = components['schemas']['WriteEnvelope_SetupAttempt_'];
+export type SchemaWriteEnvelopeSetupStartOut = components['schemas']['WriteEnvelope_SetupStartOut_'];
 export type SchemaWriteEnvelopeTrackerTaskBoardOut = components['schemas']['WriteEnvelope_TrackerTaskBoardOut_'];
 export type SchemaWriteEnvelopeTrackerTaskContentOut = components['schemas']['WriteEnvelope_TrackerTaskContentOut_'];
 export type SchemaWriteEnvelopeWorkflowTemplateExtensionDeleteOut = components['schemas']['WriteEnvelope_WorkflowTemplateExtensionDeleteOut_'];
@@ -13920,6 +14121,12 @@ export enum ProjectMoveInputScope {
     project = "project",
     catalog = "catalog"
 }
+export enum ProjectSetupCancelInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
 export enum ProjectSetupGetInputResponse_mode {
     compact = "compact",
     raw = "raw",
@@ -13939,6 +14146,20 @@ export enum ProjectSetupOutStatus {
     current = "current"
 }
 export enum ProjectSetupRemindersInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectSetupStartInputEntry_kind {
+    existing_agent = "existing_agent",
+    managed_ui = "managed_ui"
+}
+export enum ProjectSetupStartInputMode {
+    setup = "setup",
+    update = "update"
+}
+export enum ProjectSetupStartInputResponse_mode {
     compact = "compact",
     raw = "raw",
     standard = "standard",
@@ -14042,6 +14263,7 @@ export enum SetupAttemptMode {
     update = "update"
 }
 export enum SetupAttemptStatus {
+    queued = "queued",
     running = "running",
     needs_input = "needs_input",
     success = "success",

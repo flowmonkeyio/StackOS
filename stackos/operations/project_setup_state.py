@@ -21,6 +21,7 @@ from stackos.operations.spec import (
     OperationSurface,
     OperationSurfaces,
 )
+from stackos.project_setup_execution import MainAgentPreferences
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.base import ConflictError
 from stackos.repositories.project_setup import (
@@ -52,11 +53,12 @@ class ProjectSetupRemindersInput(MCPInput):
 class ProjectSetupStartInput(MCPInput):
     model_config = ConfigDict(extra="forbid")
     project_id: int = Field(strict=True, ge=1)
-    session_id: int = Field(strict=True, ge=1)
-    client_session_id: str = Field(min_length=1, max_length=160)
-    entry_kind: Literal["existing_agent"] = "existing_agent"
+    session_id: int | None = Field(default=None, strict=True, ge=1)
+    client_session_id: str | None = Field(default=None, min_length=1, max_length=160)
+    entry_kind: Literal["existing_agent", "managed_ui"] = "existing_agent"
     mode: Literal["setup", "update"] = "setup"
-    workflow_keys: list[str] = Field(min_length=1, max_length=100)
+    workflow_keys: list[str] = Field(default_factory=list, max_length=100)
+    preferences: MainAgentPreferences | None = None
     response_mode: Literal["compact", "raw", "standard", "verbose"] = "compact"
 
 
@@ -75,6 +77,29 @@ class ProjectSetupReportInput(MCPInput):
 async def project_setup_start(
     inp: ProjectSetupStartInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[SetupStartOut]:
+    if inp.entry_kind == "managed_ui":
+        from starlette.concurrency import run_in_threadpool
+
+        from stackos.project_setup_execution import start_managed
+
+        _require_console(ctx)
+        # Commit dispatcher's idempotency reservation before the background owner
+        # opens another connection. No native work runs on this request's session.
+        ctx.session.commit()
+        result = await run_in_threadpool(
+            start_managed,
+            project_id=inp.project_id,
+            session_factory=ctx.extras["session_factory"],
+            scheduler=ctx.extras["scheduler"],
+            mode=inp.mode,
+            workflow_keys=inp.workflow_keys,
+            preferences=inp.preferences.model_dump(exclude_none=True) if inp.preferences else None,
+        )
+        return WriteEnvelope(project_id=inp.project_id, data=result)
+    if inp.preferences is not None:
+        raise ToolNotGrantedError("existing-session entry cannot select a managed agent")
+    if ctx.extras.get("surface") != "mcp":
+        raise ToolNotGrantedError("existing-session setup requires its native MCP bridge")
     _require_setup_session(inp, ctx)
     return WriteEnvelope[SetupStartOut](
         project_id=inp.project_id,
@@ -91,6 +116,10 @@ async def project_setup_report(
     inp: ProjectSetupReportInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> WriteEnvelope[SetupAttempt]:
     _require_setup_session(inp, ctx)
+    row = AgentRequestRepository(ctx.session)._fetch(
+        project_id=inp.project_id, request_id=inp.request_id
+    )
+    attempt = SetupAttempt.model_validate((row.metadata_json or {}).get("project_setup"))
     return WriteEnvelope[SetupAttempt](
         project_id=inp.project_id,
         data=ProjectSetupRepository(ctx.session).report(
@@ -100,6 +129,8 @@ async def project_setup_report(
             claim_token=inp.claim_token,
             expected_revision=inp.expected_revision,
             report=inp.report,
+            _managed=attempt.entry_kind == "managed_ui",
+            _session_report=attempt.entry_kind == "managed_ui",
         ),
     )
 
@@ -107,7 +138,7 @@ async def project_setup_report(
 def _require_setup_session(
     inp: ProjectSetupStartInput | ProjectSetupReportInput, ctx: MCPContext
 ) -> None:
-    session = ctx.session.get(AgentSession, inp.session_id)
+    session = ctx.session.get(AgentSession, inp.session_id) if inp.session_id is not None else None
     if (
         session is None
         or session.project_id != inp.project_id
@@ -121,6 +152,40 @@ def _require_setup_session(
                 "next_action": "workspace.startSession",
             },
         )
+
+
+def _require_console(ctx):
+    if ctx.extras.get("surface") != "rest" or not (
+        ctx.extras.get("trusted_local_admin") is True
+        or ctx.extras.get("auth_scope") in {"daemon-admin", "ui-console-operation"}
+    ):
+        raise ToolNotGrantedError("managed setup requires authenticated local-console authority")
+    if not ctx.extras.get("scheduler") or not ctx.extras.get("session_factory"):
+        raise ToolNotGrantedError("managed setup requires the running daemon executor")
+
+
+class ProjectSetupCancelInput(MCPInput):
+    model_config = ConfigDict(extra="forbid")
+    project_id: int = Field(strict=True, ge=1)
+    request_id: int = Field(strict=True, ge=1)
+    response_mode: Literal["compact", "raw", "standard", "verbose"] = "compact"
+
+
+async def project_setup_cancel(inp: ProjectSetupCancelInput, ctx: MCPContext, _emit):
+    from starlette.concurrency import run_in_threadpool
+
+    from stackos.project_setup_execution import cancel_managed
+
+    _require_console(ctx)
+    ctx.session.commit()
+    attempt = await run_in_threadpool(
+        cancel_managed,
+        inp.project_id,
+        inp.request_id,
+        session_factory=ctx.extras["session_factory"],
+        scheduler=ctx.extras["scheduler"],
+    )
+    return WriteEnvelope(project_id=inp.project_id, data=attempt)
 
 
 def setup_request_digest(inp: ProjectSetupStartInput | ProjectSetupReportInput) -> str:
@@ -140,6 +205,21 @@ def validate_setup_replay(
     cached: dict[str, Any],
 ) -> dict[str, Any]:
     """Reauthorize before exposing any cached token or reporting success."""
+    if isinstance(inp, ProjectSetupStartInput) and inp.entry_kind == "managed_ui":
+        _require_console(ctx)
+        if cached.get(SETUP_REPLAY_DIGEST_FIELD) != setup_request_digest(inp):
+            raise ConflictError("setup idempotency key belongs to another intent")
+        managed_saved = SetupStartOut.model_validate(cached["data"])
+        current = ProjectSetupRepository(ctx.session)._current_attempt(inp.project_id)
+        if current is None or current.request_id != managed_saved.attempt.request_id:
+            raise ConflictError("cached setup attempt is no longer current; inspect setup")
+        managed_saved.attempt = current
+        managed_saved.claim_token = None
+        return {
+            key: value
+            for key, value in {**cached, "data": managed_saved.model_dump(mode="json")}.items()
+            if key != SETUP_REPLAY_DIGEST_FIELD
+        }
     _require_setup_session(inp, ctx)
     digest = cached.get(SETUP_REPLAY_DIGEST_FIELD)
     repair = {"operation": name, "project_id": inp.project_id, "next_action": "inspect_setup"}
@@ -249,7 +329,13 @@ def operation_specs() -> list[OperationSpec]:
                 category="project",
                 surfaces=OperationSurfaces(
                     mcp=OperationSurface(enabled=True),
-                    rest=OperationSurface(enabled=False),
+                    rest=OperationSurface(
+                        enabled=name == "projectSetup.start",
+                        browser_safe=name == "projectSetup.start",
+                        path=f"/api/v1/operations/{name}/call"
+                        if name == "projectSetup.start"
+                        else None,
+                    ),
                     cli=OperationSurface(enabled=False),
                 ),
                 purpose=summary,
@@ -263,7 +349,8 @@ def operation_specs() -> list[OperationSpec]:
                     "Compact retains attempt/revision, workflow outcomes, "
                     "question and repair context. "
                     "Raw retains report history.",
-                    "Setup creates no business run, tracker task or native launch.",
+                    "Setup creates no business run or tracker task. Only managed_ui console "
+                    "entry launches a native coordinator through shared capacity.",
                     "Retry the same session and normalized request with the same key; "
                     "only response_mode may change. Foreign/changed intent rejects before replay.",
                 ),
@@ -272,7 +359,7 @@ def operation_specs() -> list[OperationSpec]:
             for name, summary, input_model, output_model, handler, example in (
                 (
                     "projectSetup.start",
-                    "Start or attach to one existing-session setup attempt.",
+                    "Start or attach to project setup in an existing session or managed console.",
                     ProjectSetupStartInput,
                     WriteEnvelope[SetupStartOut],
                     project_setup_start,
@@ -313,6 +400,32 @@ def operation_specs() -> list[OperationSpec]:
                 ),
             )
         ],
+        OperationSpec(
+            name="projectSetup.cancel",
+            summary="Cancel this project's managed setup invocation.",
+            input_model=ProjectSetupCancelInput,
+            output_model=WriteEnvelope[SetupAttempt],
+            handler=project_setup_cancel,
+            grant_policy="local-admin-console-write",
+            mutating=True,
+            response_policy=OperationResponsePolicy(),
+            category="project",
+            surfaces=OperationSurfaces(
+                mcp=OperationSurface(enabled=False),
+                cli=OperationSurface(enabled=False),
+                rest=OperationSurface(
+                    enabled=True,
+                    browser_safe=True,
+                    path="/api/v1/operations/projectSetup.cancel/call",
+                ),
+            ),
+            purpose="Fence queued/running work and retain reports until actual native retirement.",
+            examples=(
+                OperationExample(
+                    title="Cancel managed setup", arguments={"project_id": 1, "request_id": 123}
+                ),
+            ),
+        ),
         operation_spec(
             name="projectSetup.get",
             summary="Read verified per-workflow setup and available updates.",

@@ -601,6 +601,9 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
                 ),
             )
         ).all()
+        from stackos.project_setup_execution import setup_directories
+
+        active_directories = [*active_directories, *setup_directories(session)]
         if any(
             path and _same_directory(directory, Path(path).expanduser().resolve())
             for path in active_directories
@@ -1219,13 +1222,23 @@ def delivery_capacity(session: Session, scheduler: BaseScheduler) -> dict[str, A
             )
         ).all()
         deliveries = [(metadata or {}).get("delivery", {}) for metadata in states]
+        from stackos.project_setup_execution import capacity_states
+
+        setups = [attempt for _, attempt in capacity_states(session)]
         return {
             "scope": "local-user-daemon",
             "configured_limit": configured_limit(session),
-            "running_count": sum(bool(state.get("slot_reserved")) for state in deliveries),
+            "running_count": sum(bool(state.get("slot_reserved")) for state in deliveries)
+            + sum(bool(attempt.managed.slot_reserved) for attempt in setups),
             "queued_count": sum(
                 state.get("status") == "queued" and not state.get("slot_reserved")
                 for state in deliveries
+            )
+            + sum(
+                attempt.status == "queued"
+                and not attempt.managed.slot_reserved
+                and attempt.managed.admission_id == identity
+                for attempt in setups
             ),
             "supported_min": 1,
             "supported_max": MAX_TASK_CAPACITY,
@@ -1263,6 +1276,9 @@ def _reserve_delivery(session_factory, scheduler):
                 continue
             _update_delivery(repo, task.project_id, task.key, slot_reserved=True)
             return task.project_id, task.key, state
+        from stackos.project_setup_execution import reserve_setup
+
+        return reserve_setup(session, scheduler)
 
 
 def drain_delivery(*, session_factory, scheduler: BaseScheduler) -> None:
@@ -1275,6 +1291,16 @@ def drain_delivery(*, session_factory, scheduler: BaseScheduler) -> None:
         return
     while reserved := _reserve_delivery(session_factory, scheduler):
         project_id, task_key, state = reserved
+        if task_key is None:
+            from stackos.project_setup_execution import schedule_setup
+
+            schedule_setup(
+                project_id=project_id,
+                state=state,
+                session_factory=session_factory,
+                scheduler=scheduler,
+            )
+            continue
         # Keep registration outside managed_launch_lock. Abort must be able to
         # fence a callback even while scheduler registration is blocked.
         try:
@@ -1369,6 +1395,11 @@ def _request_delivery_drain(session_factory, scheduler):
 
 def missed_delivery_job(event, *, session_factory, scheduler):
     """A callback rejected as late never enters run_delivery's finally block."""
+    if event.job_id.startswith("project-setup:"):
+        from stackos.project_setup_execution import missed_setup
+
+        missed_setup(event, session_factory=session_factory, scheduler=scheduler)
+        return
     if not event.job_id.startswith("task-delivery:"):
         return
     with managed_launch_lock, session_factory() as session:

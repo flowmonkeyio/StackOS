@@ -125,6 +125,7 @@ class AgentRequestExecution:
     claim_token: str = field(repr=False)
     session_factory: Callable[[], Session] = field(repr=False)
     snapshot: dict[str, Any]
+    setup_owner: bool = False
 
     def admit(self, call: ActiveInvocation, launch_snapshot: dict[str, Any]) -> None:
         with managed_launch_lock, self.session_factory() as session:
@@ -796,7 +797,9 @@ class AgentRequestRepository:
         ):
             raise ConflictError("native invocation does not own this request")
         row = self._fetch(project_id=owner.project_id, request_id=owner.request_id)
-        self._verify_claim(row, owner.claim_token, allow_expired=True)
+        self._verify_claim(
+            row, owner.claim_token, allow_expired=True, _setup_owner=owner.setup_owner
+        )
         return row
 
     def _admit_execution(
@@ -809,7 +812,7 @@ class AgentRequestRepository:
 
         ProjectRepository(self._s).require_available(owner.project_id, reserve=True)
         row = self._execution_row(owner, call)
-        self._verify_claim(row, owner.claim_token)
+        self._verify_claim(row, owner.claim_token, _setup_owner=owner.setup_owner)
         if row.status != AgentRequestStatus.CLAIMED or (row.metadata_json or {}).get(
             "native_execution"
         ):

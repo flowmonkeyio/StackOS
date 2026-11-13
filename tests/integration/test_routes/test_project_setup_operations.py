@@ -1,13 +1,17 @@
 """Browser-safe reminder administration through the canonical REST adapter."""
 
+from types import SimpleNamespace
+
 import pytest
 from sqlmodel import Session
 
 from stackos.auth import derive_ui_token
+from stackos.host_mcp import service
 from stackos.repositories.project_setup import ProjectSetupRepository
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.workspaces import WorkspaceRepository
 from tests.integration.test_repositories.test_project_setup import verified_result
+from tests.integration.test_repositories.test_task_delivery import QueuedScheduler
 
 
 def test_browser_reminders_are_independent_permanent_and_not_completion(api, project_id, settings):
@@ -66,6 +70,60 @@ def test_browser_reminders_are_independent_permanent_and_not_completion(api, pro
         api.post(path, json={"arguments": {"project_id": project_id}}, headers=ui).status_code
         == 200
     )
+
+
+def test_console_managed_start_duplicate_cancel_and_preferences(
+    api, settings, tmp_path, monkeypatch
+):
+    with Session(api.app.state.engine) as session:
+        startup = WorkspaceRepository(session).start_session(runtime="codex", cwd=str(tmp_path))
+        project = startup.project_id
+    scheduler = QueuedScheduler()
+    api.app.state.operation_services["scheduler"] = scheduler
+    monkeypatch.setattr(service, "inspect_host", lambda _: SimpleNamespace(available=True))
+    ui = {"Authorization": f"Bearer {derive_ui_token(settings.token_path.read_text().strip())}"}
+
+    def call(name, arguments):
+        return api.post(
+            f"/api/v1/operations/{name}/call", json={"arguments": arguments}, headers=ui
+        )
+
+    saved = call(
+        "tracker.configureDelivery",
+        {"project_id": project, "main_agent": {"host_key": "codex", "model": "gpt-6.1-sol"}},
+    )
+    assert saved.status_code == 200, saved.text
+    arguments = {
+        "project_id": project,
+        "entry_kind": "managed_ui",
+        "idempotency_key": "console-start",
+        "response_mode": "raw",
+    }
+    first = call("projectSetup.start", arguments)
+    assert first.status_code == 200, first.text
+    data = first.json()["data"]
+    assert data["claim_token"] is None
+    assert data["attempt"]["managed"]["settings"]["model"] == "gpt-6.1-sol"
+    repeated = call("projectSetup.start", {**arguments, "response_mode": "compact"})
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json()["data"]["attempt"]["request_id"] == data["attempt"]["request_id"]
+    changed = call("projectSetup.start", {**arguments, "mode": "update"})
+    assert changed.status_code == 409, changed.text
+    assert len(scheduler.jobs) == 1
+    foreign = call(
+        "projectSetup.cancel",
+        {"project_id": project + 1000, "request_id": data["attempt"]["request_id"]},
+    )
+    assert foreign.status_code == 404, foreign.text
+    cancelled = call(
+        "projectSetup.cancel", {"project_id": project, "request_id": data["attempt"]["request_id"]}
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["data"]["status"] == "cancelled"
+    assert not scheduler.jobs
+    read = call("projectSetup.get", {"project_id": project, "response_mode": "raw"})
+    assert read.json()["current_attempt"]["status"] == "cancelled"
+    assert read.json()["launch_preferences"] == {"host_key": "codex", "model": "gpt-6.1-sol"}
 
 
 @pytest.mark.parametrize("directory", ["workflows", "agent-presets", "skill-presets"])
