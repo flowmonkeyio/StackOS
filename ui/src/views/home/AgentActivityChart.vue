@@ -21,6 +21,9 @@ const values = computed<(number | null)[]>(previous => visible.value ? props.day
 const focused = computed(() => selected.value == null ? null : props.days[selected.value] ?? null)
 const selectedField = computed(() => fields.find(item => item.key === field.value) ?? fields[0])
 function focusDay(index: number): void { selected.value = props.days.length ? index : null }
+function leavePlot(): void {
+  if (document.activeElement !== canvas.value) selected.value = null
+}
 function moveDay(event: KeyboardEvent): void {
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Escape'].includes(event.key)) return
   event.preventDefault()
@@ -98,7 +101,7 @@ onBeforeUnmount(() => { chart?.destroy(); chart = null })
     <div
       ref="plot"
       class="activity-chart__plot"
-      @mouseleave="selected = null"
+      @mouseleave="leavePlot"
     >
       <canvas
         ref="canvas"

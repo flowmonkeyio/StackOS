@@ -20,6 +20,9 @@ const focused = computed(() => selected.value == null ? null : props.days[select
 const coverage = computed(() => props.totals[props.metric.key].coverage.status)
 const review = computed(() => props.totals.first_review_acceptance)
 
+function leavePlot(): void {
+  if (document.activeElement !== canvas.value) selected.value = null
+}
 function move(event: KeyboardEvent): void {
   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Escape'].includes(event.key)) return
   event.preventDefault()
@@ -101,7 +104,7 @@ onBeforeUnmount(() => { chart?.destroy(); chart = null })
     <div
       ref="plot"
       class="delivery-trend__plot"
-      @mouseleave="selected = null"
+      @mouseleave="leavePlot"
     >
       <canvas
         ref="canvas"
