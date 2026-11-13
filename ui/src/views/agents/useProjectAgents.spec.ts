@@ -9,6 +9,12 @@ import { blankAgent, useProjectAgents, type AgentDefinition, type AgentFields } 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
 export const definition = (name = 'research'): AgentDefinition => ({ project_id: 1, project_dir: '/fixture', source_ref: { host_key: 'codex', native_name: name, source_path: `.codex/agents/${name}.toml` }, digest: 'a'.repeat(64), registration_digest: null, fields: { ...blankAgent(), name, description: 'Research description', developer_instructions: 'Complete instructions\n'.repeat(100), model: 'native-model', model_reasoning_effort: 'high' }, capabilities: { read: true, edit: true }, unsupported_fields: ['future_option'] })
 let cleanup: (() => void) | undefined
+// Actual projectAgent REST denial envelope from _service / _error, not a 403 substitution.
+const missingScope = () => new ApiError('Project agent source requires repair.', 422, {
+  detail: 'Project agent source requires repair.', code: -32602, retryable: false,
+  data: { code: 'missing_scope', repair: 'Choose an accessible folder bound to this project.' },
+  retry_after: null, hint: null,
+})
 function setup(onDraftReplaced?: (fields: AgentFields | null) => void) {
   let agents!: ReturnType<typeof useProjectAgents>
   const id = ref(1), dir = ref('/fixture')
@@ -17,6 +23,62 @@ function setup(onDraftReplaced?: (fields: AgentFields | null) => void) {
   return { agents, id, dir }
 }
 describe('native project agents', () => {
+  it.each(['list', 'get', 'create', 'update'])('clears retained authority after the real %s missing_scope denial', async operation => {
+    const { agents } = setup(); await flushPromises(); await agents.edit(definition())
+    agents.draft.value!.description = 'Retained until confirmed scope loss'
+    if (operation === 'create') { agents.add(); agents.draft.value!.name = 'new_agent' }
+    vi.mocked(callOperation).mockRejectedValueOnce(missingScope())
+    if (operation === 'list') await agents.refresh()
+    else if (operation === 'get') await agents.edit(definition())
+    else await agents.save()
+    expect(vi.mocked(callOperation).mock.calls.some(([name]) => name === `projectAgent.${operation}`)).toBe(true)
+    expect(agents.items.value).toEqual([])
+    expect(agents.selected.value).toBeNull()
+    expect(agents.draft.value).toBeNull()
+    expect(agents.ready.value).toBe(false)
+    expect(agents.error.value).toContain('missing_scope')
+    const calls = vi.mocked(callOperation).mock.calls.length
+    await agents.save(); await agents.edit(definition())
+    expect(vi.mocked(callOperation).mock.calls).toHaveLength(calls)
+  })
+  it('does not treat an ordinary 422 source validation as scope loss', async () => {
+    const { agents } = setup(); await flushPromises(); await agents.edit(definition())
+    agents.draft.value!.description = 'Unchanged draft'
+    vi.mocked(callOperation).mockRejectedValueOnce(new ApiError('Unsupported', 422, { detail: 'Unsupported', data: { code: 'unsupported_setting', repair: 'Use supported fields.' } }))
+    await agents.save()
+    expect(agents.draft.value!.description).toBe('Unchanged draft')
+    expect(agents.items.value).toHaveLength(1)
+    expect(agents.ready.value).toBe(true)
+    expect(agents.error.value).toContain('unsupported_setting')
+  })
+  it('invalidates a late editor read after coded scope loss', async () => {
+    const { agents } = setup(); await flushPromises(); await agents.edit(definition())
+    let finishRead!: (value: unknown) => void
+    vi.mocked(callOperation).mockImplementationOnce(() => new Promise(resolve => { finishRead = resolve }))
+    const pendingRead = agents.edit(definition())
+    vi.mocked(callOperation).mockRejectedValueOnce(missingScope()); await agents.refresh()
+    finishRead(definition()); await pendingRead
+    expect(agents.items.value).toEqual([])
+    expect(agents.draft.value).toBeNull()
+    expect(agents.ready.value).toBe(false)
+    expect(agents.error.value).toContain('missing_scope')
+  })
+  it('revokes retained sources and ignores a late editor read after list denial', async () => {
+    const { agents } = setup(); await flushPromises(); await agents.edit(definition())
+    let resolveRead!: (value: unknown) => void
+    vi.mocked(callOperation).mockImplementationOnce(() => new Promise(resolve => { resolveRead = resolve }))
+    const read = agents.edit(definition())
+    vi.mocked(callOperation).mockRejectedValueOnce(new ApiError('Denied', 403, { detail: 'Denied' }))
+    await agents.refresh()
+    resolveRead(definition()); await read
+    expect(agents.draft.value).toBeNull()
+    expect(agents.items.value).toEqual([])
+    expect(agents.ready.value).toBe(false)
+    expect(agents.error.value).toContain('Denied')
+    const calls = vi.mocked(callOperation).mock.calls.length
+    await agents.save()
+    expect(vi.mocked(callOperation).mock.calls).toHaveLength(calls)
+  })
   beforeEach(() => { vi.mocked(callOperation).mockImplementation(async (operation) => operation === 'projectAgent.list' ? { data: { project_id: 1, project_dir: '/fixture', items: [definition()] } } : definition()) })
   afterEach(() => { cleanup?.(); vi.resetAllMocks() })
   it('reads full source and sends only changed fields with both preconditions, never dispatching', async () => {

@@ -17,6 +17,12 @@ defineExpose({ refresh })
     <UiSectionHeader title="Active tasks">
       <template #actions>
         <span
+          role="status"
+          class="text-xs text-fg-muted"
+        >
+          {{ error ? 'Refresh failed' : feed.status === 'reconnecting' ? 'Updates reconnecting' : feed.status === 'connecting' ? 'Connecting to updates…' : loading ? 'Refreshing…' : '' }}
+        </span>
+        <span
           v-if="asOf"
           class="text-xs tabular-nums text-fg-muted"
         >{{ items.length }} {{ items.length === 1 ? 'task' : 'tasks' }}</span>
@@ -29,15 +35,8 @@ defineExpose({ refresh })
     >
       {{ error }}<span v-if="asOf"> Previously loaded tasks are shown.</span>
     </UiCallout>
-    <p
-      v-else-if="items.length && feed.status !== 'live'"
-      role="status"
-      class="mt-2 text-xs text-fg-muted"
-    >
-      {{ feed.status === 'connecting' ? 'Connecting to updates…' : 'Updates reconnecting; showing the last received tasks.' }}
-    </p>
     <UiSkeleton
-      v-if="loading && !items.length"
+      v-if="loading && !asOf"
       class="mt-3"
       height="7rem"
       shape="block"

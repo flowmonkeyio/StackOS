@@ -25,6 +25,18 @@ async function render(props: { accounts: SchemaAccountOut[]; loading: boolean; e
 afterEach(() => { vi.useRealTimers() })
 
 describe('HomeConnectionsSection', () => {
+  it('retains the focused directory node during refresh and keeps accepted empty distinct', async () => {
+    const { wrapper } = await render({ accounts: [account(1)], loading: false })
+    try {
+      const node = wrapper.get('li').element
+      await wrapper.setProps({ loading: true })
+      expect(wrapper.get('li').element).toBe(node)
+      expect(wrapper.find('.ui-skeleton').exists()).toBe(false)
+      await wrapper.setProps({ accounts: [], loaded: true })
+      expect(wrapper.text()).toContain('No Accounts are connected.')
+      expect(wrapper.find('ul').exists()).toBe(false)
+    } finally { wrapper.unmount() }
+  })
   it('retains every account and exposes duplicate identity and full status on keyboard focus', async () => {
     const { wrapper } = await render({ accounts: [account(11), account(12), account(13, { display_name: 'Personal' })], loading: false })
     try {

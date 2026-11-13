@@ -10,7 +10,8 @@ const clientMocks = vi.hoisted(() => ({
   apiFetch: vi.fn(),
 }))
 
-vi.mock('@/lib/client', () => ({
+vi.mock('@/lib/client', async importOriginal => ({
+  ...await importOriginal<typeof import('@/lib/client')>(),
   apiFetch: clientMocks.apiFetch,
   formatApiError: (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback,

@@ -102,6 +102,7 @@ def parse_action_manifest(
     action: Action,
     plugin: Plugin,
     provider: Provider | None,
+    include_schemas: bool = True,
 ) -> ExecutableActionManifest:
     """Parse catalog rows into an executable action manifest."""
     if action.id is None:
@@ -175,9 +176,9 @@ def parse_action_manifest(
         description=action.description,
         capability_key=action.capability_key,
         risk_level=action.risk_level,
-        input_schema_json=action.input_schema_json,
-        provider_context_schema_json=provider_context_schema,
-        output_schema_json=action.output_schema_json,
+        input_schema_json=action.input_schema_json if include_schemas else {},
+        provider_context_schema_json=provider_context_schema if include_schemas else {},
+        output_schema_json=action.output_schema_json if include_schemas else {},
         config_json=config,
         connector_key=connector_key,
         execution_mode=execution_mode,

@@ -207,6 +207,46 @@ names and canonical status icons with accessible labels. Identical provider/acco
 names retain stable account numbers. Hover/focus discloses full identity and state;
 Manage connections in the header reaches the existing global or project owner.
 
+Home refreshes retain accepted task and connected-tool rows, including accepted
+empty results. An ordinary snapshot read keeps healthy feed status; only transport
+loss, a failed read or an unconfirmed reconnect makes freshness stale. The task
+header reserves its status slot so pending reads do not insert a new banner.
+The catalog store exposes independent account, project-auth and catalog read
+states. Accounts and Connections consume their named state; compatible readbacks
+retain rows and filters, while scope exit and confirmed access denial invalidate
+project-auth content. Connections topology and ingress retain compatible data
+with explicit read errors; panels keep their accepted content mounted during refresh.
+Topology acceptance, pending state and errors belong to each collection, so a failed
+destination read cannot hide accepted bot/channel counts or known-empty siblings.
+Confirmed access denial clears the affected accepted presentation. Account mutation
+readbacks retain their originating request-gate scope epoch; a late write cannot
+reclaim a project after exit, replacement or return to a new lifetime.
+Ingress write completions share their editor's authority lifetime: reset, scope
+exit and confirmed denial retire old save/sync/confirmation outcomes. Mutation
+outcomes and readback errors remain distinct; Connectivity shows both when a
+write succeeds but its readback fails, until a successful fresh read clears the error.
+
+Library and domain readers retain accepted resource schemas only for the same
+project and schema query. Type labels and structured selected fields stay mounted
+through compatible refresh failures; the canonical source pagers still own rows,
+cursors and recovery. Workflow details retain the same accepted contract on a
+transient read failure, with an explicit inspection-only stale cue. A new identity,
+mismatched source, disabled plugin or confirmed access failure clears that contract.
+The catalog store exposes the plugin read's own error/status so a sibling catalog
+read cannot masquerade as current plugin availability.
+
+Spend owns independent current-month, budget and history read states in the costs
+store. Unread metrics display placeholders, while accepted zero and empty results
+remain meaningful. Each failed history month is reported; retained values for that
+month are marked stale, and missing months are never filled with zero. Reserved
+status lines and keyboard-accessible error disclosures preserve compatible content
+positions until the operator chooses to expand diagnostics.
+Accepted-empty workflow lists and complete empty history keep their presentation
+through transient refresh failure; an initial partial history read cannot establish
+empty history. Confirmed denial clears the affected list or history acceptance.
+Workflow and domain cold reads use layout-shaped `UiSkeleton` placeholders,
+replaced by the real content or explicit unavailable/disabled result.
+
 Both Home pages share `views/home/AgentActivitySection.vue`: Input / Cache /
 Output headlines, date controls, daily chart with input detail, and an accessible
 Agent / Model / Agent+model `DataTable`. `useAgentStats.ts` owns one dated,
@@ -408,7 +448,7 @@ test for cross-feature wiring, loading, and error-state truthfulness.
 | `views/accounts/TelegramProxySetupSection.vue` | Conditional disclosure of Telegram's manifest-backed proxy fields. | Keep proxy validation and normalization in the daemon's Account proxy contract. |
 | `views/ConnectionsView.vue` | Route/query synchronization, Account attachment, section composition, and project-bound communication/ingress dispatch remain. | Keep Account secret lifecycle in the reusable Accounts panel; do not fold it back into the project page. |
 | `views/connections/useConnectionCredentials.ts` | Lists attached Accounts, filters reusable unattached Accounts, and owns attach/detach confirmation state. | Keep global Account mutation and project communication topology out. |
-| `views/TaskTrackerView.vue` | Owns Board/map route history, independent map-task and popup identities, project-local Board preferences, task-index loading and focused detail dispatch. `boardFilters.ts` guards one localStorage record per project and owns explicit update/remove/clear commands plus one-shot Home entry intents. `TrackerBoardPanel` renders seven fixed status columns, 224px anchored-footer cards and API-projected whole-task usage; `TaskTrackerCommandPanel` renders the unified `TrackerBoardFilterBar` on Board and groups task identity/Automated, status/completion, inline shared usage and Task details on Graph. The shared page-header switch stays top right in both views. `TrackerBoardFilterBar` measures only the chip region with a cleaned-up ResizeObserver, reserves controls and +N overflow space, and uses `BoardFilterEditor` for visible and overflow clause edits through the preference owner's commands. `TicketGraphNode` renders its own projected ticket usage; `graphModel.ts` owns its 328 × 224 geometry and prerequisite-title resolution. `TrackerTaskDetailDialog` owns one persistent `UiDialog layout="detail"` for task/ticket inspection and a six-row scrolling ticket list. `TrackerTicketDetailContent` is shared with the map's `TrackerTicketDetailPanel` side inspector. `useTrackerExecutionContexts` owns context/artifact pagination; `useTrackerGraphSession` composes focused graph loading, viewport and the existing project/task event stream. Pure projections and filters remain in `task-tracker/viewModel.ts`. | Keep Board filters independent from map selection. Task state and ticket-status containment filters have separate meanings. Graph visibility never changes whole-task values/trends. The task-index rollup supplies actual prerequisite titles only when all open work waits on dependencies; active execution suppresses the Board badge. No per-card requests or receipt summing. Shared current/Last identity stays independent of lifecycle status. Preserve task drafts, disclosure state and scroll during ticket inspection. No standalone Stories or Tickets modes. |
+| `views/TaskTrackerView.vue` | Owns Board/map route history, independent map-task and popup identities, project-local Board preferences, task-index loading and focused detail dispatch. `boardFilters.ts` guards one localStorage record per project and owns explicit update/remove/clear commands plus one-shot Home entry intents. `TrackerBoardPanel` renders seven status columns with a 336px minimum, cards that grow from 224px with wrapping headers and normal-flow footers, and API-projected whole-task usage; `TaskTrackerCommandPanel` renders the unified `TrackerBoardFilterBar` on Board and groups task identity/Automated, status/completion, inline shared usage and Task details on Graph. The shared page-header switch stays top right in both views. `TrackerBoardFilterBar` measures only the chip region with a cleaned-up ResizeObserver, reserves controls and +N overflow space, and uses `BoardFilterEditor` for visible and overflow clause edits through the preference owner's commands. `TicketGraphNode` renders its own projected ticket usage; `graphModel.ts` owns its 328 × 224 geometry and prerequisite-title resolution. `TrackerTaskDetailDialog` owns one persistent `UiDialog layout="detail"` for task/ticket inspection and a six-row scrolling ticket list. `TrackerTicketDetailContent` is shared with the map's `TrackerTicketDetailPanel` side inspector. `useTrackerExecutionContexts` owns context/artifact pagination; `useTrackerGraphSession` composes focused graph loading, viewport and the existing project/task event stream. Pure projections and filters remain in `task-tracker/viewModel.ts`. | Keep Board filters independent from map selection. Task state and ticket-status containment filters have separate meanings. Graph visibility never changes whole-task values/trends. The task-index rollup supplies actual prerequisite titles only when all open work waits on dependencies; active execution suppresses the Board badge. No per-card requests or receipt summing. Shared current/Last identity stays independent of lifecycle status. Preserve task drafts, disclosure state and scroll during ticket inspection. No standalone Stories or Tickets modes. |
 | `views/connections/credentialPresentation.ts` | Provider/auth grouping, labels, connection status, and account presentation. | Keep provider catalog knowledge here; do not mix in communication topology facets. |
 | `views/connections/formatters.ts` | Communication profile, route, surface, Slack, ingress, and shared Account presentation exports. | Split another provider-specific facet only when it gains a distinct contract or test lifecycle. |
 | `views/finance/FinanceRequestDialog.vue` | Contextual safe request read, original source and status at the Finance origin. | Preserve exact request/project/workspace identity, stale-read rejection and explicit unavailable/retry states. Never infer a tracker task or execute recovery from inspection. |
@@ -489,7 +529,10 @@ task moving to the Aborted column cannot dismiss a stop error or its retry.
 `useRunAbort` owns the single pending request/confirmation and calls `runPlan.abort`
 with the recorded project/run-plan link. Page callbacks refresh existing projections;
 there is no abort poller. Board menus are siblings of card buttons, preserving
-the fixed 224px card and keyboard access.
+the card's 224px minimum height and keyboard access. Board columns start at
+336px; header badges and counts wrap as whole items without text truncation.
+The visible automation badge reads Auto, with its full accessible meaning.
+Header growth moves the title, usage and normal-flow execution footer together.
 
 The `/__design-system` route was removed from the shipped app. Keep any future
 component demos outside the production router, and do not ship action-demo

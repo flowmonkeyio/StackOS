@@ -23,6 +23,14 @@ describe('active-list read states', () => {
       await flushPromises()
       expect(wrapper.text()).toContain('No tasks are in progress.')
       expect(wrapper.text()).toContain('0 tasks')
+      let finishRefresh!: (value: unknown) => void
+      vi.mocked(callOperation).mockImplementation(() => new Promise(resolve => { finishRefresh = resolve }) as never)
+      const read = (wrapper.vm as unknown as { refresh: () => Promise<void> }).refresh()
+      await flushPromises()
+      expect(wrapper.find('[aria-label="Loading active tasks"]').exists()).toBe(false)
+      expect(wrapper.text()).toContain('No tasks are in progress.')
+      finishRefresh(activeTasksFixture(null, []))
+      await read
     } finally { wrapper.unmount() }
     vi.mocked(callOperation).mockRejectedValue(new Error('Fixture service unavailable'))
     const failed = mount(ActiveTaskList, { global: { plugins: [createPinia()] } })

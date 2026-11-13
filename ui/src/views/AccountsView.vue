@@ -47,6 +47,7 @@ const search = ref('')
 
 const {
   error,
+  loading,
   panelOpen,
   busyAction,
   providerMessages,
@@ -159,7 +160,6 @@ function projectName(projectId: number): string {
 }
 
 async function load(): Promise<void> {
-  initialLoadComplete.value = false
   try {
     await Promise.all([loadAccounts(), projectsStore.refresh()])
     handleOAuthReturn()
@@ -273,6 +273,15 @@ onMounted(load)
       description="Set up provider Accounts once, then reuse them across projects."
     >
       <template #actions>
+        <UiButton
+          variant="secondary"
+          size="sm"
+          icon-left="refresh"
+          :loading="loading"
+          @click="load"
+        >
+          Refresh
+        </UiButton>
         <UiButton variant="primary" size="sm" icon-left="plus" @click="openAddAccount()">
           Add Account
         </UiButton>

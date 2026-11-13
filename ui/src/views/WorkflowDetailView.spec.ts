@@ -2,9 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import WorkflowDetailView from './WorkflowDetailView.vue'
 import { openView, plugin, workflow } from './plugin-domain/testSupport'
+import { ApiError } from '@/lib/client'
 
 const client = vi.hoisted(() => ({ apiFetch: vi.fn() }))
-vi.mock('@/lib/client', () => ({ apiFetch: client.apiFetch, formatApiError: (e: unknown) => String(e) }))
+vi.mock('@/lib/client', async importOriginal => ({ ...await importOriginal<typeof import('@/lib/client')>(), apiFetch: client.apiFetch, formatApiError: (e: unknown) => String(e) }))
 const wrappers: Awaited<ReturnType<typeof openView>>['wrapper'][] = []
 async function open(path = '/projects/1/plugins/engineering/workflows/engineering.tracked-delivery') {
   const result = await openView(WorkflowDetailView, path)
@@ -13,6 +14,20 @@ async function open(path = '/projects/1/plugins/engineering/workflows/engineerin
 describe('Workflow detail', () => {
   beforeEach(() => { client.apiFetch.mockReset().mockImplementation(async (url: string) => url.startsWith('/api/v1/plugins?') ? [plugin(), plugin('support')] : workflow()) })
   afterEach(() => { wrappers.forEach(wrapper => wrapper.unmount()); wrappers.length = 0; document.body.innerHTML = '' })
+  it.each([
+    '/projects/1/plugins/engineering/workflows/engineering.tracked-delivery',
+    '/projects/1/workflows/customer.weekly-review',
+  ])('uses layout-shaped initial structure without inventing stages or permission: %s', async path => {
+    let resolve!: (value: unknown) => void
+    client.apiFetch.mockImplementation((url: string) => url.startsWith('/api/v1/plugins?') ? Promise.resolve([plugin()]) : new Promise(value => { resolve = value }))
+    const { wrapper } = await open(path)
+    expect(wrapper.get('[aria-label="Loading workflow"]').findAll('.ui-skeleton').length).toBeGreaterThan(3)
+    expect(wrapper.find('ol').exists()).toBe(false)
+    expect(wrapper.text()).not.toMatch(/Start run|Ready for this project/)
+    resolve(path.includes('/plugins/') ? workflow() : configuredWorkflow()); await flushPromises()
+    expect(wrapper.find('[aria-label="Loading workflow"]').exists()).toBe(false)
+    expect(wrapper.find('ol').exists()).toBe(true)
+  })
   function configuredWorkflow(key = 'customer.weekly-review') {
     const result = workflow(key)
     result.summary.plugin_slug = null
@@ -89,6 +104,62 @@ describe('Workflow detail', () => {
     await wrapper.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click'); await flushPromises()
     expect((wrapper.get('details').element as HTMLDetailsElement).open).toBe(true)
     expect(client.apiFetch.mock.calls.every(([, options]) => !options?.method || options.method === 'GET')).toBe(true)
+  })
+
+  it.each([
+    '/projects/1/plugins/engineering/workflows/engineering.tracked-delivery',
+    '/projects/1/workflows/customer.weekly-review',
+  ])('retains same-template content and disclosure after transient errors: %s', async path => {
+    const initial = path.includes('/plugins/') ? workflow() : configuredWorkflow()
+    client.apiFetch.mockImplementation(async (url: string) => url.startsWith('/api/v1/plugins?') ? [plugin()] : initial)
+    const { wrapper } = await open(path)
+    const stages = wrapper.get('ol').element
+    const details = wrapper.get('details').element as HTMLDetailsElement
+    details.open = true
+    let reject!: (error: Error) => void
+    client.apiFetch.mockImplementation((url: string) => url.startsWith('/api/v1/plugins?') ? Promise.resolve([plugin()]) : new Promise((_resolve, fail) => { reject = fail }))
+    await wrapper.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click'); await flushPromises()
+    expect(wrapper.get('ol').element).toBe(stages)
+    reject(new Error('Transient workflow outage')); await flushPromises()
+    expect(wrapper.get('ol').element).toBe(stages)
+    expect(details.open).toBe(true)
+    expect(wrapper.text()).toContain('Last accepted workflow')
+    expect(wrapper.text()).toContain('Transient workflow outage')
+    expect(wrapper.text()).not.toMatch(/Ready for this project|Start run/)
+    client.apiFetch.mockImplementation(async (url: string) => url.startsWith('/api/v1/plugins?') ? [plugin()] : initial)
+    await wrapper.findAll('button').find(button => button.text() === 'Retry')!.trigger('click'); await flushPromises()
+    expect(wrapper.get('ol').element).toBe(stages)
+    expect(wrapper.text()).not.toContain('Transient workflow outage')
+  })
+
+  it.each([401, 403, 404, 422])('clears accepted content after confirmed HTTP %s', async status => {
+    const { wrapper } = await open()
+    client.apiFetch.mockImplementation(async (url: string) => {
+      if (url.startsWith('/api/v1/plugins?')) return [plugin()]
+      throw new ApiError('Unavailable', status, { detail: 'Workflow access unavailable' })
+    })
+    await wrapper.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click'); await flushPromises()
+    expect(wrapper.find('ol').exists()).toBe(false)
+    expect(wrapper.get('h1').text()).toBe('Workflow')
+    expect(wrapper.text()).toContain('Workflow access unavailable')
+  })
+
+  it('retains a catalog outage but clears on confirmed catalog denial and plugin disablement', async () => {
+    const { wrapper } = await open()
+    client.apiFetch.mockRejectedValue(new ApiError('Temporary', 503, { detail: 'Catalog outage' }))
+    await wrapper.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click'); await flushPromises()
+    expect(wrapper.find('ol').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Last accepted workflow')
+    client.apiFetch.mockRejectedValue(new ApiError('Denied', 403, { detail: 'Project denied' }))
+    await wrapper.findAll('button').find(button => button.text() === 'Retry')!.trigger('click'); await flushPromises()
+    expect(wrapper.find('ol').exists()).toBe(false)
+    client.apiFetch.mockImplementation(async (url: string) => url.startsWith('/api/v1/plugins?') ? [plugin()] : workflow())
+    await wrapper.findAll('button').find(button => button.text() === 'Retry')!.trigger('click'); await flushPromises()
+    expect(wrapper.find('ol').exists()).toBe(true)
+    client.apiFetch.mockResolvedValue([plugin('engineering', [], false)])
+    await wrapper.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click'); await flushPromises()
+    expect(wrapper.find('ol').exists()).toBe(false)
+    expect(wrapper.text()).toContain('disabled for this project')
   })
   it('clears old detail on navigation, ignores late results and shows a different workflow without invented sections', async () => {
     let resolve!: (value: unknown) => void

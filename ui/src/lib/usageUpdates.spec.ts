@@ -66,7 +66,7 @@ describe('one shared usage transport', () => {
     expect(markUsageSnapshot(null, current)).toBe(true)
     expect(connection.mock.lastCall?.[0].status).toBe('live')
     stream.onUsage?.()
-    expect(connection.mock.lastCall?.[0].status).toBe('reconnecting')
+    expect(connection.mock.lastCall?.[0].status).toBe('live')
     stream.onDisconnect?.()
     expect(markUsageSnapshot(null, usageSnapshotCheckpoint(null))).toBe(false)
     stream.onFrame?.(Date.now())

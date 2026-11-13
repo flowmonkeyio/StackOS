@@ -32,6 +32,8 @@ def main() -> int:
             or spec.name.startswith("schedule.")
             or spec.name
             in {
+                "action.list",
+                "integration.list",
                 "tracker.agentStats",
                 "tracker.agentStatsAll",
                 "tracker.activeTasks",

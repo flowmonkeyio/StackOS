@@ -1,7 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import type { SchemaArtifactOut, SchemaResourceOut, SchemaResourceRecordOut } from '@/api'
-import { apiFetch, formatApiError } from '@/lib/client'
+import { ApiError, apiFetch, formatApiError } from '@/lib/client'
 import { createSourcePager } from '@/lib/sourcePager'
 import { createProjectRequestGate } from '@/lib/stackos/projectRequestGate'
 
@@ -14,6 +14,8 @@ export const useStackOsResourcesStore = defineStore('stackosResources', () => {
   const currentProjectId = ref<number | null>(null)
   const schemaLoading = ref(false)
   const schemaError = ref<string | null>(null)
+  const schemaLoaded = ref(false)
+  let schemaQuery = ''
   const schemaRequests = createProjectRequestGate()
   const loading = computed(() => schemaLoading.value || recordSource.page.loading || artifactSource.page.loading)
   const error = computed(() => schemaError.value || recordSource.page.error || artifactSource.page.error)
@@ -31,15 +33,28 @@ export const useStackOsResourcesStore = defineStore('stackosResources', () => {
   async function refreshSchemas(projectId: number, filters: ResourceFilters = {}) {
     ensureScope(projectId)
     const request = schemaRequests.begin(projectId)
+    const query = new URLSearchParams({ ...params(filters), project_id: String(projectId) })
+    if (schemaQuery !== query.toString()) {
+      resources.value = []
+      schemaLoaded.value = false
+      schemaQuery = query.toString()
+    }
     schemaLoading.value = true
     schemaError.value = null
-    resources.value = []
     try {
-      const query = new URLSearchParams({ ...params(filters), project_id: String(projectId) })
       const rows = await apiFetch<SchemaResourceOut[]>(`/api/v1/resources?${query}`)
-      if (request.isCurrent()) resources.value = rows
+      if (request.isCurrent()) {
+        resources.value = rows
+        schemaLoaded.value = true
+      }
     } catch (err) {
-      if (request.isCurrent()) schemaError.value = formatApiError(err, 'Failed to load resource schemas')
+      if (request.isCurrent()) {
+        schemaError.value = formatApiError(err, 'Failed to load resource schemas')
+        if (err instanceof ApiError && [401, 403, 404].includes(err.status)) {
+          resources.value = []
+          schemaLoaded.value = false
+        }
+      }
     } finally {
       const current = request.isCurrent()
       request.finish()
@@ -64,6 +79,8 @@ export const useStackOsResourcesStore = defineStore('stackosResources', () => {
     resources.value = []
     schemaLoading.value = false
     schemaError.value = null
+    schemaLoaded.value = false
+    schemaQuery = ''
     recordSource.reset()
     artifactSource.reset()
     currentProjectId.value = null
@@ -71,7 +88,7 @@ export const useStackOsResourcesStore = defineStore('stackosResources', () => {
   return {
     resources, records: recordSource.items, artifacts: artifactSource.items,
     recordPage: recordSource.page, artifactPage: artifactSource.page,
-    loading, error, schemaLoading, schemaError, currentProjectId,
+    loading, error, schemaLoading, schemaError, schemaLoaded, currentProjectId,
     refresh, refreshSchemas, refreshRecords, refreshArtifacts,
     loadMoreRecords: recordSource.loadMore, loadMoreArtifacts: artifactSource.loadMore, reset,
   }

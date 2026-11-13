@@ -6,7 +6,7 @@ import LibraryView from './LibraryView.vue'
 import { useStackOsResourcesStore } from '@/stores/stackosResources'
 
 const client = vi.hoisted(() => ({ apiFetch: vi.fn() }))
-vi.mock('@/lib/client', () => ({ apiFetch: client.apiFetch, formatApiError: (e: unknown) => String(e) }))
+vi.mock('@/lib/client', async importOriginal => ({ ...await importOriginal<typeof import('@/lib/client')>(), apiFetch: client.apiFetch, formatApiError: (e: unknown) => String(e) }))
 const page = (items: object[], next_cursor: number | null = null) => ({ items, next_cursor, total_estimate: items.length })
 const decision = (id: number, project_id = 1) => ({ id, project_id, title: `Decision ${id}`, decision: `Saved decision ${id}`, rationale: 'Actual reason', status: 'accepted', created_at: '2026-11-09' })
 const wrappers: ReturnType<typeof mount>[] = []
@@ -78,6 +78,34 @@ describe('Library', () => {
     await wrapper.get('input[placeholder="Search this list"]').setValue('Old learning')
     expect(wrapper.find('[aria-label="Selected saved content"]').exists()).toBe(false)
     expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+  })
+
+  it('keeps schema labels and structured selected fields through pending/error/retry without remounting', async () => {
+    const schema = { id: 1, plugin_slug: 'engineering', key: 'engineering-decision', name: 'Approved decisions', ui_schema_json: { summary_fields: ['decision'] } }
+    let reject!: (error: Error) => void
+    let slow = false
+    client.apiFetch.mockImplementation((url: string) => {
+      if (url.startsWith('/api/v1/resources?')) return slow ? new Promise((_resolve, fail) => { reject = fail }) : Promise.resolve([schema])
+      return Promise.resolve(url.includes('/resource-records?') ? page([{ id: 1, project_id: 1, plugin_slug: 'engineering', resource_id: 1, resource_key: schema.key, title: 'Chosen decision', data_json: { decision: 'Retained structured value' } }]) : page([]))
+    })
+    const { wrapper } = await open()
+    await wrapper.get('[data-source="resource_record:1"]').trigger('click'); await flushPromises()
+    const facts = wrapper.get('[aria-label="Saved content"]').element
+    const details = wrapper.get('[data-library-detail] details').element as HTMLDetailsElement
+    details.open = true
+    slow = true
+    await button(wrapper, 'Refresh').trigger('click'); await flushPromises()
+    expect(wrapper.get('[aria-label="Saved content"]').element).toBe(facts)
+    expect(wrapper.text()).toContain('Approved decisions')
+    expect(wrapper.text()).toContain('Retained structured value')
+    reject(new Error('Schema refresh failed')); await flushPromises()
+    expect(wrapper.get('[aria-label="Saved content"]').element).toBe(facts)
+    expect(details.open).toBe(true)
+    expect(wrapper.text()).toContain('Showing last accepted labels and fields')
+    slow = false
+    await button(wrapper, 'Retry field descriptions').trigger('click'); await flushPromises()
+    expect(wrapper.get('[aria-label="Saved content"]').element).toBe(facts)
+    expect(wrapper.text()).not.toContain('could not be refreshed')
   })
 
   it('preserves a later-page selection and scroll on refresh and restores keyboard focus on close', async () => {

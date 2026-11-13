@@ -12,7 +12,7 @@ import { agentError, agentIdentity, useProjectAgents, type AgentSummary, type Ag
 const props = defineProps<{ projectId: number; standalone?: boolean }>()
 const codexLogo = resolveAgentHostLogo('codex')
 let reloadAgents = () => {}
-const { projectDir, folderIssue, folderLoading, refreshFolder } = useProjectFolder(toRef(props, 'projectId'), () => reloadAgents())
+const { projectDir, folderIssue, folderReady, folderLoading, refreshFolder } = useProjectFolder(toRef(props, 'projectId'), () => reloadAgents())
 const search = ref('')
 const features = ref('null')
 const skills = ref('null')
@@ -28,15 +28,17 @@ function resetEditorOptions(fields: AgentFields | null) {
     void loadHostStatuses()
   }
 }
-const { items, diagnostics, loading, reading, saving, error, message, selected, draft, dirty, refresh, edit, add, close, save } = useProjectAgents(toRef(props, 'projectId'), projectDir, resetEditorOptions)
-reloadAgents = () => { close(); void refresh() }
+const { items, diagnostics, loading, loaded, ready, reading, saving, error, message, selected, draft, dirty, refresh, edit, add, close, save } = useProjectAgents(toRef(props, 'projectId'), projectDir, resetEditorOptions, folderReady)
+reloadAgents = () => { void refresh() }
 const visible = computed(() => items.value.filter(item => `${item.source_ref.native_name} ${item.fields?.description ?? ''} ${item.source_ref.source_path}`.toLowerCase().includes(search.value.toLowerCase())))
 const title = (name: string) => name.replace(/[_-]/g, ' ').replace(/^./, value => value.toUpperCase()).replace(/\bseo\b/gi, 'SEO')
-const pending = ref<(() => void) | null>(null)
+type PendingAction = { action: () => void; kind: 'refresh' | 'discard' }
+const pending = ref<PendingAction | null>(null)
+const refreshingDraft = computed(() => pending.value?.kind === 'refresh')
 let cancelNavigation: (() => void) | null = null
 function cancelDiscard() { pending.value = null; cancelNavigation?.(); cancelNavigation = null }
-function protect(action: () => void) { if (saving.value) return; if (dirty.value) pending.value = action; else action() }
-function discard() { const action = pending.value; pending.value = null; action?.() }
+function protect(action: () => void, kind: PendingAction['kind']) { if (saving.value) return; if (dirty.value) pending.value = { action, kind }; else action() }
+function discard() { const action = pending.value?.action; pending.value = null; action?.() }
 const editor = ref<HTMLElement | null>(null)
 const optionsError = ref('')
 const modelCatalog = computed(() => hostStatuses.value.items.find(host => host.host_key === (selected.value?.source_ref.host_key ?? 'codex'))?.agent_execution)
@@ -77,12 +79,14 @@ if (inject(routerKey, null)) {
   const protectNavigation = () => {
     if (saving.value) return false
     if (!hasChanges.value) return true
-    return new Promise<boolean>(resolve => { pending.value = () => { cancelNavigation = null; resolve(true) }; cancelNavigation = () => resolve(false) })
+    cancelNavigation?.()
+    return new Promise<boolean>(resolve => { pending.value = { kind: 'discard', action: () => { cancelNavigation = null; resolve(true) } }; cancelNavigation = () => resolve(false) })
   }
   onBeforeRouteLeave(protectNavigation)
   onBeforeRouteUpdate(protectNavigation)
 }
-function guarded(action: () => void) { if (optionsDirty.value && !dirty.value) pending.value = action; else protect(action) }
+function guarded(action: () => void, kind: PendingAction['kind'] = 'discard') { if (saving.value) return; if (optionsDirty.value && !dirty.value) pending.value = { action, kind }; else protect(action, kind) }
+function guardedRefresh() { guarded(() => { void refreshFolder() }, 'refresh') }
 const settings: { key: 'model_reasoning_effort' | 'model_reasoning_summary' | 'model_verbosity'; label: string; values: string[] }[] = [
   { key: 'model_reasoning_effort', label: 'Reasoning effort', values: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] },
   { key: 'model_reasoning_summary', label: 'Reasoning summary', values: ['auto', 'concise', 'detailed', 'none'] },
@@ -109,15 +113,15 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
       <template #actions>
         <UiButton
           icon-left="refresh"
-          :disabled="loading || reading || saving || !projectDir"
-          @click="guarded(() => { close(); void refresh() })"
+          :disabled="loading || folderLoading || reading || saving || !projectDir"
+          @click="guardedRefresh"
         >
           Refresh
         </UiButton>
         <UiButton
           icon-left="plus"
           variant="primary"
-          :disabled="saving || !projectDir || loading"
+          :disabled="saving || !ready"
           @click="guarded(add)"
         >
           Add agent
@@ -142,15 +146,15 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
       >
         <UiButton
           icon-left="refresh"
-          :disabled="loading || reading || saving || !projectDir"
-          @click="guarded(() => { close(); void refresh() })"
+          :disabled="loading || folderLoading || reading || saving || !projectDir"
+          @click="guardedRefresh"
         >
           Refresh
         </UiButton>
         <UiButton
           variant="primary"
           icon-left="plus"
-          :disabled="saving || !projectDir || loading"
+          :disabled="saving || !ready"
           @click="guarded(add)"
         >
           Add agent
@@ -158,11 +162,11 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
       </div>
     </div>
     <UiLoadingState
-      v-if="folderLoading"
+      v-if="folderLoading && !projectDir"
       label="Loading project folder…"
     />
     <UiCallout
-      v-if="!folderLoading && folderIssue"
+      v-if="!folderLoading && folderIssue && !projectDir"
       tone="warning"
       title="Project folder needs setup"
     >
@@ -174,11 +178,11 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
       </UiButton>
     </UiCallout>
     <UiCallout
-      v-if="error"
+      v-if="error && !loaded"
       tone="danger"
       title="Agent source requires attention"
     >
-      {{ error }} Your draft is retained. Refresh discards it only after confirmation.
+      {{ error }}
     </UiCallout>
     <UiCallout
       v-for="(diagnostic, index) in diagnostics"
@@ -199,8 +203,21 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
           placeholder="Find an agent"
           class="mb-3"
         />
+        <div class="min-h-12 text-xs text-fg-muted" role="status">
+          <p v-if="loaded && (loading || folderLoading)">Last-known agents · refreshing sources…</p>
+          <template v-else-if="loaded && !ready">
+            <p>Last-known agents · refresh required</p>
+            <div class="flex items-start gap-2">
+              <details class="min-w-0 flex-1">
+                <summary class="focus-ring cursor-pointer">Refresh details</summary>
+                <p>{{ error || folderIssue || 'Source validation required.' }}</p>
+              </details>
+              <UiButton v-if="folderIssue" size="sm" variant="ghost" @click="guardedRefresh">Retry project folder</UiButton>
+            </div>
+          </template>
+        </div>
         <UiLoadingState
-          v-if="loading"
+          v-if="loading && !loaded"
           label="Loading project agents…"
         />
         <div
@@ -217,7 +234,7 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
             class="agent-columns agent-row focus-ring w-full border-t border-subtle px-4 py-3 text-left"
             :class="{ 'agent-row--selected': selected && agentIdentity(selected.source_ref) === agentIdentity(row.source_ref) }"
             :aria-pressed="Boolean(selected && agentIdentity(selected.source_ref) === agentIdentity(row.source_ref))"
-            :disabled="reading || saving"
+            :disabled="reading || saving || !ready"
             @click="select(row)"
           >
             <span class="min-w-0"><span
@@ -240,7 +257,7 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
           </button>
         </div>
         <p
-          v-else-if="projectDir && !error"
+          v-else-if="projectDir && (loaded || !error)"
           class="rounded-lg border border-default p-6 text-sm text-fg-muted"
         >
           {{ search ? 'No matching agents.' : 'No project agents yet. Add an agent to create its project file.' }}
@@ -248,6 +265,9 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
         <p class="mt-3 text-xs text-fg-muted">
           Project file editing supports Codex. Other agent apps keep their existing execution settings.
         </p>
+        <UiCallout v-if="error && ready && !draft" tone="danger" title="Agent source requires attention" role="alert" class="mt-3">
+          {{ error }}
+        </UiCallout>
       </div>
       <UiLoadingState
         v-if="reading"
@@ -416,12 +436,15 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
           >
             {{ optionsError }}
           </UiCallout>
+          <UiCallout v-if="error && ready" tone="danger" title="Agent source requires attention" role="alert">
+            {{ error }}
+          </UiCallout>
           <div class="flex flex-wrap items-center gap-3 border-t border-subtle pt-4">
             <UiButton
               type="submit"
               variant="primary"
               :loading="saving"
-              :disabled="!hasChanges || reading || selected?.capabilities?.edit === false"
+              :disabled="!ready || !hasChanges || reading || selected?.capabilities?.edit === false"
             >
               {{ selected ? 'Save changes' : 'Add agent' }}
             </UiButton><span class="text-xs text-fg-muted">{{ hasChanges ? 'Unsaved changes' : 'No changes' }}</span><span class="text-xs text-fg-muted sm:ml-auto">Changes apply to future runs.</span>
@@ -430,16 +453,16 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
             class="text-xs text-fg-muted"
             role="status"
           >
-            {{ message || 'Saved in the project file. Saving starts nothing.' }}
+            {{ message || 'Saving starts nothing.' }}
           </p>
         </form>
       </aside>
     </div>
     <UiConfirmDialog
       :model-value="Boolean(pending)"
-      title="Discard unsaved changes?"
-      description="Your draft has not been saved to the project file."
-      confirm-label="Discard changes"
+      :title="refreshingDraft ? 'Refresh project sources?' : 'Discard unsaved changes?'"
+      :description="refreshingDraft ? 'Your draft will be retained for the same project folder. A changed folder or denied access clears incompatible content.' : 'Your draft has not been saved to the project file.'"
+      :confirm-label="refreshingDraft ? 'Refresh sources' : 'Discard changes'"
       @update:model-value="!$event && cancelDiscard()"
       @confirm="discard"
       @cancel="cancelDiscard"

@@ -3,9 +3,9 @@ import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { SchemaPluginOut, SchemaWorkflowTemplateSummaryOut } from '@/api'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
-import { UiButton, UiCallout, UiLoadingState, UiPageShell, UiSectionHeader } from '@/components/ui'
+import { UiButton, UiCallout, UiPageShell, UiSectionHeader, UiSkeleton } from '@/components/ui'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
-import { apiFetch, formatApiError } from '@/lib/client'
+import { ApiError, apiFetch, formatApiError } from '@/lib/client'
 import { projectIdFromRoute } from '@/lib/stackos/projectNavigation'
 import { domainPage } from '@/lib/stackos/pluginPage'
 import { useStackOsCatalogStore } from '@/stores/plugins'
@@ -22,6 +22,8 @@ const enabled = computed(() => plugin.value && plugin.value.enabled_for_project 
 const page = computed(() => domainPage(plugin.value))
 const contentSections = computed(() => page.value.sections.filter((section): section is 'saved' | 'files' => section !== 'workflows'))
 const workflows = ref<SchemaWorkflowTemplateSummaryOut[]>([])
+const workflowsLoaded = ref(false)
+const loadingSections = computed(() => plugin.value ? page.value.sections : ['workflows', 'saved'])
 const loading = ref(true)
 const initialized = ref(false)
 const error = ref('')
@@ -33,15 +35,39 @@ async function load(nextProjectId = projectId.value, nextSlug = slug.value) {
   loading.value = true
   error.value = ''
   if (!Number.isSafeInteger(nextProjectId)) { loading.value = false; return }
-  await catalog.refreshPlugins(nextProjectId)
+  const ready = await catalog.refreshPlugins(nextProjectId)
   if (current !== generation) return
-  if (!catalog.error) plugin.value = catalog.plugins.find(item => item.slug === nextSlug)
-  if (catalog.error) error.value = catalog.error
+  if (ready) {
+    plugin.value = catalog.plugins.find(item => item.slug === nextSlug)
+    if (!enabled.value || !page.value.sections.includes('workflows')) {
+      workflows.value = []
+      workflowsLoaded.value = false
+    }
+  }
+  if (!ready) {
+    error.value = catalog.pluginError ?? 'Plugin availability could not be refreshed.'
+    if ([401, 403, 404].includes(catalog.pluginErrorStatus ?? 0)) {
+      plugin.value = undefined
+      workflows.value = []
+      workflowsLoaded.value = false
+    }
+  }
   else if (enabled.value && page.value.sections.includes('workflows')) {
     try {
       const result = await apiFetch<{ templates: SchemaWorkflowTemplateSummaryOut[] }>(`/api/v1/projects/${nextProjectId}/workflow-templates?plugin_slug=${encodeURIComponent(nextSlug)}`)
-      if (current === generation) workflows.value = result.templates.filter(item => item.plugin_slug === nextSlug)
-    } catch (err) { if (current === generation) error.value = formatApiError(err, 'Failed to load workflows') }
+      if (current === generation) {
+        workflows.value = result.templates.filter(item => item.plugin_slug === nextSlug)
+        workflowsLoaded.value = true
+      }
+    } catch (err) {
+      if (current === generation) {
+        error.value = formatApiError(err, 'Failed to load workflows')
+        if (err instanceof ApiError && [401, 403, 404].includes(err.status)) {
+          workflows.value = []
+          workflowsLoaded.value = false
+        }
+      }
+    }
   }
   if (current !== generation) return
   loading.value = false
@@ -55,6 +81,7 @@ async function load(nextProjectId = projectId.value, nextSlug = slug.value) {
 function enterScope(nextProjectId: number, nextSlug: string) {
   plugin.value = undefined
   workflows.value = []
+  workflowsLoaded.value = false
   initialized.value = false
   void load(nextProjectId, nextSlug)
 }
@@ -87,8 +114,17 @@ onBeforeUnmount(() => { generation++; removeRouteListener() })
         </UiButton>
       </template>
     </ProjectPageHeader>
+    <div data-domain-status class="min-h-5 text-xs text-fg-muted" role="status">
+      <details v-if="error && enabled">
+        <summary class="focus-ring cursor-pointer rounded-sm">Domain reads need refresh</summary>
+        <UiCallout tone="warning" class="mt-2">
+          {{ error }} <UiButton size="sm" @click="load()">Retry</UiButton>
+        </UiCallout>
+      </details>
+      <p v-else>{{ loading ? initialized ? 'Refreshing domain…' : 'Loading domain…' : error ? 'Domain read failed.' : 'Domain content current.' }}</p>
+    </div>
     <UiCallout
-      v-if="error"
+      v-if="error && !enabled"
       tone="danger"
     >
       {{ error }} <UiButton
@@ -98,17 +134,29 @@ onBeforeUnmount(() => { generation++; removeRouteListener() })
         Retry
       </UiButton>
     </UiCallout>
-    <UiLoadingState
+    <div
       v-if="loading && !initialized"
-      label="Loading domain"
-    />
+      aria-label="Loading domain"
+      aria-busy="true"
+      class="min-w-0 space-y-7"
+    >
+      <div v-for="section in loadingSections" :key="section" aria-hidden="true" class="space-y-4 py-5">
+        <UiSkeleton width="9rem" :height="20" />
+        <div class="overflow-hidden rounded-lg border border-default bg-bg-surface">
+          <div v-for="row in 2" :key="row" class="domain-workflow">
+            <UiSkeleton width="65%" />
+            <UiSkeleton width="85%" />
+          </div>
+        </div>
+      </div>
+    </div>
     <UiCallout
-      v-else-if="!enabled"
+      v-else-if="!enabled && !error"
       tone="neutral"
     >
       {{ plugin ? 'This plugin is disabled for this project.' : 'This plugin is unavailable for this project.' }}
     </UiCallout>
-    <template v-else>
+    <template v-else-if="enabled">
       <section
         v-if="page.sections.includes('workflows')"
         class="domain-section"
@@ -138,7 +186,7 @@ onBeforeUnmount(() => { generation++; removeRouteListener() })
           </div>
         </div>
         <p
-          v-else-if="!error"
+          v-else-if="workflowsLoaded"
           class="text-sm text-fg-muted"
         >
           No workflows available for this domain.

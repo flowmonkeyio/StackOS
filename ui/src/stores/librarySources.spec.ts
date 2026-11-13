@@ -4,9 +4,11 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useStackOsResourcesStore } from './stackosResources'
 import { useProjectDataStore } from './projectData'
 import { toLibrarySource } from '@/lib/librarySources'
+import { ApiError } from '@/lib/client'
 
 const client = vi.hoisted(() => ({ apiFetch: vi.fn() }))
-vi.mock('@/lib/client', () => ({
+vi.mock('@/lib/client', async importOriginal => ({
+  ...await importOriginal<typeof import('@/lib/client')>(),
   apiFetch: client.apiFetch,
   formatApiError: (e: unknown) => String(e),
 }))
@@ -23,6 +25,53 @@ describe('shared Library sources', () => {
     setActivePinia(createPinia())
     client.apiFetch.mockReset().mockImplementation(async (url: string) =>
       url.startsWith('/api/v1/resources?') ? [] : page([]))
+  })
+
+  it('retains accepted schemas during compatible pending/error reads and clears on query/project changes', async () => {
+    const store = useStackOsResourcesStore()
+    client.apiFetch.mockResolvedValue([{ id: 1, key: 'decision' }])
+    await store.refreshSchemas(1, { pluginSlug: 'engineering' })
+    const slow = deferred<unknown>()
+    client.apiFetch.mockReturnValueOnce(slow.promise)
+    const refresh = store.refreshSchemas(1, { pluginSlug: 'engineering' })
+    expect(store.resources.map(row => row.id)).toEqual([1])
+    slow.resolve([{ id: 2, key: 'decision' }]); await refresh
+    client.apiFetch.mockRejectedValueOnce(new Error('Schema temporarily unavailable'))
+    await store.refreshSchemas(1, { pluginSlug: 'engineering' })
+    expect(store.resources.map(row => row.id)).toEqual([2])
+    expect(store.schemaError).toContain('temporarily unavailable')
+    const late = deferred<unknown>()
+    client.apiFetch.mockReturnValueOnce(late.promise)
+    const old = store.refreshSchemas(1, { pluginSlug: 'engineering' })
+    client.apiFetch.mockResolvedValue([])
+    const next = store.refreshSchemas(1, { pluginSlug: 'branding' })
+    expect(store.resources).toEqual([])
+    await next
+    late.resolve([{ id: 99 }]); await old
+    expect(store.resources).toEqual([])
+    expect(store.schemaLoading).toBe(false)
+    const project = store.refreshSchemas(2)
+    expect(store.resources).toEqual([])
+    await project
+  })
+
+  it('clears field metadata on confirmed access loss and ignores a late read after reset', async () => {
+    const store = useStackOsResourcesStore()
+    client.apiFetch.mockResolvedValue([{ id: 1 }])
+    await store.refreshSchemas(1)
+    client.apiFetch.mockRejectedValueOnce(new ApiError('Denied', 403, { detail: 'Project denied' }))
+    await store.refreshSchemas(1)
+    expect(store.resources).toEqual([])
+    expect(store.schemaLoaded).toBe(false)
+    expect(store.schemaError).toContain('Project denied')
+    const late = deferred<unknown>()
+    client.apiFetch.mockReturnValueOnce(late.promise)
+    const pending = store.refreshSchemas(1)
+    store.reset()
+    late.resolve([{ id: 99 }]); await pending
+    expect(store.resources).toEqual([])
+    expect(store.currentProjectId).toBeNull()
+    expect(store.schemaLoading).toBe(false)
   })
 
   it('retains same-title identities, exact payload and canonical read refs across callers', () => {

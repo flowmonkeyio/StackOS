@@ -53,7 +53,7 @@ function priorityItems(row: TaskProgressRow) {
 <template>
   <section
     class="tracker-board focus-ring"
-    :style="{ gridTemplateColumns: `repeat(${Math.max(columns.length, 1)}, minmax(300px, 1fr))` }"
+    :style="{ gridTemplateColumns: `repeat(${Math.max(columns.length, 1)}, minmax(336px, 1fr))` }"
     aria-label="Task board"
     tabindex="0"
   >
@@ -131,9 +131,10 @@ function priorityItems(row: TaskProgressRow) {
                   v-if="isAutomaticDeliveryTask(row.task)"
                   class="tracker-board__automated"
                   title="Automated"
+                  aria-label="Automated task delivery"
                   tone="info"
                 >
-                  Automated
+                  Auto
                 </UiBadge>
                 <span
                   v-if="row.totalCount > 0"
@@ -214,30 +215,29 @@ function priorityItems(row: TaskProgressRow) {
 
 <style scoped>
 .tracker-board__card-wrap { position: relative; min-width: 0; }
-.tracker-board__open { display: flex; flex: 1; min-height: 0; flex-direction: column; align-items: stretch; text-align: left; border-radius: var(--radius-sm); }
+.tracker-board__open { display: flex; flex: 1 0 auto; min-width: 0; flex-direction: column; align-items: stretch; text-align: left; border-radius: var(--radius-sm); }
 .tracker-board__priority { display: inline-flex; align-items: center; justify-content: center; height: 20px; flex: none; border-radius: var(--radius-xs); }
 .tracker-board__priority:disabled { cursor: wait; }
 .tracker-board__message { position: sticky; left: 0; grid-column: 1 / -1; font-size: 12px; }
 .tracker-board__identity--header :deep(.ui-dropdown) { display: inline-flex; align-items: center; flex: none; vertical-align: middle; }
 .tracker-board__actions { margin-right: -4px; }
-.tracker-board { display: grid; grid-template-columns: repeat(7, minmax(300px, 1fr)); column-gap: 12px; flex: 1 1 auto; min-width: 0; min-height: 360px; overflow: auto; overscroll-behavior: contain; }
+.tracker-board { display: grid; grid-template-columns: repeat(7, minmax(336px, 1fr)); column-gap: 12px; flex: 1 1 auto; min-width: 0; min-height: 360px; overflow: auto; overscroll-behavior: contain; }
 .tracker-board__column { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .tracker-board__heading { display: flex; flex: none; align-items: center; gap: 8px; padding: 12px 8px; }
 .tracker-board__cards { --reorder-gap: 24px; flex: 1 1 auto; padding: 4px 4px 16px; scrollbar-width: thin; scrollbar-gutter: stable; }
-.tracker-board__card { position: relative; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; box-sizing: border-box; height: 224px; width: 100%; padding: 12px 12px 54px; border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); background: var(--color-bg-surface); text-align: left; scroll-margin: 4px; }
+.tracker-board__card { position: relative; display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; box-sizing: border-box; min-height: 224px; width: 100%; padding: 12px 12px 0; border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); background: var(--color-bg-surface); text-align: left; scroll-margin: 4px; }
 .tracker-board__card:hover { border-color: var(--color-border-default); background: var(--color-bg-surface-alt); }
 .tracker-board__card--selected { border-color: var(--color-border-focus); }
-.tracker-board__title { height: 40px; margin-top: 6px; min-width: 0; color: var(--color-fg-strong); font-size: 14px; font-weight: var(--fw-semibold); line-height: 20px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.tracker-board__subtitle { display: block; height: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-fg-muted); font-size: 11px; line-height: 16px; }
-.tracker-board__card :deep(.agent-usage-summary) { margin-top: 8px; }
-.tracker-board__meta { position: absolute; inset: auto 0 0; height: 56px; display: flex; min-width: 0; align-items: center; padding: 0 12px; border-top: 1px solid var(--color-border-default); }
+.tracker-board__title { flex: none; height: 40px; margin-top: 6px; min-width: 0; color: var(--color-fg-strong); font-size: 14px; font-weight: var(--fw-semibold); line-height: 20px; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tracker-board__subtitle { display: block; flex: none; height: 16px; margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--color-fg-muted); font-size: 11px; line-height: 16px; }
+.tracker-board__card :deep(.agent-usage-summary) { flex: none; margin-bottom: 8px; }
+.tracker-board__meta { flex: none; height: 56px; display: flex; min-width: 0; align-items: center; margin: auto -12px 0; padding: 0 12px; border-top: 1px solid var(--color-border-default); }
 .tracker-board__execution { flex: 1 1 auto; }
-.tracker-board__identity { display: flex; height: 20px; min-width: 0; align-items: center; gap: 5px; white-space: nowrap; color: var(--color-fg-muted); font-size: 10px; }
+.tracker-board__identity { display: flex; flex: none; flex-wrap: wrap; min-height: 20px; min-width: 0; align-items: center; gap: 5px; color: var(--color-fg-muted); font-size: 10px; }
 .tracker-board__identity time { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tracker-board__identity--header { margin-right: 0; }
-.tracker-board__state { margin-left: auto; flex: 0 1 auto; min-width: 26px; }
-.tracker-board__automated { flex: 0 1 auto; min-width: 24px; }
-.tracker-board__state :deep(.ui-badge__label), .tracker-board__automated :deep(.ui-badge__label) { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tracker-board__state { margin-left: auto; flex: none; }
+.tracker-board__automated { flex: none; }
 .tracker-board__identity :deep(.ui-badge) { font-size: 10px; padding-left: 5px; padding-right: 5px; }
 .tracker-board__progress { display: inline-flex; flex: none; align-items: center; gap: 4px; font-variant-numeric: tabular-nums; }
 .tracker-board__card--blocked { box-shadow: inset 3px 0 var(--color-warning-default); }

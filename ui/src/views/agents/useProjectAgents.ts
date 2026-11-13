@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, ref, type Ref } from 'vue'
+import { computed, onBeforeUnmount, onBeforeUpdate, ref, type Ref } from 'vue'
 import type { components } from '@/api'
 import { ApiError, formatApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
@@ -31,7 +31,7 @@ export function agentError(cause: unknown): string {
   return [formatApiError(cause), data?.code, data?.repair].filter(Boolean).join(' ')
 }
 
-export function useProjectAgents(projectId: Ref<number>, projectDir: Ref<string>, onDraftReplaced?: (fields: AgentFields | null) => void) {
+export function useProjectAgents(projectId: Ref<number>, projectDir: Ref<string>, onDraftReplaced?: (fields: AgentFields | null) => void, folderReady?: Ref<boolean>) {
   const items = ref<AgentSummary[]>([])
   const diagnostics = ref<Record<string, unknown>[]>([])
   const loading = ref(false)
@@ -42,6 +42,9 @@ export function useProjectAgents(projectId: Ref<number>, projectDir: Ref<string>
   const selected = ref<AgentDefinition | null>(null)
   const draft = ref<AgentFields | null>(null)
   const original = ref<AgentFields | null>(null)
+  const loaded = ref(false)
+  const validated = ref(false)
+  const ready = computed(() => validated.value && !loading.value && !!projectDir.value && folderReady?.value !== false)
   let generation = 0
   let readGeneration = 0
   let disposed = false
@@ -51,7 +54,7 @@ export function useProjectAgents(projectId: Ref<number>, projectDir: Ref<string>
   function replaceDraft(fields: AgentFields | null) { draft.value = fields; onDraftReplaced?.(fields) }
   function resetScope(): boolean {
     if (disposed || (loadedScope.project_id === projectId.value && loadedScope.project_dir === projectDir.value)) return false
-    loadedScope = scope(); ++generation; close(); items.value = []; diagnostics.value = []
+    loadedScope = scope(); ++generation; close(); items.value = []; diagnostics.value = []; loaded.value = false; validated.value = false
     return true
   }
   function ownsScope(input: ReturnType<typeof scope>): boolean {
@@ -62,6 +65,13 @@ export function useProjectAgents(projectId: Ref<number>, projectDir: Ref<string>
   }
 
   function close() { ++readGeneration; reading.value = false; selected.value = null; replaceDraft(null); original.value = null; message.value = ''; error.value = '' }
+  function rejectAuthority(cause: unknown) {
+    // The projectAgent producer reports a lost folder/binding as a coded 422.
+    // Other source validation/conflict errors still belong to the retained draft.
+    if (cause instanceof ApiError && ([401, 403].includes(cause.status) || (cause.data as { code?: string } | undefined)?.code === 'missing_scope')) {
+      ++generation; close(); items.value = []; diagnostics.value = []; loaded.value = false; validated.value = false; loading.value = false
+    }
+  }
   // Call refresh at the owning folder/prop boundary. Each request also checks its
   // captured scope, including changes that happen before the next component update.
   async function refresh() {
@@ -69,21 +79,28 @@ export function useProjectAgents(projectId: Ref<number>, projectDir: Ref<string>
     resetScope()
     const input = scope()
     const request = ++generation
+    validated.value = false
     error.value = ''
     if (!projectDir.value) { items.value = []; diagnostics.value = []; loading.value = false; return }
+    if (folderReady?.value === false) { loading.value = false; return }
     loading.value = true
     try {
       const { data: result } = await callOperation<{ data: Omit<components['schemas']['AgentList'], 'items'> & { items?: AgentSummary[] } }>('projectAgent.list', { ...input, response_mode: 'compact' })
       if (!ownsScope(input) || request !== generation) return
-      if (result.project_id !== projectId.value || result.project_dir !== projectDir.value) throw new Error('Agent sources belong to a different project folder.')
+      if (result.project_id !== projectId.value || result.project_dir !== projectDir.value) {
+        ++readGeneration; close(); items.value = []; diagnostics.value = []; loaded.value = false
+        throw new Error('Agent sources belong to a different project folder.')
+      }
       items.value = result.items ?? []
       diagnostics.value = result.diagnostics ?? []
-    } catch (cause) { if (ownsScope(input) && request === generation) error.value = agentError(cause) }
+      loaded.value = true; validated.value = true
+    } catch (cause) { if (ownsScope(input) && request === generation) { rejectAuthority(cause); error.value = agentError(cause) } }
     finally { if (request === generation) loading.value = false }
   }
   async function edit(row: Pick<AgentDefinition, 'source_ref'>) {
     if (disposed) return
     if (resetScope()) { void refresh(); return }
+    if (!ready.value) return
     const input = scope()
     const request = ++readGeneration
     const currentScope = generation
@@ -94,14 +111,14 @@ export function useProjectAgents(projectId: Ref<number>, projectDir: Ref<string>
       if (result.project_id !== projectId.value || result.project_dir !== projectDir.value || agentIdentity(result.source_ref) !== agentIdentity(row.source_ref)) throw new Error('Agent readback identity changed. Refresh the list.')
       if (!result.fields) throw new Error('This definition is unavailable. Repair the project file and refresh.')
       selected.value = result; replaceDraft(copy(result.fields)); original.value = copy(result.fields)
-    } catch (cause) { if (ownsScope(input) && request === readGeneration && currentScope === generation) error.value = agentError(cause) }
+    } catch (cause) { if (ownsScope(input) && request === readGeneration && currentScope === generation) { rejectAuthority(cause); error.value = agentError(cause) } }
     finally { if (request === readGeneration) reading.value = false }
   }
   function add() { close(); replaceDraft(blankAgent()) }
   async function save() {
     if (disposed) return
     if (resetScope()) { void refresh(); return }
-    if (!draft.value || saving.value || !projectDir.value) return
+    if (!draft.value || saving.value || !ready.value) return
     const input = scope()
     const currentScope = generation
     const fields = copy(draft.value)
@@ -125,10 +142,11 @@ export function useProjectAgents(projectId: Ref<number>, projectDir: Ref<string>
       selected.value = result.data; replaceDraft(copy(result.data.fields)); original.value = copy(result.data.fields)
       message.value = 'Saved in the project file.'
       await refresh()
-    } catch (cause) { if (ownsScope(input) && currentScope === generation) error.value = agentError(cause) }
+    } catch (cause) { if (ownsScope(input) && currentScope === generation) { rejectAuthority(cause); error.value = agentError(cause) } }
     finally { saving.value = false }
   }
   void refresh()
+  onBeforeUpdate(() => { if (resetScope()) void refresh() })
   onBeforeUnmount(() => { disposed = true; ++generation; ++readGeneration })
-  return { items, diagnostics, loading, reading, saving, error, message, selected, draft, dirty, refresh, edit, add, close, save }
+  return { items, diagnostics, loading, loaded, ready, reading, saving, error, message, selected, draft, dirty, refresh, edit, add, close, save }
 }

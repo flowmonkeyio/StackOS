@@ -5,9 +5,10 @@ from __future__ import annotations
 import weakref
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import Any, ClassVar
+from typing import Any, ClassVar, TypeVar, cast
 
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy.orm import defer
 from sqlmodel import Session, col, select
 
 from stackos.action_availability import ActionAvailabilityOut, ActionExposureOut
@@ -108,7 +109,9 @@ class ProviderOut(BaseModel):
     config_json: dict[str, Any] | None
 
 
-class ActionOut(BaseModel):
+class ActionSummaryOut(BaseModel):
+    """Schema-free catalog metadata with current canonical availability."""
+
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -122,9 +125,6 @@ class ActionOut(BaseModel):
     description: str
     capability_key: str | None
     risk_level: str
-    input_schema_json: dict[str, Any]
-    output_schema_json: dict[str, Any]
-    config_json: dict[str, Any] | None
     connector_key: str | None = None
     operation: str
     requires_credential: bool = False
@@ -133,6 +133,15 @@ class ActionOut(BaseModel):
     enforce_budget: bool = False
     availability: ActionAvailabilityOut
     exposure: ActionExposureOut
+
+
+class ActionOut(ActionSummaryOut):
+    input_schema_json: dict[str, Any]
+    output_schema_json: dict[str, Any]
+    config_json: dict[str, Any] | None
+
+
+ActionProjection = TypeVar("ActionProjection", bound=ActionSummaryOut)
 
 
 class PluginCatalogOut(BaseModel):
@@ -284,10 +293,12 @@ class PluginRepository:
         project_id: int | None = None,
     ) -> list[CapabilityOut]:
         self.sync_builtin_plugins()
-        stmt = select(Capability, Plugin).join(Plugin, col(Capability.plugin_id) == col(Plugin.id))
+        stmt = select(Capability).join(Plugin, col(Capability.plugin_id) == col(Plugin.id))
         if plugin_slug is not None:
             stmt = stmt.where(col(Plugin.slug) == plugin_slug)
-        rows = list(self._s.exec(stmt.order_by(col(Capability.key).asc())).all())
+        capabilities = self._s.exec(stmt.order_by(col(Capability.key).asc())).all()
+        plugins = self._plugins_by_id({row.plugin_id for row in capabilities})
+        rows = [(row, plugins[row.plugin_id]) for row in capabilities if row.plugin_id in plugins]
         rows = self._filter_project_enabled(rows, project_id=project_id)
         rows.sort(key=lambda row: (*plugin_sort_key(row[1].slug, row[1].manifest_json), row[0].key))
         return [self._capability_out(capability, plugin) for capability, plugin in rows]
@@ -310,10 +321,12 @@ class PluginRepository:
         project_id: int | None = None,
     ) -> list[ProviderOut]:
         self.sync_builtin_plugins()
-        stmt = select(Provider, Plugin).join(Plugin, col(Provider.plugin_id) == col(Plugin.id))
+        stmt = select(Provider).join(Plugin, col(Provider.plugin_id) == col(Plugin.id))
         if plugin_slug is not None:
             stmt = stmt.where(col(Plugin.slug) == plugin_slug)
-        rows = list(self._s.exec(stmt.order_by(col(Provider.key).asc())).all())
+        providers = self._s.exec(stmt.order_by(col(Provider.key).asc())).all()
+        plugins = self._plugins_by_id({row.plugin_id for row in providers})
+        rows = [(row, plugins[row.plugin_id]) for row in providers if row.plugin_id in plugins]
         rows = self._filter_project_enabled(rows, project_id=project_id)
         rows.sort(key=lambda row: (*plugin_sort_key(row[1].slug, row[1].manifest_json), row[0].key))
         return [self._provider_out(provider, plugin) for provider, plugin in rows]
@@ -335,20 +348,38 @@ class PluginRepository:
         plugin_slug: str | None = None,
         project_id: int | None = None,
     ) -> list[ActionOut]:
+        return self._list_actions(ActionOut, plugin_slug=plugin_slug, project_id=project_id)
+
+    def list_action_summaries(
+        self,
+        *,
+        plugin_slug: str | None = None,
+        project_id: int | None = None,
+    ) -> list[ActionSummaryOut]:
+        return self._list_actions(ActionSummaryOut, plugin_slug=plugin_slug, project_id=project_id)
+
+    def _list_actions(
+        self,
+        output_type: type[ActionProjection],
+        *,
+        plugin_slug: str | None,
+        project_id: int | None,
+    ) -> list[ActionProjection]:
         self.sync_builtin_plugins()
         if project_id is not None:
             self._require_project(project_id)
         stmt = select(Action).join(Plugin, col(Action.plugin_id) == col(Plugin.id))
+        if output_type is ActionSummaryOut:
+            stmt = stmt.options(
+                defer(cast(Any, Action.input_schema_json)),
+                defer(cast(Any, Action.output_schema_json)),
+            )
         if plugin_slug is not None:
             stmt = stmt.where(col(Plugin.slug) == plugin_slug)
         actions = self._s.exec(stmt.order_by(col(Action.key).asc())).all()
         # A joined catalog repeats the entire plugin manifest JSON for every
         # action. Read each parent once while retaining current database state.
-        plugin_ids = {action.plugin_id for action in actions}
-        plugins = {
-            plugin.id: plugin
-            for plugin in self._s.exec(select(Plugin).where(col(Plugin.id).in_(plugin_ids))).all()
-        }
+        plugins = self._plugins_by_id({action.plugin_id for action in actions})
         provider_ids = {action.provider_id for action in actions if action.provider_id is not None}
         providers = {
             provider.id: provider
@@ -376,10 +407,11 @@ class PluginRepository:
         availability_context = self._action_availability_context(project_id)
         connector_keys = self._connector_keys()
         return [
-            self._action_out(
+            self._action_projection(
                 action,
                 plugin,
                 provider,
+                output_type=output_type,
                 project_id=project_id,
                 availability_context=availability_context,
                 connector_keys=connector_keys,
@@ -468,6 +500,13 @@ class PluginRepository:
             raise NotFoundError(f"plugin {slug!r} not found")
         return row
 
+    def _plugins_by_id(self, plugin_ids: set[int]) -> dict[int, Plugin]:
+        """Decode each current parent once, rather than once per joined child."""
+        return {
+            _required_id(plugin.id): plugin
+            for plugin in self._s.exec(select(Plugin).where(col(Plugin.id).in_(plugin_ids))).all()
+        }
+
     def _enabled_map(self, project_id: int | None) -> dict[int, bool | None]:
         if project_id is None:
             return {}
@@ -524,18 +563,29 @@ class PluginRepository:
         *,
         compact: bool = False,
     ) -> PluginOut:
-        out = PluginOut.model_validate(row)
-        if compact:
-            # The global app shell only needs ordering and contributed nav.
-            # Avoid serializing action, provider, workflow, and resource
-            # manifests on every project navigation.
-            out.manifest_json = {
+        # Select the compact payload before output validation, rather than
+        # constructing the entire manifest only to discard it afterward.
+        manifest: dict[str, Any] = (
+            {
                 key: row.manifest_json[key]
                 for key in ("display_order", "ui")
                 if key in row.manifest_json
             }
-        out.enabled_for_project = enabled_for_project
-        return out
+            if compact
+            else row.manifest_json
+        )
+        return PluginOut(
+            id=_required_id(row.id),
+            slug=row.slug,
+            name=row.name,
+            version=row.version,
+            description=row.description,
+            source=row.source,
+            manifest_json=manifest,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+            enabled_for_project=enabled_for_project,
+        )
 
     def _project_plugin_out(self, row: ProjectPlugin, plugin: Plugin) -> ProjectPluginOut:
         assert row.id is not None and row.plugin_id is not None
@@ -592,21 +642,25 @@ class PluginRepository:
             config_json=row.config_json,
         )
 
-    def _action_out(
+    def _action_projection(
         self,
         row: Action,
         plugin: Plugin,
         provider: Provider | None,
         *,
+        output_type: type[ActionProjection],
         project_id: int | None = None,
         availability_context: Any | None = None,
         connector_keys: set[str] | None = None,
-    ) -> ActionOut:
+    ) -> ActionProjection:
         from stackos.action_availability import build_action_availability, build_action_exposure
         from stackos.actions.manifest import parse_action_manifest
 
         assert row.id is not None and row.plugin_id is not None
-        manifest = parse_action_manifest(action=row, plugin=plugin, provider=provider)
+        include_schemas = output_type is ActionOut
+        manifest = parse_action_manifest(
+            action=row, plugin=plugin, provider=provider, include_schemas=include_schemas
+        )
         availability = build_action_availability(
             self._s,
             manifest=manifest,
@@ -623,7 +677,16 @@ class PluginRepository:
             requires_credential=manifest.requires_credential,
             allows_credential=manifest.allows_credential,
         )
-        return ActionOut(
+        schemas = (
+            {
+                "input_schema_json": row.input_schema_json,
+                "output_schema_json": row.output_schema_json,
+                "config_json": row.config_json,
+            }
+            if include_schemas
+            else {}
+        )
+        return output_type(
             id=row.id,
             plugin_id=row.plugin_id,
             plugin_slug=plugin.slug,
@@ -635,9 +698,6 @@ class PluginRepository:
             description=row.description,
             capability_key=row.capability_key,
             risk_level=row.risk_level,
-            input_schema_json=row.input_schema_json,
-            output_schema_json=row.output_schema_json,
-            config_json=row.config_json,
             connector_key=manifest.connector_key,
             operation=manifest.operation,
             requires_credential=manifest.requires_credential,
@@ -646,6 +706,7 @@ class PluginRepository:
             enforce_budget=manifest.enforce_budget,
             availability=availability,
             exposure=exposure,
+            **schemas,
         )
 
 

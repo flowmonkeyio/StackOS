@@ -1,4 +1,4 @@
-import { computed, ref, type ComputedRef } from 'vue'
+import { computed, onBeforeUnmount, ref, type ComputedRef } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import type { SchemaAuthProviderOut } from '@/api'
@@ -15,12 +15,17 @@ import type { ConnectionRow, MessageMap, ServiceGroup } from './types'
 export function useConnectionCredentials(projectId: ComputedRef<number>) {
   const catalogStore = useStackOsCatalogStore()
   const {
-    authProviders,
     globalAccountsStatus,
     authStatus,
-    loading,
-    error,
+    accountsLoading,
+    accountsError,
+    authLoading,
+    authError,
   } = storeToRefs(catalogStore)
+  const loading = computed(() => authLoading.value || accountsLoading.value)
+  const error = computed(() => authError.value ?? accountsError.value)
+  const mountedProjectId = projectId.value
+  onBeforeUnmount(() => catalogStore.releaseAuth(mountedProjectId))
 
   const attachPanelOpen = ref(false)
   const selectedAccountRef = ref('')
@@ -45,7 +50,7 @@ export function useConnectionCredentials(projectId: ComputedRef<number>) {
   )
   const providerByKey = computed(() => {
     const rows = new Map<string, SchemaAuthProviderOut>()
-    for (const provider of authProviders.value) rows.set(provider.key, provider)
+    for (const provider of authStatus.value?.providers ?? []) rows.set(provider.key, provider)
     return rows
   })
   const attachedAccountRefs = computed(

@@ -69,9 +69,16 @@ export function createProjectRequestGate(
     requestGenerations.set(key, (requestGenerations.get(key) ?? 0) + 1)
   }
 
+  /** Observe an existing scope without admitting a read or reclaiming its owner. */
+  function captureScope(projectId: number): () => boolean {
+    const generation = scopeGeneration
+    return () => activeProjectId === projectId && scopeGeneration === generation
+  }
+
   return {
     begin,
     invalidate,
     invalidateOperation,
+    captureScope,
   }
 }
