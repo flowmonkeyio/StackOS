@@ -469,7 +469,15 @@ def _seed_graph(session, project_id):
         table = tables[name]
         values = {}
         for col in table.c:
-            if col.primary_key:
+            # Only the standalone integer identity is database-generated.
+            # Composite keys (including receipt ticket/attempt/phase/inventory)
+            # and primary-key foreign keys must retain their real ownership.
+            if (
+                col.primary_key
+                and len(table.primary_key) == 1
+                and isinstance(col.type, Integer)
+                and not col.foreign_keys
+            ):
                 continue
             if col.name in {"project_id", "attach_project_id"}:
                 values[col.name] = project_id
@@ -519,6 +527,9 @@ def _seed_graph(session, project_id):
 async def test_complete_ownership_inventory_and_atomic_purge_preserve_catalog(fixture):
     s, settings, target, other = fixture
     owned, seeded = _seed_graph(s, target.id)
+    projection = SQLModel.metadata.tables["tracker_receipt_projections"]
+    assert "tracker_receipt_projections" in owned
+    assert s.execute(select(projection.c.ticket_id)).scalar_one() == seeded["tracker_tickets"]
     global_counts = {
         t.name: len(s.execute(select(t)).all())
         for t in SQLModel.metadata.tables.values()

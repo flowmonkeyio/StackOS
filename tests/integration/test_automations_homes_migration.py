@@ -26,7 +26,12 @@ def test_consolidation_preserves_either_delivered_history(tmp_path, prior_head):
     settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
     settings.ensure_dirs()
     config = alembic_config(settings)
-    assert ScriptDirectory.from_config(config).get_heads() == ["0043_automations_homes_merge"]
+    script = ScriptDirectory.from_config(config)
+    assert script.get_heads() == ["0046_receipt_trend_bounds"]
+    assert script.get_revision("0043_automations_homes_merge").down_revision == (
+        "0042_schedule_main_thread",
+        "0042_task_delivery_capacity",
+    )
     command.upgrade(config, "0041_ui804_consolidation")
     root = tmp_path / "project"
     root.mkdir()
@@ -90,7 +95,7 @@ def test_consolidation_preserves_either_delivered_history(tmp_path, prior_head):
     upgrade_to_head(settings)
     with sqlite3.connect(settings.db_path) as db:
         assert db.execute("SELECT version_num FROM alembic_version").fetchall() == [
-            ("0043_automations_homes_merge",)
+            ("0046_receipt_trend_bounds",)
         ]
         assert {
             table: db.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()

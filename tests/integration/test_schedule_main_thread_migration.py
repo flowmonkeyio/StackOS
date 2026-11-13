@@ -3,6 +3,7 @@
 import importlib
 import json
 import sqlite3
+from contextlib import contextmanager
 
 import pytest
 import sqlalchemy as sa
@@ -14,7 +15,7 @@ from sqlmodel import Session
 from stackos.config import Settings
 from stackos.db.connection import make_engine
 from stackos.db.migrate import alembic_config
-from stackos.db.models import AgentRequest
+from stackos.db.models import AgentRequest, TrackerReceiptProjection
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.run_plans import RunPlanRepository
 
@@ -68,10 +69,30 @@ def legacy(tmp_path):
     return settings, config, root
 
 
+@contextmanager
+def _historical_repository_session(engine):
+    """Supply current ORM setup requirements, restoring old DDL before upgrade.
+
+    The fixture uses current run-plan mirroring, whose receipt hook needs the
+    projection table. The actual 0041 -> head migration must create it itself.
+    """
+    table = TrackerReceiptProjection.__table__
+    with engine.begin() as connection:
+        assert not sa.inspect(connection).has_table(table.name)
+        table.create(connection)
+    try:
+        with Session(engine) as session:
+            yield session
+    finally:
+        with engine.begin() as connection:
+            table.drop(connection)
+            assert not sa.inspect(connection).has_table(table.name)
+
+
 def test_transition_preserves_history_context_and_does_not_retarget(tmp_path):
     settings, config, _root = legacy(tmp_path)
     engine = make_engine(settings.db_path)
-    with Session(engine) as session:
+    with _historical_repository_session(engine) as session:
         plan = (
             RunPlanRepository(session)
             .create(
