@@ -51,7 +51,7 @@ from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.secrets import PayloadSecretRepository
 
-HEAD_REVISION = "0044_patterns"
+HEAD_REVISION = "0045_pattern_bundles"
 
 
 @pytest.fixture
@@ -1890,6 +1890,7 @@ def test_cli_migrate_stamps_create_all_schema(sandbox: Path) -> None:
             # A legacy create_all database predates the new installation-wide
             # catalog. Stamping must also create that empty independent owner.
             conn.execute(text("DROP TABLE patterns"))
+            conn.execute(text("DROP TABLE pattern_deletions"))
             conn.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
             conn.execute(
                 text("INSERT INTO alembic_version (version_num) VALUES ('0001_initial_empty')")
@@ -1907,6 +1908,7 @@ def test_cli_migrate_stamps_create_all_schema(sandbox: Path) -> None:
         with engine.connect() as conn:
             version = conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
             assert conn.execute(text("SELECT COUNT(*) FROM patterns")).scalar_one() == 0
+            assert conn.execute(text("SELECT COUNT(*) FROM pattern_deletions")).scalar_one() == 0
     finally:
         engine.dispose()
     assert version == HEAD_REVISION

@@ -297,3 +297,215 @@ def test_pattern_bundle_intervening_insert_and_delete_cannot_resurrect(tmp_path,
             assert other.exec(select(PatternDeletion)).one().bundled_id == "shipped"
     finally:
         engine.dispose()
+
+
+@pytest.mark.parametrize("ddl", ["add_column", "create_index", "create_table"])
+def test_pattern_bundle_interrupted_migration_retries_without_losing_identity(
+    tmp_path, monkeypatch, ddl
+):
+    import importlib
+    import sqlite3
+
+    from alembic import command
+
+    from stackos.config import Settings
+    from stackos.db.connection import make_engine
+    from stackos.db.migrate import alembic_config, current_alembic_version, upgrade_to_head
+
+    settings = Settings(_env_file=None, data_dir=tmp_path / "data", state_dir=tmp_path / "state")
+    settings.ensure_dirs()
+    command.upgrade(alembic_config(settings), "0044_patterns")
+    with sqlite3.connect(settings.db_path) as db:
+        db.execute(
+            "INSERT INTO patterns VALUES "
+            "(1,'retained','Retained','','Exact bytes \n','[]',3,'2026-11-12','2026-11-12')"
+        )
+        db.execute("UPDATE sqlite_sequence SET seq=90 WHERE name='patterns'")
+        original = db.execute("SELECT * FROM patterns").fetchone()
+    migration = importlib.import_module("stackos.db.migrations.versions.0045_pattern_bundles")
+    operation = getattr(migration.op, ddl)
+
+    def interrupted(*args, **kwargs):
+        operation(*args, **kwargs)
+        raise RuntimeError("fixture interruption after committed DDL")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(migration.op, ddl, interrupted)
+        with pytest.raises(RuntimeError, match="fixture interruption"):
+            upgrade_to_head(settings)
+    assert current_alembic_version(settings) == "0044_patterns"
+    upgrade_to_head(settings)
+    upgrade_to_head(settings)
+    assert current_alembic_version(settings) == "0045_pattern_bundles"
+    with sqlite3.connect(settings.db_path) as db:
+        assert (
+            db.execute(
+                "SELECT id,key,title,summary,body,tags_json,revision,created_at,updated_at "
+                "FROM patterns"
+            ).fetchone()
+            == original
+        )
+        assert db.execute("SELECT * FROM pattern_deletions").fetchall() == []
+        assert db.execute("SELECT seq FROM sqlite_sequence WHERE name='patterns'").fetchone() == (
+            90,
+        )
+    engine = make_engine(settings.db_path)
+    try:
+        with Session(engine) as session:
+            assert (
+                PatternRepository(session)
+                .upsert(key="after-recovery", title="Synthetic", summary="", body="X", tags=[])
+                .id
+                > 90
+            )
+    finally:
+        engine.dispose()
+
+
+def test_pattern_bundle_completed_migration_lost_stamp_preserves_records_and_markers(tmp_path):
+    import sqlite3
+
+    from stackos.config import Settings
+    from stackos.db.connection import make_engine
+    from stackos.db.migrate import upgrade_to_head
+
+    settings = Settings(_env_file=None, data_dir=tmp_path / "data", state_dir=tmp_path / "state")
+    upgrade_to_head(settings)
+    engine = make_engine(settings.db_path)
+    try:
+        with Session(engine) as session:
+            repo = PatternRepository(session)
+            repo.refresh_bundle(bundle(entry(), entry("deleted")))
+            current = repo.get(key="shipped")
+            repo.upsert(
+                key=current.key,
+                title=current.title,
+                summary=current.summary,
+                body="Customized bytes",
+                tags=current.tags,
+                expected_etag=current.etag,
+            )
+            deleted = repo.get(key="deleted")
+            repo.delete(deleted.id, expected_etag=deleted.etag)
+            before = stored(session, "shipped")
+    finally:
+        engine.dispose()
+    with sqlite3.connect(settings.db_path) as db:
+        sequence = db.execute("SELECT seq FROM sqlite_sequence WHERE name='patterns'").fetchone()
+        db.execute("UPDATE alembic_version SET version_num='0044_patterns'")
+    upgrade_to_head(settings)
+    engine = make_engine(settings.db_path)
+    try:
+        with Session(engine) as session:
+            assert stored(session, "shipped") == before
+            assert session.exec(select(PatternDeletion)).one().bundled_id == "deleted"
+            assert (
+                PatternRepository(session).refresh_bundle(bundle(entry("deleted")))["deleted"] == 1
+            )
+    finally:
+        engine.dispose()
+    with sqlite3.connect(settings.db_path) as db:
+        assert (
+            db.execute("SELECT seq FROM sqlite_sequence WHERE name='patterns'").fetchone()
+            == sequence
+        )
+
+
+@pytest.mark.parametrize("catalog", ["missing", "prior"])
+@pytest.mark.parametrize("stamp", [None, "0001_initial_empty"])
+def test_pattern_catalog_stamp_recovery_completes_schema_before_http_reads(
+    tmp_path, catalog, stamp
+):
+    import sqlite3
+
+    from alembic import command
+    from fastapi.testclient import TestClient
+
+    from stackos.config import Settings
+    from stackos.db.migrate import alembic_config, current_alembic_version
+    from stackos.server import create_app
+
+    settings = Settings(_env_file=None, data_dir=tmp_path / "data", state_dir=tmp_path / "state")
+    settings.ensure_dirs()
+    command.upgrade(alembic_config(settings), "0044_patterns")
+    with sqlite3.connect(settings.db_path) as db:
+        if catalog == "missing":
+            db.execute("DROP TABLE patterns")
+        else:
+            db.execute(
+                "INSERT INTO patterns VALUES "
+                "(1,'retained','Retained','','Exact bytes \n','[]',3,'2026-11-12','2026-11-12')"
+            )
+        if stamp is None:
+            db.execute("DROP TABLE alembic_version")
+        else:
+            db.execute("UPDATE alembic_version SET version_num=?", (stamp,))
+    for startup in range(2):
+        with TestClient(create_app(settings), base_url="http://127.0.0.1:5199") as api:
+            assert current_alembic_version(settings) == "0045_pattern_bundles"
+            headers = {"Authorization": f"Bearer {settings.token_path.read_text().strip()}"}
+            response = api.post(
+                "/api/v1/operations/pattern.list/call", json={"arguments": {}}, headers=headers
+            )
+            assert response.status_code == 200
+            assert response.json()["catalog_total"] == (0 if catalog == "missing" else 1)
+            with Session(api.app.state.engine) as session:
+                repo = PatternRepository(session)
+                if catalog == "prior":
+                    retained = repo.get(key="retained")
+                    assert (retained.id, retained.body, retained.revision) == (
+                        1,
+                        "Exact bytes \n",
+                        3,
+                    )
+                if startup == 0:
+                    repo.refresh_bundle(bundle(entry("to-delete")))
+                    deleted = repo.get(key="to-delete")
+                    repo.delete(deleted.id, expected_etag=deleted.etag)
+                assert repo.refresh_bundle(bundle(entry("to-delete")))["deleted"] == 1
+
+
+def test_pattern_current_create_all_stamp_preserves_bundled_ownership(tmp_path):
+    import sqlite3
+
+    from sqlmodel import SQLModel
+
+    from stackos.config import Settings
+    from stackos.db.connection import make_engine
+    from stackos.db.migrate import current_alembic_version, upgrade_to_head
+
+    settings = Settings(_env_file=None, data_dir=tmp_path / "data", state_dir=tmp_path / "state")
+    settings.ensure_dirs()
+    engine = make_engine(settings.db_path)
+    SQLModel.metadata.create_all(engine)
+    try:
+        with Session(engine) as session:
+            repo = PatternRepository(session)
+            repo.refresh_bundle(bundle(entry(), entry("deleted")))
+            deleted = repo.get(key="deleted")
+            repo.delete(deleted.id, expected_etag=deleted.etag)
+            before = stored(session, "shipped")
+    finally:
+        engine.dispose()
+    with sqlite3.connect(settings.db_path) as db:
+        sequence = db.execute("SELECT seq FROM sqlite_sequence WHERE name='patterns'").fetchone()
+        db.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+        db.execute("INSERT INTO alembic_version VALUES ('0001_initial_empty')")
+    upgrade_to_head(settings)
+    assert current_alembic_version(settings) == "0045_pattern_bundles"
+    engine = make_engine(settings.db_path)
+    try:
+        with Session(engine) as session:
+            assert stored(session, "shipped") == before
+            assert (
+                PatternRepository(session).refresh_bundle(bundle(entry("deleted")))["deleted"] == 1
+            )
+    finally:
+        engine.dispose()
+    with sqlite3.connect(settings.db_path) as db:
+        assert (
+            db.execute("SELECT seq FROM sqlite_sequence WHERE name='patterns'").fetchone()
+            == sequence
+        )
+        unique_indices = [row for row in db.execute("PRAGMA index_list(patterns)") if row[2]]
+        assert len(unique_indices) == 2  # public key and bundled identity; no duplicate index

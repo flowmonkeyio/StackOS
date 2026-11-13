@@ -257,6 +257,10 @@ identity; collisions are preserved with bounded counts. Explicit bundled deletio
 removes the content and retains only its ID in `pattern_deletions`. Package removal
 does not remove local entries. Content and markers survive whole-DB recovery and
 project deletion. There is no merge, reset or history subsystem.
+The additive catalog migrations resume after partial SQLite DDL or a lost revision
+stamp without rebuilding records or resetting ID high-water marks. Legacy
+create-all recovery stamps the pre-catalog baseline and runs those same migrations
+before claiming head, including when an older catalog table already exists.
 `pattern.list/get/upsert/delete` are registered once and use the existing MCP,
 generic HTTP, CLI and browser-safe operation adapters. Lists select summary
 columns only; detail loads the body. No semantic content validation or automatic

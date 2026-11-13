@@ -12,12 +12,27 @@ depends_on = None
 def upgrade() -> None:
     # Add in place: rebuilding the table would lose sqlite_sequence's deleted
     # high-water ID and could make an old identity/revision etag valid again.
-    op.add_column("patterns", sa.Column("bundled_id", sa.String(120), nullable=True))
-    op.add_column("patterns", sa.Column("bundled_version", sa.String(120), nullable=True))
-    op.add_column("patterns", sa.Column("bundled_base_hash", sa.String(64), nullable=True))
-    op.add_column("patterns", sa.Column("content_hash", sa.String(64), nullable=True))
-    op.create_index("uq_patterns_bundled_id", "patterns", ["bundled_id"], unique=True)
-    op.create_table("pattern_deletions", sa.Column("bundled_id", sa.String(120), primary_key=True))
+    # SQLite may retain each DDL statement before the revision stamp commits.
+    # Resume only missing objects, including a complete-DDL/lost-stamp replay.
+    inspector = sa.inspect(op.get_bind())
+    columns = {column["name"] for column in inspector.get_columns("patterns")}
+    for name, length in (
+        ("bundled_id", 120),
+        ("bundled_version", 120),
+        ("bundled_base_hash", 64),
+        ("content_hash", 64),
+    ):
+        if name not in columns:
+            op.add_column("patterns", sa.Column(name, sa.String(length), nullable=True))
+    unique_keys = inspector.get_unique_constraints("patterns") + [
+        index for index in inspector.get_indexes("patterns") if index["unique"]
+    ]
+    if not any(key["column_names"] == ["bundled_id"] for key in unique_keys):
+        op.create_index("uq_patterns_bundled_id", "patterns", ["bundled_id"], unique=True)
+    if not inspector.has_table("pattern_deletions"):
+        op.create_table(
+            "pattern_deletions", sa.Column("bundled_id", sa.String(120), primary_key=True)
+        )
 
 
 def downgrade() -> None:

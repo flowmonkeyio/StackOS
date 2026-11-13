@@ -61,8 +61,8 @@ def _stamp_create_all_schema_if_needed(settings: Settings, cfg: Config) -> bool:
     Early/dev installs can have a fully materialised schema from
     ``SQLModel.metadata.create_all`` but no ``alembic_version`` table. Running
     ``upgrade head`` from base would then fail on the first ``CREATE TABLE``.
-    When the current head-shaped tables are already present, stamp the DB at
-    head.
+    Retain the known pre-catalog baseline, then let the normal catalog
+    migrations complete both missing and older tables before claiming head.
     """
     if not settings.db_path.exists():
         return False
@@ -95,12 +95,7 @@ def _stamp_create_all_schema_if_needed(settings: Settings, cfg: Config) -> bool:
         # version eligible for retry rather than silently claiming completion.
         from sqlmodel import Session
 
-        from stackos.db.models import Pattern
         from stackos.repositories.tracker.ordering import normalize_default_columns
-
-        # Pre-Alembic installations skip DDL when stamped. Materialize this
-        # independent empty owner too; never populate recommendation content.
-        Pattern.metadata.tables["patterns"].create(engine, checkfirst=True)
 
         with Session(engine) as session:
             normalize_default_columns(session)
@@ -108,7 +103,10 @@ def _stamp_create_all_schema_if_needed(settings: Settings, cfg: Config) -> bool:
     finally:
         engine.dispose()
 
-    command.stamp(cfg, "head")
+    # create_all/checkfirst cannot add columns to an existing catalog. Replay
+    # its canonical additive migrations rather than bypassing them with a head
+    # stamp. Both tolerate already-created tables and lost revision stamps.
+    command.stamp(cfg, "0043_automations_homes_merge")
     return True
 
 
