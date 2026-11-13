@@ -2363,7 +2363,15 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
 
     from stackos.db.models import Plugin, PluginSource, ProjectPlugin, RunPlan, RunPlanStatus
     from stackos.repositories.tracker import TrackerRepository
-    from stackos.repositories.tracker.utils import DEFAULT_LANES, DEFAULT_PRIORITIES
+    from stackos.repositories.tracker.utils import DEFAULT_PRIORITIES
+
+    # 0035's immutable catalog predates Backlog in current tracker setup.
+    migration_lanes = [
+        ("planning", "Planning"),
+        ("implementation", "Implementation"),
+        ("verification", "Verification"),
+        ("done", "Done"),
+    ]
 
     _run_alembic(["upgrade", "0034_work_item_ownership"])
     with sqlite3.connect(isolated_alembic) as conn:
@@ -2504,10 +2512,13 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
             for row in conn.execute("SELECT config_json FROM project_plugins ORDER BY project_id")
         ] == [{"unrelated": {"enabled": False}}, {"unrelated": {"enabled": False}}, {"keep": 3}]
         tracker_id = conn.execute("SELECT id FROM task_trackers WHERE project_id=2").fetchone()[0]
-        assert conn.execute(
-            "SELECT key, label FROM task_tracker_lanes WHERE tracker_id=? ORDER BY position",
-            (tracker_id,),
-        ).fetchall() == list(DEFAULT_LANES)
+        assert (
+            conn.execute(
+                "SELECT key, label FROM task_tracker_lanes WHERE tracker_id=? ORDER BY position",
+                (tracker_id,),
+            ).fetchall()
+            == migration_lanes
+        )
         assert conn.execute(
             "SELECT key, label, rank FROM task_tracker_priorities "
             "WHERE tracker_id=? ORDER BY position",
@@ -2515,6 +2526,9 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
         ).fetchall() == list(DEFAULT_PRIORITIES)
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
         after = conn.execute("SELECT config_json FROM task_trackers ORDER BY id").fetchall()
+        migrated_rows = {
+            table: conn.execute(f"SELECT * FROM {table}").fetchall() for table in preserved_tables
+        }
     # A replay after migration/stamp interruption cannot reinterpret retired defaults.
     migration = importlib.import_module("stackos.db.migrations.versions.0035_generic_task_delivery")
     engine = make_engine(isolated_alembic)
@@ -2523,6 +2537,25 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
         assert (
             conn.exec_driver_sql("SELECT config_json FROM task_trackers ORDER BY id").all() == after
         )
+    # Current setup appends Backlog; it must not reinterpret migrated rows or
+    # reorder the existing catalog. Repeating setup must not add a second lane.
+    with Session(engine) as session:
+        repo = TrackerRepository(session)
+        for _ in range(2):
+            assert repo.ensure_tracker(project_id=2).id == tracker_id
+            session.commit()
+    with sqlite3.connect(isolated_alembic) as conn:
+        assert conn.execute(
+            "SELECT key, label, position FROM task_tracker_lanes "
+            "WHERE tracker_id=? ORDER BY position",
+            (tracker_id,),
+        ).fetchall() == [
+            (key, label, index) for index, (key, label) in enumerate(migration_lanes)
+        ] + [("backlog", "Backlog", len(migration_lanes))]
+        assert conn.execute("SELECT config_json FROM task_trackers ORDER BY id").fetchall() == after
+        for table, rows in migrated_rows.items():
+            assert conn.execute(f"SELECT * FROM {table}").fetchall() == rows
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     engine.dispose()
 
 
