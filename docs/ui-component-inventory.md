@@ -96,6 +96,15 @@ visual acceptance.
 
 ## Shipped — domain (`ui/src/components/domain/`)
 
+Project Home adds setup through `views/project-setup/useProjectSetup`: the shared
+`projectSetup.get/start/setReminders` operations retain status, saved choices and
+independent permanent reminder preferences. Home keeps a quiet contextual action
+and update count; directoryless projects have none. `ProjectSetupLaunchDialog`
+uses the host capability catalog and existing dialog/form primitives for first
+setup and saved-agent updates. `/projects/:id/setup` is the internal Home detail
+shell for the retained attempt; opening it performs reads only. It has no native
+host conversation link. The setup panel owns answer/result/recovery controls.
+
 Both Home headers mount the feature-owned `views/home/DeliveryCapacityControl`.
 Its compact trigger shows server-reported admitted tasks against the persisted
 local-daemon limit, independent of the visible task list or selected project.

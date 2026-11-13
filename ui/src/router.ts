@@ -5,6 +5,7 @@ import LocalSetupView from './views/LocalSetupView.vue'
 import AuthErrorView from './views/AuthErrorView.vue'
 import ProjectDetailView from './views/ProjectDetailView.vue'
 import HomeConsoleView from './views/HomeConsoleView.vue'
+import ProjectSetupView from './views/project-setup/ProjectSetupView.vue'
 import SchedulesTab from './views/project-detail/SchedulesTab.vue'
 import CostBudgetTab from './views/project-detail/CostBudgetTab.vue'
 import PluginsView from './views/PluginsView.vue'
@@ -30,6 +31,7 @@ const routes: RouteRecordRaw[] = [
       // Home is the operations console; it owns its own page chrome, so
       // ProjectDetailView renders it without the configuration header wrapper.
       { path: '', name: 'project-home', component: HomeConsoleView },
+      { path: 'setup', name: 'project-setup', component: ProjectSetupView },
       { path: 'schedules', name: 'project-detail-schedules', component: SchedulesTab },
       { path: 'cost-budget', name: 'project-detail-cost-budget', component: CostBudgetTab },
     ],

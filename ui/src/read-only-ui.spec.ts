@@ -14,6 +14,7 @@ const OPERATIONS_CLIENT = join(ROOT, 'lib', 'operations.ts')
 const TASK_CONTENT_CONTROLLER = join(ROOT, 'views', 'task-tracker', 'useTrackerTaskContent.ts')
 const TASK_BOARD_CLIENT = join(ROOT, 'lib', 'stackos', 'taskBoard.ts')
 const CAPACITY_CONTROL = join(ROOT, 'views', 'home', 'DeliveryCapacityControl.vue')
+const PROJECT_SETUP_CONTROLLER = join(ROOT, 'views', 'project-setup', 'useProjectSetup.ts')
 const ALLOWED_WRITE_FILES = new Set([AUTH_SETUP_STORE, PROJECTS_STORE, OPERATIONS_CLIENT])
 
 function filesUnder(dir: string): string[] {
@@ -28,6 +29,21 @@ function filesUnder(dir: string): string[] {
 }
 
 describe('restricted UI write contract', () => {
+  it('keeps Home setup operations at their bounded shared controller', () => {
+    const callers: string[] = []
+    for (const scope of SCOPES) {
+      for (const file of filesUnder(join(ROOT, scope))) {
+        const source = readFileSync(file, 'utf8')
+        const operations = [...source.matchAll(/callOperation(?:<[^\n]+>)?\(\s*['"](projectSetup\.[^'"]+)['"]/g)].map(match => match[1])
+        if (operations.length) {
+          expect(file).toBe(PROJECT_SETUP_CONTROLLER)
+          expect(operations).toEqual(['projectSetup.get', 'projectSetup.setReminders', 'projectSetup.start'])
+          callers.push(file)
+        }
+      }
+    }
+    expect(callers).toEqual([PROJECT_SETUP_CONTROLLER])
+  })
   it('keeps product views and stores free of non-auth write calls', () => {
     const offenders: string[] = []
     for (const scope of SCOPES) {

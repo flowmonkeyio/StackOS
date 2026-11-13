@@ -24,6 +24,7 @@ not become narrower when its data or selected mode changes.
 | `/` | Overview | `HomeView` | entire local service and host status, continuous active-task list across accessible projects, existing Agent usage with date/group and Active/Archived/All controls, Connected tools |
 | `/auth-error` | Authentication recovery | `AuthErrorView` | centered recovery content within the full shell |
 | `/projects/:id` | Project Home | `HomeConsoleView` | scoped active-task list, existing scoped Agent usage and coverage, Connected tools; task rows open the selected graph directly |
+| `/projects/:id/setup` | Project setup | `ProjectSetupView` | contextual Home child for the retained setup attempt; no standalone sidebar destination or native host conversation link |
 | `/setup` | Backups | `LocalSetupView` | installation-wide backup settings and coverage |
 | `/projects/:id/schedules` | Automations | `ProjectDetailView` | shared project-detail header and schedules panel |
 | `/projects/:id/cost-budget` | Spend | `ProjectDetailView` | shared project-detail header and budget panel |
@@ -42,7 +43,7 @@ not become narrower when its data or selected mode changes.
 routes have no forwarding shims. Their shared backend APIs and records remain.
 The configuration child components deliberately do not create a second
 shell; `ProjectDetailView` supplies it. Project Home is the exception inside
-that nested router because `HomeConsoleView` owns its complete page chrome.
+that nested router because `HomeConsoleView` and its setup child own their complete page chrome.
 
 ## Mode continuity
 

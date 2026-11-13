@@ -155,9 +155,12 @@ export function isStackOsNavItemActive(
   currentQuery: StackOsRouteQuery = {},
 ): boolean {
   const [targetPath, targetSearch = ''] = item.to.split('?')
+  // Setup is a bounded Home child; other project surfaces retain their own
+  // selection rather than making Home match every project route.
+  const homeSetupChild = /^\/projects\/[^/]+$/.test(targetPath!) && currentPath === `${targetPath}/setup`
   const pathActive = item.matchPrefix
     ? currentPath === targetPath || currentPath.startsWith(`${targetPath}/`)
-    : currentPath === targetPath
+    : currentPath === targetPath || homeSetupChild
   if (!pathActive) return false
 
   const targetParams = new URLSearchParams(targetSearch)
