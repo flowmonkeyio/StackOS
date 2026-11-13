@@ -593,6 +593,11 @@ explicitly. A stopped task or invalid final result alone does not identify why
 the native call ended; an unexplained signal does not establish cancellation.
 Keep the initiating cause separate from a later result-validation or
 error-persistence failure, while preserving credential sanitization.
+Positively identified managed Codex cancellation retains its native exit,
+session and usage evidence without an extra invalid-result diagnostic solely
+because the final file is absent. A present malformed final, initiating stream
+or process failure, unresolved native error or failed turn still retains its
+failure diagnostics, including when cleanup sets a cancellation flag.
 
 | Observed boundary | Meaning and safe recovery |
 | --- | --- |
@@ -888,14 +893,18 @@ Totals and rows include `coverage`: `usage_measured_attempts`,
 `usage_unavailable_attempts`, `classification_known_attempts` and
 `classification_unknown_attempts`. `usage_status` and `classification_status` are
 `empty`, `complete`, `partial` or `unavailable`. Explicit null validated outcomes
-record known validation failure; absent outcomes or roles remain unclassified.
+record known validation failure unless the receipt carries `cancelled=true`.
+That positive fence evidence keeps the attempt and measured usage but leaves its
+decision unclassified; it contributes neither `validation_failed` nor a reviewer
+reject. Null outcomes, unexplained signals and truthy non-boolean cancellation
+values do not establish cancellation. Absent outcomes or roles remain unclassified.
 `coverage.fields` maps each of `input`, `output`, `total`, `cache_read`,
 `cache_write`, `reasoning` to `measured_attempts`, `unavailable_attempts`, and
 `status` with the same coverage enum. Each denominator is all eligible attempts
 in that scope. A partial cache sum describes only known measurements; it does
 not imply zero cache for the others. `review_outcomes` counts explicit
 review-role validated `success`, `repair`, `blocked`, `failed`, or
-`validation_failed` (explicit null); absent/unknown role or outcome remains
+`validation_failed` (explicit null without evidenced cancellation); absent/unknown role or outcome remains
 unclassified. This is not an approval rate. Keep missing-data accounting in the
 API and accessible exact-value coverage. Fixed Input / Cache / Output summaries
 show compact muted N/A when measurement is absent; measured zero remains 0.

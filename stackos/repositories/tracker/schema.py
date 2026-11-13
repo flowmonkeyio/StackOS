@@ -491,7 +491,7 @@ class AgentStatsMetricsOut(BaseModel):
         default_factory=dict,
         description=(
             "Explicit review-role validated outcomes only; "
-            "validation_failed is an explicit null outcome."
+            "validation_failed is an explicit null outcome without evidenced cancellation."
         ),
     )
     reported_usage: AgentStatsUsageOut

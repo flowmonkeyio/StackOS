@@ -472,6 +472,62 @@ def test_repaired_current_archive_dedup_and_one_phase_review_mirror(
     assert repo.agent_stats(project_id=project_id).totals == again.totals
 
 
+@pytest.mark.parametrize("cancelled", [True, False, None, 1, "true"])
+def test_only_positive_cancellation_exempts_null_review_outcome(
+    session: Session, project_id: int, cancelled
+):
+    receipt = _receipt("review_agent", None, 10)
+    receipt["cancelled"] = cancelled
+    _store(session, project_id, "interrupted", {"attempt": 1, "review": receipt})
+    stats = TrackerRepository(session).agent_stats(project_id=project_id).totals
+    assert stats.launch_attempts == 1
+    assert stats.reported_usage.total == 10
+    assert stats.recorded_reviewer_rejects == 0
+    assert stats.review_outcomes == ({} if cancelled is True else {"validation_failed": 1})
+    assert stats.coverage.classification_known_attempts == (0 if cancelled is True else 1)
+    assert stats.coverage.classification_unknown_attempts == (1 if cancelled is True else 0)
+
+
+def test_cancelled_current_and_archived_receipts_preserve_repairs_and_history(
+    session: Session, project_id: int
+):
+    repo = TrackerRepository(session)
+    previous = _repaired()
+    cancelled = _receipt("review_agent", None, 10)
+    cancelled["cancelled"] = True
+    current = {"attempt": 3, "review": cancelled}
+    automatic = {
+        **current,
+        "repair_count": 3,
+        "sessions": {"review": {"thread_id": "retained-review"}},
+        "attempts": [*previous["attempts"], deepcopy(current)],
+    }
+    _store(session, project_id, "cancelled-after-repair", automatic)
+    stored = repo.brief(
+        project_id=project_id, ticket_key="cancelled-after-repair"
+    ).ticket.completion_evidence_json
+    stats = repo.agent_stats(project_id=project_id).totals
+    assert stats.launch_attempts == 5
+    assert stats.reported_usage.total == 110
+    assert stats.recorded_reviewer_rejects == 1
+    assert stats.review_outcomes == {"repair": 1, "success": 1}
+    assert stats.coverage.classification_known_attempts == 4
+    assert stats.coverage.classification_unknown_attempts == 1
+    brief = repo.brief(project_id=project_id, ticket_key="cancelled-after-repair")
+    assert brief.ticket.agent_stats == brief.task.agent_stats == stats
+    assert repo.agent_stats_all().totals == stats
+    assert (
+        repo.get(project_id=project_id, task_index_only=True, include_graph=False)
+        .tasks[0]
+        .agent_stats
+        == stats
+    )
+    assert brief.ticket.completion_evidence_json == stored
+    assert stored["automatic_delivery"]["repair_count"] == 3
+    assert stored["automatic_delivery"]["sessions"] == automatic["sessions"]
+    assert len(stored["automatic_delivery"]["attempts"]) == 3
+
+
 def test_coverage_invalid_results_requeues_and_measured_zero(session: Session, project_id: int):
     repo = TrackerRepository(session)
     legacy = _receipt()

@@ -3861,6 +3861,85 @@ def test_abort_fences_late_ordinary_results_and_preserves_completed_evidence(
     assert all(step.status == "skipped" for step in RunPlanRepository(session).get(plan_id).steps)
 
 
+@pytest.mark.parametrize("phase", ["delivery", "review"])
+def test_native_cancellation_reaches_receipt_and_statistics_without_invalid_result(
+    session, project_id, tmp_path, monkeypatch, phase
+):
+    """Real adapter/receipt/projection; only native process I/O is controlled."""
+    from stackos import task_delivery
+    from stackos.host_mcp import progress
+    from stackos.host_mcp.adapters import codex
+
+    plan_id = workflow_task(session, project_id)
+    task_key = f"workflow-{plan_id}"
+    scheduler = QueuedScheduler()
+    calls = []
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fake/codex")
+
+    def stream(command, *, input, on_session, process_control, **kwargs):
+        packet = json.loads(input)
+        current_phase = packet["phase"]
+        calls.append(current_phase)
+        on_session(f"native-{current_phase}")
+        if current_phase == phase:
+            with Session(session.get_bind()) as abort_session:
+                task_delivery.abort_run_plan(
+                    abort_session,
+                    run_plan_id=plan_id,
+                    project_id=project_id,
+                    reason="isolated fixture operator cancellation",
+                    scheduler=scheduler,
+                )
+            assert process_control.cancelled.is_set()
+        else:
+            Path(command[command.index("-o") + 1]).write_text(
+                json.dumps(
+                    generic_result(outputs={"commit_sha": git(tmp_path, "rev-parse", "HEAD")})
+                )
+            )
+        return subprocess.CompletedProcess(
+            command,
+            -15 if current_phase == phase else 0,
+            json.dumps(
+                {"type": "turn.completed", "usage": {"input_tokens": 100, "output_tokens": 5}}
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(progress, "run_codex_process", stream)
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=task_key,
+        run_plan_id=plan_id,
+        step_id="deliver",
+    )
+    scheduler.run()
+    session.expire_all()
+    repo = TrackerRepository(session)
+    ticket = repo.brief(project_id=project_id, ticket_key="selected").ticket
+    evidence = ticket.completion_evidence_json["automatic_delivery"]
+    receipt = evidence[phase]
+    assert ticket.status == "aborted"
+    assert receipt["cancelled"] is True and receipt["validated_outcome"] is None
+    assert receipt["error"] == "Codex invocation cancelled by managed process control."
+    assert receipt["exit_code"] == -15 and receipt["thread_id"] == f"native-{phase}"
+    assert receipt["result"] is None and receipt["usage"]["measured"]["total"] == 105
+    assert evidence["repair_count"] == 0
+    stats = repo.agent_stats(project_id=project_id).totals
+    # Analytics omit the bounded timeline/last invocation carried by work views.
+    assert stats.model_dump(exclude={"samples", "last_execution"}) == ticket.agent_stats.model_dump(
+        exclude={"samples", "last_execution"}
+    )
+    assert stats.launch_attempts == len(calls) == (1 if phase == "delivery" else 2)
+    assert stats.reported_usage.total == 105 * len(calls)
+    assert stats.review_outcomes == {} and stats.recorded_reviewer_rejects == 0
+    assert stats.coverage.classification_unknown_attempts == 1
+    assert stats.coverage.classification_known_attempts == (0 if phase == "delivery" else 1)
+
+
 def test_abort_queued_callback_scope_terminal_and_external_state_only(
     session, project_id, tmp_path, monkeypatch
 ):

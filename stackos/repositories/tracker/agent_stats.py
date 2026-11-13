@@ -396,8 +396,12 @@ def summarize_receipts(
             else:
                 unknown_cache_input += measured["input"]
         role = receipt.get("selected_role")
-        # Explicit null records failed producer validation; absence is legacy/unfinished.
+        # A fenced invocation has no validated decision. Keep its usage/attempt,
+        # without inventing a quality failure or inferring cancellation from null.
         outcome = receipt.get("validated_outcome")
+        if outcome is None and receipt.get("cancelled") is True:
+            continue
+        # Other explicit nulls record failed validation; absence is legacy/unfinished.
         if (
             isinstance(role, str)
             and bool(role)
