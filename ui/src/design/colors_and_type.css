@@ -163,6 +163,7 @@
   --color-info-subtle:     #f0f9ff;
   --color-info-fg:         #0369a1;
   --color-info-border:     #bae6fd;
+  --color-chart-work:      #7c3aed;
 
   /* Semantic — neutral */
   --color-neutral-default: #52525b;
@@ -255,6 +256,7 @@
   --color-info-subtle:     rgba(14, 165, 233, 0.16);
   --color-info-fg:         #38bdf8;
   --color-info-border:     rgba(14, 165, 233, 0.38);
+  --color-chart-work:      #c4b5fd;
 
   --color-neutral-default: #9c9ca5;
   --color-neutral-subtle:  rgba(148, 148, 160, 0.14);

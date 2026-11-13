@@ -2,193 +2,147 @@ import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import AgentActivityChart from './AgentActivityChart.vue'
-import { agentStatsFixture, groupedAgentStatsFixture } from './agentStatsFixtures'
+import DeliveryTrendChart from './DeliveryTrendChart.vue'
+import AgentActivitySection from './AgentActivitySection.vue'
+import { deliveryMetrics } from '@/lib/deliveryTrends'
+import { agentStatsFixture, emptyDeliveryTrendsFixture } from './agentStatsFixtures'
 
 enableAutoUnmount(afterEach)
 const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
-const mocks = vi.hoisted(() => ({ created: vi.fn(), updated: vi.fn(), destroyed: vi.fn(), active: vi.fn() }))
+const mocks = vi.hoisted(() => ({ created: vi.fn(), updated: vi.fn(), destroyed: vi.fn() }))
 vi.mock('chart.js', () => ({
   Chart: class {
     static register = vi.fn()
     data: unknown
     options: unknown
+    scales = { x: { getValueForPixel: () => 1 } }
     constructor(_canvas: unknown, config: { data: unknown; options: unknown }) { this.data = config.data; this.options = config.options; mocks.created(config) }
     update = mocks.updated
     resize = vi.fn()
     destroy = mocks.destroyed
-    setActiveElements = mocks.active
-  }, BarController: {}, BarElement: {}, CategoryScale: {}, LinearScale: {}, Tooltip: {},
+  }, BarController: {}, BarElement: {}, CategoryScale: {}, LinearScale: {}, LineController: {}, LineElement: {}, PointElement: {},
 }))
-afterEach(() => { vi.clearAllMocks(); vi.restoreAllMocks(); delete document.documentElement.dataset.theme })
-function render() { return mount(AgentActivityChart, { props: { days: agentStatsFixture().daily, timezone: 'America/Los_Angeles' } }) }
+afterEach(() => { vi.clearAllMocks(); vi.restoreAllMocks(); vi.unstubAllGlobals(); delete document.documentElement.dataset.theme })
 
-describe('Daily stacked usage chart', () => {
-  it('prepares only the 365 displayed buckets and does not update geometry for pointer selection', async () => {
-    const day = agentStatsFixture().daily[0]!
-    const days = Array.from({ length: 365 }, (_, index) => ({ ...structuredClone(day), date: new Date(Date.UTC(2025, 0, index + 1)).toISOString().slice(0, 10) }))
-    const wrapper = mount(AgentActivityChart, { props: { days, timezone: 'UTC' } })
+describe('Daily tokens', () => {
+  it('selects All/Input/Cache/Output without summing incomplete splits or fetching', async () => {
+    const fixture = agentStatsFixture()
+    fixture.daily[0]!.reported_usage = { ...fixture.daily[0]!.reported_usage, total: 158, input: 150, remaining_input: 20, cache_read: 80, output: 8, input_with_unknown_cache: 50 }
+    const wrapper = mount(AgentActivityChart, { props: { days: fixture.daily, totals: fixture.totals, timezone: 'UTC' } })
     await frame()
-    expect(mocks.created.mock.calls[0]![0].data.datasets.map((item: { data: unknown[] }) => item.data.length)).toEqual([365, 365, 365])
-    expect(mocks.created.mock.calls[0]![0].options.animation).toBe(false)
-    expect(mocks.created.mock.calls[0]![0].options.responsive).toBe(false)
-    mocks.updated.mockClear()
-    mocks.created.mock.calls[0]![0].options.onHover({}, [{ index: 200 }])
-    await nextTick(); await frame()
-    expect(mocks.updated).not.toHaveBeenCalled()
-    wrapper.unmount()
+    expect(mocks.created.mock.calls[0]![0].data.datasets[0].data).toEqual([158])
+    expect(mocks.created.mock.calls[0]![0].data.datasets[0].maxBarThickness).toBe(8)
+    const buttons = wrapper.findAll('button')
+    expect(buttons.map(button => button.text())).toEqual(['All 100', 'Input 30', 'Cache 40', 'Output 30'])
+    for (const [index, expected] of [[1, 20], [2, 80], [3, 8]]) {
+      await buttons[index!]!.trigger('click'); await frame()
+      const chart = mocks.updated.mock.contexts.at(-1) as { data: { datasets: { data: number[] }[] } }
+      expect(chart.data.datasets[0]!.data).toEqual([expected])
+    }
+    await wrapper.get('canvas').trigger('focus')
+    expect(wrapper.get('[role="tooltip"]').text()).toContain('Total: 158')
+    expect(wrapper.get('[role="tooltip"]').text()).toContain('50 input tokens with unknown cache split')
+    expect(wrapper.findAll('tbody td').map(item => item.text())).toEqual(['158', '20', '80', '8'])
   })
-  it.each(['agent', 'model', 'agent_model'] as const)('uses %s identities in bars, legend, pointer tooltip and keyboard values', async group => {
-    const fixture = groupedAgentStatsFixture(group)
-    const wrapper = mount(AgentActivityChart, { props: { days: fixture.daily, timezone: 'UTC', group, view: 'agents' } })
+  it('preserves measured zero, missing buckets and exact visible keyboard/pointer values', async () => {
+    const fixture = agentStatsFixture()
+    fixture.daily.push({ ...fixture.undated, date: '2026-11-07', by_agent: [], by_model: [], by_agent_model: [] })
+    fixture.daily[0]!.reported_usage.total = 0
+    const wrapper = mount(AgentActivityChart, { attachTo: document.body, props: { days: fixture.daily, totals: fixture.totals, timezone: 'UTC' } })
     await frame()
     const config = mocks.created.mock.calls[0]![0]
-    const labels = config.data.datasets.map((item: { label: string }) => item.label)
-    expect(wrapper.findAll('.activity-chart__legend-label').map(item => item.text())).toEqual(labels)
-    config.options.plugins.tooltip.external({ tooltip: { opacity: 1, dataPoints: [{ dataIndex: 0 }] } })
-    await nextTick()
-    expect(wrapper.findAll('.activity-chart__tooltip-label').map(item => item.text())).toEqual(labels)
-    expect(wrapper.get('[role="tooltip"] footer').text()).toBe('Tokens: 600')
-    await wrapper.get('canvas').trigger('focus')
-    expect(wrapper.get('[aria-live="polite"]').text()).toContain('Tokens: 600 tokens')
-    for (const label of labels) expect(wrapper.get('[aria-live="polite"]').text()).toContain(label)
-    await wrapper.setProps({ group: group === 'model' ? 'agent_model' : 'model' })
-    await frame()
-    expect(mocks.updated).toHaveBeenCalled()
-    expect(mocks.created).toHaveBeenCalledOnce()
-    wrapper.unmount()
-  })
-
-  it('renders N/A in retained daily slots and exact keyboard values while chart samples stay null', async () => {
-    const days = agentStatsFixture().daily
-    days.push({ ...agentStatsFixture().undated, date: '2026-11-07', by_agent: [], by_model: [], by_agent_model: [] })
-    const wrapper = mount(AgentActivityChart, { props: { days, timezone: 'UTC' } })
-    await frame()
-    const config = mocks.created.mock.calls[0]![0]
-    expect(config.data.datasets.map((item: { data: (number | null)[] }) => item.data)).toEqual([[30, null], [40, null], [30, null]])
-    expect(wrapper.findAll('tbody tr:last-child td').map(item => item.text())).toEqual(['N/A', 'N/A', 'N/A', 'N/A'])
-    expect(wrapper.get('tbody tr:last-child [aria-label^="Total:"]').attributes('title')).toBe('Total: N/A')
-    await wrapper.get('canvas').trigger('focus')
-    await wrapper.get('canvas').trigger('keydown', { key: 'End' })
-    expect(wrapper.get('[aria-live="polite"]').text()).toContain('Tokens: N/A')
-    expect(wrapper.get('[aria-live="polite"]').text()).toContain('Input: N/A')
-    expect(wrapper.get('[aria-live="polite"]').text()).not.toContain('0 tokens')
-    wrapper.unmount()
-  })
-
-  it('keeps exact labels and mixed paired values aligned in bars, hover, keyboard and daily rows', async () => {
-    const days = agentStatsFixture().daily
-    days[0]!.reported_usage = { ...days[0]!.reported_usage, input: 150, cache_read: 80, remaining_input: 20, output: 8, total: 158, input_with_unknown_cache: 50 }
-    const wrapper = mount(AgentActivityChart, { props: { days, timezone: 'UTC' } })
-    await frame()
-    const config = mocks.created.mock.calls[0]![0]
-    expect(config.data.datasets.map((item: { label: string; data: number[] }) => [item.label, item.data])).toEqual([['Input', [20]], ['Cache', [80]], ['Output', [8]]])
-    expect(wrapper.get('[aria-label^="Input:"]').attributes('aria-label')).toBe('Input: 20 tokens.')
-    await wrapper.get('canvas').trigger('focus')
-    expect(wrapper.get('[aria-live="polite"]').text()).toContain('Available tokens: 108 tokens')
-    expect(wrapper.get('[aria-live="polite"]').text()).toContain('Input: 20')
-    expect(wrapper.get('[aria-label^="Total:"]').text()).toBe('158')
-    wrapper.unmount()
-  })
-  it('offers exactly two views with equal measured totals, exact values and a fixed daily table', async () => {
-    const wrapper = render()
-    await frame()
-    const config = mocks.created.mock.calls[0]![0]
-    expect(config.data.datasets.map((item: { data: number[] }) => item.data)).toEqual([[30], [40], [30]])
-    expect(config.data.datasets.map((item: { label: string }) => item.label)).toEqual(['Input', 'Cache', 'Output'])
-    expect(config.options.scales.x.stacked).toBe(true)
-    expect(config.options.scales.y.stacked).toBe(true)
-    expect(wrapper.findAll('button').map(item => item.text())).toEqual(['Tokens', 'Agents'])
-    expect(wrapper.findComponent({ name: 'UiSelect' }).exists()).toBe(false)
-    config.options.plugins.tooltip.external({ tooltip: { opacity: 1, dataPoints: [{ dataIndex: 0 }] } })
-    await nextTick()
-    expect(wrapper.get('[role="tooltip"] footer').text()).toBe('Tokens: 100')
-    expect(wrapper.findAll('[role="tooltip"] li')).toHaveLength(3)
-    await wrapper.get('canvas').trigger('focus')
-    expect(wrapper.find('[role="tooltip"]').exists()).toBe(false)
-    expect(wrapper.get('[aria-live="polite"]').text()).toContain('Tokens: 100 tokens')
-    expect(wrapper.get('[aria-live="polite"]').classes()).toContain('sr-only')
-    expect(wrapper.get('.activity-chart__selection').text()).toBe('Nov 6 · 100 tokens')
-    expect(wrapper.get('.activity-chart__selection').text()).not.toContain('Cache:')
-    expect(wrapper.get('[aria-live="polite"]').text()).toContain('Cache: 40')
-    const headers = wrapper.findAll('th[scope="col"]').map(item => item.text())
-    expect(headers).toEqual(['Date', 'Input', 'Cache', 'Output', 'Total'])
-    await wrapper.findAll('button')[1]!.trigger('click')
-    await frame()
-    expect(wrapper.text()).toContain('Tokens by agent per day')
-    expect(wrapper.get('[aria-label="Chart legend"]').text()).toBe('same-name')
-    expect(wrapper.get('.activity-chart__legend-label').attributes('title')).toBe('same-name')
-    const chart = mocks.updated.mock.contexts.at(-1) as { data: { datasets: { data: number[] }[] } }
-    expect(chart.data.datasets.map(item => item.data)).toEqual([[100]])
-    expect(wrapper.findAll('th[scope="col"]').map(item => item.text())).toEqual(headers)
-    expect(mocks.created).toHaveBeenCalledOnce()
-    wrapper.unmount()
-    expect(mocks.destroyed).toHaveBeenCalledOnce()
-  })
-
-  it('keeps keyboard day selection stable while a pointer is over another bar', async () => {
-    const days = agentStatsFixture().daily
-    days.push({ ...structuredClone(days[0]!), date: '2026-11-07' })
-    const wrapper = mount(AgentActivityChart, { attachTo: document.body, props: { days, timezone: 'UTC' } })
-    await frame()
+    expect(config.data.datasets[0].data).toEqual([0, null])
     const canvas = wrapper.get('canvas')
-    ;(canvas.element as HTMLCanvasElement).focus()
+    ;(canvas.element as HTMLCanvasElement).focus(); await nextTick()
+    expect(wrapper.get('[role="tooltip"]').text()).toContain('Total: 0')
     await canvas.trigger('keydown', { key: 'End' })
-    mocks.created.mock.calls[0]![0].options.onHover({}, [{ index: 0 }])
-    await nextTick()
-    expect(wrapper.get('[aria-live="polite"]').text()).toContain('2026-11-07')
+    expect(wrapper.get('[role="tooltip"]').text()).toContain('Total: N/A')
     await canvas.trigger('keydown', { key: 'Home' })
-    expect(wrapper.get('[aria-live="polite"]').text()).toContain('2026-11-06')
-    const chart = mocks.updated.mock.contexts.at(-1) as { options: { plugins: { tooltip: { enabled: boolean } } } }
-    expect(chart.options.plugins.tooltip.enabled).toBe(false)
-    ;(canvas.element as HTMLCanvasElement).blur()
-    await nextTick()
-    expect(chart.options.plugins.tooltip.enabled).toBe(false)
-    wrapper.unmount()
-  })
-
-  it('keeps every agent value and the total available in hover details until leaving the plot', async () => {
-    const days = agentStatsFixture().daily
-    const row = days[0]!.by_agent[0]!
-    days[0]!.by_agent = Array.from({ length: 12 }, (_, index) => ({ ...structuredClone(row), group_key: `agent-${index}`, agent_name: `Recorded agent ${index}` }))
-    days[0]!.reported_usage.total = 1200
-    const wrapper = mount(AgentActivityChart, { props: { days, timezone: 'UTC', view: 'agents' } })
-    await frame()
-    const config = mocks.created.mock.calls[0]![0]
-    config.options.plugins.tooltip.external({ tooltip: { opacity: 1, dataPoints: [{ dataIndex: 0 }] } })
-    await nextTick()
-    expect(config.options.plugins.tooltip.enabled).toBe(false)
-    expect(wrapper.findAll('[role="tooltip"] li')).toHaveLength(12)
-    expect(wrapper.get('[role="tooltip"] footer').text()).toBe('Tokens: 1,200')
-    expect(wrapper.findAll('[role="tooltip"] li').at(-1)!.text()).toContain('Recorded agent 11')
-    config.options.plugins.tooltip.external({ tooltip: { opacity: 0, dataPoints: [] } })
-    await nextTick()
-    expect(wrapper.find('[role="tooltip"]').exists()).toBe(true)
+    await canvas.trigger('mousemove', { clientX: 100 })
+    expect(wrapper.get('[role="tooltip"]').text()).toContain('2026-11-06')
+    ;(canvas.element as HTMLCanvasElement).blur(); await canvas.trigger('mousemove', { clientX: 100 })
+    expect(wrapper.get('[role="tooltip"]').text()).toContain('2026-11-07')
     await wrapper.get('.activity-chart__plot').trigger('mouseleave')
     expect(wrapper.find('[role="tooltip"]').exists()).toBe(false)
-    wrapper.unmount()
   })
+  it('bounds year preparation and skips geometry updates for pointer/focus selection', async () => {
+    const fixture = agentStatsFixture()
+    const days = Array.from({ length: 365 }, (_, index) => ({ ...fixture.daily[0]!, date: new Date(Date.UTC(2025, 0, index + 1)).toISOString().slice(0, 10) }))
+    const wrapper = mount(AgentActivityChart, { props: { days, totals: fixture.totals, timezone: 'UTC' } })
+    await frame()
+    const config = mocks.created.mock.calls[0]![0]
+    expect(config.data.datasets[0].data).toHaveLength(365)
+    expect(config.options.animation).toBe(false); expect(config.options.responsive).toBe(false)
+    mocks.updated.mockClear()
+    await wrapper.get('canvas').trigger('focus'); await wrapper.get('canvas').trigger('keydown', { key: 'End' }); await frame()
+    expect(mocks.updated).not.toHaveBeenCalled()
+    expect(wrapper.get('[role="tooltip"]').text()).toContain('2025-12-31')
+    mocks.destroyed.mockClear()
+    wrapper.unmount(); expect(mocks.destroyed).toHaveBeenCalledOnce()
+  })
+})
 
-  it('omits unsupported cache, distinguishes a partial stack and preserves zero/theme lifecycle', async () => {
-    vi.spyOn(window, 'getComputedStyle').mockImplementation(() => ({ fontFamily: 'Inter', getPropertyValue: (key: string) => `${document.documentElement.dataset.theme ?? 'light'}:${key}` }) as CSSStyleDeclaration)
-    const wrapper = render()
+describe('Compact delivery trends', () => {
+  it('renders all six year-long widgets from one projection with bounded series and reduced-motion-safe options', async () => {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({ matches: query === '(prefers-reduced-motion: reduce)', addEventListener: vi.fn(), removeEventListener: vi.fn() })))
+    expect(window.matchMedia('(prefers-reduced-motion: reduce)').matches).toBe(true)
+    const fixture = agentStatsFixture()
+    fixture.delivery_trends.daily = Array.from({ length: 365 }, (_, index) => ({ ...structuredClone(fixture.delivery_trends.totals), date: new Date(Date.UTC(2025, 0, index + 1)).toISOString().slice(0, 10) }))
+    fixture.daily = fixture.delivery_trends.daily.map(day => ({ ...structuredClone(fixture.daily[0]!), date: day.date }))
+    const wrapper = mount(AgentActivitySection, { props: { summary: fixture, loading: false, error: null, filters: { start_date: '2025-01-01', end_date: '2025-12-31', timezone: 'UTC', group_by: fixture.group_by } } })
     await frame()
-    const days = agentStatsFixture().daily
-    days[0]!.reported_usage = { ...days[0]!.reported_usage, cache_read: null, remaining_input: null, input_with_unknown_cache: 70, output: 0, total: 70 }
-    await wrapper.setProps({ days })
+    expect(mocks.created).toHaveBeenCalledTimes(7)
+    for (const [config] of mocks.created.mock.calls) {
+      expect(config.data.datasets).toHaveLength(1)
+      expect(config.data.datasets[0].data).toHaveLength(365)
+      expect(config.options.animation).toBe(false)
+      expect(config.options.responsive).toBe(false)
+    }
+    expect(wrapper.findAll('canvas')).toHaveLength(7)
+  })
+  it('retains recorded stop incidents even when earlier provenance is unavailable', async () => {
+    const totals = emptyDeliveryTrendsFixture().totals
+    totals.stops = { total: 2, coverage: { status: 'unavailable', recorded: 0, unavailable: 1, issues: ['retained_revision_history_only'] } } as typeof totals.stops
+    const wrapper = mount(DeliveryTrendChart, { props: { metric: deliveryMetrics[4], totals, days: [{ ...totals, date: '2026-11-01' }] } })
     await frame()
-    const chart = mocks.updated.mock.contexts.at(-1) as { data: { datasets: { data: (number | null)[]; backgroundColor: string }[] }; options: { plugins: { tooltip: { external: (context: unknown) => void } } } }
-    expect(chart.data.datasets.map(item => item.data)).toEqual([[0]])
-    chart.options.plugins.tooltip.external({ tooltip: { opacity: 1, dataPoints: [{ dataIndex: 0 }] } })
-    await nextTick()
-    expect(wrapper.get('[role="tooltip"] footer').text()).toBe('Available tokens: 0')
+    expect(wrapper.get('.delivery-trend__total').text()).toBe('2')
+    expect(wrapper.get('.delivery-trend__note').text()).toBe('History unavailable')
+    expect(mocks.created.mock.calls[0]![0].data.datasets[0].data).toEqual([2])
     await wrapper.get('canvas').trigger('focus')
-    expect(wrapper.get('[aria-live="polite"]').text()).toContain('Available tokens: 0 tokens')
-    expect(wrapper.get('.activity-chart__selection').text()).toContain('available measurements')
-    expect(wrapper.get('.activity-chart__selection').text()).not.toMatch(/Shown|Reported total|Cache:/)
-    expect(wrapper.text()).not.toMatch(/Not reported|Cache split|New input/)
-    expect(wrapper.findAll('th[scope="col"]').map(item => item.text())).toEqual(['Date', 'Output', 'Total'])
-    document.documentElement.dataset.theme = 'dark'
-    await vi.waitFor(() => expect(chart.data.datasets[0]!.backgroundColor).toBe('dark:--color-success-default'))
-    wrapper.unmount()
+    expect(wrapper.get('[role="tooltip"]').text()).toContain('Earlier history is unavailable')
+    expect(wrapper.get('[role="tooltip"]').text()).not.toContain('retained_revision_history_only')
+  })
+  it('uses the period weighted rate and keeps no-review dates as gaps', async () => {
+    const totals = emptyDeliveryTrendsFixture().totals
+    totals.first_review_acceptance = { accepted: 1, reviewed: 3, rate: 1 / 3, coverage: { status: 'complete', recorded: 3, unavailable: 0 } } as typeof totals.first_review_acceptance
+    const days = [
+      { ...structuredClone(totals), date: '2026-11-01' },
+      { ...emptyDeliveryTrendsFixture().totals, date: '2026-11-02' },
+    ]
+    const wrapper = mount(DeliveryTrendChart, { props: { metric: deliveryMetrics[2], totals, days } })
+    await frame()
+    expect(wrapper.get('.delivery-trend__total').text()).toBe('33%')
+    expect(wrapper.get('.delivery-trend__note').text()).toBe('1 of 3 tickets')
+    const config = mocks.created.mock.calls[0]![0]
+    expect(config.type).toBe('line'); expect(config.data.datasets[0].spanGaps).toBe(false)
+    expect(config.data.datasets[0].data).toEqual([1 / 3, null])
+    await wrapper.get('canvas').trigger('focus'); await wrapper.get('canvas').trigger('keydown', { key: 'End' })
+    expect(wrapper.get('[role="tooltip"]').text()).toContain('N/A')
+    expect(wrapper.get('[role="tooltip"]').text()).toContain('0 of 0 tickets')
+  })
+  it('keeps unavailable counts distinct from zero and shows exact partial summed task time', async () => {
+    const totals = emptyDeliveryTrendsFixture().totals
+    totals.work_time.total_seconds = 66240
+    totals.work_time.coverage = { status: 'partial', recorded: 4, unavailable: 1, issues: ['missing invocation bounds'] } as typeof totals.work_time.coverage
+    const wrapper = mount(DeliveryTrendChart, { props: { metric: deliveryMetrics[5], totals, days: [{ ...totals, date: '2026-11-01' }] } })
+    await frame()
+    expect(wrapper.get('.delivery-trend__total').text()).toBe('18h 24m')
+    expect(wrapper.get('.delivery-trend__note').text()).toBe('Partial coverage')
+    await wrapper.get('canvas').trigger('focus')
+    expect(wrapper.get('[role="tooltip"]').text()).toContain('66,240 seconds of summed task work time')
+    expect(wrapper.get('[role="tooltip"]').text()).toContain('missing invocation bounds')
+    totals.completed_tasks.coverage.status = 'unavailable' as typeof totals.completed_tasks.coverage.status
+    await wrapper.setProps({ metric: deliveryMetrics[0], totals: structuredClone(totals) }); await frame()
+    expect(wrapper.get('.delivery-trend__total').text()).toBe('N/A')
   })
 })

@@ -199,9 +199,16 @@ names and canonical status icons with accessible labels. Identical provider/acco
 names retain stable account numbers. Hover/focus discloses full identity and state;
 Manage connections in the header reaches the existing global or project owner.
 
-Both Home pages share `views/home/AgentActivitySection.vue`: Input / Cache /
-Output headlines, date controls, daily chart with input detail, and an accessible
-Agent / Model / Agent+model `DataTable`. `useAgentStats.ts` owns one dated,
+Both Home pages share `views/home/AgentActivitySection.vue`: six equal compact
+delivery trends above Daily tokens and an Agent / Model / Agent + model
+breakdown. `DeliveryTrendChart.vue` presents completed tasks, completed tickets,
+first-review acceptance, changes requested, stops and recorded work time from
+the single `delivery_trends` projection. Period figures use its totals, never
+averaged daily rates. No-review and unsupported buckets remain gaps; known
+retained incidents remain visible alongside their coverage warning. Work time
+uses the repository's summed distinct-task seconds, with exact seconds and
+coverage available on inspection. There is no Top tasks or stop-reason ranking.
+`useAgentStats.ts` owns one dated,
 grouped project/global statistics request, with scope and stale-response
 protection. Regrouping retains the same dated chart and totals while the request
 loads; the retained rows and chart keep their returned grouping labels until replaced.
@@ -209,31 +216,22 @@ Date, project and visibility changes clear the prior scope. Defaults are today p
 the browser's visibly identified IANA timezone. Global Active/Archived/All
 selection remains with the existing page owner.
 
-`AgentActivityChart.vue` uses Chart.js vertical daily stacks with exactly two
-views: Tokens and Agents. Tokens shows disjoint Input (including cache write),
-Cache and Output, in that order, using the backend's paired measurements. Agents uses
-the same reported Input + Output split by the existing Agent / Model / Agent +
-model control, using canonical daily groups. Unsupported series are absent;
-missing cache never becomes an invented remainder or unknown-cache category.
-An incomplete stack uses ordinary available-measurement context, without
-claiming a complete total. Both views keep the same 215px plot, fixed axis gutter,
-56px responsive wrapping legend below the plot and single-line selection caption.
-Legend entries use their label widths and compact gaps: all three token labels
-and six short identities stay on one row whenever they fit. Wrapping follows
-available width; additional rows scroll within the same bounded legend. Long legend
-identities are visually elided, with the unchanged name available on focus/hover;
-agent identities are never rewritten. Model and combined labels preserve exact
-recorded versions. Group-key colors match bars, legends, tooltips and table
-markers across date changes and row sorting. Hover and keyboard focus (Left/Right, Home/End) expose exact
-values. Pointer hover uses Chart.js's external-tooltip hook and a bounded panel
-inside the unchanged plot: date and exact total remain visible while the series
-list scrolls, preserving every measured value even with many agents. Leaving
-the plot closes it; canvas keyboard focus uses the existing exact-value live
-region instead. Per-series exact text is screen-reader-only rather than a visible
-transcript. A bounded vertical daily disclosure has fixed Date/Input/Cache/Output/
-Total columns, omitting unsupported fields rather than growing agent
-columns. Compact daily values retain exact focus/hover labels. Its existing mount/update/theme/unmount lifecycle
-owns the chart; it adds no polling.
+`AgentActivityChart.vue` uses slim rounded Chart.js bars with selectable
+All / Input / Cache / Output period totals. All uses the reported total;
+Input uses paired `remaining_input`, never inclusive Input minus aggregate
+Cache. Unknown cache splits remain explicit in the exact-value tooltip rather
+than being invented or removed from All. Missing values remain N/A and measured
+zero remains zero. The token chart and six trend charts share the existing
+`useUsageCanvas` visibility/size/theme/paint owner, with animation and Chart.js
+responsive scheduling disabled. Work is bounded by displayed daily buckets,
+not receipt histories. Pointer/focus selection does not rebuild geometry.
+Hover and keyboard focus (Left/Right, Home/End, Escape) expose exact values in
+the same visible tooltip. A bounded daily-values disclosure retains all token
+fields. The adjacent breakdown uses distinct categorical markers and bars,
+retaining exact recorded names/models and full accessible labels. The six-column
+widget row and two-column analysis geometry remain aligned at 1280/1440px.
+Local service, aligned Active task rows and compact Connected tools retain
+their existing owners; this section adds no polling or per-widget requests.
 
 `components/domain/AgentUsageSummary.vue` accepts the existing typed summary
 metrics shared by Home and Work; consumers pass the appropriate backend

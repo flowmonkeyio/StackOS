@@ -50,6 +50,7 @@ export const lightTheme = {
   danger: { default: '#dc2626', subtle: '#fef2f2', fg: '#b91c1c', border: '#fecaca' },
   info: { default: '#0284c7', subtle: '#f0f9ff', fg: '#0369a1', border: '#bae6fd' },
   neutral: { default: '#52525b', subtle: '#f4f4f5', fg: '#3f3f46', border: '#e4e4e7' },
+  chart: { work: '#7c3aed' },
   sidebar: {
     bg: '#16161c',
     bgHover: 'rgba(255, 255, 255, 0.06)',
@@ -102,6 +103,7 @@ export const darkTheme = {
   danger: { default: '#ef4444', subtle: 'rgba(239, 68, 68, 0.16)', fg: '#f87171', border: 'rgba(239, 68, 68, 0.38)' },
   info: { default: '#0ea5e9', subtle: 'rgba(14, 165, 233, 0.16)', fg: '#38bdf8', border: 'rgba(14, 165, 233, 0.38)' },
   neutral: { default: '#9c9ca5', subtle: 'rgba(148, 148, 160, 0.14)', fg: '#c2c2ca', border: '#313139' },
+  chart: { work: '#c4b5fd' },
   sidebar: {
     bg: '#0b0b0e',
     bgHover: 'rgba(255, 255, 255, 0.055)',

@@ -1,161 +1,56 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import AgentActivitySection from './AgentActivitySection.vue'
-import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
-import DataTable from '@/components/DataTable.vue'
 import { localActivityFilters, type ActivityGroup } from '@/lib/agentActivity'
-import { agentStatsFixture } from './agentStatsFixtures'
+import { agentStatsFixture, groupedAgentStatsFixture } from './agentStatsFixtures'
 
 function render(summary = agentStatsFixture(), extra = {}) {
-  return mount(AgentActivitySection, { props: { summary, loading: false, error: null, filters: localActivityFilters(), ...extra }, global: { stubs: { AgentActivityChart: true } } })
+  return mount(AgentActivitySection, { props: { summary, loading: false, error: null, filters: localActivityFilters(), ...extra }, global: { stubs: { AgentActivityChart: true, DeliveryTrendChart: true } } })
 }
-describe('Agent usage presentation', () => {
-  it.each(['agent', 'model', 'agent_model'] as const)('uses N/A for missing %s cells in retained columns without reviving optional fields', group => {
-    const fixture = agentStatsFixture({ group_by: group as ActivityGroup })
-    fixture.rows.push({ ...structuredClone(fixture.rows[0]!), ...fixture.undated, launch_attempts: 1, group_key: 'unavailable' })
+describe('Shared Home usage', () => {
+  it('passes one accepted aggregate unchanged to all six widgets and token chart', () => {
+    const fixture = agentStatsFixture()
     const wrapper = render(fixture)
-    const row = wrapper.get('table tbody tr:last-child')
-    expect(row.findAll('[aria-label$="N/A"]').map(item => item.text())).toEqual(['N/A', 'N/A', 'N/A'])
+    const trends = wrapper.findAllComponents({ name: 'DeliveryTrendChart' })
+    expect(trends.map(item => item.props('metric').label)).toEqual(['Completed tasks', 'Completed tickets', 'First-review acceptance', 'Changes requested', 'Stops', 'Recorded work time'])
+    for (const item of trends) {
+      expect(item.props('totals')).toEqual(fixture.delivery_trends.totals)
+      expect(item.props('days')).toEqual(fixture.delivery_trends.daily)
+    }
+    expect(wrapper.getComponent({ name: 'AgentActivityChart' }).props('days')).toEqual(fixture.daily)
+    expect(wrapper.text()).not.toMatch(/Top tasks|stop reason|Where input goes/)
     wrapper.unmount()
-    const empty = render(agentStatsFixture({ totals: fixture.undated, daily: [], rows: [] }))
-    expect(empty.findAll('.agent-usage-summary dd').map(item => item.text())).toEqual(['N/A', 'N/A', 'N/A'])
-    expect(empty.find('[aria-label="Input details"]').exists()).toBe(false)
-    expect(empty.findAll('button').some(item => item.text() === 'See token details')).toBe(false)
-    empty.unmount()
   })
-
-  it.each(['agent', 'model', 'agent_model'] as const)('uses paired Input for %s row values and numeric table data', group => {
-    const fixture = agentStatsFixture()
-    fixture.group_by = group as ActivityGroup
-    fixture.rows[0]!.reported_usage = { ...fixture.rows[0]!.reported_usage, input: 150, remaining_input: 20, cache_read: 80, output: 8, total: 158 }
+  it.each(['agent', 'model', 'agent_model'] as const)('shows exact distinct %s identities and totals without a second calculation owner', group => {
+    const fixture = groupedAgentStatsFixture(group)
     const wrapper = render(fixture)
-    const table = wrapper.getComponent(DataTable)
-    expect(table.props()).toMatchObject({ items: [{ input: 20, cache_read: 80, output: 8 }] })
-    expect(table.get('[aria-label^="Input:"]').text()).toBe('20')
-    expect(table.get('[aria-label^="Input:"]').attributes('title')).toContain('20 tokens')
-    expect(table.find('details').exists()).toBe(false)
-    expect(fixture.rows[0]!.reported_usage.input).toBe(150)
+    const rows = wrapper.findAll('.agent-activity__row')
+    expect(rows).toHaveLength(fixture.rows.length)
+    expect(rows.map(row => row.get('.agent-activity__row-value').text())).toEqual(fixture.rows.map(row => String(row.reported_usage.total)))
+    expect(new Set(rows.map(row => row.get('.agent-activity__swatch').attributes('style'))).size).toBe(rows.length)
+    if (group !== 'agent') expect(wrapper.text()).toContain('gpt-6.1-sol')
     wrapper.unmount()
   })
-  it.each(['model', 'agent_model', 'agent'] as const)('uses a plain %s label when the row has no supported details', group => {
-    const fixture = agentStatsFixture()
-    fixture.rows[0]!.host_key = null
-    fixture.rows[0]!.review_outcomes = {}
-    fixture.group_by = group as ActivityGroup
-    if (group === 'agent') fixture.rows[0]!.model = null
-    const wrapper = render(fixture, { filters: { ...localActivityFilters(), group_by: group as ActivityGroup } })
-    const row = wrapper.get('table tbody tr')
-    expect(row.find('details').exists()).toBe(false)
-    expect(row.find('summary').exists()).toBe(false)
-    expect(row.text()).toContain(group === 'model' ? 'recorded-sol' : 'same-name')
-    expect(row.get('[aria-label^="Input:"]').text()).toBe('30')
-    wrapper.unmount()
-  })
-
-  it.each(['host', 'review', 'model', 'project'] as const)('does not turn %s metadata into a disclosure', detail => {
-    const fixture = agentStatsFixture()
-    fixture.rows[0]!.host_key = detail === 'host' ? 'codex' : null
-    fixture.rows[0]!.review_outcomes = detail === 'review' ? { repair: 1 } : {}
-    fixture.group_by = (detail === 'model' ? 'agent' : 'model') as ActivityGroup
-    const wrapper = render(fixture, {
-      global: detail === 'project',
-      filters: { ...localActivityFilters(), group_by: (detail === 'model' ? 'agent' : 'model') as ActivityGroup },
-    })
-    const row = wrapper.get('table tbody tr')
-    expect(row.find('details').exists()).toBe(false)
-    expect(row.find('summary').exists()).toBe(false)
-    expect(row.find('.agent-activity__details').exists()).toBe(false)
-    expect(row.text()).not.toMatch(/Codex|#1/)
-    if (detail === 'review') expect(row.text()).toContain('Changes requested: 1')
-    wrapper.unmount()
-  })
-
-  it('renders the shared Input/Cache/Output composition and bounded recorded review details', async () => {
-    const fixture = agentStatsFixture()
-    const wrapper = render(fixture, { global: true })
-    expect(wrapper.findComponent(AgentUsageSummary).props('metrics')).toEqual(fixture.totals)
-    expect(wrapper.findAll('.agent-usage-summary dd[tabindex]').map(item => item.text())).toEqual(['30', '40', '30'])
-    expect(wrapper.text()).not.toMatch(/Cache is included in Input|New input/)
-    expect(wrapper.text()).toContain('57.1%')
-    expect(wrapper.text()).toContain('America/')
-    const table = wrapper.get('table[aria-label="Agent activity breakdown"]')
-    expect(table.findAll('th').map(item => item.text())).toEqual(['Selected model', 'Attempts', 'Input', 'Cache', 'Output'])
-    expect(table.findAll('th').every(item => item.attributes('scope') === 'col')).toBe(true)
-    expect(table.text()).toContain('recorded-sol')
-    expect(table.get('[aria-label^="Cache:"]').attributes('aria-label')).toContain('40 tokens')
-    await wrapper.findAll('button').find(item => item.text() === 'See token details')!.trigger('click')
-    const detail = wrapper.get('[aria-label="Token details"]')
-    expect(detail.text()).toContain('Cache write: 10')
-    expect(detail.text()).toContain('Reasoning: 5')
-    expect(wrapper.get('[aria-label="Review outcomes"]').text()).toContain('Changes requested: 1')
-    expect(wrapper.get('[aria-label="Review outcomes"]').text()).toContain('Reviews passed: 1')
-    expect(wrapper.text()).not.toMatch(/classified|review_agent|delivery_agent|No recorded review/)
-    expect(wrapper.findComponent({ name: 'AgentActivityChart' }).props('days')).toEqual(fixture.daily)
-    expect(wrapper.text()).not.toContain('Partial')
-    wrapper.unmount()
-  })
-
-  it('emits functional date/group changes without client aggregation', async () => {
+  it('emits one date/group filter and retains the selected token metric through reload', async () => {
     const wrapper = render()
     await wrapper.get('input[type="date"]').setValue('2026-11-01')
     await wrapper.findAll('button').find(item => item.text() === 'Agent + model')!.trigger('click')
     expect(wrapper.emitted('filters')).toEqual([[{ start_date: '2026-11-01' }], [{ group_by: 'agent_model' }]])
-    wrapper.unmount()
-  })
-
-  it('retains the chart view while a new date/group scope loads', async () => {
-    const wrapper = render()
-    wrapper.findComponent({ name: 'AgentActivityChart' }).vm.$emit('update:view', 'agents')
+    wrapper.getComponent({ name: 'AgentActivityChart' }).vm.$emit('update:field', 'cache_read')
     await wrapper.setProps({ summary: null, loading: true })
     await wrapper.setProps({ summary: agentStatsFixture(), loading: false })
-    expect(wrapper.findComponent({ name: 'AgentActivityChart' }).props('view')).toBe('agents')
+    expect(wrapper.getComponent({ name: 'AgentActivityChart' }).props('field')).toBe('cache_read')
     wrapper.unmount()
   })
-
-  it('labels retained rows with their loaded grouping while a new grouping loads', async () => {
+  it('labels retained content from the loaded grouping and marks pending regrouping', async () => {
     const wrapper = render()
-    const chart = wrapper.findComponent({ name: 'AgentActivityChart' })
     await wrapper.setProps({ filters: { ...localActivityFilters(), group_by: 'agent' as ActivityGroup }, loading: true })
-    expect(wrapper.get('table th').text()).toBe('Selected model')
-    expect(wrapper.get('table tbody tr').text()).toContain('recorded-sol')
-    expect(chart.props('group')).toBe('model')
-    expect(wrapper.findComponent({ name: 'AgentActivityChart' }).vm).toBe(chart.vm)
-    const fixture = agentStatsFixture({ group_by: 'agent' as ActivityGroup })
-    await wrapper.setProps({ summary: fixture, loading: false })
-    expect(wrapper.get('table th').text()).toBe('Agent')
-    expect(wrapper.get('table tbody tr').text()).toContain('same-name')
-    expect(chart.props('group')).toBe('agent')
+    expect(wrapper.get('[aria-label="Usage by model"]').text()).toContain('recorded-sol')
+    expect(wrapper.text()).toContain('Updating grouping')
+    expect(wrapper.text()).toContain('Refreshing')
     wrapper.unmount()
   })
-
-  it('keeps independently missing cache truthful while retaining known parents and measured zero', async () => {
-    const fixture = agentStatsFixture()
-    fixture.totals.reported_usage.cache_read = null
-    fixture.totals.reported_usage.remaining_input = null
-    fixture.rows[0]!.reported_usage.cache_read = null
-    fixture.rows[0]!.reported_usage.remaining_input = null
-    fixture.totals.reported_usage.cache_write = null
-    fixture.totals.reported_usage.reasoning = null
-    fixture.totals.review_outcomes = {}
-    fixture.totals.coverage.fields!.cache_read!.unavailable_attempts = 4
-    fixture.totals.reported_usage.output = 0
-    const wrapper = render(fixture)
-    expect(wrapper.findAll('.agent-usage-summary dd[tabindex]').map(item => item.text())).toEqual(['N/A', 'N/A', '0'])
-    expect(wrapper.text()).not.toMatch(/Not reported|not reported|not available|Cache split/)
-    expect(wrapper.find('[aria-label="Input details"]').exists()).toBe(false)
-    expect(wrapper.findAll('button').some(item => item.text() === 'See token details')).toBe(false)
-    expect(wrapper.get('table').findAll('th').map(item => item.text())).toEqual(['Selected model', 'Attempts', 'Output'])
-    expect(wrapper.text()).not.toContain('57.1%')
-    fixture.totals.reported_usage.cache_read = 10
-    fixture.totals.coverage.fields!.cache_read!.unavailable_attempts = 2
-    await wrapper.setProps({ summary: structuredClone(fixture) })
-    expect(wrapper.text()).not.toContain('Cache missing for 2 attempts')
-    expect(wrapper.get('[data-usage-field="cache_read"] dd[tabindex]').attributes('title')).toContain('Cache missing for 2 attempts')
-    expect(wrapper.text()).not.toContain('Partial')
-    wrapper.unmount()
-  })
-
-  it('shows honest loading/error/empty/undated states and prepares compact reuse', async () => {
+  it('retains all six slots in empty/partial states and keeps stale errors and undated exclusions explicit', async () => {
     const wrapper = render(undefined, { summary: null, loading: true })
     expect(wrapper.find('[aria-label="Loading Agent activity"]').exists()).toBe(true)
     await wrapper.setProps({ loading: false, error: 'Request failed' })
@@ -165,22 +60,10 @@ describe('Agent usage presentation', () => {
     await wrapper.setProps({ summary: fixture })
     expect(wrapper.text()).toContain('Previously loaded Agent activity')
     expect(wrapper.text()).toContain('1 attempt has no recorded start date')
-    const empty = agentStatsFixture({ rows: [], daily: [], totals: agentStatsFixture().undated })
-    await wrapper.setProps({ summary: empty, error: null })
+    await wrapper.setProps({ summary: agentStatsFixture({ rows: [], daily: [], totals: fixture.undated }), error: null })
     expect(wrapper.text()).toContain('No recorded usage in this date range')
-    expect(wrapper.findComponent({ name: 'AgentActivityChart' }).exists()).toBe(false)
-    const unknown = agentStatsFixture()
-    unknown.totals.reported_usage = { unit: 'tokens', input: null, output: null, total: null, cache_read: null, cache_write: null, reasoning: null, remaining_input: null, input_with_unknown_cache: null }
-    unknown.daily[0]!.reported_usage = structuredClone(unknown.totals.reported_usage)
-    await wrapper.setProps({ summary: unknown })
-    expect(wrapper.findComponent({ name: 'AgentActivityChart' }).exists()).toBe(false)
-    expect(wrapper.findAll('.agent-usage-summary dd').map(item => item.text())).toEqual(['N/A', 'N/A', 'N/A'])
-    expect(wrapper.text()).not.toContain('Not reported')
-    const compact = mount(AgentUsageSummary, { props: { metrics: fixture.totals, compact: true } })
-    expect(compact.findAll('dt').map(item => item.text())).toEqual(['Input', 'Cache', 'Output'])
-    expect(compact.get('[data-usage-field="input"] dd[tabindex]').attributes('title')).toContain('30 tokens')
-    await compact.setProps({ metrics: empty.totals })
-    expect(compact.findAll('dd').map(item => item.text())).toEqual(['N/A', 'N/A', 'N/A'])
-    compact.unmount(); wrapper.unmount()
+    expect(wrapper.findAllComponents({ name: 'DeliveryTrendChart' })).toHaveLength(6)
+    expect(wrapper.findComponent({ name: 'AgentActivityChart' }).exists()).toBe(true)
+    wrapper.unmount()
   })
 })
