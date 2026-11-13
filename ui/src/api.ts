@@ -8558,6 +8558,14 @@ export interface components {
             key: string;
             /** Lane Key */
             lane_key: string;
+            /**
+             * Metadata Json
+             * @description Only delivery_scope.resume_condition, for the retained Board display.
+             * @default null
+             */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
             /** Order Index */
             order_index: number;
             /** Owner */

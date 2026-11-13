@@ -279,6 +279,7 @@ def _timeline_stream(
         emitted = 0
         next_heartbeat = time.monotonic() + heartbeat_ms / 1000
         previous_usage = None
+        previous_projects = None
         if cursor is None and not replay:
             with Session(engine) as session:
                 cursor = ContextRepository(session).latest_tracker_status_event_id(
@@ -300,14 +301,30 @@ def _timeline_stream(
             usage = usage_executions(project_id)
             if task_key:
                 usage = [call for call in usage if call["task_key"] == task_key]
+            projects = None
+            if demand is not None and project_id is None:
+                with Session(engine) as session:
+                    projects = _ui_usage_scope(
+                        session, project_id, task_key, demand, allow_removed_projects=True
+                    )
+            scope_changed = projects is not None and projects != previous_projects
             # Full replaceable transient snapshot also repairs reconnect/exit state.
             # It has no durable event ID and never advances the timeline cursor.
-            if usage != previous_usage or page.items:
+            if usage != previous_usage or page.items or scope_changed:
                 updates = None
+                current_demand = demand
                 if demand is not None:
                     with Session(engine) as session:
-                        projects = _ui_usage_scope(session, project_id, task_key, demand)
-                        scopes = _ui_usage_updates(session, projects, demand)
+                        if projects is None:
+                            projects = _ui_usage_scope(session, project_id, task_key, demand)
+                        current_demand = TrackerUsageDemand(
+                            projects={
+                                pid: requested
+                                for pid, requested in demand.projects.items()
+                                if pid in projects
+                            }
+                        )
+                        scopes = _ui_usage_updates(session, projects, current_demand)
                     updates = {
                         "projection": "ui",
                         "scope_complete": True,
@@ -344,12 +361,13 @@ def _timeline_stream(
                     event="tracker-usage",
                     data={
                         "executions": usage
-                        if demand is None
+                        if current_demand is None
                         else [
                             call
                             for call in usage
                             if (
-                                (current := demand.projects.get(call["project_id"])) is not None
+                                (current := current_demand.projects.get(call["project_id"]))
+                                is not None
                                 and (
                                     call["task_key"] in current.task_keys
                                     or call["ticket_key"] in current.ticket_keys
@@ -360,6 +378,7 @@ def _timeline_stream(
                     },
                 )
                 previous_usage = usage
+                previous_projects = projects
 
             if page.items:
                 for item in page.items:
@@ -454,8 +473,15 @@ def _ui_usage_updates(session, projects, demand: TrackerUsageDemand) -> list[dic
     ]
 
 
-def _ui_usage_scope(session, project_id, task_key, demand: TrackerUsageDemand) -> list[int]:
-    """Validate composite demand before streaming, without reading receipt payloads."""
+def _ui_usage_scope(
+    session,
+    project_id,
+    task_key,
+    demand: TrackerUsageDemand,
+    *,
+    allow_removed_projects: bool = False,
+) -> list[int]:
+    """Validate admission; an admitted global stream may drop unavailable projects."""
     from sqlalchemy import func
     from sqlmodel import col, select
 
@@ -469,14 +495,18 @@ def _ui_usage_scope(session, project_id, task_key, demand: TrackerUsageDemand) -
     else:
         projects = list(
             session.exec(
-                select(Project.id).where(
+                select(Project.id)
+                .where(
                     col(Project.is_active).is_(True),
                     func.json_type(Project.cleanup_json).is_(None)
                     | (func.json_type(Project.cleanup_json) == "null"),
                 )
+                .order_by(col(Project.id))
             )
         )
-    if not demand.projects.keys() <= set(projects):
+    if not demand.projects.keys() <= set(projects) and not (
+        project_id is None and allow_removed_projects
+    ):
         raise HTTPException(
             status_code=422, detail="UI metric demand is outside the selected project scope"
         )

@@ -525,6 +525,10 @@ class TrackerTaskSummaryOut(BaseModel):
     order_index: int
     source_kind: TrackerSourceKind
     source_json: dict[str, Any] | None
+    metadata_json: dict[str, Any] | None = Field(
+        default=None,
+        description="Only delivery_scope.resume_condition, for the retained Board display.",
+    )
     delivery: TaskDeliveryStateOut | None
     created_at: datetime
     updated_at: datetime

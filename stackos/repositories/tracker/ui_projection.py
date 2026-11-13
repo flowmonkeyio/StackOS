@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import func
+from sqlalchemy import case, func
 from sqlalchemy import select as sa_select
 from sqlalchemy.orm import load_only
 from sqlmodel import col, select
@@ -57,6 +57,16 @@ def task_headers(session, tracker_id: int, *, task_key=None, statuses=None, work
                 func.json_extract(TrackerTask.metadata_json, f"$.delivery.{path}")
                 for path in delivery_paths
             ],
+            case(
+                (
+                    func.json_type(TrackerTask.metadata_json, "$.delivery_scope.resume_condition")
+                    == "text",
+                    func.json_extract(
+                        TrackerTask.metadata_json, "$.delivery_scope.resume_condition"
+                    ),
+                ),
+                else_=None,
+            ),
         )
         .options(load_only(*fields, raiseload=True))
         .where(col(TrackerTask.tracker_id) == tracker_id)
@@ -80,7 +90,7 @@ def task_headers(session, tracker_id: int, *, task_key=None, statuses=None, work
             for key, value in zip(source_paths, values[:4], strict=True)
             if isinstance(value, (str, int))
         }
-        valid, status, ticket_key, reason = values[4:]
+        valid, status, ticket_key, reason, resume_condition = values[4:]
         delivery = None
         if valid and status in {"queued", "running", "stopped", "complete"}:
             delivery = TaskDeliveryStateOut(
@@ -96,6 +106,9 @@ def task_headers(session, tracker_id: int, *, task_key=None, statuses=None, work
             TrackerTaskSummaryOut(
                 **{field.key: getattr(task, field.key) for field in fields},
                 source_json=source or None,
+                metadata_json={"delivery_scope": {"resume_condition": resume_condition}}
+                if isinstance(resume_condition, str)
+                else None,
                 delivery=delivery,
                 board_column="todo",
             )

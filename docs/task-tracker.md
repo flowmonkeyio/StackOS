@@ -2468,6 +2468,10 @@ identity, lifecycle, projected Board column, rank, workflow/owner/search facts,
 dates and complete ticket rollup. The task scope is complete independently of
 metric demand. Existing Board clauses and completed-display preferences select
 demand from these facts; no new hidden-column controls are needed.
+Summary `metadata_json` contains only the string-valued
+`delivery_scope.resume_condition`, preserving the existing deferred Board
+subtitle. All other metadata stays with full inspection; no full task metadata
+or receipt JSON is hydrated for that fact.
 
 `metric_demand: {task_keys: [], ticket_keys: []}` names at most 200 identities,
 including any caller overscan, in one batch. Empty demand means no metrics.
@@ -2502,6 +2506,12 @@ revision/dirty facts, but metrics only for explicit demand. Each frame is a
 current replacement (`replace=true`), including cleared demand and hidden
 entities' null metrics. Global scope includes active available projects, with
 per-project revisions; the project store remains display-name/deletion truth.
+Admission rejects unavailable or foreign demand. Once admitted, a global stream
+reconciles its frozen demand with the current active/available projects: archive,
+cleanup or deletion removes that project's metrics and transient executions from
+the next complete replacement, while surviving status events keep their durable
+cursor. A scope change itself triggers a transient replacement without advancing
+that cursor. Reconnecting performs strict admission again.
 Omitting `ui_demand` preserves legacy unscoped and task-scoped feed semantics,
 durable timeline cursors, and transient usage-frame identity. This option does
 not change stream execution-thread or polling ownership.
