@@ -560,6 +560,45 @@ return the guide's complete setup proof, including deferred inputs and exact
 preset mappings. Do not create a run plan, workflow tracker work or business
 output as setup proof.
 
+### Applied setup evidence
+
+`ProjectSetupRepository` owns one current receipt per project/workflow key.
+`projectSetup.get` is the shared Home/agent read. Template selection, an active
+version pointer, a source hash, or a reminder dismissal never establishes applied
+setup. Legacy setup without verified provenance remains unknown and can be
+inspected/adopted by the setup agent.
+
+A successful repository result records the effective template origin/version,
+main-agent and specialist sources, meaningful extension provenance, bounded source
+snapshots, local adaptation/file provenance, role decisions, source-obligation
+coverage, host syntax/registration/reference and behavior checks, activation
+evidence, the separate readiness tuple, deferred input keys, time and attempt/result
+refs. Snapshot digests cover canonical JSON. Snapshots are receipt-owned comparison
+evidence, so the prior applied base remains available after a source disappears;
+live overrides remain under their existing owners. There is no second source
+version registry or empty extension for bookkeeping.
+
+Agents judge compatible adaptations and source-policy exceptions. Explicit
+unresolved obligations, missing required role mappings, failed checks and
+unjustified required omissions prevent success. This structural validation does
+not judge semantic completeness or prove actual host loading; the executing agent
+and independent review must check the underlying evidence. A known reload need
+or unknown activation stays visible as `activation_pending`.
+
+Results advance each workflow independently using its expected receipt revision.
+Failed/unfinished results retain the previous successful sources and separately
+record possible partial edits. They can still be recorded when the selected folder
+becomes unavailable. Available updates compare the receipt with current effective
+template/preset/extension sources, including same-version content and origin
+changes. Missing sources remain diagnostic uncertainty rather than fabricated
+success. Writes reserve project availability against canonical cleanup.
+
+The two permanent project reminder timestamps control unsolicited presentation
+only. Directoryless projects are ineligible; an unavailable selected folder keeps
+receipts and preferences and exposes folder repair. Receipt rows cascade through
+the existing project cleanup, while encrypted whole-database backup/restore includes
+the rows and preferences. Repository folders and existing backups are preserved.
+
 ### 2. Workflow Prerequisite Setup
 
 Collect only missing durable inputs for the selected workflow and persist them

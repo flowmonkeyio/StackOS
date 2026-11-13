@@ -6262,6 +6262,133 @@ export interface components {
              */
             updated_at: string;
         };
+        /** ProjectSetupGetInput */
+        ProjectSetupGetInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: ProjectSetupGetInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Workflow Key
+             * @default null
+             */
+            workflow_key: string | null;
+        };
+        /** ProjectSetupOut */
+        ProjectSetupOut: {
+            /**
+             * Binding Id
+             * @default null
+             */
+            binding_id: number | null;
+            /**
+             * Configured Count
+             * @default 0
+             */
+            configured_count: number;
+            /** Detail Ref */
+            detail_ref: {
+                [key: string]: unknown;
+            };
+            /** Eligible */
+            eligible: boolean;
+            /**
+             * Folder Status
+             * @enum {string}
+             */
+            folder_status: ProjectSetupOutFolder_status;
+            /** Next Action */
+            next_action: string;
+            /**
+             * Project Folder Issue
+             * @default null
+             */
+            project_folder_issue: string | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Setup Reminder Dismissed At
+             * @default null
+             */
+            setup_reminder_dismissed_at: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: ProjectSetupOutStatus;
+            /**
+             * Unknown Count
+             * @default 0
+             */
+            unknown_count: number;
+            /**
+             * Update Count
+             * @default 0
+             */
+            update_count: number;
+            /**
+             * Update Reminder Dismissed At
+             * @default null
+             */
+            update_reminder_dismissed_at: string | null;
+            /** Workflows */
+            workflows?: components["schemas"]["SetupWorkflowOut"][];
+        };
+        /** ProjectSetupRemindersInput */
+        ProjectSetupRemindersInput: {
+            /**
+             * Dismiss Setup
+             * @default false
+             */
+            dismiss_setup: boolean;
+            /**
+             * Dismiss Updates
+             * @default false
+             */
+            dismiss_updates: boolean;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: ProjectSetupRemindersInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
         /**
          * ProjectUpdateInput
          * @example {
@@ -7307,6 +7434,92 @@ export interface components {
              * @default null
              */
             run_token: string | null;
+        };
+        /** SetupSource */
+        SetupSource: {
+            /** Content */
+            content: {
+                [key: string]: unknown;
+            };
+            /** Digest */
+            digest: string;
+            /** Key */
+            key: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: SetupSourceKind;
+            /** Origin */
+            origin: string;
+            /** Ref */
+            ref: string;
+            /**
+             * Version
+             * @default null
+             */
+            version: string | null;
+        };
+        /** SetupWorkflowOut */
+        SetupWorkflowOut: {
+            /**
+             * Attempt Ref
+             * @default null
+             */
+            attempt_ref: string | null;
+            /** Available Sources */
+            available_sources?: components["schemas"]["SetupSource"][];
+            /**
+             * Diagnostic
+             * @default null
+             */
+            diagnostic: string | null;
+            /**
+             * Latest Result
+             * @default null
+             */
+            latest_result: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Latest Status
+             * @default null
+             */
+            latest_status: string | null;
+            /**
+             * Partial Changes
+             * @default false
+             */
+            partial_changes: boolean;
+            /**
+             * Receipt Id
+             * @default null
+             */
+            receipt_id: number | null;
+            /**
+             * Result Ref
+             * @default null
+             */
+            result_ref: string | null;
+            /**
+             * Revision
+             * @default 0
+             */
+            revision: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: SetupWorkflowOutStatus;
+            /**
+             * Successful
+             * @default null
+             */
+            successful: {
+                [key: string]: unknown;
+            } | null;
+            /** Workflow Key */
+            workflow_key: string;
         };
         /** SitemapFetchRequest */
         SitemapFetchRequest: {
@@ -9394,6 +9607,20 @@ export interface components {
              */
             run_id: number | null;
         };
+        /** WriteEnvelope[ProjectSetupOut] */
+        WriteEnvelope_ProjectSetupOut_: {
+            data: components["schemas"]["ProjectSetupOut"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
         /** WriteEnvelope[ScheduleRemovalOut] */
         WriteEnvelope_ScheduleRemovalOut_: {
             data: components["schemas"]["ScheduleRemovalOut"];
@@ -9905,6 +10132,9 @@ export type SchemaProjectFileOwnershipResult = components['schemas']['ProjectFil
 export type SchemaProjectMoveInput = components['schemas']['ProjectMoveInput'];
 export type SchemaProjectOut = components['schemas']['ProjectOut'];
 export type SchemaProjectPluginOut = components['schemas']['ProjectPluginOut'];
+export type SchemaProjectSetupGetInput = components['schemas']['ProjectSetupGetInput'];
+export type SchemaProjectSetupOut = components['schemas']['ProjectSetupOut'];
+export type SchemaProjectSetupRemindersInput = components['schemas']['ProjectSetupRemindersInput'];
 export type SchemaProjectUpdateInput = components['schemas']['ProjectUpdateInput'];
 export type SchemaProjectUpdateRequest = components['schemas']['ProjectUpdateRequest'];
 export type SchemaProviderOut = components['schemas']['ProviderOut'];
@@ -9933,6 +10163,8 @@ export type SchemaScheduledJobOut = components['schemas']['ScheduledJobOut'];
 export type SchemaScheduledNativeExecutionOut = components['schemas']['ScheduledNativeExecutionOut'];
 export type SchemaScheduledRunOut = components['schemas']['ScheduledRunOut'];
 export type SchemaSetDeliveryCapacityInput = components['schemas']['SetDeliveryCapacityInput'];
+export type SchemaSetupSource = components['schemas']['SetupSource'];
+export type SchemaSetupWorkflowOut = components['schemas']['SetupWorkflowOut'];
 export type SchemaSitemapFetchRequest = components['schemas']['SitemapFetchRequest'];
 export type SchemaSitemapFetchResponse = components['schemas']['SitemapFetchResponse'];
 export type SchemaSnapshotRef = components['schemas']['SnapshotRef'];
@@ -10006,6 +10238,7 @@ export type SchemaWriteEnvelopeLocalAgentChatMessageOut = components['schemas'][
 export type SchemaWriteEnvelopeProjectCleanupResult = components['schemas']['WriteEnvelope_ProjectCleanupResult_'];
 export type SchemaWriteEnvelopeProjectFileOwnershipResult = components['schemas']['WriteEnvelope_ProjectFileOwnershipResult_'];
 export type SchemaWriteEnvelopeProjectOut = components['schemas']['WriteEnvelope_ProjectOut_'];
+export type SchemaWriteEnvelopeProjectSetupOut = components['schemas']['WriteEnvelope_ProjectSetupOut_'];
 export type SchemaWriteEnvelopeScheduleRemovalOut = components['schemas']['WriteEnvelope_ScheduleRemovalOut_'];
 export type SchemaWriteEnvelopeScheduledJobOut = components['schemas']['WriteEnvelope_ScheduledJobOut_'];
 export type SchemaWriteEnvelopeTrackerTaskBoardOut = components['schemas']['WriteEnvelope_TrackerTaskBoardOut_'];
@@ -13530,6 +13763,30 @@ export enum ProjectMoveInputScope {
     project = "project",
     catalog = "catalog"
 }
+export enum ProjectSetupGetInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectSetupOutFolder_status {
+    directoryless = "directoryless",
+    available = "available",
+    unavailable = "unavailable"
+}
+export enum ProjectSetupOutStatus {
+    ineligible = "ineligible",
+    folder_unavailable = "folder_unavailable",
+    setup_needed = "setup_needed",
+    updates_available = "updates_available",
+    current = "current"
+}
+export enum ProjectSetupRemindersInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
 export enum ProjectUpdateInputResponse_modeAnyOf0 {
     compact = "compact",
     raw = "raw",
@@ -13618,6 +13875,19 @@ export enum SetDeliveryCapacityInputResponse_mode {
     raw = "raw",
     standard = "standard",
     verbose = "verbose"
+}
+export enum SetupSourceKind {
+    template = "template",
+    main_agent = "main_agent",
+    specialist = "specialist",
+    override = "override"
+}
+export enum SetupWorkflowOutStatus {
+    unknown = "unknown",
+    current = "current",
+    update_available = "update_available",
+    source_unavailable = "source_unavailable",
+    activation_pending = "activation_pending"
 }
 export enum TaskActivityItemSource_kind {
     project_event = "project_event",

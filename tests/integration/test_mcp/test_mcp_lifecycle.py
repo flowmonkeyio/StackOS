@@ -50,6 +50,7 @@ EXPECTED_NAMESPACES = {
     "plugin",
     "operation",
     "project",
+    "projectSetup",
     "provider",
     "resource",
     "run",

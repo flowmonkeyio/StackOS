@@ -51,7 +51,7 @@ from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.secrets import PayloadSecretRepository
 
-HEAD_REVISION = "0043_automations_homes_merge"
+HEAD_REVISION = "0044_project_setup_receipts"
 
 
 @pytest.fixture

@@ -28,6 +28,7 @@ def main() -> int:
         for spec in build_operation_registry().by_surface("rest")
         if (
             spec.name.startswith("actionCall.")
+            or spec.name.startswith("projectSetup.")
             or spec.name.startswith("schedule.")
             or spec.name
             in {

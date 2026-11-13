@@ -117,6 +117,36 @@ Ordinary deletion confirmation and editable artifact metadata cannot grant
 custody. After reconciliation, retry `project.delete` with the original ID/slug;
 its operation ID is preserved, including across restart.
 
+## Project setup receipts and reminders
+
+`projectSetup.get({"project_id": 1})` reads shared setup status without launching
+an agent or changing completion. Optional `workflow_key` selects detail while
+project counts remain aggregate. The bound MCP bridge injects and fences project
+scope. Directoryless projects return `ineligible` with no update count; a selected
+unavailable folder returns `folder_unavailable`, retained evidence/preferences and
+an actionable folder diagnostic. Existing adaptations without receipts are unknown.
+
+Compact/raw modes are supported; ack is refused. Compact keeps project eligibility,
+counts, permanent reminder timestamps, workflow receipt IDs/revisions, latest outcome,
+partial-change flags, attempt/result refs and `detail_ref` for full evidence. Raw
+includes receipt-owned source snapshots, role/obligation mappings, checked readiness,
+activation status and the latest partial result. Source identity never proves
+installed activation. Missing source evidence remains diagnostic uncertainty.
+
+`projectSetup.setReminders` is a browser-safe local-admin REST/CLI operation,
+unavailable over agent MCP. For example:
+
+```json
+{"project_id": 1, "dismiss_setup": true, "dismiss_updates": false}
+```
+
+Each true field permanently stamps only its own preference; omitted/false fields
+preserve existing dismissals. Rename, later versions and opening setup do not reset
+them. This operation changes neither setup success nor quiet update counts.
+Infrastructure result writes remain repository-owned until the scoped setup attempt
+reporting operation admits them; this read/dismissal slice grants no execution or
+filesystem authority. See [applied evidence](workflow-templates.md#applied-setup-evidence).
+
 ## Project workflow schedules
 
 Project folder setup has one owner: `Project.primary_workspace_binding_id`.

@@ -141,6 +141,7 @@ def build_operation_registry() -> OperationRegistry:
         project_agents,
         project_bootstrap,
         project_setup,
+        project_setup_state,
         readiness,
         resources,
         run_plans,
@@ -164,6 +165,8 @@ def build_operation_registry() -> OperationRegistry:
     for spec in project_bootstrap.operation_specs():
         registry.register(spec)
     for spec in project_setup.operation_specs():
+        registry.register(spec)
+    for spec in project_setup_state.operation_specs():
         registry.register(spec)
     for spec in readiness.operation_specs():
         registry.register(spec)

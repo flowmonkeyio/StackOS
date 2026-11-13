@@ -11,12 +11,14 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 250
+    assert len(names) == 252
     assert not names.intersection(
         {"actionCall.aggregate", "actionCall.aggregateAll", "actionCall.queryAll"}
     )
     assert {
         "action.execute",
+        "projectSetup.get",
+        "projectSetup.setReminders",
         "actionCall.cancel",
         "actionCall.get",
         "actionCall.items",

@@ -511,6 +511,32 @@ def _base_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any
 
 def _compact_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any]:
     data = _data(payload)
+    if spec.name in {"projectSetup.get", "projectSetup.setReminders"}:
+        out = _base_payload(spec, payload)
+        out["data"] = {
+            key: copy.deepcopy(value) for key, value in data.items() if key != "workflows"
+        }
+        workflows = data.get("workflows", [])
+        out["data"]["workflow_count"] = len(workflows)
+        out["data"]["workflows"] = [
+            {
+                key: item.get(key)
+                for key in (
+                    "workflow_key",
+                    "receipt_id",
+                    "revision",
+                    "status",
+                    "diagnostic",
+                    "latest_status",
+                    "partial_changes",
+                    "attempt_ref",
+                    "result_ref",
+                )
+            }
+            for item in workflows[:25]
+        ]
+        out["data"]["workflows_truncated"] = len(workflows) > 25
+        return out
     if spec.name in {
         "tracker.taskActivity",
         "tracker.taskResults",
