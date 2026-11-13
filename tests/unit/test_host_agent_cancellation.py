@@ -317,9 +317,12 @@ def test_interrupted_call_keeps_last_observed_counters_and_retires_reader(tmp_pa
         closed = False
 
         def read(self):
-            return datetime.now(UTC).isoformat(), usage_snapshot(
-                "fixture.last-observed", "invocation", 80, 20, cache_read=30
-            )
+            return [
+                (
+                    datetime.now(UTC).isoformat(),
+                    usage_snapshot("fixture.last-observed", "invocation", 80, 20, cache_read=30),
+                )
+            ]
 
         def close(self):
             self.closed = True
