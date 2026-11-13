@@ -2082,6 +2082,13 @@ the reader waits for that exact path, without searching historical sessions.
 Resumes skip the pre-invocation file prefix and use the unchanged previous
 invocation baseline and native ID.
 
+The newest source instant owns provisional totals independently of retained
+history. Previously unseen in-window checkpoints arriving later are retained in
+source-time order without rolling those totals backward. Identical timestamp
+and counter observations are deduplicated; conflicting same-time counters reach
+the shared projection as uncertainty. The bounded tail keeps the newest 120
+source observations, not the last 120 arrivals.
+
 These are native `token_count` checkpoints, not continuous token streaming.
 Repeated cumulative polls replace provisional usage; they are never summed.
 Existing receipt normalization and aggregation serve ticket, task, project,

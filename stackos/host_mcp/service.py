@@ -236,11 +236,10 @@ def _sample_invocations(now: datetime | None = None) -> None:
                 call.reader.close()
                 call.reader = None
                 continue
+            retained = list(call.samples)
             for stamp, raw in samples:
                 measured = datetime.fromisoformat(stamp)
-                if measured < datetime.fromisoformat(call.started_at) or (
-                    call.measured_at and measured <= datetime.fromisoformat(call.measured_at)
-                ):
+                if measured < datetime.fromisoformat(call.started_at):
                     continue
                 usage = normalize_usage(
                     raw,
@@ -250,10 +249,24 @@ def _sample_invocations(now: datetime | None = None) -> None:
                 )
                 if usage["status"] != "measured":
                     continue
-                call.usage = usage
-                call.measured_at = stamp
+                # Current totals follow the newest source instant. That fence
+                # must not discard unseen history or same-time contradictions.
+                if not call.measured_at or measured > datetime.fromisoformat(call.measured_at):
+                    call.usage = usage
+                    call.measured_at = stamp
                 if measured.timestamp() >= cutoff:
-                    call.samples.append({"at": stamp, "source": "native", **usage["measured"]})
+                    duplicate = any(
+                        datetime.fromisoformat(point["at"]) == measured
+                        and all(point.get(key) == value for key, value in usage["measured"].items())
+                        for point in retained
+                    )
+                    if not duplicate:
+                        retained.append({"at": stamp, "source": "native", **usage["measured"]})
+            # Bound by source time, not arrival order: a late old point must not
+            # evict a newer checkpoint. Keep conflicts for projection to expose.
+            retained.sort(key=lambda point: datetime.fromisoformat(point["at"]))
+            call.samples.clear()
+            call.samples.extend(retained[-120:])
 
 
 def _collect() -> None:
