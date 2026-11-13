@@ -134,8 +134,12 @@ master/detail pages should pass `selected-id` to keep the active row visible.
 
 **Work cards and task header.** Concept 3 keeps title/status primary, then
 quiet Input / Cache / Output slots and a fixed 56px execution footer. Graph
-tickets are 328 × 224px; Board cards are 224px tall at the existing column
-width. Manual work reserves the same card geometry and omits usage. Current
+tickets are 328 × 224px. Board columns have a 336px minimum; cards start at
+224px tall and grow with their wrapping header. Priority, Auto (accessible as
+Automated task delivery), completed/total counts and state labels remain fully
+visible. The body and 56px footer follow the header in normal flow, including
+large counts and run-action controls. Manual work uses the same minimum card
+geometry and omits usage. Current
 execution uses the canonical host mark, readable recorded role and exact model;
 retained execution is explicitly `Last:`. The same footer slot shows compact
 Work time (`0m`, `<1m`, `14m`, `2h 22m`, `1d 4h`) with an accessible Work time

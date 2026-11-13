@@ -9,9 +9,52 @@ import { buildTaskProgressRows } from './viewModel'
 import TrackerBoardPanel from './TrackerBoardPanel.vue'
 import TaskTrackerCommandPanel from './TaskTrackerCommandPanel.vue'
 import RunAbortAction from '@/components/domain/RunAbortAction.vue'
+import { taskPriorities } from './taskPriority'
 
 const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
 const automaticMetadata = { delivery: { status: 'running', job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent } }
+
+const headerStates = [
+  ...Object.entries(trackerStatus).map(([status, { label }]) => ({ status: status as TrackerStatus, label })),
+  ...['Starting', 'Reviewing', 'Delivering', 'Active now', 'Stopped', 'Queued'].map(label => ({ status: 'in-progress' as const, label })),
+]
+
+describe('Board header labels and counts', () => {
+  it.each(headerStates)('preserves the full $label header across priorities, counts and run controls', ({ status, label }) => {
+    const counts = [0, 15, 999999, Number.MAX_SAFE_INTEGER]
+    const records = taskPriorities.flatMap(priority => counts.flatMap((total, index) => [false, true].map(linked => {
+      const record = task(status)
+      record.key = `${priority}-${total}-${linked}`
+      record.id = taskPriorities.indexOf(priority) * 8 + index * 2 + Number(linked) + 1
+      record.priority_key = priority
+      record.metadata_json = automaticMetadata
+      if (label === 'Stopped' || label === 'Queued') record.metadata_json = { delivery: { ...automaticMetadata.delivery, status: label.toLowerCase() } }
+      if (['Starting', 'Reviewing', 'Delivering', 'Active now'].includes(label)) record.active_execution = {
+        invocation_id: record.key, ticket_key: record.key, agent: label === 'Reviewing' ? 'sdlc_delivery_reviewer' : label === 'Delivering' ? 'sdlc_delivery' : 'worker',
+        host_key: 'codex', model: 'recorded-model', started_at: '2026-11-13T00:00:00Z',
+        live_usage: label === 'Starting' ? null : { measured_at: '2026-11-13T00:00:00Z', usage: { unit: 'tokens', status: 'measured', measured: agentStatsFixture().totals.reported_usage } },
+      }
+      record.source_kind = linked ? 'workflow' : 'manual'
+      record.source_json = linked ? { run_plan_id: 123 } : null
+      record.ticket_summary = { ...record.ticket_summary!, total_count: total, terminal_count: total ? total - 1 : 0, status_counts: { complete: total ? total - 1 : 0 } }
+      return record
+    })))
+    const rows = buildTaskProgressRows(records, new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
+    const wrapper = mount(TrackerBoardPanel, { props: { rows } })
+    for (const card of wrapper.findAll('.tracker-board__card')) {
+      const row = rows.find(row => card.get('.tracker-board__open').attributes('aria-label')?.startsWith(`Open task #${row.id}:`))!
+      expect(card.get('.tracker-board__automated').text()).toBe('Auto')
+      expect(card.get('.tracker-board__automated').attributes('aria-label')).toBe('Automated task delivery')
+      expect(card.get('.tracker-board__state').text()).toBe(label)
+      expect(card.get('.tracker-board__priority').text()).toBe(row.task.priority_key.toUpperCase())
+      expect(card.find('.tracker-board__progress').exists()).toBe(row.totalCount > 0)
+      if (row.totalCount) expect(card.get('.tracker-board__progress').text()).toBe(`${row.completedCount}/${row.totalCount}`)
+      expect(card.find('.tracker-board__actions').exists()).toBe(Boolean(row.task.source_json) && !['complete', 'failed', 'aborted', 'skipped'].includes(status))
+      expect(card.find('button button').exists()).toBe(false)
+    }
+    wrapper.unmount()
+  })
+})
 
 describe('Work board presentation', () => {
   it('limits pending edit controls to the conflicting column and keeps task inspection usable', async () => {
@@ -94,7 +137,7 @@ describe('Work board presentation', () => {
     const rows = () => buildTaskProgressRows([structuredClone(record)], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
     const wrapper = mount(TrackerBoardPanel, { props: { rows: rows() } })
     const card = wrapper.get('[aria-label="In Progress"] .tracker-board__card')
-    expect(card.text()).toContain('Automated')
+    expect(card.get('.tracker-board__automated').text()).toBe('Auto')
     expect(card.text()).toContain('Stopped')
     expect(card.get('.tracker-board__subtitle').attributes('title')).toBe('Browser access denied.')
     expect(card.text()).not.toContain('Blocked by:')
@@ -108,19 +151,19 @@ describe('Work board presentation', () => {
     const record = task('in-progress')
     const rows = () => buildTaskProgressRows([structuredClone(record)], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
     const wrapper = mount(TrackerBoardPanel, { props: { rows: rows() } })
-    expect(wrapper.get('button').text()).not.toContain('Automated')
+    expect(wrapper.find('.tracker-board__automated').exists()).toBe(false)
     for (const status of ['queued', 'running', 'stopped', 'complete']) {
       record.metadata_json = { delivery: { status, job_ref: 'task-delivery:1:1', delivery_agent: agent, review_agent: agent } }
       await wrapper.setProps({ rows: rows() })
       const badge = wrapper.get('.tracker-board__automated')
-      expect(badge.text()).toBe('Automated')
+      expect(badge.text()).toBe('Auto')
       expect(badge.element.parentElement?.classList.contains('tracker-board__identity')).toBe(true)
       expect(badge.classes()).toContain('text-info-fg')
       expect(badge.element.tagName).toBe('SPAN')
     }
     record.metadata_json = { delivery: { status: 'running' } }
     await wrapper.setProps({ rows: rows() })
-    expect(wrapper.findAll('.ui-badge').some(badge => badge.text() === 'Automated')).toBe(false)
+    expect(wrapper.find('.tracker-board__automated').exists()).toBe(false)
   })
 
   it('renders all three projected fields with exact values, independent missing data and zero', async () => {
