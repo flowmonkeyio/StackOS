@@ -86,6 +86,11 @@ viewport batches. Board excludes filtered/offscreen columns and adds 160px of
 vertical overscan. Selected Graph requests the visible ticket window plus its
 task, within the existing 200-identity contract. A scoped response older than
 the accepted revision cannot establish Live freshness.
+The Work index queue validates scope and revision before discarding metrics
+invalidated during a read. A changed demand/usage generation requires fresh
+reconciliation, even at the same tracker revision; it is not evidence that the
+server failed to reach a saved revision. Repeated usable older responses still
+stop with a retryable error, preserving the accepted mutation and useful content.
 
 Home's analytics and active-task readers share pending admission through
 `usageReads`: scope/filter/group changes have independent identities, manual

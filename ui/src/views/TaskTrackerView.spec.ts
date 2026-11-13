@@ -79,6 +79,95 @@ async function render(url = '/projects/7/tasks', realDialogs = false, realContro
 const popup = () => new DOMWrapper(document.body)
 
 describe('Work board navigation', () => {
+  it.each(['graph-usage-first', 'graph-event-first', 'board-usage-first', 'board-event-first'])('review probe: accepts a newer UI revision in %s without reporting a stale successful read', async mode => {
+    const { wrapper, controls } = await render(mode.startsWith('graph') ? '/projects/7/tasks?view=graph&task=task-a' : '/projects/7/tasks')
+    try {
+      const stream = mocks.stream.mock.lastCall![0]
+      const frame = (rev: number) => ({ projection: 'ui', scope_complete: true, scope: 'project', project_id: 7,
+        projects: [{ project_id: 7, rev, metric_demand: { task_keys: [], ticket_keys: [] } }], tasks: [], tickets: [], replace: true })
+      stream.onUsage(frame(1))
+      await flushPromises()
+      const normal = mocks.callOperation.getMockImplementation()!
+      mocks.callOperation.mockImplementation(async (name, args) => {
+        const result = await normal(name, args)
+        if (name !== 'tracker.get') return result
+        return { ...result, projection: 'ui', metric_demand: args.metric_demand,
+          tracker: { ...result.tracker, rev: 2 },
+          tasks: result.tasks.map((task: TrackerTask) => ({ ...task, title: task.key === 'task-a' ? 'Fresh task title' : task.title })) }
+      })
+      if (mode.endsWith('event-first')) stream.onEvent({ id: 2, project_id: 7, event_type: 'tracker.tasks.changed', metadata_json: {
+        tracker_id: 1, rev: 2, affected_task_keys: ['task-a'], affected_tasks: [{ task_id: 1, task_key: 'task-a', changed_fields: ['title'], url_path: '/projects/7/tasks?detail=task-a' }],
+      } })
+      stream.onUsage(frame(2))
+      await new Promise(resolve => setTimeout(resolve, 100))
+      await flushPromises()
+      expect.soft(wrapper.text(), 'successful revision 2 responses must not become a stale-response error').not.toContain('older than the saved change')
+      expect.soft(controls().props('taskOptions').find((task: { value: string }) => task.value === 'task-a')).toMatchObject({ label: expect.stringContaining('Fresh task title') })
+      controls().vm.$emit('refresh')
+      await flushPromises()
+      expect(wrapper.text(), 'manual recovery must remain usable').not.toContain('older than the saved change')
+      expect(controls().props('taskOptions').find((task: { value: string }) => task.value === 'task-a')).toMatchObject({ label: expect.stringContaining('Fresh task title') })
+    } finally { wrapper.unmount() }
+  })
+
+  it.each(['revision', 'manual'])('reconciles repeated usage invalidations during a pending %s read without publishing superseded metrics', async trigger => {
+    const { wrapper, controls, board } = await render()
+    try {
+      const stream = mocks.stream.mock.lastCall![0]
+      const frame = () => ({ projection: 'ui', scope_complete: true, scope: 'project', project_id: 7,
+        projects: [{ project_id: 7, rev: 2, metric_demand: { task_keys: [], ticket_keys: [] } }], tasks: [], tickets: [], replace: true })
+      stream.onUsage({ ...frame(), projects: [{ ...frame().projects[0], rev: 1 }] })
+      const read = mocks.callOperation.getMockImplementation()!
+      const pending: Array<(value: TrackerSnapshot) => void> = []
+      const fresh = { ...trackerSnapshot([{ ...taskA, title: 'Current task' }], []), tracker: { ...trackerSnapshot([], []).tracker, rev: 2 } }
+      mocks.callOperation.mockImplementation((name, args) => name === 'tracker.get' && args.task_index_only
+        ? pending.length < 3 ? new Promise(resolve => pending.push(resolve)) : Promise.resolve(fresh)
+        : read(name, args))
+      if (trigger === 'manual') controls().vm.$emit('refresh')
+      else stream.onEvent({ id: 2, project_id: 7, event_type: 'tracker.tasks.changed', metadata_json: { rev: 2, task_key: taskA.key } })
+      for (let i = 0; i < 20; i++) stream.onUsage(frame())
+      expect(pending).toHaveLength(1)
+      pending[0]!({ ...fresh, tasks: [{ ...taskA, title: 'Superseded first read' }] })
+      await flushPromises()
+      expect(pending).toHaveLength(2)
+      expect(board().text()).toContain('Alpha task')
+      stream.onUsage(frame()) // another real change while the follow-up is pending
+      pending[1]!({ ...fresh, tasks: [{ ...taskA, title: 'Superseded second read' }] })
+      await flushPromises()
+      expect(pending).toHaveLength(3)
+      expect(board().text()).toContain('Alpha task')
+      pending[2]!(fresh)
+      await flushPromises()
+      expect(board().text()).toContain('Current task')
+      expect(wrapper.text()).not.toContain('older than the saved change')
+      await new Promise(resolve => setTimeout(resolve, 100))
+      await flushPromises()
+      // Three pending reads cover the initial read and two intervening
+      // generations; at most one existing settled metric batch also runs.
+      expect(mocks.callOperation.mock.calls.filter(([name, args]) => name === 'tracker.get' && args.task_index_only).length).toBeLessThanOrEqual(5)
+      expect(mocks.stream).toHaveBeenCalledTimes(1)
+    } finally { wrapper.unmount() }
+  })
+
+  it('rejects a foreign response even when its pending metric generation was invalidated', async () => {
+    const { wrapper, controls, board } = await render()
+    try {
+      const stream = mocks.stream.mock.lastCall![0]
+      const frame = { projection: 'ui', scope_complete: true, scope: 'project', project_id: 7,
+        projects: [{ project_id: 7, rev: 1, metric_demand: { task_keys: [], ticket_keys: [] } }], tasks: [], tickets: [], replace: true }
+      stream.onUsage(frame)
+      let finish!: (value: TrackerSnapshot) => void
+      mocks.callOperation.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+      controls().vm.$emit('refresh')
+      stream.onUsage(frame)
+      finish(scoped(trackerSnapshot([{ ...taskA, title: 'Foreign task' }], []), 8))
+      await flushPromises()
+      expect(wrapper.text()).toContain('scope did not match')
+      expect(board().text()).toContain('Alpha task')
+      expect(board().text()).not.toContain('Foreign task')
+    } finally { wrapper.unmount() }
+  })
+
   it('retains graph content through a metric error and clears that error after a fresh success', async () => {
     const { wrapper } = await render('/projects/7/tasks?view=graph&task=task-a')
     try {

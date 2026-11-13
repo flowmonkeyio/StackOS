@@ -114,7 +114,7 @@ let loadSequence = 0
 let detailSequence = 0
 let alive = true
 type LoadOptions = { refocus?: boolean; restartStream?: boolean; quiet?: boolean; minRevision?: number; taskKeys?: string[]; metricsOnly?: boolean }
-interface LoadRequest { options: LoadOptions; obtainedRevision?: number; promise: Promise<boolean>; resolve: (result: boolean) => void }
+interface LoadRequest { options: LoadOptions; obtainedRevision?: number; metricsInvalidated?: boolean; promise: Promise<boolean>; resolve: (result: boolean) => void }
 let activeLoad: LoadRequest | null = null
 let trailingLoad: LoadRequest | null = null
 let loadController: AbortController | null = null
@@ -191,14 +191,16 @@ function refreshUsage(next?: UsageProjection): void {
     }
     const initial = !receivedUsageBaseline
     receivedUsageBaseline = true
+    if (!initial) {
+      metricGeneration++
+      metricsCurrent.value = false
+      graph.invalidateMetrics()
+    }
     if (scope.rev > (snapshot.value?.tracker.rev ?? -1)) {
       metricsCurrent.value = false
       void load({ quiet: true, restartStream: false, minRevision: scope.rev })
     }
     if (!initial) {
-      metricGeneration++
-      metricsCurrent.value = false
-      graph.invalidateMetrics()
       scheduleMetricRefresh()
     }
     return
@@ -261,8 +263,11 @@ async function runLoad(request: LoadRequest): Promise<void> {
   try {
     result = await loadOnce(request)
     let previousRevision = -1
-    while (result && request.options.minRevision !== undefined && (snapshot.value?.tracker.rev ?? -1) < request.options.minRevision) {
-      if ((request.obtainedRevision ?? -1) <= previousRevision) {
+    while (result && (request.metricsInvalidated || (request.options.minRevision !== undefined && (snapshot.value?.tracker.rev ?? -1) < request.options.minRevision))) {
+      // A changed demand/usage generation requires a current read, even if
+      // its tracker revision is unchanged. Only a usable response can prove
+      // that the server made no progress toward the required revision.
+      if (!request.metricsInvalidated && (request.obtainedRevision ?? -1) <= previousRevision) {
         error.value = 'The board response is older than the saved change. Use Refresh to retry.'
         result = false
         break
@@ -303,10 +308,11 @@ async function loadOnce(request: LoadRequest): Promise<boolean> {
       },
     }, { signal: controller.signal })
     if (controller.signal.aborted || !currentScope() || sequence !== loadSequence) return false
-    if (requestedMetrics !== metricGeneration) return true
     if (next.tracker.project_id !== projectId.value || next.tasks.some(task => task.project_id !== projectId.value)) throw new Error('The board response scope did not match the requested project.')
     if (next.tracker.rev < (snapshot.value?.tracker.rev ?? 0)) throw new Error('The board response is older than the current view. Use Refresh to retry.')
     request.obtainedRevision = next.tracker.rev
+    request.metricsInvalidated = requestedMetrics !== metricGeneration
+    if (request.metricsInvalidated) return true
     // Do not publish a response known to predate the accepted mutation, or
     // refresh focused readers from it. runLoad obtains the required revision.
     if (options.minRevision !== undefined && next.tracker.rev < options.minRevision) return true
