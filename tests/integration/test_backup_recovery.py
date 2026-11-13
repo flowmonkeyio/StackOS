@@ -38,13 +38,15 @@ def test_pattern_migration_restart_and_encrypted_recovery(tmp_path: Path) -> Non
 
     from stackos.db.connection import make_engine
     from stackos.db.migrate import alembic_config
+    from stackos.install import bundled_patterns_source
     from stackos.repositories.patterns import PatternRepository
     from stackos.server import create_app
     from tests.integration.test_repositories.test_pattern_bundles import bundle, entry
 
     settings = Settings(_env_file=None, data_dir=tmp_path / "data", state_dir=tmp_path / "state")
     settings.ensure_dirs()
-    # Upgrade a real previous-head DB through normal app startup, with no seed content.
+    shipped = json.loads(bundled_patterns_source().read_text())["entries"]
+    # Upgrade a real previous-head DB through normal app startup and package refresh.
     command.upgrade(alembic_config(settings), "0043_automations_homes_merge")
     with TestClient(create_app(settings), base_url="http://127.0.0.1:5199") as api:
         headers = {"Authorization": f"Bearer {settings.token_path.read_text().strip()}"}
@@ -53,7 +55,7 @@ def test_pattern_migration_restart_and_encrypted_recovery(tmp_path: Path) -> Non
         )
         assert page_response.status_code == 200, page_response.text
         page = page_response.json()
-        assert page["catalog_total"] == 0
+        assert page["catalog_total"] == len(shipped)
         content = dict(
             key="backup-fixture",
             title="Synthetic",
@@ -103,7 +105,10 @@ def test_pattern_migration_restart_and_encrypted_recovery(tmp_path: Path) -> Non
         assert repo.get(key=content["key"]).model_dump(mode="json") == detail
         assert repo.get(key="shipped") == bundled
         assert repo.refresh_bundle(bundle(entry(), entry("deleted")))["deleted"] == 1
-        assert repo.list().catalog_total == 2
+        assert repo.list().catalog_total == len(shipped) + 2
+        for item in shipped:
+            restored = repo.get(key=item["key"])
+            assert restored.body == item["body"] and restored.source_label == "StackOS"
     engine.dispose()
 
 

@@ -90,9 +90,10 @@ On startup, after migrations, the catalog refreshes once from package-owned
 `_assets/patterns/bundle.json` (the clone source is
 `stackos/db/bundled_patterns.json`). Wheel packaging includes that asset;
 desktop payloads install the same wheel. There is no runtime source selector or
-refresh operation available to normal API callers. The shipped bundle is empty
-in this delivery. A later package can insert trusted IDs and update entries whose
-exact normalized editable content still matches the last-applied shipped hash.
+refresh operation available to normal API callers. The shipped bundle contains
+portable engineering recommendations. A later package can insert trusted IDs
+and update entries whose exact normalized editable content still matches the
+last-applied shipped hash.
 Local customizations, user entries and prior baselines on skipped updates are
 preserved. Explicit bundled deletion retains only a trusted-ID marker, so repair
 or update cannot resurrect it; package removal leaves local entries intact.
