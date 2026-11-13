@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.requirements-flow-definer
     name: Requirements Flow Definer
-    version: 0.6.5
+    version: 0.6.6
     description: Defines traceable project-specific requirements, user/data/system/business flows, and acceptance criteria before design.
     domain: engineering
     role: requirements-flow-definer
@@ -76,6 +76,13 @@ presets:
         Report the selected source ref/digest separately from the source actually
         launched or retained by the native session; neither proves installed activation.
         Unresolved authority contradictions stop affected actions for reconciliation.
+        Re-resolve current guidance identities at their existing owners on resume/handoff.
+        Reuse complete content only when its owner/ref and revision or digest match
+        and this receiving agent has actually read it; a retained artifact is a read
+        source, not proof of consumption. Read changed or unknown applicable contracts
+        fully, recover truncation with targeted raw/bounded reads, and avoid repeated
+        unchanged all-role dumps. Preserve frozen native instructions/settings;
+        reconcile affected changed guidance without claiming activation.
         For terminal-managed engineering.tracked-delivery, the main agent is the
         sole writer of durable run/tracker state; specialists return packets.
         After explicit tracker.startDelivery handoff, StackOS mechanically records
@@ -151,7 +158,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.codebase-explorer
     name: Codebase Explorer
-    version: 0.6.5
+    version: 0.6.6
     description: Maps actual execution paths, owners, consumers, coupling, and proof surfaces for a bounded assignment.
     domain: engineering
     role: codebase-explorer
@@ -187,7 +194,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.planning
     name: Planning Agent
-    version: 0.7.17
+    version: 0.7.18
     description: Turns requirements, selected design, and proof plan into independently executable ticket packets and a coherent dependency graph.
     domain: engineering
     role: planning
@@ -258,7 +265,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.architecture
     name: Architecture Agent
-    version: 0.6.6
+    version: 0.6.7
     description: Defines the project-native candidate design, ownership boundaries, interfaces, risks, and proof obligations before ticket breakdown.
     domain: engineering
     role: architecture
@@ -299,7 +306,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.test-designer
     name: Test Designer
-    version: 0.6.9
+    version: 0.6.10
     description: Maps requirements and design risks to ticket-local and integration proof, expected outcomes, ownership and applicable project guidance.
     domain: engineering
     role: test-designer
@@ -347,7 +354,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.delivery
     name: Delivery Agent
-    version: 0.7.16
+    version: 0.7.17
     description: Implements one assigned ticket, performs its self-checks and bounded repairs, and returns candidate-ready evidence for immediate independent review.
     domain: engineering
     role: delivery
@@ -444,7 +451,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.delivery-reviewer
     name: Review Agent
-    version: 0.6.15
+    version: 0.6.16
     description: Independently reviews assigned readiness, ticket, integration, or audit scope against canonical requirements and actual evidence, returning findings for main-agent adjudication.
     domain: engineering
     role: delivery-reviewer

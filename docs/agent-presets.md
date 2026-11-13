@@ -411,6 +411,21 @@ controls, observed actions beyond phrase checks, and distinct capability/approva
 boundaries. Use the existing scenario fixture and independent review; no new
 evaluation service, host/model policy or installed-activation claim follows.
 
+Focused supervision uses existing compact activity/revision reads before relevant
+expansion; unchanged observations stay in the occurrence summary, while authorized
+context writes preserve unrelated fields and history. Resume/handoff re-resolves
+guidance at its owner. Complete content can be reused only against matching
+owner/ref and revision/digest evidence and only by a receiving agent that actually
+read it. Fresh consumers read their applicable retained artifacts; changed/unknown
+contracts and truncated responses require complete targeted recovery. These rules
+do not refresh frozen native snapshots or weaken required guidance consumption.
+
+The supervision revision rechecked the same official review-rule and skills-eval
+sources on 2026-11-13. Applicability: scoped rules with a safe path and unrelated
+controls, captured actions and artifacts, and measured usage rather than an assumed
+gain from shorter text. The existing rehearsal corpus includes unchanged and
+changed observations plus a fresh consumer; independent review judges the trace.
+
 An interface ticket can pass its contract checks before a consumer is built;
 the complete user journey remains an open workflow obligation. Readiness
 checks coverage against authoritative operator input as well as derived

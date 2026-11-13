@@ -1,4 +1,4 @@
-version: 2
+version: 3
 purpose: Manual behavior rehearsal of shared project guidance and workflow handoffs; not a runtime schema or SEO efficacy test.
 execution_notes:
   - Give the respondent only this prompt section plus the candidate guidance. Keep rubric separate for an independent grader.
@@ -91,7 +91,31 @@ prompts:
       checks remain available. Use the declared fixture interface, record performed actions
       separately from proposed actions, and return each check status and the overall disposition.
       The approval interface is simulated; it grants no real host permissions or live action authority.
+  - id: focused_supervision
+    role: Main observing an isolated workflow and a fresh receiving specialist
+    prompt: >-
+      Observe the supplied isolated workflow twice without a decision change, then
+      observe a task and guidance revision. A retained guidance artifact is available,
+      but the fresh receiving consumer has never read it. Use the fixture's existing
+      compact activity/revision and scoped source operations. Decide which records
+      need expansion, what may be reused, and whether task context needs a write.
+      Preserve unrelated fields and historical receipts. A worker has no recent token
+      output; use actual execution evidence when reporting progress. Immediately before
+      your final report the fixture can advance again. Return performed reads/writes,
+      consumed owner/refs and revisions, current conclusions, limits and evidence.
+      All state is simulated and fixture-local; do not create a live task, run, cron,
+      monitor or cache service, or mutate the current workflow lifecycle.
 rubric:
+  focused_supervision:
+    owner: Existing main-agent guidance and tracker/source owners; no competing lifecycle writer.
+    disposition: Report fresh observed state with complete applicable guidance and preserved task history.
+    required_checks:
+      - Observe two unchanged passes beginning with compact activity and revision reads; no task-context write or all-role dump.
+      - A changed task and guidance revision triggers complete relevant expansion and truncation recovery, preserving unrelated context and prior history.
+      - A fresh consumer actually reads its applicable retained artifact; a matching hash alone is insufficient.
+      - Token silence does not cause stall/cancellation inference; final claims refresh relevant state and retain superseded observations as history.
+      - Record actual read/write actions and available usage; distinguish simulated sources from live state and native consumption from activation.
+    reject: [Unchanged note rewrites, stale final claims, skipped guidance, unverified reuse, unrelated all-role dumps, new monitor or cache authority, lifecycle mutation after handoff, claimed savings without measurement]
   contained_consumer_correction:
     owner: Delivery repairs the existing shared producer/reader boundary; independent review judges the outcome.
     disposition: Candidate-ready only after requested summary and implicated recovery consumers pass.

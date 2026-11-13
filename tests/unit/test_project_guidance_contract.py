@@ -125,6 +125,34 @@ def test_proportionate_proof_rules_reach_each_execution_and_planning_consumer() 
             assert rule in local["developer_instructions"], role
 
 
+def test_focused_reads_reach_main_and_each_receiving_role() -> None:
+    # Delivery availability/parity; the separate native rehearsal judges behavior.
+    skill = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
+    guidance = next(
+        rule
+        for rule in skill.operating_contract.must_do
+        if rule.startswith("Re-resolve current guidance identities")
+    )
+    observation = next(
+        rule
+        for rule in skill.operating_contract.must_do
+        if rule.startswith("Start routine observation")
+    )
+    orchestrator = (ROOT / ".codex/orchestrator/sdlc-delivery-orchestrator.md").read_text()
+    assert guidance in orchestrator
+    assert observation in orchestrator
+    assert {"tracker.changed", "tracker.status"} <= set(skill.recommended_tools)
+    agents = AgentPresetLoader()
+    # The separately owned optional core release role has no local SDLC target.
+    for path in sorted((ROOT / ".codex/agents").glob("sdlc-*.toml")):
+        role = path.stem.removeprefix("sdlc-")
+        preset = agents.describe_preset(key=f"stackos.sdlc.{role}").preset
+        adaptation = " ".join(preset.project_adaptation.required_agent_action.split())
+        assert guidance in adaptation, preset.key
+        local = tomllib.loads(path.read_text())["developer_instructions"]
+        assert guidance in local, path
+
+
 @pytest.mark.parametrize("owner", ["planning", "orchestrator"])
 def test_cross_task_inputs_reach_planning_and_dispatch_consumers(owner: str) -> None:
     if owner == "planning":

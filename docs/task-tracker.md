@@ -1966,6 +1966,23 @@ checks, compact history summaries, and suggested next actions. Use
 tracker rows with timestamps, metadata, definitions, and source payloads. Use
 `tracker.changed` when you know a previous revision and only need new context.
 
+Routine supervision starts with compact activity and `tracker.changed` from the
+last observed revision. Without a known revision, use a scoped current read to
+establish the baseline. Expand changed or unknown relevant tickets, receipts,
+blockers and guidance; an unchanged tracker revision does not prove that host
+execution or guidance is unchanged. Judge progress from actual invocation,
+tool and receipt evidence, never token silence alone. Before final claims,
+refresh the relevant state rather than reporting an earlier observation as current.
+
+Keep no-change observations in the current occurrence summary. Update task
+context only for changed decisions, actions or blockers and only under the current
+writer contract; after automatic handoff, observers do not compete with StackOS
+lifecycle writes. Read/merge complete supplied JSON fields before an authorized
+write, preserving unrelated context and history. Measure actual reads/writes and
+available usage over a named scope; smaller response payloads alone do not prove
+less work or token savings. This uses existing operations and receipts, with no
+new monitor, scheduler, persistent cache authority or ledger.
+
 `tracker.status` and `tracker.blockers` report active blockers for executable
 work: non-terminal tickets with an explicit blocker reason or incomplete
 dependencies. Historical blocker notes on terminal tickets are kept for context,

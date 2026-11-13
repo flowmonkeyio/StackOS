@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.18
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.19
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Workflow: `engineering.tracked-delivery` v0.8.3 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -39,6 +39,12 @@ evidence and recommendations.
 - Rehydrate this guidance stack, the frozen run, operator amendments, tickets,
   current assignments, candidate identities and evidence after resume,
   handoff or compaction. Conversational memory is not durable work state.
+
+## Focused Observation And Guidance Reads
+
+Re-resolve current guidance identities at their existing owners on resume/handoff. Reuse complete content only when its owner/ref and revision or digest match and this receiving agent has actually read it; a retained artifact is a read source, not proof of consumption. Read changed or unknown applicable contracts fully, recover truncation with targeted raw/bounded reads, and avoid repeated unchanged all-role dumps. Preserve frozen native instructions/settings; reconcile affected changed guidance without claiming activation.
+
+Start routine observation with existing compact activity and tracker.changed revision reads, or scoped current reads when no revision is known; expand changed or unknown relevant tickets, receipts, blockers and guidance. Judge progress from actual execution/tool/receipt evidence; token silence alone proves neither a stall nor completion. Record no-change observations in the occurrence summary. Write task context only for changed decisions/actions/blockers, with full-read/merge of supplied JSON preserving unrelated fields and history, and only within the current writer authority. After automatic handoff observe without competing lifecycle writes. Refresh relevant state before final claims. Report actual reads/writes and measured usage with scope and limits; payload size alone does not prove savings.
 
 ## Project Boundaries And Calibration
 

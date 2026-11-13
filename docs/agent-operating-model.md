@@ -271,6 +271,12 @@ affected change:
    review, or highest timestamp cannot establish approval. Missing, inaccessible,
    conflicting, retired, or ambiguous sources remain explicit gaps. Resolve
    only gaps material to current work.
+   Reuse complete content only after verifying its owner/ref and current revision
+   or digest, and only if the receiving agent has actually read it. A retained
+   artifact is a source to read, not evidence that a new agent consumed it.
+   Read changed or unknown applicable contracts fully; recover truncation through
+   targeted raw reads or bounded sections until complete. Resolve applicable roles
+   individually instead of repeatedly dumping unchanged all-role contracts.
 3. Pass each specialist the relevant subset, refs and revision/approval
    evidence, applicability, candidate identity, and unresolved gaps. Specialists
    verify assignment inputs and return the sources consumed with findings.
@@ -282,6 +288,8 @@ affected change:
    evidence as history and continue unaffected work. The receiving workflow
    resolves the same authoritative owners; a handoff does not authorize execution
    or freeze an old guide as current.
+   Preserve frozen native instructions/settings and report affected reconciliation
+   explicitly; reading a changed source does not activate it in a retained session.
 
 Apply guidance according to the work, not merely the role's domain label:
 

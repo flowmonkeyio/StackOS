@@ -245,7 +245,7 @@ def test_marketing_retains_legacy_selection_and_requires_authority_for_owner_upd
 def test_rehearsal_corpus_separates_prompts_from_independent_rubric() -> None:
     corpus = yaml.safe_load(CASES.read_text())
     ids = [item["id"] for item in corpus["prompts"]]
-    assert len(ids) == len(set(ids)) == 10
+    assert len(ids) == len(set(ids)) == 11
     assert set(ids) == set(corpus["rubric"])
     for prompt in corpus["prompts"]:
         assert set(prompt) == {"id", "role", "prompt"}
