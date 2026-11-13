@@ -10,7 +10,7 @@ import sqlite3
 from functools import lru_cache
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, inspect, select
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.engine import Connection
 from sqlmodel import col
@@ -84,7 +84,12 @@ def _projection_changes(
     old: dict[tuple, Any],
 ) -> tuple[list[dict[str, Any]], list[tuple]]:
     """One change calculator shared by ORM/migration and the narrow SQLite repair writer."""
-    from stackos.repositories.tracker.agent_stats import _instant, _receipt_items
+    from stackos.repositories.tracker.agent_stats import (
+        _eligible,
+        _instant,
+        _receipt_items,
+        classification_known,
+    )
 
     changes = []
     automatic = evidence.get("automatic_delivery") if isinstance(evidence, dict) else None
@@ -108,12 +113,38 @@ def _projection_changes(
         prior_receipt = (prior_usage if inventory == "usage" else prior_timing).get(
             (attempt, phase)
         )
+        finish = _instant(receipt.get("finished_at"))
+        finish = finish.replace(tzinfo=None) if finish else None
+        closed = any(key in receipt for key in ("finished_at", "exit_code", "result"))
+        review_outcome = (
+            receipt.get("validated_outcome")
+            if receipt.get("selected_role") == "review_agent" and _eligible(receipt)
+            else None
+        )
+        if review_outcome not in ("success", "repair", "blocked", "failed"):
+            review_outcome = None
+        role = receipt.get("selected_role")
+        if (
+            _eligible(receipt)
+            and not classification_known(receipt)
+            and (not isinstance(role, str) or not role or role == "review_agent")
+        ):
+            review_outcome = "unclassified"
+        same_bounds = previous is not None and all(
+            previous.get(key) == value
+            for key, value in (
+                ("finished_at", finish),
+                ("closed", closed),
+                ("review_outcome", review_outcome),
+            )
+        )
         if (
             previous is not None
             and previous["current"] == current
             and previous["position"] == position
             and previous["timing"] == for_timing
             and prior_receipt == receipt
+            and same_bounds
         ):
             continue
         text = json.dumps(receipt_input(receipt), sort_keys=True, separators=(",", ":"))
@@ -123,6 +154,7 @@ def _projection_changes(
             and previous["current"] == current
             and previous["position"] == position
             and previous["timing"] == for_timing
+            and same_bounds
         ):
             continue
         launch = receipt.get("launch")
@@ -135,6 +167,9 @@ def _projection_changes(
             timing=for_timing,
             current=current,
             launch_at=at.replace(tzinfo=None) if at else None,
+            finished_at=finish,
+            closed=closed,
+            review_outcome=review_outcome,
             receipt_json=text,
             position=position,
         )
@@ -185,6 +220,19 @@ def initialize_receipt_projection(connection: Connection) -> None:
     """One migration/recovery pass; normal statistics reads never backfill."""
     table = TrackerReceiptProjection.__table__  # type: ignore[attr-defined]
     table.create(connection, checkfirst=True)
+    # Also serves explicit lost-stamp recovery of an older derived index.
+    columns = {column["name"] for column in inspect(connection).get_columns(table.name)}
+    for name, ddl in (
+        ("finished_at", "DATETIME"),
+        ("closed", "BOOLEAN NOT NULL DEFAULT 0"),
+        ("review_outcome", "VARCHAR"),
+    ):
+        if name not in columns:
+            connection.exec_driver_sql(
+                f"ALTER TABLE tracker_receipt_projections ADD COLUMN {name} {ddl}"
+            )
+    for index in table.indexes:
+        index.create(connection, checkfirst=True)
     for ticket_id, evidence in connection.execute(
         select(col(TrackerTicket.id), col(TrackerTicket.completion_evidence_json))
     ):
@@ -216,9 +264,12 @@ def sync_sqlite_receipt_projection(
         old[row["attempt"], row["phase"], row["inventory"]] = row
     changes, removed = _projection_changes(ticket_id, evidence, previous_evidence, old)
     for values in changes:
+        for name in ("launch_at", "finished_at"):
+            if values[name] is not None:
+                values[name] = values[name].isoformat(" ", timespec="microseconds")
+        # The maintenance script also supports a database awaiting the new migration.
+        values = {name: value for name, value in values.items() if name in columns}
         names = list(values)
-        if values["launch_at"] is not None:
-            values["launch_at"] = values["launch_at"].isoformat(" ", timespec="microseconds")
         # All identifiers come from the canonical calculator, never operator input.
         connection.execute(
             f"INSERT INTO tracker_receipt_projections ({','.join(names)}) "

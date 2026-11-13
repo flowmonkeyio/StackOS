@@ -118,7 +118,7 @@ _AGENT_STATS_RESPONSE_POLICY = OperationResponsePolicy(
     ack_safe=False,
     compact_notes=(
         "Keep scope, dates, timezone, group_by, as_of, totals, every row/day/series, "
-        "undated facts and per-field/classification coverage.",
+        "undated facts, delivery_trends totals/daily and all per-field/classification coverage.",
     ),
 )
 
@@ -454,7 +454,9 @@ def operation_specs() -> list[OperationSpec]:
                 "or agent_model. Optional inclusive dates (at most 366 days) and IANA timezone "
                 "scope totals/rows/daily identically; undated receipts are disclosed separately. "
                 "Cache read is included in Input; reasoning in Output. "
-                "Missing fields stay explicit."
+                "Missing fields stay explicit. delivery_trends shares the scope/date range: "
+                "first completions, first-review acceptance, changes requested, stops and "
+                "summed task work time, with independent source-time buckets and coverage."
             ),
             examples=(
                 OperationExample(title="Read project agent activity", arguments={"project_id": 1}),
@@ -483,7 +485,7 @@ def operation_specs() -> list[OperationSpec]:
                 "Local-console read over the same reset-aware dated projection. Agent identity "
                 "stays project-scoped; explicit Model grouping combines visible projects. "
                 "Model means recorded launch selection, not measured actual model. "
-                "No role/host splitting."
+                "No role/host splitting. Includes the same six shared delivery_trends."
             ),
             examples=(
                 OperationExample(

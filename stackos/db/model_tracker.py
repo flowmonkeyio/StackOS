@@ -276,6 +276,8 @@ class TrackerReceiptProjection(SQLModel, table=True):
     __table_args__ = (
         Index("ix_tracker_receipts_launch", "inventory", "launch_at", "ticket_id"),
         Index("ix_tracker_receipts_ticket_launch", "ticket_id", "inventory", "launch_at"),
+        Index("ix_tracker_receipts_review_finish", "inventory", "review_outcome", "finished_at"),
+        Index("ix_tracker_receipts_finish", "timing", "finished_at", "launch_at"),
     )
 
     ticket_id: int = Field(
@@ -291,6 +293,9 @@ class TrackerReceiptProjection(SQLModel, table=True):
     current: bool
     position: int
     launch_at: datetime | None = None  # validated offset-aware source time, stored as UTC
+    finished_at: datetime | None = None
+    closed: bool = False
+    review_outcome: str | None = None
     receipt_json: str = Field(sa_column=Column(Text, nullable=False))
 
 

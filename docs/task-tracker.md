@@ -975,6 +975,67 @@ and a seven-day selection over its longer archive; the assembled delivery gate
 owns the single large-load campaign and useful-page timing. No statistics read
 seeds production data or performs an implicit index backfill.
 
+#### Shared delivery trends
+
+Both statistics operations additionally return `delivery_trends.totals` and
+`delivery_trends.daily`, using the same authorized scope, inclusive dates and
+timezone. The six widgets consume this single projection; they never read raw
+receipts or recompute history. Existing usage, identity groups and launch-date
+daily series retain their semantics. Without dates, trend totals cover retained
+lifetime evidence and the trend daily list is empty.
+
+- `completed_tasks.total` and `completed_tickets.total` count the first recorded
+  successful complete transition per stable entity ID from `TrackerRevision`.
+  Reopen/recompletion and repeated same-state writes add nothing. Ordinary
+  tickets and workflow mirrors each count as tickets; tasks are separate.
+  The event's UTC instant determines its reporting day. If retained evidence
+  already begins complete, a later completion cannot invent the missing first
+  event. Imports without recoverable completion history remain unknown.
+- `first_review_acceptance` exposes `accepted`, `reviewed` and nullable `rate`
+  (0 to 1). Each ticket's first explicit review-role success or repair in the
+  canonical receipt occurrence order supplies at most one verdict, regardless
+  of storage phase. Earlier blocked, failed and validation failures do not
+  enter this denominator. Its finish instant determines the reporting day;
+  unknown occurrence identity or finish time stays unavailable. Period rate
+  divides period accepted by period reviewed, rather than averaging daily rates.
+- `changes_requested.total` counts distinct explicit review-role repair
+  receipts once by ticket/attempt/phase, on the verdict finish day. It reuses
+  statistics eligibility/classification, including exact operator-reset
+  exclusion; native failures, blocked calls and amendments add no rejects.
+- `stops.total` counts task revision transitions from a non-stopped
+  `metadata_json.delivery.status` to `stopped`. Repeated stopped metadata writes
+  add nothing; a real resume and another stop count again. Missing active
+  execution and blocked ticket/step attempts are not stops. Imported histories
+  without creation provenance disclose retained-only coverage.
+- `work_time.total_seconds` uses the canonical invocation endpoint validator,
+  deduplication and final-over-live precedence. It clips recorded intervals to
+  each reporting bucket, unions overlaps within each task, then sums distinct
+  tasks once. Parallel tasks can contribute concurrently; this is **summed
+  task work time**, not elapsed scope age or CPU time. It never adds task totals
+  to ticket totals. A known empty period is zero; unsupported history is null.
+
+Each trend metric carries `coverage` (`status`, `recorded`, `unavailable`,
+`issues`). Coverage is deliberately lifetime-scoped, also on daily buckets:
+a date filter cannot repair missing earlier defining history. Completion
+coverage counts entities with recoverable history versus unknown entities;
+review coverage counts quality verdicts with usable identity/time versus
+unavailable verdicts, disclosing unclassified receipt history separately in
+`issues`; stop coverage counts tasks with creation provenance
+versus retained-only histories; work coverage counts validated intervals versus
+unusable receipts or included tasks/tickets without recorded invocations.
+No missing receipt count is inferred. Counts/rates describe known observations,
+with partial/unavailable coverage explicit rather than fabricated zero events.
+
+The receipt index also retains validated finish bounds, closed-state presence
+and explicit review classification, updated in the canonical source transaction.
+Migration (or explicit lost-stamp recovery) backfills these derived fields.
+Short reports select overlapping intervals before receipt JSON decoding and
+reduce first-completion/first-review provenance before date filtering. Scalar
+coverage reads preserve lifetime gaps without decoding unrelated history. One
+bounded query path supplies all six trends; no report cache or analytics store
+is introduced. `test_delivery_trends.py` provides independent reopens, stops,
+review, overlap, DST, scope, missing-history and read-budget ledgers.
+
 Request example for `tracker.agentStats` (`tracker.agentStatsAll` accepts the
 same filters and `is_active` instead of `project_id`):
 

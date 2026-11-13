@@ -668,6 +668,48 @@ class AgentStatsDayOut(AgentStatsMetricsOut):
     by_agent_model: list[AgentStatsRowOut]
 
 
+class DeliveryMetricCoverageOut(BaseModel):
+    status: Literal["empty", "complete", "partial", "unavailable"]
+    recorded: int = 0
+    unavailable: int = 0
+    issues: list[str] = Field(default_factory=list)
+
+
+class DeliveryCountOut(BaseModel):
+    total: int = 0
+    coverage: DeliveryMetricCoverageOut
+
+
+class FirstReviewAcceptanceOut(BaseModel):
+    accepted: int = 0
+    reviewed: int = 0
+    rate: float | None = None
+    coverage: DeliveryMetricCoverageOut
+
+
+class DeliveryWorkTimeOut(BaseModel):
+    total_seconds: float | None = None
+    coverage: DeliveryMetricCoverageOut
+
+
+class DeliveryTrendMetricsOut(BaseModel):
+    completed_tasks: DeliveryCountOut
+    completed_tickets: DeliveryCountOut
+    first_review_acceptance: FirstReviewAcceptanceOut
+    changes_requested: DeliveryCountOut
+    stops: DeliveryCountOut
+    work_time: DeliveryWorkTimeOut
+
+
+class DeliveryTrendDayOut(DeliveryTrendMetricsOut):
+    date: date
+
+
+class DeliveryTrendsOut(BaseModel):
+    totals: DeliveryTrendMetricsOut
+    daily: list[DeliveryTrendDayOut]
+
+
 class TrackerAgentStatsOut(BaseModel):
     project_id: int | None
     is_active: bool | None
@@ -679,6 +721,7 @@ class TrackerAgentStatsOut(BaseModel):
     end_date: date | None
     timezone: str
     daily: list[AgentStatsDayOut]
+    delivery_trends: DeliveryTrendsOut
     undated: AgentStatsMetricsOut = Field(
         description=(
             "Eligible receipts without a valid offset-aware launch.started_at, "

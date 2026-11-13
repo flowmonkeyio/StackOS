@@ -554,6 +554,13 @@ usage and missing/classification coverage in compact responses. No private
 receipt payloads are returned, and reads change no state. See
 [metric semantics](./task-tracker.md#recorded-agent-statistics).
 
+`delivery_trends` adds one shared set of period totals and daily buckets for
+completed tasks/tickets, first-review acceptance, changes requested, stop
+occurrences and summed task work time. Both scopes reuse this read; six widgets
+must not query or aggregate receipt history individually. Existing token and
+recorded agent/model grouping fields keep their meanings. Compact/raw retain
+the same trend facts and coverage; ack remains unavailable.
+
 ```json
 {"arguments": {"project_id": 1, "response_mode": "compact"}}
 ```

@@ -92,13 +92,13 @@ def invocation_timing_facts(evidence: Any) -> dict[tuple[int | None, str], tuple
     return facts
 
 
-def work_duration(
+def work_intervals(
     sources: Iterable[tuple[str, Any]],
     *,
     live_calls: list[dict[str, Any]],
     observed_at: datetime,
-) -> WorkDurationOut:
-    """Union ticket-local deduplicated receipts; missing data is never zero-filled.
+) -> tuple[list[tuple[datetime, datetime]], dict[str, ExecutionIdentityOut], set[str], int]:
+    """Validate ticket-local deduplicated intervals; missing data is never zero-filled.
 
     Live state must match the current receipt's actual identity. Persisted
     execution/usage observations alone cannot manufacture an open endpoint.
@@ -183,9 +183,34 @@ def work_duration(
             if reason:
                 missing += 1
                 issues.add(reason)
+    return intervals, live, issues, missing
+
+
+def union_intervals(
+    intervals: Iterable[tuple[datetime, datetime]],
+) -> list[tuple[datetime, datetime]]:
+    result: list[tuple[datetime, datetime]] = []
+    for start, end in sorted(intervals):
+        if result and start <= result[-1][1]:
+            result[-1] = result[-1][0], max(result[-1][1], end)
+        else:
+            result.append((start, end))
+    return result
+
+
+def work_duration(
+    sources: Iterable[tuple[str, Any]],
+    *,
+    live_calls: list[dict[str, Any]],
+    observed_at: datetime,
+) -> WorkDurationOut:
+    """Project the union using the same interval validator as scoped reporting."""
+    intervals, live, issues, missing = work_intervals(
+        sources, live_calls=live_calls, observed_at=observed_at
+    )
     total = 0.0
     endpoint = None
-    for start, end in sorted(intervals):
+    for start, end in union_intervals(intervals):
         total += max(0, (end - max(start, endpoint or start)).total_seconds())
         endpoint = max(endpoint or end, end)
     if not intervals and not missing:
@@ -251,6 +276,16 @@ def _eligible(receipt: dict[str, Any]) -> bool:
         and usage.get("reason") == "operator_reset"
         and "measured" in usage
         and usage["measured"] is None
+    )
+
+
+def classification_known(receipt: dict[str, Any]) -> bool:
+    role = receipt.get("selected_role")
+    return (
+        isinstance(role, str)
+        and bool(role)
+        and "validated_outcome" in receipt
+        and receipt.get("validated_outcome") in (None, "success", "repair", "blocked", "failed")
     )
 
 
@@ -519,12 +554,7 @@ class ReceiptMetrics:
         role = receipt.get("selected_role")
         # Explicit null records failed producer validation; absence is legacy/unfinished.
         outcome = receipt.get("validated_outcome")
-        if (
-            isinstance(role, str)
-            and bool(role)
-            and "validated_outcome" in receipt
-            and outcome in (None, "success", "repair", "blocked", "failed")
-        ):
+        if classification_known(receipt):
             self.classified += 1
             self.rejects += int(role == "review_agent" and outcome == "repair")
             if role == "review_agent":
@@ -1072,6 +1102,7 @@ def query_agent_stats(
     if group_by not in ("agent", "model", "agent_model"):
         raise ValueError("group_by must be agent, model or agent_model")
     provisional = provisional_usage(project_id)
+    timing = host_service.invocation_timings()
     table = TrackerReceiptProjection
     statement = (
         select(  # type: ignore[call-overload]
@@ -1162,6 +1193,17 @@ def query_agent_stats(
                     **by_day[day].output().model_dump(),
                 )
             )
+    from stackos.repositories.tracker.delivery_stats import query_delivery_trends
+
+    delivery_trends = query_delivery_trends(
+        session,
+        project_id=project_id,
+        is_active=is_active,
+        start_date=start_date,
+        end_date=end_date,
+        zone=zone,
+        timing=timing,
+    )
     return TrackerAgentStatsOut(
         project_id=project_id,
         is_active=is_active,
@@ -1174,4 +1216,5 @@ def query_agent_stats(
         timezone=timezone,
         daily=daily,
         undated=undated.output(),
+        delivery_trends=delivery_trends,
     )

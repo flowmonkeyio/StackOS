@@ -3690,6 +3690,73 @@ export interface components {
              */
             supported_min: number;
         };
+        /** DeliveryCountOut */
+        DeliveryCountOut: {
+            coverage: components["schemas"]["DeliveryMetricCoverageOut"];
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+        };
+        /** DeliveryMetricCoverageOut */
+        DeliveryMetricCoverageOut: {
+            /** Issues */
+            issues?: string[];
+            /**
+             * Recorded
+             * @default 0
+             */
+            recorded: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: DeliveryMetricCoverageOutStatus;
+            /**
+             * Unavailable
+             * @default 0
+             */
+            unavailable: number;
+        };
+        /** DeliveryTrendDayOut */
+        DeliveryTrendDayOut: {
+            changes_requested: components["schemas"]["DeliveryCountOut"];
+            completed_tasks: components["schemas"]["DeliveryCountOut"];
+            completed_tickets: components["schemas"]["DeliveryCountOut"];
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            first_review_acceptance: components["schemas"]["FirstReviewAcceptanceOut"];
+            stops: components["schemas"]["DeliveryCountOut"];
+            work_time: components["schemas"]["DeliveryWorkTimeOut"];
+        };
+        /** DeliveryTrendMetricsOut */
+        DeliveryTrendMetricsOut: {
+            changes_requested: components["schemas"]["DeliveryCountOut"];
+            completed_tasks: components["schemas"]["DeliveryCountOut"];
+            completed_tickets: components["schemas"]["DeliveryCountOut"];
+            first_review_acceptance: components["schemas"]["FirstReviewAcceptanceOut"];
+            stops: components["schemas"]["DeliveryCountOut"];
+            work_time: components["schemas"]["DeliveryWorkTimeOut"];
+        };
+        /** DeliveryTrendsOut */
+        DeliveryTrendsOut: {
+            /** Daily */
+            daily: components["schemas"]["DeliveryTrendDayOut"][];
+            totals: components["schemas"]["DeliveryTrendMetricsOut"];
+        };
+        /** DeliveryWorkTimeOut */
+        DeliveryWorkTimeOut: {
+            coverage: components["schemas"]["DeliveryMetricCoverageOut"];
+            /**
+             * Total Seconds
+             * @default null
+             */
+            total_seconds: number | null;
+        };
         /** DurableActionItemOut */
         DurableActionItemOut: {
             /** Attempt Count */
@@ -4945,6 +5012,25 @@ export interface components {
             project_id: number;
             /** Readiness */
             readiness: string;
+        };
+        /** FirstReviewAcceptanceOut */
+        FirstReviewAcceptanceOut: {
+            /**
+             * Accepted
+             * @default 0
+             */
+            accepted: number;
+            coverage: components["schemas"]["DeliveryMetricCoverageOut"];
+            /**
+             * Rate
+             * @default null
+             */
+            rate: number | null;
+            /**
+             * Reviewed
+             * @default 0
+             */
+            reviewed: number;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -7812,6 +7898,7 @@ export interface components {
             as_of: string;
             /** Daily */
             daily: components["schemas"]["AgentStatsDayOut"][];
+            delivery_trends: components["schemas"]["DeliveryTrendsOut"];
             /** End Date */
             end_date: string | null;
             /**
@@ -10127,6 +10214,12 @@ export type SchemaDecisionOut = components['schemas']['DecisionOut'];
 export type SchemaDecisionRecordRequest = components['schemas']['DecisionRecordRequest'];
 export type SchemaDeliveryCapacityInput = components['schemas']['DeliveryCapacityInput'];
 export type SchemaDeliveryCapacityOut = components['schemas']['DeliveryCapacityOut'];
+export type SchemaDeliveryCountOut = components['schemas']['DeliveryCountOut'];
+export type SchemaDeliveryMetricCoverageOut = components['schemas']['DeliveryMetricCoverageOut'];
+export type SchemaDeliveryTrendDayOut = components['schemas']['DeliveryTrendDayOut'];
+export type SchemaDeliveryTrendMetricsOut = components['schemas']['DeliveryTrendMetricsOut'];
+export type SchemaDeliveryTrendsOut = components['schemas']['DeliveryTrendsOut'];
+export type SchemaDeliveryWorkTimeOut = components['schemas']['DeliveryWorkTimeOut'];
 export type SchemaDurableActionItemOut = components['schemas']['DurableActionItemOut'];
 export type SchemaDurableActionJobOut = components['schemas']['DurableActionJobOut'];
 export type SchemaEnumLookupResponse = components['schemas']['EnumLookupResponse'];
@@ -10158,6 +10251,7 @@ export type SchemaFinanceReportRenderInput = components['schemas']['FinanceRepor
 export type SchemaFinanceSnapshotOut = components['schemas']['FinanceSnapshotOut'];
 export type SchemaFinanceStatusInput = components['schemas']['FinanceStatusInput'];
 export type SchemaFinanceStatusOut = components['schemas']['FinanceStatusOut'];
+export type SchemaFirstReviewAcceptanceOut = components['schemas']['FirstReviewAcceptanceOut'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
 export type SchemaHealthResponse = components['schemas']['HealthResponse'];
 export type SchemaHeartbeatResponse = components['schemas']['HeartbeatResponse'];
@@ -13595,6 +13689,12 @@ export enum DeliveryCapacityInputResponse_mode {
     raw = "raw",
     standard = "standard",
     verbose = "verbose"
+}
+export enum DeliveryMetricCoverageOutStatus {
+    empty = "empty",
+    complete = "complete",
+    partial = "partial",
+    unavailable = "unavailable"
 }
 export enum DurableActionItemStatus {
     pending = "pending",
