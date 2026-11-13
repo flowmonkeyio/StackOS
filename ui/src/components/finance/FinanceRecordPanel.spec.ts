@@ -66,6 +66,7 @@ describe('reviewed save and private originals', () => {
     expect(panel.get<HTMLInputElement>('[data-test="date"]').element.value).toBe('2026-09-01')
     expect(panel.get('[data-test="preview-edit"]').attributes('disabled')).toBeDefined()
     expect(panel.get('fieldset').attributes('disabled')).toBeUndefined()
+    expect(panel.text()).not.toContain('This record is read-only here.')
     const calls = vi.mocked(callOperation).mock.calls.length
     await panel.get('form').trigger('submit')
     expect(vi.mocked(callOperation).mock.calls).toHaveLength(calls)

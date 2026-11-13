@@ -112,7 +112,6 @@ const allowed = computed(() =>
 )
 const canEdit = computed(
   () =>
-    props.authorityCurrent !== false &&
     props.access.modes.includes('correct') &&
     allowed.value.length > 0 &&
     (props.recordRef === null ||
@@ -188,7 +187,7 @@ function close(value: boolean) {
   emit('update:modelValue', value)
 }
 function beginEdit() {
-  if (!canEdit.value) return
+  if (!canEdit.value || props.authorityCurrent === false) return
   editSequence++
   notice.value = ''
   error.value = ''
@@ -397,7 +396,7 @@ function buildIntent(): Record<string, unknown> {
   }
 }
 async function requestPreview() {
-  if (!canEdit.value) return
+  if (!canEdit.value || props.authorityCurrent === false) return
   error.value = ''
   preview.value = null
   heldIntent.value = null
@@ -415,7 +414,7 @@ async function requestPreview() {
       'finance.record.preview',
       { ...intent, response_mode: 'compact' },
     )
-    if (!active || sequence !== editSequence || !editing.value || props.authorityCurrent === false) return
+    if (!active || sequence !== editSequence || !editing.value || !props.authorityCurrent) return
     if (
       result.data.state !== 'valid' ||
       result.data.source_snapshot.sha256 !== props.snapshot.sha256
@@ -434,7 +433,7 @@ async function requestPreview() {
   }
 }
 async function save() {
-  if (!canEdit.value || !preview.value || !heldIntent.value || stale.value || saving.value) return
+  if (!canEdit.value || props.authorityCurrent === false || !preview.value || !heldIntent.value || stale.value || saving.value) return
   const sequence = editSequence
   const intent = heldIntent.value,
     digest = preview.value.preview_digest
@@ -710,7 +709,7 @@ onBeforeUnmount(() => {
           {{ text(item.reason) }}
         </p>
       </details>
-      <UiButton v-if="canEdit && !editing" data-test="edit-record" class="mt-5" @click="beginEdit"
+      <UiButton v-if="canEdit && !editing" data-test="edit-record" class="mt-5" :disabled="authorityCurrent === false" @click="beginEdit"
         >Edit sourced facts</UiButton
       >
       <p v-if="!canEdit" class="mt-3 text-sm text-fg-muted">
@@ -877,7 +876,7 @@ onBeforeUnmount(() => {
           data-test="preview-edit"
           type="submit"
           :loading="previewing"
-          :disabled="!canEdit || saving || stale"
+          :disabled="authorityCurrent === false || !canEdit || saving || stale"
           variant="primary"
           >Preview changes</UiButton
         >
@@ -885,7 +884,7 @@ onBeforeUnmount(() => {
           v-else
           data-test="save-edit"
           :loading="saving"
-          :disabled="!canEdit || stale"
+          :disabled="authorityCurrent === false || !canEdit || stale"
           variant="primary"
           @click="save"
           >{{ uncertain ? 'Recheck same save' : 'Save reviewed changes' }}</UiButton

@@ -677,7 +677,13 @@ onBeforeUnmount(() => {
     </ProjectPageHeader>
     <UiCallout v-if="error && !projection" variant="danger" role="alert">{{ error }}</UiCallout>
     <div class="min-h-10 text-sm text-fg-muted" role="status" aria-live="polite">
-      <template v-if="projection && (!currentAuthority || error)">Last-known Finance data · {{ loading ? 'validating current source…' : error || 'refresh required' }}</template>
+      <template v-if="projection && (!currentAuthority || error)">
+        <p>Last-known Finance data · {{ loading ? 'validating current source…' : 'refresh required' }}</p>
+        <details v-if="error">
+          <summary class="focus-ring cursor-pointer">Refresh details</summary>
+          <p>{{ error }}</p>
+        </details>
+      </template>
       <template v-else-if="loading">Loading project Finance data…</template>
     </div>
     <p v-if="message" role="status" class="text-sm text-fg-muted">{{ message }}</p>

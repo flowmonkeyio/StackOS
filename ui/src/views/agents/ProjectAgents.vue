@@ -201,10 +201,19 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
           placeholder="Find an agent"
           class="mb-3"
         />
-        <p class="min-h-10 text-xs text-fg-muted" role="status">
-          {{ loaded && (loading || folderLoading) ? 'Last-known agents · refreshing sources…' : loaded && !ready ? `Last-known agents · ${error || folderIssue || 'source validation required'}` : '' }}
-          <UiButton v-if="loaded && folderIssue" size="sm" variant="ghost" @click="guardedRefresh">Retry project folder</UiButton>
-        </p>
+        <div class="min-h-12 text-xs text-fg-muted" role="status">
+          <p v-if="loaded && (loading || folderLoading)">Last-known agents · refreshing sources…</p>
+          <template v-else-if="loaded && !ready">
+            <p>Last-known agents · refresh required</p>
+            <div class="flex items-start gap-2">
+              <details class="min-w-0 flex-1">
+                <summary class="focus-ring cursor-pointer">Refresh details</summary>
+                <p>{{ error || folderIssue || 'Source validation required.' }}</p>
+              </details>
+              <UiButton v-if="folderIssue" size="sm" variant="ghost" @click="guardedRefresh">Retry project folder</UiButton>
+            </div>
+          </template>
+        </div>
         <UiLoadingState
           v-if="loading && !loaded"
           label="Loading project agents…"
