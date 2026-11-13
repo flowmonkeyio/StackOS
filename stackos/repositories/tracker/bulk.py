@@ -23,6 +23,7 @@ from stackos.repositories.base import (
     NotFoundError,
     ValidationError,
 )
+from stackos.repositories.tracker.board import task_columns
 from stackos.repositories.tracker.schema import (
     TrackerDependencyPreviewOut,
     TrackerListIssueOut,
@@ -124,6 +125,7 @@ class TrackerBulkMixin:
         # One savepoint owns all skeletons, relations, revisions and task rollup.
         try:
             with self._s.begin_nested():
+                old_column = task_columns(self._s, [task])[task.id]
                 for spec in specs:
                     ticket = self._create_ticket_row(
                         tracker=tracker,
@@ -187,7 +189,7 @@ class TrackerBulkMixin:
                         commit=False,
                     )
 
-                self._sync_task_status(task, now=now)
+                self._sync_task_status(task, now=now, old_column=old_column)
         except Exception:
             # _record_revision marks these SQL-allocated values clean; a nested
             # rollback does not expire them automatically for retained callers.
@@ -291,6 +293,7 @@ class TrackerBulkMixin:
                             "ticket task not found", data={"ticket_key": ticket.key}
                         )
                     before = self._ticket_snapshot(ticket)
+                    old_column = task_columns(self._s, [task])[task.id]
                     old_status = ticket.status
                     self._apply_ticket_patch(tracker, ticket, patch_json)
                     self._record_tracker_ticket_status_event(
@@ -301,7 +304,7 @@ class TrackerBulkMixin:
                         actor=actor,
                         reason="tracker.update_ticket_list",
                     )
-                    self._sync_task_status(task, now=_utcnow())
+                    self._sync_task_status(task, now=_utcnow(), old_column=old_column)
                     self._record_revision(
                         tracker,
                         actor=actor,

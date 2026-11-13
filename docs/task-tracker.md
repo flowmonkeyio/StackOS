@@ -1483,6 +1483,10 @@ are exactly Backlog, Todo, In progress, Stopped, Done, Aborted, Failed and Skipp
 | Remaining `not-started` with `lane_key=backlog` | Backlog |
 | Remaining `not-started` in any other lane | Todo |
 
+Task revision snapshots retain source lifecycle, lane and delivery facts and
+omit the derived `board_column`; live reads resolve it with invocation evidence.
+Board intent receipts retain the accepted projection for stable retry/replay.
+
 Absent live execution never means stopped. Queued membership uses recorded
 actual invocation events or canonical current/archive invocation receipts;
 workflow `started_at`, a pending launch or a saved session alone is insufficient.

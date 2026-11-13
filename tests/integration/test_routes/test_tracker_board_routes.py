@@ -349,3 +349,169 @@ def test_place_task_uses_scoped_browser_operation_without_lifecycle_authority(ap
             },
         ).json()["tasks"][0]
         assert current == candidate
+
+
+def _board_operation(api, scope_id, operation, **arguments):
+    response = api.post(
+        f"/api/v1/operations/{operation}/call",
+        json={"arguments": {"project_id": scope_id, "response_mode": "raw", **arguments}},
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _board_delivery(status):
+    agent = {"name": "worker", "instructions": "Frozen fixture"}
+    return {
+        "delivery": {
+            "status": status,
+            "job_ref": "task-delivery:fixture",
+            "delivery_agent": agent,
+            "review_agent": agent,
+        }
+    }
+
+
+def _board_evidence():
+    identity = {
+        "agent": "worker",
+        "host_key": "codex",
+        "model": "fixture",
+        "started_at": "2026-11-12T00:00:00+00:00",
+        "ticket_key": "child",
+        "invocation_id": "recorded-call",
+    }
+    return {
+        "automatic_delivery": {
+            "attempt": 1,
+            "delivery": {
+                "launch": identity,
+                "execution": identity,
+            },
+        }
+    }
+
+
+@pytest.mark.parametrize("writer", ["list-create", "list-update"])
+def test_bulk_receipt_arrival_uses_shared_column_rank_and_preserves_manual_order(
+    api, project_id, writer
+):
+    def call(operation, **arguments):
+        return _board_operation(api, project_id, operation, **arguments)
+
+    for key in ("old-progress", "top-progress"):
+        top = call("tracker.createTask", key=key, title=key, status="in-progress")["data"]["task"]
+    queued = call(
+        "tracker.createTask",
+        key="work",
+        title="Work",
+        status="in-progress",
+        metadata_json=_board_delivery("queued"),
+    )["data"]["task"]
+    assert queued["board_column"] == "todo"
+    if writer == "list-create":
+        saved = call(
+            "tracker.createTicket",
+            task_key="work",
+            tickets_json=[
+                {
+                    "key": "child",
+                    "title": "Child",
+                    "status": "in-progress",
+                    "completion_evidence_json": _board_evidence(),
+                }
+            ],
+        )
+    else:
+        call(
+            "tracker.createTicket",
+            task_key="work",
+            key="child",
+            title="Child",
+            status="in-progress",
+        )
+        saved = call(
+            "tracker.updateTicket",
+            updates_json=[
+                {
+                    "ticket_key": "child",
+                    "patch_json": {"completion_evidence_json": _board_evidence()},
+                }
+            ],
+        )
+    assert saved["data"]["valid"]
+    entered = call("tracker.get", task_key="work")["tasks"][0]
+    assert entered["board_column"] == "in-progress"
+    assert entered["order_index"] < top["order_index"]
+    manual = call(
+        "tracker.reorderTask",
+        **_arguments(entered, "manual-after-entry"),
+        anchor_task_key=top["key"],
+        placement="after",
+    )["data"]["task"]
+    assert manual["order_index"] > top["order_index"]
+    same = call(
+        "tracker.updateTicket",
+        updates_json=[
+            {
+                "ticket_key": "child",
+                "patch_json": {
+                    "title": "Same column",
+                    "completion_evidence_json": _board_evidence(),
+                },
+            }
+        ],
+    )
+    assert same["data"]["valid"]
+    assert call("tracker.get", task_key="work")["tasks"][0]["order_index"] == manual["order_index"]
+
+
+def test_history_omits_derived_board_column_while_live_queue_stop_resume_stays_truthful(
+    api, project_id
+):
+    def call(operation, **arguments):
+        return _board_operation(api, project_id, operation, **arguments)
+
+    call(
+        "tracker.createTask",
+        key="work",
+        title="Work",
+        status="in-progress",
+        metadata_json=_board_delivery("queued"),
+    )
+    call(
+        "tracker.createTicket",
+        task_key="work",
+        key="child",
+        title="Child",
+        status="in-progress",
+        completion_evidence_json=_board_evidence(),
+    )
+    for state, column in (
+        ("queued", "in-progress"),
+        ("stopped", "stopped"),
+        ("queued", "in-progress"),
+    ):
+        task = call(
+            "tracker.updateTask",
+            task_key="work",
+            patch_json={
+                "title": f"Still {state}",
+                "metadata_json": _board_delivery(state),
+            },
+        )["data"]["task"]
+        assert task["board_column"] == column
+        assert call("tracker.get", task_key="work")["tasks"][0]["board_column"] == column
+        history = call("tracker.history", limit=50)
+        latest = max(
+            (
+                row
+                for row in history["items"]
+                if row["entity_kind"] == "task" and row["entity_key"] == "work"
+            ),
+            key=lambda row: row["id"],
+        )
+        for snapshot in (latest["before_json"], latest["after_json"]):
+            assert "board_column" not in snapshot
+            assert snapshot["status"] == "in-progress"
+        assert latest["after_json"]["metadata_json"]["delivery"]["status"] == state

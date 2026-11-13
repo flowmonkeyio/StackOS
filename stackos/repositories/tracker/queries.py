@@ -1715,9 +1715,11 @@ class TrackerQueryMixin:
         return row.rank if row is not None else 100
 
     def _task_snapshot(self, task: TrackerTask) -> dict[str, Any]:
-        # Derived usage belongs to read projections, never persisted history.
+        # Board membership needs invocation evidence, just like usage. History
+        # retains source lifecycle/placement facts, not a projection of a bare row.
         return TrackerTaskOut.model_validate(task).model_dump(
-            mode="json", exclude={"agent_stats", "active_execution", "work_duration"}
+            mode="json",
+            exclude={"agent_stats", "active_execution", "work_duration", "board_column"},
         )
 
     def _ticket_snapshot(self, ticket: TrackerTicket) -> dict[str, Any]:

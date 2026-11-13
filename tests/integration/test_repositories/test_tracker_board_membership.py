@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from sqlmodel import Session, create_engine, select
 
-from stackos.db.models import TaskTrackerLane, TrackerTask
+from stackos.db.models import ProjectEvent, TaskTrackerLane, TrackerRevision, TrackerTask
 from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.tracker import TrackerRepository
 from stackos.repositories.tracker.schema import TrackerTaskOut
@@ -385,3 +385,83 @@ def test_initial_receipt_import_also_enters_at_top(session, project_id, default_
         ).data.task
     assert task.board_column == "in-progress"
     assert task.order_index < other.order_index
+
+
+@pytest.mark.parametrize("writer", ["list-create", "list-update"])
+def test_bulk_arrival_failure_rolls_back_rank_receipt_events_and_revision(
+    session, project_id, monkeypatch, writer
+):
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="other", title="Other", status="in-progress")
+    repo.create_task(
+        project_id=project_id,
+        key="work",
+        title="Work",
+        status="in-progress",
+        metadata_json=delivery("queued"),
+    )
+    if writer == "list-update":
+        repo.create_ticket(
+            project_id=project_id, task_key="work", key="child", title="Child", status="in-progress"
+        )
+    before = repo.get(project_id=project_id, task_key="work").tasks[0]
+    revisions = [row.id for row in session.exec(select(TrackerRevision)).all()]
+    events = [row.id for row in session.exec(select(ProjectEvent)).all()]
+    identity = {
+        "agent": "worker",
+        "host_key": "codex",
+        "model": "fixture",
+        "started_at": "2026-11-12T00:00:00+00:00",
+        "ticket_key": "child",
+        "invocation_id": "recorded-call",
+    }
+    evidence = {
+        "automatic_delivery": {
+            "attempt": 1,
+            "delivery": {
+                "launch": identity,
+                "execution": identity,
+            },
+        }
+    }
+    original = repo._record_tracker_task_change_event
+
+    def fail_after_event(task, fields, **kwargs):
+        original(task, fields, **kwargs)
+        raise ValidationError("fixture arrival failure")
+
+    monkeypatch.setattr(repo, "_record_tracker_task_change_event", fail_after_event)
+    if writer == "list-create":
+        with pytest.raises(ValidationError, match="fixture arrival failure"):
+            repo.create_ticket_list(
+                project_id=project_id,
+                ticket_list_json={
+                    "task_key": "work",
+                    "tickets": [
+                        {
+                            "key": "child",
+                            "title": "Child",
+                            "status": "in-progress",
+                            "completion_evidence_json": evidence,
+                        }
+                    ],
+                },
+            )
+    else:
+        result = repo.update_ticket_list(
+            project_id=project_id,
+            updates_json=[
+                {
+                    "ticket_key": "child",
+                    "patch_json": {"completion_evidence_json": evidence},
+                }
+            ],
+        )
+        assert not result.data.valid
+        assert result.data.results[0].error == "fixture arrival failure"
+    session.expire_all()
+    after = repo.get(project_id=project_id, task_key="work")
+    assert after.tasks[0] == before
+    assert all(ticket.completion_evidence_json is None for ticket in after.tickets)
+    assert [row.id for row in session.exec(select(TrackerRevision)).all()] == revisions
+    assert [row.id for row in session.exec(select(ProjectEvent)).all()] == events
