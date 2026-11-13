@@ -126,13 +126,16 @@ export function useProjectSetup(projectId: Ref<number>) {
     return changeAttempt(snapshot, async () => (await callOperation<SchemaWriteEnvelopeSetupStartOut>('projectSetup.continue', args)).data.attempt)
   }
 
-  async function cancel(snapshot: SchemaSetupAttempt): Promise<boolean> {
+  async function cancel(snapshot: SchemaSetupAttempt, externalWorkStopped = false): Promise<boolean> {
     const current = attempt.value
     // Confirmation targets this invocation, even if progress advanced its
     // revision meanwhile. A successor invocation is a different target.
     if (!current || current.request_id !== snapshot.request_id || current.project_id !== snapshot.project_id) return false
-    const args: Pick<SchemaProjectSetupCancelInput, 'project_id' | 'request_id'> = {
+    const external = snapshot.entry_kind === 'existing_agent'
+    if (external && !externalWorkStopped) return false
+    const args: Pick<SchemaProjectSetupCancelInput, 'project_id' | 'request_id'> & Partial<Pick<SchemaProjectSetupCancelInput, 'expected_revision' | 'external_work_stopped'>> = {
       project_id: snapshot.project_id, request_id: snapshot.request_id,
+      ...(external ? { expected_revision: snapshot.revision, external_work_stopped: true } : {}),
     }
     return changeAttempt(current, async () => (await callOperation<SchemaWriteEnvelopeSetupAttempt>('projectSetup.cancel', args)).data)
   }
@@ -142,6 +145,7 @@ export function useProjectSetup(projectId: Ref<number>) {
     if (current?.status === 'needs_input') return current.question?.response_channel === 'managed_ui' ? 'Answer question' : 'View setup'
     if (current && ['queued', 'running'].includes(current.status)) return 'View setup'
     if (neverStarted.value) return 'View setup'
+    if (current?.entry_kind === 'existing_agent' && current.status === 'cancelled') return 'View setup'
     if (current && ['partial', 'failed', 'interrupted', 'cancelled'].includes(current.status)) return 'Continue setup'
     if (state.value?.status === 'updates_available') return 'Update workflows'
     return state.value?.status === 'setup_needed' ? 'Set up project' : 'Manage setup'

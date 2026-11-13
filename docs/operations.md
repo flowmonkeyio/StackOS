@@ -311,7 +311,7 @@ a JSON-encoded `SetupReport` through `report_json`; all receipt validation stays
 the existing setup repository. A finished invocation asking a question releases its
 slot and retains its exact native identity for the continuation owner.
 
-Console-only `projectSetup.cancel({"project_id":1,"request_id":123})` fences that
+Console-only `projectSetup.cancel({"project_id":1,"request_id":123})` fences a
 managed request through the existing native cancellation owner. Queued work can be
 cancelled before spawn. Running cancellation remains pending until actual native
 retirement; callback lifetime retains the reservation, completed workflow receipts
@@ -321,6 +321,20 @@ and actionable reconciliation diagnostic instead of silently launching replaceme
 The canonical project cleanup guard also retains these managed reservations after
 request lease expiry; confirmed deletion cannot race an unconfirmed native writer.
 Terminal reports revoke writer authority and preserve attempt history.
+
+For an `existing_agent` attempt, the same console operation requires the exact
+`expected_revision` and strict boolean `external_work_stopped: true`. Stop the
+previous setup work in the agent app before acknowledging it. StackOS atomically
+cancels that record and revokes its claim under the project writer reservation;
+the acknowledgement does not establish observed native retirement, stop a process,
+or rebind a session. It preserves original identity, receipts, reports, questions,
+answers and possible file changes. A changed revision requires a fresh decision.
+Cancellation retries bind the project/request/revision/acknowledgement intent;
+exact replay returns only the historical target, even after another attempt starts.
+Old start/progress replays and late reports cannot restore the revoked claim.
+Home keeps the cancelled record inspectable even when retained receipts are current.
+**Set up again** opens a separate launch decision; cancellation never starts it.
+MCP, CLI and run-step authority cannot cancel setup.
 
 Console-only `projectSetup.answer` takes `project_id`, the current `request_id`,
 `expected_revision`, `question_id`, `question_revision` and a bounded `answer`.

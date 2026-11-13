@@ -5,7 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { defineComponent, ref } from 'vue'
 import { callOperation } from '@/lib/operations'
 import { ApiError, apiFetch } from '@/lib/client'
-import { ProjectSetupOutFolder_status, ProjectSetupOutStatus, SetupAttemptStatus, SetupQuestionAnswer_state, SetupQuestionResponse_channel } from '@/api'
+import { ProjectSetupOutFolder_status, ProjectSetupOutStatus, SetupAttemptEntry_kind, SetupAttemptStatus, SetupQuestionAnswer_state, SetupQuestionResponse_channel } from '@/api'
 import HomeConsoleView from '../HomeConsoleView.vue'
 import ProjectSetupView from './ProjectSetupView.vue'
 import ProjectSetupLaunchDialog from './ProjectSetupLaunchDialog.vue'
@@ -57,6 +57,16 @@ function button(label: string) {
 const writes = () => vi.mocked(callOperation).mock.calls.filter(([name]) => ['projectSetup.start', 'projectSetup.setReminders'].includes(name))
 
 describe('Home project setup', () => {
+  it('opens the cancelled external record even when retained receipts make aggregate setup current', async () => {
+    state = setupFixture({ status: ProjectSetupOutStatus.current, configured_count: 1,
+      current_attempt: attemptFixture({ entry_kind: SetupAttemptEntry_kind.existing_agent, status: SetupAttemptStatus.cancelled }) })
+    const router = await home()
+    await button('View setup').trigger('click'); await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/projects/1/setup')
+    expect(button('Set up again')).toBeDefined()
+    expect(wrapper!.find('[role="dialog"]').exists()).toBe(false)
+    expect(writes()).toHaveLength(0)
+  })
   it.each(['cancelled', 'failed'] as const)('opens actionable pre-launch %s recovery without a new agent picker', async status => {
     state.current_attempt = attemptFixture({ status: SetupAttemptStatus[status], managed: { settings: { host_key: 'codex', model: 'original-model' }, binding_id: 1, admission_id: 'fixture', job_ref: 'fixture', callback_started: false, slot_reserved: false, cancel_requested: status === 'cancelled', resume_thread_id: null, diagnostic: null } })
     state.launch_preferences = { host_key: 'codex', model: 'newer-saved-model' }

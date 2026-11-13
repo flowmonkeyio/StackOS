@@ -5,11 +5,12 @@ import DataTable from '@/components/DataTable.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
 import type { DataTableColumn } from '@/components/types'
 import { ProjectPageHeader } from '@/components/domain'
-import { UiButton, UiCard, UiConfirmDialog, UiPageShell } from '@/components/ui'
+import { UiButton, UiCard, UiCheckbox, UiDialog, UiPageShell } from '@/components/ui'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { resolveStatus } from '@/design/status'
 import { useProjectSetup } from './useProjectSetup'
 import SetupQuestionForm from './SetupQuestionForm.vue'
+import ProjectSetupLaunchDialog from './ProjectSetupLaunchDialog.vue'
 
 const { projectId } = useProjectRouteScope()
 const setup = useProjectSetup(projectId)
@@ -30,6 +31,7 @@ const heading = computed(() => {
   return headings[attempt.value?.status ?? ''] ?? 'Project setup'
 })
 const pendingQuestion = computed(() => attempt.value?.question?.answer_state === 'pending'
+  && !(attempt.value.entry_kind === 'existing_agent' && attempt.value.status === 'cancelled')
   && ['needs_input', ...recoveryStates].includes(attempt.value.status) ? attempt.value.question : null)
 const managed = computed(() => attempt.value?.entry_kind === 'managed_ui')
 const available = computed(() => state.value?.folder_status === 'available')
@@ -39,6 +41,19 @@ const recoveryLabel = computed(() => neverStarted.value
   ? attempt.value?.status === 'failed' ? 'Retry setup' : 'Start again'
   : ({ failed: 'Retry remaining', interrupted: 'Resume setup', cancelled: 'Start again' } as Record<string, string>)[attempt.value?.status ?? ''] ?? 'Continue remaining')
 const cancelTarget = ref<SchemaSetupAttempt | null>(null)
+const externalWorkStopped = ref(false)
+const launchOpen = ref(false)
+function confirmCancellation(): void {
+  if (!attempt.value) return
+  cancelTarget.value = { ...attempt.value }
+  externalWorkStopped.value = false
+}
+function closeLaunch(): void { launchOpen.value = false }
+async function startedAgain(): Promise<void> {
+  closeLaunch()
+  await nextTick()
+  stateHeading.value?.focus({ preventScroll: true })
+}
 const stateHeading = ref<HTMLElement | null>(null)
 async function sendAnswer(snapshot: SchemaSetupAttempt, text: string): Promise<boolean> {
   const sent = await setup.answer(snapshot, text)
@@ -53,7 +68,8 @@ async function continueRemaining(): Promise<void> {
   }
 }
 async function stop(): Promise<void> {
-  if (cancelTarget.value) await setup.cancel(cancelTarget.value)
+  if (!cancelTarget.value || (cancelTarget.value.entry_kind === 'existing_agent' && !externalWorkStopped.value)) return
+  await setup.cancel(cancelTarget.value, externalWorkStopped.value)
   cancelTarget.value = null
   await nextTick()
   stateHeading.value?.focus({ preventScroll: true })
@@ -350,15 +366,23 @@ const questionKey = computed(() => `${attempt.value?.attempt_ref}:${attempt.valu
           v-if="recoveryStates.includes(attempt.status)"
           class="max-w-2xl text-sm text-fg-muted"
         >
-          {{ neverStarted ? 'Setup stopped before the agent started. Try again with the same agent settings; completed workflow results are kept.' : managed ? 'Continue only remaining work. The agent will recheck completed workflows if their guidance has changed.' : 'Continue in the agent session where you started setup.' }}
+          {{ neverStarted ? 'Setup stopped before the agent started. Try again with the same agent settings; completed workflow results are kept.' : managed ? 'Continue only remaining work. The agent will recheck completed workflows if their guidance has changed.' : attempt.status === 'cancelled' ? 'Completed results are kept. Files may already have changed. Set up again when you are ready; the agent will check the current guidance.' : 'Continue in the agent session where you started setup.' }}
         </p>
         <div class="ml-auto flex flex-wrap gap-2">
           <UiButton
-            v-if="managed && ['queued', 'running', 'needs_input'].includes(attempt.status) && !attempt.managed?.cancel_requested"
+            v-if="['queued', 'running', 'needs_input'].includes(attempt.status) && !attempt.managed?.cancel_requested"
             :disabled="writing"
-            @click="cancelTarget = attempt"
+            @click="confirmCancellation"
           >
             Cancel setup
+          </UiButton>
+          <UiButton
+            v-if="!managed && attempt.status === 'cancelled'"
+            variant="primary"
+            :disabled="writing || !available"
+            @click="launchOpen = true"
+          >
+            Set up again
           </UiButton>
           <UiButton
             v-if="managed && recoveryStates.includes(attempt.status) && !pendingQuestion"
@@ -391,15 +415,52 @@ const questionKey = computed(() => `${attempt.value?.attempt_ref}:${attempt.valu
     >
       Loading project setup…
     </p>
-    <UiConfirmDialog
+    <ProjectSetupLaunchDialog
+      v-if="launchOpen && state"
+      :state="state"
+      :pending="writing"
+      :error="error"
+      :start="setup.start"
+      @close="closeLaunch"
+      @started="startedAgain"
+    />
+    <UiDialog
       :model-value="!!cancelTarget"
       title="Stop project setup?"
-      confirm-label="Stop setup"
-      cancel-label="Keep working"
-      description="Completed workflow results are kept. Files may already have changed; stopping setup does not roll them back."
-      :loading="writing"
+      described-by="setup-cancel-description"
+      size="sm"
       @update:model-value="value => { if (!value && !writing) cancelTarget = null }"
-      @confirm="stop"
-    />
+    >
+      <div class="space-y-3">
+        <p id="setup-cancel-description">
+          Completed workflow results are kept. Files may already have changed; stopping setup does not roll them back.
+        </p>
+        <template v-if="cancelTarget?.entry_kind === 'existing_agent'">
+          <p>Stop the previous setup work in your agent app first. StackOS cannot stop that agent or verify that it has exited.</p>
+          <UiCheckbox
+            v-model="externalWorkStopped"
+            :disabled="writing"
+            label="I stopped the previous setup work in my agent app."
+          />
+        </template>
+      </div>
+      <template #footer>
+        <UiButton
+          variant="ghost"
+          :disabled="writing"
+          @click="cancelTarget = null"
+        >
+          Keep working
+        </UiButton>
+        <UiButton
+          variant="primary"
+          :loading="writing"
+          :disabled="writing || (cancelTarget?.entry_kind === 'existing_agent' && !externalWorkStopped)"
+          @click="stop"
+        >
+          Stop setup
+        </UiButton>
+      </template>
+    </UiDialog>
   </UiPageShell>
 </template>

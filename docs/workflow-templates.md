@@ -618,6 +618,15 @@ business run or tracker delivery task is invented for infrastructure setup. See 
 [operation contract](operations.md#project-setup-receipts-and-reminders) for admission,
 ownership and response details.
 
+If that bridge disappears, the operator first stops its setup work in the agent
+app. Console cancellation then requires explicit stopped-work acknowledgement and
+the revision captured when confirmation opened. It revokes only that request's
+claim, retains successful receipts and history, and records possible file changes
+without claiming rollback or observed process exit. A conflict requires a fresh
+confirmation. The cancelled record remains visible; **Set up again** is a separate
+deliberate launch, with normal source and receipt validation. No session takeover,
+rebinding or automatic replacement occurs.
+
 Home's managed entry invokes one request-native coordinator with the same
 `workflowTemplate.authoringGuide` setup-method reference. It freezes the supported
 project agent selection and folder association, queues through shared task capacity,

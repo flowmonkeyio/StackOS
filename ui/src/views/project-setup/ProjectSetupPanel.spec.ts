@@ -108,7 +108,54 @@ describe('setup detail questions and recovery', () => {
     expect(wrapper!.text()).toContain('Answer in the agent session where you started setup.')
     expect(wrapper!.find('textarea').exists()).toBe(false)
     expect(wrapper!.find('a[href*="conversation"]').exists()).toBe(false)
-    expect(button('Cancel setup')).toBeUndefined()
+    expect(button('Cancel setup')).toBeDefined()
+  })
+  it('requires a stopped-work acknowledgement for the captured external revision, then offers a separate launch', async () => {
+    state.current_attempt = { ...asking(), entry_kind: 'existing_agent', managed: null, question: null } as SchemaSetupAttempt
+    await panel()
+    await button('Cancel setup').trigger('click'); await flushPromises()
+    expect(button('Stop setup').attributes('disabled')).toBeDefined()
+    expect(wrapper!.text()).toContain('Stop the previous setup work in your agent app first.')
+    await button('Keep working').trigger('click'); await flushPromises()
+    expect(writes()).toHaveLength(0)
+    await button('Cancel setup').trigger('click'); await flushPromises()
+    expect(wrapper!.get('input[type="checkbox"]').element).toHaveProperty('checked', false)
+    await wrapper!.get('input[type="checkbox"]').setValue(true)
+    vi.mocked(callOperation).mockImplementationOnce(async (_name, args) => {
+      state = { ...state, current_attempt: { ...state.current_attempt!, status: SetupAttemptStatus.cancelled, revision: 8 } }
+      expect(args).toEqual({ project_id: 1, request_id: 10, expected_revision: 7, external_work_stopped: true })
+      return { data: state.current_attempt }
+    })
+    await button('Stop setup').trigger('click'); await flushPromises()
+    expect(button('Set up again')).toBeDefined()
+    expect(wrapper!.find('[role="dialog"]').exists()).toBe(false)
+    expect(vi.mocked(callOperation).mock.calls.some(([name]) => name === 'projectSetup.start')).toBe(false)
+    await button('Set up again').trigger('click'); await flushPromises()
+    expect(wrapper!.find('[role="dialog"]').exists()).toBe(true)
+    expect(vi.mocked(callOperation).mock.calls.some(([name]) => name === 'projectSetup.start')).toBe(false)
+  })
+  it('sends the captured external revision after polling advances, refreshes on 409 and requires a fresh decision', async () => {
+    let controller!: ReturnType<typeof useProjectSetup>
+    state.current_attempt = { ...asking(), entry_kind: 'existing_agent', managed: null } as SchemaSetupAttempt
+    wrapper = mount(defineComponent({ setup() { controller = useProjectSetup(ref(1)); return () => null } }))
+    await flushPromises()
+    const snapshot = { ...controller.attempt.value! }
+    state = { ...state, current_attempt: { ...snapshot, revision: 8 } }
+    await controller.refresh()
+    vi.mocked(callOperation).mockRejectedValueOnce(new ApiError('Review the current revision', 409, null))
+    expect(await controller.cancel(snapshot, true)).toBe(false)
+    expect(callOperation).toHaveBeenCalledWith('projectSetup.cancel', { project_id: 1, request_id: 10, expected_revision: 7, external_work_stopped: true })
+    expect(controller.error.value).toBe('Review the current revision')
+    expect(controller.attempt.value?.revision).toBe(8)
+  })
+  it('retains a cancelled external question as history without asking for an answer on its revoked session', async () => {
+    state.current_attempt = { ...asking(), entry_kind: 'existing_agent', status: SetupAttemptStatus.cancelled, managed: null } as SchemaSetupAttempt
+    await panel()
+    expect(wrapper!.text()).not.toContain('Answer in the agent session where you started setup.')
+    expect(wrapper!.find('textarea').exists()).toBe(false)
+    expect(button('Set up again')).toBeDefined()
+    expect(writes()).toHaveLength(0)
+    expect(state.current_attempt?.question?.prompt).toBe(question.prompt)
   })
   it.each(['queued', 'running', 'needs_input', 'success', 'partial', 'failed', 'interrupted', 'cancelled'] as const)('retains one shell and completed results in %s', async status => {
     state.current_attempt = attemptFixture({ status: SetupAttemptStatus[status], thread_id: 'native-exact', managed, ...(status === 'needs_input' ? { question: asking().question } : {}) })

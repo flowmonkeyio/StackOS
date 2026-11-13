@@ -155,24 +155,34 @@ def _require_setup_session(
 
 
 def _require_console(ctx):
-    if ctx.extras.get("surface") != "rest" or not (
+    if (
+        ctx.extras.get("surface") != "rest"
+        or ctx.extras.get("client_surface", "rest") != "rest"
+        or ctx.run is not None
+    ) or not (
         ctx.extras.get("trusted_local_admin") is True
         or ctx.extras.get("auth_scope") in {"daemon-admin", "ui-console-operation"}
     ):
-        raise ToolNotGrantedError("managed setup requires authenticated local-console authority")
+        raise ToolNotGrantedError("setup requires authenticated local-console authority")
     if not ctx.extras.get("scheduler") or not ctx.extras.get("session_factory"):
-        raise ToolNotGrantedError("managed setup requires the running daemon executor")
+        raise ToolNotGrantedError("setup requires the running daemon executor")
 
 
 class ProjectSetupCancelInput(MCPInput):
     model_config = ConfigDict(extra="forbid")
     project_id: int = Field(strict=True, ge=1)
     request_id: int = Field(strict=True, ge=1)
+    expected_revision: int | None = Field(default=None, strict=True, ge=1)
+    external_work_stopped: bool = Field(default=False, strict=True)
     response_mode: Literal["compact", "raw", "standard", "verbose"] = "compact"
 
 
-class ProjectSetupContinueInput(ProjectSetupCancelInput):
+class ProjectSetupContinueInput(MCPInput):
+    model_config = ConfigDict(extra="forbid")
+    project_id: int = Field(strict=True, ge=1)
+    request_id: int = Field(strict=True, ge=1)
     expected_revision: int = Field(strict=True, ge=1)
+    response_mode: Literal["compact", "raw", "standard", "verbose"] = "compact"
 
 
 class ProjectSetupAnswerInput(ProjectSetupContinueInput):
@@ -212,14 +222,16 @@ async def project_setup_continue(inp: ProjectSetupContinueInput, ctx: MCPContext
 async def project_setup_cancel(inp: ProjectSetupCancelInput, ctx: MCPContext, _emit):
     from starlette.concurrency import run_in_threadpool
 
-    from stackos.project_setup_execution import cancel_managed
+    from stackos.project_setup_execution import cancel_setup
 
     _require_console(ctx)
     ctx.session.commit()
     attempt = await run_in_threadpool(
-        cancel_managed,
+        cancel_setup,
         inp.project_id,
         inp.request_id,
+        expected_revision=inp.expected_revision,
+        external_work_stopped=inp.external_work_stopped,
         session_factory=ctx.extras["session_factory"],
         scheduler=ctx.extras["scheduler"],
     )
@@ -227,7 +239,10 @@ async def project_setup_cancel(inp: ProjectSetupCancelInput, ctx: MCPContext, _e
 
 
 def setup_request_digest(
-    inp: ProjectSetupStartInput | ProjectSetupReportInput | ProjectSetupContinueInput,
+    inp: ProjectSetupStartInput
+    | ProjectSetupReportInput
+    | ProjectSetupContinueInput
+    | ProjectSetupCancelInput,
 ) -> str:
     # Parsed defaults and canonical JSON normalize the intent. Only response
     # presentation and the lookup key may differ on a retry. Session, attempt,
@@ -240,11 +255,35 @@ def setup_request_digest(
 
 def validate_setup_replay(
     name: str,
-    inp: ProjectSetupStartInput | ProjectSetupReportInput | ProjectSetupContinueInput,
+    inp: ProjectSetupStartInput
+    | ProjectSetupReportInput
+    | ProjectSetupContinueInput
+    | ProjectSetupCancelInput,
     ctx: MCPContext,
     cached: dict[str, Any],
 ) -> dict[str, Any]:
     """Reauthorize before exposing any cached token or reporting success."""
+    if isinstance(inp, ProjectSetupCancelInput):
+        _require_console(ctx)
+        if cached.get(SETUP_REPLAY_DIGEST_FIELD) != setup_request_digest(inp):
+            raise ConflictError("setup idempotency key belongs to another cancellation intent")
+        saved = SetupAttempt.model_validate(cached["data"])
+        row = AgentRequestRepository(ctx.session)._fetch(
+            project_id=inp.project_id, request_id=inp.request_id
+        )
+        cancelled_current = SetupAttempt.model_validate(
+            (row.metadata_json or {}).get("project_setup")
+        )
+        if (
+            saved.request_id != cancelled_current.request_id
+            or saved.attempt_ref != cancelled_current.attempt_ref
+        ):
+            raise ConflictError("cancellation retry target changed; inspect setup")
+        return {
+            key: value
+            for key, value in {**cached, "data": cancelled_current.model_dump(mode="json")}.items()
+            if key != SETUP_REPLAY_DIGEST_FIELD
+        }
     if isinstance(inp, ProjectSetupContinueInput):
         _require_console(ctx)
         if cached.get(SETUP_REPLAY_DIGEST_FIELD) != setup_request_digest(inp):
@@ -522,7 +561,7 @@ def operation_specs() -> list[OperationSpec]:
         ],
         OperationSpec(
             name="projectSetup.cancel",
-            summary="Cancel this project's managed setup invocation.",
+            summary="Cancel this project's setup with explicit external-work acknowledgement.",
             input_model=ProjectSetupCancelInput,
             output_model=WriteEnvelope[SetupAttempt],
             handler=project_setup_cancel,
@@ -539,10 +578,22 @@ def operation_specs() -> list[OperationSpec]:
                     path="/api/v1/operations/projectSetup.cancel/call",
                 ),
             ),
-            purpose="Fence queued/running work and retain reports until actual native retirement.",
+            purpose=(
+                "Fence managed work until native retirement, or revoke an existing-agent "
+                "claim after exact-revision operator acknowledgement. Preserve results."
+            ),
             examples=(
                 OperationExample(
                     title="Cancel managed setup", arguments={"project_id": 1, "request_id": 123}
+                ),
+                OperationExample(
+                    title="Cancel stopped existing-agent setup",
+                    arguments={
+                        "project_id": 1,
+                        "request_id": 123,
+                        "expected_revision": 2,
+                        "external_work_stopped": True,
+                    },
                 ),
             ),
         ),

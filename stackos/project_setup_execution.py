@@ -657,6 +657,33 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
         _request_delivery_drain(session_factory, scheduler)
 
 
+def cancel_setup(
+    project_id,
+    request_id,
+    *,
+    expected_revision,
+    external_work_stopped,
+    session_factory,
+    scheduler,
+):
+    from stackos.repositories.agent_requests import AgentRequestRepository
+    from stackos.repositories.project_setup import ProjectSetupRepository, SetupAttempt
+
+    with session_factory() as session:
+        row = AgentRequestRepository(session)._fetch(project_id=project_id, request_id=request_id)
+        attempt = SetupAttempt.model_validate((row.metadata_json or {}).get("project_setup"))
+        if attempt.entry_kind == "existing_agent":
+            return ProjectSetupRepository(session).cancel_existing(
+                project_id,
+                request_id=request_id,
+                expected_revision=expected_revision,
+                external_work_stopped=external_work_stopped,
+            )
+    return cancel_managed(
+        project_id, request_id, session_factory=session_factory, scheduler=scheduler
+    )
+
+
 def cancel_managed(project_id, request_id, *, session_factory, scheduler):
     from stackos.task_delivery import _admission_id, _request_delivery_drain
 

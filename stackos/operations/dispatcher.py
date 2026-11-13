@@ -196,6 +196,7 @@ class OperationDispatcher:
                     "projectSetup.report",
                     "projectSetup.answer",
                     "projectSetup.continue",
+                    "projectSetup.cancel",
                 }:
                     from stackos.operations.project_setup_state import validate_setup_replay
 
@@ -240,6 +241,7 @@ class OperationDispatcher:
             "projectSetup.report",
             "projectSetup.answer",
             "projectSetup.continue",
+            "projectSetup.cancel",
         }:
             from stackos.operations.project_setup_state import (
                 SETUP_REPLAY_DIGEST_FIELD,

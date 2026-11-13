@@ -354,6 +354,68 @@ def test_concurrent_sessions_have_one_writer(attempt, session, tmp_path):
         engine.dispose()
 
 
+def test_concurrent_external_cancellation_has_one_revision_winner(attempt, session, tmp_path):
+    opened = start(attempt)
+    engine = make_engine(tmp_path / "concurrent-cancel.db")
+    restore_database_snapshot(engine, capture_database_snapshot(session.get_bind()))
+    barrier = Barrier(2)
+
+    def cancel(_):
+        with Session(engine) as other:
+            barrier.wait(timeout=10)
+            try:
+                return (
+                    ProjectSetupRepository(other)
+                    .cancel_existing(
+                        attempt[0],
+                        request_id=opened.attempt.request_id,
+                        expected_revision=1,
+                        external_work_stopped=True,
+                    )
+                    .revision
+                )
+            except ConflictError:
+                return "conflict"
+
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            assert sorted(pool.map(cancel, range(2)), key=str) == [2, "conflict"]
+        with Session(engine) as other:
+            assert other.get(AgentRequest, opened.attempt.request_id).claim_token_hash is None
+    finally:
+        engine.dispose()
+
+
+def test_external_cancel_releases_only_its_cleanup_claim(attempt, session, settings):
+    from stackos.project_cleanup import ProjectCleanupService
+
+    opened = start(attempt)
+    guard = ProjectCleanupService(session, settings)
+    assert "claimed_request" in guard._blockers(attempt[0])
+    # The stored schema is the pre-change schema. Unknown independent writers
+    # still protect cleanup after this particular setup claim is revoked.
+    unrelated = AgentRequest(
+        project_id=attempt[0],
+        request_key="unknown-writer",
+        title="Independent writer",
+        status=AgentRequestStatus.CLAIMED,
+        attention_status=AgentRequestAttentionStatus.READ,
+    )
+    session.add(unrelated)
+    session.commit()
+    attempt[2].cancel_existing(
+        attempt[0],
+        request_id=opened.attempt.request_id,
+        expected_revision=1,
+        external_work_stopped=True,
+    )
+    assert "claimed_request" in guard._blockers(attempt[0])
+    unrelated.status = AgentRequestStatus.FAILED
+    session.add(unrelated)
+    session.commit()
+    assert "claimed_request" not in guard._blockers(attempt[0])
+
+
 def test_completion_rechecks_sources_changed_between_progress_reports(attempt, session):
     project, session_id, repo = attempt
     opened = repo.start(

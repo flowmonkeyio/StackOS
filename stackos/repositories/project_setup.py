@@ -677,6 +677,59 @@ class ProjectSetupRepository:
             self._s.rollback()
             raise
 
+    def cancel_existing(
+        self,
+        project_id: int,
+        *,
+        request_id: int,
+        expected_revision: int | None,
+        external_work_stopped: bool,
+    ) -> SetupAttempt:
+        """Fence only the acknowledged external writer, under the project reservation."""
+        try:
+            ProjectRepository(self._s).require_available(project_id, reserve=True)
+            row = AgentRequestRepository(self._s)._fetch(
+                project_id=project_id, request_id=request_id
+            )
+            current = self._current_attempt(project_id)
+            if (
+                current is None
+                or current.request_id != request_id
+                or current.entry_kind != "existing_agent"
+                or current.status not in {"running", "needs_input"}
+                or current.revision != expected_revision
+                or external_work_stopped is not True
+            ):
+                raise ConflictError(
+                    "Stop previous setup work in the agent app, then confirm the current revision",
+                    data={
+                        "project_id": project_id,
+                        "request_id": request_id,
+                        "next_action": "inspect_setup",
+                    },
+                )
+            current.status = "cancelled"
+            current.revision += 1
+            current.recovery_condition = (
+                "Operator acknowledged stopping external setup work. StackOS revoked this "
+                "claim; it did not stop the agent or verify native retirement. Completed "
+                "results are retained. Files may have changed; no rollback is implied. "
+                "Start a separate setup deliberately when ready."
+            )
+            row.metadata_json = {
+                **(row.metadata_json or {}),
+                SETUP_NAMESPACE: current.model_dump(mode="json"),
+            }
+            row.status = AgentRequestStatus.FAILED
+            row.claim_token_hash = None
+            row.completed_at = row.updated_at = datetime.now(UTC).replace(tzinfo=None)
+            self._s.add(row)
+            self._s.commit()
+            return current
+        except Exception:
+            self._s.rollback()
+            raise
+
     def report(
         self,
         project_id: int,

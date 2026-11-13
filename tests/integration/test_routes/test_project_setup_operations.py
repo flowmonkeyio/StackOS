@@ -14,6 +14,94 @@ from tests.integration.test_repositories.test_project_setup import verified_resu
 from tests.integration.test_repositories.test_task_delivery import QueuedScheduler
 
 
+def test_console_existing_agent_cancel_requires_ack_revision_and_fences_replay(
+    api, settings, tmp_path
+):
+    from stackos.db.models import AgentRequest
+
+    with Session(api.app.state.engine) as session:
+        opened = WorkspaceRepository(session).start_session(runtime="codex", cwd=str(tmp_path))
+        repo = ProjectSetupRepository(session)
+        started = repo.start(
+            opened.project_id,
+            session_id=opened.data.id,
+            mode="setup",
+            workflow_keys=["agency.project-setup"],
+        )
+    api.app.state.operation_services["scheduler"] = QueuedScheduler()
+    ui = {"Authorization": f"Bearer {derive_ui_token(settings.token_path.read_text().strip())}"}
+    args = {
+        "project_id": opened.project_id,
+        "request_id": started.attempt.request_id,
+        "expected_revision": 1,
+        "external_work_stopped": True,
+        "idempotency_key": "cancel-external",
+        "response_mode": "raw",
+    }
+
+    def call(arguments):
+        return api.post(
+            "/api/v1/operations/projectSetup.cancel/call", json={"arguments": arguments}, headers=ui
+        )
+
+    absent = call({key: value for key, value in args.items() if key != "external_work_stopped"})
+    assert absent.status_code == 409, absent.text
+    for ack in ("true", 1):
+        invalid = call({**args, "external_work_stopped": ack})
+        assert invalid.status_code == 422, invalid.text
+    cli = api.post(
+        "/api/v1/operations/projectSetup.cancel/call",
+        json={"arguments": args},
+        headers={**ui, "X-StackOS-Client-Surface": "cli"},
+    )
+    assert cli.status_code == 403, cli.text
+    from tests.integration.test_routes.test_operations_routes import _start_mock_run_plan
+
+    _, run_token, _, _ = _start_mock_run_plan(api, opened.project_id)
+    run_denied = call({**args, "run_token": run_token})
+    assert run_denied.status_code == 403, run_denied.text
+
+    for patch in (
+        {"external_work_stopped": False},
+        {"expected_revision": None},
+        {"expected_revision": 2},
+        {"project_id": opened.project_id + 999},
+    ):
+        rejected = call({**args, **patch})
+        assert rejected.status_code in {404, 409, 422}, rejected.text
+        with Session(api.app.state.engine) as session:
+            row = session.get(AgentRequest, started.attempt.request_id)
+            assert row.claim_token_hash and row.metadata_json["project_setup"]["revision"] == 1
+    cancelled = call(args)
+    assert cancelled.status_code == 200, cancelled.text
+    saved = cancelled.json()["data"]
+    assert saved["status"] == "cancelled" and saved["revision"] == 2
+    assert "operator" in saved["recovery_condition"].lower()
+    with Session(api.app.state.engine) as session:
+        assert session.get(AgentRequest, started.attempt.request_id).claim_token_hash is None
+        successor = ProjectSetupRepository(session).start(
+            opened.project_id,
+            session_id=opened.data.id,
+            mode="setup",
+            workflow_keys=["agency.project-setup"],
+        )
+    replay = call({**args, "response_mode": "compact"})
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["data"]["request_id"] == started.attempt.request_id
+    for patch in (
+        {"request_id": successor.attempt.request_id},
+        {"expected_revision": 2},
+        {"external_work_stopped": False},
+    ):
+        rejected = call({**args, **patch})
+        assert rejected.status_code == 409, rejected.text
+    with Session(api.app.state.engine) as session:
+        assert (
+            ProjectSetupRepository(session).get(opened.project_id).current_attempt
+            == successor.attempt
+        )
+
+
 def test_browser_reminders_are_independent_permanent_and_not_completion(api, project_id, settings):
     ui = {"Authorization": f"Bearer {derive_ui_token(settings.token_path.read_text().strip())}"}
     path = "/api/v1/operations/projectSetup.setReminders/call"
@@ -65,6 +153,7 @@ def test_browser_reminders_are_independent_permanent_and_not_completion(api, pro
             json={"arguments": {"project_id": project_id, "response_mode": "ack"}},
             headers=ui,
         )
+
         assert invalid.status_code == 422, invalid.text
     assert (
         api.post(path, json={"arguments": {"project_id": project_id}}, headers=ui).status_code

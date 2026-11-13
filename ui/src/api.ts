@@ -6649,6 +6649,16 @@ export interface components {
              */
             expected_etag: string | null;
             /**
+             * Expected Revision
+             * @default null
+             */
+            expected_revision: number | null;
+            /**
+             * External Work Stopped
+             * @default false
+             */
+            external_work_stopped: boolean;
+            /**
              * Idempotency Key
              * @default null
              */
