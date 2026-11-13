@@ -145,6 +145,14 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
 
   async function refresh(projectId: number): Promise<void> {
     const request = projectRequests.begin(projectId, 'catalog', { trackPending: false })
+    // Promise.all reports only its first failure. Every current inventory denial
+    // must still retire the scope after an earlier sibling transient failure.
+    function observeDenial<T>(read: Promise<T>): Promise<T> {
+      return read.catch(err => {
+        if (request.isCurrent()) invalidateDeniedCatalog(err)
+        throw err
+      })
+    }
     catalogLoading.value = true
     catalogError.value = null
     try {
@@ -152,12 +160,12 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
       const [pluginsReady, capabilityRows, providerRows, actionInventory] =
         await Promise.all([
           refreshPlugins(projectId, { silent: true }),
-          apiFetch<SchemaCapabilityOut[]>(`/api/v1/capabilities${pluginQuery}`),
-          apiFetch<SchemaProviderOut[]>(`/api/v1/providers${pluginQuery}`),
-          callOperation<SchemaActionListOut>('action.list', {
+          observeDenial(apiFetch<SchemaCapabilityOut[]>(`/api/v1/capabilities${pluginQuery}`)),
+          observeDenial(apiFetch<SchemaProviderOut[]>(`/api/v1/providers${pluginQuery}`)),
+          observeDenial(callOperation<SchemaActionListOut>('action.list', {
             project_id: projectId,
             include_unavailable_integrations: true,
-          }),
+          })),
         ])
       if (!request.isCurrent()) return
       if (!pluginsReady) throw new Error(pluginError.value ?? 'failed to load StackOS plugins')
@@ -171,7 +179,6 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     } catch (err) {
       if (request.isCurrent()) {
         catalogError.value = formatApiError(err, 'failed to load StackOS catalog')
-        invalidateDeniedCatalog(err)
       }
     } finally {
       if (request.isCurrent()) catalogLoading.value = false

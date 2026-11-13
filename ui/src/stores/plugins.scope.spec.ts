@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed, defineComponent } from 'vue'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { useStackOsCatalogStore } from './plugins'
 import { useConnectionCredentials } from '@/views/connections/useConnectionCredentials'
@@ -127,6 +127,75 @@ describe('shared catalog authorization lifetime', () => {
     expect(store.pluginProjectId).toBe(1)
     expect(store.plugins).toEqual([])
     expect(store.pluginError).toBeNull()
+  })
+
+  it.each([
+    ['/providers?', '/capabilities?', 401],
+    ['/providers?', '/capabilities?', 403],
+    ['/providers?', '/capabilities?', 404],
+    ['/capabilities?', '/providers?', 403],
+    ['action.list/call', '/capabilities?', 403],
+  ] as const)('observes late %s denial after %s transient failure (HTTP %s)', async (deniedPath, transientPath, status) => {
+    const store = useStackOsCatalogStore()
+    globalThis.fetch = vi.fn(async input => catalogResponse(input)) as typeof fetch
+    await store.refresh(1)
+    const isCurrentScope = store.capturePluginScope(1)
+    const denied = deferred<Response>()
+    globalThis.fetch = vi.fn(async input => String(input).includes(deniedPath) ? denied.promise
+      : String(input).includes(transientPath) ? json({ detail: 'Temporary inventory outage' }, 503) : catalogResponse(input)) as typeof fetch
+    await store.refresh(1)
+    expect(store.catalogError).toContain('Temporary inventory outage')
+    expect(store.catalogLoaded).toBe(true)
+    expect(store.pluginProjectId).toBe(1)
+    denied.resolve(json({ detail: 'Late inventory denial' }, status))
+    await flushPromises()
+    expect(isCurrentScope()).toBe(false)
+    expect(store.pluginProjectId).toBeNull()
+    expect(store.plugins).toEqual([])
+    expect(store.capabilities).toEqual([])
+    expect(store.providers).toEqual([])
+    expect(store.actions).toEqual([])
+    expect(store.catalogLoaded).toBe(false)
+    expect(store.catalogLoading).toBe(false)
+    expect(store.loading).toBe(false)
+    expect(store.pluginErrorStatus).toBe(status)
+    expect(store.catalogError).toContain('Late inventory denial')
+    globalThis.fetch = vi.fn(async input => catalogResponse(input)) as typeof fetch
+    await store.refresh(1)
+    expect(store.catalogLoaded).toBe(true)
+    expect(store.pluginProjectId).toBe(1)
+    expect(store.pluginError).toBeNull()
+    expect(store.catalogError).toBeNull()
+  })
+
+  it.each([
+    ['/capabilities?', '/providers?', 'superseded'],
+    ['/providers?', '/capabilities?', 'new-project'],
+    ['action.list/call', '/capabilities?', 'new-lifetime'],
+  ] as const)('ignores late %s denial after %s failure in a %s scope', async (deniedPath, transientPath, replacement) => {
+    const store = useStackOsCatalogStore()
+    globalThis.fetch = vi.fn(async input => catalogResponse(input)) as typeof fetch
+    await store.refresh(1)
+    const denied = deferred<Response>()
+    globalThis.fetch = vi.fn(async input => String(input).includes(deniedPath) ? denied.promise
+      : String(input).includes(transientPath) ? json({ detail: 'Temporary inventory outage' }, 503) : catalogResponse(input)) as typeof fetch
+    await store.refresh(1)
+    globalThis.fetch = vi.fn(async input => catalogResponse(input)) as typeof fetch
+    if (replacement !== 'superseded') await store.refresh(2)
+    const projectId = replacement === 'new-project' ? 2 : 1
+    if (replacement !== 'new-project') await store.refresh(1)
+    const accepted = [store.plugins, store.capabilities, store.providers, store.actions]
+    const isCurrentScope = store.capturePluginScope(projectId)
+    denied.resolve(json({ detail: 'Obsolete inventory denial' }, 403))
+    await flushPromises()
+    expect(isCurrentScope()).toBe(true)
+    expect(store.pluginProjectId).toBe(projectId)
+    expect([store.plugins, store.capabilities, store.providers, store.actions]).toEqual(accepted)
+    expect(store.catalogLoaded).toBe(true)
+    expect(store.catalogLoading).toBe(false)
+    expect(store.catalogError).toBeNull()
+    expect(store.pluginError).toBeNull()
+    expect(store.pluginErrorStatus).toBeNull()
   })
 
   it('ignores old-project denial and old-project finally while the new project is loading', async () => {
