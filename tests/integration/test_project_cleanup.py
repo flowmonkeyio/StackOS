@@ -54,11 +54,22 @@ def confirmation(target):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("state", ["reserved", "queued", "unknown", "missing", "retired"])
+@pytest.mark.parametrize(
+    "state",
+    [
+        "reserved",
+        "queued",
+        "unknown",
+        "missing",
+        "retired",
+        "unclassified",
+        "unknown_classification",
+    ],
+)
 async def test_cleanup_uses_scalar_setup_ownership_even_on_terminal_requests(
     fixture, tmp_path, state
 ):
-    from stackos.db.models import AgentRequest
+    from stackos.db.models import AgentRequest, AgentRequestStatus
     from tests.integration.test_repositories.test_managed_setup import stored_setup
 
     session, settings, target, other = fixture
@@ -76,10 +87,20 @@ async def test_cleanup_uses_scalar_setup_ownership_even_on_terminal_requests(
         payload["status"] = "unknown"
     if state == "missing":
         payload["managed"].pop("slot_reserved")
+    if state == "unclassified":
+        payload = {"status": "running"}
+    if state == "unknown_classification":
+        payload["entry_kind"] = "legacy"
     request_id = stored_setup(session, target.id, "legacy-managed", payload)
+    if state in {"unclassified", "unknown_classification"}:
+        row = session.get(AgentRequest, request_id)
+        row.status = AgentRequestStatus.CLAIMED
+        row.claim_expires_at = datetime(2000, 1, 1)
+        session.add(row)
+        session.commit()
     before = session.get(AgentRequest, request_id).metadata_json
     service = ProjectCleanupService(session, settings)
-    if state in {"unknown", "missing"}:
+    if state in {"unknown", "missing", "unclassified", "unknown_classification"}:
         with pytest.raises(ConflictError) as error:
             await service.delete(target.id, confirmation=confirmation(target))
         assert error.value.data == {

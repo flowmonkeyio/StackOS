@@ -340,6 +340,7 @@ class SetupAdmissionState(BaseModel):
     model_config = ConfigDict(strict=True)
     project_id: int
     request_id: int
+    entry_kind: Literal["managed_ui"]
     status: Literal[
         "queued",
         "running",
@@ -404,11 +405,13 @@ class ProjectSetupRepository:
         status = func.json_extract(metadata, "$.project_setup.status")
         reservation = func.json_type(metadata, "$.project_setup.managed.slot_reserved")
         managed = func.json_type(metadata, "$.project_setup.managed")
+        entry_kind = func.json_extract(metadata, "$.project_setup.entry_kind")
         admission = func.json_extract(metadata, "$.project_setup.managed.admission_id")
         query = (
             sa_select(
                 col(AgentRequest.project_id),
                 col(AgentRequest.id).label("request_id"),
+                entry_kind.label("entry_kind"),
                 func.json_extract(metadata, "$.project_setup.project_id").label("owner_project_id"),
                 func.json_extract(metadata, "$.project_setup.request_id").label("owner_request_id"),
                 status.label("status"),
@@ -420,10 +423,19 @@ class ProjectSetupRepository:
             )
             .where(
                 or_(
+                    col(AgentRequest.source_kind) == SETUP_NAMESPACE,
+                    func.json_type(metadata, "$.project_setup").is_not(None),
+                ),
+                # Only an established external attempt is outside managed
+                # ownership. Unclassified setup is not evidence of free work.
+                or_(
                     managed.is_not(None) & (managed != "null"),
-                    func.json_extract(metadata, "$.project_setup.entry_kind") == "managed_ui",
+                    entry_kind.is_(None),
+                    entry_kind != "existing_agent",
                 ),
                 or_(
+                    entry_kind.is_(None),
+                    entry_kind != "managed_ui",
                     status.is_(None),
                     status.not_in(
                         ("needs_input", "success", "partial", "failed", "interrupted", "cancelled")

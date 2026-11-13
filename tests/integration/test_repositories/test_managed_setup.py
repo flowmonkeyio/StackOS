@@ -88,6 +88,74 @@ def stored_setup(session, project, key, payload):
     return row.id
 
 
+@pytest.mark.parametrize(
+    "shape", ["missing", "unknown", "retired_unknown", "source_only", "namespace_only"]
+)
+def test_unclassified_setup_fences_capacity_directory_and_ordinary_admission(
+    managed, session, project_id, tmp_path, shape
+):
+    from datetime import datetime
+
+    from stackos.db.models import AgentRequestStatus
+    from stackos.repositories.base import ConflictError
+
+    execution, project, scheduler, _factory = managed
+    payload = {"status": "running"}
+    if shape in {"unknown", "retired_unknown"}:
+        payload["entry_kind"] = "legacy"
+    if shape == "retired_unknown":
+        payload.update(status="failed", managed={"slot_reserved": False})
+    request_id = stored_setup(session, project, "unclassified-owner", payload)
+    row = session.get(AgentRequest, request_id)
+    row.status = AgentRequestStatus.CLAIMED
+    row.claim_expires_at = datetime(2000, 1, 1)
+    if shape == "source_only":
+        row.metadata_json = {"native_execution": row.metadata_json["native_execution"]}
+    if shape == "namespace_only":
+        row.source_kind = None
+    session.add(row)
+    session.commit()
+    before = deepcopy(row.metadata_json)
+    expected = {"project_id": project, "request_id": request_id, "next_action": "inspect_request"}
+    for read in (
+        lambda: task_delivery.delivery_capacity(session, scheduler),
+        lambda: execution.setup_directories(session),
+    ):
+        with pytest.raises(ConflictError) as error:
+            read()
+        assert error.value.data == expected
+    prepared_task(session, project_id)
+    root = tmp_path / "ordinary"
+    root.mkdir()
+    with pytest.raises(ConflictError) as error:
+        submit(session, project_id, root, scheduler)
+    assert error.value.data == expected
+    session.expire_all()
+    assert session.get(AgentRequest, request_id).metadata_json == before
+    task = session.exec(
+        select(TrackerTask).where(
+            TrackerTask.project_id == project_id, TrackerTask.key == "deliver"
+        )
+    ).one()
+    assert task.metadata_json == {"keep": "yes"}
+    assert not scheduler.jobs
+
+
+@pytest.mark.parametrize("has_managed_field", [False, True])
+def test_established_external_setup_stays_out_of_managed_admission(
+    managed, session, has_managed_field
+):
+    execution, project, scheduler, _factory = managed
+    payload = {"entry_kind": "existing_agent", "status": "running"}
+    if has_managed_field:
+        payload["managed"] = None
+    stored_setup(session, project, "external-owner", payload)
+    assert ProjectSetupRepository(session).managed_admissions() == []
+    assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 0
+    assert task_delivery.delivery_capacity(session, scheduler)["queued_count"] == 0
+    assert execution.setup_directories(session) == []
+
+
 @pytest.mark.parametrize("history_count", [0, 1, 40])
 def test_admission_projects_only_relevant_setup_scalars(
     managed, session, project_id, tmp_path, monkeypatch, history_count, record_property
@@ -149,7 +217,7 @@ def test_admission_projects_only_relevant_setup_scalars(
         assert projected == [opened.attempt.request_id] * 2
         assert hydrated == []
         assert columns and all(
-            len(selected) == 8
+            len(selected) == 9
             and "metadata_json" not in selected
             and "body_preview" not in selected
             for selected in columns

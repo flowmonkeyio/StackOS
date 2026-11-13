@@ -70,8 +70,10 @@ requests instead.
   validated. Queue reservation loads only the first eligible request with a
   retained daemon claim, in request order; missed-job recovery targets its exact
   job reference. Prior-daemon reservations still count and protect directories
-  and project cleanup. Missing or incompatible ownership scalars return bounded
-  project/request repair context rather than freeing uncertain work. This does
+  and project cleanup. Recognized setup requests with missing or unknown
+  managed/external classification remain uncertain; established external
+  attempts stay outside managed admission. Missing or incompatible ownership
+  scalars return bounded project/request repair context. This does
   not delete history, recreate claims or remove SQLite's JSON predicate work.
 - The global project shell and Plugins directory request compact plugin
   navigation metadata. The directory reads the complete schema-free
