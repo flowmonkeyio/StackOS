@@ -32,12 +32,13 @@ const { items, diagnostics, loading, loaded, ready, reading, saving, error, mess
 reloadAgents = () => { void refresh() }
 const visible = computed(() => items.value.filter(item => `${item.source_ref.native_name} ${item.fields?.description ?? ''} ${item.source_ref.source_path}`.toLowerCase().includes(search.value.toLowerCase())))
 const title = (name: string) => name.replace(/[_-]/g, ' ').replace(/^./, value => value.toUpperCase()).replace(/\bseo\b/gi, 'SEO')
-const pending = ref<(() => void) | null>(null)
-const refreshingDraft = ref(false)
+type PendingAction = { action: () => void; kind: 'refresh' | 'discard' }
+const pending = ref<PendingAction | null>(null)
+const refreshingDraft = computed(() => pending.value?.kind === 'refresh')
 let cancelNavigation: (() => void) | null = null
 function cancelDiscard() { pending.value = null; cancelNavigation?.(); cancelNavigation = null }
-function protect(action: () => void) { if (saving.value) return; if (dirty.value) pending.value = action; else action() }
-function discard() { const action = pending.value; pending.value = null; action?.() }
+function protect(action: () => void, kind: PendingAction['kind']) { if (saving.value) return; if (dirty.value) pending.value = { action, kind }; else action() }
+function discard() { const action = pending.value?.action; pending.value = null; action?.() }
 const editor = ref<HTMLElement | null>(null)
 const optionsError = ref('')
 const modelCatalog = computed(() => hostStatuses.value.items.find(host => host.host_key === (selected.value?.source_ref.host_key ?? 'codex'))?.agent_execution)
@@ -78,13 +79,14 @@ if (inject(routerKey, null)) {
   const protectNavigation = () => {
     if (saving.value) return false
     if (!hasChanges.value) return true
-    return new Promise<boolean>(resolve => { pending.value = () => { cancelNavigation = null; resolve(true) }; cancelNavigation = () => resolve(false) })
+    cancelNavigation?.()
+    return new Promise<boolean>(resolve => { pending.value = { kind: 'discard', action: () => { cancelNavigation = null; resolve(true) } }; cancelNavigation = () => resolve(false) })
   }
   onBeforeRouteLeave(protectNavigation)
   onBeforeRouteUpdate(protectNavigation)
 }
-function guarded(action: () => void) { refreshingDraft.value = false; if (optionsDirty.value && !dirty.value) pending.value = action; else protect(action) }
-function guardedRefresh() { guarded(() => { void refreshFolder() }); refreshingDraft.value = Boolean(pending.value) }
+function guarded(action: () => void, kind: PendingAction['kind'] = 'discard') { if (saving.value) return; if (optionsDirty.value && !dirty.value) pending.value = { action, kind }; else protect(action, kind) }
+function guardedRefresh() { guarded(() => { void refreshFolder() }, 'refresh') }
 const settings: { key: 'model_reasoning_effort' | 'model_reasoning_summary' | 'model_verbosity'; label: string; values: string[] }[] = [
   { key: 'model_reasoning_effort', label: 'Reasoning effort', values: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] },
   { key: 'model_reasoning_summary', label: 'Reasoning summary', values: ['auto', 'concise', 'detailed', 'none'] },
@@ -263,6 +265,9 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
         <p class="mt-3 text-xs text-fg-muted">
           Project file editing supports Codex. Other agent apps keep their existing execution settings.
         </p>
+        <UiCallout v-if="error && ready && !draft" tone="danger" title="Agent source requires attention" role="alert" class="mt-3">
+          {{ error }}
+        </UiCallout>
       </div>
       <UiLoadingState
         v-if="reading"
@@ -431,6 +436,9 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
           >
             {{ optionsError }}
           </UiCallout>
+          <UiCallout v-if="error && ready" tone="danger" title="Agent source requires attention" role="alert">
+            {{ error }}
+          </UiCallout>
           <div class="flex flex-wrap items-center gap-3 border-t border-subtle pt-4">
             <UiButton
               type="submit"
@@ -445,7 +453,7 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
             class="text-xs text-fg-muted"
             role="status"
           >
-            {{ message || 'Saved in the project file. Saving starts nothing.' }}
+            {{ message || 'Saving starts nothing.' }}
           </p>
         </form>
       </aside>

@@ -66,7 +66,9 @@ export function useProjectAgents(projectId: Ref<number>, projectDir: Ref<string>
 
   function close() { ++readGeneration; reading.value = false; selected.value = null; replaceDraft(null); original.value = null; message.value = ''; error.value = '' }
   function rejectAuthority(cause: unknown) {
-    if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
+    // The projectAgent producer reports a lost folder/binding as a coded 422.
+    // Other source validation/conflict errors still belong to the retained draft.
+    if (cause instanceof ApiError && ([401, 403].includes(cause.status) || (cause.data as { code?: string } | undefined)?.code === 'missing_scope')) {
       ++generation; close(); items.value = []; diagnostics.value = []; loaded.value = false; validated.value = false; loading.value = false
     }
   }

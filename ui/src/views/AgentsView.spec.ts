@@ -3,6 +3,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import ProjectAgents from './agents/ProjectAgents.vue'
 import { blankAgent } from './agents/useProjectAgents'
 import { callOperation } from '@/lib/operations'
+import { ApiError } from '@/lib/client'
 import { UiFormField, UiInput, UiSelect, UiTextarea } from '@/components/ui'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
@@ -25,6 +26,59 @@ function setup(items = [row]) {
 }
 afterEach(() => { wrapper?.unmount(); vi.resetAllMocks() })
 describe('Agents list and native editor', () => {
+  it('shows a failed editor read and recovers without replacing the accepted list', async () => {
+    const w = setup(); await flushPromises()
+    const list = w.get('.agent-list').element
+    vi.mocked(callOperation).mockRejectedValueOnce(new ApiError('Read unavailable', 503, { detail: 'Read unavailable' }))
+    await w.get('.agent-row').trigger('click'); await flushPromises()
+    expect(w.get('.agent-list').element).toBe(list)
+    expect(w.find('[aria-label="Agent editor"]').exists()).toBe(false)
+    expect(w.findAll('[role="alert"]').some(node => node.text().includes('Read unavailable'))).toBe(true)
+    await w.get('.agent-row').trigger('click'); await flushPromises()
+    expect(w.find('[aria-label="Agent editor"]').exists()).toBe(true)
+    expect(w.text()).not.toContain('Read unavailable')
+  })
+  it('shows stale-source save repair while retaining the draft and reconciles through a fresh read', async () => {
+    const w = setup(); await flushPromises(); await w.get('.agent-row').trigger('click'); await flushPromises()
+    await w.get('textarea').setValue('Unsaved description')
+    vi.mocked(callOperation).mockRejectedValueOnce(new ApiError('Source changed', 409, { detail: 'Source changed', data: { code: 'stale_source', repair: 'Refresh the definition and reconcile the draft before saving.' } }))
+    await w.get('form').trigger('submit'); await flushPromises()
+    expect(w.get('textarea').element.value).toBe('Unsaved description')
+    expect(w.findAll('[role="alert"]').some(node => node.text().includes('stale_source') && node.text().includes('reconcile the draft'))).toBe(true)
+    expect(w.text()).not.toContain('Saved in the project file.')
+    const fresh = { ...row, digest: 'b'.repeat(64) }
+    vi.mocked(callOperation).mockResolvedValueOnce(fresh)
+    await w.get('.agent-row').trigger('click')
+    await w.findAll('button').find(button => button.text() === 'Discard changes')!.trigger('click'); await flushPromises()
+    await w.get('textarea').setValue('Reconciled description')
+    vi.mocked(callOperation).mockResolvedValueOnce({ project_id: 1, data: { ...fresh, fields: { ...fresh.fields, description: 'Reconciled description' } } })
+    await w.get('form').trigger('submit'); await flushPromises()
+    expect(callOperation).toHaveBeenCalledWith('projectAgent.update', expect.objectContaining({ expected_digest: fresh.digest, patch: { description: 'Reconciled description' } }))
+    expect(w.text()).not.toContain('stale_source')
+    expect(w.text()).toContain('Saved in the project file.')
+  })
+  it.each(['cancel', 'confirm'] as const)('uses discard wording for navigation after %s of a guarded refresh', async refreshAction => {
+    setup(); wrapper!.unmount()
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/agents/:id', component: ProjectAgents, props: route => ({ projectId: Number(route.params.id) }) }, { path: '/other', component: { template: '<div>Other page</div>' } }] })
+    await router.push('/agents/1'); await router.isReady()
+    wrapper = mount({ template: '<router-view />' }, { global: { plugins: [router], stubs: { teleport: true } } }); await flushPromises()
+    await wrapper.get('.agent-row').trigger('click'); await flushPromises()
+    await wrapper.get('input[pattern]').setValue('unsaved_name')
+    await wrapper.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click')
+    await wrapper.findAll('button').find(button => button.text() === (refreshAction === 'cancel' ? 'Cancel' : 'Refresh sources'))!.trigger('click'); await flushPromises()
+    expect(wrapper.get<HTMLInputElement>('input[pattern]').element.value).toBe('unsaved_name')
+    // Both route-update and route-leave must replace the current action's prompt.
+    const update = router.push('/agents/2'); await flushPromises()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Discard unsaved changes?')
+    expect(wrapper.get('[role="dialog"]').text()).not.toContain('Refresh sources')
+    await wrapper.findAll('button').find(button => button.text() === 'Cancel')!.trigger('click'); await update
+    expect(router.currentRoute.value.path).toBe('/agents/1')
+    expect(wrapper.get<HTMLInputElement>('input[pattern]').element.value).toBe('unsaved_name')
+    const leave = router.push('/other'); await flushPromises()
+    expect(wrapper.get('[role="dialog"]').text()).toContain('Discard unsaved changes?')
+    await wrapper.findAll('button').find(button => button.text() === 'Discard changes')!.trigger('click'); await leave
+    expect(router.currentRoute.value.path).toBe('/other')
+  })
   it('keeps the accepted empty presentation mounted when a list refresh fails', async () => {
     const w = setup([]); await flushPromises()
     const empty = w.findAll('p').find(node => node.text().includes('No project agents yet'))!.element
