@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic import ValidationError as ModelValidationError
 from sqlalchemy.engine import Engine
 from sqlmodel import Session
+from starlette.concurrency import run_in_threadpool
 
 from stackos.api.deps import get_engine, get_session
 from stackos.api.envelopes import WriteResponse, write_response
@@ -36,6 +37,7 @@ from stackos.context import (
 )
 from stackos.context.repository.utils import MAX_CONTEXT_LIMIT
 from stackos.host_mcp.service import usage_executions
+from stackos.repositories.base import Page
 from stackos.repositories.tracker.agent_stats import usage_refresh
 from stackos.repositories.tracker.schema import TrackerMetricDemand, TrackerUsageDemand
 
@@ -219,7 +221,8 @@ async def context_timeline_stream(
     engine: Engine = Depends(get_engine),
 ) -> StreamingResponse:
     """Stream tracker status timeline updates as Server-Sent Events."""
-    return _timeline_stream(
+    return await run_in_threadpool(
+        _timeline_stream,
         project_id,
         request,
         task_key,
@@ -242,8 +245,19 @@ async def global_context_timeline_stream(
     engine: Engine = Depends(get_engine),
 ) -> StreamingResponse:
     """The same local-admin tracker transport for Overview's global usage scope."""
-    return _timeline_stream(
-        None, request, None, after, 50, 1000, 15_000, None, False, engine, ui_demand
+    return await run_in_threadpool(
+        _timeline_stream,
+        None,
+        request,
+        None,
+        after,
+        50,
+        1000,
+        15_000,
+        None,
+        False,
+        engine,
+        ui_demand,
     )
 
 
@@ -274,57 +288,61 @@ def _timeline_stream(
         with Session(engine) as session:
             _ui_usage_scope(session, project_id, task_key, demand)
 
-    async def event_source():
-        cursor = after
-        emitted = 0
-        next_heartbeat = time.monotonic() + heartbeat_ms / 1000
-        previous_usage = None
-        previous_projects = None
-        if cursor is None and not replay:
-            with Session(engine) as session:
-                cursor = ContextRepository(session).latest_tracker_status_event_id(
-                    project_id=project_id,
-                    task_key=task_key,
-                )
-        while True:
-            if await request.is_disconnected():
-                break
+    def latest_cursor():
+        with Session(engine) as session:
+            return ContextRepository(session).latest_tracker_status_event_id(
+                project_id=project_id, task_key=task_key
+            )
 
-            with Session(engine) as session:
-                page = ContextRepository(session).tracker_status_timeline(
+    def read_poll(scan_cursor, previous_usage, previous_projects):
+        # Construct, use and close each Session in its worker. Only detached
+        # event models and a serialized transient snapshot cross the await.
+        with Session(engine) as session:
+            repository = ContextRepository(session)
+            watermark = repository.latest_event_id(project_id=project_id) or 0
+            page = (
+                repository.tracker_status_timeline(
                     project_id=project_id,
                     limit=limit,
-                    after_id=cursor,
+                    after_id=scan_cursor,
                     task_key=task_key,
+                    include_total=False,
                 )
+                if scan_cursor is None or watermark > scan_cursor
+                else Page[ProjectEventOut](items=[])
+            )
+            # Exhausted reads also cover unmatched events. Keep that private
+            # progress separate from the durable cursor carried by status frames.
+            scanned = page.next_cursor
+            if scanned is None:
+                scanned = max(scan_cursor or 0, watermark, page.items[-1].id if page.items else 0)
 
             usage = usage_executions(project_id)
             if task_key:
                 usage = [call for call in usage if call["task_key"] == task_key]
             projects = None
             if demand is not None and project_id is None:
-                with Session(engine) as session:
-                    projects = _ui_usage_scope(
-                        session, project_id, task_key, demand, allow_removed_projects=True
-                    )
+                projects = _ui_usage_scope(
+                    session, project_id, task_key, demand, allow_removed_projects=True
+                )
             scope_changed = projects is not None and projects != previous_projects
             # Full replaceable transient snapshot also repairs reconnect/exit state.
             # It has no durable event ID and never advances the timeline cursor.
+            frame = None
             if usage != previous_usage or page.items or scope_changed:
                 updates = None
                 current_demand = demand
                 if demand is not None:
-                    with Session(engine) as session:
-                        if projects is None:
-                            projects = _ui_usage_scope(session, project_id, task_key, demand)
-                        current_demand = TrackerUsageDemand(
-                            projects={
-                                pid: requested
-                                for pid, requested in demand.projects.items()
-                                if pid in projects
-                            }
-                        )
-                        scopes = _ui_usage_updates(session, projects, current_demand)
+                    if projects is None:
+                        projects = _ui_usage_scope(session, project_id, task_key, demand)
+                    current_demand = TrackerUsageDemand(
+                        projects={
+                            pid: requested
+                            for pid, requested in demand.projects.items()
+                            if pid in projects
+                        }
+                    )
+                    scopes = _ui_usage_updates(session, projects, current_demand)
                     updates = {
                         "projection": "ui",
                         "scope_complete": True,
@@ -347,17 +365,14 @@ def _timeline_stream(
                         and isinstance(item.metadata_json.get("task_key"), str)
                         and isinstance(item.metadata_json.get("ticket_key"), str)
                     ]
-                    with Session(engine) as session:
-                        updates = usage_refresh(
-                            session,
-                            project_id,
-                            None
-                            if previous_usage is None
-                            else [*usage, *previous_usage, *affected],
-                            task_key=task_key,
-                        )
-                        updates["replace"] = previous_usage is None
-                yield sse_frame(
+                    updates = usage_refresh(
+                        session,
+                        project_id,
+                        None if previous_usage is None else [*usage, *previous_usage, *affected],
+                        task_key=task_key,
+                    )
+                    updates["replace"] = previous_usage is None
+                frame = sse_frame(
                     event="tracker-usage",
                     data={
                         "executions": usage
@@ -377,6 +392,30 @@ def _timeline_stream(
                         "updates": updates,
                     },
                 )
+            return page, usage, projects, frame, scanned
+
+    async def event_source():
+        cursor = after
+        emitted = 0
+        next_heartbeat = time.monotonic() + heartbeat_ms / 1000
+        previous_usage = None
+        previous_projects = None
+        if cursor is None and not replay:
+            cursor = await run_in_threadpool(latest_cursor)
+        scan_cursor = cursor
+        while True:
+            if await request.is_disconnected():
+                break
+            page, usage, projects, frame, scanned = await run_in_threadpool(
+                read_poll, scan_cursor, previous_usage, previous_projects
+            )
+            # A disconnect during a slow read must not publish its late result
+            # or begin another operation. Worker cleanup owns the SQL lifetime.
+            if await request.is_disconnected():
+                break
+            scan_cursor = scanned
+            if frame is not None:
+                yield frame
                 previous_usage = usage
                 previous_projects = projects
 

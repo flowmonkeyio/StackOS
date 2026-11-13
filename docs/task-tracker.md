@@ -1754,6 +1754,18 @@ may pass `replay=true` with `max_events` to read a bounded historical batch.
 Stream filtering is task-scoped so two tabs on different active tasks can
 subscribe independently.
 
+Admission, initial/reconnect cursor reads and each poll's synchronous database
+and usage projection run in the existing thread pool. Each operation creates,
+uses and closes its own Session in that worker; no live Session crosses an
+await. A stream awaits one read at a time and discards a late result after
+disconnect. Cursor polling skips the unused lifetime event count and seeks the
+existing event table by ID (project-scoped reads use the project/ID index).
+Repository callers that need a total retain the default counted page contract.
+A private read watermark also covers unmatched events, so quiet task streams
+do not repeatedly scan other tasks' newer history. It never becomes an emitted
+status ID or heartbeat/reconnect cursor; paged matching events remain ordered
+and are fully drained before that private watermark moves past them.
+
 ## Operations
 
 Tracker behavior is registered once as StackOS operations. MCP, REST, CLI, and

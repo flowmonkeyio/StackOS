@@ -85,3 +85,33 @@ def seed_statistics_workload(
         ticket_ids.append(ticket.id)
     session.commit()
     return ticket_ids
+
+
+def seed_tracker_event_history(
+    session: Session, project_id: int, *, events: int, task_key: str = "perf-task-0"
+) -> int:
+    """Shared long-history variant; fixed task identity with realistic safe event metadata."""
+    from sqlalchemy import insert
+
+    from stackos.db.models import ProjectEvent
+    from stackos.repositories.tracker.events import TRACKER_USAGE_CHANGED
+
+    session.execute(
+        insert(ProjectEvent),
+        [
+            {
+                "project_id": project_id,
+                "source_type": "tracker_ticket",
+                "event_type": TRACKER_USAGE_CHANGED,
+                "title": "Recorded usage changed",
+                "metadata_json": {"task_key": task_key, "ticket_key": "perf-ticket-0"},
+            }
+            for _ in range(events)
+        ],
+    )
+    session.commit()
+    from sqlmodel import col, select
+
+    latest = session.exec(select(ProjectEvent.id).order_by(col(ProjectEvent.id).desc())).first()
+    assert latest is not None
+    return latest

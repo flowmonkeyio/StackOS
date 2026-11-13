@@ -681,7 +681,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0044_receipt_statistics_index",
+            "0045_tracker_stream_cursor",
         )
     finally:
         conn.close()
@@ -1751,6 +1751,31 @@ def test_telegram_cutover_retires_active_bindings_preserves_history(isolated_ale
         assert data["historic"] == records[-1][2]
 
 
+def test_tracker_stream_cursor_migration_preserves_history(isolated_alembic: Path) -> None:
+    _run_alembic(["upgrade", "0044_receipt_statistics_index"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        conn.execute(
+            "INSERT INTO projects "
+            "(id, slug, name, domain, locale, is_active, created_at, updated_at) "
+            "VALUES (1, 'cursor', 'Cursor', 'fixture.test', 'en-US', 1, '2026-11-01', '2026-11-01')"
+        )
+        conn.execute(
+            "INSERT INTO project_events (id, project_id, source_type, event_type, metadata_json, "
+            "occurred_at, created_at) VALUES (7, 1, 'tracker_ticket', 'tracker.usage.changed', "
+            "'{\"task_key\":\"retained\"}', '2026-11-01', '2026-11-01')"
+        )
+        before = conn.execute("SELECT * FROM project_events").fetchall()
+    for target in ("head", "0044_receipt_statistics_index", "head"):
+        _run_alembic(
+            ["downgrade" if target == "0044_receipt_statistics_index" else "upgrade", target]
+        )
+        with sqlite3.connect(isolated_alembic) as conn:
+            assert conn.execute("SELECT * FROM project_events").fetchall() == before
+            columns = conn.execute("PRAGMA index_info(ix_project_events_project_cursor)").fetchall()
+            assert [row[2] for row in columns] == (["project_id", "id"] if target == "head" else [])
+            assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
 def test_alembic_upgrade_creates_expected_stackos_tables(isolated_alembic: Path) -> None:
     """One fresh migration proves the table inventory and global Account layout."""
     _run_alembic(["upgrade", "head"])
@@ -1763,7 +1788,7 @@ def test_alembic_upgrade_creates_expected_stackos_tables(isolated_alembic: Path)
     assert not (tables & LEGACY_TABLES)
     with sqlite3.connect(isolated_alembic) as conn:
         assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [
-            ("0044_receipt_statistics_index",)
+            ("0045_tracker_stream_cursor",)
         ]
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     assert {"order_index", "cleanup_json", "primary_workspace_binding_id"} <= _table_columns(
