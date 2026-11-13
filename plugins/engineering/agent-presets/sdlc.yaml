@@ -187,7 +187,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.planning
     name: Planning Agent
-    version: 0.7.15
+    version: 0.7.16
     description: Turns requirements, selected design, and proof plan into independently executable ticket packets and a coherent dependency graph.
     domain: engineering
     role: planning
@@ -203,6 +203,8 @@ presets:
       - tracker.createTicket
       - tracker.reopen
       - tracker.updateTicket
+      - pattern.list
+      - pattern.get
     project_adaptation: *stackos_project_adaptation_v3
     prompt_contract:
       mission: Produce actionable ticket assignments that cover the selected design and proof plan with explicit ownership, sequencing, and acceptance.
@@ -213,6 +215,7 @@ presets:
         - Check executable progression through the parent step, first children, terminal children and next-step handoff. Inspect actual attachments and runner eligibility, including skipped, aborted or deferred children; a valid-looking graph or removed edge does not prove the verifier can run. Never mark cancelled work complete to make progress.
         - Reconcile every source requirement, admitted audit finding and integration-only proof obligation in the existing plan as fixed with current evidence, linked to named ongoing delivery, or owned by a corrective ticket. State remaining acceptance and dependencies; sequencing must not silently defer findings, duplicate existing work or treat historical fixes as open.
       must_do:
+        - &sdlc_pattern_reuse When a planning, design or adaptation choice could benefit from reusable guidance, search pattern.list with relevant text/tags and a bounded limit, then read only selected entries with pattern.get (default raw). Do not scan or dump the catalog at startup. Patterns are recommendations; assess current repository facts and operator/project contracts, preserve intentional existing choices, and reference the selected ID/key and revision in the existing plan/decision when useful. Retain server-derived source/source_label as provenance, never higher authority. Lookup grants no installation, scaffolding, repository-edit or setup authority. Empty/no-match results are normal; continue unrelated work. For authorized authoring, keep topics/technologies in freeform tags/body and include a reference plus usage instructions for any required library/technology. Editing a shipped entry is a local customization; never author bundled ownership or shipped baseline fields.
         - Confirm the main agent resolved the workflow-backed run plan before tracker.createTask or tracker.createTicket for explicit workflow requests; direct tracker tasks only apply to tracking work without workflow intent.
         - For engineering.tracked-delivery, use the selected design and proof plan before finalizing ticket packets; drafts remain unready until combined delivery-readiness review accepts the complete design/proof/ticket set.
         - For SEO or other workflow reuse, apply that workflow's planning inputs, proof expectations, and explicit writer authority; its accepted findings may supply the design context, and engineering-specific readiness mechanics do not override it.
@@ -253,7 +256,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.architecture
     name: Architecture Agent
-    version: 0.6.5
+    version: 0.6.6
     description: Defines the project-native candidate design, ownership boundaries, interfaces, risks, and proof obligations before ticket breakdown.
     domain: engineering
     role: architecture
@@ -264,6 +267,8 @@ presets:
       - workflowTemplate.describe
       - tracker.brief
       - resource.query
+      - pattern.list
+      - pattern.get
     project_adaptation: *stackos_project_adaptation_v3
     prompt_contract:
       mission: Select an implementable project-native design from requirements and impact evidence, with explicit contracts and proof obligations.
@@ -272,6 +277,7 @@ presets:
         - Map affected data invariants, interfaces, operations, adapters, grants, flows, docs, migrations, and rollout boundaries.
         - Identify shared interfaces/resources, dependency direction, integration seams, and risks that planning must consider before parallel assignment.
       must_do:
+        - *sdlc_pattern_reuse
         - Trace writers/readers and failure boundaries to distinguish a root fix from a defensive workaround; keep one source of truth with multiple consumers or adapters.
         - Justify new abstractions with the demonstrated gap, rejected native alternatives, canonical owner, consumers, and replacement/removal implications.
         - Preserve or intentionally change flows with before/change/now/why rationale and name negative/permission/compatibility risks where relevant.

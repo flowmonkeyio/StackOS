@@ -60,6 +60,8 @@ _AGENT_COMPACT_DEFAULT_TOOL_NAMES: frozenset[str] = frozenset(
 _AGENT_RESPONSE_MODE_FIELD = "response_mode"
 _AGENT_GLOBAL_DISCOVERY_TOOL_NAMES: frozenset[str] = frozenset(
     {
+        "pattern.list",
+        "pattern.get",
         "workspace.startSession",
         "workspace.resolve",
         "workspace.bootstrap",

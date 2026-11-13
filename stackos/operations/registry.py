@@ -138,6 +138,7 @@ def build_operation_registry() -> OperationRegistry:
         finance,
         guides,
         integrations,
+        patterns,
         project_agents,
         project_bootstrap,
         project_setup,
@@ -155,6 +156,8 @@ def build_operation_registry() -> OperationRegistry:
     from stackos.operations import tracker as tracker_operations
 
     registry = OperationRegistry()
+    for spec in patterns.operation_specs():
+        registry.register(spec)
     for spec in desktop.operation_specs():
         registry.register(spec)
     for spec in finance.operation_specs():

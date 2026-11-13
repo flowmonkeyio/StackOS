@@ -17,6 +17,6 @@ describe('approved human routes', () => {
     expect(workflow.params).toEqual({ id: '7', templateKey: 'customer.weekly-review' })
     const route = router.resolve('/projects/7/library?tab=saved&plugin=engineering&type=decision&item=decision:42')
     expect(route.query).toEqual({ tab: 'saved', plugin: 'engineering', type: 'decision', item: 'decision:42' })
-    for (const path of ['/', '/accounts', '/setup']) expect(router.resolve(path).matched).toHaveLength(1)
+    for (const path of ['/', '/accounts', '/setup', '/patterns', '/patterns/42']) expect(router.resolve(path).matched).toHaveLength(1)
   })
 })

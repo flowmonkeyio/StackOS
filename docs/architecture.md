@@ -222,6 +222,7 @@ Core StackOS tables include:
 - `auth_providers`, `credential_accounts`, `credentials`,
   `credential_scopes`, `credential_usage_events`, `credential_refresh_events`
 - `payload_secrets`
+- `patterns` (installation-wide, without `project_id`)
 - `resources`, `resource_records`
 - `artifacts`
 - `workflow_templates`, `workflow_template_versions`,
@@ -237,6 +238,36 @@ Core StackOS tables include:
 Plugin tables may exist for first-party domains when they provide durable
 domain resources. Those tables are plugin-owned and should not drive core UI
 or MCP design.
+
+`PatternRepository` owns the shared local Patterns catalog in the existing
+database. It stores a stable ID/key, title, summary, Markdown body, freeform tags,
+timestamps and optimistic revision. Project resources remain project-scoped;
+patterns are not resources under a hidden project. Whole-database backup and
+recovery preserve them, and project cleanup leaves them intact. The migration
+creates an empty table. Trusted package assets carry stable bundled IDs and a
+version; the production bundle may be empty. After migration, each daemon startup
+invokes one refresh in this same repository. List/detail reads never refresh.
+The repository hashes normalized title, summary, tags and exact Markdown body,
+excluding key, timestamps and provenance. It stores the current content hash and
+last-applied shipped hash/version; only a matching baseline permits an atomic
+revision-checked replacement. A skipped customization retains its entire record
+and prior baseline. Ordinary saves update the content hash through the same
+revision boundary and cannot set trusted fields. Keys/titles never confer bundled
+identity; collisions are preserved with bounded counts. Explicit bundled deletion
+removes the content and retains only its ID in `pattern_deletions`. Package removal
+does not remove local entries. Content and markers survive whole-DB recovery and
+project deletion. There is no merge, reset or history subsystem.
+The additive catalog migrations resume after partial SQLite DDL or a lost revision
+stamp without rebuilding records or resetting ID high-water marks. Legacy
+create-all recovery stamps the pre-catalog baseline and runs those same migrations
+before claiming head, including when an older catalog table already exists.
+The public-key unique index is recovered independently of table creation;
+revision `0046_pattern_key_index` also repairs already-stamped older catalogs by
+adding only that missing index, preserving records and identity high-water.
+`pattern.list/get/upsert/delete` are registered once and use the existing MCP,
+generic HTTP, CLI and browser-safe operation adapters. Lists select summary
+columns only; detail loads the body. No semantic content validation or automatic
+project application occurs.
 
 ## MCP And Permissions
 

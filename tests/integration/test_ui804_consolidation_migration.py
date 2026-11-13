@@ -43,7 +43,7 @@ def test_consolidation_preserves_both_prior_heads_and_reruns_once(tmp_path, prio
     settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
     settings.ensure_dirs()
     config = alembic_config(settings)
-    assert ScriptDirectory.from_config(config).get_heads() == ["0043_automations_homes_merge"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["0046_pattern_key_index"]
     command.upgrade(config, "0037_schedule_id_nonreuse")
     folder = tmp_path / "source"
     folder.mkdir()
@@ -122,7 +122,7 @@ def test_consolidation_preserves_both_prior_heads_and_reruns_once(tmp_path, prio
     upgrade_to_head(settings)
     with sqlite3.connect(settings.db_path) as connection:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchall() == [
-            ("0043_automations_homes_merge",)
+            ("0046_pattern_key_index",)
         ]
         assert {
             table: connection.execute(f"SELECT {names} FROM {table} ORDER BY id").fetchall()

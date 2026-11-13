@@ -705,20 +705,7 @@ class WorkspaceRepository:
                             "project_scoped_tools_usable": selected,
                             "auto_bootstrap": False,
                         },
-                        "next_step": _connected_next_step(project_id)
-                        if project_id is not None
-                        else {
-                            "status": "project_selection_required",
-                            "why": (
-                                "Choose an explicit project for each task; "
-                                "no last-used project is selected."
-                            ),
-                            "recommended_tools": [
-                                "project.list",
-                                "workspace.startSession",
-                                "workspace.bootstrap",
-                            ],
-                        },
+                        "next_step": _connected_next_step(project_id),
                     }
                 ),
                 project_id=project_id,

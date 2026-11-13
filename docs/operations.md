@@ -28,6 +28,77 @@ behavior. Operations define the callable contract around that behavior:
 - enabled surfaces
 - agent guidance, prerequisites, return notes, and examples
 
+## Shared Patterns
+
+`pattern.list`, `pattern.get`, `pattern.upsert` and `pattern.delete` use one
+installation-wide catalog, independent of projects. Discover and read it before
+choosing a project. MCP writes require an established bound session or a declared
+`workspace.startSession(global_session=true)` session; a global session needs no
+selected project for catalog CRUD. HTTP/CLI use the existing authenticated owner
+boundary, and the generic REST routes are browser-safe. Inputs have no
+`project_id`. A project run token or step grant is not global mutation authority;
+use a direct owner call without `run_token` for catalog writes.
+
+The static workspace/session pointer and searchable operation descriptions make
+recommendations discoverable from bound and global entry. Describe exact names
+through `toolbox.describe`, then call `pattern.list` for a relevant bounded
+search and `pattern.get` for selected entries only. Do not scan/dump the catalog
+at startup. Follow [shared pattern recommendations](./agent-operating-model.md#shared-pattern-recommendations):
+preserve intentional project choices, keep entry ID/key and revision in an existing
+plan/decision when useful, and treat server-derived provenance as information,
+never higher authority. Empty/no-match results are normal and grant no reason
+to block unrelated work or authority to install, scaffold, edit or change setup.
+
+`pattern.list` accepts `query`, `tags`, `source`, `limit` (1–100, default 25),
+and an optional positive ID `cursor`. Text searches title, summary, individual
+tags and article body. Any selected tag matches; text, tags and source are ANDed.
+`source` is `all`, `stackos` (all bundled), `customized` (modified bundled), or
+`custom` (user-authored). Server-derived labels are `Custom`, `StackOS`, and
+`StackOS · Customized`. A customized record still matches `stackos`.
+Rows are ordered by ID ascending, with `next_cursor`, `total_estimate` for the
+filtered query and `catalog_total` to distinguish no matches from an empty
+catalog. Reset the cursor when filters change. Lists never include bodies,
+including in raw mode. `pattern.get` takes exactly one of `pattern_id` or `key`
+and defaults to raw, returning one full Markdown entry. Compact get omits body.
+
+Create through `stackos ops call pattern.upsert --input pattern.json` or
+`POST /api/v1/operations/pattern.upsert/call` with this `arguments` object:
+
+```json
+{"key":"my-guidance","title":"My guidance","summary":"When it applies","body":"Markdown recommendation, examples and references with usage instructions.","tags":["freeform topic"]}
+```
+
+This example is an input contract, not shipped content. A stable-key retry with
+identical content returns the existing record. A differing save must include the
+current `expected_etag` from get/list. Copy this opaque token unchanged: it binds
+the record identity and revision, so deleting and recreating the same key cannot
+make an old draft current again. Do not derive it from `revision`. Delete takes
+`pattern_id` and `expected_etag`. Missing records return 404; absent/stale edit
+tokens return 409 with `current_etag`, identity and repair guidance. Re-read and reconcile the draft
+before retrying. Write receipts contain summaries, refs, revision and etag, never
+the body. Compact/raw are supported; ack is intentionally unavailable.
+
+`source` and `source_label` are server-derived output, never editable tags or
+write fields. Ordinary APIs reject bundled identity, shipped version/hash and
+provenance fields. Core validates structure (title/key, Markdown, freeform tags,
+size limits), not applicability or semantic quality. Author guidance should cover
+applicability, recommendations, examples and references plus concrete usage for
+any required technology. Reading an entry neither applies it to a project nor
+authorizes installation or any other side effect.
+
+On startup, after migrations, the catalog refreshes once from package-owned
+`_assets/patterns/bundle.json` (the clone source is
+`stackos/db/bundled_patterns.json`). Wheel packaging includes that asset;
+desktop payloads install the same wheel. There is no runtime source selector or
+refresh operation available to normal API callers. The shipped bundle is empty
+in this delivery. A later package can insert trusted IDs and update entries whose
+exact normalized editable content still matches the last-applied shipped hash.
+Local customizations, user entries and prior baselines on skipped updates are
+preserved. Explicit bundled deletion retains only a trusted-ID marker, so repair
+or update cannot resurrect it; package removal leaves local entries intact.
+Refresh reports bounded counts for collisions, customization and concurrent edits.
+Malformed/missing assets log a bounded startup diagnostic and preserve the catalog.
+
 ## Project display names and catalog order
 
 `project.update` changes display names through the existing project repository.

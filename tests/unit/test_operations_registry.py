@@ -11,7 +11,7 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 250
+    assert len(names) == 254
     assert not names.intersection(
         {"actionCall.aggregate", "actionCall.aggregateAll", "actionCall.queryAll"}
     )
@@ -623,3 +623,18 @@ def test_agent_communication_operations_include_when_to_use_guidance() -> None:
     assert missing == []
     assert any("dry_run=true" in item for item in registry.get("communication.send").when_to_use)
     assert any("claim token" in item for item in registry.get("agentRequest.claim").when_to_use)
+
+
+def test_pattern_operations_share_surfaces_and_readonly_provenance():
+    registry = build_operation_registry()
+    for verb in ("list", "get", "upsert", "delete"):
+        spec = registry.get(f"pattern.{verb}")
+        assert all(spec.surfaces.is_enabled(s) for s in ("mcp", "rest", "cli"))
+        assert spec.surfaces.rest.browser_safe is True
+        assert "project_id" not in spec.input_model.model_fields
+        assert "source_label" not in spec.input_model.model_fields
+        assert "bundled_id" not in spec.input_model.model_fields
+        assert "ack" not in spec.effective_response_policy.allowed_modes
+        assert spec.examples and spec.when_to_use
+    assert registry.get("pattern.get").effective_response_policy.default_mode == "raw"
+    assert registry.get("pattern.list").effective_response_policy.default_mode == "compact"

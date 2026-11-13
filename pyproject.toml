@@ -80,6 +80,7 @@ packages = ["stackos"]
 [tool.hatch.build.targets.wheel.force-include]
 "plugins/stackos/skills" = "stackos/_assets/skills"
 "plugins" = "stackos/_assets/plugins"
+"stackos/db/bundled_patterns.json" = "stackos/_assets/patterns/bundle.json"
 
 [tool.hatch.build.targets.sdist]
 include = [

@@ -790,6 +790,47 @@ def test_agent_preset_describe_includes_tracker_adaptation_guidance() -> None:
     assert "specialist or subagent" in shared_action
 
 
+def test_shared_pattern_reuse_presets_match_local_guidance() -> None:
+    from stackos.operations.registry import build_operation_registry
+    from stackos.skill_presets import SkillPresetLoader
+
+    root = Path(__file__).resolve().parents[2]
+    loader = AgentPresetLoader()
+    presets = [
+        (
+            loader.describe_preset(key=f"stackos.sdlc.{role}").preset,
+            root / ".codex" / "agents" / f"sdlc-{role}.toml",
+        )
+        for role in ("planning", "architecture")
+    ]
+    main = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
+    contracts = [(p, p.prompt_contract, path) for p, path in presets]
+    contracts.append(
+        (main, main.operating_contract, root / ".codex/orchestrator/sdlc-delivery-orchestrator.md")
+    )
+    registry = build_operation_registry()
+    for preset, contract, path in contracts:
+        method = next(item for item in contract.must_do if "search pattern.list" in item)
+        assert {"pattern.list", "pattern.get"} <= set(preset.recommended_tools)
+        for name in ("pattern.list", "pattern.get"):
+            assert registry.get(name).surfaces.mcp.enabled
+        local = path.read_text()
+        for obligation in (
+            "bounded limit",
+            "only selected entries",
+            "intentional existing choices",
+            "ID/key and revision",
+            "never higher authority",
+            "setup authority",
+            "continue unrelated work",
+            "freeform tags/body",
+            "local customization",
+            "shipped baseline fields",
+        ):
+            assert obligation in method
+            assert obligation in local
+
+
 def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None:
     loader = AgentPresetLoader()
     architecture = loader.describe_preset(key="stackos.sdlc.architecture").preset
@@ -797,7 +838,7 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
     delivery = loader.describe_preset(key="stackos.sdlc.delivery").preset
     reviewer = loader.describe_preset(key="stackos.sdlc.delivery-reviewer").preset
 
-    assert architecture.version == "0.6.5"
+    assert architecture.version == "0.6.6"
     architecture_text = " ".join(
         [
             *architecture.prompt_contract.responsibilities,
@@ -868,8 +909,8 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     expected_versions = {
         "requirements-flow-definer": "0.6.5",
         "codebase-explorer": "0.6.5",
-        "planning": "0.7.15",
-        "architecture": "0.6.5",
+        "planning": "0.7.16",
+        "architecture": "0.6.6",
         "test-designer": "0.6.8",
         "delivery": "0.7.15",
         "delivery-reviewer": "0.6.14",

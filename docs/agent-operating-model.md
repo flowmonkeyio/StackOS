@@ -215,6 +215,36 @@ templates, run plans, tracker tasks/tickets, dependencies, and evidence. The
 main agent decides whether to load it, but the workflow response makes the
 expectation visible.
 
+## Shared Pattern Recommendations
+
+Workspace/session guidance points to the installation-wide `pattern.list` and
+`pattern.get` operations in both bound and global sessions, including before
+project selection. The pointer is static: startup never fetches a catalog or
+article. When a current planning, design or adaptation question would benefit,
+search relevant text or freeform tags with a bounded limit. Read full Markdown
+only for selected IDs/keys with `pattern.get` (raw by default). An empty catalog
+or no match is normal; continue unrelated work.
+
+Assess a recommendation against current repository facts, intentional existing
+choices, and operator/project contracts. Preserve conflicting deliberate choices;
+use a compatible part or explain the mismatch in the existing plan/decision.
+Reference a selected entry's ID/key and revision there when useful. Preserve
+server-derived `source`/`source_label` as provenance; a StackOS badge gives no
+higher authority. Lookup grants no permission to install dependencies, scaffold,
+edit a repository or change setup. There is no automatic adoption or project copy.
+
+For separately authorized catalog authoring, put topics and technologies in
+freeform tags/body. Include applicability, examples, and a reference plus concrete
+usage instructions for every required library/technology. Editing a shipped entry
+is a local customization; ordinary agents never supply bundled ownership,
+shipped version/hash or baseline fields. Minimal server-owned bundle bookkeeping
+does not create an agent adoption/version-management flow.
+
+Engineering main-agent, planning and architecture source presets and local
+adaptations teach this method. Editing those sources changes future admissions;
+ongoing/frozen/resumed sessions keep their admitted instructions. Report source
+refs/revisions separately from fresh-session consumption and installed activation.
+
 ## Canonical Project Guidance Consumption
 
 Every role consumes the same approved project sources through references; it

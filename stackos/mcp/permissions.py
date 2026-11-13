@@ -76,6 +76,10 @@ _SAFE_CONTEXT_FIELDS: dict[str, frozenset[str]] = {
 
 _SYSTEM_TOOLS: frozenset[str] = frozenset(
     {
+        "pattern.list",
+        "pattern.get",
+        "pattern.upsert",
+        "pattern.delete",
         "action.describe",
         "action.list",
         "action.run",
@@ -335,6 +339,7 @@ _RUN_PLAN_STEP_BOUND_CONTROL_TOOLS: frozenset[str] = frozenset(
     }
 )
 _RUN_PLAN_CONTROLLER_TOOLS: frozenset[str] = _RUN_PLAN_CONTROL | _RUN_PLAN_DYNAMIC_TOOLS
+_RUN_PLAN_CONTROLLER_TOOLS |= frozenset({"pattern.list", "pattern.get"})
 
 
 # The matrix proper. ``__system__`` is explicit bootstrap/setup authority, not
