@@ -91,4 +91,59 @@ describe('shared visible usage preparation and paint', () => {
     expect(wrapper.get('canvas').attributes('aria-label')).toContain('10 tokens')
     wrapper.unmount(); document.documentElement.removeAttribute('data-theme')
   })
+
+  it('animates changed live geometry once, keeps historical/unchanged paints quiet, and cancels hidden/reduced/unmounted motion', async () => {
+    let reduced = false
+    let reduceChanged!: () => void
+    const cancel = vi.fn()
+    const animate = vi.fn(() => ({ cancel, onfinish: null }))
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      get matches() { return query === '(prefers-reduced-motion: reduce)' && reduced },
+      addEventListener: (_event: string, callback: () => void) => { if (query.startsWith('(prefers-reduced')) reduceChanged = callback },
+      removeEventListener: vi.fn(),
+    })))
+    vi.stubGlobal('Animation', class {})
+    Object.defineProperty(HTMLCanvasElement.prototype, 'animate', { configurable: true, value: animate })
+    const samples = [sample(0), { ...sample(2), at: '2026-11-08T01:01:00Z' }, { ...sample(5), at: '2026-11-08T01:02:00Z' }]
+    const feed = ref({ status: 'live' as 'live' | 'reconnecting', receivedAt: Date.parse('2026-11-08T01:02:10Z') })
+    const metrics = { ...agentStatsFixture().totals, samples }
+    const wrapper = mount(AgentUsageSummary, { props: { compact: true, active: true, metrics }, global: { provide: { [usageFeedKey as symbol]: feed } } })
+    await reveal([wrapper.element]); flushFrame()
+    expect(animate).not.toHaveBeenCalled()
+    vi.spyOn(window, 'getComputedStyle').mockReturnValue({ color: '', getPropertyValue: (key: string) => key === '--duration-base' ? '0.16s' : '' } as CSSStyleDeclaration)
+    const update = async (input: number) => {
+      await wrapper.setProps({ metrics: { ...metrics, samples: [...samples.slice(0, 2), { ...samples[2]!, input }] } })
+      flushFrame()
+    }
+    await update(120)
+    expect(animate).toHaveBeenCalledOnce()
+    expect(animate.mock.calls[0]).toEqual([[{ opacity: 0.65 }, { opacity: 1 }], expect.objectContaining({ duration: 160 })])
+    expect(frames.size).toBe(0) // no animation paint loop
+    draws.mockClear(); animate.mockClear()
+    await wrapper.setProps({ inline: true }); flushFrame()
+    expect(animate).not.toHaveBeenCalled(); expect(draws).not.toHaveBeenCalled()
+    reduced = true; reduceChanged()
+    expect(cancel).toHaveBeenCalledOnce()
+    await update(130); expect(animate).not.toHaveBeenCalled()
+    reduced = false; reduceChanged()
+    await update(140); expect(animate).toHaveBeenCalledOnce()
+    hidden = true; document.dispatchEvent(new Event('visibilitychange')); await nextTick(); flushFrame()
+    expect(cancel).toHaveBeenCalledTimes(2)
+    draws.mockClear(); animate.mockClear()
+    await update(150); expect(draws).not.toHaveBeenCalled(); expect(animate).not.toHaveBeenCalled()
+    hidden = false; document.dispatchEvent(new Event('visibilitychange')); await nextTick()
+    await reveal([wrapper.element]); flushFrame(); expect(animate).not.toHaveBeenCalled()
+    await update(160); expect(animate).toHaveBeenCalledOnce()
+    feed.value = { ...feed.value, status: 'reconnecting' }; await nextTick(); flushFrame()
+    expect(cancel).toHaveBeenCalledTimes(3)
+    animate.mockClear(); await update(170); expect(animate).not.toHaveBeenCalled()
+    feed.value = { ...feed.value, status: 'live' }; await nextTick(); flushFrame()
+    await wrapper.setProps({ active: false }); flushFrame()
+    await update(180); expect(animate).not.toHaveBeenCalled()
+    await wrapper.setProps({ active: true }); flushFrame()
+    await update(190); expect(animate).toHaveBeenCalledOnce()
+    wrapper.unmount(); expect(cancel).toHaveBeenCalledTimes(4)
+    delete (HTMLCanvasElement.prototype as unknown as { animate?: unknown }).animate
+    expect(frames.size).toBe(0)
+  })
 })

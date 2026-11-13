@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, useId } from 'vue'
-import { useUsageCanvas } from '@/composables/useUsageCanvas'
+import { useUsageCanvas, type UsageCanvasFrame } from '@/composables/useUsageCanvas'
+import { useUsageFeed } from '@/composables/useUsageFeed'
 import { BarController, BarElement, CategoryScale, Chart, LinearScale, type ChartOptions } from 'chart.js'
 import { UiButton, UiButtonGroup } from '@/components/ui'
 import { exactUsage, fieldCoverage, formatTokens, formatUsage, usageFields, usageValue, type AgentStatsDay, type AgentStatsMetrics, type UsageField } from '@/lib/agentActivity'
@@ -15,7 +16,8 @@ const plot = ref<HTMLElement | null>(null)
 const detailId = `daily-values-${useId()}`
 let chart: Chart<'bar'> | null = null
 let signature = ''
-const visible = useUsageCanvas(canvas, paint, plot)
+const feed = useUsageFeed()
+const visible = useUsageCanvas(canvas, paint, plot, () => feed?.value.status === 'live')
 const fields = [{ key: 'total', label: 'All', token: 'accent-primary' }, ...usageFields] as const
 const values = computed<(number | null)[]>(previous => visible.value ? props.days.map(day => usageValue(day, field.value)) : previous ?? [])
 const focused = computed(() => selected.value == null ? null : props.days[selected.value] ?? null)
@@ -36,7 +38,7 @@ function hover(event: MouseEvent): void {
   const index = chart.scales.x.getValueForPixel(event.clientX - bounds.left)
   selected.value = index == null ? null : Math.max(0, Math.min(props.days.length - 1, Math.round(index)))
 }
-function paint(): void {
+function paint(): UsageCanvasFrame | void {
   if (!canvas.value || !plot.value) return
   const style = getComputedStyle(canvas.value)
   const width = plot.value.clientWidth
@@ -61,6 +63,7 @@ function paint(): void {
   }
   if (chart) { chart.data = data; chart.options = options; chart.resize(width, height); chart.update('none') }
   else { canvas.value.width = width; canvas.value.height = height; chart = new Chart(canvas.value, { type: 'bar', data, options }) }
+  return { scope: JSON.stringify([props.days.map(day => day.date), field.value, props.timezone, width, height]), geometry: JSON.stringify(values.value) }
 }
 onBeforeUnmount(() => { chart?.destroy(); chart = null })
 </script>
@@ -68,6 +71,7 @@ onBeforeUnmount(() => { chart?.destroy(); chart = null })
 <template>
   <figure
     :data-visible="visible"
+    :data-live="feed?.status === 'live'"
     class="activity-chart"
     aria-label="Daily recorded agent usage"
   >

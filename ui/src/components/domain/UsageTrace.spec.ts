@@ -122,13 +122,14 @@ describe('reported activity mini-canvas', () => {
     changed(); await frame()
     expect((wrapper.element as HTMLCanvasElement).width).toBe(210)
     expect(queries[0]!.removeEventListener).toHaveBeenCalledWith('change', changed)
-    expect(queries).toHaveLength(2)
+    expect(queries).toHaveLength(3) // DPR is rearmed; reduced motion has one shared query.
     const draw = add.mock.calls.find(call => call[0] === 'resize')![1]
     wrapper.unmount()
     expect(disconnect).toHaveBeenCalledOnce()
     expect(mutationDisconnect).toHaveBeenCalledOnce()
     expect(remove).toHaveBeenCalledWith('resize', draw)
-    expect(queries[1]!.removeEventListener).toHaveBeenCalledWith('change', changed)
+    expect(queries[2]!.removeEventListener).toHaveBeenCalledWith('change', changed)
+    expect(queries[1]!.removeEventListener).toHaveBeenCalledWith('change', expect.any(Function))
     const count = context.clearRect.mock.calls.length
     window.dispatchEvent(new Event('resize'))
     document.documentElement.setAttribute('data-theme', 'light')

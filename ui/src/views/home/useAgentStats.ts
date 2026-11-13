@@ -1,12 +1,15 @@
-import { computed, onBeforeUnmount, onMounted, ref, type Ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, provide, ref, type Ref } from 'vue'
 import type { SchemaTrackerAgentStatsOut } from '@/api'
 import { callOperation } from '@/lib/operations'
 import { formatApiError } from '@/lib/client'
 import { localActivityFilters, type AgentStatsFilters } from '@/lib/agentActivity'
-import { awaitUsageBaseline, subscribeUsageUpdates } from '@/lib/usageUpdates'
+import { awaitUsageBaseline, subscribeUsageUpdates, type UsageFeedState } from '@/lib/usageUpdates'
+import { usageFeedKey } from '@/composables/useUsageFeed'
 import { createUsageReadOwner } from '@/lib/usageReads'
 
 export function useAgentStats(projectId?: Ref<number>) {
+  const feed = ref<UsageFeedState>({ status: 'connecting', receivedAt: null })
+  provide(usageFeedKey, feed)
   const visibility = ref<boolean | null>(true)
   const filters = ref<AgentStatsFilters>(localActivityFilters())
   // Grouping changes identities, not dated totals. Keep the current response
@@ -29,7 +32,10 @@ export function useAgentStats(projectId?: Ref<number>) {
     unsubscribe?.()
     connectedProject = project
     const refresh = () => { if (connectedProject === project) void load(true) }
-    unsubscribe = subscribeUsageUpdates(project, { usage: refresh, status: refresh, resume: refresh, coalesceStatusWithUsage: true })
+    feed.value = { status: 'connecting', receivedAt: null }
+    unsubscribe = subscribeUsageUpdates(project, { usage: refresh, status: refresh, resume: refresh, coalesceStatusWithUsage: true,
+      connection: state => { if (!disposed && connectedProject === project) feed.value = state },
+    })
   }
   onMounted(connect)
   onBeforeUnmount(() => { disposed = true; unsubscribe?.(); reads.stop(); generation += 1 })

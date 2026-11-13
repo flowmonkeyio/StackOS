@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { defineComponent, ref, type Ref } from 'vue'
+import { defineComponent, h, nextTick, ref, type Ref } from 'vue'
+import UsageLiveIndicator from '@/components/domain/UsageLiveIndicator.vue'
 import { callOperation } from '@/lib/operations'
 import { useAgentStats } from './useAgentStats'
 import { localActivityFilters } from '@/lib/agentActivity'
@@ -8,7 +9,7 @@ import { agentStatsFixture } from './agentStatsFixtures'
 import { subscribeUsageUpdates } from '@/lib/usageUpdates'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
-vi.mock('@/lib/usageUpdates', () => ({ subscribeUsageUpdates: vi.fn(() => vi.fn()), awaitUsageBaseline: vi.fn(async () => {}) }))
+vi.mock('@/lib/usageUpdates', () => ({ subscribeUsageUpdates: vi.fn(() => vi.fn()), awaitUsageBaseline: vi.fn(async () => {}), subscribeUsageVisibility: vi.fn(() => vi.fn()) }))
 const wrappers: ReturnType<typeof mount>[] = []
 beforeEach(() => { vi.mocked(callOperation).mockReset(); vi.mocked(subscribeUsageUpdates).mockClear() })
 afterEach(() => wrappers.splice(0).forEach(wrapper => wrapper.unmount()))
@@ -19,6 +20,24 @@ function setup(projectId?: Ref<number>) {
 }
 
 describe('Agent activity query', () => {
+  it('provides freshness from its existing subscription and ignores retired-scope connection callbacks', async () => {
+    const id = ref(1)
+    let stats!: ReturnType<typeof useAgentStats>
+    const wrapper = mount(defineComponent({ setup() { stats = useAgentStats(id); return () => h(UsageLiveIndicator, { active: true }) } }))
+    wrappers.push(wrapper)
+    const first = vi.mocked(subscribeUsageUpdates).mock.calls[0]![1]
+    first.connection?.({ status: 'live', receivedAt: Date.now() }); await nextTick()
+    expect(wrapper.text()).toBe('Live')
+    vi.mocked(callOperation).mockResolvedValue(agentStatsFixture())
+    id.value = 2; await stats.load(); await nextTick()
+    expect(wrapper.text()).toBe('Connecting')
+    first.connection?.({ status: 'live', receivedAt: Date.now() }); await nextTick()
+    expect(wrapper.text()).toBe('Connecting')
+    const current = vi.mocked(subscribeUsageUpdates).mock.calls[1]![1]
+    current.connection?.({ status: 'reconnecting', receivedAt: Date.now() }); await nextTick()
+    expect(wrapper.text()).toBe('Reconnecting')
+    expect(subscribeUsageUpdates).toHaveBeenCalledTimes(2) // one per explicit scope
+  })
   it('replaces the project subscription on explicit scope loads and releases it on route unmount', async () => {
     vi.mocked(callOperation).mockResolvedValue(agentStatsFixture())
     const id = ref(1)

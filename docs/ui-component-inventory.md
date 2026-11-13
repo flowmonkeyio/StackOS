@@ -222,9 +222,11 @@ Input uses paired `remaining_input`, never inclusive Input minus aggregate
 Cache. Unknown cache splits remain explicit in the exact-value tooltip rather
 than being invented or removed from All. Missing values remain N/A and measured
 zero remains zero. The token chart and six trend charts share the existing
-`useUsageCanvas` visibility/size/theme/paint owner, with animation and Chart.js
-responsive scheduling disabled. Work is bounded by displayed daily buckets,
-not receipt histories. Pointer/focus selection does not rebuild geometry.
+`useUsageCanvas` visibility/size/theme/paint owner, with Chart.js animation and
+responsive scheduling disabled. Comparable, changed live data receives one
+160ms opacity fade on the painted canvas; initial/revealed charts, scope/metric
+changes and pointer/focus inspection do not restart motion. Work is bounded by
+displayed daily buckets, not receipt histories. Pointer/focus selection does not rebuild geometry.
 Hover and keyboard focus (Left/Right, Home/End, Escape) expose exact values in
 the same visible tooltip. A bounded daily-values disclosure retains all token
 fields. The adjacent breakdown uses distinct categorical markers and bars,

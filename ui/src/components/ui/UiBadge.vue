@@ -81,7 +81,7 @@ const dotColor = computed(() => ({
   >
     <span
       v-if="dot"
-      :class="['inline-block w-1.5 h-1.5 rounded-full shrink-0', dotColor, pulse && 'animate-pulse']"
+      :class="['ui-badge__dot inline-block w-1.5 h-1.5 rounded-full shrink-0', dotColor, pulse && 'animate-pulse']"
       aria-hidden="true"
     />
     <slot name="iconLeft" />

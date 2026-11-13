@@ -3,6 +3,7 @@ import { computed, ref } from 'vue'
 import type { ActiveExecution } from '@/lib/task-tracker/types'
 import type { SchemaExecutionIdentityOut, SchemaWorkDurationOut } from '@/api'
 import { activeExecutionTitle, executionRole } from '@/lib/task-tracker/execution'
+import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
 import { resolveAgentHostLogo, resolveAgentOwnerLogo } from '@/lib/stackos/agentIdentity'
 import { UiIcon, UiTooltip } from '@/components/ui'
 import UsageLiveIndicator from './UsageLiveIndicator.vue'
@@ -67,7 +68,7 @@ const full = computed(() => identity.value ? activeExecutionTitle(identity.value
       />
       <UsageLiveIndicator
         v-if="execution"
-        :active="true"
+        :active="metricsActive && !isTerminalTrackerStatus(item?.status ?? '')"
       />
     </span>
   </UiTooltip>

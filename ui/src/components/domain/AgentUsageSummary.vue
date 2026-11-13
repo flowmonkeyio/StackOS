@@ -53,6 +53,7 @@ const scopeTitle = 'Numbers are task or ticket totals, including delivery and re
         :metric="field.key"
         :end-at="endAt"
         :prepared-geometry="traces?.[field.key]"
+        :active="active && feed?.status === 'live'"
       />
     </div>
   </dl>

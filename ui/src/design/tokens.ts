@@ -167,7 +167,7 @@ export const typography = {
 } as const
 
 export const motion = {
-  duration: { fast: '120ms', base: '160ms', slow: '240ms' },
+  duration: { fast: '120ms', base: '160ms', slow: '240ms', livePulse: '1800ms' },
   easing: {
     standard: 'cubic-bezier(0.2, 0, 0, 1)',
     enter: 'cubic-bezier(0, 0, 0.2, 1)',

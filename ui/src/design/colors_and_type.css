@@ -78,6 +78,7 @@
   --duration-fast: 120ms;
   --duration-base: 160ms;
   --duration-slow: 240ms;
+  --duration-live-pulse: 1800ms;
   --easing-standard: cubic-bezier(0.2, 0, 0, 1);
   --easing-enter:    cubic-bezier(0, 0, 0.2, 1);
   --easing-exit:     cubic-bezier(0.4, 0, 1, 1);

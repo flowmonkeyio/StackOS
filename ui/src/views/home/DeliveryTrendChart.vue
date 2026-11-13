@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, ref, useId } from 'vue'
 import { BarController, BarElement, CategoryScale, Chart, LineController, LineElement, LinearScale, PointElement, type ChartConfiguration } from 'chart.js'
 import type { SchemaDeliveryTrendDayOut, SchemaDeliveryTrendMetricsOut } from '@/api'
-import { useUsageCanvas } from '@/composables/useUsageCanvas'
+import { useUsageCanvas, type UsageCanvasFrame } from '@/composables/useUsageCanvas'
+import { useUsageFeed } from '@/composables/useUsageFeed'
 import { activityDayLabel, deliveryCoverage, deliveryValue, formatDeliveryValue, type deliveryMetrics } from '@/lib/deliveryTrends'
 
 Chart.register(BarController, BarElement, CategoryScale, LinearScale, LineController, LineElement, PointElement)
@@ -13,7 +14,8 @@ const selected = ref<number | null>(null)
 const detailId = `trend-${useId()}`
 let chart: Chart<'bar' | 'line'> | null = null
 let signature = ''
-const visible = useUsageCanvas(canvas, paint, plot)
+const feed = useUsageFeed()
+const visible = useUsageCanvas(canvas, paint, plot, () => feed?.value.status === 'live')
 const values = computed<(number | null)[]>(previous => visible.value ? props.days.map(day => deliveryValue(day, props.metric.key)) : previous ?? [])
 const total = computed(() => formatDeliveryValue(deliveryValue(props.totals, props.metric.key), props.metric.key))
 const focused = computed(() => selected.value == null ? null : props.days[selected.value] ?? null)
@@ -34,7 +36,7 @@ function hover(event: MouseEvent): void {
   const bounds = canvas.value!.getBoundingClientRect()
   selected.value = Math.max(0, Math.min(props.days.length - 1, Math.floor((event.clientX - bounds.left) / bounds.width * props.days.length)))
 }
-function paint(): void {
+function paint(): UsageCanvasFrame | void {
   if (!canvas.value || !plot.value) return
   const style = getComputedStyle(canvas.value)
   const width = plot.value.clientWidth
@@ -59,6 +61,7 @@ function paint(): void {
   }
   if (chart) { chart.data = config.data; chart.options = config.options!; chart.resize(width, height); chart.update('none') }
   else { canvas.value.width = width; canvas.value.height = height; chart = new Chart(canvas.value, config) }
+  return { scope: JSON.stringify([props.days.map(day => day.date), props.metric.key, width, height]), geometry: JSON.stringify(values.value) }
 }
 onBeforeUnmount(() => { chart?.destroy(); chart = null })
 </script>
@@ -69,6 +72,7 @@ onBeforeUnmount(() => { chart?.destroy(); chart = null })
     :aria-label="metric.label"
     :data-metric="metric.key"
     :data-visible="visible"
+    :data-live="feed?.status === 'live'"
   >
     <figcaption>
       <h3 class="delivery-trend__label">

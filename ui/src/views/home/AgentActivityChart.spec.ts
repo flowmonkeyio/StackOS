@@ -1,6 +1,9 @@
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
+import { ref } from 'vue'
+import { usageFeedKey } from '@/composables/useUsageFeed'
+import type { UsageFeedState } from '@/lib/usageUpdates'
 import AgentActivityChart from './AgentActivityChart.vue'
 import DeliveryTrendChart from './DeliveryTrendChart.vue'
 import AgentActivitySection from './AgentActivitySection.vue'
@@ -25,6 +28,39 @@ vi.mock('chart.js', () => ({
 afterEach(() => { vi.clearAllMocks(); vi.restoreAllMocks(); vi.unstubAllGlobals(); delete document.documentElement.dataset.theme })
 
 describe('Chart inspection lifetime', () => {
+  it.each(['tokens', 'trends'] as const)('animates %s data updates without replay on focus, metric/scope changes, or reconnect', async kind => {
+    const cancel = vi.fn(), animate = vi.fn(() => ({ cancel, onfinish: null }))
+    Object.defineProperty(HTMLCanvasElement.prototype, 'animate', { configurable: true, value: animate })
+    const fixture = agentStatsFixture()
+    const feed = ref<UsageFeedState>({ status: 'live', receivedAt: Date.now() })
+    const options = { global: { provide: { [usageFeedKey as symbol]: feed } } }
+    const token = kind === 'tokens' ? mount(AgentActivityChart, { ...options, props: { days: fixture.daily, totals: fixture.totals, timezone: 'UTC' } }) : null
+    const trend = kind === 'trends' ? mount(DeliveryTrendChart, { ...options, props: { metric: deliveryMetrics[0], totals: fixture.delivery_trends.totals, days: [{ ...fixture.delivery_trends.totals, date: '2026-11-06' }] } }) : null
+    const wrapper = token ?? trend!
+    await frame(); expect(animate).not.toHaveBeenCalled()
+    if (token) {
+      const days = structuredClone(fixture.daily); days[0]!.reported_usage.total = (days[0]!.reported_usage.total ?? 0) + 10
+      await token.setProps({ days })
+    } else if (trend) {
+      const day = structuredClone(fixture.delivery_trends.totals); day.completed_tasks.total += 1
+      await trend.setProps({ days: [{ ...day, date: '2026-11-06' }] })
+    }
+    await frame(); expect(animate).toHaveBeenCalledOnce()
+    animate.mockClear(); mocks.updated.mockClear()
+    await wrapper.get('canvas').trigger('focus'); await frame()
+    expect(animate).not.toHaveBeenCalled(); expect(mocks.updated).not.toHaveBeenCalled()
+    feed.value = { ...feed.value, status: 'reconnecting' }; await nextTick(); await frame()
+    expect(cancel).toHaveBeenCalledOnce()
+    if (token) await token.setProps({ days: structuredClone(fixture.daily) })
+    else await trend!.setProps({ days: [{ ...fixture.delivery_trends.totals, date: '2026-11-06' }] })
+    await frame(); expect(animate).not.toHaveBeenCalled()
+    feed.value = { ...feed.value, status: 'live' }; await nextTick()
+    if (token) await token.findAll('button')[1]!.trigger('click')
+    else await trend!.setProps({ metric: deliveryMetrics[1] })
+    await frame(); expect(animate).not.toHaveBeenCalled()
+    wrapper.unmount()
+    delete (HTMLCanvasElement.prototype as unknown as { animate?: unknown }).animate
+  })
   it.each(['tokens', 'trends'] as const)('retains %s keyboard selection across pointer exit until Escape or blur', async kind => {
     const fixture = agentStatsFixture()
     fixture.daily.push({ ...structuredClone(fixture.daily[0]!), date: '2026-11-07' })
