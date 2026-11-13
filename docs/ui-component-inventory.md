@@ -233,7 +233,13 @@ cursors and recovery. Workflow details retain the same accepted contract on a
 transient read failure, with an explicit inspection-only stale cue. A new identity,
 mismatched source, disabled plugin or confirmed access failure clears that contract.
 The catalog store exposes the plugin read's own error/status so a sibling catalog
-read cannot masquerade as current plugin availability.
+read cannot masquerade as current plugin availability. Confirmed plugin/catalog
+401/403/404 responses retire the shared catalog scope and clear its plugin links
+and capability/provider/action inventory; compatible transient failures retain
+accepted content. Navigation retries an unavailable scope on the next route entry.
+Domain and workflow readers consume that shared availability and capture its
+request lifetime so pending results cannot restore content after denial or scope
+replacement. Account and project-auth reads retain their independent owners.
 
 Spend owns independent current-month, budget and history read states in the costs
 store. Unread metrics display placeholders, while accepted zero and empty results

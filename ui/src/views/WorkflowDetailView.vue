@@ -17,17 +17,22 @@ const { projectId } = useProjectRouteScope(route)
 const slug = computed(() => String(route.params.pluginSlug ?? ''))
 const key = computed(() => String(route.params.templateKey ?? ''))
 const catalog = useStackOsCatalogStore()
-const template = ref<SchemaLoadedWorkflowTemplate | null>(null)
-const error = ref('')
+const acceptedTemplate = ref<SchemaLoadedWorkflowTemplate | null>(null)
+const templateScope = ref<() => boolean>(() => false)
+const plugin = computed(() => catalog.pluginProjectId === projectId.value
+  ? catalog.plugins.find(item => item.slug === slug.value && item.enabled_for_project !== false) : undefined)
+const template = computed(() => !slug.value || (plugin.value && templateScope.value()) ? acceptedTemplate.value : null)
+const loadError = ref('')
+const error = computed(() => (slug.value ? catalog.pluginError : null) ?? loadError.value)
 const loading = ref(true)
 let generation = 0
 async function load(nextProjectId = projectId.value, nextSlug = slug.value, nextKey = key.value) {
   const current = ++generation
-  error.value = ''
+  loadError.value = ''
   loading.value = true
   if (!Number.isSafeInteger(nextProjectId) || nextProjectId <= 0 || !nextKey) {
-    template.value = null
-    error.value = 'This workflow identity is invalid.'
+    acceptedTemplate.value = null
+    loadError.value = 'This workflow identity is invalid.'
     loading.value = false
     return
   }
@@ -35,27 +40,29 @@ async function load(nextProjectId = projectId.value, nextSlug = slug.value, next
     const ready = await catalog.refreshPlugins(nextProjectId)
     if (current !== generation) return
     if (!ready) {
-      error.value = catalog.pluginError ?? 'Plugin availability could not be refreshed.'
-      if ([401, 403, 404].includes(catalog.pluginErrorStatus ?? 0)) template.value = null
+      loadError.value = catalog.pluginError ?? 'Plugin availability could not be refreshed.'
     } else if (!catalog.plugins.some(item => item.slug === nextSlug && item.enabled_for_project !== false)) {
-      error.value = 'This plugin is unavailable or disabled for this project.'
-      template.value = null
+      loadError.value = 'This plugin is unavailable or disabled for this project.'
+      acceptedTemplate.value = null
     }
   }
   if (!error.value) {
+    const isCurrentScope = nextSlug ? catalog.capturePluginScope(nextProjectId) : () => true
     try {
       const suffix = nextSlug ? `?plugin_slug=${encodeURIComponent(nextSlug)}` : ''
       const result = await apiFetch<SchemaLoadedWorkflowTemplate>(`/api/v1/projects/${nextProjectId}/workflow-templates/${encodeURIComponent(nextKey)}${suffix}`)
       if (current !== generation) return
+      if (!isCurrentScope()) { loading.value = false; return }
       if (result.summary.key !== nextKey || (result.summary.plugin_slug ?? '') !== nextSlug || result.spec.key !== nextKey) {
-        template.value = null
+        acceptedTemplate.value = null
         throw new Error('The workflow source does not match this page.')
       }
-      template.value = result
+      acceptedTemplate.value = result
+      templateScope.value = isCurrentScope
     } catch (err) {
-      if (current === generation) {
-        error.value = formatApiError(err, 'Workflow unavailable')
-        if (err instanceof ApiError && [400, 401, 403, 404, 410, 422].includes(err.status)) template.value = null
+      if (current === generation && isCurrentScope()) {
+        loadError.value = formatApiError(err, 'Workflow unavailable')
+        if (err instanceof ApiError && [400, 401, 403, 404, 410, 422].includes(err.status)) acceptedTemplate.value = null
       }
     }
   }
@@ -71,7 +78,7 @@ const removeRouteListener = router.afterEach((to, from, failure) => {
   const nextSlug = String(to.params.pluginSlug ?? '')
   const nextKey = String(to.params.templateKey ?? '')
   if (nextProjectId !== projectIdFromRoute(from) || nextSlug !== String(from.params.pluginSlug ?? '') || nextKey !== String(from.params.templateKey ?? '')) {
-    template.value = null
+    acceptedTemplate.value = null
     void load(nextProjectId, nextSlug, nextKey)
   }
 })

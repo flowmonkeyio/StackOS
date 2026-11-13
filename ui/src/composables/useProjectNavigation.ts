@@ -14,11 +14,6 @@ import { useStackOsCatalogStore } from '@/stores/plugins'
 import { useProjectsStore, type Project } from '@/stores/projects'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 
-interface CatalogRefresh {
-  projectId: number
-  promise: Promise<boolean>
-}
-
 export function useProjectNavigation() {
   const route = useRoute()
   const router = useRouter()
@@ -26,7 +21,6 @@ export function useProjectNavigation() {
   const catalog = useStackOsCatalogStore()
   const { items: projectItems, activeProject } = storeToRefs(projects)
   const { enabledPlugins, pluginProjectId } = storeToRefs(catalog)
-  let catalogRefresh: CatalogRefresh | null = null
   let selectionIntent = 0
   const renameTargetId = ref<number | null>(null)
   const deleteTarget = ref<Project | null>(null)
@@ -66,19 +60,7 @@ export function useProjectNavigation() {
   })
   async function refreshNavigationCatalog(projectId: number): Promise<boolean> {
     if (pluginProjectId.value === projectId) return true
-    if (catalogRefresh?.projectId === projectId) return catalogRefresh.promise
-
-    const promise = catalog.refreshPlugins(projectId, { silent: true })
-    const request: CatalogRefresh = {
-      projectId,
-      promise,
-    }
-    catalogRefresh = request
-    try {
-      return await request.promise
-    } finally {
-      if (catalogRefresh === request) catalogRefresh = null
-    }
+    return catalog.refreshPlugins(projectId, { silent: true })
   }
 
   function synchronizeSuccessfulRoute(to: RouteLocationNormalized): void {

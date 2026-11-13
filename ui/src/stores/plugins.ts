@@ -60,7 +60,7 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     authError.value = null
   })
   let pendingPlugins: { projectId: number; promise: Promise<boolean> } | null = null
-  const projectRequests = createProjectRequestGate(() => {
+  function clearCatalog(): void {
     // Incompatible project metadata must disappear immediately. Compatible
     // refreshes keep the same plugin rows and sidebar nodes mounted.
     pendingPlugins = null
@@ -71,10 +71,24 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     actions.value = []
     catalogLoaded.value = false
     catalogLoading.value = false
+    loading.value = false
     catalogError.value = null
     pluginError.value = null
     pluginErrorStatus.value = null
-  })
+  }
+  const projectRequests = createProjectRequestGate(clearCatalog)
+
+  function invalidateDeniedCatalog(err: unknown): void {
+    if (!(err instanceof ApiError) || ![401, 403, 404].includes(err.status)) return
+    // Retire all reads before clearing rows, including sibling inventory reads.
+    // Accounts and project auth have separate owners and lifetimes.
+    projectRequests.invalidate()
+    clearCatalog()
+    error.value = formatApiError(err, 'failed to load StackOS plugins')
+    pluginError.value = error.value
+    pluginErrorStatus.value = err.status
+    catalogError.value = error.value
+  }
 
   const enabledPlugins = computed(() =>
     plugins.value.filter((plugin) => plugin.enabled_for_project !== false),
@@ -119,11 +133,13 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
         error.value = formatApiError(err, 'failed to load StackOS plugins')
         pluginError.value = error.value
         pluginErrorStatus.value = err instanceof ApiError ? err.status : null
+        invalidateDeniedCatalog(err)
       }
       return false
     } finally {
+      const current = request.isCurrent()
       const hasPending = request.finish()
-      if (!options.silent) loading.value = hasPending
+      if (current && !options.silent) loading.value = hasPending
     }
   }
 
@@ -155,6 +171,7 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     } catch (err) {
       if (request.isCurrent()) {
         catalogError.value = formatApiError(err, 'failed to load StackOS catalog')
+        invalidateDeniedCatalog(err)
       }
     } finally {
       if (request.isCurrent()) catalogLoading.value = false
@@ -485,6 +502,7 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     connectionProjectId,
     enabledPlugins,
     refreshPlugins,
+    capturePluginScope: projectRequests.captureScope,
     refresh,
     refreshAuth,
     refreshAccounts,

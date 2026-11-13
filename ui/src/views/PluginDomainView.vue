@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import type { SchemaPluginOut, SchemaWorkflowTemplateSummaryOut } from '@/api'
+import type { SchemaWorkflowTemplateSummaryOut } from '@/api'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import { UiButton, UiCallout, UiPageShell, UiSectionHeader, UiSkeleton } from '@/components/ui'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
@@ -17,54 +17,55 @@ const router = useRouter()
 const { projectId } = useProjectRouteScope(route)
 const slug = computed(() => String(route.params.pluginSlug ?? ''))
 const catalog = useStackOsCatalogStore()
-const plugin = ref<SchemaPluginOut>()
+const plugin = computed(() => catalog.pluginProjectId === projectId.value
+  ? catalog.plugins.find(item => item.slug === slug.value) : undefined)
 const enabled = computed(() => plugin.value && plugin.value.enabled_for_project !== false)
 const page = computed(() => domainPage(plugin.value))
 const contentSections = computed(() => page.value.sections.filter((section): section is 'saved' | 'files' => section !== 'workflows'))
-const workflows = ref<SchemaWorkflowTemplateSummaryOut[]>([])
-const workflowsLoaded = ref(false)
+const workflowRows = ref<SchemaWorkflowTemplateSummaryOut[]>([])
+const workflowScope = ref<() => boolean>(() => false)
+const workflows = computed(() => plugin.value && workflowScope.value() ? workflowRows.value : [])
+const acceptedWorkflows = ref(false)
+const workflowsLoaded = computed(() => plugin.value && workflowScope.value() && acceptedWorkflows.value)
 const loadingSections = computed(() => plugin.value ? page.value.sections : ['workflows', 'saved'])
 const loading = ref(true)
 const initialized = ref(false)
-const error = ref('')
+const loadError = ref('')
+const error = computed(() => catalog.pluginError ?? loadError.value)
 const contentReaders = ref<InstanceType<typeof DomainContentSection>[]>([])
 let generation = 0
 async function load(nextProjectId = projectId.value, nextSlug = slug.value) {
   const current = ++generation
   const mountedReaders = [...contentReaders.value]
   loading.value = true
-  error.value = ''
+  loadError.value = ''
   if (!Number.isSafeInteger(nextProjectId)) { loading.value = false; return }
   const ready = await catalog.refreshPlugins(nextProjectId)
   if (current !== generation) return
   if (ready) {
-    plugin.value = catalog.plugins.find(item => item.slug === nextSlug)
     if (!enabled.value || !page.value.sections.includes('workflows')) {
-      workflows.value = []
-      workflowsLoaded.value = false
+      workflowRows.value = []
+      acceptedWorkflows.value = false
     }
   }
   if (!ready) {
-    error.value = catalog.pluginError ?? 'Plugin availability could not be refreshed.'
-    if ([401, 403, 404].includes(catalog.pluginErrorStatus ?? 0)) {
-      plugin.value = undefined
-      workflows.value = []
-      workflowsLoaded.value = false
-    }
+    loadError.value = catalog.pluginError ?? 'Plugin availability could not be refreshed.'
   }
   else if (enabled.value && page.value.sections.includes('workflows')) {
+    const isCurrentScope = catalog.capturePluginScope(nextProjectId)
     try {
       const result = await apiFetch<{ templates: SchemaWorkflowTemplateSummaryOut[] }>(`/api/v1/projects/${nextProjectId}/workflow-templates?plugin_slug=${encodeURIComponent(nextSlug)}`)
-      if (current === generation) {
-        workflows.value = result.templates.filter(item => item.plugin_slug === nextSlug)
-        workflowsLoaded.value = true
+      if (current === generation && isCurrentScope()) {
+        workflowRows.value = result.templates.filter(item => item.plugin_slug === nextSlug)
+        workflowScope.value = isCurrentScope
+        acceptedWorkflows.value = true
       }
     } catch (err) {
-      if (current === generation) {
-        error.value = formatApiError(err, 'Failed to load workflows')
+      if (current === generation && isCurrentScope()) {
+        loadError.value = formatApiError(err, 'Failed to load workflows')
         if (err instanceof ApiError && [401, 403, 404].includes(err.status)) {
-          workflows.value = []
-          workflowsLoaded.value = false
+          workflowRows.value = []
+          acceptedWorkflows.value = false
         }
       }
     }
@@ -79,9 +80,8 @@ async function load(nextProjectId = projectId.value, nextSlug = slug.value) {
   await Promise.all(contentReaders.value.filter(reader => mountedReaders.includes(reader)).map(reader => reader.refresh()))
 }
 function enterScope(nextProjectId: number, nextSlug: string) {
-  plugin.value = undefined
-  workflows.value = []
-  workflowsLoaded.value = false
+  workflowRows.value = []
+  acceptedWorkflows.value = false
   initialized.value = false
   void load(nextProjectId, nextSlug)
 }

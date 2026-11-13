@@ -3,6 +3,7 @@ import { flushPromises } from '@vue/test-utils'
 import PluginDomainView from './PluginDomainView.vue'
 import { openView, page, plugin, workflow } from './plugin-domain/testSupport'
 import { ApiError } from '@/lib/client'
+import { useStackOsCatalogStore } from '@/stores/plugins'
 
 const client = vi.hoisted(() => ({ apiFetch: vi.fn() }))
 vi.mock('@/lib/client', async importOriginal => ({ ...await importOriginal<typeof import('@/lib/client')>(), apiFetch: client.apiFetch, formatApiError: (e: unknown) => String(e) }))
@@ -24,6 +25,28 @@ function defaults(url: string) {
 describe('Plugin domain', () => {
   beforeEach(() => { client.apiFetch.mockReset().mockImplementation(async (url: string) => defaults(url)) })
   afterEach(() => { wrappers.forEach(wrapper => wrapper.unmount()); wrappers.length = 0; document.body.innerHTML = '' })
+
+  it.each([401, 403, 404])('consumes shared HTTP %s invalidation and fences a pending list across recovery', async status => {
+    const { wrapper } = await open()
+    const catalog = useStackOsCatalogStore()
+    let resolve!: (value: unknown) => void
+    client.apiFetch.mockImplementation(async (url: string) => url.includes('/workflow-templates?')
+      ? new Promise(value => { resolve = value }) : defaults(url))
+    await button(wrapper, 'Refresh').trigger('click'); await flushPromises()
+    expect(wrapper.get('.domain-workflows').text()).toContain('Tracked delivery')
+    client.apiFetch.mockRejectedValue(new ApiError('Denied', status, { detail: 'Shared catalog denied' }))
+    await catalog.refreshPlugins(1); await flushPromises()
+    expect(wrapper.find('.domain-workflows').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'DomainContentSection' }).exists()).toBe(false)
+    expect(wrapper.text()).toContain('Shared catalog denied')
+    client.apiFetch.mockImplementation(async (url: string) => defaults(url))
+    await catalog.refreshPlugins(1)
+    resolve({ templates: [{ ...workflow().summary, name: 'Obsolete late workflow' }] }); await flushPromises()
+    expect(wrapper.text()).not.toContain('Obsolete late workflow')
+    expect(wrapper.find('.domain-workflows').exists()).toBe(false)
+    await button(wrapper, 'Refresh').trigger('click'); await flushPromises()
+    expect(wrapper.get('.domain-workflows').text()).toContain('Tracked delivery')
+  })
 
   it('clears a denied workflow list while retaining saved content, then recovers on retry', async () => {
     client.apiFetch.mockImplementation(async (url: string) => url.includes('/resource-records?') ? page([record(1)]) : defaults(url))

@@ -7,6 +7,8 @@ import { createMemoryHistory, createRouter, RouterView, type NavigationGuard, ty
 import { useProjectNavigation } from './useProjectNavigation'
 import { useStackOsCatalogStore } from '@/stores/plugins'
 import { useProjectsStore, type Project } from '@/stores/projects'
+import PluginNavRenderer from '@/components/renderers/PluginNavRenderer.vue'
+import { plugin } from '@/views/plugin-domain/testSupport'
 
 const ORIG_FETCH = globalThis.fetch
 
@@ -18,6 +20,48 @@ describe('useProjectNavigation', () => {
   afterEach(() => {
     globalThis.fetch = ORIG_FETCH
     vi.restoreAllMocks()
+  })
+
+  it.each([401, 403, 404])('removes rendered plugin links on HTTP %s and revalidates on same-project navigation', async status => {
+    globalThis.fetch = vi.fn(async () => json([plugin()])) as typeof fetch
+    const harness = await setupNavigation('/projects/1/agents')
+    const sidebar = mount(defineComponent({ setup: () => () => h(PluginNavRenderer, {
+      sections: harness.navigation.projectNavSections.value,
+    }) }), { global: { plugins: [harness.pinia, harness.router] } })
+    try {
+      expect(sidebar.find('a[href="/projects/1/plugins/engineering"]').exists()).toBe(true)
+      globalThis.fetch = vi.fn(async () => json({ detail: 'Catalog denied' }, status)) as typeof fetch
+      await harness.catalog.refreshPlugins(1); await flushPromises()
+      expect(sidebar.find('a[href="/projects/1/plugins/engineering"]').exists()).toBe(false)
+      expect(sidebar.find('a[href="/projects/1/tasks"]').exists()).toBe(true)
+      globalThis.fetch = vi.fn(async () => json([plugin()])) as typeof fetch
+      await harness.router.push('/projects/1/tasks'); await flushPromises()
+      expect(requestedPluginProjects()).toEqual([1])
+      expect(sidebar.find('a[href="/projects/1/plugins/engineering"]').exists()).toBe(true)
+      globalThis.fetch = vi.fn(async () => json({ detail: 'Temporary outage' }, 503)) as typeof fetch
+      const retained = sidebar.get('a[href="/projects/1/plugins/engineering"]').element
+      await harness.catalog.refreshPlugins(1); await flushPromises()
+      expect(sidebar.get('a[href="/projects/1/plugins/engineering"]').element).toBe(retained)
+      expect(harness.catalog.pluginError).toContain('Temporary outage')
+    } finally { sidebar.unmount(); harness.wrapper.unmount() }
+  })
+
+  it('retries navigation after inventory denial while the retired plugin read is still pending', async () => {
+    let resolve!: (response: Response) => void
+    const pending = new Promise<Response>(yes => { resolve = yes })
+    globalThis.fetch = vi.fn(async () => pending) as typeof fetch
+    const harness = await setupNavigation('/projects/1/agents')
+    const retired = harness.catalog.refreshPlugins(1)
+    globalThis.fetch = vi.fn(async input => String(input).includes('/plugins?') ? pending
+      : json({ detail: 'Inventory denied' }, 403)) as typeof fetch
+    await harness.catalog.refresh(1)
+    globalThis.fetch = vi.fn(async () => json([plugin()])) as typeof fetch
+    await harness.router.push('/projects/1/tasks'); await flushPromises()
+    expect(requestedPluginProjects()).toEqual([1])
+    expect(harness.catalog.pluginProjectId).toBe(1)
+    resolve(json([])); expect(await retired).toBe(false)
+    expect(harness.catalog.enabledPlugins.map(row => row.slug)).toEqual(['engineering'])
+    harness.wrapper.unmount()
   })
 
   it('navigates first, then commits the selected project and scoped catalog', async () => {

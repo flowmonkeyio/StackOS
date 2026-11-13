@@ -3,6 +3,7 @@ import { flushPromises } from '@vue/test-utils'
 import WorkflowDetailView from './WorkflowDetailView.vue'
 import { openView, plugin, workflow } from './plugin-domain/testSupport'
 import { ApiError } from '@/lib/client'
+import { useStackOsCatalogStore } from '@/stores/plugins'
 
 const client = vi.hoisted(() => ({ apiFetch: vi.fn() }))
 vi.mock('@/lib/client', async importOriginal => ({ ...await importOriginal<typeof import('@/lib/client')>(), apiFetch: client.apiFetch, formatApiError: (e: unknown) => String(e) }))
@@ -14,6 +15,28 @@ async function open(path = '/projects/1/plugins/engineering/workflows/engineerin
 describe('Workflow detail', () => {
   beforeEach(() => { client.apiFetch.mockReset().mockImplementation(async (url: string) => url.startsWith('/api/v1/plugins?') ? [plugin(), plugin('support')] : workflow()) })
   afterEach(() => { wrappers.forEach(wrapper => wrapper.unmount()); wrappers.length = 0; document.body.innerHTML = '' })
+  it.each([401, 403, 404])('consumes shared HTTP %s invalidation and fences pending detail across recovery', async status => {
+    const { wrapper } = await open()
+    const catalog = useStackOsCatalogStore()
+    let resolve!: (value: unknown) => void
+    client.apiFetch.mockImplementation(async (url: string) => url.startsWith('/api/v1/plugins?')
+      ? [plugin()] : new Promise(value => { resolve = value }))
+    await wrapper.findAll('button').find(item => item.text() === 'Refresh')!.trigger('click'); await flushPromises()
+    expect(wrapper.find('ol').exists()).toBe(true)
+    client.apiFetch.mockRejectedValue(new ApiError('Denied', status, { detail: 'Shared catalog denied' }))
+    await catalog.refreshPlugins(1); await flushPromises()
+    expect(wrapper.find('ol').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Shared catalog denied')
+    client.apiFetch.mockResolvedValue([plugin()])
+    await catalog.refreshPlugins(1)
+    const obsolete = workflow(); obsolete.spec.name = 'Obsolete late workflow'
+    resolve(obsolete); await flushPromises()
+    expect(wrapper.text()).not.toContain('Obsolete late workflow')
+    expect(wrapper.find('ol').exists()).toBe(false)
+    client.apiFetch.mockImplementation(async (url: string) => url.startsWith('/api/v1/plugins?') ? [plugin()] : workflow())
+    await wrapper.findAll('button').find(item => item.text() === 'Refresh')!.trigger('click'); await flushPromises()
+    expect(wrapper.find('ol').exists()).toBe(true)
+  })
   it.each([
     '/projects/1/plugins/engineering/workflows/engineering.tracked-delivery',
     '/projects/1/workflows/customer.weekly-review',
