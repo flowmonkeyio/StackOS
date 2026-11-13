@@ -23,7 +23,7 @@ from stackos.repositories.base import ValidationError
 from stackos.repositories.project_setup import ProjectSetupRepository
 from stackos.repositories.tracker import TrackerRepository
 from stackos.repositories.workspaces import WorkspaceRepository
-from stackos.task_capacity import save_limit
+from stackos.task_capacity import save_limits
 from tests.integration.test_repositories.test_project_setup import verified_result
 from tests.integration.test_repositories.test_request_execution import (
     native_lifetime,  # noqa: F401
@@ -35,6 +35,16 @@ from tests.integration.test_repositories.test_task_delivery import (
     prepared_task,
     submit,
 )
+
+
+def capacity_counts(session, scheduler):
+    rows = task_delivery.delivery_capacity(session, scheduler)["projects"]
+    return {key: sum(row[key] for row in rows) for key in ("running_count", "queued_count")}
+
+
+def reserve_setup(execution, session, scheduler):
+    rows = task_delivery.delivery_capacity(session, scheduler)["projects"]
+    return execution.reserve_setup(session, scheduler, {row["project_id"]: row for row in rows})
 
 
 @pytest.fixture
@@ -118,7 +128,7 @@ def test_unclassified_setup_fences_capacity_directory_and_ordinary_admission(
     before = deepcopy(row.metadata_json)
     expected = {"project_id": project, "request_id": request_id, "next_action": "inspect_request"}
     for read in (
-        lambda: task_delivery.delivery_capacity(session, scheduler),
+        lambda: capacity_counts(session, scheduler),
         lambda: execution.setup_directories(session),
     ):
         with pytest.raises(ConflictError) as error:
@@ -151,8 +161,8 @@ def test_established_external_setup_stays_out_of_managed_admission(
         payload["managed"] = None
     stored_setup(session, project, "external-owner", payload)
     assert ProjectSetupRepository(session).managed_admissions() == []
-    assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 0
-    assert task_delivery.delivery_capacity(session, scheduler)["queued_count"] == 0
+    assert capacity_counts(session, scheduler)["running_count"] == 0
+    assert capacity_counts(session, scheduler)["queued_count"] == 0
     assert execution.setup_directories(session) == []
 
 
@@ -208,7 +218,7 @@ def test_admission_projects_only_relevant_setup_scalars(
     try:
         started = perf_counter()
         with factory() as check:
-            assert task_delivery.delivery_capacity(check, scheduler)["running_count"] == 1
+            assert capacity_counts(check, scheduler)["running_count"] == 1
             assert execution.setup_directories(check) == [
                 opened.attempt.managed.settings["project_dir"]
             ]
@@ -233,7 +243,7 @@ def test_admission_projects_only_relevant_setup_scalars(
         root = tmp_path / "ordinary"
         root.mkdir()
         submit(session, project_id, root, scheduler)
-        assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 2
+        assert capacity_counts(session, scheduler)["running_count"] == 2
     finally:
         event.remove(Session, "loaded_as_persistent", loaded)
         event.remove(session.get_bind(), "after_cursor_execute", queried)
@@ -280,7 +290,7 @@ def test_uncertain_setup_ownership_returns_bounded_repair_context(managed, sessi
                 payload["managed"][name] = value
     request_id = stored_setup(session, project, "uncertain", payload)
     for read in (
-        lambda: task_delivery.delivery_capacity(session, scheduler),
+        lambda: capacity_counts(session, scheduler),
         lambda: execution.setup_directories(session),
     ):
         with pytest.raises(ConflictError) as error:
@@ -321,19 +331,20 @@ def test_setup_reservation_selects_one_current_claimed_candidate(managed, sessio
         return validate(value, *args, **kwargs)
 
     monkeypatch.setattr(SetupAttempt, "model_validate", validating)
-    assert task_delivery.delivery_capacity(session, scheduler)["queued_count"] == 3
-    assert execution.reserve_setup(session, scheduler)[2]["request_id"] == first
+    assert capacity_counts(session, scheduler)["queued_count"] == 3
+    assert reserve_setup(execution, session, scheduler)[2]["request_id"] == first
     assert validated == [first]
-    assert execution.reserve_setup(session, scheduler)[2]["request_id"] == second
+    assert reserve_setup(execution, session, scheduler)[2]["request_id"] == second
     assert validated == [first, second]
-    assert execution.reserve_setup(session, scheduler) is None
+    assert reserve_setup(execution, session, scheduler) is None
     assert missing_claim not in scheduler.project_setup_claims
     # A restarted daemon cannot recreate claims, even for otherwise valid queues.
-    assert execution.reserve_setup(session, QueuedScheduler()) is None
+    assert reserve_setup(execution, session, QueuedScheduler()) is None
     # An explicitly selected incompatible body fails with bounded repair context.
+    save_limits(session, {project: 4})
     scheduler.project_setup_claims[missing_claim] = "retained-existing-claim"
     with pytest.raises(ConflictError) as error:
-        execution.reserve_setup(session, scheduler)
+        reserve_setup(execution, session, scheduler)
     assert error.value.data == {
         "project_id": project,
         "request_id": missing_claim,
@@ -373,7 +384,7 @@ def test_missed_setup_hydrates_only_exact_job_and_preserves_other_work(
     assert target["status"] == "failed" and target["managed"]["slot_reserved"] is False
     assert validated == [opened.attempt.request_id]
     assert session.get(AgentRequest, unrelated).metadata_json == before
-    assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 1
+    assert capacity_counts(session, scheduler)["running_count"] == 1
 
 
 def test_prior_daemon_reserved_setup_counts_and_fences_ordinary_directory(managed, session):
@@ -386,8 +397,8 @@ def test_prior_daemon_reserved_setup_counts_and_fences_ordinary_directory(manage
     attempt.managed.admission_id = "prior-daemon"
     execution._save(session, row, attempt)
     restarted = QueuedScheduler()
-    assert task_delivery.delivery_capacity(session, restarted)["running_count"] == 1
-    assert task_delivery.delivery_capacity(session, restarted)["queued_count"] == 0
+    assert capacity_counts(session, restarted)["running_count"] == 1
+    assert capacity_counts(session, restarted)["queued_count"] == 0
     prepared_task(session, project)
     with pytest.raises(ValidationError, match="working directory"):
         submit(session, project, Path(attempt.managed.settings["project_dir"]), restarted)
@@ -395,7 +406,7 @@ def test_prior_daemon_reserved_setup_counts_and_fences_ordinary_directory(manage
 
 def test_duplicate_start_freezes_choice_and_queued_cancel_retires_once(managed, session):
     execution, project, scheduler, factory = managed
-    save_limit(session, 1)
+    save_limits(session, {project: 1})
     first = launch(managed, host_key="codex", model="gpt-6.1-sol")
     second = launch(managed, host_key="codex", model="gpt-6-astra")
     assert second.attached and second.attempt.request_id == first.attempt.request_id
@@ -404,7 +415,7 @@ def test_duplicate_start_freezes_choice_and_queued_cancel_retires_once(managed, 
     TrackerRepository(session).configure_main_agent(
         project_id=project, preferences={"host_key": "codex", "model": "gpt-6-astra"}
     )
-    assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 1
+    assert capacity_counts(session, scheduler)["running_count"] == 1
     execution.cancel_managed(
         project, first.attempt.request_id, session_factory=factory, scheduler=scheduler
     )
@@ -416,7 +427,7 @@ def test_duplicate_start_freezes_choice_and_queued_cancel_retires_once(managed, 
     assert attempt.status == "cancelled"
     assert attempt.partial_changes_possible is False
     assert attempt.managed.settings["model"] == "gpt-6.1-sol"
-    assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 0
+    assert capacity_counts(session, scheduler)["running_count"] == 0
     assert not session.exec(select(RunPlan)).all()
     assert not session.exec(select(TrackerTask)).all()
 
@@ -462,7 +473,7 @@ def test_real_request_executor_persists_report_identity_and_releases(managed, se
     assert evidence["snapshot"]["model"] == "gpt-6.1-sol"
     assert json.loads(evidence["snapshot"]["prompt"])["claim_token"] == "[redacted]"
     assert row.metadata_json["project_setup"]["status"] == "partial"
-    assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 0
+    assert capacity_counts(session, scheduler)["running_count"] == 0
 
 
 def test_invalid_explicit_selection_rejects_before_request(managed, session):
@@ -513,7 +524,7 @@ def test_setup_and_delivery_compete_in_both_orders(
     managed, session, tmp_path, monkeypatch, setup_first
 ):
     execution, project, scheduler, factory = managed
-    save_limit(session, 1)
+    save_limits(session, {project: 1})
     prepared_task(session, project)
     monkeypatch.setattr(task_delivery, "_select_work", lambda *args: (None, None, False))
     root = tmp_path / "task"
@@ -528,13 +539,13 @@ def test_setup_and_delivery_compete_in_both_orders(
     current = ProjectSetupRepository(session).get(project).current_attempt
     assert current.status == "queued"
     assert current.managed.slot_reserved == setup_first
-    assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 1
-    assert task_delivery.delivery_capacity(session, scheduler)["queued_count"] == 1
+    assert capacity_counts(session, scheduler)["running_count"] == 1
+    assert capacity_counts(session, scheduler)["queued_count"] == 1
     execution.cancel_managed(
         project, opened.attempt.request_id, session_factory=factory, scheduler=scheduler
     )
     scheduler.run()
-    assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 0
+    assert capacity_counts(session, scheduler)["running_count"] == 0
 
 
 @pytest.mark.parametrize("queue_removal_fails", [False, True])
@@ -642,7 +653,7 @@ def test_live_cancel_retains_reports_fences_late_report_and_releases_after_callb
             assert cancelled.status == "running"
             with factory() as check:
                 assert ProjectSetupRepository(check).get(project).configured_count == 1
-                assert task_delivery.delivery_capacity(check, scheduler)["running_count"] == 1
+                assert capacity_counts(check, scheduler)["running_count"] == 1
         finally:
             finish.set()
         future.result(timeout=10)
@@ -651,7 +662,7 @@ def test_live_cancel_retains_reports_fences_late_report_and_releases_after_callb
     assert checked and after.configured_count == 1
     assert after.current_attempt.status == "cancelled"
     assert len(after.current_attempt.reports) == 1
-    assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 0
+    assert capacity_counts(session, scheduler)["running_count"] == 0
 
 
 def test_restart_or_timeout_never_reclassifies_unconfirmed_live_work(managed, session):
@@ -669,7 +680,7 @@ def test_restart_or_timeout_never_reclassifies_unconfirmed_live_work(managed, se
     after = execution.cancel_managed(project, row.id, session_factory=factory, scheduler=restarted)
     assert after.status == "running" and after.managed.slot_reserved
     assert "reconciliation" in after.managed.diagnostic
-    assert task_delivery.delivery_capacity(session, restarted)["running_count"] == 1
+    assert capacity_counts(session, restarted)["running_count"] == 1
     assert launch((execution, project, restarted, factory)).attached
 
 
@@ -685,7 +696,7 @@ def test_changed_folder_and_missed_job_fail_without_launch(managed, session, mon
     scheduler.run()
     session.expire_all()
     assert ProjectSetupRepository(session).get(project).current_attempt.status == "failed"
-    assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 0
+    assert capacity_counts(session, scheduler)["running_count"] == 0
     opened = launch(managed, host_key="codex")
     scheduler.jobs.clear()
     task_delivery.missed_delivery_job(
@@ -695,7 +706,7 @@ def test_changed_folder_and_missed_job_fail_without_launch(managed, session, mon
     )
     session.expire_all()
     assert ProjectSetupRepository(session).get(project).current_attempt.status == "failed"
-    assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 0
+    assert capacity_counts(session, scheduler)["running_count"] == 0
 
 
 @pytest.mark.parametrize("setup_first", [True, False])
@@ -852,7 +863,7 @@ def test_queued_cancel_survives_queue_error_and_late_callback_keeps_replacement_
     scheduler.run()
     session.expire_all()
     assert execution._load(session, project, opened.attempt.request_id)[1].status == "cancelled"
-    assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 1
+    assert capacity_counts(session, scheduler)["running_count"] == 1
     assert replacement.attempt.request_id != opened.attempt.request_id
     execution.cancel_managed(
         project, replacement.attempt.request_id, session_factory=factory, scheduler=scheduler

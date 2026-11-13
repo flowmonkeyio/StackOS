@@ -17,6 +17,23 @@ def upgrade() -> None:
         # incompatible pre-existing owner.
         columns = inspector.get_columns("task_delivery_capacity")
         checks = inspector.get_check_constraints("task_delivery_capacity")
+        # A lost older stamp can replay this validation after 0049 completed.
+        # Recognize its complete replacement schema without recreating the
+        # singleton or changing any saved per-project value.
+        if (
+            {column["name"] for column in columns} == {"project_id", "concurrent_tasks"}
+            and {check["name"] for check in checks} == {"ck_task_delivery_capacity_limit"}
+            and inspector.get_pk_constraint("task_delivery_capacity")["constrained_columns"]
+            == ["project_id"]
+            and any(
+                fk["constrained_columns"] == ["project_id"]
+                and fk["referred_table"] == "projects"
+                and fk["referred_columns"] == ["id"]
+                and fk["options"].get("ondelete") == "CASCADE"
+                for fk in inspector.get_foreign_keys("task_delivery_capacity")
+            )
+        ):
+            return
         if {column["name"] for column in columns} != {"id", "concurrent_tasks"} or {
             check["name"] for check in checks
         } != {"ck_task_delivery_capacity_singleton", "ck_task_delivery_capacity_limit"}:

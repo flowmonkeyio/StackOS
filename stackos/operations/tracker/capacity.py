@@ -1,8 +1,8 @@
-"""Explicit local operator control over this daemon's shared task capacity."""
+"""Explicit local operator control over project-owned task capacity."""
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
@@ -18,24 +18,47 @@ from stackos.operations.spec import (
     OperationSurfaces,
 )
 from stackos.repositories.base import ValidationError
-from stackos.task_capacity import save_limit
+from stackos.task_capacity import MAX_CAPACITY_UPDATES, save_limits
 from stackos.task_delivery import delivery_capacity, drain_delivery
 
 
-class DeliveryCapacityInput(MCPInput):
+class CapacityInput(MCPInput):
     model_config = ConfigDict(extra="forbid")
     response_mode: Literal["compact", "raw", "standard", "verbose"] = "compact"
 
 
-class SetDeliveryCapacityInput(DeliveryCapacityInput):
-    concurrent_tasks: int = Field(strict=True, ge=1, le=32)
+class DeliveryCapacityInput(CapacityInput):
+    project_id: int | None = Field(default=None, strict=True, gt=0)
 
 
-class DeliveryCapacityOut(BaseModel):
-    scope: Literal["local-user-daemon"] = "local-user-daemon"
+class ProjectCapacityUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    project_id: int = Field(strict=True, gt=0)
+    max_concurrent_tasks: int = Field(strict=True, ge=1, le=32)
+
+
+class SetDeliveryCapacityInput(CapacityInput):
+    updates: list[ProjectCapacityUpdate] = Field(min_length=1, max_length=MAX_CAPACITY_UPDATES)
+
+    @model_validator(mode="after")
+    def unique_projects(self):
+        if len({item.project_id for item in self.updates}) != len(self.updates):
+            raise ValueError("Each project_id must appear only once in updates")
+        return self
+
+
+class ProjectDeliveryCapacityOut(BaseModel):
+    project_id: int
+    project_name: str
+    project_slug: str
     configured_limit: int
     running_count: int
     queued_count: int
+
+
+class DeliveryCapacityOut(BaseModel):
+    scope: Literal["project"] = "project"
+    projects: list[ProjectDeliveryCapacityOut]
     supported_min: int = 1
     supported_max: int = 32
 
@@ -56,7 +79,7 @@ def _runtime(inp, ctx):
 
 async def read_capacity(inp: DeliveryCapacityInput, ctx: MCPContext, _emitter):
     scheduler, _ = _runtime(inp, ctx)
-    value = await run_in_threadpool(delivery_capacity, ctx.session, scheduler)
+    value = await run_in_threadpool(delivery_capacity, ctx.session, scheduler, inp.project_id)
     return DeliveryCapacityOut.model_validate(value)
 
 
@@ -66,16 +89,20 @@ async def set_capacity(inp: SetDeliveryCapacityInput, ctx: MCPContext, _emitter)
     def save():
         with managed_launch_lock:
             try:
-                save_limit(ctx.session, inp.concurrent_tasks)
+                changed = save_limits(
+                    ctx.session,
+                    {item.project_id: item.max_concurrent_tasks for item in inp.updates},
+                )
             except SQLAlchemyError as error:
                 raise ValidationError(
-                    "Task capacity could not be saved. The previous limit remains effective.",
+                    "Task capacity could not be saved. The previous limits remain effective.",
                     data={"code": "delivery-capacity-save", "retryable": True},
                 ) from error
         # Saving is complete. Per-task registration errors are recorded on the
         # affected delivery, and must not misreport a durable preference as failed.
         try:
-            drain_delivery(session_factory=factory, scheduler=scheduler)
+            if changed:
+                drain_delivery(session_factory=factory, scheduler=scheduler)
         except Exception:
             import logging
 
@@ -109,22 +136,24 @@ def operation_specs() -> list[OperationSpec]:
                 allowed_modes=("compact", "raw"),
                 ack_safe=False,
                 compact_notes=(
-                    "Preserve scope, effective limit, running/queued counts and bounds.",
+                    "Preserve project identities, effective limits, "
+                    "running/queued counts and bounds.",
                 ),
             ),
             purpose=(
-                "Configure concurrent automated tasks across projects in this local OS user's "
-                "daemon/data directory. Running means admitted task slots, including callbacks "
+                "Read or atomically configure independent project task limits. "
+                "Running means admitted task slots, including callbacks "
                 "starting or retiring. Queued work has no slot yet. Default 3, range 1..32. "
                 "Lowering never cancels work. No account isolation or cross-device quota."
             ),
-            prerequisites=("Explicit local operator authority; no project selector or run token.",),
-            returns=("Durable effective limit and current local admission counts.",),
+            prerequisites=("Explicit local operator authority; no run token.",),
+            returns=("Project identities, durable limits and current project admission counts.",),
             examples=(OperationExample(title="Read local capacity", arguments={}),)
             if not mutating
             else (
                 OperationExample(
-                    title="Save six concurrent tasks", arguments={"concurrent_tasks": 6}
+                    title="Save project limits atomically",
+                    arguments={"updates": [{"project_id": 1, "max_concurrent_tasks": 6}]},
                 ),
             ),
         )

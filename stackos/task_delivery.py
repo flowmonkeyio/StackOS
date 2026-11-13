@@ -19,8 +19,8 @@ from uuid import uuid4
 from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.base import BaseScheduler
 from pydantic import ValidationError as SchemaValidationError
-from sqlalchemy import and_, func, or_
-from sqlmodel import Session, select
+from sqlalchemy import and_, case, func, or_
+from sqlmodel import Session, col, select
 
 from stackos.db.models import (
     RunPlan,
@@ -1211,35 +1211,80 @@ def _admission_id(scheduler: BaseScheduler) -> str:
         return identity
 
 
-def delivery_capacity(session: Session, scheduler: BaseScheduler) -> dict[str, Any]:
-    from stackos.task_capacity import MAX_TASK_CAPACITY, configured_limit
+def delivery_capacity(
+    session: Session, scheduler: BaseScheduler, project_id: int | None = None
+) -> dict[str, Any]:
+    """One consolidated scalar read for all projects, or the selected project."""
+    from stackos.db.models import Project, TaskDeliveryCapacity
+    from stackos.repositories.project_setup import ProjectSetupRepository
+    from stackos.task_capacity import DEFAULT_TASK_CAPACITY, MAX_TASK_CAPACITY
 
     with managed_launch_lock:
         identity = _admission_id(scheduler)
-        states = session.exec(
-            select(TrackerTask.metadata_json).where(
+        query = (
+            select(
+                Project.id,
+                Project.name,
+                Project.slug,
+                func.coalesce(TaskDeliveryCapacity.concurrent_tasks, DEFAULT_TASK_CAPACITY),
+            )
+            .outerjoin(
+                TaskDeliveryCapacity, col(TaskDeliveryCapacity.project_id) == col(Project.id)
+            )
+            .order_by(col(Project.id))
+        )
+        if project_id is not None:
+            query = query.where(Project.id == project_id)
+        projects = session.execute(query).all()
+        if project_id is not None and not projects:
+            raise NotFoundError("Project not found", data={"project_id": project_id})
+        reserved = (
+            func.coalesce(
+                func.json_extract(TrackerTask.metadata_json, "$.delivery.slot_reserved"), 0
+            )
+            == 1
+        )
+        queued = func.json_extract(TrackerTask.metadata_json, "$.delivery.status") == "queued"
+        counts_query = (
+            select(
+                TrackerTask.project_id,
+                func.sum(case((reserved, 1), else_=0)),
+                func.sum(case((and_(queued, ~reserved), 1), else_=0)),
+            )
+            .where(
                 func.json_extract(TrackerTask.metadata_json, "$.delivery.admission_id") == identity
             )
-        ).all()
-        deliveries = [(metadata or {}).get("delivery", {}) for metadata in states]
-        from stackos.repositories.project_setup import ProjectSetupRepository
-
-        setups = ProjectSetupRepository(session).managed_admissions()
-        return {
-            "scope": "local-user-daemon",
-            "configured_limit": configured_limit(session),
-            "running_count": sum(bool(state.get("slot_reserved")) for state in deliveries)
-            + sum(state.slot_reserved for state in setups),
-            "queued_count": sum(
-                state.get("status") == "queued" and not state.get("slot_reserved")
-                for state in deliveries
-            )
-            + sum(
+            .group_by(col(TrackerTask.project_id))
+        )
+        if project_id is not None:
+            counts_query = counts_query.where(TrackerTask.project_id == project_id)
+        counts = {
+            owner: [running, waiting]
+            for owner, running, waiting in session.exec(counts_query).all()
+        }
+        # The existing setup owner validates only live ownership scalars, once.
+        # Reserved callbacks from a previous daemon remain fenced until retired.
+        for state in ProjectSetupRepository(session).managed_admissions(project_id=project_id):
+            totals = counts.setdefault(state.project_id, [0, 0])
+            totals[0] += state.slot_reserved
+            totals[1] += (
                 state.status == "queued"
                 and not state.slot_reserved
                 and state.admission_id == identity
-                for state in setups
-            ),
+            )
+        return {
+            "scope": "project",
+            "projects": [
+                {
+                    "project_id": owner,
+                    "project_name": name,
+                    "project_slug": slug,
+                    "configured_limit": limit,
+                    "running_count": counts.get(owner, [0, 0])[0],
+                    "queued_count": counts.get(owner, [0, 0])[1],
+                }
+                for owner, name, slug, limit in projects
+            ],
             "supported_min": 1,
             "supported_max": MAX_TASK_CAPACITY,
         }
@@ -1251,9 +1296,9 @@ def _reserve_delivery(session_factory, scheduler):
 
     with managed_launch_lock, session_factory() as session:
         identity = _admission_id(scheduler)
-        capacity = delivery_capacity(session, scheduler)
-        if capacity["running_count"] >= capacity["configured_limit"]:
-            return
+        capacities = {
+            row["project_id"]: row for row in delivery_capacity(session, scheduler)["projects"]
+        }
         tasks = session.exec(
             select(TrackerTask)
             .where(
@@ -1264,6 +1309,9 @@ def _reserve_delivery(session_factory, scheduler):
         ).all()
         repo = TrackerRepository(session)
         for task in tasks:
+            capacity = capacities[task.project_id]
+            if capacity["running_count"] >= capacity["configured_limit"]:
+                continue
             state = (task.metadata_json or {})["delivery"]
             if state.get("slot_reserved"):
                 continue
@@ -1278,7 +1326,7 @@ def _reserve_delivery(session_factory, scheduler):
             return task.project_id, task.key, state
         from stackos.project_setup_execution import reserve_setup
 
-        return reserve_setup(session, scheduler)
+        return reserve_setup(session, scheduler, capacities)
 
 
 def drain_delivery(*, session_factory, scheduler: BaseScheduler) -> None:

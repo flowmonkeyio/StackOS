@@ -26,8 +26,13 @@ from stackos.repositories.tracker.ordering import NORMALIZATION_KIND
 def test_capacity_migration_replay_preserves_configured_preference(tmp_path):
     settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
     settings.ensure_dirs()
-    upgrade_to_head(settings)
+    command.upgrade(alembic_config(settings), "0048_product_receipts_merge")
     with sqlite3.connect(settings.db_path) as connection:
+        connection.execute(
+            "INSERT INTO projects (id,slug,name,domain,locale,is_active,created_at,updated_at) "
+            "VALUES (1,'saved','Saved','fixture.test','en-US',1,"
+            "CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"
+        )
         connection.execute("INSERT INTO task_delivery_capacity VALUES (1, 9)")
         connection.execute("UPDATE alembic_version SET version_num='0041_ui804_consolidation'")
     upgrade_to_head(settings)
@@ -44,7 +49,7 @@ def test_consolidation_preserves_both_prior_heads_and_reruns_once(tmp_path, prio
     settings.ensure_dirs()
     config = alembic_config(settings)
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["0048_product_receipts_merge"]
+    assert script.get_heads() == ["0049_project_task_capacity"]
     assert script.get_revision("0041_ui804_consolidation").down_revision == (
         "0040_artifact_managed_files",
         "0039_tracker_board_arrivals",
@@ -127,7 +132,7 @@ def test_consolidation_preserves_both_prior_heads_and_reruns_once(tmp_path, prio
     upgrade_to_head(settings)
     with sqlite3.connect(settings.db_path) as connection:
         assert connection.execute("SELECT version_num FROM alembic_version").fetchall() == [
-            ("0048_product_receipts_merge",)
+            ("0049_project_task_capacity",)
         ]
         assert {
             table: connection.execute(f"SELECT {names} FROM {table} ORDER BY id").fetchall()
