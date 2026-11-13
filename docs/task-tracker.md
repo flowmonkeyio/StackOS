@@ -937,6 +937,44 @@ totals/rows cover retained lifetime usage including `undated`, and `daily` is
 empty (no unbounded all-history time series). Work projections always use
 retained lifetime usage, independently of these analytics filters.
 
+Statistics reads use the existing receipt owner's derived
+`tracker_receipt_projections` index. It contains only the inputs to usage,
+classification, source-time history and recorded duration, keyed by ticket,
+attempt and phase. Raw results, prompts, configuration and recovery packets
+remain in the authoritative ticket evidence and its complete detail reads.
+The usage inventory requires a recorded launch; duration retains its existing
+unfiltered inventory. A malformed current launch therefore cannot erase an
+otherwise eligible archived usage contribution or fabricate a duration endpoint.
+
+The index is backfilled during migration or explicit lost-schema-stamp recovery.
+Canonical ORM receipt writes and
+the explicit usage-repair script update it in the source transaction. Finalization,
+repair/requeue and clearing evidence replace or remove only changed contributions;
+ticket/task/project deletion cascades. Project visibility and tracker membership
+are joined from current source rows, rather than cached. Date requests select the
+UTC bounds of the requested local calendar range before receipt decoding, plus
+the deliberately lifetime-scoped undated disclosure. Dated and undated ranges
+use separate index searches. A short report never decodes unrelated raw history.
+
+`ReceiptProjection` belongs to one read request. Task/ticket projections in a
+snapshot or usage refresh share its selected rows, provisional copy and normalized
+facts. The live copy is captured before fresh scalar SQL; persisted final usage
+and closed timing endpoints still win. Later requests create a new projection.
+At the same statistics owner, bounded in-process LRU reuse (8192 source entries)
+keys pure decoding/normalization and per-receipt history preparation by the complete
+projected source value and ticket identity where needed. Changed source values
+cannot reuse an older contribution. This cache contains no scoped report result,
+authorization decision or live registry state; eviction only recomputes a fact.
+Outputs own their mutable models. Reporting fans each normalized receipt into
+period/day/agent/model accumulators in one pass; history replaces changed cumulative
+contributions rather than resumming every invocation at each checkpoint.
+
+The reusable disposable performance workload builder is
+`tests/helpers/agent_statistics.py`. Local proof covers repeated terminal reads
+and a seven-day selection over its longer archive; the assembled delivery gate
+owns the single large-load campaign and useful-page timing. No statistics read
+seeds production data or performs an implicit index backfill.
+
 Request example for `tracker.agentStats` (`tracker.agentStatsAll` accepts the
 same filters and `is_active` instead of `project_id`):
 

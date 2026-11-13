@@ -419,6 +419,16 @@ def apply_manifest(
                     "WHERE id=? AND project_id=1",
                     (json.dumps(evidence, ensure_ascii=False, sort_keys=True), row["id"]),
                 )
+                from stackos.repositories.tracker.receipt_projection import (
+                    sync_sqlite_receipt_projection,
+                )
+
+                sync_sqlite_receipt_projection(
+                    connection,
+                    row["id"],
+                    evidence,
+                    json.loads(row["completion_evidence_json"]),
+                )
         connection.commit()
         return len(pending)
     except BaseException:

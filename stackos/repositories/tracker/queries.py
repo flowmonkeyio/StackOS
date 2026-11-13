@@ -45,6 +45,7 @@ from stackos.repositories.base import (
     cursor_paginate,
 )
 from stackos.repositories.tracker.agent_stats import (
+    ReceiptProjection,
     query_agent_stats,
     query_task_agent_stats,
     query_ticket_agent_stats,
@@ -370,8 +371,9 @@ class TrackerQueryMixin:
             task_ids = {ticket.task_id for ticket in tickets}
             tasks = [task for task in tasks if task.id in task_ids]
 
-        task_out = self._task_out_many(tracker.id, tasks)
-        ticket_out = self._ticket_out_many(tickets)
+        projection = ReceiptProjection(self._s)
+        task_out = self._task_out_many(tracker.id, tasks, projection=projection)
+        ticket_out = self._ticket_out_many(tickets, projection=projection)
         dependencies = self._dependency_out_for_tickets(tickets)
         links = self._link_out_for_scope(
             tracker.id,
@@ -971,8 +973,9 @@ class TrackerQueryMixin:
                 .limit(max(1, min(limit, 100)))
             )
         )
-        task_out = self._task_out_many(tracker.id, tasks)
-        ticket_out = self._ticket_out_many(tickets)
+        projection = ReceiptProjection(self._s)
+        task_out = self._task_out_many(tracker.id, tasks, projection=projection)
+        ticket_out = self._ticket_out_many(tickets, projection=projection)
         return TrackerSearchOut(
             project_id=project_id,
             query=query.strip(),
@@ -1016,9 +1019,15 @@ class TrackerQueryMixin:
         rows: list[TrackerTask],
         *,
         include_ticket_summary: bool = False,
+        projection: ReceiptProjection | None = None,
     ) -> list[TrackerTaskOut]:
         summaries = self._task_ticket_summaries(tracker_id, rows) if include_ticket_summary else {}
-        columns = task_columns(self._s, rows)
+        projection = projection or ReceiptProjection(self._s)
+        projection.load(
+            task_ids={row.id for row in rows if row.id is not None},
+            tracker_id=tracker_id,
+        )
+        columns = task_columns(self._s, rows, projection=projection)
         durations: dict[int, WorkDurationOut] = {}
         metrics = query_task_agent_stats(
             self._s,
@@ -1026,6 +1035,7 @@ class TrackerQueryMixin:
             task_ids={row.id for row in rows if row.id is not None},
             work_durations=durations,
             task_keys={row.id: row.key for row in rows if row.id is not None},
+            projection=projection,
         )
         return [
             TrackerTaskOut.model_validate(row).model_copy(
@@ -1233,12 +1243,22 @@ class TrackerQueryMixin:
             link_count=len(self._link_rows_for_ticket(row.id)),
         )
 
-    def _ticket_out_many(self, rows: list[TrackerTicket]) -> list[TrackerTicketOut]:
+    def _ticket_out_many(
+        self,
+        rows: list[TrackerTicket],
+        *,
+        projection: ReceiptProjection | None = None,
+    ) -> list[TrackerTicketOut]:
         ticket_ids = {row.id for row in rows if row.id is not None}
         if not ticket_ids:
             return []
         durations: dict[int, WorkDurationOut] = {}
-        metrics = query_ticket_agent_stats(self._s, ticket_ids=ticket_ids, work_durations=durations)
+        metrics = query_ticket_agent_stats(
+            self._s,
+            ticket_ids=ticket_ids,
+            work_durations=durations,
+            projection=projection,
+        )
 
         dependencies = list(
             self._s.exec(

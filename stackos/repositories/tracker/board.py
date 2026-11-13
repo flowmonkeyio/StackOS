@@ -5,12 +5,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Literal
 
 from sqlalchemy import func
-from sqlmodel import Session, col, select
+from sqlmodel import Session, select
 
-from stackos.db.models import ProjectEvent, TrackerTask, TrackerTicket
+from stackos.db.models import ProjectEvent, TrackerTask
 from stackos.repositories.tracker.schema import TaskDeliveryStateOut
 
 if TYPE_CHECKING:
+    from stackos.repositories.tracker.agent_stats import ReceiptProjection
     from stackos.repositories.tracker.schema import TrackerTaskOut
 
 BoardColumn = Literal[
@@ -41,7 +42,12 @@ def task_column(task: TrackerTask | TrackerTaskOut, *, has_execution: bool = Fal
     return "backlog" if task.lane_key == "backlog" else "todo"
 
 
-def task_columns(session: Session, tasks: list[TrackerTask]) -> dict[int | None, BoardColumn]:
+def task_columns(
+    session: Session,
+    tasks: list[TrackerTask],
+    *,
+    projection: ReceiptProjection | None = None,
+) -> dict[int | None, BoardColumn]:
     # Only queued work needs historical evidence. A workflow's started_at is
     # lifecycle state, not proof that a native host call has ever begun.
     queued = [
@@ -55,7 +61,7 @@ def task_columns(session: Session, tasks: list[TrackerTask]) -> dict[int | None,
     ]
     executed: set[int | None] = set()
     if queued:
-        from stackos.repositories.tracker.agent_stats import _last_execution, invocation_receipts
+        from stackos.repositories.tracker.agent_stats import ReceiptProjection, _last_execution
 
         for project_id in {task.project_id for task in queued}:
             keys = {task.key: task.id for task in queued if task.project_id == project_id}
@@ -75,11 +81,14 @@ def task_columns(session: Session, tasks: list[TrackerTask]) -> dict[int | None,
         # retention. Launch/session records alone do not establish execution.
         missing = {task.id for task in queued} - executed
         if missing:
-            for task_id, evidence in session.exec(
-                select(TrackerTicket.task_id, TrackerTicket.completion_evidence_json).where(
-                    col(TrackerTicket.task_id).in_(missing)
-                )
-            ).all():
-                if _last_execution(invocation_receipts(evidence)) is not None:
-                    executed.add(task_id)
+            if projection is None:
+                projection = ReceiptProjection(session)
+                projection.load(task_ids={tid for tid in missing if tid is not None})
+            for ticket in projection.tickets.values():
+                if (
+                    ticket.task_id in missing
+                    and _last_execution([fact.receipt for fact in ticket.durable_receipts])
+                    is not None
+                ):
+                    executed.add(ticket.task_id)
     return {task.id: task_column(task, has_execution=task.id in executed) for task in tasks}

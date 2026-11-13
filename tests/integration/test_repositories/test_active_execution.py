@@ -793,7 +793,7 @@ def test_native_exit_hands_usage_to_receipt_before_return_without_active_resourc
 
     def runner(*args, **kwargs):
         call = next(iter(service._active_invocations.values()))
-        call.reader = SimpleNamespace(close=close, read=lambda: None)
+        call.reader = SimpleNamespace(close=close, read=lambda: [])
         call.usage = measured(200, 8, 160)
         call.measured_at = stamp
         call.samples.append({"at": stamp, **call.usage["measured"]})
