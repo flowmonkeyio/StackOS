@@ -139,6 +139,7 @@ it('removes the target from the actual Overview list and selector while a late p
     }
     if (url.includes('tracker.ticketCounts')) return json(ticketSummaryFixture())
     if (url.includes('tracker.agentStats')) return json(agentStatsFixture())
+    if (url === '/api/v1/auth/accounts?summary_only=true') return json({ accounts: [], providers: [], summary_only: true })
     return json([])
   })
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/', component: HomeView }] })
@@ -148,6 +149,7 @@ it('removes the target from the actual Overview list and selector while a late p
     HomePortfolioOverview: true, TicketStatusChart: true,
   } } })
   await flushPromises()
+  expect(globalThis.fetch).toHaveBeenCalledWith('/api/v1/auth/accounts?summary_only=true', expect.anything())
   const list = () => app.getComponent(ActiveTaskList).text()
   expect(list()).toContain('Alpha')
   deferPortfolio = true
