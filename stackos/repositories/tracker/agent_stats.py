@@ -833,18 +833,27 @@ def usage_refresh(
     *,
     task_key: str | None = None,
     metric_demand: TrackerMetricDemand | None = None,
+    projection: ReceiptProjection | None = None,
 ) -> dict[str, Any]:
     """Safe initial/reconnect snapshot, then minimal affected Work projections."""
     if metric_demand is not None:
-        from stackos.repositories.tracker import TrackerRepository
+        if task_key is not None:
+            from stackos.repositories.base import ValidationError
 
-        snapshot = TrackerRepository(session).get(
+            raise ValidationError("UI metric demand uses complete project scope")
+        from stackos.repositories.tracker import TrackerRepository
+        from stackos.repositories.tracker.ui_projection import ui_snapshot
+
+        snapshot = ui_snapshot(
+            TrackerRepository(session),
             project_id=project_id,
             task_key=task_key,
             task_index_only=True,
             include_graph=False,
-            projection="ui",
-            metric_demand=metric_demand,
+            task_statuses=None,
+            workflow_key=None,
+            demand=metric_demand,
+            receipt_projection=projection,
         )
         return {
             "projection": "ui",

@@ -4,6 +4,7 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import event
 from sqlmodel import Session
 
 from stackos.auth_providers import AuthRepository
@@ -161,14 +162,32 @@ async def test_global_ui_feed_replaces_complete_composite_scope(api, project_id)
         TrackerRepository(session).create_task(
             project_id=foreign, key="visible", title="Same key, foreign owner"
         )
+        TrackerRepository(session).create_ticket(
+            project_id=foreign, task_key="visible", key="foreign-child", title="Foreign child"
+        )
 
     async def connected():
         return False
 
+    receipt_queries = []
+
+    def observe(_connection, _cursor, sql, params, _context, _many):
+        if "receipt_json" in sql:
+            receipt_queries.append((sql, params))
+
+    engine = api.app.state.engine
+    event.listen(engine, "before_cursor_execute", observe)
     response = await global_context_timeline_stream(
         SimpleNamespace(is_disconnected=connected),
         after=None,
-        ui_demand=json.dumps({"projects": {str(project_id): {"task_keys": ["visible"]}}}),
+        ui_demand=json.dumps(
+            {
+                "projects": {
+                    str(project_id): {"task_keys": ["visible"]},
+                    str(foreign): {"task_keys": ["visible"], "ticket_keys": ["foreign-child"]},
+                }
+            }
+        ),
         engine=api.app.state.engine,
     )
     try:
@@ -181,9 +200,12 @@ async def test_global_ui_feed_replaces_complete_composite_scope(api, project_id)
             (foreign, "foreign"),
             (foreign, "visible"),
         }
-        assert sum(task["agent_stats"] is not None for task in data["tasks"]) == 1
+        assert sum(task["agent_stats"] is not None for task in data["tasks"]) == 2
+        assert len(receipt_queries) == 1
+        assert [ticket["key"] for ticket in data["tickets"]] == ["foreign-child"]
     finally:
         await response.body_iterator.aclose()
+        event.remove(engine, "before_cursor_execute", observe)
 
 
 @pytest.mark.parametrize("mode", ["raw", "compact"])

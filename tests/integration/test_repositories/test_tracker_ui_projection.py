@@ -389,3 +389,7 @@ def test_ui_metrics_match_full_canonical_duration_usage_and_replacement(session,
     assert cleared["tickets"] == []
     assert len(usage_refresh(session, project_id, None)["tickets"]) == 1
     assert len(usage_refresh(session, project_id, None, task_key="owned")["tasks"]) == 1
+    with pytest.raises(ValidationError):
+        usage_refresh(
+            session, project_id, None, task_key="owned", metric_demand=TrackerMetricDemand()
+        )

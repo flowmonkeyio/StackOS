@@ -307,16 +307,7 @@ def _timeline_stream(
                 if demand is not None:
                     with Session(engine) as session:
                         projects = _ui_usage_scope(session, project_id, task_key, demand)
-                        scopes = [
-                            usage_refresh(
-                                session,
-                                pid,
-                                None,
-                                task_key=task_key,
-                                metric_demand=demand.projects.get(pid, TrackerMetricDemand()),
-                            )
-                            for pid in projects
-                        ]
+                        scopes = _ui_usage_updates(session, projects, demand)
                     updates = {
                         "projection": "ui",
                         "scope_complete": True,
@@ -396,6 +387,71 @@ def _timeline_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+def _ui_usage_updates(session, projects, demand: TrackerUsageDemand) -> list[dict[str, Any]]:
+    """One authorized receipt batch across the global stream's composite demand."""
+    from sqlalchemy import false, or_
+    from sqlmodel import col, select
+
+    from stackos.db.models import TaskTracker, TrackerTask, TrackerTicket
+    from stackos.repositories.tracker.agent_stats import ReceiptProjection
+    from stackos.repositories.tracker.utils import DEFAULT_TRACKER_KEY
+
+    task_ids = (
+        set(
+            session.exec(
+                select(TrackerTask.id)
+                .join(TaskTracker, col(TaskTracker.id) == col(TrackerTask.tracker_id))
+                .where(
+                    TaskTracker.key == DEFAULT_TRACKER_KEY,
+                    or_(
+                        false(),
+                        *[
+                            (col(TrackerTask.project_id) == pid)
+                            & col(TrackerTask.key).in_(requested.task_keys)
+                            for pid, requested in demand.projects.items()
+                        ],
+                    ),
+                )
+            )
+        )
+        if any(d.task_keys for d in demand.projects.values())
+        else set()
+    )
+    ticket_ids = (
+        set(
+            session.exec(
+                select(TrackerTicket.id)
+                .join(TaskTracker, col(TaskTracker.id) == col(TrackerTicket.tracker_id))
+                .where(
+                    TaskTracker.key == DEFAULT_TRACKER_KEY,
+                    or_(
+                        false(),
+                        *[
+                            (col(TrackerTicket.project_id) == pid)
+                            & col(TrackerTicket.key).in_(requested.ticket_keys)
+                            for pid, requested in demand.projects.items()
+                        ],
+                    ),
+                )
+            )
+        )
+        if any(d.ticket_keys for d in demand.projects.values())
+        else set()
+    )
+    projection = ReceiptProjection(session)
+    projection.load(task_ids=task_ids, ticket_ids=ticket_ids)
+    return [
+        usage_refresh(
+            session,
+            pid,
+            None,
+            metric_demand=demand.projects.get(pid, TrackerMetricDemand()),
+            projection=projection,
+        )
+        for pid in projects
+    ]
 
 
 def _ui_usage_scope(session, project_id, task_key, demand: TrackerUsageDemand) -> list[int]:

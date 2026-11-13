@@ -113,6 +113,7 @@ def ui_snapshot(
     include_graph,
     task_index_only,
     demand: TrackerMetricDemand,
+    receipt_projection: ReceiptProjection | None = None,
 ) -> TrackerSnapshotOut:
     ProjectRepository(repo._s).require_available(project_id)
     tracker = repo._tracker_or_none(project_id=project_id)
@@ -173,15 +174,17 @@ def ui_snapshot(
     ticket_ids_by_key = {ticket.key: ticket.id for ticket in tickets}
     if not set(demand.ticket_keys) <= ticket_ids_by_key.keys():
         raise ValidationError("Metric ticket demand is outside the selected graph scope")
-    projection = ReceiptProjection(repo._s)
+    projection = receipt_projection or ReceiptProjection(repo._s)
+    # Shared global demand was authorized and loaded once by exact composite keys.
+    metric_tracker_id = None if receipt_projection is not None else tracker.id
     task_ids = {tasks_by_key[key].id for key in demand.task_keys}
     ticket_ids = {ticket_ids_by_key[key] for key in demand.ticket_keys}
     # Exactly one receipt batch combines demanded task and ticket scopes.
-    projection.load(task_ids=task_ids, ticket_ids=ticket_ids, tracker_id=tracker.id)
+    projection.load(task_ids=task_ids, ticket_ids=ticket_ids, tracker_id=metric_tracker_id)
     durations: dict[int, WorkDurationOut] = {}
     metrics = query_task_agent_stats(
         repo._s,
-        tracker_id=tracker.id,
+        tracker_id=metric_tracker_id,
         task_ids=task_ids,
         work_durations=durations,
         task_keys={task.id: task.key for task in tasks if task.id in task_ids},
