@@ -282,86 +282,56 @@ def query_delivery_trends(
         col(table.finished_at).is_not(None),
         col(table.finished_at) <= observed.replace(tzinfo=None),
     )
-    inventory = _scope(
-        _join_scope(
-            select(
-                col(TrackerTicket.id),
-                col(TrackerTicket.task_id),
-                func.sum(case((col(table.timing).is_(True), 1), else_=0)),
-                func.sum(case((valid_closed, 1), else_=0)),
-                func.sum(
-                    case(
-                        (
-                            or_(
-                                and_(
-                                    col(table.inventory) == "usage",
-                                    col(table.review_outcome) == "unclassified",
+    inventory = (
+        _scope(
+            _join_scope(
+                select(
+                    col(TrackerTicket.id).label("ticket_id"),
+                    col(TrackerTicket.task_id).label("task_id"),
+                    func.sum(case((col(table.timing).is_(True), 1), else_=0)).label("timing_count"),
+                    func.sum(case((valid_closed, 1), else_=0)).label("valid_count"),
+                    func.sum(
+                        case(
+                            (
+                                or_(
+                                    and_(
+                                        col(table.inventory) == "usage",
+                                        col(table.review_outcome) == "unclassified",
+                                    ),
+                                    and_(
+                                        col(table.inventory) == "timing",
+                                        col(table.review_outcome).in_(("success", "repair")),
+                                    ),
                                 ),
-                                and_(
-                                    col(table.inventory) == "timing",
-                                    col(table.review_outcome).in_(("success", "repair")),
-                                ),
+                                1,
                             ),
-                            1,
-                        ),
-                        else_=0,
-                    )
+                            else_=0,
+                        )
+                    ).label("unclassified"),
+                    func.sum(case((and_(repair, usable_verdict), 1), else_=0)).label(
+                        "known_repairs"
+                    ),
+                    func.sum(case((and_(repair, ~usable_verdict), 1), else_=0)).label(
+                        "missing_repairs"
+                    ),
+                )
+                .select_from(TrackerTicket)
+                .outerjoin(
+                    table,
+                    col(table.ticket_id) == col(TrackerTicket.id),
                 ),
-                func.sum(case((and_(repair, usable_verdict), 1), else_=0)),
-                func.sum(case((and_(repair, ~usable_verdict), 1), else_=0)),
-            )
-            .select_from(TrackerTicket)
-            .outerjoin(
-                table,
-                col(table.ticket_id) == col(TrackerTicket.id),
+                TrackerTicket,
             ),
-            TrackerTicket,
-        ),
-        project_id,
-        is_active,
-    ).group_by(TrackerTicket.id)
-    recorded = missing = 0
-    ticket_tasks = set()
-    unknown_classification = 0
-    repair_known = repair_missing = 0
-    for (
-        _tid,
-        task_id,
-        count,
-        valid,
-        unclassified,
-        known_repairs,
-        missing_repairs,
-    ) in session.execute(inventory):
-        ticket_tasks.add(task_id)
-        recorded += valid or 0
-        unknown_classification += unclassified or 0
-        repair_known += known_repairs or 0
-        repair_missing += missing_repairs or 0
-        if not count:
-            missing += 1
-    no_tickets = task_count - len(ticket_tasks)
-    missing += no_tickets
-    coverage["changes_requested"] = _coverage(
-        repair_known,
-        repair_missing,
-        *(["quality_verdict_identity_or_finish_unknown"] if repair_missing else []),
+            project_id,
+            is_active,
+        )
+        .group_by(col(TrackerTicket.id))
+        .subquery("timing_inventory")
     )
-    if unknown_classification:
-        for name, known, unavailable in (
-            ("first_review_acceptance", first_known, first_missing),
-            ("changes_requested", repair_known, repair_missing),
-        ):
-            coverage[name] = _coverage(
-                known,
-                unavailable + unknown_classification,
-                *coverage[name].issues,
-                "unclassified_review_history",
-            )
     selected_timing = _scope(
         _join_scope(
             select(
-                col(TrackerTicket.id),
+                col(TrackerTicket.id).label("ticket_id"),
                 col(TrackerTicket.task_id),
                 col(TrackerTicket.project_id),
                 col(TrackerTicket.key),
@@ -391,12 +361,53 @@ def query_delivery_trends(
     evidence: dict[int, dict[str, Any]] = {}
     identities = {}
     already_counted: dict[int, int] = defaultdict(int)
-    timing_rows = session.execute(selected_timing).all()
+    selected_timing = selected_timing.subquery("timing_selection")
+    # Coverage totals and selected receipts must share one SQL snapshot. A
+    # native final receipt can commit after any earlier read; a later row must
+    # never be subtracted as already counted by an earlier inventory.
+    timing_rows = session.execute(
+        select(inventory, selected_timing)
+        .select_from(inventory)
+        .outerjoin(selected_timing, inventory.c.ticket_id == selected_timing.c.ticket_id)
+    ).all()
     # A real native exit can land during the earlier report reductions. Validate
     # fresh final rows against the time after their read; the earlier owned live
     # copy still bounds any invocation without a durable finish.
     observed = datetime.now(UTC)
-    for tid, task_id, pid, key, attempt, phase, current, source, counted in timing_rows:
+    recorded = missing = 0
+    ticket_tasks = set()
+    included_tickets = set()
+    unknown_classification = 0
+    repair_known = repair_missing = 0
+    for (
+        tid,
+        task_id,
+        count,
+        valid,
+        unclassified,
+        known_repairs,
+        missing_repairs,
+        selected_tid,
+        _selected_task,
+        pid,
+        key,
+        attempt,
+        phase,
+        current,
+        source,
+        counted,
+    ) in timing_rows:
+        if tid not in included_tickets:
+            included_tickets.add(tid)
+            ticket_tasks.add(task_id)
+            recorded += valid or 0
+            unknown_classification += unclassified or 0
+            repair_known += known_repairs or 0
+            repair_missing += missing_repairs or 0
+            if not count:
+                missing += 1
+        if selected_tid is None:
+            continue
         identities[tid] = task_id, pid, key
         already_counted[tid] += bool(counted)
         automatic = evidence.setdefault(tid, {"automatic_delivery": {"attempts": []}})[
@@ -409,6 +420,23 @@ def query_delivery_trends(
             automatic[phase] = receipt
         else:
             automatic["attempts"].append({"attempt": attempt or None, phase: receipt})
+    missing += task_count - len(ticket_tasks)
+    coverage["changes_requested"] = _coverage(
+        repair_known,
+        repair_missing,
+        *(["quality_verdict_identity_or_finish_unknown"] if repair_missing else []),
+    )
+    if unknown_classification:
+        for name, known, unavailable in (
+            ("first_review_acceptance", first_known, first_missing),
+            ("changes_requested", repair_known, repair_missing),
+        ):
+            coverage[name] = _coverage(
+                known,
+                unavailable + unknown_classification,
+                *coverage[name].issues,
+                "unclassified_review_history",
+            )
     by_task: dict[int, list[tuple[datetime, datetime]]] = defaultdict(list)
     issues = {"no_recorded_invocations"} if missing else set()
     for tid, source in evidence.items():

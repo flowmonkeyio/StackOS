@@ -1031,8 +1031,10 @@ and explicit review classification, updated in the canonical source transaction.
 Migration (or explicit lost-stamp recovery) backfills these derived fields.
 Short reports select overlapping intervals before receipt JSON decoding and
 reduce first-completion/first-review provenance before date filtering. Scalar
-coverage reads preserve lifetime gaps without decoding unrelated history. One
-bounded query path supplies all six trends; no report cache or analytics store
+coverage reductions and selected timing rows share one SQL snapshot, so a native
+final receipt committed during a report cannot erase supported work time or its
+coverage. These reads preserve lifetime gaps without decoding unrelated history.
+One bounded query path supplies all six trends; no report cache or analytics store
 is introduced. `test_delivery_trends.py` provides independent reopens, stops,
 review, overlap, DST, scope, missing-history and read-budget ledgers.
 

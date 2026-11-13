@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime, timedelta
 
 import pytest
 from sqlalchemy import event
-from sqlmodel import select
+from sqlmodel import Session, SQLModel, select
 
 from stackos.db.models import TrackerRevision, TrackerTask, TrackerTicket
 from stackos.repositories.projects import ProjectRepository
@@ -119,6 +119,7 @@ def test_independent_completion_review_stop_and_interval_ledger(session, project
     # Per-task union: Nov1 07:00-09:00 + Nov2 07:30-08:00 = 2.5h;
     # Nov2 08:00-08:30 = .5h. No duplicate task/ticket or archive totals.
     assert trends.totals.work_time.total_seconds == 10800
+    assert trends.totals.work_time.coverage.recorded == 4
     assert [day.work_time.total_seconds for day in trends.daily] == [9000, 1800]
     assert [day.completed_tasks.total for day in trends.daily] == [1, 0]
     assert [day.stops.total for day in trends.daily] == [1, 1]
@@ -316,7 +317,7 @@ def test_short_range_decodes_only_overlapping_receipts_in_one_shared_read(
     assert report.totals.reported_usage.total == 77
     assert report.delivery_trends.totals.work_time.total_seconds == 70
     assert len(decoded) == 7
-    assert len(statements) == 8  # Includes the repository's legitimate project lookup.
+    assert len(statements) == 7  # Includes the repository's legitimate project lookup.
     assert all(statement.lstrip().upper().startswith("SELECT") for statement in statements)
     assert not any("completion_evidence_json" in statement for statement in statements)
 
@@ -372,6 +373,111 @@ def test_report_uses_canonical_live_final_handoff(session, project_id, monkeypat
             )
     finally:
         service._unregister(call)
+
+
+@pytest.mark.parametrize(
+    "disk_backed,global_scope,period",
+    [
+        (False, False, "lifetime"),
+        (True, False, "lifetime"),
+        (True, True, "contains"),
+        (True, True, "empty"),
+    ],
+)
+def test_closed_registry_handoff_keeps_duration_and_coverage_consistent(
+    session, project_id, tmp_path, disk_backed, global_scope, period
+):
+    from stackos.db.connection import make_engine
+    from stackos.host_mcp import service
+    from stackos.task_delivery import _record_execution_transition
+
+    def probe(current_session, pid):
+        start = datetime.now(UTC) - timedelta(seconds=10)
+        finish = start + timedelta(seconds=9)
+        call = service.ActiveInvocation(
+            "trend-delayed-commit",
+            service.AgentExecutionScope(pid, "overview", "delayed", "worker", 1, "delivery"),
+            "codex",
+            None,
+            start.isoformat(),
+        )
+        _store(
+            current_session,
+            pid,
+            "delayed",
+            {
+                "attempt": 1,
+                "delivery": {
+                    "launch": {"started_at": start.isoformat()},
+                    "execution": call.projection(),
+                },
+            },
+        )
+        service._active_invocations[call.invocation_id] = call
+        service._finish(call, None, finished_at=finish.isoformat())
+        engine = current_session.get_bind()
+        committed = []
+
+        def commit_before_timing_rows(_conn, _cursor, statement, *_args):
+            if " AS counted" not in statement or committed:
+                return
+            committed.append(True)
+            _record_execution_transition(lambda: Session(engine), call, False)
+            service._unregister(call)
+
+        event.listen(engine, "before_cursor_execute", commit_before_timing_rows)
+        try:
+            repo = TrackerRepository(current_session)
+            filters = {}
+            if period != "lifetime":
+                day = start.date() - timedelta(days=1) if period == "empty" else start.date()
+                filters = dict(
+                    start_date=day,
+                    end_date=day if period == "empty" else finish.date(),
+                    timezone="UTC",
+                )
+
+            def read():
+                report = (
+                    repo.agent_stats_all(is_active=None, **filters)
+                    if global_scope
+                    else repo.agent_stats(project_id=pid, **filters)
+                )
+                return report.delivery_trends
+
+            current, settled = read(), read()
+            assert committed
+            assert current == settled
+            expected = 0 if period == "empty" else 9
+            assert current.totals.work_time.total_seconds == expected
+            assert current.totals.work_time.coverage.model_dump() == {
+                "status": "complete",
+                "recorded": 1,
+                "unavailable": 0,
+                "issues": [],
+            }
+            assert sum(day.work_time.total_seconds for day in current.daily) == (
+                expected if period != "lifetime" else 0
+            )
+        finally:
+            event.remove(engine, "before_cursor_execute", commit_before_timing_rows)
+            service._unregister(call)
+
+    if not disk_backed:
+        probe(session, project_id)
+        return
+    engine = make_engine(tmp_path / "handoff.db")
+    SQLModel.metadata.create_all(engine)
+    try:
+        with Session(engine) as current_session:
+            pid = (
+                ProjectRepository(current_session)
+                .create(slug="handoff", name="Handoff", domain="test.invalid")
+                .data.id
+            )
+            probe(current_session, pid)
+    finally:
+        engine.dispose()
 
 
 def test_final_finish_during_the_report_replaces_the_earlier_live_copy(session, project_id):
