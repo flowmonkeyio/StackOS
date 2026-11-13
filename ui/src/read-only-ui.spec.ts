@@ -37,7 +37,7 @@ describe('restricted UI write contract', () => {
         const operations = [...source.matchAll(/callOperation(?:<[^\n]+>)?\(\s*['"](projectSetup\.[^'"]+)['"]/g)].map(match => match[1])
         if (operations.length) {
           expect(file).toBe(PROJECT_SETUP_CONTROLLER)
-          expect(operations).toEqual(['projectSetup.get', 'projectSetup.setReminders', 'projectSetup.start'])
+          expect(operations).toEqual(['projectSetup.get', 'projectSetup.setReminders', 'projectSetup.start', 'projectSetup.answer', 'projectSetup.continue', 'projectSetup.cancel'])
           callers.push(file)
         }
       }

@@ -103,7 +103,17 @@ and update count; directoryless projects have none. `ProjectSetupLaunchDialog`
 uses the host capability catalog and existing dialog/form primitives for first
 setup and saved-agent updates. `/projects/:id/setup` is the internal Home detail
 shell for the retained attempt; opening it performs reads only. It has no native
-host conversation link. The setup panel owns answer/result/recovery controls.
+host conversation link. The same detail shell renders queued, running, question,
+current and recovery states. `SetupQuestionForm` retains one draft per exact
+attempt/request/question revision, focuses the actionable answer and submits
+through the controller's typed `projectSetup.answer` binding. Existing-session
+answers remain in that session. Revision conflicts refresh the recorded question;
+pending writes exclude competing answers, recovery and cancellation. Leaving the
+page only dismisses the UI; cancellation requires an explicit confirmation.
+`projectSetup.continue` resumes remaining work with the recorded selection.
+The shared `DataTable` and `projectSetup` status domain show independent workflow
+results, secondary last-verified versions, expandable details and partial-change
+warnings. Partial or unactivated setup never claims whole-project readiness.
 
 Both Home headers mount the feature-owned `views/home/DeliveryCapacityControl`.
 Its compact trigger shows server-reported admitted tasks against the persisted
