@@ -99,6 +99,32 @@ def test_family_aliases_keep_one_shared_adaptation() -> None:
         assert len({id(role["project_adaptation"]) for role in roles}) == 1
 
 
+def test_proportionate_proof_rules_reach_each_execution_and_planning_consumer() -> None:
+    # Availability/parity only. The scenario fixture requires observed actions and
+    # an independent qualitative assessment, not a phrase-based behavior verdict.
+    agents = AgentPresetLoader()
+    planning = agents.describe_preset(key="stackos.sdlc.planning").preset
+    rules = [
+        rule
+        for rule in planning.prompt_contract.must_do
+        if rule.startswith(
+            ("Prove the requested end-to-end flow", "Base each pass claim", "Establish uncertain")
+        )
+    ]
+    assert len(rules) == 3
+    skill = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
+    main_rules = skill.operating_contract.responsibilities + skill.operating_contract.must_do
+    orchestrator = (ROOT / ".codex/orchestrator/sdlc-delivery-orchestrator.md").read_text()
+    for rule in rules:
+        assert rule in main_rules
+        assert rule in orchestrator
+        for role in ("planning", "test-designer", "delivery", "delivery-reviewer"):
+            source = agents.describe_preset(key=f"stackos.sdlc.{role}").preset
+            local = tomllib.loads((ROOT / f".codex/agents/sdlc-{role}.toml").read_text())
+            assert rule in source.prompt_contract.must_do, role
+            assert rule in local["developer_instructions"], role
+
+
 @pytest.mark.parametrize("owner", ["planning", "orchestrator"])
 def test_cross_task_inputs_reach_planning_and_dispatch_consumers(owner: str) -> None:
     if owner == "planning":

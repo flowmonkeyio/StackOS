@@ -382,6 +382,35 @@ stays in nonblocking followups; reject drift, unnecessary abstractions and
 duplicate ownership, not justified unlisted changes.
 
 Ticket-local acceptance must be distinct from integration-only obligations.
+Choose the smallest convincing checks for the requested end-to-end flow, directly
+affected existing consumers and relevant failure/recovery transitions. Repair a
+demonstrated shared cause and implicated adjacent consumers within the outcome;
+stop expanding when assigned obligations are answered unless new evidence, a
+material change or a mandatory gate warrants more. Broad suites on every child,
+exhaustive matrices and unrelated audits are not defaults. Required integration
+and final signoff retain their existing owners.
+
+Pass claims require actual command exit status, completion and unhandled errors,
+tested candidate and covered scope. Green assertions cannot conceal a failed
+command. Preserve failed, blocked and skipped observations; fix affected fixtures
+without weakening guarantees. Reuse complete current proof with explicit scope,
+candidate, prerequisite and environment justification; rerun invalidated or missing
+required proof. Check uncertain required capabilities before lengthy dependent
+work. Ordinary approval need uses normal scoped approval for authorized actions;
+actual denial stops that action and dependent work without bypass. Distinguish
+unavailable capability, repairable owned defect and explicit cancellation using
+concrete tool evidence; manual exceptions cover only their named proof. Continue
+unaffected work and keep unavailable required proof blocked.
+
+The proportionate-proof revision assessed official
+[Codex review rules](https://developers.openai.com/blog/custom-code-review-rules-for-codex)
+(published 2026-07-20), [skills evaluation guidance](https://developers.openai.com/blog/eval-skills)
+(published 2026-01-22), and [agent approvals and security](https://learn.chatgpt.com/docs/agent-approvals-security)
+on 2026-11-13. Applicability: scoped invariants with safe alternatives and unrelated
+controls, observed actions beyond phrase checks, and distinct capability/approval
+boundaries. Use the existing scenario fixture and independent review; no new
+evaluation service, host/model policy or installed-activation claim follows.
+
 An interface ticket can pass its contract checks before a consumer is built;
 the complete user journey remains an open workflow obligation. Readiness
 checks coverage against authoritative operator input as well as derived

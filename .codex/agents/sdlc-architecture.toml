@@ -1,5 +1,5 @@
 # Source preset: stackos.sdlc.architecture v0.6.6
-# Workflow: engineering.tracked-delivery v0.8.2
+# Workflow: engineering.tracked-delivery v0.8.3
 # Workflow requirement: recommended
 # Keep aligned with plugins/engineering/agent-presets/sdlc.yaml.
 

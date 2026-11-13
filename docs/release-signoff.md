@@ -75,6 +75,15 @@ retroactively fail unrelated accepted children. Preserve the observation and rou
 its required correction through existing ownership, without a new scheduler or
 weakened final-signoff requirement.
 
+Choose ticket-local checks from the requested flow, actual directly affected
+consumers and relevant failure/recovery transitions. Stop expanding after those
+obligations are answered unless new evidence, a material change or a mandatory
+gate warrants more. This does not replace the final integrated signoff above.
+Judge a command by its actual exit status, completion and unhandled errors as
+well as assertions: green assertions with a nonzero exit or unhandled error are
+failed proof. Repair affected code, fixtures or setup without weakening their
+guarantees, and retain the failed observation when later proof supersedes it.
+
 At each gate, identify evidence executed on the current candidate, unchanged
 proof reused with covered-scope/prerequisite/environment justification, stale
 changed-consumer proof needing rerun and required never-executed checks. Reuse
