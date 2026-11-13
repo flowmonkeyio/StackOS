@@ -63,8 +63,16 @@ requests instead.
   progress.
 - Setup may load the complete integration/action inventory. Home must not load
   that inventory during initial render or routine polling.
-- The global project shell requests compact plugin navigation metadata. Full
-  plugin manifests belong on catalog/setup surfaces, not every project page.
+- The global project shell and Plugins directory request compact plugin
+  navigation metadata. The directory reads the complete schema-free
+  `action.list` inventory with `include_unavailable_integrations=true` and
+  `response_mode=raw`; generic compact responses may bound lists. It does not
+  request unused resource schemas. Full manifests and action schemas remain
+  available through the existing detail APIs and schema-aware action search.
+- Action and integration inventory summaries share the repository's canonical
+  visibility and live availability projection without constructing full
+  schema-rich action outputs. Compatible catalog refreshes retain navigation;
+  plugin metadata publishes independently of slower action/integration reads.
 
 Response filtering must reduce database work as well as payload size. Tracker
 list reads bulk-hydrate task, parent, dependency, reference, and link state;

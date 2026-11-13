@@ -2256,6 +2256,141 @@ export interface components {
             /** Visible By Default */
             visible_by_default: boolean;
         };
+        /**
+         * ActionListInput
+         * @example {
+         *       "plugin_slug": "utils",
+         *       "project_id": 1,
+         *       "query": "sitemap"
+         *     }
+         */
+        ActionListInput: {
+            /**
+             * Capability Key
+             * @default null
+             */
+            capability_key: string | null;
+            /**
+             * Executable
+             * @default null
+             */
+            executable: boolean | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Include Unavailable Integrations
+             * @description When false, normal agent discovery hides disconnected, deferred, project-local, missing-connector, and otherwise non-executable external-provider actions. Set true for setup, readiness debugging, or catalog inventory.
+             * @default false
+             */
+            include_unavailable_integrations: boolean;
+            /**
+             * Plugin Slug
+             * @default null
+             */
+            plugin_slug: string | null;
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Provider Key
+             * @default null
+             */
+            provider_key: string | null;
+            /**
+             * Query
+             * @default null
+             */
+            query: string | null;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: ActionListInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** ActionListItemOut */
+        ActionListItemOut: {
+            /** Action Ref */
+            action_ref: string;
+            /** Allows Credential */
+            allows_credential: boolean;
+            /** Availability Reasons */
+            availability_reasons?: string[];
+            /** Availability Status */
+            availability_status: string;
+            /**
+             * Budget Kind
+             * @default null
+             */
+            budget_kind: string | null;
+            /** Budget State */
+            budget_state: string;
+            /**
+             * Capability Key
+             * @default null
+             */
+            capability_key: string | null;
+            /**
+             * Connector Key
+             * @default null
+             */
+            connector_key: string | null;
+            /** Credential State */
+            credential_state: string;
+            /** Description */
+            description: string;
+            /** Executable */
+            executable: boolean;
+            exposure: components["schemas"]["ActionExposureOut"];
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Operation */
+            operation: string;
+            /** Plugin Slug */
+            plugin_slug: string;
+            /**
+             * Provider Key
+             * @default null
+             */
+            provider_key: string | null;
+            /** Requires Credential */
+            requires_credential: boolean;
+            /** Risk Level */
+            risk_level: string;
+        };
+        /** ActionListOut */
+        ActionListOut: {
+            /** Count */
+            count: number;
+            /** Filters */
+            filters?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Hidden Count
+             * @default 0
+             */
+            hidden_count: number;
+            /** Items */
+            items: components["schemas"]["ActionListItemOut"][];
+        };
         /** ActionOut */
         ActionOut: {
             /** Action Ref */
@@ -4976,6 +5111,30 @@ export interface components {
             /** Run Id */
             run_id: number | null;
         };
+        /** IntegrationActionSummaryOut */
+        IntegrationActionSummaryOut: {
+            /** Action Ref */
+            action_ref: string;
+            /** Availability Status */
+            availability_status: string;
+            /** Executable */
+            executable: boolean;
+            /** Exposure State */
+            exposure_state: string;
+            /**
+             * Hidden Reason
+             * @default null
+             */
+            hidden_reason: string | null;
+            /** Name */
+            name: string;
+            /** Operation */
+            operation: string;
+            /** Risk Level */
+            risk_level: string;
+            /** Visible By Default */
+            visible_by_default: boolean;
+        };
         /** IntegrationBudgetOut */
         IntegrationBudgetOut: {
             /** Alert Threshold Pct */
@@ -5009,6 +5168,164 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * IntegrationListInput
+         * @example {
+         *       "plugin_slug": "communications",
+         *       "project_id": 1
+         *     }
+         */
+        IntegrationListInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Include Actions
+             * @description Include compact per-action exposure summaries for each integration.
+             * @default false
+             */
+            include_actions: boolean;
+            /**
+             * Include Unavailable
+             * @description When true, include disconnected providers and their hidden actions. Set false for a compact current-ready integration view.
+             * @default true
+             */
+            include_unavailable: boolean;
+            /**
+             * Plugin Slug
+             * @default null
+             */
+            plugin_slug: string | null;
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Provider Key
+             * @default null
+             */
+            provider_key: string | null;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: IntegrationListInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** IntegrationListItemOut */
+        IntegrationListItemOut: {
+            /** Actions */
+            actions?: components["schemas"]["IntegrationActionSummaryOut"][];
+            /** Auth Type */
+            auth_type: string;
+            /** Connected */
+            connected: boolean;
+            /**
+             * Connected Credential Count
+             * @default 0
+             */
+            connected_credential_count: number;
+            /**
+             * Credential Count
+             * @default 0
+             */
+            credential_count: number;
+            /** Description */
+            description: string;
+            /**
+             * Executable Action Count
+             * @default 0
+             */
+            executable_action_count: number;
+            /**
+             * Exposed Action Count
+             * @default 0
+             */
+            exposed_action_count: number;
+            /**
+             * Hidden Action Count
+             * @default 0
+             */
+            hidden_action_count: number;
+            /** Name */
+            name: string;
+            /** @default null */
+            next_action: components["schemas"]["ActionExposureNextActionOut"] | null;
+            /**
+             * Optional Action Count
+             * @default 0
+             */
+            optional_action_count: number;
+            /** Plugin Slug */
+            plugin_slug: string;
+            /** Provider Key */
+            provider_key: string;
+            /**
+             * Required Action Count
+             * @default 0
+             */
+            required_action_count: number;
+            /** @default null */
+            setup: components["schemas"]["ProviderSetupOut"] | null;
+            /** State */
+            state: string;
+            /**
+             * Total Action Count
+             * @default 0
+             */
+            total_action_count: number;
+        };
+        /** IntegrationListOut */
+        IntegrationListOut: {
+            /**
+             * Connected Count
+             * @default 0
+             */
+            connected_count: number;
+            /** Count */
+            count: number;
+            /**
+             * Executable Action Count
+             * @default 0
+             */
+            executable_action_count: number;
+            /**
+             * Exposed Action Count
+             * @default 0
+             */
+            exposed_action_count: number;
+            /** Filters */
+            filters?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Hidden Action Count
+             * @default 0
+             */
+            hidden_action_count: number;
+            /** Items */
+            items: components["schemas"]["IntegrationListItemOut"][];
+            /** Project Id */
+            project_id: number;
+            /**
+             * Ready Count
+             * @default 0
+             */
+            ready_count: number;
         };
         /** LearningCreateRequest */
         LearningCreateRequest: {
@@ -9767,6 +10084,9 @@ export type SchemaActionCallRetryInput = components['schemas']['ActionCallRetryI
 export type SchemaActionContractSpec = components['schemas']['ActionContractSpec'];
 export type SchemaActionExposureNextActionOut = components['schemas']['ActionExposureNextActionOut'];
 export type SchemaActionExposureOut = components['schemas']['ActionExposureOut'];
+export type SchemaActionListInput = components['schemas']['ActionListInput'];
+export type SchemaActionListItemOut = components['schemas']['ActionListItemOut'];
+export type SchemaActionListOut = components['schemas']['ActionListOut'];
 export type SchemaActionOut = components['schemas']['ActionOut'];
 export type SchemaActiveExecutionOut = components['schemas']['ActiveExecutionOut'];
 export type SchemaActiveTaskOut = components['schemas']['ActiveTaskOut'];
@@ -9852,7 +10172,11 @@ export type SchemaFinanceStatusOut = components['schemas']['FinanceStatusOut'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
 export type SchemaHealthResponse = components['schemas']['HealthResponse'];
 export type SchemaHeartbeatResponse = components['schemas']['HeartbeatResponse'];
+export type SchemaIntegrationActionSummaryOut = components['schemas']['IntegrationActionSummaryOut'];
 export type SchemaIntegrationBudgetOut = components['schemas']['IntegrationBudgetOut'];
+export type SchemaIntegrationListInput = components['schemas']['IntegrationListInput'];
+export type SchemaIntegrationListItemOut = components['schemas']['IntegrationListItemOut'];
+export type SchemaIntegrationListOut = components['schemas']['IntegrationListOut'];
 export type SchemaLearningCreateRequest = components['schemas']['LearningCreateRequest'];
 export type SchemaLearningHookSpec = components['schemas']['LearningHookSpec'];
 export type SchemaLearningOut = components['schemas']['LearningOut'];
@@ -13215,6 +13539,13 @@ export enum ActionCallStatus {
     success = "success",
     failed = "failed"
 }
+export enum ActionListInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
 export enum ActiveTasksOutScope {
     project = "project",
     global = "global"
@@ -13425,6 +13756,13 @@ export enum FinanceStatusInputResponse_modeAnyOf0 {
 export enum HealthResponseDb_status {
     ok = "ok",
     unreachable = "unreachable"
+}
+export enum IntegrationListInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
 }
 export enum LocalAgentChatCreateMessageInputDirection {
     inbound = "inbound",

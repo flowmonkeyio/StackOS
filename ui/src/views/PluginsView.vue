@@ -32,7 +32,10 @@ import { useIntegrationAvailability } from './plugins/useIntegrationAvailability
 type CatalogView = 'plugins' | 'providers'
 
 const catalogStore = useStackOsCatalogStore()
-const { plugins, providers, actions, capabilities, loading, error } = storeToRefs(catalogStore)
+const {
+  plugins, providers, actions, capabilities,
+  catalogLoading: loading, catalogError: error, catalogLoaded,
+} = storeToRefs(catalogStore)
 
 const { projectId } = useProjectRouteScope()
 const connectionsHref = computed(() => `/projects/${projectId.value}/connections?section=services`)
@@ -126,6 +129,7 @@ const { refresh } = useProjectScopedLoader({
           variant="secondary"
           size="sm"
           icon-left="refresh"
+          :loading="loading || availabilityLoading"
           @click="refresh"
         >
           Refresh
@@ -159,7 +163,7 @@ const { refresh } = useProjectScopedLoader({
     </UiCallout>
 
     <UiFilterBar
-      v-if="!loading && !error && plugins.length"
+      v-if="catalogLoaded && plugins.length"
       v-model:search="search"
       search-placeholder="Search plugins or services"
       aria-label="Plugin catalog filters"
@@ -186,7 +190,7 @@ const { refresh } = useProjectScopedLoader({
     </UiFilterBar>
 
     <div
-      v-if="loading"
+      v-if="loading && !catalogLoaded"
       class="grid grid-cols-1 gap-4 lg:grid-cols-2"
       aria-label="Loading plugins"
     >
@@ -201,7 +205,7 @@ const { refresh } = useProjectScopedLoader({
       </UiCard>
     </div>
 
-    <template v-else-if="!error">
+    <template v-else-if="catalogLoaded">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <p class="text-xs text-fg-muted">
           <strong class="text-fg-strong">{{ resultCount }}</strong>

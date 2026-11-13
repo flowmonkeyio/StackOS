@@ -159,12 +159,12 @@ describe('StackOS catalog store auth controls', () => {
     expect(store.authStatus?.project_id).toBe(2)
   })
 
-  it('refreshes catalog lists without calling the aggregate catalog endpoint', async () => {
+  it('reads the complete schema-free inventory without unused resource or manifest reads', async () => {
     const calls: string[] = []
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)
       calls.push(url)
-      if (url === '/api/v1/plugins?project_id=1') {
+      if (url === '/api/v1/plugins?project_id=1&compact=true') {
         return json([
           plugin('utils', true),
           plugin('seo', false),
@@ -176,11 +176,8 @@ describe('StackOS catalog store auth controls', () => {
       if (url === '/api/v1/providers?project_id=1') {
         return json([{ plugin_slug: 'utils', key: 'firecrawl' }])
       }
-      if (url === '/api/v1/actions?project_id=1') {
-        return json([{ plugin_slug: 'utils', key: 'web.scrape' }])
-      }
-      if (url === '/api/v1/resources?project_id=1') {
-        return json([{ plugin_slug: 'utils', key: 'web-document' }])
+      if (url === '/api/v1/operations/action.list/call') {
+        return json({ items: Array.from({ length: 31 }, (_, i) => ({ plugin_slug: 'utils', key: `web.scrape.${i}` })), count: 31 })
       }
       return json({})
     }) as typeof fetch
@@ -188,12 +185,21 @@ describe('StackOS catalog store auth controls', () => {
     const store = useStackOsCatalogStore()
     await store.refresh(1)
 
-    expect(calls).not.toContain('/api/v1/catalog?project_id=1')
+    expect(calls).toEqual([
+      '/api/v1/plugins?project_id=1&compact=true',
+      '/api/v1/capabilities?project_id=1',
+      '/api/v1/providers?project_id=1',
+      '/api/v1/operations/action.list/call',
+    ])
+    const actionCall = vi.mocked(fetch).mock.calls.find(([url]) => String(url).endsWith('action.list/call'))!
+    expect(JSON.parse(String(actionCall[1]?.body))).toEqual({ arguments: {
+      project_id: 1, include_unavailable_integrations: true, response_mode: 'raw',
+    } })
     expect(store.plugins).toHaveLength(2)
     expect(store.enabledPlugins.map((row) => row.slug)).toEqual(['utils'])
-    expect(store.catalog?.plugins).toHaveLength(1)
-    expect(store.catalog?.plugins[0].plugin.slug).toBe('utils')
-    expect(store.catalog?.plugins[0].actions).toEqual([{ plugin_slug: 'utils', key: 'web.scrape' }])
+    expect(store.actions).toHaveLength(31)
+    expect(store.actions.at(-1)?.key).toBe('web.scrape.30')
+    expect(store.catalogLoaded).toBe(true)
   })
 
   it('refreshes just plugin rows for app-shell navigation', async () => {
@@ -215,10 +221,9 @@ describe('StackOS catalog store auth controls', () => {
     expect(store.loading).toBe(false)
     expect(store.pluginProjectId).toBe(1)
     expect(store.enabledPlugins.map((row) => row.slug)).toEqual(['utils'])
-    expect(store.catalog?.plugins[0].plugin.slug).toBe('utils')
   })
 
-  it('keeps the last successful plugin scope retryable after a failed silent refresh', async () => {
+  it('clears incompatible plugin links immediately even when the new scope fails', async () => {
     globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)
       if (url.includes('project_id=1')) return json([plugin('utils', true)])
@@ -229,8 +234,8 @@ describe('StackOS catalog store auth controls', () => {
     expect(await store.refreshPlugins(1, { silent: true })).toBe(true)
     expect(await store.refreshPlugins(2, { silent: true })).toBe(false)
 
-    expect(store.pluginProjectId).toBe(1)
-    expect(store.enabledPlugins.map((row) => row.slug)).toEqual(['utils'])
+    expect(store.pluginProjectId).toBe(null)
+    expect(store.enabledPlugins).toEqual([])
   })
 
   it('prevents an older full catalog refresh from replacing a newer plugin scope', async () => {
@@ -259,6 +264,64 @@ describe('StackOS catalog store auth controls', () => {
 
     expect(store.pluginProjectId).toBe(2)
     expect(store.enabledPlugins.map((row) => row.slug)).toEqual(['seo'])
+  })
+
+  it('publishes navigation before slow actions and retains it through refresh and catalog failure', async () => {
+    const actionRead = deferred<Response>()
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      if (url.includes('/plugins?')) return json([plugin('utils', true)])
+      if (url.endsWith('action.list/call')) return actionRead.promise
+      return json([])
+    }) as typeof fetch
+    const store = useStackOsCatalogStore()
+    const first = store.refresh(1)
+    await vi.waitFor(() => expect(store.pluginProjectId).toBe(1))
+    expect(store.catalogLoading).toBe(true)
+    const retained = store.plugins[0]
+    actionRead.resolve(json({ items: [], count: 0 }))
+    await first
+    const failedRead = deferred<Response>()
+    globalThis.fetch = vi.fn(async (input) => String(input).endsWith('action.list/call')
+      ? failedRead.promise : String(input).includes('/plugins?')
+        ? json([plugin('utils', true)]) : json([])) as typeof fetch
+    const refresh = store.refresh(1)
+    expect(store.plugins[0]).toBe(retained)
+    expect(store.pluginProjectId).toBe(1)
+    expect(store.catalogLoaded).toBe(true)
+    failedRead.resolve(json({ detail: 'Actions unavailable' }, 503))
+    await refresh
+    expect(store.enabledPlugins.map(row => row.slug)).toEqual(['utils'])
+    expect(store.catalogLoaded).toBe(true)
+    expect(store.catalogError).toContain('Actions unavailable')
+  })
+
+  it('rejects a truncated action envelope and ignores late A results after A to B to A', async () => {
+    const oldActions = deferred<Response>()
+    let actionCalls = 0
+    globalThis.fetch = vi.fn(async (input) => {
+      const url = String(input)
+      if (url.includes('/plugins?')) return json([plugin('utils', true)])
+      if (url.endsWith('action.list/call')) {
+        actionCalls++
+        if (actionCalls === 1) return oldActions.promise
+        return json({ items: [], count: 0 })
+      }
+      return json([])
+    }) as typeof fetch
+    const store = useStackOsCatalogStore()
+    const old = store.refresh(1)
+    await store.refresh(2)
+    await store.refresh(1)
+    oldActions.resolve(json({ items: [{ key: 'obsolete' }], count: 1 }))
+    await old
+    expect(store.actions).toEqual([])
+    expect(store.catalogLoading).toBe(false)
+    globalThis.fetch = vi.fn(async (input) => String(input).endsWith('action.list/call')
+      ? json({ items: [], count: 31 }) : String(input).includes('/plugins?')
+        ? json([plugin('utils', true)]) : json([])) as typeof fetch
+    await store.refresh(1)
+    expect(store.catalogError).toContain('Incomplete StackOS action inventory')
   })
 })
 

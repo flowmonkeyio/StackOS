@@ -1,26 +1,21 @@
 import type {
-  SchemaActionOut,
+  SchemaActionListItemOut,
   SchemaCapabilityOut,
   SchemaPluginOut,
   SchemaProviderOut,
-  SchemaActionExposureNextActionOut,
+  SchemaIntegrationListItemOut,
 } from '@/api'
 
 /** The fields this view consumes from the canonical integration.list operation. */
-export interface IntegrationAvailability {
-  plugin_slug: string
-  provider_key: string
-  state: string
-  total_action_count: number
-  executable_action_count: number
-  hidden_action_count: number
-  next_action?: SchemaActionExposureNextActionOut | null
-}
+export type IntegrationAvailability = Pick<SchemaIntegrationListItemOut,
+  'plugin_slug' | 'provider_key' | 'state' | 'total_action_count'
+  | 'executable_action_count' | 'hidden_action_count'>
+  & Partial<Pick<SchemaIntegrationListItemOut, 'next_action'>>
 
 export interface PluginDirectoryItem {
   plugin: SchemaPluginOut
   providers: SchemaProviderOut[]
-  actions: SchemaActionOut[]
+  actions: SchemaActionListItemOut[]
   capabilities: SchemaCapabilityOut[]
   searchText: string
   integrations: IntegrationAvailability[]
@@ -29,7 +24,7 @@ export interface PluginDirectoryItem {
 export interface ProviderDirectoryItem {
   provider: SchemaProviderOut
   plugin: SchemaPluginOut
-  actions: SchemaActionOut[]
+  actions: SchemaActionListItemOut[]
   capabilityNames: string[]
   searchText: string
   availability?: IntegrationAvailability
@@ -40,7 +35,7 @@ export type CatalogSort = 'name' | 'actions'
 export function buildPluginDirectory(
   plugins: SchemaPluginOut[],
   providers: SchemaProviderOut[],
-  actions: SchemaActionOut[],
+  actions: SchemaActionListItemOut[],
   capabilities: SchemaCapabilityOut[],
   integrations: IntegrationAvailability[] = [],
 ): PluginDirectoryItem[] {
@@ -87,7 +82,7 @@ export function buildProviderDirectory(
   return pluginItems.flatMap((item) =>
     item.providers.map((provider) => {
       const providerActions = item.actions.filter(
-        (action) => action.provider_id === provider.id || action.provider_key === provider.key,
+        (action) => action.provider_key === provider.key,
       )
       const capabilityKeys = new Set(
         providerActions.map((action) => action.capability_key).filter(Boolean),

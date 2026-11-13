@@ -17,7 +17,7 @@ from stackos.mcp.streaming import ProgressEmitter
 from stackos.operations._helpers import operation_spec
 from stackos.operations.spec import OperationExample, OperationSpec
 from stackos.provider_setup import ProviderSetupOut, build_provider_setup
-from stackos.repositories.plugins import ActionOut, PluginRepository, ProviderOut
+from stackos.repositories.plugins import ActionSummaryOut, PluginRepository, ProviderOut
 
 
 class IntegrationListInput(MCPInput):
@@ -112,7 +112,7 @@ async def integration_list(
     providers = repo.list_providers(plugin_slug=inp.plugin_slug, project_id=project_id)
     if inp.provider_key is not None:
         providers = [provider for provider in providers if provider.key == inp.provider_key]
-    actions = repo.list_actions(plugin_slug=inp.plugin_slug, project_id=project_id)
+    actions = repo.list_action_summaries(plugin_slug=inp.plugin_slug, project_id=project_id)
     action_groups = _actions_by_provider(actions)
     credential_groups = _credentials_by_provider(ctx.session, project_id=project_id)
 
@@ -154,8 +154,10 @@ async def integration_list(
     )
 
 
-def _actions_by_provider(actions: list[ActionOut]) -> dict[tuple[str, str], list[ActionOut]]:
-    grouped: dict[tuple[str, str], list[ActionOut]] = defaultdict(list)
+def _actions_by_provider(
+    actions: list[ActionSummaryOut],
+) -> dict[tuple[str, str], list[ActionSummaryOut]]:
+    grouped: dict[tuple[str, str], list[ActionSummaryOut]] = defaultdict(list)
     for action in actions:
         if action.provider_key is None:
             continue
@@ -174,7 +176,7 @@ def _credentials_by_provider(session: Session, *, project_id: int) -> dict[str, 
 def _integration_item(
     provider: ProviderOut,
     *,
-    actions: list[ActionOut],
+    actions: list[ActionSummaryOut],
     credentials: list[Credential],
     project_id: int,
     include_actions: bool,
@@ -266,10 +268,10 @@ def _integration_state(
     provider: ProviderOut,
     connected: bool,
     repair_required: bool,
-    actions: list[ActionOut],
-    exposed_actions: list[ActionOut],
-    executable_actions: list[ActionOut],
-    hidden_actions: list[ActionOut],
+    actions: list[ActionSummaryOut],
+    exposed_actions: list[ActionSummaryOut],
+    executable_actions: list[ActionSummaryOut],
+    hidden_actions: list[ActionSummaryOut],
 ) -> str:
     if isinstance(provider.config_json, dict) and provider.config_json.get("enabled") is False:
         return "provider_disabled"
@@ -288,7 +290,7 @@ def _integration_state(
     return "available"
 
 
-def _action_summary(row: ActionOut) -> IntegrationActionSummaryOut:
+def _action_summary(row: ActionSummaryOut) -> IntegrationActionSummaryOut:
     return IntegrationActionSummaryOut(
         action_ref=row.action_ref,
         name=row.name,
