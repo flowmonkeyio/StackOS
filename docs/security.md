@@ -354,6 +354,11 @@ namespace. Mutating operation calls are allowed only when the operation's REST
 surface declares `browser_safe=True` for explicit local setup, the bounded
 human finance console contract described below, the task-content contract, or
 the bounded run abort control.
+`plugin.enable` is browser-safe for explicit local project setup through its
+registered operation. It validates one installed plugin and an available project;
+it neither provisions Finance files nor grants workflow execution. Finance file
+initialization remains with authenticated `finance.status` after explicit enablement.
+`plugin.disable` and legacy plugin mutation URLs remain daemon-admin surfaces.
 `project.update` and `project.move` are browser-safe only for the bounded
 project management contract: explicit `scope: "catalog"`, display-name-only
 patches and single-project moves. Catalog scope requires authenticated REST

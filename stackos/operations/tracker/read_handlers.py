@@ -29,6 +29,7 @@ from stackos.repositories.tracker import (
     TrackerChangedOut,
     TrackerHistoryOut,
     TrackerNextOut,
+    TrackerNotificationChangesOut,
     TrackerRepository,
     TrackerSearchOut,
     TrackerSnapshotOut,
@@ -158,6 +159,8 @@ async def tracker_get(
         assignee=inp.assignee,
         include_graph=inp.include_graph,
         task_index_only=inp.task_index_only,
+        projection=inp.projection,
+        metric_demand=inp.metric_demand,
     )
 
 
@@ -242,11 +245,12 @@ async def tracker_changed(
     inp: TrackerChangedInput,
     ctx: MCPContext,
     _emitter: ProgressEmitter,
-) -> TrackerChangedOut:
+) -> TrackerChangedOut | TrackerNotificationChangesOut:
     return TrackerRepository(ctx.session).changed(
         project_id=inp.project_id,
         since_rev=inp.since_rev,
         limit=inp.limit,
+        projection=inp.projection,
     )
 
 

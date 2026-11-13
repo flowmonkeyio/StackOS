@@ -60,6 +60,8 @@ no-ops, scrolls only the supplied vertical container, and cleans up its one
 animation-frame loop and gesture listeners on every termination path. Movement
 announcements and focus/visibility restoration accompany menu and drop intents;
 there is no decorative movement animation.
+The list contains vertical overscroll only; horizontal input can chain to an
+ancestor such as the Board. Consumers keep their existing overflow ownership.
 
 `ProjectSwitcher` consumes this primitive for the complete, stored project
 catalog. Its closed sidebar trigger retains its geometry; only the open menu is
@@ -129,7 +131,7 @@ reload counts through the same local-admin read, with no project override.
 | `ProjectPageHeader` | project-aware title, breadcrumbs, utility action slot, and route chrome |
 | `ProviderMark` | canonical provider logo/initial mark backed by `provider-presentation.json`; shared by Connections and Plugins |
 | `AgentUsageSummary` | Shared fixed Input / Cache / Output renderer; accepts `metrics: AgentStatsMetrics \| null`, `compact?: boolean` and `active?: boolean`. Default mode keeps the analytics headline scale. Compact mode reserves three equal columns with fixed label, number and mini-canvas slots; values never wrap or toggle charts. Numbers retain task/ticket lifetime totals; bars show recent reported increments from that scope. Active charts use the existing shared feed clock, completed charts retain their last window. Missing measurements use N/A; measured zero stays 0. Exact focus/hover values remain available when a compact number is elided. Input uses paired `remaining_input`, Cache uses `cache_read`, Output uses `output`; raw input stays inclusive. No receipt parsing, subtotal calculation or polling. Work callers enforce automatic parent-task eligibility. |
-| `UsageTrace` | Shared canvas bar renderer. `lib/liveUsage.ts` owns paired counter mapping and one-minute reported-delta buckets. Shared default is 20 bars; `barCount` accepts 5–60, `endAt` supplies the active clock or defaults to the last observation. Empty and first-reading states retain a fixed baseline; the first reading adds only a neutral tick. Unknown intervals and negative corrections stay gaps. Each metric has a separate zero-based scale; bars remain at most 2 CSS pixels wide. Chart values are accessible by title/ARIA. Resize, theme and pixel-density changes redraw; unmount releases observers/listeners. No SVG, animation, per-card timer or visibility decision based on sample count. |
+| `UsageTrace` | Shared canvas bar renderer. `lib/liveUsage.ts` maps the producer's per-invocation `intervals` to one-minute source-checkpoint buckets. Shared default is 20 bars; `barCount` accepts 5–60, `endAt` supplies the active clock or defaults to the last observation. First retained cumulative totals are neutral baseline ticks; gaps over one minute and final-only changes are neutral batched-observation ticks, with accessible amounts/bounds and unknown consumption timing. They never inflate bar height or distribute tokens across missing minutes. Counter resets and missing fields stay gaps. Each metric has a separate zero-based scale; bars remain at most 2 CSS pixels wide. Chart values are accessible by title/ARIA. Resize, theme and pixel-density changes redraw; unmount releases observers/listeners. No SVG, animation, per-card timer or visibility decision based on sample count. |
 | `ActiveExecutionLine` / `WorkTime` | Shared actual current / explicitly Last execution identity using canonical `agentIdentity.ts` host marks and readable recorded roles. `WorkTime` formats the canonical `work_duration` interval union for the execution line and Scheduled Runs, independent of lifecycle dates, automation and tokens. Partial coverage shows `Partial`; unavailable history shows `N/A`, and recorded zero shows `0m`. Only an exact matching owned live identity extends the total once after `observed_at` on the existing Work heartbeat; stopped, closed or disconnected observations freeze without per-card timers. Last retains full recorded provenance in its accessible title. Focusable instances disclose the full role/model or fallback owner in a hover/focus tooltip without expanding their layout slot. `owner` is ordinary assignment when no occurrence exists. Card footers reserve 56px and center the 32px mark and text; the blocker badge sits outside the bottom edge. Task and shared ticket details use the same Work time presentation without duplicate Started facts or separate current-call token totals. |
 | `UsageLiveIndicator` | Small recording dot and Live label for actual active executions with a healthy shared feed; Connecting/Reconnecting stays neutral. Consumes the Work page's existing subscription through `useUsageFeed`, opens no connection and owns no timer. Hidden for last execution or ordinary assignment. |
 
@@ -137,6 +139,15 @@ reload counts through the same local-admin read, with no project override.
 header: labels stay above fixed number/canvas columns in the same shared renderer.
 This changes arrangement only; reporting intervals, scope and chart ownership
 remain unchanged.
+
+Compact summaries prepare all three metrics together only while visible.
+`useUsageCanvas` shares viewport/resize/theme/DPR observation and batches paint
+through the existing feed visibility owner. Same-minute heartbeats and unrelated
+component updates retain geometry and pixels. The Home chart uses the same
+primitive; hidden updates wait until reveal. No per-chart timer is introduced.
+`WorkTime` also uses this shared visibility owner. `ActiveExecutionLine` forwards
+Board/Graph metric demand through `metricsActive`; inactive or offscreen footers
+keep their slot and suspend duration formatting until reveal reads current data.
 
 Project Automations reuses this inline compact renderer for historical task runs.
 `SchedulesTab` owns exactly two shared underline tabs, Automations and Runs;
@@ -253,9 +264,16 @@ empty history. Confirmed denial clears the affected list or history acceptance.
 Workflow and domain cold reads use layout-shaped `UiSkeleton` placeholders,
 replaced by the real content or explicit unavailable/disabled result.
 
-Both Home pages share `views/home/AgentActivitySection.vue`: Input / Cache /
-Output headlines, date controls, daily chart with input detail, and an accessible
-Agent / Model / Agent+model `DataTable`. `useAgentStats.ts` owns one dated,
+Both Home pages share `views/home/AgentActivitySection.vue`: six equal compact
+delivery trends above Daily tokens and an Agent / Model / Agent + model
+breakdown. `DeliveryTrendChart.vue` presents completed tasks, completed tickets,
+first-review acceptance, changes requested, stops and recorded work time from
+the single `delivery_trends` projection. Period figures use its totals, never
+averaged daily rates. No-review and unsupported buckets remain gaps; known
+retained incidents remain visible alongside their coverage warning. Work time
+uses the repository's summed distinct-task seconds, with exact seconds and
+coverage available on inspection. There is no Top tasks or stop-reason ranking.
+`useAgentStats.ts` owns one dated,
 grouped project/global statistics request, with scope and stale-response
 protection. Regrouping retains the same dated chart and totals while the request
 loads; the retained rows and chart keep their returned grouping labels until replaced.
@@ -263,31 +281,24 @@ Date, project and visibility changes clear the prior scope. Defaults are today p
 the browser's visibly identified IANA timezone. Global Active/Archived/All
 selection remains with the existing page owner.
 
-`AgentActivityChart.vue` uses Chart.js vertical daily stacks with exactly two
-views: Tokens and Agents. Tokens shows disjoint Input (including cache write),
-Cache and Output, in that order, using the backend's paired measurements. Agents uses
-the same reported Input + Output split by the existing Agent / Model / Agent +
-model control, using canonical daily groups. Unsupported series are absent;
-missing cache never becomes an invented remainder or unknown-cache category.
-An incomplete stack uses ordinary available-measurement context, without
-claiming a complete total. Both views keep the same 215px plot, fixed axis gutter,
-56px responsive wrapping legend below the plot and single-line selection caption.
-Legend entries use their label widths and compact gaps: all three token labels
-and six short identities stay on one row whenever they fit. Wrapping follows
-available width; additional rows scroll within the same bounded legend. Long legend
-identities are visually elided, with the unchanged name available on focus/hover;
-agent identities are never rewritten. Model and combined labels preserve exact
-recorded versions. Group-key colors match bars, legends, tooltips and table
-markers across date changes and row sorting. Hover and keyboard focus (Left/Right, Home/End) expose exact
-values. Pointer hover uses Chart.js's external-tooltip hook and a bounded panel
-inside the unchanged plot: date and exact total remain visible while the series
-list scrolls, preserving every measured value even with many agents. Leaving
-the plot closes it; canvas keyboard focus uses the existing exact-value live
-region instead. Per-series exact text is screen-reader-only rather than a visible
-transcript. A bounded vertical daily disclosure has fixed Date/Input/Cache/Output/
-Total columns, omitting unsupported fields rather than growing agent
-columns. Compact daily values retain exact focus/hover labels. Its existing mount/update/theme/unmount lifecycle
-owns the chart; it adds no polling.
+`AgentActivityChart.vue` uses slim rounded Chart.js bars with selectable
+All / Input / Cache / Output period totals. All uses the reported total;
+Input uses paired `remaining_input`, never inclusive Input minus aggregate
+Cache. Unknown cache splits remain explicit in the exact-value tooltip rather
+than being invented or removed from All. Missing values remain N/A and measured
+zero remains zero. The token chart and six trend charts share the existing
+`useUsageCanvas` visibility/size/theme/paint owner, with Chart.js animation and
+responsive scheduling disabled. Comparable, changed live data receives one
+160ms opacity fade on the painted canvas; initial/revealed charts, scope/metric
+changes and pointer/focus inspection do not restart motion. Work is bounded by
+displayed daily buckets, not receipt histories. Pointer/focus selection does not rebuild geometry.
+Hover and keyboard focus (Left/Right, Home/End, Escape) expose exact values in
+the same visible tooltip. A bounded daily-values disclosure retains all token
+fields. The adjacent breakdown uses distinct categorical markers and bars,
+retaining exact recorded names/models and full accessible labels. The six-column
+widget row and two-column analysis geometry remain aligned at 1280/1440px.
+Local service, aligned Active task rows and compact Connected tools retain
+their existing owners; this section adds no polling or per-widget requests.
 
 `components/domain/AgentUsageSummary.vue` accepts the existing typed summary
 metrics shared by Home and Work; consumers pass the appropriate backend
@@ -454,7 +465,7 @@ test for cross-feature wiring, loading, and error-state truthfulness.
 | `views/accounts/TelegramProxySetupSection.vue` | Conditional disclosure of Telegram's manifest-backed proxy fields. | Keep proxy validation and normalization in the daemon's Account proxy contract. |
 | `views/ConnectionsView.vue` | Route/query synchronization, Account attachment, section composition, and project-bound communication/ingress dispatch remain. | Keep Account secret lifecycle in the reusable Accounts panel; do not fold it back into the project page. |
 | `views/connections/useConnectionCredentials.ts` | Lists attached Accounts, filters reusable unattached Accounts, and owns attach/detach confirmation state. | Keep global Account mutation and project communication topology out. |
-| `views/TaskTrackerView.vue` | Owns Board/map route history, independent map-task and popup identities, project-local Board preferences, task-index loading and focused detail dispatch. `boardFilters.ts` guards one localStorage record per project and owns explicit update/remove/clear commands plus one-shot Home entry intents. `TrackerBoardPanel` renders seven status columns with a 336px minimum, cards that grow from 224px with wrapping headers and normal-flow footers, and API-projected whole-task usage; `TaskTrackerCommandPanel` renders the unified `TrackerBoardFilterBar` on Board and groups task identity/Automated, status/completion, inline shared usage and Task details on Graph. The shared page-header switch stays top right in both views. `TrackerBoardFilterBar` measures only the chip region with a cleaned-up ResizeObserver, reserves controls and +N overflow space, and uses `BoardFilterEditor` for visible and overflow clause edits through the preference owner's commands. `TicketGraphNode` renders its own projected ticket usage; `graphModel.ts` owns its 328 × 224 geometry and prerequisite-title resolution. `TrackerTaskDetailDialog` owns one persistent `UiDialog layout="detail"` for task/ticket inspection and a six-row scrolling ticket list. `TrackerTicketDetailContent` is shared with the map's `TrackerTicketDetailPanel` side inspector. `useTrackerExecutionContexts` owns context/artifact pagination; `useTrackerGraphSession` composes focused graph loading, viewport and the existing project/task event stream. Pure projections and filters remain in `task-tracker/viewModel.ts`. | Keep Board filters independent from map selection. Task state and ticket-status containment filters have separate meanings. Graph visibility never changes whole-task values/trends. The task-index rollup supplies actual prerequisite titles only when all open work waits on dependencies; active execution suppresses the Board badge. No per-card requests or receipt summing. Shared current/Last identity stays independent of lifecycle status. Preserve task drafts, disclosure state and scroll during ticket inspection. No standalone Stories or Tickets modes. |
+| `views/TaskTrackerView.vue` | Owns Board/map route history, independent map-task and popup identities, project-local Board preferences, task-index loading and focused detail dispatch. `boardFilters.ts` guards one localStorage record per project and owns explicit update/remove/clear commands plus one-shot Home entry intents. `TrackerBoardPanel` renders eight fixed projected Board columns with a 336px minimum, cards that grow from 224px with wrapping headers and normal-flow footers, eligible Backlog–Todo menu placement, and API-projected whole-task usage; `TaskTrackerCommandPanel` renders the unified `TrackerBoardFilterBar` on Board and groups task identity/Automated, status/completion, inline shared usage and Task details on Graph. The shared page-header switch stays top right in both views. `TrackerBoardFilterBar` measures only the chip region with a cleaned-up ResizeObserver, reserves controls and +N overflow space, and uses `BoardFilterEditor` for visible and overflow clause edits through the preference owner's commands. `TicketGraphNode` renders its own projected ticket usage; `graphModel.ts` owns its 328 × 224 geometry and prerequisite-title resolution. `TrackerTaskDetailDialog` owns one persistent `UiDialog layout="detail"` for task/ticket inspection and a six-row scrolling ticket list. `TrackerTicketDetailContent` is shared with the map's `TrackerTicketDetailPanel` side inspector. `useTrackerExecutionContexts` owns context/artifact pagination; `useTrackerGraphSession` composes focused graph loading, viewport and the existing project/task event stream. Pure projections and filters remain in `task-tracker/viewModel.ts`. | Keep Board filters independent from map selection. Task state and ticket-status containment filters have separate meanings. Graph visibility never changes whole-task values/trends. The task-index rollup supplies actual prerequisite titles only when all open work waits on dependencies; active execution suppresses the Board badge. No per-card requests or receipt summing. Shared current/Last identity stays independent of lifecycle status. Preserve task drafts, disclosure state and scroll during ticket inspection. No standalone Stories or Tickets modes. |
 | `views/connections/credentialPresentation.ts` | Provider/auth grouping, labels, connection status, and account presentation. | Keep provider catalog knowledge here; do not mix in communication topology facets. |
 | `views/connections/formatters.ts` | Communication profile, route, surface, Slack, ingress, and shared Account presentation exports. | Split another provider-specific facet only when it gains a distinct contract or test lifecycle. |
 | `views/finance/FinanceRequestDialog.vue` | Contextual safe request read, original source and status at the Finance origin. | Preserve exact request/project/workspace identity, stale-read rejection and explicit unavailable/retry states. Never infer a tracker task or execute recovery from inspection. |

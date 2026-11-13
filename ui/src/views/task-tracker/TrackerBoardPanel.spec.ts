@@ -1,8 +1,8 @@
-import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WorkDurationOutCoverage } from '@/api'
-import type { TrackerStatus, TrackerTask } from '@/lib/task-tracker/types'
-import { trackerStatus } from '@/design/status'
+import type { BoardColumn, TrackerStatus, TrackerTask } from '@/lib/task-tracker/types'
+import { boardColumnStatus, trackerStatus } from '@/design/status'
 import { UiIcon } from '@/components/ui'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 import { buildTaskProgressRows } from './viewModel'
@@ -10,6 +10,8 @@ import TrackerBoardPanel from './TrackerBoardPanel.vue'
 import TaskTrackerCommandPanel from './TaskTrackerCommandPanel.vue'
 import RunAbortAction from '@/components/domain/RunAbortAction.vue'
 import { taskPriorities } from './taskPriority'
+
+enableAutoUnmount(afterEach)
 
 const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
 const automaticMetadata = { delivery: { status: 'running', job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent } }
@@ -42,7 +44,7 @@ describe('Board header labels and counts', () => {
     const rows = buildTaskProgressRows(records, new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
     const wrapper = mount(TrackerBoardPanel, { props: { rows } })
     for (const card of wrapper.findAll('.tracker-board__card')) {
-      const row = rows.find(row => card.get('.tracker-board__open').attributes('aria-label')?.startsWith(`Open task #${row.id}:`))!
+      const row = rows.find(row => card.get('.tracker-board__open').attributes('aria-label')?.startsWith(`Open graph for task #${row.id}:`))!
       expect(card.get('.tracker-board__automated').text()).toBe('Auto')
       expect(card.get('.tracker-board__automated').attributes('aria-label')).toBe('Automated task delivery')
       expect(card.get('.tracker-board__state').text()).toBe(label)
@@ -57,17 +59,45 @@ describe('Board header labels and counts', () => {
 })
 
 describe('Work board presentation', () => {
+  it('offers explicit placement only for eligible cards through the existing menu', async () => {
+    const rows = buildTaskProgressRows([task('not-started')], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
+    const wrapper = mount(TrackerBoardPanel, { props: { rows } })
+    await wrapper.get('.tracker-board__priority').trigger('click')
+    const action = wrapper.findAll('[role="menuitem"]').find(item => item.text() === 'Move to Backlog')!
+    await action.trigger('click')
+    expect(wrapper.emitted('place')).toEqual([[{ taskKey: 'board-task', boardColumn: 'backlog' }]])
+    expect(wrapper.emitted('openTask')).toBeUndefined()
+    await wrapper.setProps({ rows: rows.map(row => ({ ...row, task: { ...row.task, status: 'deferred', board_column: 'backlog' } })) })
+    await wrapper.get('.tracker-board__priority').trigger('click')
+    expect(wrapper.text()).not.toContain('Move to Todo')
+    wrapper.unmount()
+  })
+  it('uses producer membership and counts through queue, stop, terminal and reopened states', async () => {
+    const columns = Object.keys(boardColumnStatus) as BoardColumn[]
+    const records: TrackerTask[] = columns.map((board_column, id) => ({ ...task('in-progress'), id, key: board_column, board_column }))
+    records.push({ ...task('deferred'), id: 9, key: 'deferred', board_column: 'backlog', metadata_json: { delivery_scope: { resume_condition: 'After operator review' } } })
+    const rows = () => buildTaskProgressRows(records, new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
+    const wrapper = mount(TrackerBoardPanel, { props: { rows: rows() } })
+    expect(wrapper.findAll('.tracker-board__heading h2').map(item => item.text())).toEqual(['Backlog', 'Todo', 'In progress', 'Stopped', 'Done', 'Aborted', 'Failed', 'Skipped'])
+    expect(wrapper.findAll('.tracker-board__column').map(column => column.findAll('.tracker-board__card').length)).toEqual([2, 1, 1, 1, 1, 1, 1, 1])
+    expect(wrapper.get('[data-task-key="deferred"] .tracker-board__subtitle').attributes('title')).toBe('Resume when: After operator review')
+    records[4] = { ...task('not-started'), id: 4, key: 'done', board_column: 'todo' }
+    await wrapper.setProps({ rows: rows() })
+    expect(wrapper.get('[aria-label="Todo"]').findAll('.tracker-board__card')).toHaveLength(2)
+    expect(wrapper.get('[aria-label="Done"]').text()).toContain('No tasks')
+    wrapper.unmount()
+  })
   it('limits pending edit controls to the conflicting column and keeps task inspection usable', async () => {
     const records = [task('in-progress'), { ...task('complete'), key: 'other', id: 2 }]
     const rows = buildTaskProgressRows(records, new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
     const wrapper = mount(TrackerBoardPanel, { props: { rows, editPending: true, editPendingColumns: ['in-progress'] } })
-    const busy = wrapper.get('[aria-label="In Progress"]')
-    const other = wrapper.get('[aria-label="Complete"]')
+    const busy = wrapper.get('[aria-label="In progress"]')
+    const other = wrapper.get('[aria-label="Done"]')
     expect(busy.get('[data-reorder-handle]').attributes('disabled')).toBeDefined()
     expect(other.get('[data-reorder-handle]').attributes('disabled')).toBeUndefined()
     expect(other.get('.tracker-board__priority').attributes('disabled')).toBeUndefined()
     await busy.get('.tracker-board__open').trigger('click')
-    expect(wrapper.emitted('openTask')).toEqual([['board-task']])
+    expect(wrapper.emitted('openGraph')).toEqual([['board-task']])
     await wrapper.setProps({ editPending: false, editPendingColumns: [] })
     expect(busy.get('[data-reorder-handle]').attributes('disabled')).toBeUndefined()
     wrapper.unmount()
@@ -86,14 +116,14 @@ describe('Work board presentation', () => {
   it('hides only empty projected columns when requested and restores all columns when cleared', async () => {
     const rows = buildTaskProgressRows([task('in-progress')], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
     const wrapper = mount(TrackerBoardPanel, { props: { rows } })
-    expect(wrapper.findAll('.tracker-board__column')).toHaveLength(7)
+    expect(wrapper.findAll('.tracker-board__column')).toHaveLength(8)
     await wrapper.setProps({ hideEmptyColumns: true })
     expect(wrapper.findAll('.tracker-board__column')).toHaveLength(1)
-    expect(wrapper.get('.tracker-board__column').attributes('aria-label')).toBe('In Progress')
+    expect(wrapper.get('.tracker-board__column').attributes('aria-label')).toBe('In progress')
     await wrapper.setProps({ rows: [] })
     expect(wrapper.findAll('.tracker-board__column')).toHaveLength(0)
     await wrapper.setProps({ hideEmptyColumns: false })
-    expect(wrapper.findAll('.tracker-board__column')).toHaveLength(7)
+    expect(wrapper.findAll('.tracker-board__column')).toHaveLength(8)
     wrapper.unmount()
   })
   it('shows recorded work for completed manual cards without an owner or token eligibility', () => {
@@ -131,20 +161,29 @@ describe('Work board presentation', () => {
     expect(wrapper.get('.tracker-board__blocked').attributes('title')).toBe('Blocked by: Actual prerequisite title')
     expect(wrapper.find('.vue-flow__handle').exists()).toBe(false)
   })
-  it('shows stopped delivery without moving the task column and clears it after resume', async () => {
+  it('shows stopped delivery in its projected column and clears it after resume', async () => {
     const metadata = { delivery: { ...automaticMetadata.delivery, status: 'stopped', ticket_key: 'fix-chart', reason: 'Browser access denied.' } }
-    const record = { ...task('in-progress'), metadata_json: metadata }
+    const record = { ...task('in-progress'), board_column: 'stopped' as BoardColumn, metadata_json: metadata }
     const rows = () => buildTaskProgressRows([structuredClone(record)], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
     const wrapper = mount(TrackerBoardPanel, { props: { rows: rows() } })
-    const card = wrapper.get('[aria-label="In Progress"] .tracker-board__card')
+    const card = wrapper.get('[aria-label="Stopped"] .tracker-board__card')
     expect(card.get('.tracker-board__automated').text()).toBe('Auto')
     expect(card.text()).toContain('Stopped')
     expect(card.get('.tracker-board__subtitle').attributes('title')).toBe('Browser access denied.')
     expect(card.text()).not.toContain('Blocked by:')
     record.metadata_json.delivery.status = 'running'
+    record.board_column = 'in-progress'
     await wrapper.setProps({ rows: rows() })
-    expect(wrapper.get('[aria-label="In Progress"] .tracker-board__card').text()).not.toContain('Delivery stopped')
+    expect(wrapper.get('[aria-label="In progress"] .tracker-board__card').text()).not.toContain('Delivery stopped')
     expect(wrapper.find('.task-delivery-stop').exists()).toBe(false)
+  })
+  it('retains terminal lifecycle truth over old delivery metadata', () => {
+    const record = { ...task('complete'), metadata_json: { delivery: { ...automaticMetadata.delivery, status: 'stopped', reason: 'Historical stop' } } }
+    const rows = buildTaskProgressRows([record], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
+    const wrapper = mount(TrackerBoardPanel, { props: { rows } })
+    expect(wrapper.get('[aria-label="Done"] .tracker-board__state').text()).toBe('Complete')
+    expect(wrapper.get('.tracker-board__subtitle').text()).not.toContain('Historical stop')
+    wrapper.unmount()
   })
   it('indicates persisted automatic delivery and removes the badge when task metadata changes', async () => {
     const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
@@ -210,21 +249,21 @@ describe('Work board presentation', () => {
     expect(wrapper.findAll('.agent-usage-summary dd').map(item => item.text())).toEqual(['N/A', 'N/A', 'N/A'])
   })
 
-  it('keeps all seven columns and an explicit open target separate from edit controls', async () => {
+  it('keeps all eight columns and an explicit open target separate from edit controls', async () => {
     const rows = buildTaskProgressRows([task('in-progress')], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
     const wrapper = mount(TrackerBoardPanel, { props: { rows } })
-    expect(wrapper.findAll('.tracker-board__column').map(column => column.attributes('aria-label'))).toEqual(Object.values(trackerStatus).map(status => status.label))
-    expect(wrapper.findAll('.tracker-board__empty')).toHaveLength(6)
+    expect(wrapper.findAll('.tracker-board__column').map(column => column.attributes('aria-label'))).toEqual(Object.values(boardColumnStatus).map(status => status.label))
+    expect(wrapper.findAll('.tracker-board__empty')).toHaveLength(7)
     expect(wrapper.get('[aria-label="Task board"]').attributes('tabindex')).toBe('0')
-    expect(wrapper.findAll('.tracker-board__heading h2').map(heading => heading.text())).toEqual(Object.values(trackerStatus).map(status => status.label))
-    expect(wrapper.findAll('.tracker-board__heading').map(heading => heading.findComponent(UiIcon).props('name'))).toEqual(Object.values(trackerStatus).map(status => status.icon))
+    expect(wrapper.findAll('.tracker-board__heading h2').map(heading => heading.text())).toEqual(Object.values(boardColumnStatus).map(status => status.label))
+    expect(wrapper.findAll('.tracker-board__heading').map(heading => heading.findComponent(UiIcon).props('name'))).toEqual(Object.values(boardColumnStatus).map(status => status.icon))
     expect(wrapper.findAll('[draggable="true"]')).toHaveLength(1)
     expect(wrapper.text()).toContain('0/2')
     const card = wrapper.get('.tracker-board__open')
-    expect(card.attributes('aria-label')).toBe('Open task #1: Build task board')
+    expect(card.attributes('aria-label')).toBe('Open graph for task #1: Build task board')
     expect(card.findAll('button, a, input, select, [role="button"]')).toHaveLength(0)
     await card.trigger('click')
-    expect(wrapper.emitted('openTask')).toEqual([['board-task']])
+    expect(wrapper.emitted('openGraph')).toEqual([['board-task']])
   })
 
   it('shows ordinary assignment and counts only complete tickets without labeling the task blocked', () => {
@@ -249,7 +288,7 @@ describe('Work board presentation', () => {
     const rows = buildTaskProgressRows([record], new Map(), { search: '', status: 'all', workflow: '', assignee: '' })
     const wrapper = mount(TrackerBoardPanel, { props: { rows } })
     const card = wrapper.get('.tracker-board__card')
-    expect(card.get('.tracker-board__open').attributes('aria-label')).toBe(`Open task #1: ${record.title}`)
+    expect(card.get('.tracker-board__open').attributes('aria-label')).toBe(`Open graph for task #1: ${record.title}`)
     expect(card.get('.tracker-board__title').attributes('title')).toBe(record.title)
     expect(card.find('.tracker-board__owner').exists()).toBe(false)
     expect(card.text()).not.toContain('0/0')
@@ -362,7 +401,7 @@ describe('Board card controls', () => {
     expect(wrapper.find('.ui-reorder-list__placeholder').exists()).toBe(true)
     await wrapper.findAll('.tracker-board__card-wrap')[1]!.trigger('dragover', { dataTransfer, clientY: 500 })
     expect(wrapper.find('.ui-reorder-list__before').exists()).toBe(true)
-    await wrapper.get('[aria-label="In Progress"] .tracker-board__cards').trigger('drop', { dataTransfer, clientY: 500 })
+    await wrapper.get('[aria-label="In progress"] .tracker-board__cards').trigger('drop', { dataTransfer, clientY: 500 })
     expect(wrapper.emitted('move')).toEqual([[{ taskKey: 'first', anchorKey: 'third', placement: 'before' }]])
     expect(wrapper.find('.ui-reorder-list__placeholder').exists()).toBe(false)
     wrapper.unmount()
@@ -375,7 +414,7 @@ describe('Board card controls', () => {
     expect(wrapper.find('.ui-reorder-list__placeholder').exists()).toBe(true)
     // Before the next visible item is still the source's current position.
     await wrapper.findAll('.tracker-board__card-wrap')[1]!.trigger('dragover', { dataTransfer, clientY: 300 })
-    await wrapper.get('[aria-label="In Progress"] .tracker-board__cards').trigger('drop', { dataTransfer, clientY: 300 })
+    await wrapper.get('[aria-label="In progress"] .tracker-board__cards').trigger('drop', { dataTransfer, clientY: 300 })
     expect(wrapper.emitted('move')).toBeUndefined()
     wrapper.unmount()
   })
@@ -385,7 +424,7 @@ describe('Board card controls', () => {
     await wrapper.get('[data-reorder-handle]').trigger('dragstart', { dataTransfer })
     await wrapper.findAll('.tracker-board__card-wrap')[1]!.trigger('dragover', { dataTransfer, clientY: 500 })
     if (change === 'escape') document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
-    if (change === 'outside') await wrapper.get('[aria-label="Complete"]').trigger('drop', { dataTransfer })
+    if (change === 'outside') await wrapper.get('[aria-label="Done"]').trigger('drop', { dataTransfer })
     if (change === 'status') await wrapper.setProps({ rows: wrapper.props('rows').map(row => row.key === 'first' ? { ...row, task: { ...row.task, status: 'complete' as const } } : row) })
     if (change === 'filters') await wrapper.setProps({ interactionKey: 'filters-2' })
     if (change === 'hidden') await wrapper.setProps({ rows: wrapper.props('rows').slice(1) })
@@ -393,7 +432,7 @@ describe('Board card controls', () => {
     if (change === 'source-rank') await wrapper.setProps({ rows: wrapper.props('rows').map(row => row.key === 'first' ? { ...row, task: { ...row.task, order_index: 7 } } : row) })
     if (change === 'target-status') await wrapper.setProps({ rows: wrapper.props('rows').map(row => row.key === 'third' ? { ...row, task: { ...row.task, status: 'complete' as const } } : row) })
     if (change === 'target-removal') await wrapper.setProps({ rows: wrapper.props('rows').filter(row => row.key !== 'third') })
-    await wrapper.get('[aria-label="In Progress"] .tracker-board__cards').trigger('drop', { dataTransfer, clientY: 500 })
+    await wrapper.get('[aria-label="In progress"] .tracker-board__cards').trigger('drop', { dataTransfer, clientY: 500 })
     expect(wrapper.emitted('move')).toBeUndefined()
     expect(wrapper.find('.ui-reorder-list__placeholder').exists()).toBe(false)
     wrapper.unmount()
@@ -403,6 +442,7 @@ describe('Board card controls', () => {
 function task(status: TrackerStatus): TrackerTask {
   return {
     id: 1, project_id: 1, tracker_id: 1, key: 'board-task', title: 'Build task board', goal: '', description: '', status,
+    board_column: status === 'complete' ? 'done' : status === 'deferred' ? 'backlog' : status === 'not-started' ? 'todo' : status,
     priority_key: 'p2', lane_key: 'implementation', owner: 'Codex', task_type: 'manual', order_index: 1, source_kind: 'manual', source_json: null,
     definition_of_done_json: [], constraints_json: [], expected_outcomes_json: [], completion_evidence_json: null, context_json: null,
     metadata_json: null, created_by: 'codex', created_at: '2026-10-28T00:00:00Z', updated_at: '2026-10-28T00:00:00Z', started_at: null, completed_at: null,

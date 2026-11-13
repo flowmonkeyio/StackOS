@@ -44,6 +44,7 @@ def main() -> int:
                 "tracker.taskResults",
                 "tracker.updateTaskPriority",
                 "tracker.reorderTask",
+                "tracker.placeTask",
                 "project.move",
                 "project.update",
                 "project.delete",

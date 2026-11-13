@@ -27,6 +27,7 @@ beforeEach(() => {
   })
   vi.mocked(apiFetch).mockImplementation(async url => url.includes('/connections/accounts')
     ? { accounts: [{ credential_ref: 'cred_one', provider_key: 'stripe', display_name: 'My Stripe', status: 'connected', setup_required: false, last_test: { ok: false } }] } as never
+    : /^\/api\/v1\/projects\/\d+$/.test(url) ? portfolioFixture({ id: Number(url.split('/').at(-1)) }) as never
     : { items: [], next_cursor: null } as never)
 })
 afterEach(() => { document.body.innerHTML = '' })
@@ -73,6 +74,8 @@ describe('project Home active work', () => {
         .toEqual(['Active tasks', 'Agent activity', 'Connected tools'])
       expect(callOperation).toHaveBeenCalledWith('tracker.activeTasks', { project_id: 1, limit: 200 })
       expect(callOperation).toHaveBeenCalledWith('tracker.agentStats', { project_id: 1, ...localActivityFilters() })
+      expect(apiFetch).toHaveBeenCalledWith('/api/v1/projects/1/connections/accounts?summary_only=true')
+      expect(callOperation).not.toHaveBeenCalledWith('project.portfolio', expect.anything())
       expect(wrapper.findComponent({ name: 'AgentActivitySection' }).props('summary').totals.reported_usage.total).toBe(100)
       expect(wrapper.text()).not.toContain('Delivered report')
       expect(wrapper.text()).not.toContain('Tickets by status')
@@ -95,16 +98,18 @@ describe('project Home active work', () => {
     } finally { wrapper.unmount() }
   })
 
-  it('retains overview polling without polling task lifetime metrics or aggregate Usage', async () => {
+  it('polls compact connections without polling task lifetime metrics, Usage or portfolio', async () => {
     vi.useFakeTimers()
     const { wrapper } = await mountProject()
     try {
       const count = (operation: string) => vi.mocked(callOperation).mock.calls.filter(([name]) => name === operation).length
-      const usage = count('tracker.agentStats'), active = count('tracker.activeTasks'), overview = count('project.portfolio')
+      const usage = count('tracker.agentStats'), active = count('tracker.activeTasks')
+      const connections = vi.mocked(apiFetch).mock.calls.filter(([url]) => url.includes('/connections/accounts')).length
       await vi.advanceTimersByTimeAsync(30_000)
       expect(count('tracker.agentStats')).toBe(usage)
       expect(count('tracker.activeTasks')).toBe(active)
-      expect(count('project.portfolio')).toBeGreaterThan(overview)
+      expect(count('project.portfolio')).toBe(0)
+      expect(vi.mocked(apiFetch).mock.calls.filter(([url]) => url.includes('/connections/accounts')).length).toBeGreaterThan(connections)
     } finally { wrapper.unmount(); vi.useRealTimers() }
   })
 

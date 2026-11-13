@@ -59,10 +59,184 @@ class Reader:
     def read(self):
         self.reads += 1
         value, self.value = self.value, None
-        return value
+        return [value] if value else []
 
     def close(self):
         self.closed = True
+
+
+def collect_native_history(root, batches, *, resumed=False, poll_times=None, final_count=None):
+    """Exercise real native bytes through collection, handoff and projection."""
+    root.mkdir()
+    sid = "019a681b-1000-7000-8000-000000000001"
+    rollout = root / "rollout.jsonl"
+    with sqlite3.connect(root / "state_5.sqlite") as database:
+        database.execute("CREATE TABLE threads(id TEXT PRIMARY KEY, rollout_path TEXT)")
+        database.execute("INSERT INTO threads VALUES (?, ?)", (sid, str(rollout)))
+    rollout.write_text(
+        json.dumps({"type": "session_meta", "payload": {"id": sid, "cwd": str(root)}}) + "\n"
+    )
+    baseline = 100 if resumed else 0
+    invocation = call(resumed=resumed)
+    invocation.session_id = sid
+    invocation.previous_usage = normalize_usage(
+        usage_snapshot("codex.turn", "session", baseline, 0, cache_read=0),
+        session_id=sid,
+        resumed=False,
+    )
+    invocation.reader = CodexCounterReader(sid, root, home=root, resumed=resumed)
+    service._active_invocations[invocation.invocation_id] = invocation
+    current = []
+    try:
+        for index, batch in enumerate(batches):
+            with rollout.open("a") as target:
+                for second, count in batch:
+                    at = datetime(2026, 11, 8, 1, tzinfo=UTC) + timedelta(seconds=second)
+                    target.write(
+                        json.dumps(
+                            {
+                                "type": "event_msg",
+                                "timestamp": at.isoformat(),
+                                "payload": {
+                                    "type": "token_count",
+                                    "info": {
+                                        "total_token_usage": {
+                                            "input_tokens": baseline + count,
+                                            "output_tokens": 0,
+                                            "total_tokens": baseline + count,
+                                            "cached_input_tokens": 0,
+                                        }
+                                    },
+                                },
+                            }
+                        )
+                        + "\n"
+                    )
+            now = datetime(2026, 11, 8, 1, tzinfo=UTC) + timedelta(
+                seconds=poll_times[index] if poll_times else 100
+            )
+            service._sample_invocations(now)
+            current.append((invocation.measured_at, invocation.usage["measured"]["input"]))
+        if final_count is not None:
+            service._finish(
+                invocation,
+                AgentRunResult(
+                    0,
+                    thread_id=sid,
+                    usage=usage_snapshot(
+                        "codex.turn", "session", baseline + final_count, 0, cache_read=0
+                    ),
+                ),
+            )
+            assert invocation.finished and invocation.reader is None
+        projection = invocation.projection()
+        stats = summarize_receipts(
+            [{"exit_code": 0, "usage": invocation.usage, "execution": projection}],
+            include_history=True,
+        )
+        history = [(p.at, [(i.kind, i.input) for i in p.intervals]) for p in stats.samples]
+        return stats.reported_usage.input, history, current, projection
+    finally:
+        service._unregister(invocation)
+
+
+@pytest.mark.parametrize("resumed", [False, True])
+def test_real_collector_preserves_late_source_history_without_regressing_totals(tmp_path, resumed):
+    ordered = [(0, 0), (40, 100), (70, 200), (100, 300)]
+    reference = collect_native_history(tmp_path / "ordered", [ordered], resumed=resumed)
+    same_read = collect_native_history(
+        tmp_path / "same-read", [[ordered[i] for i in (0, 2, 1, 3)]], resumed=resumed
+    )
+    later_poll = collect_native_history(
+        tmp_path / "later-poll",
+        [ordered[:1] + ordered[2:3], ordered[1:2], ordered[3:]],
+        resumed=resumed,
+    )
+    assert reference[:2] == same_read[:2] == later_poll[:2]
+    assert [amount for _, amount in later_poll[2]] == [200, 200, 300]
+    assert [intervals for _, intervals in reference[1]] == [
+        [("baseline", 0)],
+        [("checkpoint", 100)],
+        [("checkpoint", 100)],
+        [("checkpoint", 100)],
+    ]
+
+
+@pytest.mark.parametrize("split", [False, True])
+def test_real_collector_keeps_conflicting_timestamps_but_deduplicates_equal_counters(
+    tmp_path, split
+):
+    points = [(0, 0), (40, 100), (40, 100), (40, 300), (70, 400), (100, 500)]
+    batches = [points[:2], points[2:4], points[4:]] if split else [points]
+    total, history, current, projection = collect_native_history(tmp_path / "conflict", batches)
+    assert total == 500
+    assert len(projection["live_usage"]["samples"]) == 5
+    assert [intervals for _, intervals in history] == [
+        [("baseline", 0)],
+        [("reset", None)],
+        [("baseline", 400)],
+        [("checkpoint", 100)],
+    ]
+    if split:
+        assert [amount for _, amount in current] == [100, 100, 500]
+
+
+def test_real_collector_retains_newest_source_points_and_final_handoff(tmp_path):
+    total, history, current, projection = collect_native_history(
+        tmp_path / "bounded",
+        [[(i * 5, i) for i in range(1, 121)], [(2, 0)]],
+        poll_times=[600, 600],
+    )
+    points = projection["live_usage"]["samples"]
+    assert total == 120 and len(points) == 120
+    assert points[0]["at"] == "2026-11-08T01:00:05+00:00"
+    assert points[-1]["at"] == "2026-11-08T01:10:00+00:00"
+    assert [amount for _, amount in current] == [120, 120]
+    total, history, _, projection = collect_native_history(
+        tmp_path / "expired",
+        [[(0, 0), (40, 100)], [(30, 50)]],
+        poll_times=[100, 701],
+    )
+    assert total == 100 and not projection["live_usage"]["samples"]
+    # The last known total remains a dated baseline when its raw tail expires.
+    assert history == [("2026-11-08T01:00:40+00:00", [("baseline", 100)])]
+    total, history, _, projection = collect_native_history(
+        tmp_path / "final",
+        [[(0, 0), (70, 200)], [(40, 100), (100, 300)]],
+        resumed=True,
+        final_count=320,
+    )
+    assert total == 320 and len(projection["live_usage"]["samples"]) == 5
+    assert [intervals for _, intervals in history[:-1]] == [
+        [("baseline", 0)],
+        [("checkpoint", 100)],
+        [("checkpoint", 100)],
+        [("checkpoint", 100)],
+    ]
+    assert history[-1][1] == [("batched", 20)]
+
+
+def test_native_read_bound_keeps_newest_source_points_before_collector(tmp_path):
+    ordered = [(i * 5, i) for i in range(121)]
+    reference = collect_native_history(tmp_path / "ordered-bound", [ordered], poll_times=[600])
+    latest_first = collect_native_history(
+        tmp_path / "latest-first-bound", [[ordered[-1], *ordered[:-1]]], poll_times=[600]
+    )
+    assert reference[:2] == latest_first[:2]
+    assert latest_first[0] == 120 and len(latest_first[3]["live_usage"]["samples"]) == 120
+
+
+def test_delayed_collector_keeps_each_source_checkpoint_and_fixed_resume_baseline():
+    invocation = call(resumed=True)
+    invocation.reader = Reader()
+    invocation.reader.read = lambda: [counter(1), counter(2), counter(1), counter(3)]
+    service._active_invocations[invocation.invocation_id] = invocation
+    service._sample_invocations(datetime.fromisoformat(counter(3)[0]))
+    assert [(p["at"], p["input"]) for p in invocation.samples] == [
+        (counter(i)[0], i * 10) for i in (1, 2, 3)
+    ]
+    assert invocation.usage["measured"]["input"] == 30
+    assert invocation.previous_usage["snapshot"]["input"] == 100
 
 
 def test_single_owner_bounds_replaces_fixed_resume_baseline_and_project_scopes():
@@ -282,7 +456,7 @@ def test_exact_rollout_cursor_partial_lines_and_counter_only_parsing(tmp_path):
         json.dumps({"type": "session_meta", "payload": {"id": sid, "cwd": str(tmp_path)}}) + "\n"
     )
     reader = CodexCounterReader(sid, tmp_path, home=tmp_path)
-    assert waiting.read() is None and waiting.file is not None
+    assert waiting.read() == [] and waiting.file is not None
     waiting.close()
     event = {
         "type": "event_msg",
@@ -302,18 +476,27 @@ def test_exact_rollout_cursor_partial_lines_and_counter_only_parsing(tmp_path):
     encoded = json.dumps(event)
     with file.open("a") as out:
         out.write("not json transcript bytes\n" + encoded[:30])
-    assert reader.read() is None
+    assert reader.read() == []
     offset = reader.cursor
     with file.open("a") as out:
         out.write(encoded[30:] + "\n")
-    stamp, usage = reader.read()
+    ((stamp, usage),) = reader.read()
     assert stamp == event["timestamp"] and usage["snapshot"]["cache_read"] == 90
-    assert reader.cursor > offset and reader.read() is None
+    assert reader.cursor > offset and reader.read() == []
+    # A delayed poll must preserve each source instant, rather than returning
+    # only the last cumulative counter and losing the intervening minutes.
+    with file.open("a") as out:
+        for minute in (1, 2, 3):
+            event["timestamp"] = f"2026-11-08T01:0{minute}:10Z"
+            out.write(json.dumps(event) + "\n")
+    assert [stamp for stamp, _ in reader.read()] == [
+        f"2026-11-08T01:0{minute}:10Z" for minute in (1, 2, 3)
+    ]
     resumed = CodexCounterReader(sid, tmp_path, home=tmp_path, resumed=True)
-    assert resumed.cursor == file.stat().st_size and resumed.read() is None
+    assert resumed.cursor == file.stat().st_size and resumed.read() == []
     with file.open("a") as out:
         out.write(encoded + "\n")
-    assert resumed.read()[1]["snapshot"]["total"] == 132
+    assert resumed.read()[0][1]["snapshot"]["total"] == 132
     resumed.close()
     reader.close()
     assert reader.file is None and not reader.pending

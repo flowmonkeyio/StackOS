@@ -200,6 +200,7 @@ describe('ConnectionsView provider readiness', () => {
     const catalog = useStackOsCatalogStore()
     catalog.authProviders = [provider]
     catalog.authStatus = {
+      summary_only: false,
       project_id: 1,
       provider_key: null,
       providers: [provider],

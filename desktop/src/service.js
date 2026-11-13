@@ -389,7 +389,7 @@ function readAuthToken() {
   return fs.readFileSync(authTokenPath(), "utf8").trim();
 }
 
-function daemonJsonGet(pathname, { auth = false, timeoutMs = 5000 } = {}) {
+function daemonJsonGet(pathname, { auth = false, timeoutMs = 5000, json } = {}) {
   return new Promise((resolve, reject) => {
     let url;
     try {
@@ -403,8 +403,13 @@ function daemonJsonGet(pathname, { auth = false, timeoutMs = 5000 } = {}) {
     if (auth) {
       headers.Authorization = `Bearer ${readAuthToken()}`;
     }
+    const payload = json === undefined ? null : JSON.stringify(json);
+    if (payload !== null) {
+      headers["Content-Type"] = "application/json";
+      headers["Content-Length"] = Buffer.byteLength(payload);
+    }
 
-    const req = http.get(url, { headers }, (res) => {
+    const req = http.request(url, { headers, method: payload === null ? "GET" : "POST" }, (res) => {
       let body = "";
       res.setEncoding("utf8");
       res.on("data", (chunk) => {
@@ -434,11 +439,16 @@ function daemonJsonGet(pathname, { auth = false, timeoutMs = 5000 } = {}) {
       req.destroy(new Error("StackOS request timed out"));
     });
     req.on("error", reject);
+    req.end(payload);
   });
 }
 
 function authenticatedJsonGet(pathname, options = {}) {
   return daemonJsonGet(pathname, { ...options, auth: true });
+}
+
+function authenticatedJsonPost(pathname, json, options = {}) {
+  return daemonJsonGet(pathname, { ...options, json, auth: true });
 }
 
 function openDesktopAvailability(onDisconnect) {
@@ -877,6 +887,7 @@ module.exports = {
   DAEMON_URL,
   HEALTH_URL,
   authenticatedJsonGet,
+  authenticatedJsonPost,
   openDesktopAvailability,
   authTokenPath,
   checkHealth,

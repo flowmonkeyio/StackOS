@@ -11,6 +11,7 @@ from stackos.db.models import TrackerItemStatus
 
 DEFAULT_TRACKER_KEY = "default"
 DEFAULT_LANES: tuple[tuple[str, str], ...] = (
+    ("backlog", "Backlog"),
     ("planning", "Planning"),
     ("implementation", "Implementation"),
     ("verification", "Verification"),

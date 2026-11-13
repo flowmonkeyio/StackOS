@@ -2,7 +2,8 @@ import { computed, onBeforeUnmount, onMounted, provide, ref } from 'vue'
 import type { SchemaActiveTaskOut, SchemaActiveTasksOut } from '@/api'
 import { callOperation } from '@/lib/operations'
 import { formatApiError } from '@/lib/client'
-import { markUsageSnapshot, subscribeUsageUpdates, usageSnapshotCheckpoint, type UsageFeedState } from '@/lib/usageUpdates'
+import { awaitUsageBaseline, markUsageSnapshot, subscribeUsageUpdates, usageSnapshotCheckpoint, type UsageFeedState } from '@/lib/usageUpdates'
+import { createUsageReadOwner } from '@/lib/usageReads'
 import { usageFeedKey } from '@/composables/useUsageFeed'
 import { useProjectsStore } from '@/stores/projects'
 
@@ -10,7 +11,7 @@ import { useProjectsStore } from '@/stores/projects'
 export function useActiveTasks(projectId: number | null) {
   const projects = useProjectsStore()
   const rows = ref<SchemaActiveTaskOut[]>([])
-  const loading = ref(false)
+  const loading = ref(true)
   const error = ref<string | null>(null)
   const asOf = ref<string | null>(null)
   const transport = ref<UsageFeedState>({ status: 'connecting', receivedAt: null })
@@ -29,10 +30,10 @@ export function useActiveTasks(projectId: number | null) {
   }))
   let retired = false
   let version = 0
-  let pending: Promise<void> | null = null
+  const reads = createUsageReadOwner()
   let unsubscribe: (() => void) | null = null
 
-  async function drain(): Promise<void> {
+  async function drain(current: () => boolean): Promise<void> {
     loading.value = true
     try {
       while (!retired) {
@@ -61,6 +62,7 @@ export function useActiveTasks(projectId: number | null) {
             cursor = after
           } while (cursor !== null)
           if (request !== version) continue
+          if (!current()) return
           projects.reconcileProjectMetadata(next.map(row => row.project))
           rows.value = next
           asOf.value = page!.as_of
@@ -75,24 +77,22 @@ export function useActiveTasks(projectId: number | null) {
         if (request === version) break
       }
     } finally {
-      pending = null
       if (!retired) loading.value = false
     }
   }
 
-  function refresh(): Promise<void> {
+  function refresh(invalidate = false): Promise<void> {
     if (retired) return Promise.resolve()
-    version += 1
-    // Start after the current SSE batch so usage/status companions coalesce.
-    pending ??= Promise.resolve().then(drain)
-    return pending
+    loading.value = true
+    return reads.read(String(projectId), drain, { invalidate, ready: () => awaitUsageBaseline(projectId) })
   }
 
   onMounted(() => {
     unsubscribe = subscribeUsageUpdates(projectId, {
-      usage: () => { void refresh() },
-      status: () => { void refresh() },
-      resume: () => { void refresh() },
+      coalesceStatusWithUsage: true,
+      usage: () => { void refresh(true) },
+      status: () => { void refresh(true) },
+      resume: () => { void refresh(true) },
       connection: state => {
         transport.value = state
         if (state.status !== 'live') snapshotCurrent.value = false
@@ -106,6 +106,7 @@ export function useActiveTasks(projectId: number | null) {
   })
   onBeforeUnmount(() => {
     retired = true
+    reads.stop()
     version += 1
     unsubscribe?.()
   })

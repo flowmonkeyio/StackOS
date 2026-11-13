@@ -127,6 +127,7 @@ class AuthStatusOut(BaseModel):
     provider_key: str | None
     providers: list[AuthProviderOut]
     accounts: list[AccountOut]
+    summary_only: bool = False
 
 
 class AccountAuthChallengeOut(BaseModel):

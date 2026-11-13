@@ -4,7 +4,7 @@ import type { TrackerSnapshot } from '@/lib/task-tracker/types'
 import { agentStatsFixture } from '@/views/home/agentStatsFixtures'
 import { openTrackerStatusStream } from '@/lib/task-tracker/liveEvents'
 import { WorkDurationOutCoverage } from '@/api'
-vi.mock('@/lib/task-tracker/liveEvents', () => ({ openTrackerStatusStream: vi.fn(() => ({ close: vi.fn() })) }))
+vi.mock('@/lib/task-tracker/liveEvents', async original => ({ ...await original<object>(), openTrackerStatusStream: vi.fn(() => ({ close: vi.fn() })) }))
 beforeEach(() => {
   vi.mocked(openTrackerStatusStream).mockClear()
   Object.defineProperty(document, 'hidden', { configurable: true, value: false })
@@ -13,6 +13,42 @@ beforeEach(() => {
 })
 afterEach(() => vi.useRealTimers())
 describe('one shared usage transport', () => {
+  it('coalesces status companions already covered by a UI revision without hiding a newer change', () => {
+    const usage = vi.fn(), status = vi.fn(), graphStatus = vi.fn()
+    const stop = subscribeUsageUpdates(1, { usage, status, coalesceStatusWithUsage: true })
+    const graph = subscribeUsageUpdates(1, { usage: vi.fn(), status: graphStatus })
+    const stream = vi.mocked(openTrackerStatusStream).mock.calls[0]![0]
+    stream.onFrame?.(Date.now())
+    stream.onUsage?.({ projection: 'ui', scope_complete: true, scope: 'project', project_id: 1,
+      projects: [{ project_id: 1, rev: 5, metric_demand: { task_keys: [], ticket_keys: [] } }], tasks: [], tickets: [], replace: true })
+    const read = usageSnapshotCheckpoint(1)
+    const event = (rev: number) => ({ project_id: 1, event_type: 'tracker.tasks.changed', metadata_json: { rev, affected_tasks: [{ task_key: 'a' }] } })
+    stream.onEvent(event(5) as never)
+    expect(usage).toHaveBeenCalledOnce()
+    expect(status).not.toHaveBeenCalled()
+    expect(graphStatus).toHaveBeenCalledOnce() // Preserve structured graph highlights.
+    expect(markUsageSnapshot(1, read)).toBe(true)
+    stream.onEvent(event(6) as never)
+    expect(status).toHaveBeenCalledOnce()
+    expect(markUsageSnapshot(1, read)).toBe(false)
+    graph(); stop()
+  })
+  it('coalesces unversioned same-poll events only with explicit producer coverage', () => {
+    const status = vi.fn()
+    const stop = subscribeUsageUpdates(1, { usage: vi.fn(), status, coalesceStatusWithUsage: true })
+    const stream = vi.mocked(openTrackerStatusStream).mock.lastCall![0]
+    stream.onFrame?.(Date.now())
+    stream.onUsage?.({ projection: 'ui', scope_complete: true, scope: 'project', project_id: 1,
+      covered_event_id: 12, projects: [], tasks: [], tickets: [], replace: true })
+    const read = usageSnapshotCheckpoint(1)
+    stream.onEvent({ id: 12, project_id: 1, event_type: 'tracker.task.changed', metadata_json: {} } as never)
+    expect(status).not.toHaveBeenCalled()
+    expect(markUsageSnapshot(1, read)).toBe(true)
+    stream.onEvent({ id: 13, project_id: 1, event_type: 'tracker.task.changed', metadata_json: {} } as never)
+    expect(status).toHaveBeenCalledOnce()
+    expect(markUsageSnapshot(1, read)).toBe(false)
+    stop()
+  })
   it('carries timing-only final receipts and explicit unavailable values through the existing refresh owner', () => {
     const stop = subscribeUsageUpdates(9, { usage: vi.fn() })
     const stream = vi.mocked(openTrackerStatusStream).mock.calls[0]![0]
@@ -84,7 +120,7 @@ describe('one shared usage transport', () => {
     const start = usageCheckpoint()
     const measured = agentStatsFixture().totals
     measured.last_execution = { invocation_id: 'finished-call', agent: 'Actual reviewer', host_key: 'codex', model: 'recorded-model', started_at: '2026-11-08T01:00:00Z', ticket_key: 'child' }
-    measured.samples = Array.from({ length: 120 }, (_, i) => ({ at: `2026-11-08T01:${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}Z`, input: i, cache_read: 0, remaining_input: i, output: i, total: i * 2, cache_write: null, reasoning: null }))
+    measured.samples = Array.from({ length: 120 }, (_, i) => ({ at: `2026-11-08T01:${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}Z`, input: i, cache_read: 0, remaining_input: i, output: i, total: i * 2, cache_write: null, reasoning: null, source: null, intervals: null }))
     stream.onUsage?.({ tasks: [{ key: 'task', agent_stats: measured, active_execution: null }], tickets: [], replace: true })
     const stale = { tasks: [{ key: 'task', agent_stats: null }], tickets: [] } as unknown as TrackerSnapshot
     patchUsageAfter(stale, 8, start)

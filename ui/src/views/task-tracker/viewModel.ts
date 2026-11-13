@@ -201,7 +201,7 @@ function matchesBoardClause(row: TaskProgressRow, clause: BoardFilterClause): bo
     case 'text': return taskRowMatchesControls(row, { ...base, search: clause.value })
     case 'blocked': return taskRowMatchesControls(row, { ...base, blocked: true })
     case 'ticket-status': return taskRowMatchesControls(row, { ...base, ticketStatus: clause.value })
-    case 'status': matches = clause.values.includes(row.task.status); break
+    case 'status': matches = clause.values.some(value => value === row.task.board_column); break
     case 'priority': matches = clause.values.some(value => value === row.task.priority_key); break
     case 'workflow': matches = taskMatchesWorkflow(row.task, clause.value); break
     case 'assignee': matches = taskRowMatchesControls(row, { ...base, assignee: clause.value }); break

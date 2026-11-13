@@ -1,12 +1,16 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { useVisibleMetricDemand } from './useVisibleMetricDemand'
 import { UiBadge, UiDropdownMenu, UiIcon, UiReorderList, UiReorderHandle } from '@/components/ui'
-import { trackerStatus } from '@/design/status'
+import type { DropdownItem } from '@/components/ui/UiDropdownMenu.vue'
+import { boardColumnStatus } from '@/design/status'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
 import ActiveExecutionLine from '@/components/domain/ActiveExecutionLine.vue'
 import RunAbortAction from '@/components/domain/RunAbortAction.vue'
 import { taskRunAbortTarget } from '@/composables/useRunAbort'
-import type { TrackerStatus } from '@/lib/task-tracker/types'
+import type { BoardColumn } from '@/lib/task-tracker/types'
+import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
+import { canPlaceTask, type BoardPlacement } from './useTaskBoardEdits'
 import { isAutomaticDeliveryTask, taskDeliveryState } from '@/lib/task-tracker/delivery'
 import { activeExecutionTitle, executionStatus } from '@/lib/task-tracker/execution'
 import type { TaskProgressRow } from './viewTypes'
@@ -14,22 +18,39 @@ import TaskPriorityBadge from './TaskPriorityBadge.vue'
 import { taskPriorities, type TaskPriority } from './taskPriority'
 import type { BoardMove } from './useTaskBoardEdits'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   rows: TaskProgressRow[]; selectedTaskKey?: string; hideEmptyColumns?: boolean
   editPending?: boolean; editPendingColumns?: string[]; editError?: string | null; interactionKey?: string
-}>()
+  metricsActive?: boolean
+  metricDemandEnabled?: boolean
+}>(), { metricsActive: true, selectedTaskKey: undefined, editPendingColumns: undefined, editError: null, interactionKey: undefined })
 const emit = defineEmits<{
   (e: 'openTask', key: string): void; (e: 'refresh'): void
+  (e: 'openGraph', key: string): void
   (e: 'move', move: BoardMove): void
   (e: 'priority', edit: { taskKey: string; priority: TaskPriority }): void
+  (e: 'place', edit: { taskKey: string; boardColumn: BoardPlacement }): void
+  (e: 'metricDemand', keys: string[]): void
 }>()
-const columns = computed(() => (Object.keys(trackerStatus) as TrackerStatus[]).map((status) => ({
+const root = ref<HTMLElement | null>(null)
+const demand = useVisibleMetricDemand(root, '[data-task-key]', node => node.dataset.taskKey,
+  keys => emit('metricDemand', keys), () => props.metricsActive !== false)
+const demanded = computed(() => new Set(demand.keys.value))
+const columns = computed(() => (Object.keys(boardColumnStatus) as BoardColumn[]).map((status) => ({
   status,
-  rows: props.rows.filter((row) => row.task.status === status),
+  rows: props.rows.filter((row) => row.task.board_column === status),
 })).filter(column => !props.hideEmptyColumns || column.rows.length))
 
 function state(row: TaskProgressRow) {
-  return executionStatus(row.task.status, row.task.active_execution, taskDeliveryState(row.task))
+  return executionStatus(row.task.status, isTerminalTrackerStatus(row.task.status) ? null : row.task.active_execution,
+    isTerminalTrackerStatus(row.task.status) ? null : taskDeliveryState(row.task))
+}
+function subtitle(row: TaskProgressRow): string {
+  if (row.task.status === 'deferred') {
+    const scope = row.task.metadata_json?.delivery_scope
+    if (scope && typeof scope === 'object' && 'resume_condition' in scope && typeof scope.resume_condition === 'string') return `Resume when: ${scope.resume_condition}`
+  }
+  return (isTerminalTrackerStatus(row.task.status) ? null : taskDeliveryState(row.task)?.reason) ?? row.task.goal
 }
 function blocker(row: TaskProgressRow): string | null {
   if (row.task.active_execution) return null
@@ -43,15 +64,22 @@ function columnPending(status: string): boolean {
 const rowKey = (row: TaskProgressRow) => row.key
 const rowLabel = (row: TaskProgressRow) => `task #${row.id}`
 // Titles, usage, heartbeats and their updated_at values do not change drag eligibility.
-const rowVersion = (row: TaskProgressRow) => JSON.stringify([row.task.project_id, row.task.tracker_id, row.task.status, row.task.order_index, row.task.priority_key])
+const rowVersion = (row: TaskProgressRow) => JSON.stringify([row.task.project_id, row.task.tracker_id, row.task.status, row.task.board_column, row.task.lane_key, row.task.order_index, row.task.priority_key])
 function priorityItems(row: TaskProgressRow) {
-  return taskPriorities.map(priority => ({ key: priority, label: priority.toUpperCase(), disabled: columnPending(row.task.status) || row.task.priority_key === priority,
+  const items: DropdownItem[] = taskPriorities.map(priority => ({ key: priority, label: priority.toUpperCase(), disabled: columnPending(row.task.board_column!) || row.task.priority_key === priority,
     onSelect: () => emit('priority', { taskKey: row.key, priority }) }))
+  if (canPlaceTask(row.task)) {
+    const boardColumn = row.task.board_column === 'backlog' ? 'todo' : 'backlog'
+    items.push({ key: 'place', label: `Move to ${boardColumnStatus[boardColumn].label}`, disabled: columnPending(row.task.board_column!),
+      onSelect: () => emit('place', { taskKey: row.key, boardColumn }) })
+  }
+  return [...items, { key: 'details', label: 'Task details', disabled: false, onSelect: () => emit('openTask', row.key) }]
 }
 </script>
 
 <template>
   <section
+    ref="root"
     class="tracker-board focus-ring"
     :style="{ gridTemplateColumns: `repeat(${Math.max(columns.length, 1)}, minmax(336px, 1fr))` }"
     aria-label="Task board"
@@ -72,16 +100,16 @@ function priorityItems(row: TaskProgressRow) {
       v-for="column in columns"
       :key="column.status"
       class="tracker-board__column"
-      :aria-label="trackerStatus[column.status].label"
+      :aria-label="boardColumnStatus[column.status].label"
     >
       <header class="tracker-board__heading">
         <UiIcon
-          :name="trackerStatus[column.status].icon"
+          :name="boardColumnStatus[column.status].icon"
           class="h-4 w-4 shrink-0"
-          :style="{ color: `var(--color-${trackerStatus[column.status].tone}-fg)` }"
+          :style="{ color: `var(--color-${boardColumnStatus[column.status].tone}-fg)` }"
         />
         <h2 class="text-sm font-medium text-fg-strong">
-          {{ trackerStatus[column.status].label }}
+          {{ boardColumnStatus[column.status].label }}
         </h2>
         <span class="text-xs tabular-nums text-fg-muted">{{ column.rows.length }}</span>
       </header>
@@ -104,7 +132,7 @@ function priorityItems(row: TaskProgressRow) {
               class="tracker-board__card"
               :class="{ 'tracker-board__card--selected': selectedTaskKey === row.key, 'tracker-board__card--blocked': blocker(row) }"
               :title="row.task.active_execution ? activeExecutionTitle(row.task.active_execution) : undefined"
-              :aria-busy="columnPending(row.task.status) || undefined"
+              :aria-busy="columnPending(column.status) || undefined"
             >
               <span class="tracker-board__identity tracker-board__identity--header">
                 <UiReorderHandle v-bind="handle" />
@@ -117,7 +145,7 @@ function priorityItems(row: TaskProgressRow) {
                       type="button"
                       class="tracker-board__priority focus-ring"
                       data-dropdown-trigger
-                      :disabled="columnPending(row.task.status)"
+                      :disabled="columnPending(column.status)"
                       :aria-expanded="open"
                       aria-haspopup="menu"
                       :aria-label="`Change priority for task #${row.id}: ${row.task.priority_key.toUpperCase()}`"
@@ -164,8 +192,8 @@ function priorityItems(row: TaskProgressRow) {
               <button
                 type="button"
                 class="tracker-board__open focus-ring"
-                :aria-label="`Open task #${row.id}: ${row.task.title}${row.task.active_execution ? `; Active now: ${activeExecutionTitle(row.task.active_execution)}` : ''}`"
-                @click="$emit('openTask', row.key)"
+                :aria-label="`Open graph for task #${row.id}: ${row.task.title}${row.task.active_execution ? `; Active now: ${activeExecutionTitle(row.task.active_execution)}` : ''}`"
+                @click="$emit('openGraph', row.key)"
               >
                 <span
                   class="tracker-board__title"
@@ -173,10 +201,10 @@ function priorityItems(row: TaskProgressRow) {
                 >{{ row.task.title }}</span>
                 <span
                   class="tracker-board__subtitle"
-                  :title="taskDeliveryState(row.task)?.reason ?? row.task.goal"
-                >{{ taskDeliveryState(row.task)?.reason ?? row.task.goal }}</span>
+                  :title="subtitle(row)"
+                >{{ subtitle(row) }}</span>
                 <AgentUsageSummary
-                  v-if="isAutomaticDeliveryTask(row.task)"
+                  v-if="metricsActive !== false && isAutomaticDeliveryTask(row.task) && (!metricDemandEnabled || demanded.has(row.key))"
                   :metrics="row.task.agent_stats"
                   :active="!!row.task.active_execution"
                   compact
@@ -184,6 +212,7 @@ function priorityItems(row: TaskProgressRow) {
                 />
                 <span class="tracker-board__meta">
                   <ActiveExecutionLine
+                    :metrics-active="metricsActive && (!metricDemandEnabled || demanded.has(row.key))"
                     :item="row.task"
                     :execution="row.task.active_execution"
                     :last-execution="isAutomaticDeliveryTask(row.task) ? row.task.agent_stats?.last_execution : null"
@@ -221,7 +250,7 @@ function priorityItems(row: TaskProgressRow) {
 .tracker-board__message { position: sticky; left: 0; grid-column: 1 / -1; font-size: 12px; }
 .tracker-board__identity--header :deep(.ui-dropdown) { display: inline-flex; align-items: center; flex: none; vertical-align: middle; }
 .tracker-board__actions { margin-right: -4px; }
-.tracker-board { display: grid; grid-template-columns: repeat(7, minmax(336px, 1fr)); column-gap: 12px; flex: 1 1 auto; min-width: 0; min-height: 360px; overflow: auto; overscroll-behavior: contain; }
+.tracker-board { display: grid; column-gap: 12px; flex: 1 1 auto; min-width: 0; min-height: 360px; overflow: auto; overscroll-behavior: contain; }
 .tracker-board__column { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .tracker-board__heading { display: flex; flex: none; align-items: center; gap: 8px; padding: 12px 8px; }
 .tracker-board__cards { --reorder-gap: 24px; flex: 1 1 auto; padding: 4px 4px 16px; scrollbar-width: thin; scrollbar-gutter: stable; }

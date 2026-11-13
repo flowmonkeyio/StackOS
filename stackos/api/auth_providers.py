@@ -136,12 +136,13 @@ async def list_auth_providers(
 @router.get("/auth/accounts", response_model=AuthStatusOut)
 async def list_accounts(
     provider_key: str | None = Query(default=None),
+    summary_only: bool = Query(default=False),
     session: Session = Depends(get_session),
 ) -> AuthStatusOut:
     """Return the sanitized global Account inventory."""
     payload = await _dispatch_auth_operation(
         "account.list",
-        {"provider_key": provider_key},
+        {"provider_key": provider_key, "summary_only": summary_only},
         session=session,
     )
     return AuthStatusOut.model_validate(payload)
@@ -154,12 +155,13 @@ async def list_accounts(
 async def list_project_connections(
     project_id: int,
     provider_key: str | None = Query(default=None),
+    summary_only: bool = Query(default=False),
     session: Session = Depends(get_session),
 ) -> AuthStatusOut:
     """Return Accounts explicitly attached to one project."""
     payload = await _dispatch_auth_operation(
         "connection.list",
-        {"project_id": project_id, "provider_key": provider_key},
+        {"project_id": project_id, "provider_key": provider_key, "summary_only": summary_only},
         session=session,
     )
     return AuthStatusOut.model_validate(payload)

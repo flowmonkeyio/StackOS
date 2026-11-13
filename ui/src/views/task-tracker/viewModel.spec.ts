@@ -330,6 +330,7 @@ function makeTask(overrides: Partial<TrackerTask> = {}): TrackerTask {
     goal: 'Ship safely',
     description: 'Tracked delivery',
     status: 'in-progress',
+    board_column: 'in-progress',
     priority_key: 'p1',
     lane_key: 'implementation',
     owner: null,

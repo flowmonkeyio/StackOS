@@ -96,10 +96,13 @@ def _stamp_create_all_schema_if_needed(settings: Settings, cfg: Config) -> bool:
         from sqlmodel import Session
 
         from stackos.repositories.tracker.ordering import normalize_default_columns
+        from stackos.repositories.tracker.receipt_projection import initialize_receipt_projection
 
-        with Session(engine) as session:
-            normalize_default_columns(session)
-            session.commit()
+        with engine.begin() as connection:
+            initialize_receipt_projection(connection)
+            with Session(bind=connection) as session:
+                normalize_default_columns(session)
+                session.flush()
     finally:
         engine.dispose()
 

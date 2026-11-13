@@ -16,6 +16,12 @@ describe('project navigation', () => {
     expect(isStackOsNavItemActive(home, '/projects/7/tasks')).toBe(false)
     expect(isStackOsNavItemActive(home, '/projects/8/setup')).toBe(false)
   })
+  it('requires explicit Finance enablement while preserving other plugin defaults', () => {
+    const finance = { ...plugin('finance'), enabled_for_project: null }
+    const engineering = { ...plugin('engineering'), enabled_for_project: null }
+    expect(pluginContributionSections(7, [finance, engineering])[0]!.items.map(item => item.key))
+      .toEqual(['plugin-engineering'])
+  })
   it('connects the primary and Setup destinations without category pages', () => {
     const sections = coreNavSections(7)
     expect(sections.map(section => section.items.map(item => [item.label, item.to]))).toEqual([

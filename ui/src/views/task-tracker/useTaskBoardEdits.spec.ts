@@ -1,14 +1,14 @@
 import { computed, ref } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/lib/client'
-import { reorderTask, saveTaskPriority } from '@/lib/stackos/taskBoard'
+import { placeTask, reorderTask, saveTaskPriority } from '@/lib/stackos/taskBoard'
 import type { TaskProgressRow } from './viewTypes'
 import { useTaskBoardEdits } from './useTaskBoardEdits'
 
-vi.mock('@/lib/stackos/taskBoard', () => ({ reorderTask: vi.fn(), saveTaskPriority: vi.fn() }))
+vi.mock('@/lib/stackos/taskBoard', () => ({ reorderTask: vi.fn(), saveTaskPriority: vi.fn(), placeTask: vi.fn() }))
 function setup() {
   const source = ref(['a', 'b', 'c'].map(key => ({ key, task: {
-    key, project_id: 1, status: 'in-progress', priority_key: 'p2', updated_at: '2026-11-10T00:00:00',
+    key, project_id: 1, status: 'in-progress', board_column: 'in-progress', priority_key: 'p2', updated_at: '2026-11-10T00:00:00',
   } }) as TaskProgressRow))
   const projectId = ref(1)
   const refresh = vi.fn(async () => {})
@@ -20,11 +20,65 @@ describe('Board save lifecycle', () => {
     vi.resetAllMocks()
     vi.mocked(reorderTask).mockResolvedValue({ data: { rev: 2 } } as never)
     vi.mocked(saveTaskPriority).mockResolvedValue({ data: { rev: 2 } } as never)
+    vi.mocked(placeTask).mockResolvedValue({ data: { rev: 2 } } as never)
   })
   afterEach(() => { vi.useRealTimers() })
+  it('reorders the projected cohort even when lifecycle statuses differ', async () => {
+    const { source, edits } = setup()
+    source.value = source.value.map((row, i) => ({ ...row, task: { ...row.task, status: i ? 'deferred' : 'not-started', board_column: 'backlog' } }))
+    await edits.move({ taskKey: 'a', anchorKey: 'c', placement: 'after' })
+    expect(reorderTask).toHaveBeenCalledOnce()
+    expect(reorderTask).toHaveBeenCalledWith(expect.objectContaining({ expected_status: 'not-started', anchor_task_key: 'c' }), expect.any(AbortSignal))
+  })
+  it('places eligible work once with only the existing snapshot and lane intent, without optimistic lifecycle changes', async () => {
+    const { source, edits, refresh } = setup()
+    source.value[0]!.task = { ...source.value[0]!.task, status: 'not-started', board_column: 'backlog', lane_key: 'backlog' }
+    let finish!: (value: never) => void
+    vi.mocked(placeTask).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const saving = edits.place('a', 'todo')
+    expect(edits.pendingColumns.value).toEqual(['backlog'])
+    expect(edits.rows.value[0]!.task).toMatchObject({ status: 'not-started', board_column: 'backlog', lane_key: 'backlog' })
+    expect(placeTask).toHaveBeenCalledWith({ project_id: 1, task_key: 'a', board_column: 'todo', expected_status: 'not-started', expected_updated_at: '2026-11-10T00:00:00', idempotency_key: expect.any(String) }, expect.any(AbortSignal))
+    finish({ data: { rev: 3 } } as never)
+    await saving
+    expect(refresh).toHaveBeenCalledWith(3)
+    expect(reorderTask).not.toHaveBeenCalled()
+    expect(saveTaskPriority).not.toHaveBeenCalled()
+  })
+  it('does not place deferred, stopped, open-handoff, same-column or foreign work', async () => {
+    const { source, edits, refresh } = setup()
+    for (const patch of [
+      { status: 'deferred', board_column: 'backlog' },
+      { status: 'in-progress', board_column: 'stopped' },
+      { status: 'not-started', board_column: 'todo' },
+      { status: 'not-started', board_column: 'backlog', project_id: 2 },
+      { status: 'not-started', board_column: 'backlog', metadata_json: { delivery: { status: 'queued', job_ref: 'synthetic:never-execute', delivery_agent: { name: 'worker', instructions: 'Inert' }, review_agent: { name: 'review', instructions: 'Inert' } } } },
+    ] as const) {
+      source.value[0]!.task = { ...source.value[0]!.task, project_id: 1, metadata_json: null, ...patch }
+      await edits.place('a', 'todo')
+    }
+    expect(placeTask).not.toHaveBeenCalled()
+    expect(refresh).not.toHaveBeenCalled()
+  })
+  it('ignores a placement response after cancellation and never repeats a lost placement', async () => {
+    const { source, edits, refresh } = setup()
+    source.value[0]!.task = { ...source.value[0]!.task, status: 'not-started', board_column: 'backlog' }
+    let finish!: (value: never) => void
+    vi.mocked(placeTask).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const saving = edits.place('a', 'todo')
+    edits.stop()
+    finish({ data: { rev: 3 } } as never)
+    await saving
+    expect(refresh).not.toHaveBeenCalled()
+    vi.mocked(placeTask).mockRejectedValueOnce(new TypeError('Lost response'))
+    await edits.place('a', 'todo')
+    expect(placeTask).toHaveBeenCalledTimes(2)
+    expect(refresh).toHaveBeenCalledOnce()
+    expect(edits.error.value).toContain('could not confirm')
+  })
   it('does not save or refresh self, same-position, cross-column, cross-project or missing-anchor moves', async () => {
     const { edits, refresh, source } = setup()
-    source.value.push({ key: 'other-status', task: { ...source.value[0]!.task, key: 'other-status', status: 'complete' } } as TaskProgressRow)
+    source.value.push({ key: 'other-status', task: { ...source.value[0]!.task, key: 'other-status', status: 'in-progress', board_column: 'stopped' } } as TaskProgressRow)
     source.value.push({ key: 'other-project', task: { ...source.value[0]!.task, key: 'other-project', project_id: 2 } } as TaskProgressRow)
     for (const move of [
       { taskKey: 'a', anchorKey: 'a', placement: 'before' },
@@ -109,7 +163,7 @@ describe('Board save lifecycle', () => {
   })
   it('allows a different column to save while an ordering edit is pending', async () => {
     const { edits, source } = setup()
-    source.value.push({ key: 'd', task: { ...source.value[0]!.task, key: 'd', status: 'complete' } } as TaskProgressRow)
+    source.value.push({ key: 'd', task: { ...source.value[0]!.task, key: 'd', status: 'complete', board_column: 'done' } } as TaskProgressRow)
     let finish!: (value: never) => void
     vi.mocked(reorderTask).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
     const saving = edits.move({ taskKey: 'a', anchorKey: 'c', placement: 'after' })

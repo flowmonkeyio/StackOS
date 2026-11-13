@@ -39,8 +39,9 @@ from stackos.repositories.base import (
     validate_transition,
 )
 from stackos.repositories.run_plan_state import TERMINAL_PLAN_STATUSES, TERMINAL_RUN_STATUSES
+from stackos.repositories.tracker.board import BoardColumn, task_columns
 from stackos.repositories.tracker.events import TrackerTaskChange, _tracker_task_path
-from stackos.repositories.tracker.ordering import next_task_position
+from stackos.repositories.tracker.ordering import next_task_position, task_column_rows
 from stackos.repositories.tracker.schema import (
     TrackerCorrectionIntent,
     TrackerDeliveryScopeExclusion,
@@ -192,7 +193,7 @@ class TrackerMutationMixin:
             lane_key=lane_key,
             owner=owner,
             task_type=task_type,
-            order_index=self._next_task_position(tracker.id, status),
+            order_index=0,
             source_kind=source_kind,
             source_json=redact_secrets(source_json) if source_json is not None else None,
             definition_of_done_json=definition_of_done_json or [],
@@ -213,6 +214,10 @@ class TrackerMutationMixin:
         )
         if status in TERMINAL_TRACKER_STATUSES:
             row.lane_key = "done"
+        initial_column = task_columns(self._s, [row])[row.id]
+        row.order_index = next_task_position(
+            self._s, tracker.id, status, board_column=initial_column
+        )
         self._s.add(row)
         self._s.flush()
         assert row.id is not None
@@ -239,6 +244,12 @@ class TrackerMutationMixin:
                     now=now,
                 )
             )
+        final_column = task_columns(self._s, [row])[row.id]
+        if final_column != initial_column:
+            row.order_index = next_task_position(
+                self._s, tracker.id, row.status, exclude_task_id=row.id, board_column=final_column
+            )
+            self._s.add(row)
         self._record_revision(
             tracker,
             actor=created_by,
@@ -310,6 +321,7 @@ class TrackerMutationMixin:
         with self._s.begin_nested():
             tracker = self.ensure_tracker(project_id=project_id)
             task = self._task_by_key(tracker.id, task_key)
+            old_column = task_columns(self._s, [task])[task.id]
             key = _slug(key, fallback="ticket", max_length=180)
             if self._ticket_by_key(tracker.id, key, missing_ok=True) is not None:
                 raise ConflictError("tracker ticket key already exists", data={"ticket_key": key})
@@ -360,7 +372,7 @@ class TrackerMutationMixin:
                 self._add_dependency(tracker, ticket, dependency)
             for reference in references_json or []:
                 self._add_reference(tracker, ticket, reference)
-            self._sync_task_status(task, now=now)
+            self._sync_task_status(task, now=now, old_column=old_column)
             self._record_revision(
                 tracker,
                 actor=created_by,
@@ -401,6 +413,7 @@ class TrackerMutationMixin:
         task = self._task_by_key(tracker.id, task_key)
         before = self._task_snapshot(task)
         old_status = task.status
+        old_column = task_columns(self._s, [task])[task.id]
         self._apply_task_patch(task, patch_json)
         self._record_tracker_task_status_event(
             task,
@@ -408,6 +421,7 @@ class TrackerMutationMixin:
             task.status,
             actor=actor,
             reason="tracker.update_task",
+            old_column=old_column,
         )
         self._record_revision(
             tracker,
@@ -445,13 +459,20 @@ class TrackerMutationMixin:
         expected_updated_at: datetime,
         idempotency_key: str,
         priority_key: str | None = None,
+        board_column: BoardColumn | None = None,
         anchor_task_key: str | None = None,
         placement: str | None = None,
         actor: str | None = None,
     ) -> Envelope[TrackerTaskBoardOut]:
         """Save one explicit priority or same-column neighbor intent atomically."""
         priority_edit = priority_key is not None
-        if priority_edit:
+        column_edit = board_column is not None
+        if column_edit:
+            if board_column not in {"backlog", "todo"} or any(
+                value is not None for value in (priority_key, anchor_task_key, placement)
+            ):
+                raise ValidationError("placement accepts only Backlog or Todo")
+        elif priority_edit:
             if (
                 priority_key not in {"p0", "p1", "p2", "p3"}
                 or anchor_task_key is not None
@@ -477,9 +498,16 @@ class TrackerMutationMixin:
             "priority_key": priority_key,
             "anchor_task_key": anchor_task_key,
             "placement": placement,
+            **({"board_column": board_column} if column_edit else {}),
         }
         fingerprint = hashlib.sha256(json.dumps(intent, sort_keys=True).encode()).hexdigest()
-        operation = "tracker.updateTaskPriority" if priority_edit else "tracker.reorderTask"
+        operation = (
+            "tracker.placeTask"
+            if column_edit
+            else "tracker.updateTaskPriority"
+            if priority_edit
+            else "tracker.reorderTask"
+        )
         try:
             # Reserve the SQLite writer before reading status, anchors or retry receipts.
             self._s.connection().exec_driver_sql("BEGIN IMMEDIATE")
@@ -520,7 +548,32 @@ class TrackerMutationMixin:
             rank_changes: set[int | None] = set()
             before: dict[str, Any]
             after: dict[str, Any]
-            if priority_edit:
+            if column_edit:
+                from stackos.repositories.tracker.schema import TaskDeliveryStateOut
+
+                handoff = TaskDeliveryStateOut.from_metadata(task.metadata_json)
+                if task.status != TrackerItemStatus.NOT_STARTED or (
+                    handoff is not None and handoff.status != "complete"
+                ):
+                    raise ValidationError(
+                        "placement requires nonstarted work without an open delivery handoff; "
+                        "resume deferred work explicitly"
+                    )
+                current_column = task_columns(self._s, [task])[task.id]
+                before = {"lane_key": task.lane_key, "board_column": current_column}
+                if current_column != board_column:
+                    self.ensure_tracker(project_id=project_id)
+                    task.lane_key = "backlog" if board_column == "backlog" else "implementation"
+                    task.order_index = next_task_position(
+                        self._s,
+                        task.tracker_id,
+                        task.status,
+                        exclude_task_id=task.id,
+                        board_column=board_column,
+                    )
+                    changed_rows = [task]
+                after = {"lane_key": task.lane_key, "board_column": board_column}
+            elif priority_edit:
                 before = {"priority_key": task.priority_key}
                 if task.priority_key != priority_key:
                     task.priority_key = priority_key
@@ -529,20 +582,11 @@ class TrackerMutationMixin:
             else:
                 # Same comparator as the Board projection: integer rank, newest
                 # creation first for ties, then descending stable numeric ID.
-                column = list(
-                    self._s.exec(
-                        select(TrackerTask)
-                        .where(
-                            TrackerTask.project_id == project_id,
-                            TrackerTask.tracker_id == tracker.id,
-                            TrackerTask.status == task.status,
-                        )
-                        .order_by(
-                            col(TrackerTask.order_index),
-                            col(TrackerTask.created_at).desc(),
-                            col(TrackerTask.id).desc(),
-                        )
-                    ).all()
+                column = task_column_rows(
+                    self._s,
+                    _required_id(tracker.id, "tracker"),
+                    project_id,
+                    task_columns(self._s, [task])[task.id],
                 )
                 anchor = next((row for row in column if row.key == anchor_task_key), None)
                 if anchor is None:
@@ -596,8 +640,13 @@ class TrackerMutationMixin:
                     patch_json=intent,
                     metadata_json={"operation": operation, "idempotency_key": idempotency_key},
                 )
-                if priority_edit:
-                    self._record_tracker_task_change_event(task, ["priority_key"], actor=actor)
+                if priority_edit or column_edit:
+                    fields = (
+                        ["lane_key", "board_column", "order_index"]
+                        if column_edit
+                        else ["priority_key"]
+                    )
+                    self._record_tracker_task_change_event(task, fields, actor=actor)
                 else:
                     self._record_tracker_tasks_change_event(
                         project_id=project_id,
@@ -1123,6 +1172,7 @@ class TrackerMutationMixin:
                 ),
                 project_id=project_id,
             )
+        old_task_column = task_columns(self._s, [task])[task.id]
         before = self._ticket_snapshot(ticket)
         old_status = ticket.status
         self._apply_ticket_patch(tracker, ticket, patch_json)
@@ -1136,7 +1186,7 @@ class TrackerMutationMixin:
             actor=actor,
             reason="tracker.update_ticket",
         )
-        self._sync_task_status(task, now=_utcnow())
+        self._sync_task_status(task, now=_utcnow(), old_column=old_task_column)
         self._record_revision(
             tracker,
             actor=actor,
@@ -1190,6 +1240,7 @@ class TrackerMutationMixin:
                 task = self._task_by_key(tracker.id, str(task_key))
                 before = self._task_snapshot(task)
                 old_status = task.status
+                old_column = task_columns(self._s, [task])[task.id]
                 self._apply_task_patch(task, task_patch)
                 self._record_tracker_task_status_event(
                     task,
@@ -1197,6 +1248,7 @@ class TrackerMutationMixin:
                     task.status,
                     actor=actor,
                     reason="tracker.patch_task",
+                    old_column=old_column,
                 )
                 changed_task = task
                 self._record_revision(
@@ -1221,6 +1273,7 @@ class TrackerMutationMixin:
                 if ticket_task is None:
                     raise NotFoundError("ticket task not found", data={"ticket_key": ticket.key})
                 before = self._ticket_snapshot(ticket)
+                old_task_column = task_columns(self._s, [ticket_task])[ticket_task.id]
                 old_status = ticket.status
                 self._apply_ticket_patch(tracker, ticket, ticket_patch)
                 self._record_tracker_ticket_status_event(
@@ -1231,7 +1284,7 @@ class TrackerMutationMixin:
                     actor=actor,
                     reason="tracker.patch_ticket",
                 )
-                self._sync_task_status(ticket_task, now=_utcnow())
+                self._sync_task_status(ticket_task, now=_utcnow(), old_column=old_task_column)
                 changed_task = ticket_task
                 changed_tickets.append(ticket)
                 self._record_revision(
@@ -1495,6 +1548,8 @@ class TrackerMutationMixin:
         self._validate_task_patch_fields(patch_json)
         self._validate_workflow_task_patch(task, patch_json)
         old_priority = task.priority_key
+        old_status = task.status
+        old_column = task_columns(self._s, [task])[task.id]
         now = _utcnow()
         if "status" in patch_json:
             new_status = _status_value(str(patch_json["status"]))
@@ -1550,6 +1605,8 @@ class TrackerMutationMixin:
             self._record_tracker_task_change_event(task, ["priority_key"])
         task.updated_at = now
         self._s.add(task)
+        if old_status == task.status:
+            self._record_task_board_entry(task, old_column)
 
     def _validate_workflow_task_patch(
         self,
@@ -1998,12 +2055,18 @@ class TrackerMutationMixin:
                 data={"fields": unknown, "entity_kind": entity_kind},
             )
 
-    def _sync_task_status(self, task: TrackerTask, *, now: datetime) -> None:
+    def _sync_task_status(
+        self, task: TrackerTask, *, now: datetime, old_column: BoardColumn | None = None
+    ) -> None:
         tickets = list(self._s.exec(select(TrackerTicket).where(TrackerTicket.task_id == task.id)))
         if not tickets:
             return
-        if self._sync_workflow_task_status(task, now=now):
+        if self._sync_workflow_task_status(task, now=now, old_column=old_column):
             return
+        # Ticket aggregation is also a task lifecycle producer. Preserve its
+        # before/after state in the existing revision feed, in this transaction.
+        # A shallow row copy avoids serializing prompts on unchanged updates.
+        previous = task.model_copy()
         old = task.status
         if (
             task.metadata_json
@@ -2064,9 +2127,29 @@ class TrackerMutationMixin:
                 old,
                 task.status,
                 reason="tracker.sync_task_status",
+                old_column=old_column,
             )
+            tracker = self._s.get(TaskTracker, task.tracker_id)
+            if tracker is None:
+                raise NotFoundError("tracker not found")
+            self._record_revision(
+                tracker,
+                actor="system",
+                change_kind="update",
+                entity_kind="task",
+                entity_id=task.id,
+                entity_key=task.key,
+                summary=f"Aggregated task {task.key} status.",
+                before_json=self._task_snapshot(previous),
+                after_json=self._task_snapshot(task),
+                commit=False,
+            )
+        elif old_column is not None:
+            self._record_task_board_entry(task, old_column)
 
-    def _sync_workflow_task_status(self, task: TrackerTask, *, now: datetime) -> bool:
+    def _sync_workflow_task_status(
+        self, task: TrackerTask, *, now: datetime, old_column: BoardColumn | None = None
+    ) -> bool:
         run_plan_id = self._workflow_task_run_plan_id(task)
         if run_plan_id is None:
             return False
@@ -2106,7 +2189,10 @@ class TrackerMutationMixin:
                 old,
                 task.status,
                 reason="tracker.sync_workflow_task_status",
+                old_column=old_column,
             )
+        elif old_column is not None:
+            self._record_task_board_entry(task, old_column)
         return True
 
     def _next_task_position(

@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { boardColumnStatus } from './design/status'
 
 const ROOT = dirname(fileURLToPath(import.meta.url))
 
@@ -54,10 +55,17 @@ describe('desktop screen composition contract', () => {
     expect(view).not.toContain("statuses: ['in-progress']")
     expect(view).toContain('const taskKey = mapTaskKey.value')
     expect(view).toContain('graph.loadFocusedGraph(taskKey,')
-    expect(board).toContain('Object.keys(trackerStatus)')
-    expect(board).toMatch(/grid-template-columns:\s*repeat\(7,/)
-    expect(board).toContain('row.task.status === status')
-    expect(board).toContain("@click=\"$emit('openTask', row.key)\"")
+    expect(Object.entries(boardColumnStatus).map(([key, status]) => [key, status.label])).toEqual([
+      ['backlog', 'Backlog'], ['todo', 'Todo'], ['in-progress', 'In progress'], ['stopped', 'Stopped'],
+      ['done', 'Done'], ['aborted', 'Aborted'], ['failed', 'Failed'], ['skipped', 'Skipped'],
+    ])
+    expect(board).toContain('Object.keys(boardColumnStatus)')
+    expect(board).toContain('Math.max(columns.length, 1)')
+    expect(board).toContain('row.task.board_column === status')
+    expect(board).toContain("@click=\"$emit('openGraph', row.key)\"")
+    expect(view).toContain('@open-graph="viewDependencies"')
+    expect(board).toContain("label: 'Task details'")
+    expect(view).toContain('@open-task="openTaskDetail"')
     expect(board).toContain('<UiReorderList')
     expect(board).toContain('<UiReorderHandle')
     expect(reorder).toContain('Move up')

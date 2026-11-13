@@ -1,14 +1,17 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import ProviderMark from '@/components/domain/ProviderMark.vue'
 import { UiBadge, UiButton, UiCard, UiIcon, UiMedallion } from '@/components/ui'
 import { resolveStatus } from '@/design/status'
 import { pluginSectionIcon } from '@/lib/stackos/nav'
+import { isProjectPluginEnabled } from '@/lib/stackos/pluginPage'
 
 import IntegrationAvailability from './IntegrationAvailability.vue'
 import type { PluginDirectoryItem } from './viewModel'
 
-defineProps<{
+const props = defineProps<{
   item: PluginDirectoryItem
+  projectId?: number
   availabilityLoading?: boolean
   availabilityError?: boolean
   connectionsHref: string
@@ -16,6 +19,7 @@ defineProps<{
 defineEmits<{ showProviders: [] }>()
 
 const repair = resolveStatus('integration', 'repair_required')
+const enabled = computed(() => isProjectPluginEnabled(props.item.plugin))
 </script>
 
 <template>
@@ -42,10 +46,10 @@ const repair = resolveStatus('integration', 'repair_required')
       <UiBadge
         class="shrink-0"
         size="md"
-        :tone="item.plugin.enabled_for_project === false ? 'neutral' : 'success'"
-        :dot="item.plugin.enabled_for_project !== false"
+        :tone="enabled ? 'success' : 'neutral'"
+        :dot="enabled"
       >
-        {{ item.plugin.enabled_for_project === false ? 'Available' : 'Enabled' }}
+        {{ enabled ? 'Enabled' : 'Available' }}
       </UiBadge>
     </div>
 
@@ -120,6 +124,13 @@ const repair = resolveStatus('integration', 'repair_required')
     </div>
 
     <div class="mt-auto pt-4">
+      <UiButton
+        v-if="item.plugin.slug === 'finance' && projectId"
+        :href="`/projects/${projectId}/finance`"
+        class="mb-3"
+      >
+        {{ enabled ? 'Open Finance' : 'Set up Finance' }}
+      </UiButton>
       <details class="group border-t border-default pt-2">
         <summary class="focus-ring flex cursor-pointer list-none items-center gap-2 rounded-sm py-1 text-sm text-fg-default [&::-webkit-details-marker]:hidden">
           <UiIcon

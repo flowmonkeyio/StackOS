@@ -597,7 +597,9 @@ def test_project_visibility_historical_identity_and_read_only_projection(
     finally:
         event.remove(session.get_bind(), "before_cursor_execute", capture)
     assert all(s.lstrip().upper().startswith("SELECT") for s in statements)
-    assert all("tracker_history" not in s and "tracker_revisions" not in s for s in statements)
+    # Usage still comes only from receipts; delivery trends additionally reduce
+    # authoritative completion/stop revisions, without replaying tracker history.
+    assert all("tracker_history" not in s for s in statements)
     assert repo.get(project_id=project_id).model_dump() == before
 
 

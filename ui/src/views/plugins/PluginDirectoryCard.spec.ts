@@ -7,6 +7,16 @@ import type { PluginDirectoryItem } from './viewModel'
 describe('PluginDirectoryCard', () => {
   const connectionsHref = '/projects/1/connections?section=services'
 
+  it.each([null, false, true])('shows actual Finance enablement %s and a scoped next action', (enabled) => {
+    const item = directoryItem(0)
+    item.plugin.slug = 'finance'
+    item.plugin.enabled_for_project = enabled
+    const wrapper = mount(PluginDirectoryCard, { props: { item, connectionsHref, projectId: 7 } })
+    expect(wrapper.text()).toContain(enabled === true ? 'Enabled' : 'Available')
+    expect(wrapper.get('a').attributes('href')).toBe('/projects/7/finance')
+    expect(wrapper.get('a').text()).toBe(enabled === true ? 'Open Finance' : 'Set up Finance')
+  })
+
   it('previews services and lets the operator inspect the complete catalog details', async () => {
     const wrapper = mount(PluginDirectoryCard, { props: { item: directoryItem(5), connectionsHref } })
 

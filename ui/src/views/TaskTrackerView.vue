@@ -31,6 +31,7 @@ import { buildAssigneeOptions, buildTaskProgressRows, buildWorkflowOptions, grou
 import { boardFiltersFromEntry, clearBoardFilters, readBoardFilters, removeBoardFilter, saveBoardFilters, updateBoardDisplay, updateBoardFilter } from './task-tracker/boardFilters'
 import type { BoardFilterClause, BoardFilterField, BoardFilterState } from './task-tracker/boardFilters'
 import { useTaskBoardEdits } from './task-tracker/useTaskBoardEdits'
+import { currentFocusedDetail } from './task-tracker/detailUtils'
 
 const route = useRoute()
 const router = useRouter()
@@ -48,6 +49,7 @@ const viewOptions = [{ key: 'board', label: 'Board' }, { key: 'graph', label: 'G
 const detailTaskKey = computed(() => queryText(route.query.detail))
 const detailTicketKey = computed(() => queryText(route.query.ticket))
 const detailSnapshot = ref<TrackerSnapshot | null>(null)
+let retainedDetail: TrackerSnapshot | null = null
 const detailLoading = ref(false)
 const detailError = ref<string | null>(null)
 const taskDialog = ref<{ confirmLeave: () => boolean; syncTask: (task: TrackerTask | null) => void; prepareInspection: (ticketKey: string) => void } | null>(null)
@@ -83,7 +85,11 @@ const graph = useTrackerGraphSession({
   reload: async (options) => { if (!await load(options)) throw new Error(error.value ?? 'Could not refresh work.') },
   refreshUsage,
 })
-provide(usageFeedKey, graph.feedState)
+const metricsCurrent = ref(false)
+provide(usageFeedKey, computed(() => ({ ...graph.feedState.value,
+  status: graph.feedState.value.status === 'live' && (!metricsCurrent.value || error.value || graph.liveError.value)
+    ? 'reconnecting' as const : graph.feedState.value.status,
+})))
 const {
   loading: graphLoading, graphDataAvailable, statusFilters: graphStatusFilters, blockFilters: graphBlockFilters,
   viewport: graphViewport, refocusKey: graphRefocusKey, liveError, statusRows: graphStatusRows, blockRows: graphBlockRows,
@@ -95,6 +101,11 @@ const {
 } = graph
 const graphPending = computed(() => graphLoading.value && !graphDataAvailable.value)
 const contexts = useTrackerExecutionContexts({ projectId })
+let contextExpanded = false
+function setContextDemand(open: boolean): void {
+  contextExpanded = open
+  if (open && detailTask.value) void contexts.load(detailTask.value, true)
+}
 const {
   contexts: taskContexts, artifacts: taskContextArtifacts, pageInfo: taskContextPageInfo,
   artifactPageInfo: taskContextArtifactPageInfo, loading: taskContextLoading, error: taskContextError,
@@ -102,14 +113,98 @@ const {
 let loadSequence = 0
 let detailSequence = 0
 let alive = true
-type LoadOptions = { refocus?: boolean; restartStream?: boolean; quiet?: boolean; minRevision?: number; taskKeys?: string[] }
-interface LoadRequest { options: LoadOptions; obtainedRevision?: number; promise: Promise<boolean>; resolve: (result: boolean) => void }
+type LoadOptions = { refocus?: boolean; restartStream?: boolean; quiet?: boolean; minRevision?: number; taskKeys?: string[]; metricsOnly?: boolean }
+interface LoadRequest { options: LoadOptions; obtainedRevision?: number; metricsInvalidated?: boolean; promise: Promise<boolean>; resolve: (result: boolean) => void }
 let activeLoad: LoadRequest | null = null
 let trailingLoad: LoadRequest | null = null
 let loadController: AbortController | null = null
 let requiredIndexRevision = 0
+let boardMetricKeys: string[] = []
+let metricRefresh: number | null = null
+let receivedUsageBaseline = false
+let metricGeneration = 0
+type PendingDetailMetrics = {
+  taskKey: string
+  tasks: Map<string, { rev: number; item: TrackerTask }>
+  tickets: Map<string, { rev: number; item: TrackerTicket }>
+}
+const pendingDetailMetrics = new Set<PendingDetailMetrics>()
+function setBoardMetricDemand(keys: string[]): void {
+  if (viewMode.value !== 'board' || JSON.stringify(keys) === JSON.stringify(boardMetricKeys)) return
+  boardMetricKeys = keys
+  if (viewMode.value === 'board') { metricGeneration++; metricsCurrent.value = false; scheduleMetricRefresh() }
+}
+function setGraphMetricDemand(keys: string[]): void {
+  graph.setMetricDemand(keys)
+  if (viewMode.value === 'graph') { metricsCurrent.value = false; scheduleMetricRefresh() }
+}
+function scheduleMetricRefresh(): void {
+  if (metricRefresh !== null || !currentScope()) return
+  // Join reveal/resize/filter and stream bursts in one settling window.
+  metricRefresh = window.setTimeout(() => {
+    metricRefresh = null
+    if (!currentScope()) return
+    if (viewMode.value === 'board') void load({ quiet: true, restartStream: false, metricsOnly: true })
+    else {
+      void loadMap(false, undefined, true)
+      if (detailTaskKey.value && detailTaskKey.value !== mapTaskKey.value) void load({ quiet: true, restartStream: false, metricsOnly: true })
+    }
+  }, 32)
+}
+function patchDetailMetrics(next: TrackerSnapshot): void {
+  const demand = next.metric_demand
+  if (next.projection === 'ui' && !demand) return
+  const updates = {
+    tasks: next.tasks.filter(task => !demand || demand.task_keys.includes(task.key)),
+    tickets: next.tickets.filter(ticket => !demand || demand.ticket_keys.includes(ticket.key)),
+  }
+  patchUsageSnapshot(detailSnapshot.value, updates)
+  patchUsageSnapshot(retainedDetail, updates)
+  for (const pending of pendingDetailMetrics) {
+    for (const item of updates.tasks) if (item.key === pending.taskKey) pending.tasks.set(item.key, { rev: next.tracker.rev, item })
+    for (const item of updates.tickets) if (item.task_key === pending.taskKey) pending.tickets.set(item.key, { rev: next.tracker.rev, item })
+  }
+}
+async function withCurrentDetailMetrics(taskKey: string, read: () => Promise<TrackerSnapshot>): Promise<TrackerSnapshot> {
+  // Lightweight stream frames invalidate demand without carrying metrics.
+  // Retain only patches accepted while this primary read is pending, so its
+  // full content cannot roll current usage (including explicit nulls) backward.
+  const pending: PendingDetailMetrics = { taskKey, tasks: new Map(), tickets: new Map() }
+  pendingDetailMetrics.add(pending)
+  try {
+    const next = await read()
+    patchUsageSnapshot(next, {
+      tasks: [...pending.tasks.values()].filter(update => update.rev >= next.tracker.rev).map(update => update.item),
+      tickets: [...pending.tickets.values()].filter(update => update.rev >= next.tracker.rev).map(update => update.item),
+    })
+    return next
+  } finally { pendingDetailMetrics.delete(pending) }
+}
 function refreshUsage(next?: UsageProjection): void {
   if (!currentScope() || !next) return
+  if (next.projection === 'ui') {
+    const scope = next.projects?.find(scope => scope.project_id === projectId.value)
+    if (!scope || next.scope_complete !== true || next.project_id !== projectId.value || next.scope !== 'project') {
+      metricsCurrent.value = false
+      error.value = 'Live work scope is unavailable. Use Refresh to retry.'
+      return
+    }
+    const initial = !receivedUsageBaseline
+    receivedUsageBaseline = true
+    if (!initial) {
+      metricGeneration++
+      metricsCurrent.value = false
+      graph.invalidateMetrics()
+    }
+    if (scope.rev > (snapshot.value?.tracker.rev ?? -1)) {
+      metricsCurrent.value = false
+      void load({ quiet: true, restartStream: false, minRevision: scope.rev })
+    }
+    if (!initial) {
+      scheduleMetricRefresh()
+    }
+    return
+  }
   patchUsageSnapshot(snapshot.value, next)
   patchUsageSnapshot(detailSnapshot.value, next)
   graph.patchUsage(next)
@@ -121,9 +216,11 @@ function currentScope(): boolean {
 
 function load(options: LoadOptions = {}): Promise<boolean> {
   if (!projectId.value || !currentScope()) return Promise.resolve(false)
+  if (!options.metricsOnly && options.minRevision === undefined) retainedDetail = null
+  if (!options.metricsOnly && !options.quiet) graph.invalidateMetrics()
   if (options.minRevision !== undefined) requiredIndexRevision = Math.max(requiredIndexRevision, options.minRevision)
   if (options.minRevision !== undefined && snapshot.value && snapshot.value.tracker.rev >= options.minRevision) {
-    void refreshInspection(loadSequence, detailTaskKey.value, options.refocus, options.taskKeys, options.minRevision)
+    if (!options.metricsOnly) void refreshInspection(loadSequence, detailTaskKey.value, options.refocus, options.taskKeys, options.minRevision)
     return Promise.resolve(true)
   }
   // A failed read does not erase an accepted revision. Manual retry must
@@ -145,6 +242,7 @@ function load(options: LoadOptions = {}): Promise<boolean> {
       refocus: trailingLoad.options.refocus || options.refocus,
       restartStream: trailingLoad.options.restartStream !== false || options.restartStream !== false,
       quiet: trailingLoad.options.quiet === true && options.quiet === true,
+      metricsOnly: trailingLoad.options.metricsOnly === true && options.metricsOnly === true,
     }
     return trailingLoad.promise
   }
@@ -165,8 +263,11 @@ async function runLoad(request: LoadRequest): Promise<void> {
   try {
     result = await loadOnce(request)
     let previousRevision = -1
-    while (result && request.options.minRevision !== undefined && (snapshot.value?.tracker.rev ?? -1) < request.options.minRevision) {
-      if ((request.obtainedRevision ?? -1) <= previousRevision) {
+    while (result && (request.metricsInvalidated || (request.options.minRevision !== undefined && (snapshot.value?.tracker.rev ?? -1) < request.options.minRevision))) {
+      // A changed demand/usage generation requires a current read, even if
+      // its tracker revision is unchanged. Only a usable response can prove
+      // that the server made no progress toward the required revision.
+      if (!request.metricsInvalidated && (request.obtainedRevision ?? -1) <= previousRevision) {
         error.value = 'The board response is older than the saved change. Use Refresh to retry.'
         result = false
         break
@@ -192,6 +293,7 @@ async function loadOnce(request: LoadRequest): Promise<boolean> {
   const options = request.options
   const sequence = ++loadSequence
   const usageVersion = usageCheckpoint()
+  const requestedMetrics = metricGeneration
   const controller = new AbortController()
   loadController = controller
   const timeout = setTimeout(() => controller.abort(new DOMException('Refresh timed out', 'TimeoutError')), 15000)
@@ -200,14 +302,24 @@ async function loadOnce(request: LoadRequest): Promise<boolean> {
   try {
     const next = await callOperation<TrackerSnapshot>('tracker.get', {
       project_id: projectId.value, task_index_only: true, include_graph: false,
+      projection: 'ui', metric_demand: {
+        task_keys: [...new Set([...(detailTaskKey.value ? [detailTaskKey.value] : []), ...(viewMode.value === 'board' ? boardMetricKeys : [])])].slice(0, 199),
+        ticket_keys: detailTicketKey.value ? [detailTicketKey.value] : [],
+      },
     }, { signal: controller.signal })
     if (controller.signal.aborted || !currentScope() || sequence !== loadSequence) return false
+    if (next.tracker.project_id !== projectId.value || next.tasks.some(task => task.project_id !== projectId.value)) throw new Error('The board response scope did not match the requested project.')
+    if (next.tracker.rev < (snapshot.value?.tracker.rev ?? 0)) throw new Error('The board response is older than the current view. Use Refresh to retry.')
     request.obtainedRevision = next.tracker.rev
+    request.metricsInvalidated = requestedMetrics !== metricGeneration
+    if (request.metricsInvalidated) return true
     // Do not publish a response known to predate the accepted mutation, or
     // refresh focused readers from it. runLoad obtains the required revision.
     if (options.minRevision !== undefined && next.tracker.rev < options.minRevision) return true
     patchUsageAfter(next, projectId.value, usageVersion)
     snapshot.value = next
+    patchDetailMetrics(next)
+    if (viewMode.value === 'board') metricsCurrent.value = true
     boardEdits.reconcile()
     if (viewMode.value === 'graph') mapTaskKey.value = resolveMapTaskKey()
     else if (!queryText(route.query.task)) mapTaskKey.value = validRememberedMapTask()
@@ -217,7 +329,7 @@ async function loadOnce(request: LoadRequest): Promise<boolean> {
     const detailKey = detailTaskKey.value
     // Focused readers own their loading/error state. A slow inspector must
     // not hold the project refresh queue or a completed Board edit open.
-    void refreshInspection(sequence, detailKey, options.refocus, options.taskKeys, options.minRevision)
+    if (!options.metricsOnly) void refreshInspection(sequence, detailKey, options.refocus, options.taskKeys, options.minRevision)
     return currentScope() && sequence === loadSequence
   } catch (cause) {
     if (currentScope() && sequence === loadSequence) error.value = cause instanceof Error ? cause.message : 'Could not load work.'
@@ -239,7 +351,7 @@ async function refreshInspection(sequence: number, detailKey: string, refocus?: 
   }
 }
 
-async function loadMap(refocus?: boolean, minRevision?: number): Promise<void> {
+async function loadMap(refocus?: boolean, minRevision?: number, force = false): Promise<void> {
   if (!currentScope() || !activeTaskRow.value || viewMode.value !== 'graph') return
   const taskKey = mapTaskKey.value
   try { window.sessionStorage.setItem(mapTaskStorageKey, mapTaskKey.value) } catch { /* Storage may be unavailable. */ }
@@ -248,13 +360,18 @@ async function loadMap(refocus?: boolean, minRevision?: number): Promise<void> {
     return
   }
   const restored = graph.restoreViewport()
-  const focused = await graph.loadFocusedGraph(taskKey, { refocus: refocus ?? !restored, minRevision })
+  const focused = await graph.loadFocusedGraph(taskKey, { refocus: refocus ?? !restored, minRevision, force })
   if (!currentScope() || viewMode.value !== 'graph' || mapTaskKey.value !== taskKey || queryText(route.query.task) !== taskKey) return
-  if (focused && snapshot.value) snapshot.value = mergeFocusedTrackerSnapshot(snapshot.value, focused)
+  if (focused && snapshot.value) {
+    patchDetailMetrics(focused)
+    snapshot.value = mergeFocusedTrackerSnapshot(snapshot.value, focused)
+    metricsCurrent.value = graph.metricsAreCurrent()
+  }
 }
 
 let detailRead: { taskKey: string; promise: Promise<void> } | null = null
 async function loadDetail(taskKey: string, minRevision?: number): Promise<void> {
+  if (minRevision === undefined && detailRead?.taskKey === taskKey) return detailRead.promise
   const covered = () => detailSnapshot.value?.tasks[0]?.key === taskKey && detailSnapshot.value.tracker.rev >= minRevision!
   if (minRevision !== undefined) {
     if (covered()) return
@@ -282,18 +399,23 @@ async function readDetail(taskKey: string, minRevision?: number): Promise<void> 
     void contexts.load(null)
   }
   try {
-    const next = await callOperation<TrackerSnapshot>('tracker.get', {
+    const requiredRevision = Math.max(snapshot.value?.tracker.rev ?? 0, minRevision ?? 0)
+    const next = await withCurrentDetailMetrics(taskKey, async () => currentFocusedDetail(retainedDetail, projectId.value, taskKey, requiredRevision) ?? currentFocusedDetail(
+      graph.graphSnapshot.value, projectId.value, taskKey,
+      requiredRevision,
+    ) ?? await callOperation<TrackerSnapshot>('tracker.get', {
       project_id: projectId.value, task_key: taskKey, include_graph: false,
-    })
+    }))
     if (!currentScope() || sequence !== detailSequence || detailTaskKey.value !== taskKey) return
     if (minRevision !== undefined && next.tracker.rev < minRevision) throw new Error('Task details are older than the change. Use Refresh to retry.')
     patchUsageAfter(next, projectId.value, usageVersion)
     const task = next.tasks.find((item) => item.key === taskKey)
     if (!task) throw new Error('This task is no longer available in this project.')
     detailSnapshot.value = next
+    retainedDetail = next
     taskDialog.value?.syncTask?.(task)
     if (snapshot.value) snapshot.value = mergeFocusedTrackerSnapshot(snapshot.value, next)
-    void contexts.load(task)
+    void contexts.load(task, contextExpanded)
     void results.refresh()
     void activity.refresh()
   } catch (cause) {
@@ -307,27 +429,28 @@ async function readDetail(taskKey: string, minRevision?: number): Promise<void> 
 
 async function refreshTaskContent(taskKey: string): Promise<TrackerTask> {
   const usageVersion = usageCheckpoint()
-  const [index, focused] = await Promise.all([
-    callOperation<TrackerSnapshot>('tracker.get', {
-      project_id: projectId.value, task_index_only: true, include_graph: false,
-    }),
-    callOperation<TrackerSnapshot>('tracker.get', {
-      project_id: projectId.value, task_key: taskKey, include_graph: false,
-    }),
-  ])
-  patchUsageAfter(index, projectId.value, usageVersion)
+  const focused = await withCurrentDetailMetrics(taskKey, async () => {
+    const [loaded, detail] = await Promise.all([
+      load({ quiet: true, restartStream: false, metricsOnly: true }),
+      callOperation<TrackerSnapshot>('tracker.get', {
+        project_id: projectId.value, task_key: taskKey, include_graph: false,
+      }),
+    ])
+    if (!loaded) throw new Error('Could not refresh the board.')
+    return detail
+  })
   patchUsageAfter(focused, projectId.value, usageVersion)
   const task = focused.tasks.find((item) => item.key === taskKey)
   if (!task) throw new Error('This task is no longer available in this project.')
   if (currentScope() && detailTaskKey.value === taskKey) {
-    loadSequence += 1
     detailSequence += 1
     loading.value = false
     detailLoading.value = false
     error.value = null
     detailError.value = null
-    snapshot.value = mergeFocusedTrackerSnapshot(index, focused)
+    if (snapshot.value) snapshot.value = mergeFocusedTrackerSnapshot(snapshot.value, focused)
     detailSnapshot.value = focused
+    retainedDetail = focused
     taskDialog.value?.syncTask?.(task)
   }
   return task
@@ -413,10 +536,12 @@ const removeRouteListener = router.afterEach(async (to, from, failure) => {
   consumeBoardEntry()
   if (!snapshot.value) return
   const mapChanged = to.query.view !== from.query.view || to.query.task !== from.query.task
+  const previousMapTaskKey = mapTaskKey.value
   if (viewMode.value === 'graph' && mapChanged) {
     mapTaskKey.value = resolveMapTaskKey()
   }
-  if (mapChanged) graph.clearFocus()
+  if (mapTaskKey.value !== previousMapTaskKey) graph.clearFocus()
+  if (mapChanged) metricsCurrent.value = false
   if (to.query.detail && to.query.detail !== from.query.detail) graphDetailPanelOpen.value = false
   if (mapChanged && !mapNeedsCanonicalRoute()) graph.restartStatusStream()
   if (viewMode.value === 'graph' && mapChanged) {
@@ -424,7 +549,7 @@ const removeRouteListener = router.afterEach(async (to, from, failure) => {
     if (!isCurrentNavigation(to.query)) return
   }
   if (viewMode.value === 'board' && from.query.view === 'graph') {
-    await load({ restartStream: false })
+    await load({ restartStream: false, quiet: true, metricsOnly: true })
     if (!isCurrentNavigation(to.query)) return
   }
   if (to.query.detail !== from.query.detail) {
@@ -432,6 +557,7 @@ const removeRouteListener = router.afterEach(async (to, from, failure) => {
     else {
       detailSequence += 1
       detailSnapshot.value = null
+      contextExpanded = false
       taskDialog.value?.syncTask?.(null)
       detailError.value = null
       detailLoading.value = false
@@ -446,6 +572,9 @@ useProjectScopedLoader({
   projectId, load: () => load(),
   onScopeExit: () => {
     alive = false
+    for (const pending of pendingDetailMetrics) { pending.tasks.clear(); pending.tickets.clear() }
+    pendingDetailMetrics.clear()
+    if (metricRefresh !== null) window.clearTimeout(metricRefresh)
     loadController?.abort()
     trailingLoad?.resolve(false)
     trailingLoad = null
@@ -554,6 +683,8 @@ useProjectScopedLoader({
         No tasks match these filters.
       </p>
       <TrackerBoardPanel
+        metric-demand-enabled
+        :metrics-active="viewMode === 'board'"
         :rows="boardEdits.rows.value"
         :edit-pending="boardEdits.pending.value"
         :edit-pending-columns="boardEdits.pendingColumns.value"
@@ -562,9 +693,12 @@ useProjectScopedLoader({
         :hide-empty-columns="boardFilters.hideEmptyColumns"
         :selected-task-key="detailTaskKey"
         @open-task="openTaskDetail"
+        @open-graph="viewDependencies"
         @refresh="load()"
         @move="boardEdits.move"
         @priority="boardEdits.priority($event.taskKey, $event.priority)"
+        @place="boardEdits.place($event.taskKey, $event.boardColumn)"
+        @metric-demand="setBoardMetricDemand"
       />
     </div>
     <template v-if="viewMode === 'graph' && snapshot">
@@ -599,6 +733,7 @@ useProjectScopedLoader({
           :selected-ticket="graphSelectedTicket"
           :selected-edge-label="graphSelectedEdge?.label ?? null"
           :selection-stats="graphSelectionStats"
+          @metric-demand="setGraphMetricDemand"
           @toggle-status="graph.toggleStatus"
           @toggle-block="graph.toggleBlock"
           @clear-filters="graph.clearFilters"
@@ -631,12 +766,14 @@ useProjectScopedLoader({
       :context-page-info="taskContextPageInfo"
       :context-artifact-page-info="taskContextArtifactPageInfo"
       :context-loading="taskContextLoading"
+      :context-artifacts-loading="contexts.artifactsLoading.value"
       :context-error="taskContextError"
       :activity="activity"
       :results="results"
       :result-resources="resultResources.resources"
       :result-schema-loading="resultResources.schemaLoading"
       :result-schema-error="resultResources.schemaError"
+      @context-demand="setContextDemand"
       @update:model-value="!$event && navigate({ detail: undefined, ticket: undefined })"
       @view-dependencies="viewDependencies"
       @open-ticket="openTicket"

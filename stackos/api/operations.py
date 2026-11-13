@@ -107,6 +107,11 @@ async def call_operation(
             }
             or console_contract
             or (
+                spec.name == "plugin.enable"
+                and spec.grant_policy == "local-admin-plugin-write"
+                and spec.surfaces.rest.browser_safe
+            )
+            or (
                 spec.name == "project.reconcileFileOwnership"
                 and not spec.surfaces.mcp.enabled
                 and not spec.surfaces.rest.browser_safe

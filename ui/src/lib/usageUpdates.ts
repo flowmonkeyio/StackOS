@@ -1,9 +1,14 @@
-import { openTrackerStatusStream, type ProjectTimelineEvent, type TrackerStatusStream } from '@/lib/task-tracker/liveEvents'
+import { openTrackerStatusStream, trackerEventRevision, type ProjectTimelineEvent, type TrackerStatusStream } from '@/lib/task-tracker/liveEvents'
 import type { TrackerSnapshot, ActiveExecution } from '@/lib/task-tracker/types'
 import type { SchemaAgentStatsMetricsOut, SchemaWorkDurationOut } from '@/api'
 
 type UsageItem = { key: string; agent_stats?: SchemaAgentStatsMetricsOut | null; active_execution?: ActiveExecution | null; work_duration?: SchemaWorkDurationOut | null }
-export interface UsageProjection { tasks: UsageItem[]; tickets: UsageItem[]; replace?: boolean }
+export interface UsageProjection {
+  tasks: UsageItem[]; tickets: UsageItem[]; replace?: boolean
+  projection?: 'ui'; scope_complete?: boolean; scope?: 'project' | 'global'; project_id?: number | null
+  covered_event_id?: number | null
+  projects?: { project_id: number; rev: number; metric_demand: { task_keys: string[]; ticket_keys: string[] } }[]
+}
 
 export function patchUsageSnapshot(target: TrackerSnapshot | null, incoming: UsageProjection): void {
   if (!target) return
@@ -11,7 +16,9 @@ export function patchUsageSnapshot(target: TrackerSnapshot | null, incoming: Usa
     const updates = new Map(incoming[key].map((item) => [item.key, item]))
     for (const item of target[key]) {
       const update = updates.get(item.key)
-      if (update) { item.agent_stats = update.agent_stats; item.active_execution = update.active_execution; item.work_duration = update.work_duration }
+      const demanded = !incoming.projects || incoming.projects.some(scope => scope.project_id === item.project_id
+        && (key === 'tasks' ? scope.metric_demand.task_keys : scope.metric_demand.ticket_keys).includes(item.key))
+      if (update && demanded) { item.agent_stats = update.agent_stats; item.active_execution = update.active_execution; item.work_duration = update.work_duration }
     }
   }
 }
@@ -20,17 +27,35 @@ export interface UsageFeedState {
   status: 'connecting' | 'live' | 'reconnecting' | 'paused'
   receivedAt: number | null
 }
-type Listener = { usage: (updates?: UsageProjection) => void; status?: (event: ProjectTimelineEvent) => void; error?: (cause: unknown) => void; resume?: () => void; connection?: (state: UsageFeedState) => void }
+type Listener = { usage: (updates?: UsageProjection) => void; status?: (event: ProjectTimelineEvent) => void; error?: (cause: unknown) => void; resume?: () => void; connection?: (state: UsageFeedState) => void; coalesceStatusWithUsage?: boolean }
 type LatestUsage = { version: number; item: UsageItem }
 type Channel = {
   listeners: Set<Listener>; stream: TrackerStatusStream | null; projectId: number | null
   latest: { tasks: Map<string, LatestUsage>; tickets: Map<string, LatestUsage> }
   connection: UsageFeedState; snapshotReady: boolean; freshnessTimer: number | null; generation: number; snapshotVersion: number; frameReady: boolean
+  baseline: boolean; waiters: Set<() => void>
+  usageRevisions: Map<number, number>
+  coveredEventId: number | null
 }
 const channels = new Map<number | null, Channel>()
 let revision = 0
 // The server sends a heartbeat every 15 seconds even when tokens do not change.
 const FEED_STALE_MS = 45_000
+
+// Establish the initial/reconnect boundary before a Home bulk read. A failed or
+// silent stream releases the read, but cannot establish Live freshness.
+export function awaitUsageBaseline(projectId: number | null): Promise<void> {
+  const channel = channels.get(projectId)
+  if (!channel || channel.baseline || document.hidden) return Promise.resolve()
+  return new Promise(resolve => {
+    const done = () => { window.clearTimeout(timer); channel.waiters.delete(done); resolve() }
+    const timer = window.setTimeout(done, 1000)
+    channel.waiters.add(done)
+  })
+}
+function releaseBaseline(channel: Channel): void {
+  channel.waiters.forEach(done => done())
+}
 
 export function usageCheckpoint(): number { return revision }
 
@@ -80,9 +105,18 @@ function open(channel: Channel): void {
   channel.stream = openTrackerStatusStream({
     projectId: channel.projectId,
     taskKey: undefined,
+    uiDemand: { projects: {} },
     onUsage: (updates) => {
       if (!current()) return
+      channel.baseline = true
+      releaseBaseline(channel)
       channel.snapshotVersion += 1
+      channel.usageRevisions.clear()
+      channel.coveredEventId = null
+      if (updates?.projection === 'ui' && updates.scope_complete && updates.project_id === channel.projectId) {
+        for (const scope of updates.projects ?? []) channel.usageRevisions.set(scope.project_id, scope.rev)
+        if (Number.isSafeInteger(updates.covered_event_id) && (updates.covered_event_id ?? 0) > 0) channel.coveredEventId = updates.covered_event_id!
+      }
       if (channel.projectId === null) {
         // Global frames invalidate the pending read, not the healthy transport.
         // Keep the accepted snapshot live while its replacement is fetched.
@@ -93,7 +127,11 @@ function open(channel: Channel): void {
         const version = ++revision
         for (const key of ['tasks', 'tickets'] as const) {
           if (updates.replace) channel.latest[key].clear()
-          for (const item of updates[key]) channel.latest[key].set(item.key, { version, item })
+          for (const item of updates[key]) {
+            if (updates.projects && !updates.projects.some(scope => scope.project_id === (item as UsageItem & { project_id?: number }).project_id
+              && (key === 'tasks' ? scope.metric_demand.task_keys : scope.metric_demand.ticket_keys).includes(item.key))) continue
+            channel.latest[key].set(item.key, { version, item })
+          }
         }
       }
       channel.listeners.forEach((listener) => listener.usage(updates))
@@ -113,6 +151,10 @@ function open(channel: Channel): void {
     onDisconnect: () => {
       if (!current()) return
       channel.snapshotVersion += 1
+      channel.usageRevisions.clear()
+      channel.coveredEventId = null
+      channel.baseline = true
+      releaseBaseline(channel)
       channel.snapshotReady = false
       channel.frameReady = false
       publishConnection(channel, 'reconnecting')
@@ -121,16 +163,25 @@ function open(channel: Channel): void {
     onEvent: (event) => {
       if (!current()) return
       if (channel.projectId !== null && event.project_id != null && event.project_id !== channel.projectId) return
-      channel.snapshotVersion += 1
+      const rev = trackerEventRevision(event)
+      const covered = (rev !== undefined && (channel.usageRevisions.get(event.project_id) ?? -1) >= rev)
+        || (Number.isSafeInteger(event.id) && event.id > 0 && channel.coveredEventId !== null && event.id <= channel.coveredEventId)
+      if (!covered) channel.snapshotVersion += 1
       // Its usage frame already refreshed every consumer. Receipt-only writes
       // do not require a second whole-page Work/status reload.
-      if (event.event_type !== 'tracker.usage.changed') channel.listeners.forEach((listener) => listener.status?.(event))
+      if (event.event_type !== 'tracker.usage.changed') channel.listeners.forEach((listener) => {
+        if (!covered || !listener.coalesceStatusWithUsage) listener.status?.(event)
+      })
     },
     onError: (cause) => {
       if (!current()) return
       channel.snapshotVersion += 1
+      channel.usageRevisions.clear()
+      channel.coveredEventId = null
       channel.snapshotReady = false
       channel.frameReady = false
+      channel.baseline = true
+      releaseBaseline(channel)
       publishConnection(channel, 'reconnecting')
       channel.listeners.forEach((listener) => listener.error?.(cause))
     },
@@ -143,6 +194,10 @@ function publishConnection(channel: Channel, status: UsageFeedState['status'], r
 }
 
 function close(channel: Channel): void {
+  channel.baseline = false
+  channel.usageRevisions.clear()
+  channel.coveredEventId = null
+  releaseBaseline(channel)
   channel.generation += 1
   if (channel.freshnessTimer !== null) window.clearTimeout(channel.freshnessTimer)
   channel.freshnessTimer = null
@@ -164,7 +219,36 @@ function armFreshness(channel: Channel): void {
   }, FEED_STALE_MS)
 }
 
+const visibilityListeners = new Set<() => void>()
+const paints = new Set<() => void>()
+let paintFrame: number | null = null
+export function queueUsagePaint(paint: () => void): void {
+  paints.add(paint)
+  if (document.hidden || paintFrame !== null) return
+  paintFrame = requestAnimationFrame(() => {
+    paintFrame = null
+    if (document.hidden) return
+    const pending = [...paints]
+    paints.clear()
+    pending.forEach(draw => draw())
+  })
+}
+export function cancelUsagePaint(paint: () => void): void {
+  paints.delete(paint)
+  if (!paints.size && paintFrame !== null) { cancelAnimationFrame(paintFrame); paintFrame = null }
+}
+export function subscribeUsageVisibility(listener: () => void): () => void {
+  if (!channels.size && !visibilityListeners.size) document.addEventListener('visibilitychange', visibilityChanged)
+  visibilityListeners.add(listener)
+  return () => {
+    visibilityListeners.delete(listener)
+    if (!channels.size && !visibilityListeners.size) document.removeEventListener('visibilitychange', visibilityChanged)
+  }
+}
 function visibilityChanged(): void {
+  if (document.hidden && paintFrame !== null) { cancelAnimationFrame(paintFrame); paintFrame = null }
+  visibilityListeners.forEach(listener => listener())
+  if (!document.hidden && paints.size) queueUsagePaint([...paints][0]!)
   for (const channel of channels.values()) {
     if (document.hidden) { close(channel); publishConnection(channel, 'paused') }
     else { open(channel); channel.listeners.forEach((listener) => listener.resume ? listener.resume() : listener.usage()) }
@@ -172,13 +256,16 @@ function visibilityChanged(): void {
 }
 
 export function subscribeUsageUpdates(projectId: number | null, listener: Listener): () => void {
-  if (!channels.size) document.addEventListener('visibilitychange', visibilityChanged)
+  if (!channels.size && !visibilityListeners.size) document.addEventListener('visibilitychange', visibilityChanged)
   let channel = channels.get(projectId)
   if (!channel) {
     channel = {
       projectId, listeners: new Set(), stream: null, latest: { tasks: new Map(), tickets: new Map() },
       connection: { status: document.hidden ? 'paused' : 'connecting', receivedAt: null },
       snapshotReady: false, freshnessTimer: null, generation: 0, snapshotVersion: 0, frameReady: false,
+      baseline: false, waiters: new Set(),
+      usageRevisions: new Map(),
+      coveredEventId: null,
     }
     channels.set(projectId, channel)
   }
@@ -191,6 +278,6 @@ export function subscribeUsageUpdates(projectId: number | null, listener: Listen
       close(channel)
       channels.delete(projectId)
     }
-    if (!channels.size) document.removeEventListener('visibilitychange', visibilityChanged)
+    if (!channels.size && !visibilityListeners.size) document.removeEventListener('visibilitychange', visibilityChanged)
   }
 }

@@ -10,7 +10,7 @@ import { useProjectsStore, type Project } from '@/stores/projects'
 import { useActiveTasks } from './useActiveTasks'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
-vi.mock('@/lib/task-tracker/liveEvents', () => ({ openTrackerStatusStream: vi.fn(() => ({ close: vi.fn() })) }))
+vi.mock('@/lib/task-tracker/liveEvents', async original => ({ ...await original<object>(), openTrackerStatusStream: vi.fn(() => ({ close: vi.fn() })) }))
 
 const wrappers: VueWrapper[] = []
 function task(projectId = 1, key = 'work', delivery: 'queued' | 'stopped' | 'running' = 'queued'): SchemaActiveTaskOut {
@@ -35,6 +35,8 @@ function deferred<T>() {
 function home(projectId: number | null = null) {
   let state!: ReturnType<typeof useActiveTasks>
   wrappers.push(mount(defineComponent({ setup() { state = useActiveTasks(projectId); return () => null } })))
+  stream(vi.mocked(openTrackerStatusStream).mock.calls.length - 1).onFrame?.(Date.now())
+  stream(vi.mocked(openTrackerStatusStream).mock.calls.length - 1).onUsage?.({ tasks: [], tickets: [], replace: true })
   return state
 }
 function stream(index = 0) { return vi.mocked(openTrackerStatusStream).mock.calls[index]![0] }
@@ -79,7 +81,7 @@ describe('shared Home active-task reads', () => {
     expect(state.items.value).toHaveLength(2)
     expect(callOperation).toHaveBeenCalledTimes(1)
     expect(callOperation).toHaveBeenCalledWith('tracker.activeTasksAll', { limit: 200 })
-    expect(state.feed.value.status).not.toBe('live')
+    expect(state.feed.value.status).toBe('live') // Baseline precedes the single accepted read.
     stream().onFrame?.(Date.now())
     stream().onUsage?.() // Actual global transport cannot supply project replacements.
     await flushPromises()

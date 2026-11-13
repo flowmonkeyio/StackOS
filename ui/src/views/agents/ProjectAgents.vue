@@ -12,7 +12,7 @@ import { agentError, agentIdentity, useProjectAgents, type AgentSummary, type Ag
 const props = defineProps<{ projectId: number; standalone?: boolean }>()
 const codexLogo = resolveAgentHostLogo('codex')
 let reloadAgents = () => {}
-const { projectDir, folderIssue, folderReady, folderLoading, refreshFolder } = useProjectFolder(toRef(props, 'projectId'), () => reloadAgents())
+const { projectDir, folderIssue, folderReady, folderStatus, folderTitle, folderLoading, refreshFolder } = useProjectFolder(toRef(props, 'projectId'), () => reloadAgents())
 const search = ref('')
 const features = ref('null')
 const skills = ref('null')
@@ -167,8 +167,8 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
     />
     <UiCallout
       v-if="!folderLoading && folderIssue && !projectDir"
-      tone="warning"
-      title="Project folder needs setup"
+      :tone="folderStatus === 'directoryless' ? 'info' : 'warning'"
+      :title="folderTitle"
     >
       {{ folderIssue }}
       <UiButton

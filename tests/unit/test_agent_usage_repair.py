@@ -302,6 +302,48 @@ def test_apply_backup_nonanalytics_preserved_and_repeat_noop(tmp_path):
     assert not (tmp_path / "unused.json").exists()
 
 
+def test_repair_updates_statistics_index_in_the_same_transaction(tmp_path, monkeypatch):
+    from stackos.db.connection import make_engine
+    from stackos.db.models import TrackerReceiptProjection
+    from stackos.repositories.tracker import receipt_projection as index
+    from stackos.repositories.tracker.agent_stats import summarize_receipts
+
+    path, row, allow = database(tmp_path)
+    write_native(tmp_path)
+    engine = make_engine(path)
+    with engine.begin() as connection:
+        TrackerReceiptProjection.__table__.create(connection)
+    engine.dispose()
+    evidence = json.loads(row["completion_evidence_json"])
+    with repair.connect(path, writable=True) as connection:
+        index.sync_sqlite_receipt_projection(connection, 10, evidence, None)
+        connection.commit()
+        plan = repair.plan_rows(repair.read_rows(connection, allow), allow, [tmp_path])
+        before = connection.execute("SELECT * FROM tracker_receipt_projections").fetchall()
+        original = index.sync_sqlite_receipt_projection
+
+        def fail_after_projection(*args):
+            original(*args)
+            raise RuntimeError("injected after index write")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(index, "sync_sqlite_receipt_projection", fail_after_projection)
+            with pytest.raises(RuntimeError, match="injected"):
+                repair.apply_manifest(connection, allow, plan, tmp_path / "rollback.json")
+        assert connection.execute("SELECT * FROM tracker_receipt_projections").fetchall() == before
+        assert (
+            dict(connection.execute("SELECT * FROM tracker_tickets WHERE id=10").fetchone()) == row
+        )
+        assert repair.apply_manifest(connection, allow, plan, tmp_path / "applied.json") == 1
+        receipts = [
+            json.loads(record[0])
+            for record in connection.execute(
+                "SELECT receipt_json FROM tracker_receipt_projections WHERE inventory='usage'"
+            )
+        ]
+        assert summarize_receipts(receipts).reported_usage.total == 210
+
+
 @pytest.mark.parametrize("after_apply", [False, True])
 def test_stale_guard_even_on_repeat(tmp_path, after_apply):
     path, _, allow = database(tmp_path)

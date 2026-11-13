@@ -83,6 +83,43 @@ export function buildTrackerFlowModel(
   snapshot: TrackerSnapshot,
   options: BuildTrackerFlowOptions = {},
 ): TrackerFlowModel {
+  return createTrackerFlowProjector()(snapshot, options)
+}
+
+type NodeIndex = { tasks: Map<string, TrackerTask>; tickets: Map<string, TrackerTicket> }
+
+// A single mounted graph owns one layout. Keep only geometry, never an old
+// snapshot/history. Fixed card dimensions make labels/metrics non-geometric.
+export function createTrackerFlowProjector() {
+  let signature = ''
+  let layout: { nodes: Omit<Node<TrackerVueNodeData>, 'data'>[]; edgeIds: Set<string>; warnings: string[] } | null = null
+  return (snapshot: TrackerSnapshot, options: BuildTrackerFlowOptions = {}): TrackerFlowModel => {
+    const graph = snapshot.graph
+    const next = JSON.stringify([options.showContainment === true, TICKET_WIDTH, TICKET_HEIGHT,
+      graph?.nodes.map(node => [node.id, node.type, node.parent_id, graphNodeOrder(node)]),
+      graph?.edges.map(edge => [edge.id, edge.type, edge.source, edge.target]), graph?.warnings])
+    const index: NodeIndex = { tasks: new Map(snapshot.tasks.map(task => [task.key, task])), tickets: new Map(snapshot.tickets.map(ticket => [ticket.key, ticket])) }
+    if (!layout || signature !== next) {
+      const model = buildTrackerFlowLayout(snapshot, options, index)
+      layout = { nodes: model.nodes.map(({ data: _data, class: _class, zIndex: _zIndex, ...geometry }) => geometry),
+        edgeIds: new Set(model.edges.map(edge => edge.id)), warnings: model.warnings }
+      signature = next
+    }
+    const nodes = new Map(graph?.nodes.map(node => [node.id, node]))
+    return {
+      nodes: layout.nodes.map(node => ({ ...node, data: vueNodeData(nodes.get(node.id)!, options, index),
+        class: nodeClass(options, node.id), zIndex: nodeZIndex(options, node.id) })),
+      edges: (graph?.edges ?? []).filter(edge => layout!.edgeIds.has(edge.id)).map(edge => vueEdge(edge, options)),
+      warnings: layout.warnings,
+    }
+  }
+}
+
+function buildTrackerFlowLayout(
+  snapshot: TrackerSnapshot,
+  options: BuildTrackerFlowOptions,
+  entities: NodeIndex,
+): TrackerFlowModel {
   const graph = snapshot.graph
   if (!graph?.nodes.length) {
     return {
@@ -97,7 +134,7 @@ export function buildTrackerFlowModel(
   const graphNodeById = new Map(graph.nodes.map((node) => [node.id, node]))
 
   if (!showContainment) {
-    return buildDependencyTreeFlow(snapshot, options, warnings, graphNodeById)
+    return buildDependencyTreeFlow(snapshot, options, warnings, graphNodeById, entities)
   }
 
   const childrenByParent = groupGraphChildren(graph.nodes)
@@ -125,7 +162,7 @@ export function buildTrackerFlowModel(
         width: `${taskWidth(childColumns, childCount)}px`,
         height: `${taskHeight(childRows, childCount)}px`,
       },
-      data: vueNodeData(graphNode, snapshot, options),
+      data: vueNodeData(graphNode, options, entities),
       class: nodeClass(options, graphNode.id),
       zIndex: nodeZIndex(options, graphNode.id),
     })
@@ -153,7 +190,7 @@ export function buildTrackerFlowModel(
         selectable: !graphNode.id.startsWith('link:'),
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
-        data: vueNodeData(graphNode, snapshot, options),
+        data: vueNodeData(graphNode, options, entities),
         class: nodeClass(options, graphNode.id),
         zIndex: nodeZIndex(options, graphNode.id),
       })
@@ -182,6 +219,7 @@ function buildDependencyTreeFlow(
   options: BuildTrackerFlowOptions,
   warnings: Set<string>,
   graphNodeById: Map<string, TrackerGraphNode>,
+  index: NodeIndex,
 ): TrackerFlowModel {
   const graph = snapshot.graph
   if (!graph) return { nodes: [], edges: [], warnings: Array.from(warnings) }
@@ -213,7 +251,7 @@ function buildDependencyTreeFlow(
         selectable: true,
         sourcePosition: Position.Right,
         targetPosition: Position.Left,
-        data: vueNodeData(graphNode, snapshot, options),
+        data: vueNodeData(graphNode, options, index),
         class: nodeClass(options, graphNode.id),
         zIndex: nodeZIndex(options, graphNode.id),
       })
@@ -241,14 +279,16 @@ function buildDependencyTreeFlow(
       selectable: true,
       sourcePosition: Position.Right,
       targetPosition: Position.Left,
-      data: vueNodeData(graphNode, snapshot, options),
+      data: vueNodeData(graphNode, options, index),
       class: nodeClass(options, graphNode.id),
       zIndex: nodeZIndex(options, graphNode.id),
     })
   }
 
+  const firstEdgeBySource = new Map<string, TrackerGraphEdge>()
+  for (const edge of graph.edges) if (!firstEdgeBySource.has(edge.source)) firstEdgeBySource.set(edge.source, edge)
   for (const graphNode of graph.nodes.filter((node) => node.id.startsWith('link:'))) {
-    const targetEdge = graph.edges.find((edge) => edge.source === graphNode.id)
+    const targetEdge = firstEdgeBySource.get(graphNode.id)
     const targetPosition = targetEdge ? positions.get(targetEdge.target) : undefined
     const position = targetPosition
       ? { x: targetPosition.x - LINK_GAP_X, y: targetPosition.y + 16 }
@@ -262,7 +302,7 @@ function buildDependencyTreeFlow(
       selectable: false,
       sourcePosition: Position.Right,
       targetPosition: Position.Left,
-      data: vueNodeData(graphNode, snapshot, options),
+      data: vueNodeData(graphNode, options, index),
       class: nodeClass(options, graphNode.id),
       zIndex: nodeZIndex(options, graphNode.id),
     })
@@ -618,15 +658,15 @@ function statusSort(status: string): number {
 
 function vueNodeData(
   graphNode: TrackerGraphNode,
-  snapshot: TrackerSnapshot,
   options: BuildTrackerFlowOptions,
+  index: NodeIndex,
 ): TrackerVueNodeData {
   const itemKind = itemKindForNodeId(graphNode.id)
   const itemKey = itemKeyForNodeId(graphNode.id) ?? graphNode.id
-  const raw = rawForGraphNode(graphNode, snapshot) ?? graphNode
+  const raw = rawForGraphNode(graphNode, index) ?? graphNode
   const ticket = isTrackerTicket(raw) ? raw : null
   const task = isTrackerTask(raw) ? raw : null
-  const parentTask = task ?? snapshot.tasks.find((candidate) => candidate.key === ticket?.task_key)
+  const parentTask = task ?? index.tasks.get(ticket?.task_key ?? '')
   const delivery = taskDeliveryState(parentTask)
   const deliveryStopped = delivery?.status === 'stopped' && delivery.ticketKey === ticket?.key
   return {
@@ -642,7 +682,7 @@ function vueNodeData(
       ticket?.goal ||
       ticket?.source_kind ||
       linkSubtitle(graphNode),
-    blockedBy: ticket?.blocked_by_titles ?? ticket?.blocked_by.map(key => snapshot.tickets.find(candidate => candidate.key === key)?.title ?? key),
+    blockedBy: ticket?.blocked_by_titles ?? ticket?.blocked_by.map(key => index.tickets.get(key)?.title ?? key),
     assignee: ticket?.assignee,
     owner: ticket?.assignee ?? task?.owner,
     activeExecution: ticket?.active_execution ?? null,
@@ -686,15 +726,15 @@ function vueEdge(edge: TrackerGraphEdge, options: BuildTrackerFlowOptions): Edge
 
 function rawForGraphNode(
   graphNode: TrackerGraphNode,
-  snapshot: TrackerSnapshot,
+  index: NodeIndex,
 ): TrackerTask | TrackerTicket | null {
   const key = itemKeyForNodeId(graphNode.id)
   if (!key) return null
   if (graphNode.id.startsWith('task:')) {
-    return snapshot.tasks.find((task) => task.key === key) ?? null
+    return index.tasks.get(key) ?? null
   }
   if (graphNode.id.startsWith('ticket:')) {
-    return snapshot.tickets.find((ticket) => ticket.key === key) ?? null
+    return index.tickets.get(key) ?? null
   }
   return null
 }

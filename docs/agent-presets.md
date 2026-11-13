@@ -168,7 +168,13 @@ Its model picker uses the shared `hostMcp.status` loader and the source host's
 and custom native names remain selectable. Catalog loading or retry never
 replaces the source draft, and a listed model does not establish account access.
 The normal page omits the project-folder path; missing or mismatched setup
-still provides an actionable error.
+still provides an actionable error. Agents resolves the selected project's
+primary folder through `project.get`, including on Refresh and Retry. It shows
+directoryless, missing, unavailable and conflicting binding states separately;
+directoryless projects remain usable without onboarding. Repair uses the existing
+explicit project/binding setup owner and never a manual folder picker or recent
+worktree inference. Project changes clear the previous list and editor before
+loading the next folder, and late reads or saves cannot replace the current view.
 
 `source_ref` is `{host_key, native_name, source_path}`, where `source_path` is
 the exact workspace-relative path. Reads return the SHA256 `digest`, editable
@@ -485,6 +491,21 @@ instructions, truthfully reporting no enforced read-only isolation. Until accept
 the ticket stays `in-progress`. There is no separate review ticket by default
 and no new tracker status. Main-agent scheduling and acceptance are guidance,
 not daemon-enforced leases or semantic verification.
+
+Planning, delivery, review and the main orchestrator apply the shared
+[Board contract](task-tracker.md#board-priority-and-order-writes): Backlog is
+uncommitted backlog, Todo is waiting for development, and Stopped is a validated
+execution projection, not cancellation. `tracker.placeTask` changes eligible
+nonstarted lane placement only. A column move or reorder supplies no dispatch,
+stop, resume, completion or abort authority. Delivery/review/repair remains
+lifecycle `in-progress`; queued work before its first actual invocation is Todo,
+while previously invoked work between calls stays In progress. Deferred work
+retains its resume condition and normal explicit resume owner. Source guidance
+changes apply to supported future admissions; active, queued, historical and
+resumed native snapshots stay frozen. Source refs already selected by a project
+need no copied-prompt refresh. Any saved-source adoption remains main-owned
+reviewed preview/write/readback with expected digests through the existing
+`tracker.configureDelivery` path, preserving overrides and host settings.
 
 Reviewers independently derive coverage from current requirements/amendments,
 the whole diff, actual affected consumers and project rules. They execute

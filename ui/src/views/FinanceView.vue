@@ -40,6 +40,7 @@ import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { useProjectScopedLoader } from '@/composables/useProjectScopedLoader'
 import { callOperation } from '@/lib/operations'
 import { ApiError } from '@/lib/client'
+import { useStackOsCatalogStore } from '@/stores/plugins'
 import {
   contentBlob,
   contentText,
@@ -58,6 +59,8 @@ import {
 const route = useRoute(),
   router = useRouter()
 const { projectId } = useProjectRouteScope(route)
+const catalog = useStackOsCatalogStore()
+const pluginDisabled = ref(false), enabling = ref(false)
 const section = ref('overview'),
   loading = ref(false),
   error = ref(''),
@@ -218,6 +221,8 @@ function clearScope() {
   error.value = ''
   message.value = ''
   loading.value = false
+  pluginDisabled.value = false
+  enabling.value = false
 }
 function financeStatusMessage(code: string): string {
   if (code === 'storage_owner_mismatch')
@@ -278,7 +283,7 @@ function financeStatusMessage(code: string): string {
     invalid_root:
       'Project Finance storage could not be safely read. Check local permissions and preserve the existing files, then refresh.',
     plugin_not_enabled:
-      'Finance is not enabled for this project. Enable Finance in Plugins, then refresh.',
+      'Finance is not enabled for this project. Enable Finance to open this project’s console.',
     writer_busy:
       'Project Finance data is busy. Wait for the current write or backup to finish, then refresh.',
   }
@@ -297,6 +302,7 @@ async function loadStatus() {
   loading.value = true
   error.value = ''
   authorityReady.value = false
+  pluginDisabled.value = false
   try {
     const response = await callOperation<{ data: SchemaFinanceStatusOut }>('finance.status', {
       project_id: id,
@@ -316,6 +322,7 @@ async function loadStatus() {
     if (chosen?.readiness !== 'ready' || !chosen.modes.includes('read')) {
       const readiness = text(chosen?.readiness || response.data.readiness)
       clearScope()
+      pluginDisabled.value = readiness === 'plugin_not_enabled'
       error.value = financeStatusMessage(readiness)
       return
     }
@@ -329,10 +336,28 @@ async function loadStatus() {
       const code = cause instanceof ApiError ? text(object(cause.data).finance_code) : ''
       if (code || (cause instanceof ApiError && [401, 403, 404].includes(cause.status))) clearScope()
       authorityReady.value = false
+      pluginDisabled.value = code === 'plugin_not_enabled'
       error.value = financeStatusMessage(code)
     }
   } finally {
     if (active && sequence === scopeSequence) loading.value = false
+  }
+}
+async function enableFinance() {
+  if (!pluginDisabled.value || enabling.value || loading.value) return
+  const id = projectId.value,
+    sequence = scopeSequence
+  enabling.value = true
+  try {
+    await callOperation('plugin.enable', { project_id: id, plugin_slug: 'finance' })
+    if (!active || sequence !== scopeSequence || id !== projectId.value) return
+    void catalog.refreshPlugins(id, { silent: true, force: true })
+    await loadStatus()
+  } catch {
+    if (active && sequence === scopeSequence && id === projectId.value)
+      error.value = 'Finance could not be enabled for this project. Check local permissions, then refresh to retry.'
+  } finally {
+    if (active) enabling.value = false
   }
 }
 async function loadQuery(value: FinanceQuery) {
@@ -672,10 +697,40 @@ onBeforeUnmount(() => {
       description="Expenses, income and documents stored with this project."
     >
       <template #actions>
-        <UiButton data-test="refresh-finance" @click="refresh">Refresh</UiButton>
+        <UiButton
+          data-test="refresh-finance"
+          :disabled="enabling"
+          @click="refresh"
+        >
+          Refresh
+        </UiButton>
       </template>
     </ProjectPageHeader>
-    <UiCallout v-if="error && !projection" variant="danger" role="alert">{{ error }}</UiCallout>
+    <UiCallout
+      v-if="error && !projection"
+      :tone="pluginDisabled ? 'warning' : 'danger'"
+      role="alert"
+    >
+      {{ error }}
+      <template
+        v-if="pluginDisabled"
+        #actions
+      >
+        <UiButton
+          data-test="enable-finance"
+          :disabled="enabling || loading"
+          @click="enableFinance"
+        >
+          {{ enabling ? 'Enabling Finance…' : 'Enable Finance' }}
+        </UiButton>
+        <UiButton
+          :href="`/projects/${projectId}/plugins`"
+          variant="link"
+        >
+          View plugins
+        </UiButton>
+      </template>
+    </UiCallout>
     <div class="min-h-10 text-sm text-fg-muted" role="status" aria-live="polite">
       <template v-if="projection && (!currentAuthority || error)">
         <p>Last-known Finance data · {{ loading ? 'validating current source…' : 'refresh required' }}</p>

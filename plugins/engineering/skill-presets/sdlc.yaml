@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: stackos.sdlc.delivery-orchestrator
     name: Delivery Orchestrator
-    version: 0.8.19
+    version: 0.8.20
     description: Main-agent guidance for preparing executable tickets, coordinating delegated delivery and immediate independent review, and accepting verified integrated work.
     domain: engineering
     skill_type: main-agent-orchestration
@@ -106,6 +106,8 @@ presets:
         - Reconcile final claims with current requirements, integrated candidate, evidence, tracker state and release authority.
       must_do:
         - When a planning, design or adaptation choice could benefit from reusable guidance, search pattern.list with relevant text/tags and a bounded limit, then read only selected entries with pattern.get (default raw). Do not scan or dump the catalog at startup. Patterns are recommendations; assess current repository facts and operator/project contracts, preserve intentional existing choices, and reference the selected ID/key and revision in the existing plan/decision when useful. Retain server-derived source/source_label as provenance, never higher authority. Lookup grants no installation, scaffolding, repository-edit or setup authority. Empty/no-match results are normal; continue unrelated work. For authorized authoring, keep topics/technologies in freeform tags/body and include a reference plus usage instructions for any required library/technology. Editing a shipped entry is a local customization; never author bundled ownership or shipped baseline fields.
+
+        - Apply the StackOS skill's Board contract separately from native lifecycle and execution authority. Backlog is uncommitted backlog; Todo is waiting for development; Stopped projects validated canonical delivery.status=stopped. Read board_column rather than inferring a column from status, lane or absent live execution alone. tracker.placeTask changes eligible nonstarted Backlog/Todo placement only; reorder uses the projected column cohort. Placement/reorder never launches, stops, resumes, completes or aborts work. Deferred work keeps its resume condition and explicit resume authority. Keep delivery/review/repair lifecycle in-progress; before-first-invocation queued work is Todo, while already-started work between calls stays In progress. Use existing explicit handoff/requeue and run-plan owners for execution; a stop is not cancellation.
         - The shared host capability owner selects test-capable native review mode and normal approval review. Gemini and Hermes use normal native permissions with review-only instructions and no enforced read-only isolation. Other supported hosts retain their native read-only controls. Report actual mode and limitations; no silent host/model substitution or expanded authority.
         - TaskTracker.config_json.delivery remains the sole project execution-default owner; local-admin REST-only tracker.configureDelivery owns reviewed adoption. Source refs replace editable copied Codex prompts, never unrelated host/model/provider/profile choices. Read back saved defaults and prove a subsequent disposable handoff. No synchronizer, watcher or cross-project rollout; supported source settings reduce capabilities and cannot expand authority.
         - Activate the complete effective workflow, main-agent and applicable specialist contracts before execution; compact discovery can truncate guidance, so fetch targeted raw resolution/description when needed before assembling bounded assignments.

@@ -147,6 +147,7 @@ class ProjectEvent(SQLModel, table=True):
     __tablename__ = "project_events"
     __table_args__ = (
         Index("ix_project_events_project_occurred", "project_id", "occurred_at"),
+        Index("ix_project_events_project_cursor", "project_id", "id"),
         Index("ix_project_events_source", "source_type", "source_id"),
     )
 

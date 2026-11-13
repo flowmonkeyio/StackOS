@@ -1,4 +1,4 @@
-import type { SchemaActiveExecutionOut, SchemaAgentStatsMetricsOut, SchemaWorkDurationOut } from '@/api'
+import type { SchemaActiveExecutionOut, SchemaAgentStatsMetricsOut, SchemaTrackerTaskOut, SchemaWorkDurationOut } from '@/api'
 
 export type TrackerStatus =
   | 'not-started'
@@ -9,6 +9,7 @@ export type TrackerStatus =
   | 'failed'
   | 'skipped'
 export type TrackerNodeKind = 'task' | 'ticket' | 'group'
+export type BoardColumn = `${SchemaTrackerTaskOut['board_column']}`
 export type TrackerEdgeKind = 'contains' | 'dependency' | 'link'
 
 export type ActiveExecution = SchemaActiveExecutionOut
@@ -56,6 +57,7 @@ export interface TrackerPriority {
 }
 
 export interface TrackerTask {
+  board_column?: BoardColumn
   work_duration?: SchemaWorkDurationOut | null
   active_execution?: ActiveExecution | null
   id: number
@@ -202,6 +204,8 @@ export interface TrackerGraph {
 }
 
 export interface TrackerSnapshot {
+  projection?: 'full' | 'ui'
+  metric_demand?: { task_keys: string[]; ticket_keys: string[] } | null
   tracker: TrackerSummary
   lanes: TrackerLane[]
   priorities: TrackerPriority[]

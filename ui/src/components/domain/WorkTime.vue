@@ -1,28 +1,39 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { SchemaExecutionIdentityOut, SchemaWorkDurationOut } from '@/api'
 import { useUsageFeed } from '@/composables/useUsageFeed'
 import { formatWorkTime } from '@/lib/stackos/time'
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
+import { useUsageVisibility } from '@/composables/useUsageCanvas'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   item: { status: string; work_duration?: SchemaWorkDurationOut | null }
   execution?: SchemaExecutionIdentityOut | null
-}>()
+  active?: boolean
+}>(), { active: true, execution: null })
 const feed = useUsageFeed()
-const elapsed = computed(() => {
-  // The shared heartbeat invalidates presentation; no per-consumer timer.
-  void feed?.value.receivedAt
-  const execution = isTerminalTrackerStatus(props.item.status) || (feed && feed.value.status !== 'live') ? null : props.execution
-  return formatWorkTime(props.item.work_duration, execution)
+const root = ref<HTMLElement | null>(null)
+const visible = useUsageVisibility(root)
+const liveExecution = computed(() => isTerminalTrackerStatus(props.item.status) || !props.execution
+  ? null : !feed || feed.value.status === 'live' ? props.execution : null)
+const measurement = computed<{ elapsed: string; partial: boolean }>(previous => {
+  // Retain the footer slot, but do not read duration or the clock outside demand.
+  // Reveal reads the current projection through the canonical formatter.
+  if (!props.active || !visible.value) return previous ?? { elapsed: 'N/A', partial: false }
+  const execution = liveExecution.value
+  if (execution) void feed?.value.receivedAt
+  const elapsed = formatWorkTime(props.item.work_duration, execution)
+  return { elapsed, partial: elapsed !== 'N/A' && props.item.work_duration?.coverage === 'partial' }
 })
-const partial = computed(() => elapsed.value !== 'N/A' && props.item.work_duration?.coverage === 'partial')
+const elapsed = computed(() => measurement.value.elapsed)
+const partial = computed(() => measurement.value.partial)
 const label = computed(() => `Work time: ${elapsed.value}${partial.value ? ' · Partial coverage' : elapsed.value === 'N/A' ? ' · Unavailable' : ''}`)
 defineExpose({ label })
 </script>
 
 <template>
   <span
+    ref="root"
     class="active-execution-line__elapsed"
     :aria-label="label"
     :title="label"

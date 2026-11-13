@@ -100,6 +100,13 @@ or update cannot resurrect it; package removal leaves local entries intact.
 Refresh reports bounded counts for collisions, customization and concurrent edits.
 Malformed/missing assets log a bounded startup diagnostic and preserve the catalog.
 
+## Local console plugin enablement
+
+`plugin.enable` accepts explicit project setup from the authenticated local
+console through its browser-safe REST operation. The existing plugin repository
+owns validation and enablement; the console does not receive agent grants.
+`plugin.disable` and legacy plugin write routes remain daemon-admin only.
+
 ## Project display names and catalog order
 
 `project.update` changes display names through the existing project repository.
@@ -378,7 +385,13 @@ unselected after migration. Setup selects an existing same-project directory
 binding from `workspace.listBindings` through the local-admin `project.update`
 patch `{"primary_workspace_binding_id": <binding_id>}`. This does not rebind a
 workspace or grant filesystem access. `project.get` returns that exact
-`project_dir` or an actionable `project_folder_issue`.
+`project_dir`, `project_folder_status` (`ready`, `directoryless`, `missing`,
+`unavailable`, or `conflict`) and an actionable `project_folder_issue` when local
+files cannot be used. No selected primary with no directory bindings means a
+supported directoryless project; an unselected existing directory or a stale
+primary reference needs explicit setup. Unavailable roots and cross-project
+conflicts fail closed without selecting a newer worktree. Reads and retries do
+not repair data or change a session binding.
 
 `schedule.list`, `schedule.set`, `schedule.toggle`, `schedule.remove` and
 `schedule.runs` share `ScheduledJobRepository` through MCP, registered REST
@@ -491,6 +504,15 @@ For example, save an inert prompt draft with
 Add `template_key` for a workflow hint. Normal grants and approvals apply to
 any work the main agent chooses; enabled configuration alone is not evidence
 of desktop availability.
+
+## Task Board writes
+
+Task Board writes use `tracker.placeTask`, `tracker.updateTaskPriority` and
+`tracker.reorderTask` through the registered MCP/REST/CLI surfaces. Placement
+accepts only Backlog/Todo for eligible nonstarted work; reorder uses the shared
+projected Board column. Neither grants delivery execution authority. All retain
+strict snapshots, intent-bound idempotency and raw save receipts. See
+[Board membership and order writes](task-tracker.md#board-priority-and-order-writes).
 
 ## Local task admission capacity
 
@@ -752,6 +774,19 @@ relevant object Details may expose safe contextual metadata.
 
 ## Agent activity reads
 
+For Home connected tools, existing `account.list` and `connection.list` accept
+`summary_only=true` (also on their existing GET routes). This skips provider
+setup inventory construction and returns the exact same safe Account records:
+status/setup-required, auth method, expiry/revocation, last-test diagnostics,
+scopes, safe identity and project attachments remain complete in compact/raw
+mode. `providers` is empty and `summary_only` is explicit. Default setup APIs
+retain the full provider inventory. Home display names come from the current
+project store or `project.get`, not `project.portfolio` supervision.
+
+Work summary and exact metric demand use the existing `tracker.get` and timeline
+stream owners. See [UI summary/demand](./task-tracker.md#graph-projection) for
+complete lightweight scope, null unrequested metrics and legacy compatibility.
+
 Home uses `tracker.activeTasks` (`project_id`, direct-read) and
 `tracker.activeTasksAll` (local-admin-read). Both are read-only registry
 operations exposed through REST/CLI/MCP, with the global operation denied to
@@ -780,6 +815,13 @@ Both return scope, `as_of`, `totals` and grouped `rows`, preserving all numeric
 usage and missing/classification coverage in compact responses. No private
 receipt payloads are returned, and reads change no state. See
 [metric semantics](./task-tracker.md#recorded-agent-statistics).
+
+`delivery_trends` adds one shared set of period totals and daily buckets for
+completed tasks/tickets, first-review acceptance, changes requested, stop
+occurrences and summed task work time. Both scopes reuse this read; six widgets
+must not query or aggregate receipt history individually. Existing token and
+recorded agent/model grouping fields keep their meanings. Compact/raw retain
+the same trend facts and coverage; ack remains unavailable.
 
 ```json
 {"arguments": {"project_id": 1, "response_mode": "compact"}}

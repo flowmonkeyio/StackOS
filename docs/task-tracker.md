@@ -50,6 +50,12 @@ intentionally not executed. Supersession is a relationship or disposition in
 metadata/links, not a lifecycle status; do not use `deferred` as a generic
 replacement for "moved elsewhere."
 
+These lifecycle values are separate from the eight visible Board columns and
+delivery execution state. Backlog is uncommitted backlog; Todo is waiting for
+development. A recoverable delivery stop is not an instruction to set `aborted`.
+Use the [Board membership and operation contract](#board-priority-and-order-writes)
+for placement and the existing explicit handoff/requeue owners for execution.
+
 ## Automated Task Delivery
 
 Explicit workflow abort uses `runPlan.abort` and the shared delivery/native launch
@@ -955,6 +961,107 @@ totals/rows cover retained lifetime usage including `undated`, and `daily` is
 empty (no unbounded all-history time series). Work projections always use
 retained lifetime usage, independently of these analytics filters.
 
+Statistics reads use the existing receipt owner's derived
+`tracker_receipt_projections` index. It contains only the inputs to usage,
+classification, source-time history and recorded duration, keyed by ticket,
+attempt and phase. Raw results, prompts, configuration and recovery packets
+remain in the authoritative ticket evidence and its complete detail reads.
+The usage inventory requires a recorded launch; duration retains its existing
+unfiltered inventory. A malformed current launch therefore cannot erase an
+otherwise eligible archived usage contribution or fabricate a duration endpoint.
+
+The index is backfilled during migration or explicit lost-schema-stamp recovery.
+Canonical ORM receipt writes and
+the explicit usage-repair script update it in the source transaction. Finalization,
+repair/requeue and clearing evidence replace or remove only changed contributions;
+ticket/task/project deletion cascades. Project visibility and tracker membership
+are joined from current source rows, rather than cached. Date requests select the
+UTC bounds of the requested local calendar range before receipt decoding, plus
+the deliberately lifetime-scoped undated disclosure. Dated and undated ranges
+use separate index searches. A short report never decodes unrelated raw history.
+
+`ReceiptProjection` belongs to one read request. Task/ticket projections in a
+snapshot or usage refresh share its selected rows, provisional copy and normalized
+facts. The live copy is captured before fresh scalar SQL; persisted final usage
+and closed timing endpoints still win. Later requests create a new projection.
+At the same statistics owner, bounded in-process LRU reuse (8192 source entries)
+keys pure decoding/normalization and per-receipt history preparation by the complete
+projected source value and ticket identity where needed. Changed source values
+cannot reuse an older contribution. This cache contains no scoped report result,
+authorization decision or live registry state; eviction only recomputes a fact.
+Outputs own their mutable models. Reporting fans each normalized receipt into
+period/day/agent/model accumulators in one pass; history replaces changed cumulative
+contributions rather than resumming every invocation at each checkpoint.
+
+The reusable disposable performance workload builder is
+`tests/helpers/agent_statistics.py`. Local proof covers repeated terminal reads
+and a seven-day selection over its longer archive; the assembled delivery gate
+owns the single large-load campaign and useful-page timing. No statistics read
+seeds production data or performs an implicit index backfill.
+
+#### Shared delivery trends
+
+Both statistics operations additionally return `delivery_trends.totals` and
+`delivery_trends.daily`, using the same authorized scope, inclusive dates and
+timezone. The six widgets consume this single projection; they never read raw
+receipts or recompute history. Existing usage, identity groups and launch-date
+daily series retain their semantics. Without dates, trend totals cover retained
+lifetime evidence and the trend daily list is empty.
+
+- `completed_tasks.total` and `completed_tickets.total` count the first recorded
+  successful complete transition per stable entity ID from `TrackerRevision`.
+  Reopen/recompletion and repeated same-state writes add nothing. Ordinary
+  tickets and workflow mirrors each count as tickets; tasks are separate.
+  The event's UTC instant determines its reporting day. If retained evidence
+  already begins complete, a later completion cannot invent the missing first
+  event. Imports without recoverable completion history remain unknown.
+- `first_review_acceptance` exposes `accepted`, `reviewed` and nullable `rate`
+  (0 to 1). Each ticket's first explicit review-role success or repair in the
+  canonical receipt occurrence order supplies at most one verdict, regardless
+  of storage phase. Earlier blocked, failed and validation failures do not
+  enter this denominator. Its finish instant determines the reporting day;
+  unknown occurrence identity or finish time stays unavailable. Period rate
+  divides period accepted by period reviewed, rather than averaging daily rates.
+- `changes_requested.total` counts distinct explicit review-role repair
+  receipts once by ticket/attempt/phase, on the verdict finish day. It reuses
+  statistics eligibility/classification, including exact operator-reset
+  exclusion; native failures, blocked calls and amendments add no rejects.
+- `stops.total` counts task revision transitions from a non-stopped
+  `metadata_json.delivery.status` to `stopped`. Repeated stopped metadata writes
+  add nothing; a real resume and another stop count again. Missing active
+  execution and blocked ticket/step attempts are not stops. Imported histories
+  without creation provenance disclose retained-only coverage.
+- `work_time.total_seconds` uses the canonical invocation endpoint validator,
+  deduplication and final-over-live precedence. It clips recorded intervals to
+  each reporting bucket, unions overlaps within each task, then sums distinct
+  tasks once. Parallel tasks can contribute concurrently; this is **summed
+  task work time**, not elapsed scope age or CPU time. It never adds task totals
+  to ticket totals. A known empty period is zero; unsupported history is null.
+
+Each trend metric carries `coverage` (`status`, `recorded`, `unavailable`,
+`issues`). Coverage is deliberately lifetime-scoped, also on daily buckets:
+a date filter cannot repair missing earlier defining history. Completion
+coverage counts entities with recoverable history versus unknown entities;
+review coverage counts quality verdicts with usable identity/time versus
+unavailable verdicts, disclosing unclassified receipt history separately in
+`issues`; stop coverage counts tasks with creation provenance
+versus retained-only histories; work coverage counts validated intervals versus
+unusable receipts or included tasks/tickets without recorded invocations.
+No missing receipt count is inferred. Counts/rates describe known observations,
+with partial/unavailable coverage explicit rather than fabricated zero events.
+
+The receipt index also retains validated finish bounds, closed-state presence
+and explicit review classification, updated in the canonical source transaction.
+Migration (or explicit lost-stamp recovery) backfills these derived fields.
+Short reports select overlapping intervals before receipt JSON decoding and
+reduce first-completion/first-review provenance before date filtering. Scalar
+coverage reductions and selected timing rows share one SQL snapshot, so a native
+final receipt committed during a report cannot erase supported work time or its
+coverage. These reads preserve lifetime gaps without decoding unrelated history.
+One bounded query path supplies all six trends; no report cache or analytics store
+is introduced. `test_delivery_trends.py` provides independent reopens, stops,
+review, overlap, DST, scope, missing-history and read-budget ledgers.
+
 Request example for `tracker.agentStats` (`tracker.agentStatsAll` accepts the
 same filters and `is_active` instead of `project_id`):
 
@@ -1491,15 +1598,56 @@ and consumption remain separate claims.
 
 ## Board priority and order writes
 
-`tracker.updateTaskPriority` and `tracker.reorderTask` are strict, browser-safe
+Board membership is the repository's `TrackerTaskOut.board_column` projection.
+It does not replace the task/ticket lifecycle or run-plan authority. The columns
+are exactly Backlog, Todo, In progress, Stopped, Done, Aborted, Failed and Skipped:
+
+| Existing facts, evaluated in order | Column |
+| --- | --- |
+| `complete` | Done (`done`) |
+| `aborted`, `failed`, `skipped` | Aborted, Failed, Skipped |
+| `deferred`, retaining its resume owner/condition | Backlog |
+| Nonterminal, validated canonical delivery `stopped` | Stopped |
+| Delivery `queued`, no actual invocation recorded | Todo |
+| Delivery `queued` with a prior actual invocation, or delivery `running` | In progress |
+| Remaining lifecycle `in-progress` | In progress |
+| Remaining `not-started` with `lane_key=backlog` | Backlog |
+| Remaining `not-started` in any other lane | Todo |
+
+Task revision snapshots retain source lifecycle, lane and delivery facts and
+omit the derived `board_column`; live reads resolve it with invocation evidence.
+Board intent receipts retain the accepted projection for stable retry/replay.
+
+Absent live execution never means stopped. Queued membership uses recorded
+actual invocation events or canonical current/archive invocation receipts;
+workflow `started_at`, a pending launch or a saved session alone is insufficient.
+Already-started delivery waiting between calls stays In progress. Terminal
+lifecycle wins over retained delivery metadata. Deferred records retain their
+condition and map to Backlog even though their internal terminal lane is `done`.
+
+The existing `lane_key` owns explicit Backlog/Todo placement. Normal tracker
+setup includes a generic `backlog` lane; existing catalogs acquire a missing
+Backlog entry on the next setup write, preserving their other lanes and order.
+Legacy task rows are not rewritten: existing nonstarted lanes stay Todo until
+explicitly moved. No lifecycle enum, placement table or data migration is added.
+
+`tracker.placeTask` accepts only `board_column: backlog|todo` plus the same
+snapshot and retry fields as other Board intents. It changes only lane and
+arrival rank on `not-started` work without an open validated delivery handoff.
+Todo preserves an existing non-backlog lane; leaving Backlog selects the normal
+`implementation` lane. Deferred work requires its existing explicit resume
+authority first. Placement never launches, stops, resumes, reopens or finishes
+delivery or a workflow. Repeated same-column placement preserves manual order.
+
+`tracker.placeTask`, `tracker.updateTaskPriority` and `tracker.reorderTask` are strict, browser-safe
 operations exposed through the same registry to REST, CLI and MCP. They use
 the existing task `priority_key` and integer `order_index`, with no separate
 ranking store. The UI client is `lib/stackos/taskBoard.ts`.
 
-Both require `project_id`, `task_key`, `expected_status`, `expected_updated_at`
+All three require `project_id`, `task_key`, `expected_status`, `expected_updated_at`
 and a stable `idempotency_key`. Priority accepts only `priority_key: p0|p1|p2|p3`.
 Reorder accepts `anchor_task_key` and `placement: before|after`. The anchor
-must currently belong to the same project and status column as the moved task.
+must currently belong to the same project and projected Board column as the moved task.
 There is no lifecycle, ticket-priority or execution-policy payload. These direct
 tracker intents do not accept a run token or arbitrary patch fields.
 
@@ -1520,12 +1668,13 @@ No-op receipts still make retries stable. All changed ranks, revision, events
 and retry receipt commit together; the moved task's snapshot also advances when
 a tied integer remains unchanged but its relative position changes.
 
-New tasks and real task status transitions prepend to the full destination
+New tasks and genuine projected-column entries prepend to the full destination
 column using that same persisted rank. The repository reserves the SQLite
 writer before allocating a rank, so concurrent arrivals serialize. Direct
-patches, child-ticket rollups and workflow mirroring share the status-transition
-hook; same-status writes and title, usage or priority updates retain manual
-order. Arrival placement does not change priority or ticket scheduling.
+patches, delivery stop/resume metadata, child-ticket invocation receipts,
+rollups and workflow mirroring use the existing rank owner. Same-column writes
+and title, usage or priority updates retain manual order. Arrival placement does
+not change priority or ticket scheduling.
 
 Migration `0039_tracker_board_arrivals` normalizes existing untouched columns
 once. Complete tracker revisions, creation receipts and rank snapshots establish
@@ -1672,10 +1821,87 @@ Timeline metadata includes the entity key, old/new status, and tracker URL
 path, plus event-envelope metadata such as `schema_version` and actor when
 supplied by the producer. Event rows preserve source provenance with `source_type` set to
 `tracker_task` or `tracker_ticket` and `source_id` set to the persisted tracker
-row id. The macOS desktop app consumes this timeline for native notifications,
-but the MVP only displays native notifications for completed tasks. Ticket
-status events remain available for audit, UI timelines, and future notification
-policy without creating native ticket notifications today.
+row id. Ticket status events remain available for audit and UI timelines;
+they do not produce native per-ticket notifications.
+
+### Desktop actionable task notifications
+
+The existing desktop controller reads `tracker.changed` with
+`projection="notifications"`. This is a typed scalar projection of atomic
+`TrackerRevision` before/after snapshots, not another event store or scheduler.
+The default full revision contract remains unchanged. The projection includes
+project ID/name, stable task ID/key/title, revision and before/after lifecycle
+and validated delivery status. It never returns prompts, raw outputs or stop
+reason prose. The task graph retains the actual reason and failure details.
+
+| Type | Canonical transition | Native title and body |
+| --- | --- | --- |
+| `complete` | Task lifecycle changes to `complete` | Task complete; `{task title} · {project name}` |
+| `stopped` | Nonterminal task delivery changes from non-stopped to validated `stopped` | Task needs attention; `{task title} stopped · {project name}` |
+| `failed` | Task lifecycle changes to `failed` outside an already-notified stop | Task failed; `{task title} · {project name}` |
+
+`update_task`/`_record_revision` own lifecycle snapshots; automatic delivery's
+`_update_delivery` uses the same mutation owner. Independent child-ticket
+aggregation records its task transition in that same transaction; workflow
+terminal mirroring retains its existing task snapshot. A repeated stopped write is
+quiet; resume followed by stop is another incident. Failure plus stop in one
+revision selects failure; failure during a retained stop or a later stop of a
+failed task does not duplicate that incident. Progress, review chatter, task
+creation and unchanged lifecycle are quiet. Service/auth/update alerts retain
+their existing owners. There is currently no standalone actionable approval or
+input-needed producer: pending future approval rows and prose do not create
+notifications. Adding one remains a separate extension of that existing owner.
+
+Omitting `since_rev` returns an empty baseline at `current_rev` without scanning
+history. Subsequent reads inspect at most `limit` revisions (1–200, default 50),
+including quiet writes and removed targets; `next_cursor` continues a partial
+page and otherwise `current_rev` is the checkpoint. Compact and raw preserve
+this entire bounded contract. Scalar SQL projection avoids decoding full
+revision/task evidence or counting history. Missing, foreign and replaced task
+identities cannot appear as valid targets.
+
+The controller follows project catalog pages and reads at most four 50-revision
+pages per project per poll. Remaining catch-up continues on the next poll. It
+checkpoints each processed revision/page atomically, so a later project/page
+failure or a normal app restart cannot replay already-processed work. Version 2
+`projectRevisionCursors` in `notification-state.json` are independent of old
+`projectEventWatermarks`; migration preserves those event IDs as history and
+baselines the revision cursor quietly. A first historical load never replays.
+The OS display and local checkpoint are separate operations; an abrupt process
+failure precisely between them cannot provide transactional exactly-once OS
+delivery. Normal restart/reconnect and partial-read retries retain deduplication.
+
+Clicks use the existing task deep link, first re-reading that exact project/key
+through `tracker.get`'s lightweight UI projection with empty metric demand and
+checking its stable task ID. Missing/deleted/reused/foreign targets and failed
+reads perform no navigation, rather than selecting another task by default.
+The native macOS adapter/visuals remain the existing owner; presentation proof
+belongs with changes to the presentation surface.
+
+The same controller forwards its bounded presentation to the trusted desktop
+renderer's existing toast queue, without another read loop or notification
+history. Both surfaces use the catalog wording above and retain project/task
+identity; each name is normalized and limited to 100 Unicode characters with
+an ellipsis. Missing names use “Task”/“Project”, never internal keys or IDs.
+Native macOS notifications use the packaged StackOS app identity/icon and system
+layout. New notices replace a retained native/toast notice for the same task;
+the active presentation is bounded to three notices. In-app completion is
+success-toned and expires after five seconds; stopped is warning-toned and
+failure is danger-toned, both retained until dismissed or replaced. `UiToast`
+owns the accessible severity, wrapping and “Open task” action. That action uses
+the same exact-target revalidation as a native click, via main-frame-only IPC.
+An unavailable task produces a readable in-app message without changing target.
+The fixed in-app stack stays within the viewport and scrolls when needed; keyboard
+focus can reach every retained notice and action without dismissing other notices.
+
+Native support is not proof of permission or visible delivery: macOS notification
+settings, Focus and system policy control display. The controller reports native
+support/failure separately from polling, keeps in-app delivery available when the
+native adapter is unsupported or fails, and does not retry historical events to
+work around system settings. It cannot detect a silently disabled macOS banner.
+Plain browser and older desktop shells without the subscription remain unchanged.
+There is no dedicated approval notice until an authoritative actionable source
+exists; a future pending approval is never presented as a current request.
 
 The browser UI consumes selected-task status changes through the project
 timeline stream:
@@ -1691,6 +1917,22 @@ task does not replay historical status changes into the chart. Debug and tests
 may pass `replay=true` with `max_events` to read a bounded historical batch.
 Stream filtering is task-scoped so two tabs on different active tasks can
 subscribe independently.
+
+Admission, initial/reconnect cursor reads and each poll's synchronous database
+and usage projection run in the existing thread pool. Each operation creates,
+uses and closes its own Session in that worker; no live Session crosses an
+await. A stream awaits one read at a time and discards a late result after
+disconnect. Cursor polling skips the unused lifetime event count and seeks the
+existing event table by ID (project-scoped reads use the project/ID index).
+Repository callers that need a total retain the default counted page contract.
+A private read watermark also covers unmatched events, so quiet task streams
+do not repeatedly scan other tasks' newer history. It never becomes an emitted
+status ID or heartbeat/reconnect cursor; paged matching events remain ordered
+and are fully drained before that private watermark moves past them.
+Global streams retain the watermark event's owning project identity. Project
+purge can free event IDs for reuse, so a missing/replaced anchor resets only
+private read progress to the last emitted status cursor, even when new events
+have already regrown past the old watermark. Durable cursors never retreat.
 
 ## Operations
 
@@ -2068,10 +2310,19 @@ per call. One daemon collector samples at five-second intervals only while calls
 are active. Codex identity is exposed before process exit; the exact native
 rollout path is resolved once by exact ID in the native thread index, metadata
 checks its ID and working directory, and
-subsequent reads advance a byte cursor. A newly announced file may not exist yet;
+subsequent reads advance a byte cursor and retain up to 120 source checkpoints
+from each read, rather than collapsing them into the last timestamp. A newly
+announced file may not exist yet;
 the reader waits for that exact path, without searching historical sessions.
 Resumes skip the pre-invocation file prefix and use the unchanged previous
 invocation baseline and native ID.
+
+The newest source instant owns provisional totals independently of retained
+history. Previously unseen in-window checkpoints arriving later are retained in
+source-time order without rolling those totals backward. Identical timestamp
+and counter observations are deduplicated; conflicting same-time counters reach
+the shared projection as uncertainty. The bounded tail keeps the newest 120
+source observations, not the last 120 arrivals.
 
 These are native `token_count` checkpoints, not continuous token streaming.
 Repeated cumulative polls replace provisional usage; they are never summed.
@@ -2111,6 +2362,14 @@ usage projections, including the initial snapshot, reconnect and later
 receipt-only changes. Unscoped project/global streams retain their full scope;
 transient usage frames never advance the durable status-event cursor.
 
+UI-demand replacements additionally report `covered_event_id`: the highest
+durable event read in that same poll, or null for a transient-only frame.
+This is coverage metadata, not an SSE `id` or a tracker revision. Home's shared
+read owner coalesces those same-poll status companions even for existing writers
+without a revision, while later event IDs still invalidate. Graph retains the
+structured events for highlights. The legacy unscoped and explicit task-key
+contracts are unchanged; initial/reconnect replacements still revalidate data.
+
 Each statistics projection copies provisional counters before selecting fresh
 receipt evidence. If a call disappears before that copy, its handoff has already
 committed; if it disappears afterwards, the request keeps its own counter copy.
@@ -2149,9 +2408,21 @@ Each Input / Cache / Output metric reserves fixed number and mini-canvas slots
 before the first measurement, during execution, between calls and after terminal
 states or reload. Slots do not hide according to activity, sample count or text
 fit, and values do not wrap or resize the card. Numbers remain lifetime totals;
-bars show newly reported increments within the same task or ticket scope. Each
-bar covers one minute, with its delta assigned to the later observation's minute,
-not an inferred consumption time. `DEFAULT_USAGE_BAR_COUNT` sets the shared
+the temporal projection pairs checkpoints within each invocation before combining
+task or ticket scope. `agent_stats.samples[].intervals` retains each change's
+kind, start boundary and paired counters. First retained cumulative contributions
+are `baseline`, never activity from another call. Native changes spanning at most
+one minute are `checkpoint` and use the source event's minute, including events
+read late in one collector poll. Longer gaps and final-only changes are `batched`;
+counter decreases are `reset`. Optional field gaps are not bridged. A final save
+does not move an existing native observation to receipt-save time.
+
+Bars show source checkpoint increments, not per-token consumption times.
+Baselines and batches use fixed neutral ticks with accessible amounts and
+available interval bounds, never proportional bar heights or even spreading
+across missing minutes. Legacy counter-only frames preserve the first baseline
+and mark differences spanning more than a minute as batched observations.
+`DEFAULT_USAGE_BAR_COUNT` sets the shared
 default of 20 intervals; `UsageTrace.barCount` supports 5–60. Bars stay at most
 2 CSS pixels wide as the chart uses the available metric-column width.
 Every chart keeps the same baseline. The first observation supplies a neutral
@@ -2206,6 +2477,16 @@ Storage access and parsing are guarded; absent, malformed or invalid records
 use the existing defaults. Storage failure leaves controls usable in memory.
 There are no Vue watchers or server/account preference settings.
 
+Saved version-2 task Status clauses use `board_column` identities in the same
+eight-column order. Ticket status clauses still use lifecycle values. On reading
+an older unversioned inclusion, Not started expands to Backlog/Todo/In progress/
+Stopped, In progress expands to Todo/In progress/Stopped, Deferred becomes
+Backlog and Complete becomes Done; other terminal values are retained. A legacy
+exclusion hides a column only if all its possible lifecycle cohorts were excluded.
+Ambiguous filters deliberately broaden so retained queued, deferred or stopped
+work is not silently lost when columns combine lifecycle values. The next explicit
+preference save records version 2. Per-project scope and hide-empty choices remain.
+
 | Preference | Meaning |
 | --- | --- |
 | Text | Substring across task and ticket/index search fields, case insensitive |
@@ -2217,7 +2498,7 @@ There are no Vue watchers or server/account preference settings.
 
 Missing status/completed choices default to Status is not Aborted and Completed
 Past week. Clear all saves empty clauses and Completed All, retaining the
-empty-column display choice. Complete selected explicitly with Completed None
+empty-column display choice. Done selected explicitly with Completed None
 reconciles to All in controls and storage readback.
 
 Filter edits do not navigate or create history entries. URL `view`, `task`,
@@ -2247,10 +2528,12 @@ Task/ticket selections and one-shot entry intents are cleared.
 
 The Work UI provides two views, Board and Graph. It renders:
 
-- Board by default, with seven columns for the current task statuses (empty
-  columns can be hidden through the display choice):
-  `not-started`, `in-progress`, `complete`, `deferred`, `aborted`, `failed`,
-  and `skipped`. Cards cannot be dragged between columns or change status.
+- Board by default, with eight projected columns (empty columns can be hidden
+  through the display choice): Backlog, Todo, In progress, Stopped, Done,
+  Aborted, Failed and Skipped. The [membership contract](#board-priority-and-order-writes)
+  owns their mapping; labels are not lifecycle values. Explicit Backlog/Todo
+  placement uses `tracker.placeTask`; ordering uses `tracker.reorderTask` within
+  the projected column. Neither changes lifecycle or execution authority.
 - a Board / Graph switch in the same top-right page-header position in both
   views. Board has one filter bar: Filter opens Text, Status, Priority,
   Workflow and Assignee editors; applied chips support edit and removal.
@@ -2335,8 +2618,9 @@ The Work UI provides two views, Board and Graph. It renders:
   through loading, errors, editing and disclosure changes; the body scrolls
   while header and footer remain visible. The ticket list shows at most six
   40px rows in a 240px scrolling region, with every record reachable.
-  Board task cards and the map's explicit Task details action open a task
-  popup independently of the map selection. Ticket details inside it offer
+  Board task cards open that task's Graph in one click. Their existing card menu
+  and the map's explicit Task details action open a task popup independently of
+  the map selection. Ticket details inside it offer
   Back to task; View graph opens the map for that exact task. URL
   history preserves these identities, and unavailable tasks are explicit.
   Task-to-ticket inspection starts at the ticket heading; Back restores the
@@ -2381,6 +2665,64 @@ intent fails. Content editing never resumes work or changes lifecycle, and
 workflow mirroring preserves these description/input additions.
 
 ## Graph Projection
+
+`tracker.get(projection="ui")` is an additive summary contract. Default `full`
+and raw agent/detail reads retain every primary field. UI discovery uses
+`task_index_only=true, include_graph=false`; it returns every matching task's
+identity, lifecycle, projected Board column, rank, workflow/owner/search facts,
+dates and complete ticket rollup. The task scope is complete independently of
+metric demand. Existing Board clauses and completed-display preferences select
+demand from these facts; no new hidden-column controls are needed.
+Summary `metadata_json` contains only the string-valued
+`delivery_scope.resume_condition`, preserving the existing deferred Board
+subtitle. All other metadata stays with full inspection; no full task metadata
+or receipt JSON is hydrated for that fact.
+
+`metric_demand: {task_keys: [], ticket_keys: []}` names at most 200 identities,
+including any caller overscan, in one batch. Empty demand means no metrics.
+The backend adds **zero overscan**: only exact demanded keys enter receipt reads,
+decoding, duration and usage aggregation. Unrequested `agent_stats`,
+`work_duration` and `active_execution` are null, meaning **not requested**, never
+zero, unavailable measurement coverage, or Live. Demanded values use the same
+canonical receipts, partial coverage, invocation identity and final precedence
+as full reads. `projection`, `scope_complete`, `metric_scope="demand"` and echoed `metric_demand` describe
+that distinction explicitly; compact mode preserves the complete UI projection.
+UI consumers own a measured viewport allowance within the 200-identity cap,
+coalescing Board/filter/completed-display or selected Graph demand at the shared
+reader. Hiding a column or selecting Graph removes its Board metric keys.
+
+A selected UI graph requires `task_key` and reads that task directly, without
+hydrating unrelated task JSON. It retains lightweight ticket hierarchy,
+dependencies, counts and safe external link navigation; graph node data contains
+record identity references instead of a second copy of context/evidence or card
+metrics. Task/ticket summaries omit primary instructions, context and evidence;
+full focused inspection remains the owner of those fields. A current full
+focused graph may supply the detail dialog's primary records directly when its
+project/task/revision covers the current index and requested revision. Summary
+graphs, foreign scope and older revisions require a full detail read. Secondary
+context/results/history panes retain their existing reads and hierarchy.
+
+The existing project/global timeline stream accepts `ui_demand`, JSON encoding
+`{"projects":{"1":{"task_keys":["core-tracker"],"ticket_keys":[]}}}`.
+Composite project/key identity and a combined 200-identity cap apply. Project
+streams reject foreign project demand; missing/foreign tasks or tickets reject
+before streaming. UI frames retain complete lightweight selected scope and
+revision/dirty facts, but metrics only for explicit demand. Each frame is a
+current replacement (`replace=true`), including cleared demand and hidden
+entities' null metrics. Global scope includes active available projects, with
+per-project revisions; the project store remains display-name/deletion truth.
+Admission rejects unavailable or foreign demand. Once admitted, a global stream
+reconciles its frozen demand with the current active/available projects: archive,
+cleanup or deletion removes that project's metrics and transient executions from
+the next complete replacement, while surviving status events keep their durable
+cursor. A scope change itself triggers a transient replacement without advancing
+that cursor. Reconnecting performs strict admission again.
+Omitting `ui_demand` preserves legacy unscoped and task-scoped feed semantics,
+durable timeline cursors, and transient usage-frame identity. This option does
+not change stream execution-thread or polling ownership.
+`ui_demand` and legacy `task_key` cannot be combined: the shared UI transport
+keeps complete project/global discovery and expresses selected-view demand only
+through explicit metric keys.
 
 Storage is normalized and not Vue Flow-specific. `tracker.get` returns an
 optional graph projection so the UI can compose Vue Flow without rediscovering

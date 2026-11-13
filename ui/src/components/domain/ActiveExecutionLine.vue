@@ -3,12 +3,15 @@ import { computed, ref } from 'vue'
 import type { ActiveExecution } from '@/lib/task-tracker/types'
 import type { SchemaExecutionIdentityOut, SchemaWorkDurationOut } from '@/api'
 import { activeExecutionTitle, executionRole } from '@/lib/task-tracker/execution'
+import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
 import { resolveAgentHostLogo, resolveAgentOwnerLogo } from '@/lib/stackos/agentIdentity'
 import { UiIcon, UiTooltip } from '@/components/ui'
 import UsageLiveIndicator from './UsageLiveIndicator.vue'
 import WorkTime from './WorkTime.vue'
 
-const props = defineProps<{ item?: { status: string; work_duration?: SchemaWorkDurationOut | null; started_at?: string | null; completed_at?: string | null } | null; execution?: ActiveExecution | null; lastExecution?: SchemaExecutionIdentityOut | null; owner?: string | null; detailed?: boolean; focusable?: boolean }>()
+const props = withDefaults(defineProps<{ item?: { status: string; work_duration?: SchemaWorkDurationOut | null; started_at?: string | null; completed_at?: string | null } | null; execution?: ActiveExecution | null; lastExecution?: SchemaExecutionIdentityOut | null; owner?: string | null; detailed?: boolean; focusable?: boolean; metricsActive?: boolean }>(), {
+  metricsActive: true, item: null, execution: null, lastExecution: null, owner: null,
+})
 const identity = computed(() => props.execution ?? props.lastExecution)
 const agent = computed(() => identity.value ? executionRole(identity.value.agent) : '')
 const logo = computed(() => identity.value ? resolveAgentHostLogo(identity.value.host_key) : resolveAgentOwnerLogo(props.owner))
@@ -61,10 +64,11 @@ const full = computed(() => identity.value ? activeExecutionTitle(identity.value
         ref="workTime"
         :item="item"
         :execution="execution"
+        :active="metricsActive"
       />
       <UsageLiveIndicator
         v-if="execution"
-        :active="true"
+        :active="metricsActive && !isTerminalTrackerStatus(item?.status ?? '')"
       />
     </span>
   </UiTooltip>

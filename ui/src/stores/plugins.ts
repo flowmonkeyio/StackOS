@@ -27,6 +27,7 @@ import type {
 import { ApiError, apiFetch, formatApiError } from '@/lib/client'
 import { createProjectRequestGate } from '@/lib/stackos/projectRequestGate'
 import { callOperation } from '@/lib/operations'
+import { isProjectPluginEnabled } from '@/lib/stackos/pluginPage'
 
 /** Safe projection of one project-authorized Telegram Account session. */
 export type TelegramAccountSessionStatus = SchemaAccountSessionOut
@@ -37,6 +38,27 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
   const providers = ref<SchemaProviderOut[]>([])
   const authProviders = ref<SchemaAuthProviderOut[]>([])
   const globalAccountsStatus = ref<SchemaAuthStatusOut | null>(null)
+  const homeAccounts = ref<SchemaAccountOut[]>([])
+  const homeAccountsLoaded = ref(false)
+  const homeAccountsLoading = ref(false)
+  const homeAccountsError = ref<string | null>(null)
+  let homeAccountsRead: Promise<void> | null = null
+  function refreshHomeAccounts(): Promise<void> {
+    if (homeAccountsRead) return homeAccountsRead
+    homeAccountsLoading.value = true
+    homeAccountsRead = apiFetch<SchemaAuthStatusOut>('/api/v1/auth/accounts?summary_only=true').then(status => {
+      homeAccounts.value = status.accounts
+      homeAccountsLoaded.value = true
+      homeAccountsError.value = null
+    }).catch(cause => {
+      if (cause instanceof ApiError && [401, 403, 404].includes(cause.status)) {
+        homeAccounts.value = []
+        homeAccountsLoaded.value = false
+      }
+      homeAccountsError.value = formatApiError(cause, 'Could not refresh connected tools.')
+    }).finally(() => { homeAccountsRead = null; homeAccountsLoading.value = false })
+    return homeAccountsRead
+  }
   const authStatus = ref<SchemaAuthStatusOut | null>(null)
   const accountsLoading = ref(false)
   const accountsError = ref<string | null>(null)
@@ -91,16 +113,23 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
   }
 
   const enabledPlugins = computed(() =>
-    plugins.value.filter((plugin) => plugin.enabled_for_project !== false),
+    plugins.value.filter(isProjectPluginEnabled),
   )
 
   function refreshPlugins(
     projectId: number,
-    options: { silent?: boolean } = {},
+    options: { silent?: boolean; force?: boolean } = {},
   ): Promise<boolean> {
     // The shell and a domain detail can mount together. Share their read so
     // neither consumer cancels the other's project discovery.
-    if (pendingPlugins?.projectId === projectId) return pendingPlugins.promise
+    if (pendingPlugins?.projectId === projectId && !options.force) return pendingPlugins.promise
+    // A completed setup mutation supersedes both writers of plugin readiness.
+    // readPlugins begins a new compact-read generation; also retire any older
+    // full-catalog read so it cannot restore pre-mutation plugin rows.
+    if (options.force) {
+      projectRequests.invalidateOperation('catalog')
+      catalogLoading.value = false
+    }
     const promise = readPlugins(projectId, options)
     pendingPlugins = { projectId, promise }
     void promise.finally(() => {
@@ -138,8 +167,10 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
       return false
     } finally {
       const current = request.isCurrent()
-      const hasPending = request.finish()
-      if (current && !options.silent) loading.value = hasPending
+      request.finish()
+      // A forced, silent replacement owns completion too. Retired reads cannot
+      // leave the prior visible spinner running after current data has arrived.
+      if (current) loading.value = false
     }
   }
 
@@ -491,6 +522,7 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     providers,
     authProviders,
     globalAccountsStatus,
+    homeAccounts, homeAccountsLoaded, homeAccountsLoading, homeAccountsError, refreshHomeAccounts,
     authStatus,
     accountsLoading,
     accountsError,

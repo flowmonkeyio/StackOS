@@ -70,6 +70,12 @@ describe('ActiveExecutionLine', () => {
     feed.value = { status: 'live', receivedAt: Date.now() }
     await wrapper.vm.$nextTick()
     expect(wrapper.get('.usage-live-indicator--live').text()).toBe('Live')
+    await wrapper.setProps({ metricsActive: false })
+    expect(wrapper.find('.usage-live-indicator').exists()).toBe(false)
+    await wrapper.setProps({ metricsActive: true, item: { status: 'complete' } })
+    expect(wrapper.find('.usage-live-indicator').exists()).toBe(false)
+    await wrapper.setProps({ item: { status: 'in-progress' } })
+    expect(wrapper.get('.usage-live-indicator--live').text()).toBe('Live')
     feed.value = { ...feed.value, status: 'reconnecting' }
     await wrapper.vm.$nextTick()
     expect(wrapper.get('.usage-live-indicator').text()).toBe('Reconnecting')

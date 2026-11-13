@@ -3440,6 +3440,11 @@ export interface components {
             provider_key: string | null;
             /** Providers */
             providers: components["schemas"]["AuthProviderOut"][];
+            /**
+             * Summary Only
+             * @default false
+             */
+            summary_only: boolean;
         };
         /** AuthTestOut */
         AuthTestOut: {
@@ -3819,6 +3824,73 @@ export interface components {
              * @default 1
              */
             supported_min: number;
+        };
+        /** DeliveryCountOut */
+        DeliveryCountOut: {
+            coverage: components["schemas"]["DeliveryMetricCoverageOut"];
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+        };
+        /** DeliveryMetricCoverageOut */
+        DeliveryMetricCoverageOut: {
+            /** Issues */
+            issues?: string[];
+            /**
+             * Recorded
+             * @default 0
+             */
+            recorded: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: DeliveryMetricCoverageOutStatus;
+            /**
+             * Unavailable
+             * @default 0
+             */
+            unavailable: number;
+        };
+        /** DeliveryTrendDayOut */
+        DeliveryTrendDayOut: {
+            changes_requested: components["schemas"]["DeliveryCountOut"];
+            completed_tasks: components["schemas"]["DeliveryCountOut"];
+            completed_tickets: components["schemas"]["DeliveryCountOut"];
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            first_review_acceptance: components["schemas"]["FirstReviewAcceptanceOut"];
+            stops: components["schemas"]["DeliveryCountOut"];
+            work_time: components["schemas"]["DeliveryWorkTimeOut"];
+        };
+        /** DeliveryTrendMetricsOut */
+        DeliveryTrendMetricsOut: {
+            changes_requested: components["schemas"]["DeliveryCountOut"];
+            completed_tasks: components["schemas"]["DeliveryCountOut"];
+            completed_tickets: components["schemas"]["DeliveryCountOut"];
+            first_review_acceptance: components["schemas"]["FirstReviewAcceptanceOut"];
+            stops: components["schemas"]["DeliveryCountOut"];
+            work_time: components["schemas"]["DeliveryWorkTimeOut"];
+        };
+        /** DeliveryTrendsOut */
+        DeliveryTrendsOut: {
+            /** Daily */
+            daily: components["schemas"]["DeliveryTrendDayOut"][];
+            totals: components["schemas"]["DeliveryTrendMetricsOut"];
+        };
+        /** DeliveryWorkTimeOut */
+        DeliveryWorkTimeOut: {
+            coverage: components["schemas"]["DeliveryMetricCoverageOut"];
+            /**
+             * Total Seconds
+             * @default null
+             */
+            total_seconds: number | null;
         };
         /** DurableActionItemOut */
         DurableActionItemOut: {
@@ -5075,6 +5147,25 @@ export interface components {
             project_id: number;
             /** Readiness */
             readiness: string;
+        };
+        /** FirstReviewAcceptanceOut */
+        FirstReviewAcceptanceOut: {
+            /**
+             * Accepted
+             * @default 0
+             */
+            accepted: number;
+            coverage: components["schemas"]["DeliveryMetricCoverageOut"];
+            /**
+             * Rate
+             * @default null
+             */
+            rate: number | null;
+            /**
+             * Reviewed
+             * @default 0
+             */
+            reviewed: number;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -6805,6 +6896,8 @@ export interface components {
             project_dir?: string | null;
             /** Project Folder Issue */
             project_folder_issue?: string | null;
+            /** Project Folder Status */
+            project_folder_status?: ProjectOutProject_folder_statusAnyOf0 | null;
             /** Schedule Json */
             schedule_json: {
                 [key: string]: unknown;
@@ -9007,6 +9100,7 @@ export interface components {
             as_of: string;
             /** Daily */
             daily: components["schemas"]["AgentStatsDayOut"][];
+            delivery_trends: components["schemas"]["DeliveryTrendsOut"];
             /** End Date */
             end_date: string | null;
             /**
@@ -9150,8 +9244,16 @@ export interface components {
              * @default true
              */
             include_graph: boolean;
+            /** @default null */
+            metric_demand: components["schemas"]["TrackerMetricDemand"] | null;
             /** Project Id */
             project_id: number;
+            /**
+             * Projection
+             * @default full
+             * @enum {string}
+             */
+            projection: TrackerGetInputProjection;
             /**
              * Response Mode
              * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
@@ -9332,6 +9434,52 @@ export interface components {
             /** Title */
             title: string | null;
         };
+        /**
+         * TrackerMetricDemand
+         * @description Exact current UI demand. Empty means no metrics, never all metrics.
+         */
+        TrackerMetricDemand: {
+            /** Task Keys */
+            task_keys?: string[];
+            /** Ticket Keys */
+            ticket_keys?: string[];
+        };
+        /** TrackerPlaceTaskInput */
+        TrackerPlaceTaskInput: {
+            /**
+             * Board Column
+             * @enum {string}
+             */
+            board_column: TrackerPlaceTaskInputBoard_column;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: null;
+            expected_status: components["schemas"]["TrackerItemStatus"];
+            /**
+             * Expected Updated At
+             * Format: date-time
+             */
+            expected_updated_at: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default raw
+             * @enum {string}
+             */
+            response_mode: TrackerPlaceTaskInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: null;
+            /** Task Key */
+            task_key: string;
+        };
         /** TrackerPriorityOut */
         TrackerPriorityOut: {
             /** Key */
@@ -9391,12 +9539,31 @@ export interface components {
             lanes: components["schemas"]["TrackerLaneOut"][];
             /** Links */
             links: components["schemas"]["TrackerLinkOut"][];
+            /** @default null */
+            metric_demand: components["schemas"]["TrackerMetricDemand"] | null;
+            /**
+             * Metric Scope
+             * @default all
+             * @enum {string}
+             */
+            metric_scope: TrackerSnapshotOutMetric_scope;
             /** Priorities */
             priorities: components["schemas"]["TrackerPriorityOut"][];
+            /**
+             * Projection
+             * @default full
+             * @enum {string}
+             */
+            projection: TrackerSnapshotOutProjection;
+            /**
+             * Scope Complete
+             * @default true
+             */
+            scope_complete: boolean;
             /** Tasks */
-            tasks: components["schemas"]["TrackerTaskOut"][];
+            tasks: components["schemas"]["TrackerTaskOut"][] | components["schemas"]["TrackerTaskSummaryOut"][];
             /** Tickets */
-            tickets: components["schemas"]["TrackerTicketOut"][];
+            tickets: components["schemas"]["TrackerTicketOut"][] | components["schemas"]["TrackerTicketSummaryOut"][];
             tracker: components["schemas"]["TrackerSummaryOut"];
         };
         /**
@@ -9534,6 +9701,13 @@ export interface components {
              * @default null
              */
             agent_stats: components["schemas"]["AgentStatsMetricsOut"] | null;
+            /**
+             * Board Column
+             * @description Projected Board column; lifecycle status is unchanged.
+             * @default todo
+             * @enum {string}
+             */
+            board_column: TrackerTaskOutBoard_column;
             /** Completed At */
             completed_at: string | null;
             /** Completion Evidence Json */
@@ -9645,6 +9819,75 @@ export interface components {
             source_kind: TrackerTaskResultsInputSource_kindAnyOf0 | null;
             /** Task Key */
             task_key: string;
+        };
+        /**
+         * TrackerTaskSummaryOut
+         * @description Complete discovery/filter facts; primary instructions belong to a full read.
+         */
+        TrackerTaskSummaryOut: {
+            /** @default null */
+            active_execution: components["schemas"]["ActiveExecutionOut"] | null;
+            /** @default null */
+            agent_stats: components["schemas"]["AgentStatsMetricsOut"] | null;
+            /** Board Column */
+            board_column: string;
+            /** Completed At */
+            completed_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            delivery: components["schemas"]["TaskDeliveryStateOut"] | null;
+            /** Description */
+            description: string;
+            /** Goal */
+            goal: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            /** Lane Key */
+            lane_key: string;
+            /**
+             * Metadata Json
+             * @description Only delivery_scope.resume_condition, for the retained Board display.
+             * @default null
+             */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Order Index */
+            order_index: number;
+            /** Owner */
+            owner: string | null;
+            /** Priority Key */
+            priority_key: string;
+            /** Project Id */
+            project_id: number;
+            /** Source Json */
+            source_json: {
+                [key: string]: unknown;
+            } | null;
+            source_kind: components["schemas"]["TrackerSourceKind"];
+            /** Started At */
+            started_at: string | null;
+            status: components["schemas"]["TrackerItemStatus"];
+            /** Task Type */
+            task_type: string;
+            /** @default null */
+            ticket_summary: components["schemas"]["TrackerTaskTicketSummaryOut"] | null;
+            /** Title */
+            title: string;
+            /** Tracker Id */
+            tracker_id: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** @default null */
+            work_duration: components["schemas"]["WorkDurationOut"] | null;
         };
         /**
          * TrackerTaskTicketSummaryOut
@@ -9812,6 +10055,97 @@ export interface components {
             /** @default null */
             work_duration: components["schemas"]["WorkDurationOut"] | null;
         };
+        /** TrackerTicketSummaryOut */
+        TrackerTicketSummaryOut: {
+            /** @default null */
+            active_execution: components["schemas"]["ActiveExecutionOut"] | null;
+            /** @default null */
+            agent_stats: components["schemas"]["AgentStatsMetricsOut"] | null;
+            /** Assignee */
+            assignee: string | null;
+            /** Blocked By */
+            blocked_by?: string[];
+            /** Blocked By Titles */
+            blocked_by_titles?: string[];
+            /** Blocker Reason */
+            blocker_reason: string | null;
+            /** Completed At */
+            completed_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Dependency Keys */
+            dependency_keys?: string[];
+            /** Goal */
+            goal: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            kind: components["schemas"]["TrackerTicketKind"];
+            /** Lane Key */
+            lane_key: string;
+            /**
+             * Link Count
+             * @default 0
+             */
+            link_count: number;
+            /**
+             * Metadata Json
+             * @default null
+             */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Order Index */
+            order_index: number;
+            /** Parent Ticket Id */
+            parent_ticket_id: number | null;
+            /**
+             * Parent Ticket Key
+             * @default null
+             */
+            parent_ticket_key: string | null;
+            /** Priority Key */
+            priority_key: string;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Reference Count
+             * @default 0
+             */
+            reference_count: number;
+            /** Run Id */
+            run_id: number | null;
+            /** Run Plan Id */
+            run_plan_id: number | null;
+            /** Run Plan Step Id */
+            run_plan_step_id: number | null;
+            source_kind: components["schemas"]["TrackerSourceKind"];
+            /** Started At */
+            started_at: string | null;
+            status: components["schemas"]["TrackerItemStatus"];
+            /** Task Id */
+            task_id: number;
+            /**
+             * Task Key
+             * @default
+             */
+            task_key: string;
+            /** Title */
+            title: string;
+            /** Tracker Id */
+            tracker_id: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** @default null */
+            work_duration: components["schemas"]["WorkDurationOut"] | null;
+        };
         /**
          * TrackerUpdateTaskContentInput
          * @description Human content edits cannot supply tracker or workflow execution state.
@@ -9899,6 +10233,57 @@ export interface components {
             /** Token */
             token: string;
         };
+        /**
+         * UsageIntervalOut
+         * @description One invocation's change, before combining lifetime counters across calls.
+         */
+        UsageIntervalOut: {
+            /**
+             * Cache Read
+             * @default null
+             */
+            cache_read: number | null;
+            /**
+             * Cache Write
+             * @default null
+             */
+            cache_write: number | null;
+            /**
+             * Input
+             * @default null
+             */
+            input: number | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: UsageIntervalOutKind;
+            /**
+             * Output
+             * @default null
+             */
+            output: number | null;
+            /**
+             * Reasoning
+             * @default null
+             */
+            reasoning: number | null;
+            /**
+             * Remaining Input
+             * @default null
+             */
+            remaining_input: number | null;
+            /**
+             * Start At
+             * @default null
+             */
+            start_at: string | null;
+            /**
+             * Total
+             * @default null
+             */
+            total: number | null;
+        };
         /** UsageSampleOut */
         UsageSampleOut: {
             /** At */
@@ -9915,6 +10300,12 @@ export interface components {
             cache_write: number | null;
             /** Input */
             input: number;
+            /**
+             * Intervals
+             * @description Per-invocation temporal evidence; null on legacy counter-only payloads.
+             * @default null
+             */
+            intervals: components["schemas"]["UsageIntervalOut"][] | null;
             /** Output */
             output: number;
             /**
@@ -9928,6 +10319,11 @@ export interface components {
              * @default null
              */
             remaining_input: number | null;
+            /**
+             * Source
+             * @default null
+             */
+            source: UsageSampleOutSourceAnyOf0 | null;
             /** Total */
             total: number;
         };
@@ -11081,6 +11477,12 @@ export type SchemaDecisionOut = components['schemas']['DecisionOut'];
 export type SchemaDecisionRecordRequest = components['schemas']['DecisionRecordRequest'];
 export type SchemaDeliveryCapacityInput = components['schemas']['DeliveryCapacityInput'];
 export type SchemaDeliveryCapacityOut = components['schemas']['DeliveryCapacityOut'];
+export type SchemaDeliveryCountOut = components['schemas']['DeliveryCountOut'];
+export type SchemaDeliveryMetricCoverageOut = components['schemas']['DeliveryMetricCoverageOut'];
+export type SchemaDeliveryTrendDayOut = components['schemas']['DeliveryTrendDayOut'];
+export type SchemaDeliveryTrendMetricsOut = components['schemas']['DeliveryTrendMetricsOut'];
+export type SchemaDeliveryTrendsOut = components['schemas']['DeliveryTrendsOut'];
+export type SchemaDeliveryWorkTimeOut = components['schemas']['DeliveryWorkTimeOut'];
 export type SchemaDurableActionItemOut = components['schemas']['DurableActionItemOut'];
 export type SchemaDurableActionJobOut = components['schemas']['DurableActionJobOut'];
 export type SchemaEnumLookupResponse = components['schemas']['EnumLookupResponse'];
@@ -11112,6 +11514,7 @@ export type SchemaFinanceReportRenderInput = components['schemas']['FinanceRepor
 export type SchemaFinanceSnapshotOut = components['schemas']['FinanceSnapshotOut'];
 export type SchemaFinanceStatusInput = components['schemas']['FinanceStatusInput'];
 export type SchemaFinanceStatusOut = components['schemas']['FinanceStatusOut'];
+export type SchemaFirstReviewAcceptanceOut = components['schemas']['FirstReviewAcceptanceOut'];
 export type SchemaHttpValidationError = components['schemas']['HTTPValidationError'];
 export type SchemaHealthResponse = components['schemas']['HealthResponse'];
 export type SchemaHeartbeatResponse = components['schemas']['HeartbeatResponse'];
@@ -11254,6 +11657,8 @@ export type SchemaTrackerGraphNodeOut = components['schemas']['TrackerGraphNodeO
 export type SchemaTrackerGraphOut = components['schemas']['TrackerGraphOut'];
 export type SchemaTrackerLaneOut = components['schemas']['TrackerLaneOut'];
 export type SchemaTrackerLinkOut = components['schemas']['TrackerLinkOut'];
+export type SchemaTrackerMetricDemand = components['schemas']['TrackerMetricDemand'];
+export type SchemaTrackerPlaceTaskInput = components['schemas']['TrackerPlaceTaskInput'];
 export type SchemaTrackerPriorityOut = components['schemas']['TrackerPriorityOut'];
 export type SchemaTrackerReorderTaskInput = components['schemas']['TrackerReorderTaskInput'];
 export type SchemaTrackerSnapshotOut = components['schemas']['TrackerSnapshotOut'];
@@ -11264,11 +11669,14 @@ export type SchemaTrackerTaskContentOut = components['schemas']['TrackerTaskCont
 export type SchemaTrackerTaskInputOut = components['schemas']['TrackerTaskInputOut'];
 export type SchemaTrackerTaskOut = components['schemas']['TrackerTaskOut'];
 export type SchemaTrackerTaskResultsInput = components['schemas']['TrackerTaskResultsInput'];
+export type SchemaTrackerTaskSummaryOut = components['schemas']['TrackerTaskSummaryOut'];
 export type SchemaTrackerTaskTicketSummaryOut = components['schemas']['TrackerTaskTicketSummaryOut'];
 export type SchemaTrackerTicketOut = components['schemas']['TrackerTicketOut'];
+export type SchemaTrackerTicketSummaryOut = components['schemas']['TrackerTicketSummaryOut'];
 export type SchemaTrackerUpdateTaskContentInput = components['schemas']['TrackerUpdateTaskContentInput'];
 export type SchemaTrackerUpdateTaskPriorityInput = components['schemas']['TrackerUpdateTaskPriorityInput'];
 export type SchemaUiTokenResponse = components['schemas']['UiTokenResponse'];
+export type SchemaUsageIntervalOut = components['schemas']['UsageIntervalOut'];
 export type SchemaUsageSampleOut = components['schemas']['UsageSampleOut'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type SchemaWorkDurationOut = components['schemas']['WorkDurationOut'];
@@ -11432,6 +11840,7 @@ export interface operations {
         parameters: {
             query?: {
                 provider_key?: string | null;
+                summary_only?: boolean;
             };
             header?: never;
             path?: never;
@@ -11993,6 +12402,7 @@ export interface operations {
         parameters: {
             query?: {
                 after?: number | null;
+                ui_demand?: string | null;
             };
             header?: never;
             path?: never;
@@ -12713,6 +13123,7 @@ export interface operations {
         parameters: {
             query?: {
                 provider_key?: string | null;
+                summary_only?: boolean;
             };
             header?: never;
             path: {
@@ -13053,6 +13464,7 @@ export interface operations {
                 heartbeat_ms?: number;
                 max_events?: number | null;
                 replay?: boolean;
+                ui_demand?: string | null;
             };
             header?: never;
             path: {
@@ -14581,6 +14993,12 @@ export enum DeliveryCapacityInputResponse_mode {
     standard = "standard",
     verbose = "verbose"
 }
+export enum DeliveryMetricCoverageOutStatus {
+    empty = "empty",
+    complete = "complete",
+    partial = "partial",
+    unavailable = "unavailable"
+}
 export enum DurableActionItemStatus {
     pending = "pending",
     leased = "leased",
@@ -14884,6 +15302,13 @@ export enum ProjectMoveInputScope {
     project = "project",
     catalog = "catalog"
 }
+export enum ProjectOutProject_folder_statusAnyOf0 {
+    ready = "ready",
+    directoryless = "directoryless",
+    missing = "missing",
+    unavailable = "unavailable",
+    conflict = "conflict"
+}
 export enum ProjectSetupAnswerInputResponse_mode {
     compact = "compact",
     raw = "raw",
@@ -15150,6 +15575,10 @@ export enum TrackerGetInputBlock_stateAnyOf0 {
     blocked = "blocked",
     open = "open"
 }
+export enum TrackerGetInputProjection {
+    full = "full",
+    ui = "ui"
+}
 export enum TrackerGetInputResponse_modeAnyOf0 {
     compact = "compact",
     raw = "raw",
@@ -15186,6 +15615,15 @@ export enum TrackerLinkKind {
     action_call = "action-call",
     external = "external"
 }
+export enum TrackerPlaceTaskInputBoard_column {
+    backlog = "backlog",
+    todo = "todo"
+}
+export enum TrackerPlaceTaskInputResponse_mode {
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
 export enum TrackerReorderTaskInputPlacement {
     before = "before",
     after = "after"
@@ -15194,6 +15632,14 @@ export enum TrackerReorderTaskInputResponse_mode {
     raw = "raw",
     standard = "standard",
     verbose = "verbose"
+}
+export enum TrackerSnapshotOutMetric_scope {
+    all = "all",
+    demand = "demand"
+}
+export enum TrackerSnapshotOutProjection {
+    full = "full",
+    ui = "ui"
 }
 export enum TrackerSourceKind {
     manual = "manual",
@@ -15207,6 +15653,16 @@ export enum TrackerTaskActivityInputResponse_mode {
     raw = "raw",
     standard = "standard",
     verbose = "verbose"
+}
+export enum TrackerTaskOutBoard_column {
+    backlog = "backlog",
+    todo = "todo",
+    in_progress = "in-progress",
+    stopped = "stopped",
+    done = "done",
+    aborted = "aborted",
+    failed = "failed",
+    skipped = "skipped"
 }
 export enum TrackerTaskResultsInputResponse_mode {
     compact = "compact",
@@ -15240,6 +15696,16 @@ export enum TrackerUpdateTaskPriorityInputResponse_mode {
     raw = "raw",
     standard = "standard",
     verbose = "verbose"
+}
+export enum UsageIntervalOutKind {
+    baseline = "baseline",
+    checkpoint = "checkpoint",
+    batched = "batched",
+    reset = "reset"
+}
+export enum UsageSampleOutSourceAnyOf0 {
+    native = "native",
+    final = "final"
 }
 export enum WorkDurationOutCoverage {
     complete = "complete",

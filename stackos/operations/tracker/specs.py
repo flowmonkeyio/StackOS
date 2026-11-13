@@ -50,6 +50,7 @@ from stackos.operations.tracker.schemas import (
     TrackerNextInput,
     TrackerPatchInput,
     TrackerPickInput,
+    TrackerPlaceTaskInput,
     TrackerProjectInput,
     TrackerRejectTaskInput,
     TrackerReleaseInput,
@@ -79,6 +80,7 @@ from stackos.operations.tracker.write_handlers import (
     tracker_link_run_plan,
     tracker_patch,
     tracker_pick,
+    tracker_place_task,
     tracker_reject_task,
     tracker_release,
     tracker_reopen,
@@ -95,6 +97,7 @@ from stackos.repositories.tracker import (
     TrackerChangedOut,
     TrackerHistoryOut,
     TrackerNextOut,
+    TrackerNotificationChangesOut,
     TrackerReopenOut,
     TrackerSearchOut,
     TrackerSnapshotOut,
@@ -116,7 +119,7 @@ _AGENT_STATS_RESPONSE_POLICY = OperationResponsePolicy(
     ack_safe=False,
     compact_notes=(
         "Keep scope, dates, timezone, group_by, as_of, totals, every row/day/series, "
-        "undated facts and per-field/classification coverage.",
+        "undated facts, delivery_trends totals/daily and all per-field/classification coverage.",
     ),
 )
 
@@ -232,10 +235,17 @@ def operation_specs() -> list[OperationSpec]:
                 ),
                 (
                     "tracker.reorderTask",
-                    "Move one task before or after a same-status task.",
+                    "Move one task before or after a task in the same projected Board column.",
                     TrackerReorderTaskInput,
                     tracker_reorder_task,
                     {"anchor_task_key": "neighbor", "placement": "before"},
+                ),
+                (
+                    "tracker.placeTask",
+                    "Place eligible nonstarted work in Backlog or Todo without execution changes.",
+                    TrackerPlaceTaskInput,
+                    tracker_place_task,
+                    {"board_column": "backlog"},
                 ),
             )
         ],
@@ -455,7 +465,9 @@ def operation_specs() -> list[OperationSpec]:
                 "or agent_model. Optional inclusive dates (at most 366 days) and IANA timezone "
                 "scope totals/rows/daily identically; undated receipts are disclosed separately. "
                 "Cache read is included in Input; reasoning in Output. "
-                "Missing fields stay explicit."
+                "Missing fields stay explicit. delivery_trends shares the scope/date range: "
+                "first completions, first-review acceptance, changes requested, stops and "
+                "summed task work time, with independent source-time buckets and coverage."
             ),
             examples=(
                 OperationExample(title="Read project agent activity", arguments={"project_id": 1}),
@@ -484,7 +496,7 @@ def operation_specs() -> list[OperationSpec]:
                 "Local-console read over the same reset-aware dated projection. Agent identity "
                 "stays project-scoped; explicit Model grouping combines visible projects. "
                 "Model means recorded launch selection, not measured actual model. "
-                "No role/host splitting."
+                "No role/host splitting. Includes the same six shared delivery_trends."
             ),
             examples=(
                 OperationExample(
@@ -574,8 +586,25 @@ def operation_specs() -> list[OperationSpec]:
                 "unavailable coverage; lifecycle timestamps and token silence are never "
                 "substitutes. "
                 "Compact responses preserve metrics and their usage/classification coverage."
+                " Explicit projection=ui returns complete lightweight task/filter/count facts "
+                "without primary context/evidence. Supply metric_demand with up to 200 exact "
+                "task/ticket keys including any caller overscan; empty demand computes no metrics. "
+                "Unrequested metrics are null, not zero or Live. Use task_index_only with "
+                "include_graph=false for discovery; selected graph reads require task_key. "
+                "Full/default and raw agent inspection retain complete primary contracts."
             ),
             examples=(
+                OperationExample(
+                    title="Discover all tasks and measure only demanded cards",
+                    arguments={
+                        "project_id": 1,
+                        "projection": "ui",
+                        "task_index_only": True,
+                        "include_graph": False,
+                        "metric_demand": {"task_keys": ["core-tracker"]},
+                        "response_mode": "raw",
+                    },
+                ),
                 OperationExample(
                     title="Load the complete operator task index",
                     arguments={
@@ -760,9 +789,14 @@ def operation_specs() -> list[OperationSpec]:
             name="tracker.changed",
             summary="Read tracker changes after a known revision.",
             input_model=TrackerChangedInput,
-            output_model=TrackerChangedOut | dict[str, Any],
+            output_model=TrackerChangedOut | TrackerNotificationChangesOut | dict[str, Any],
             handler=tracker_changed,
-            purpose="Use this for efficient context refresh without reloading the whole tracker.",
+            purpose=(
+                "Use this for efficient context refresh without reloading the whole tracker. "
+                "projection=notifications returns a bounded scalar transition page; omit "
+                "since_rev for a quiet baseline, then page with next_cursor and retain "
+                "current_rev. It excludes prompts, reasons and raw outputs."
+            ),
             examples=(
                 OperationExample(
                     title="Refresh from a known revision",

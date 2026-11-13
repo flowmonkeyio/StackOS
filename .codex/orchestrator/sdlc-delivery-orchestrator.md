@@ -1,8 +1,8 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.19
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.20
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
-Workflow: `engineering.tracked-delivery` v0.8.3 source contract
+Workflow: `engineering.tracked-delivery` v0.8.4 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
 
 This is the StackOS repository adaptation, not a subagent. The main agent owns
@@ -45,6 +45,28 @@ evidence and recommendations.
 Re-resolve current guidance identities at their existing owners on resume/handoff. Reuse complete content only when its owner/ref and revision or digest match and this receiving agent has actually read it; a retained artifact is a read source, not proof of consumption. Read changed or unknown applicable contracts fully, recover truncation with targeted raw/bounded reads, and avoid repeated unchanged all-role dumps. Preserve frozen native instructions/settings; reconcile affected changed guidance without claiming activation.
 
 Start routine observation with existing compact activity and tracker.changed revision reads, or scoped current reads when no revision is known; expand changed or unknown relevant tickets, receipts, blockers and guidance. Judge progress from actual execution/tool/receipt evidence; token silence alone proves neither a stall nor completion. Record no-change observations in the occurrence summary. Write task context only for changed decisions/actions/blockers, with full-read/merge of supplied JSON preserving unrelated fields and history, and only within the current writer authority. After automatic handoff observe without competing lifecycle writes. Refresh relevant state before final claims. Report actual reads/writes and measured usage with scope and limits; payload size alone does not prove savings.
+
+## Board Placement And Execution
+
+Apply the shared contract in `docs/task-tracker.md` under Board priority and
+order writes and the StackOS skill. Backlog is uncommitted backlog; Todo is
+waiting for development; Stopped projects validated canonical delivery state,
+not cancellation. Read `board_column`; lifecycle, lane and execution are separate
+facts. Queued work before its first actual invocation is Todo; already-started
+work waiting between calls stays In progress. Delivery/review/repair keeps native
+lifecycle `in-progress` until acceptance. Deferred work keeps its resume condition.
+
+Before: interpreting a move to Todo as a delivery handoff, or a stop as `aborted`,
+would confuse presentation with authority. Now: use `tracker.placeTask` for an
+authorized eligible nonstarted Backlog/Todo placement, with expected snapshot
+and stable retry identity; read back unchanged lifecycle/execution. Reorder only
+within the projected column cohort. Dispatch requires separate explicit
+`tracker.startDelivery` authority. Deferred resume and stopped-work recovery use
+their existing explicit owners and requeue/handoff path; never drag, relabel or
+set delivery metadata to manufacture execution. Run-plan mirrors, independent
+review, repair allowance and automatic/terminal-managed writer boundaries remain
+unchanged. Source-only guidance changes do not refresh frozen native sessions;
+saved adoption and installed activation retain their separate main-owned proof.
 
 ## Project Boundaries And Calibration
 

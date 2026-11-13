@@ -29,7 +29,7 @@ from stackos.mcp.contract import MCPInput
 from stackos.project_setup_execution import MainAgentPreferences
 from stackos.repositories.tracker.agent_stats import stats_timezone
 from stackos.repositories.tracker.inspection_schema import ResultSourceKind
-from stackos.repositories.tracker.schema import TrackerCorrectionIntent
+from stackos.repositories.tracker.schema import TrackerCorrectionIntent, TrackerMetricDemand
 
 TrackerResponseMode = Literal["compact", "raw", "standard", "verbose"]
 AgentRole = Annotated[str, Field(pattern=r"^[a-zA-Z0-9_][a-zA-Z0-9_-]{0,159}$", strict=True)]
@@ -302,9 +302,13 @@ class TrackerGetInput(MCPInput):
             "This is intended for operator task indexes before one focused graph is loaded."
         ),
     )
+    projection: Literal["full", "ui"] = "full"
+    metric_demand: TrackerMetricDemand | None = None
 
     @model_validator(mode="after")
     def validate_task_index_scope(self) -> TrackerGetInput:
+        if self.metric_demand is not None and self.projection != "ui":
+            raise ValueError("metric_demand requires projection=ui")
         if not self.task_index_only:
             return self
         if self.include_graph:
@@ -397,6 +401,14 @@ class TrackerChangedInput(MCPInput):
     project_id: int
     since_rev: int | None = None
     limit: int = Field(default=50, ge=1, le=200)
+    projection: Literal["full", "notifications"] = Field(
+        default="full",
+        description=(
+            "notifications returns bounded task identity and before/after lifecycle/handoff "
+            "states only. Omit since_rev to baseline without historical replay; page with "
+            "next_cursor, then persist current_rev. Full history remains the default."
+        ),
+    )
     response_mode: TrackerResponseMode = Field(
         default="compact",
         description=(
@@ -611,6 +623,10 @@ class TrackerUpdateTaskPriorityInput(TrackerTaskBoardInput):
 class TrackerReorderTaskInput(TrackerTaskBoardInput):
     anchor_task_key: StrictStr = Field(min_length=1, max_length=200)
     placement: Literal["before", "after"]
+
+
+class TrackerPlaceTaskInput(TrackerTaskBoardInput):
+    board_column: Literal["backlog", "todo"]
 
 
 class TrackerUpdateTaskContentInput(MCPInput):
@@ -889,6 +905,7 @@ __all__ = [
     "TrackerNextInput",
     "TrackerPatchInput",
     "TrackerPickInput",
+    "TrackerPlaceTaskInput",
     "TrackerProjectInput",
     "TrackerRejectTaskInput",
     "TrackerReleaseInput",

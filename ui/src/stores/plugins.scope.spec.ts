@@ -29,6 +29,32 @@ function consumer(id: number) {
 beforeEach(() => setActivePinia(createPinia()))
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()); globalThis.fetch = originalFetch })
 
+it('keeps accepted Home account summaries during refresh, coalesces reads, and clears denied data', async () => {
+  const store = useStackOsCatalogStore()
+  globalThis.fetch = vi.fn(async () => json({ project_id: null, accounts: [], providers: [] })) as typeof fetch
+  await store.refreshHomeAccounts()
+  expect(store.homeAccountsLoaded).toBe(true)
+  const pending = deferred<Response>()
+  globalThis.fetch = vi.fn(() => pending.promise) as typeof fetch
+  const first = store.refreshHomeAccounts()
+  const second = store.refreshHomeAccounts()
+  expect(store.homeAccountsLoaded).toBe(true)
+  expect(store.homeAccountsLoading).toBe(true)
+  expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+  expect(vi.mocked(fetch).mock.calls[0]?.[0]).toBe('/api/v1/auth/accounts?summary_only=true')
+  pending.resolve(json(auth(null)))
+  await Promise.all([first, second])
+  globalThis.fetch = vi.fn(async () => json({ detail: 'Temporary outage' }, 503)) as typeof fetch
+  await store.refreshHomeAccounts()
+  expect(store.homeAccounts).toEqual(auth(null).accounts)
+  expect(store.homeAccountsLoaded).toBe(true)
+  globalThis.fetch = vi.fn(async () => json({ detail: 'Permission revoked' }, 403)) as typeof fetch
+  await store.refreshHomeAccounts()
+  expect(store.homeAccounts).toEqual([])
+  expect(store.homeAccountsLoaded).toBe(false)
+  expect(store.homeAccountsError).toContain('Permission revoked')
+})
+
 describe('shared catalog authorization lifetime', () => {
   function catalogResponse(input: RequestInfo | URL) {
     const url = String(input)

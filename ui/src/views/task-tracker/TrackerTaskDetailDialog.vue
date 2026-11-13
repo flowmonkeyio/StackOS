@@ -61,6 +61,7 @@ const props = withDefaults(
     contextPageInfo?: TaskExecutionContextPageInfo | null
     contextArtifactPageInfo?: TaskExecutionContextArtifactPageInfo
     contextLoading?: boolean
+    contextArtifactsLoading?: boolean
     contextError?: string | null
     activity?: TaskInspectionPageState<SchemaTaskActivityItem>
     results?: TaskInspectionPageState<SchemaTaskResultItem>
@@ -82,6 +83,7 @@ const props = withDefaults(
     contextPageInfo: null,
     contextArtifactPageInfo: () => ({}),
     contextLoading: false,
+    contextArtifactsLoading: false,
     contextError: null,
     activity: undefined,
     results: undefined,
@@ -92,6 +94,7 @@ const props = withDefaults(
 )
 
 defineEmits<{
+  (e: 'contextDemand', open: boolean): void
   (e: 'update:modelValue', value: boolean): void
   (e: 'viewDependencies', taskKey: string): void
   (e: 'openTicket', ticket: TrackerTicket): void
@@ -624,7 +627,10 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
             </li>
           </ol>
         </section>
-        <details class="border-t border-subtle pt-4">
+        <details
+          class="border-t border-subtle pt-4"
+          @toggle="$emit('contextDemand', ($event.target as HTMLDetailsElement).open)"
+        >
           <summary class="focus-ring cursor-pointer rounded-xs text-sm font-medium text-fg-muted">
             More details
           </summary>
@@ -761,6 +767,13 @@ function artifactPath(item: TaskExecutionContextArtifact): string {
               >
                 {{ contextError }}
               </UiCallout>
+              <p
+                v-if="contextArtifactsLoading"
+                class="text-xs text-fg-muted"
+                role="status"
+              >
+                Loading file previews…
+              </p>
 
               <p
                 v-if="contextLoading"

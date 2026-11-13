@@ -25,7 +25,7 @@ describe('Board local preferences', () => {
     const state: BoardFilterState = {
       clauses: [
         { field: 'text', value: ' text & spaces ' },
-        { field: 'status', operator: 'is', values: ['in-progress', 'complete'] },
+        { field: 'status', operator: 'is', values: ['in-progress', 'done'] },
         { field: 'priority', operator: 'is-not', values: ['p0', 'p2'] },
         { field: 'workflow', operator: 'is-not', value: 'engineering.delivery' },
         { field: 'assignee', operator: 'is', value: 'Agent / Reviewer' },
@@ -34,7 +34,7 @@ describe('Board local preferences', () => {
     }
     saveBoardFilters(7, state)
     expect(readBoardFilters(7)).toEqual(state)
-    expect(JSON.parse(localStorage.getItem('stackos:work-board-filters:7')!)).toEqual(state)
+    expect(JSON.parse(localStorage.getItem('stackos:work-board-filters:7')!)).toEqual({ ...state, version: 2 })
   })
 
   it.each(['{', 'null', '[]', '42', '{}', '{"clauses":null}', JSON.stringify({ clauses: [], completed: 'invented', hideEmptyColumns: false }),
@@ -75,9 +75,25 @@ describe('Board local preferences', () => {
 
   it('reconciles Complete plus None on controls and storage readback', () => {
     const hidden = updateBoardDisplay(defaultBoardFilters(), { completed: 'none' })
-    const next = updateBoardFilter(hidden, { field: 'status', operator: 'is', values: ['complete'] })
+    const next = updateBoardFilter(hidden, { field: 'status', operator: 'is', values: ['done'] })
     expect(next.completed).toBe('all')
     expect(updateBoardDisplay(next, { completed: 'none' }).completed).toBe('all')
-    expect(normalizeBoardFilters({ ...next, completed: 'none' }).completed).toBe('all')
+    expect(normalizeBoardFilters({ ...next, version: 2, completed: 'none' }).completed).toBe('all')
+  })
+  it('migrates old lifecycle cohorts without losing deferred or stopped work, then reloads column identities', () => {
+    localStorage.setItem('stackos:work-board-filters:7', JSON.stringify({ clauses: [{ field: 'status', operator: 'is', values: ['not-started', 'in-progress', 'deferred', 'complete', 'aborted', 'failed', 'skipped'] }], completed: 'none', hideEmptyColumns: true }))
+    const migrated = readBoardFilters(7)
+    expect(migrated.clauses).toEqual([{ field: 'status', operator: 'is', values: ['backlog', 'todo', 'in-progress', 'stopped', 'done', 'aborted', 'failed', 'skipped'] }])
+    expect(migrated.completed).toBe('all')
+    saveBoardFilters(7, migrated)
+    expect(readBoardFilters(7)).toEqual(migrated)
+    expect(readBoardFilters(8)).toEqual(defaultBoardFilters())
+  })
+  it('broadens ambiguous legacy exclusions so excluding nonstarted work never hides deferred work', () => {
+    const legacy = { clauses: [{ field: 'status', operator: 'is-not', values: ['not-started', 'failed'] }], completed: 'all', hideEmptyColumns: true }
+    const migrated = normalizeBoardFilters(legacy)
+    expect(migrated.clauses).toEqual([{ field: 'status', operator: 'is-not', values: ['failed'] }])
+    expect(migrated.hideEmptyColumns).toBe(true)
+    expect(normalizeBoardFilters({ ...legacy, clauses: [{ field: 'status', operator: 'is-not', values: ['not-started', 'deferred'] }] }).clauses).toEqual([{ field: 'status', operator: 'is-not', values: ['backlog'] }])
   })
 })

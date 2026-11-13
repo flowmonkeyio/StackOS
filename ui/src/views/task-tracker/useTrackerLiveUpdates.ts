@@ -23,11 +23,14 @@ export function useTrackerLiveUpdates(options: UseTrackerLiveUpdatesOptions) {
   const recentNodeTimers = new Map<string, number>()
   let unsubscribe: (() => void) | null = null
   let generation = 0
+  let connectedProject: number | null = null
 
   function restart(): void {
+    if (unsubscribe && connectedProject === projectId.value) return
     stop()
     if (!validProjectId(projectId.value)) return
     liveError.value = null
+    connectedProject = projectId.value
     unsubscribe = subscribeUsageUpdates(projectId.value, {
       usage: (updates) => options.refreshUsage?.(updates),
       resume: () => requestRefresh(),
@@ -46,6 +49,7 @@ export function useTrackerLiveUpdates(options: UseTrackerLiveUpdatesOptions) {
     generation += 1
     unsubscribe?.()
     unsubscribe = null
+    connectedProject = null
     feedState.value = { status: 'paused', receivedAt: feedState.value.receivedAt }
     for (const timer of recentNodeTimers.values()) window.clearTimeout(timer)
     recentNodeTimers.clear()

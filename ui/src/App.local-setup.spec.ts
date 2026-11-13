@@ -15,6 +15,7 @@ import {
   type SchemaTrackerAgentStatsOut,
 } from '@/api'
 import ProjectSwitcher from '@/components/ProjectSwitcher.vue'
+import { emptyDeliveryTrendsFixture } from '@/views/home/agentStatsFixtures'
 import { useProjectsStore, type Project } from '@/stores/projects'
 
 const ORIG_FETCH = globalThis.fetch
@@ -77,6 +78,8 @@ it.each([null, 7])(
           daemon_uptime_s: 10,
         })
       if (url === '/api/v1/operations/hostMcp.status/call') return json({ ok: true, items: [] })
+      if (url === '/api/v1/auth/accounts?summary_only=true')
+        return json({ accounts: [], providers: [], summary_only: true })
       if (
         url === '/api/v1/operations/project.portfolio/call' ||
         url.startsWith('/api/v1/projects?')
@@ -137,6 +140,7 @@ it.each([null, 7])(
           rows: [],
           daily: [],
           undated: emptyMetrics,
+          delivery_trends: emptyDeliveryTrendsFixture(),
         } satisfies SchemaTrackerAgentStatsOut)
       }
       if (url.startsWith('/api/v1/plugins')) return json([])

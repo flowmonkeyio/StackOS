@@ -17,6 +17,21 @@ from stackos.repositories.tracker import agent_stats as stats_projection
 from stackos.repositories.tracker.events import record_execution_change
 
 
+@pytest.fixture
+def stream_session(session, project_id, tmp_path):
+    """Workers need independent WAL connections, not per-thread memory databases."""
+    from stackos.db.connection import make_engine
+    from tests.helpers.sqlite_schema import capture_database_snapshot, restore_database_snapshot
+
+    engine = make_engine(tmp_path / "stream.db")
+    restore_database_snapshot(engine, capture_database_snapshot(session.get_bind()))
+    try:
+        with Session(engine) as reader:
+            yield reader
+    finally:
+        engine.dispose()
+
+
 @pytest.mark.parametrize(
     "mode",
     ["brief", "stream", "index", "get", "project", "global", "active-project", "active-global"],
@@ -174,6 +189,17 @@ def test_overlapping_receipt_handoff_keeps_inflight_projections_consistent(
                 else:
                     patch.setattr(stats_projection, "provisional_usage", crossing)
                 if mode == "stream":
+                    from stackos.api import context as stream_context
+
+                    original_refresh = stream_context.usage_refresh
+
+                    def worker_refresh(*args, **kwargs):
+                        nonlocal reader_thread
+                        # Keep the race hook on the actual projection reader.
+                        reader_thread = threading.get_ident()
+                        return original_refresh(*args, **kwargs)
+
+                    patch.setattr(stream_context, "usage_refresh", worker_refresh)
 
                     async def first():
                         async def disconnected():
@@ -484,8 +510,9 @@ def test_provisional_ticket_task_project_daily_groups_and_final_race(session, pr
 
 @pytest.mark.asyncio
 async def test_task_scoped_usage_stream_isolates_initial_reconnect_exit_and_receipt_updates(
-    session, project_id
+    stream_session, project_id
 ):
+    session = stream_session
     import asyncio
 
     from stackos.api.context import _timeline_stream
@@ -634,8 +661,9 @@ async def test_task_scoped_usage_stream_isolates_initial_reconnect_exit_and_rece
 
 @pytest.mark.asyncio
 async def test_usage_stream_initial_and_reconnect_replace_state_with_safe_projection(
-    session, project_id
+    stream_session, project_id
 ):
+    session = stream_session
     from stackos.api.context import _timeline_stream
 
     repo = TrackerRepository(session)
@@ -793,7 +821,7 @@ def test_native_exit_hands_usage_to_receipt_before_return_without_active_resourc
 
     def runner(*args, **kwargs):
         call = next(iter(service._active_invocations.values()))
-        call.reader = SimpleNamespace(close=close, read=lambda: None)
+        call.reader = SimpleNamespace(close=close, read=lambda: [])
         call.usage = measured(200, 8, 160)
         call.measured_at = stamp
         call.samples.append({"at": stamp, **call.usage["measured"]})
@@ -860,8 +888,9 @@ def test_native_exit_hands_usage_to_receipt_before_return_without_active_resourc
 
 @pytest.mark.asyncio
 async def test_timing_only_corrections_reach_connected_scoped_stream_without_noop_events(
-    session, project_id
+    stream_session, project_id
 ):
+    session = stream_session
     import asyncio
 
     from stackos.api.context import _timeline_stream
@@ -970,7 +999,10 @@ async def test_timing_only_corrections_reach_connected_scoped_stream_without_noo
 
 
 @pytest.mark.asyncio
-async def test_receipt_only_commit_refreshes_existing_and_reconnected_streams(session, project_id):
+async def test_receipt_only_commit_refreshes_existing_and_reconnected_streams(
+    stream_session, project_id
+):
+    session = stream_session
     import asyncio
 
     from stackos.api.context import _timeline_stream

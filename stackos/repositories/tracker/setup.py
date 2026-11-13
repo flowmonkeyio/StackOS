@@ -193,6 +193,19 @@ class TrackerSetupMixin:
     ) -> TaskTracker:
         row = self._tracker_or_none(project_id=project_id, key=key)
         if row is not None:
+            assert row.id is not None
+            lanes = self._s.exec(
+                select(TaskTrackerLane).where(TaskTrackerLane.tracker_id == row.id)
+            ).all()
+            if not any(lane.key == "backlog" for lane in lanes):
+                self._s.add(
+                    TaskTrackerLane(
+                        tracker_id=row.id,
+                        key="backlog",
+                        label="Backlog",
+                        position=max((lane.position for lane in lanes), default=-1) + 1,
+                    )
+                )
             return row
         now = _utcnow()
         row = TaskTracker(

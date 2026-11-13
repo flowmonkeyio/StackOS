@@ -127,6 +127,11 @@ describe('TrackerGraphPanel interaction and sizing', () => {
     expect(flowMocks.fitView).not.toHaveBeenCalled()
     expect(flowMocks.setCenter).toHaveBeenCalled()
 
+    flowMocks.setCenter.mockClear()
+    await wrapper.setProps({ focusNodeIds: [], primaryFocusNodeId: null, refocusKey: 'completed-large-graph' })
+    await flushPromises()
+    expect(flowMocks.setCenter).toHaveBeenCalledWith(164, 112, expect.objectContaining({ zoom: 0.82 }))
+
     await wrapper.setProps({ loading: true })
     expect(wrapper.text()).toContain('Loading selected graph…')
     expect(wrapper.find('[data-test="vue-flow"]').exists()).toBe(false)

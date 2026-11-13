@@ -33,18 +33,19 @@ const capacityControl = ref<InstanceType<typeof DeliveryCapacityControl> | null>
 const overview = useProjectOverview(projectId)
 const { project, accounts, loading, connectionsLoaded, errors } = overview
 const projects = useProjectsStore()
+const currentProject = computed(() => projects.getById(projectId.value) ?? project.value)
 const projectName = computed(() => projects.isProjectDeleted(projectId.value) ? 'Project unavailable'
-  : projects.getById(projectId.value)?.name ?? project.value?.name)
-const description = computed(() => projects.getById(projectId.value)?.domain || project.value?.domain || 'Current project work')
+  : currentProject.value?.name)
+const description = computed(() => currentProject.value?.domain || 'Current project work')
 const agents = useAgentStats(projectId)
 onMounted(() => { void agents.load() })
 const { summary: agentSummary, loading: agentsLoading, error: agentsError, filters: agentFilters } = agents
-const { running, refresh } = usePolling(overview.load, { intervalMs: 30_000 })
+const { running } = usePolling(overview.load, { intervalMs: 30_000 })
 const refreshing = ref(false)
 async function refreshAll(): Promise<void> {
   refreshing.value = true
   try {
-    await Promise.all([refresh(), setup.refresh(), agents.load(), activeTasks.value?.refresh(), capacityControl.value?.refresh()])
+    await Promise.all([overview.load(true), setup.refresh(), agents.load(), activeTasks.value?.refresh(), capacityControl.value?.refresh()])
   } finally { refreshing.value = false }
 }
 </script>

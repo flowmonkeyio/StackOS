@@ -125,6 +125,44 @@ def test_proportionate_proof_rules_reach_each_execution_and_planning_consumer() 
             assert rule in local["developer_instructions"], role
 
 
+def test_board_placement_contract_survives_combined_guidance_resolution() -> None:
+    # Contract availability alongside the independently tested proof/read rules,
+    # not a claim that phrase checks establish an agent's behavior.
+    agents = AgentPresetLoader()
+    planning = agents.describe_preset(key="stackos.sdlc.planning").preset
+    board_rule = next(
+        rule
+        for rule in planning.prompt_contract.must_do
+        if rule.startswith("Keep Board placement, lifecycle and execution distinct")
+    )
+    for role in ("planning", "delivery", "delivery-reviewer"):
+        source = agents.describe_preset(key=f"stackos.sdlc.{role}").preset
+        local = tomllib.loads((ROOT / f".codex/agents/sdlc-{role}.toml").read_text())[
+            "developer_instructions"
+        ]
+        assert board_rule in source.prompt_contract.must_do, role
+        for required in (
+            "tracker.placeTask",
+            "nonstarted Backlog/Todo placement",
+            "not cancellation",
+            "explicit resume authority",
+        ):
+            assert required in board_rule
+            assert required in local, role
+
+    skill = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
+    main_rule = next(
+        rule
+        for rule in skill.operating_contract.must_do
+        if rule.startswith("Apply the StackOS skill's Board contract")
+    )
+    assert "Placement/reorder never launches, stops, resumes, completes or aborts work" in main_rule
+    local_main = (ROOT / ".codex/orchestrator/sdlc-delivery-orchestrator.md").read_text()
+    assert "## Board Placement And Execution" in local_main
+    assert "## Focused Observation And Guidance Reads" in local_main
+    assert "Dispatch requires separate explicit" in local_main
+
+
 def test_focused_reads_reach_main_and_each_receiving_role() -> None:
     # Delivery availability/parity; the separate native rehearsal judges behavior.
     skill = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset

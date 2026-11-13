@@ -30,6 +30,37 @@ describe('StackOS catalog store auth controls', () => {
     expect(store.plugins[0].slug).toBe('engineering')
   })
 
+  it.each(['compact', 'full'])('supersedes pre-mutation %s catalog reads while coalescing the fresh read', async (kind) => {
+    const old = deferred<Response>()
+    const fresh = deferred<Response>()
+    let compactReads = 0
+    globalThis.fetch = vi.fn((input) => {
+      const url = String(input)
+      if (url === '/api/v1/plugins?project_id=1&compact=true') {
+        compactReads++
+        if (kind === 'full' && compactReads === 1) return Promise.resolve(json([plugin('finance', false)]))
+        return kind === 'compact' && compactReads === 1 ? old.promise : fresh.promise
+      }
+      if (url.endsWith('action.list/call')) return kind === 'full' ? old.promise : Promise.resolve(json({ items: [], count: 0 }))
+      return Promise.resolve(json([]))
+    }) as typeof fetch
+    const store = useStackOsCatalogStore()
+    const older = kind === 'compact' ? store.refreshPlugins(1) : store.refresh(1)
+    const newer = store.refreshPlugins(1, { silent: true, force: true })
+    const shared = store.refreshPlugins(1, { silent: true })
+    expect(compactReads).toBe(2)
+    fresh.resolve(json([plugin('finance', true)]))
+    expect(await newer).toBe(true)
+    expect(await shared).toBe(true)
+    old.resolve(json(kind === 'full' ? { items: [], count: 0 } : [plugin('finance', false)]))
+    await older
+    expect(store.enabledPlugins.map(row => row.slug)).toContain('finance')
+    expect(store.plugins.filter(row => row.enabled_for_project).map(row => row.slug)).toContain('finance')
+    expect(store.pluginProjectId).toBe(1)
+    expect(store.loading).toBe(false)
+    expect(store.catalogLoading).toBe(false)
+  })
+
   it('stores credentials through the local-admin endpoint and refreshes sanitized auth state', async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = []
     globalThis.fetch = vi.fn(async (input, init) => {

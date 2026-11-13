@@ -1,281 +1,176 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, onUpdated, ref, useId } from 'vue'
-import { BarController, BarElement, CategoryScale, Chart, LinearScale, Tooltip, type ChartOptions, type Plugin } from 'chart.js'
+import { computed, onBeforeUnmount, ref, useId } from 'vue'
+import { useUsageCanvas, type UsageCanvasFrame } from '@/composables/useUsageCanvas'
+import { useUsageFeed } from '@/composables/useUsageFeed'
+import { BarController, BarElement, CategoryScale, Chart, LinearScale, type ChartOptions } from 'chart.js'
 import { UiButton, UiButtonGroup } from '@/components/ui'
-import { activitySeries, exactUsage, formatTokens, formatUsage, usageFields, usageValue, type ActivityGroup, type ActivityView, type AgentStatsDay } from '@/lib/agentActivity'
+import { exactUsage, fieldCoverage, formatTokens, formatUsage, usageFields, usageValue, type AgentStatsDay, type AgentStatsMetrics, type UsageField } from '@/lib/agentActivity'
+import { activityDayLabel } from '@/lib/deliveryTrends'
 
-Chart.register(BarController, BarElement, CategoryScale, LinearScale, Tooltip)
-const props = withDefaults(defineProps<{ days: AgentStatsDay[]; timezone: string; global?: boolean; group?: `${ActivityGroup}` }>(), { group: 'agent' })
-const view = defineModel<ActivityView>('view', { default: 'tokens' })
-const selectedDay = ref<number | null>(null)
-const hoverDay = ref<number | null>(null)
+Chart.register(BarController, BarElement, CategoryScale, LinearScale)
+const props = defineProps<{ days: AgentStatsDay[]; totals?: AgentStatsMetrics; timezone: string }>()
+const field = defineModel<UsageField>('field', { default: 'total' })
+const selected = ref<number | null>(null)
 const canvas = ref<HTMLCanvasElement | null>(null)
+const plot = ref<HTMLElement | null>(null)
 const detailId = `daily-values-${useId()}`
 let chart: Chart<'bar'> | null = null
-let observer: MutationObserver | null = null
 let signature = ''
-const title = computed(() => view.value === 'tokens' ? 'Tokens per day' : `Tokens by ${props.group === 'model' ? 'model' : props.group === 'agent_model' ? 'agent + model' : 'agent'} per day`)
-const series = computed(() => activitySeries(props.days, view.value, props.global, props.group))
-const focused = computed(() => selectedDay.value == null ? null : props.days[selectedDay.value] ?? null)
-type DailyField = (typeof usageFields)[number]['key'] | 'total'
-const dailyFields = computed(() => [...usageFields.map(field => field.key), 'total' as const].filter(key => props.days.some(day => day.launch_attempts > 0 && dailyValue(day, key) != null)))
-const dailyLabels = Object.fromEntries([...usageFields.map(field => [field.key, field.label]), ['total', 'Total']])
-function dailyValue(day: AgentStatsDay, field: DailyField): number | null {
-  return usageValue(day, field)
-}
-function dayLabel(date: string): string {
-  return new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })
-}
-function value(index: number): number | null {
-  const values = series.value.map(item => item.values[index]).filter((amount): amount is number => amount != null)
-  return values.length ? values.reduce((sum, amount) => sum + amount, 0) : null
-}
-function incomplete(index: number): boolean { return value(index) !== usageValue(props.days[index], 'total') }
-const partial = computed(() => props.days.some((_day, index) => value(index) != null && incomplete(index)))
-function valueLabel(index: number): string { return incomplete(index) ? 'Available tokens' : 'Tokens' }
-function focusDay(index: number): void {
-  hoverDay.value = null
-  selectedDay.value = index
-  if (chart) {
-    chart.setActiveElements(series.value.map((_, datasetIndex) => ({ datasetIndex, index })))
-    chart.update('none')
-  }
-}
-function blurChart(): void {
-  hoverDay.value = null
-  selectedDay.value = null
-  if (chart) {
-    chart.setActiveElements([])
-    chart.update('none')
-  }
+const feed = useUsageFeed()
+const visible = useUsageCanvas(canvas, paint, plot, () => feed?.value.status === 'live')
+const fields = [{ key: 'total', label: 'All', token: 'accent-primary' }, ...usageFields] as const
+const values = computed<(number | null)[]>(previous => visible.value ? props.days.map(day => usageValue(day, field.value)) : previous ?? [])
+const focused = computed(() => selected.value == null ? null : props.days[selected.value] ?? null)
+const selectedField = computed(() => fields.find(item => item.key === field.value) ?? fields[0])
+function focusDay(index: number): void { selected.value = props.days.length ? index : null }
+function leavePlot(): void {
+  if (document.activeElement !== canvas.value) selected.value = null
 }
 function moveDay(event: KeyboardEvent): void {
-  const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End']
-  if (!keys.includes(event.key) || props.days.length === 0) return
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End', 'Escape'].includes(event.key)) return
   event.preventDefault()
-  const current = selectedDay.value ?? 0
-  focusDay(event.key === 'Home' ? 0 : event.key === 'End' ? props.days.length - 1 : Math.max(0, Math.min(props.days.length - 1, current + (event.key === 'ArrowRight' ? 1 : -1))))
+  if (event.key === 'Escape') { selected.value = null; return }
+  focusDay(event.key === 'Home' ? 0 : event.key === 'End' ? props.days.length - 1 : Math.max(0, Math.min(props.days.length - 1, (selected.value ?? 0) + (event.key === 'ArrowRight' ? 1 : -1))))
 }
-const totalsPlugin: Plugin<'bar'> = {
-  id: 'dailyTotals',
-  afterDatasetsDraw(instance) {
-    const { ctx, scales } = instance
-    if (!scales.x || !scales.y) return
-    ctx.save()
-    ctx.fillStyle = getComputedStyle(instance.canvas).getPropertyValue('--color-fg-strong').trim()
-    ctx.font = `600 13px ${getComputedStyle(instance.canvas).fontFamily}`
-    ctx.textAlign = 'center'
-    props.days.forEach((_day, index) => {
-      const amount = value(index)
-      if (amount != null && props.days.length <= 14)
-        ctx.fillText(formatTokens(amount), scales.x!.getPixelForValue(index), Math.max(12, scales.y!.getPixelForValue(amount) - 8))
-      const cacheIndex = series.value.findIndex(item => item.key === 'cache_read')
-      if (view.value === 'tokens' && cacheIndex >= 0) {
-        const bar = instance.getDatasetMeta(cacheIndex).data[index] as BarElement | undefined
-        const box = bar?.getProps(['x', 'y', 'base', 'width'], true)
-        const cached = series.value[cacheIndex]?.values[index]
-        if (box && box.x != null && box.y != null && cached != null && Math.abs(box.base - box.y) > 32 && box.width > 70) {
-          ctx.fillStyle = getComputedStyle(instance.canvas).getPropertyValue('--color-fg-on-accent').trim()
-          ctx.fillText(formatTokens(cached), box.x, (box.base + box.y) / 2 + 4)
-          ctx.fillStyle = getComputedStyle(instance.canvas).getPropertyValue('--color-fg-strong').trim()
-        }
-      }
-    })
-    ctx.restore()
-  },
+function hover(event: MouseEvent): void {
+  if (document.activeElement === canvas.value || !props.days.length || !chart?.scales.x) return
+  const bounds = canvas.value!.getBoundingClientRect()
+  const index = chart.scales.x.getValueForPixel(event.clientX - bounds.left)
+  selected.value = index == null ? null : Math.max(0, Math.min(props.days.length - 1, Math.round(index)))
 }
-function paint(): void {
-  if (!canvas.value) return
-  const next = JSON.stringify([props.days, props.global, props.group, view.value, document.documentElement.dataset.theme])
+function paint(): UsageCanvasFrame | void {
+  if (!canvas.value || !plot.value) return
+  const style = getComputedStyle(canvas.value)
+  const width = plot.value.clientWidth
+  const height = plot.value.clientHeight
+  const next = JSON.stringify([values.value, props.days.map(day => day.date), field.value, width, height, window.devicePixelRatio, document.documentElement.dataset.theme])
   if (chart && signature === next) return
   signature = next
-  const style = getComputedStyle(canvas.value)
   const token = (name: string) => style.getPropertyValue(`--color-${name}`).trim()
   const data = {
-    labels: props.days.map(day => dayLabel(day.date)),
-    datasets: series.value.map(item => ({
-      label: item.label, data: item.values, backgroundColor: token(item.token),
-      borderSkipped: false as const, borderRadius: 2, maxBarThickness: 180, categoryPercentage: 0.65, barPercentage: 0.65,
-    })),
+    labels: props.days.map(day => activityDayLabel(day.date)),
+    datasets: [{ label: selectedField.value.label, data: values.value, backgroundColor: token(selectedField.value.token), borderSkipped: false as const,
+      borderRadius: 3, maxBarThickness: 8, categoryPercentage: 0.8, barPercentage: 0.8 }],
   }
   const options: ChartOptions<'bar'> = {
-    responsive: true, maintainAspectRatio: false, animation: false,
-    layout: { padding: { top: 22, right: 8 } },
-    interaction: { mode: 'index', intersect: false },
+    responsive: false, maintainAspectRatio: false, animation: false, events: [], devicePixelRatio: window.devicePixelRatio || 1,
+    layout: { padding: { right: 4 } },
     scales: {
-      x: { stacked: true, grid: { display: false }, ticks: { color: token('fg-muted'), font: { family: style.fontFamily, size: 11 }, maxTicksLimit: 8 }, border: { color: token('border-default') } },
-      y: { stacked: true, beginAtZero: true, suggestedMax: Math.max(1, ...props.days.flatMap(day => usageValue(day, 'total') == null ? [] : [usageValue(day, 'total')!])), afterFit: axis => { axis.width = 88 }, grid: { color: token('border-default') }, border: { display: false }, ticks: { color: token('fg-muted'), maxTicksLimit: 4, callback: tick => formatTokens(Number(tick)).replace(/\.00([MB])$/, '$1') } },
+      x: { grid: { display: false }, ticks: { color: token('fg-muted'), font: { family: style.fontFamily, size: 10 }, maxTicksLimit: 5, maxRotation: 0 }, border: { color: token('border-default') } },
+      y: { beginAtZero: true, suggestedMax: 1, afterFit: axis => { axis.width = 45 }, grid: { color: token('border-subtle') }, border: { display: false }, ticks: { color: token('fg-muted'), maxTicksLimit: 4, font: { size: 10 }, callback: tick => formatTokens(Number(tick)).replace(/\.00([MB])$/, '$1') } },
     },
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        enabled: false,
-        external: ({ tooltip }) => {
-          if (document.activeElement === canvas.value) { hoverDay.value = null; return }
-          // Keep the panel while the pointer moves from the canvas into its
-          // scrollable values. Leaving the plot closes it.
-          if (tooltip.opacity > 0) hoverDay.value = tooltip.dataPoints[0]?.dataIndex ?? null
-        },
-      },
-    },
-    onHover: (_event, elements) => { if (document.activeElement !== canvas.value) selectedDay.value = elements[0]?.index ?? null },
+    plugins: { legend: { display: false }, tooltip: { enabled: false } },
   }
-  if (chart) { chart.data = data; chart.options = options; chart.update('none') }
-  else chart = new Chart(canvas.value, { type: 'bar', data, options, plugins: [totalsPlugin] })
+  if (chart) { chart.data = data; chart.options = options; chart.resize(width, height); chart.update('none') }
+  else { canvas.value.width = width; canvas.value.height = height; chart = new Chart(canvas.value, { type: 'bar', data, options }) }
+  return { scope: JSON.stringify([props.days.map(day => day.date), field.value, props.timezone, width, height]), geometry: JSON.stringify(values.value) }
 }
-onMounted(() => {
-  paint()
-  observer = new MutationObserver(paint)
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
-})
-onUpdated(paint)
-onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy(); chart = null })
+onBeforeUnmount(() => { chart?.destroy(); chart = null })
 </script>
 
 <template>
   <figure
+    :data-visible="visible"
+    :data-live="feed?.status === 'live'"
     class="activity-chart"
     aria-label="Daily recorded agent usage"
   >
-    <figcaption class="activity-chart__header">
-      <div>
-        <h3 class="text-lg font-semibold text-fg-strong">
-          {{ title }}
-        </h3>
-        <p class="mt-1 text-xs text-fg-muted">
-          By attempt start date · {{ timezone }}
+    <figcaption>
+      <h3 class="text-base font-semibold text-fg-strong">
+        Daily tokens
+      </h3>
+    </figcaption>
+    <UiButtonGroup
+      aria-label="Token metric"
+      class="activity-chart__metrics"
+    >
+      <UiButton
+        v-for="option in fields"
+        :key="option.key"
+        size="sm"
+        :variant="field === option.key ? 'secondary' : 'ghost'"
+        :aria-pressed="field === option.key"
+        :title="exactUsage(totals, option.key)"
+        @click="field = option.key; selected = null"
+      >
+        <span
+          v-if="option.key !== 'total'"
+          class="activity-chart__swatch"
+          :style="{ backgroundColor: `var(--color-${option.token})` }"
+          aria-hidden="true"
+        />
+        {{ option.label }} <span class="tabular-nums">{{ formatUsage(usageValue(totals, option.key)) }}</span>
+      </UiButton>
+    </UiButtonGroup>
+    <div
+      ref="plot"
+      class="activity-chart__plot"
+      @mouseleave="leavePlot"
+    >
+      <canvas
+        ref="canvas"
+        class="focus-ring"
+        role="img"
+        tabindex="0"
+        :aria-describedby="detailId"
+        :aria-label="`${selectedField.label} tokens per day. Use Left and Right arrow keys, Home or End to inspect exact daily values.`"
+        @focus="focusDay(0)"
+        @blur="selected = null"
+        @keydown="moveDay"
+        @mousemove="hover"
+      />
+      <div
+        v-if="focused"
+        :id="detailId"
+        class="activity-chart__tooltip"
+        role="tooltip"
+        aria-label="Daily usage details"
+        aria-live="polite"
+      >
+        <strong>{{ focused.date }}</strong>
+        <ul>
+          <li
+            v-for="item in usageFields"
+            :key="item.key"
+          >
+            <span
+              class="activity-chart__swatch"
+              :style="{ backgroundColor: `var(--color-${item.token})` }"
+              aria-hidden="true"
+            />
+            <span>{{ item.label }}</span><span :title="fieldCoverage(focused, item.key)">{{ formatUsage(usageValue(focused, item.key), false) }}</span>
+          </li>
+        </ul>
+        <footer>Total: {{ formatUsage(usageValue(focused, 'total'), false) }}</footer>
+        <p v-if="focused.reported_usage.input_with_unknown_cache">
+          Includes {{ formatTokens(focused.reported_usage.input_with_unknown_cache, false) }} input tokens with unknown cache split.
+        </p>
+        <p v-if="focused.coverage.usage_unavailable_attempts">
+          Usage missing for {{ focused.coverage.usage_unavailable_attempts }} attempts.
         </p>
       </div>
-      <UiButtonGroup aria-label="Chart view">
-        <UiButton
-          v-for="option in (['tokens', 'agents'] as const)"
-          :key="option"
-          size="sm"
-          :variant="view === option ? 'secondary' : 'ghost'"
-          :aria-pressed="view === option"
-          @click="view = option; selectedDay = null"
-        >
-          {{ option === 'tokens' ? 'Tokens' : 'Agents' }}
-        </UiButton>
-      </UiButtonGroup>
-    </figcaption>
-    <div class="activity-chart__body">
-      <div
-        class="activity-chart__plot"
-        @mouseleave="hoverDay = null"
-      >
-        <canvas
-          ref="canvas"
-          role="img"
-          tabindex="0"
-          :aria-describedby="detailId"
-          :aria-label="`${title}. Use Left and Right arrow keys, Home or End to inspect exact daily values, or open the daily values table.`"
-          @focus="focusDay(0)"
-          @blur="blurChart"
-          @keydown="moveDay"
-        />
-        <div
-          v-if="hoverDay != null && days[hoverDay]"
-          class="activity-chart__tooltip"
-          role="tooltip"
-          aria-label="Daily usage details"
-        >
-          <strong>{{ days[hoverDay]!.date }}</strong>
-          <ul
-            class="activity-chart__tooltip-values focus-ring"
-            aria-label="Daily series values"
-            tabindex="0"
-          >
-            <li
-              v-for="item in series"
-              :key="item.key"
-            >
-              <span
-                class="activity-chart__swatch"
-                :style="{ backgroundColor: `var(--color-${item.token})` }"
-                aria-hidden="true"
-              />
-              <span
-                class="activity-chart__tooltip-label"
-                :title="item.label"
-              >{{ item.label }}</span>
-              <span :class="{ 'text-fg-muted': item.values[hoverDay] == null }">{{ formatUsage(item.values[hoverDay], false) }}</span>
-            </li>
-          </ul>
-          <footer v-if="value(hoverDay) != null">
-            {{ valueLabel(hoverDay) }}: {{ formatTokens(value(hoverDay), false) }}
-          </footer>
-        </div>
-      </div>
-      <ul
-        class="activity-chart__legend"
-        aria-label="Chart legend"
-      >
-        <li
-          v-for="item in series"
-          :key="item.key"
-        >
-          <span
-            class="activity-chart__swatch"
-            :style="{ backgroundColor: `var(--color-${item.token})` }"
-            aria-hidden="true"
-          />
-          <span
-            class="activity-chart__legend-label"
-            :title="item.label"
-            tabindex="0"
-          >{{ item.label }}</span>
-        </li>
-      </ul>
-    </div>
-    <p
-      class="activity-chart__selection"
-      aria-hidden="true"
-    >
-      <template v-if="focused">
-        {{ dayLabel(focused.date) }} · {{ formatUsage(value(selectedDay!)) }}<template v-if="value(selectedDay!) != null">
-          tokens
-        </template><template v-if="value(selectedDay!) != null && incomplete(selectedDay!)">
-          · available measurements
-        </template>
-      </template>
-      <template v-else>
-        {{ partial ? 'Available measurements; some token details are missing.' : 'Hover a day or use arrow keys for exact values.' }}
-      </template>
-    </p>
-    <div
-      :id="detailId"
-      class="activity-chart__exact sr-only"
-      aria-live="polite"
-    >
-      <template v-if="focused">
-        <strong>{{ focused.date }} · {{ valueLabel(selectedDay!) }}: {{ formatUsage(value(selectedDay!), false) }}<template v-if="value(selectedDay!) != null"> tokens</template></strong>
-        <span
-          v-for="item in series"
-          :key="item.key"
-        >{{ item.label }}: {{ formatUsage(item.values[selectedDay!], false) }}</span>
-      </template>
-      <span v-else>Hover a bar or focus the chart and use arrow keys for exact values.</span>
+      <span
+        v-else
+        :id="detailId"
+        class="sr-only"
+      >Hover a bar or focus the chart and use arrow keys for exact values.</span>
     </div>
     <details class="activity-chart__daily-table">
-      <summary class="focus-ring cursor-pointer text-xs text-fg-muted">
-        Daily values
+      <summary class="focus-ring">
+        Daily values · {{ timezone }}
       </summary>
       <div class="activity-chart__daily-scroll">
-        <table
-          aria-label="Exact daily usage"
-          class="mt-2 w-full text-xs tabular-nums"
-        >
+        <table aria-label="Exact daily usage">
           <thead>
             <tr>
               <th scope="col">
                 Date
               </th><th
-                v-for="field in dailyFields"
-                :key="field"
+                v-for="item in fields"
+                :key="item.key"
                 scope="col"
               >
-                {{ dailyLabels[field] }}
+                {{ item.key === 'total' ? 'Total' : item.label }}
               </th>
             </tr>
           </thead>
@@ -287,15 +182,11 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy(); chart = null }
               <th scope="row">
                 {{ day.date }}
               </th><td
-                v-for="field in dailyFields"
-                :key="field"
+                v-for="item in fields"
+                :key="item.key"
+                :title="exactUsage(day, item.key)"
               >
-                <span
-                  tabindex="0"
-                  :title="exactUsage(day, field)"
-                  :aria-label="exactUsage(day, field)"
-                  :class="{ 'text-fg-muted': dailyValue(day, field) == null }"
-                >{{ formatUsage(dailyValue(day, field)) }}</span>
+                {{ formatUsage(usageValue(day, item.key), false) }}
               </td>
             </tr>
           </tbody>
@@ -306,27 +197,20 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy(); chart = null }
 </template>
 
 <style scoped>
-.activity-chart { min-width: 0; margin: 0; }
-.activity-chart__header { display: flex; align-items: start; justify-content: space-between; gap: 12px; min-height: 44px; }
-.activity-chart__plot { position: relative; height: 215px; margin-top: 12px; }
-.activity-chart__tooltip { position: absolute; z-index: 1; top: 8px; right: 8px; width: min(400px, calc(100% - 16px)); max-height: calc(100% - 16px); display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); background: var(--color-bg-surface); color: var(--color-fg-default); font-size: 12px; line-height: 18px; box-shadow: var(--shadow-md); }
-.activity-chart__tooltip strong, .activity-chart__tooltip footer { flex: none; font-weight: 600; color: var(--color-fg-strong); }
-.activity-chart__tooltip-values { min-height: 0; overflow-y: auto; scrollbar-gutter: stable; }
-.activity-chart__tooltip-values li { display: grid; grid-template-columns: 10px minmax(0, 1fr) max-content; align-items: center; gap: 6px; padding: 2px 0; font-variant-numeric: tabular-nums; }
-.activity-chart__tooltip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.activity-chart__tooltip-values li > span:last-child { white-space: nowrap; }
-.activity-chart__body { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: 227px 56px; gap: 8px; }
-.activity-chart__legend { display: flex; flex-wrap: wrap; align-content: start; gap: 4px 16px; height: 56px; margin: 0; overflow-y: auto; scrollbar-gutter: stable; color: var(--color-fg-default); font-size: 12px; }
-.activity-chart__legend li { min-width: 0; max-width: 100%; height: 24px; flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
-.activity-chart__legend-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.activity-chart__legend-label:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: -2px; }
-.activity-chart__swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
-.activity-chart__plot canvas:focus-visible { outline: 2px solid var(--color-border-focus); outline-offset: 2px; border-radius: var(--radius-xs); }
-.activity-chart__selection { height: 26px; margin: 0; padding-top: 6px; white-space: nowrap; font-size: 12px; line-height: 18px; color: var(--color-fg-muted); }
-.activity-chart__daily-table { margin-top: 4px; }
-.activity-chart__daily-scroll { max-height: 240px; overflow-y: auto; }
-table { table-layout: fixed; }
-thead { position: sticky; top: 0; background: var(--color-bg-surface); }
+.activity-chart { min-width: 0; margin: 0; padding: 16px; border: 1px solid var(--color-border-default); border-radius: var(--radius-lg); background: var(--color-bg-surface); }
+.activity-chart__metrics { display: flex; margin-top: 8px; width: 100%; }
+.activity-chart__metrics :deep(button) { min-width: 0; flex: 1; padding: 4px 6px; gap: 5px; font-size: 11px; white-space: nowrap; }
+.activity-chart__plot { position: relative; height: 200px; margin-top: 16px; }
+.activity-chart__plot canvas { display: block; width: 100%; height: 100%; }
+.activity-chart__tooltip { position: absolute; z-index: var(--z-tooltip); top: 4px; right: 4px; width: 210px; max-width: calc(100% - 8px); display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm); background: var(--color-bg-surface); color: var(--color-fg-default); font-size: 11px; line-height: 16px; box-shadow: var(--shadow-md); }
+.activity-chart__tooltip strong, .activity-chart__tooltip footer { font-weight: 600; color: var(--color-fg-strong); }
+.activity-chart__tooltip li { display: grid; grid-template-columns: 8px minmax(0, 1fr) max-content; align-items: center; gap: 6px; padding: 2px 0; font-variant-numeric: tabular-nums; }
+.activity-chart__tooltip footer { border-top: 1px solid var(--color-border-default); padding-top: 4px; text-align: right; }
+.activity-chart__swatch { display: inline-block; width: 7px; height: 7px; border-radius: 2px; flex: none; }
+.activity-chart__daily-table { margin-top: 8px; color: var(--color-fg-muted); font-size: 10px; line-height: 18px; }
+.activity-chart__daily-table summary { cursor: pointer; }
+.activity-chart__daily-scroll { max-height: 240px; overflow: auto; }
+table { width: 100%; font-variant-numeric: tabular-nums; }
 th, td { text-align: right; padding: 6px 4px; border-bottom: 1px solid var(--color-border-subtle); white-space: nowrap; }
 th:first-child { text-align: left; }
 </style>

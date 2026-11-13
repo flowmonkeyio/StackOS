@@ -4,6 +4,7 @@ import { UiButton, UiConfirmDialog, UiPageHeader, UiPageShell, UiSegmentedContro
 import { isDesktopShell } from '@/lib/desktop'
 import { GETTING_STARTED_URL } from '@/lib/externalLinks'
 import { useStackOsCatalogStore } from '@/stores/plugins'
+import { useProjectsStore } from '@/stores/projects'
 import ActiveTaskList from './home/ActiveTaskList.vue'
 import DeliveryCapacityControl from './home/DeliveryCapacityControl.vue'
 import HomeConnectionsSection from './home/HomeConnectionsSection.vue'
@@ -18,7 +19,8 @@ const repairOpen = ref(false)
 const activeTasks = ref<InstanceType<typeof ActiveTaskList> | null>(null)
 const capacityControl = ref<InstanceType<typeof DeliveryCapacityControl> | null>(null)
 const catalog = useStackOsCatalogStore()
-const accounts = computed(() => catalog.globalAccountsStatus?.accounts ?? [])
+const projects = useProjectsStore()
+const accounts = computed(() => catalog.homeAccounts)
 const agents = useAgentStats()
 const usageVisibility = ref<boolean | null>(true)
 function setUsageVisibility(value: string | number): void {
@@ -35,14 +37,14 @@ onMounted(() => {
   void agents.load()
   void loadHealth()
   void loadHostStatuses()
-  void catalog.refreshAccounts()
+  void catalog.refreshHomeAccounts()
 })
 
 const refreshing = ref(false)
 async function refresh(): Promise<void> {
   refreshing.value = true
   try {
-    await Promise.all([activeTasks.value?.refresh(), capacityControl.value?.refresh(), catalog.refreshAccounts(), agents.load(), loadHealth(), loadHostStatuses()])
+    await Promise.all([projects.loadAll(), activeTasks.value?.refresh(), capacityControl.value?.refresh(), catalog.refreshHomeAccounts(), agents.load(), loadHealth(), loadHostStatuses()])
   } finally { refreshing.value = false }
 }
 function confirmRepair(): void {
@@ -63,7 +65,7 @@ function confirmRepair(): void {
           variant="secondary"
           size="sm"
           icon-left="refresh"
-          :loading="refreshing || catalog.accountsLoading || agentsLoading"
+          :loading="refreshing || catalog.homeAccountsLoading || agentsLoading"
           @click="refresh"
         >
           Refresh
@@ -118,9 +120,9 @@ function confirmRepair(): void {
     </AgentActivitySection>
     <HomeConnectionsSection
       :accounts="accounts"
-      :loading="catalog.accountsLoading"
-      :error="catalog.accountsError"
-      :loaded="catalog.globalAccountsStatus !== null"
+      :loading="catalog.homeAccountsLoading"
+      :error="catalog.homeAccountsError"
+      :loaded="catalog.homeAccountsLoaded"
     />
     <UiConfirmDialog
       v-model="repairOpen"

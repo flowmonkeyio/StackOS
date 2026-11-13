@@ -3,17 +3,26 @@
 import json
 from collections import defaultdict
 from collections.abc import Iterable
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
+from functools import cached_property, lru_cache
 from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import select, true
+from sqlalchemy import or_, select, true
 from sqlmodel import Session, col
 
-from stackos.db.models import Project, TaskTracker, TrackerTask, TrackerTicket
+from stackos.db.models import (
+    Project,
+    TaskTracker,
+    TrackerReceiptProjection,
+    TrackerTask,
+    TrackerTicket,
+)
 from stackos.host_mcp import service as host_service
 from stackos.host_mcp.result import usage_snapshot
 from stackos.host_mcp.service import ProvisionalUsage, active_execution, provisional_usage
+from stackos.repositories.tracker.receipt_projection import decode_receipt, receipt_input
 from stackos.repositories.tracker.schema import (
     AgentStatsCoverageOut,
     AgentStatsDayOut,
@@ -23,6 +32,8 @@ from stackos.repositories.tracker.schema import (
     AgentStatsUsageOut,
     ExecutionIdentityOut,
     TrackerAgentStatsOut,
+    TrackerMetricDemand,
+    UsageIntervalOut,
     UsageSampleOut,
     WorkDurationOut,
 )
@@ -81,13 +92,13 @@ def invocation_timing_facts(evidence: Any) -> dict[tuple[int | None, str], tuple
     return facts
 
 
-def work_duration(
+def work_intervals(
     sources: Iterable[tuple[str, Any]],
     *,
     live_calls: list[dict[str, Any]],
     observed_at: datetime,
-) -> WorkDurationOut:
-    """Union ticket-local deduplicated receipts; missing data is never zero-filled.
+) -> tuple[list[tuple[datetime, datetime]], dict[str, ExecutionIdentityOut], set[str], int]:
+    """Validate ticket-local deduplicated intervals; missing data is never zero-filled.
 
     Live state must match the current receipt's actual identity. Persisted
     execution/usage observations alone cannot manufacture an open endpoint.
@@ -172,9 +183,34 @@ def work_duration(
             if reason:
                 missing += 1
                 issues.add(reason)
+    return intervals, live, issues, missing
+
+
+def union_intervals(
+    intervals: Iterable[tuple[datetime, datetime]],
+) -> list[tuple[datetime, datetime]]:
+    result: list[tuple[datetime, datetime]] = []
+    for start, end in sorted(intervals):
+        if result and start <= result[-1][1]:
+            result[-1] = result[-1][0], max(result[-1][1], end)
+        else:
+            result.append((start, end))
+    return result
+
+
+def work_duration(
+    sources: Iterable[tuple[str, Any]],
+    *,
+    live_calls: list[dict[str, Any]],
+    observed_at: datetime,
+) -> WorkDurationOut:
+    """Project the union using the same interval validator as scoped reporting."""
+    intervals, live, issues, missing = work_intervals(
+        sources, live_calls=live_calls, observed_at=observed_at
+    )
     total = 0.0
     endpoint = None
-    for start, end in sorted(intervals):
+    for start, end in union_intervals(intervals):
         total += max(0, (end - max(start, endpoint or start)).total_seconds())
         endpoint = max(endpoint or end, end)
     if not intervals and not missing:
@@ -243,6 +279,20 @@ def _eligible(receipt: dict[str, Any]) -> bool:
     )
 
 
+def classification_known(receipt: dict[str, Any]) -> bool:
+    # A positively fenced invocation has no validated decision. Other explicit
+    # nulls still mean failed validation, not an inferred cancellation.
+    if receipt.get("validated_outcome") is None and receipt.get("cancelled") is True:
+        return False
+    role = receipt.get("selected_role")
+    return (
+        isinstance(role, str)
+        and bool(role)
+        and "validated_outcome" in receipt
+        and receipt.get("validated_outcome") in (None, "success", "repair", "blocked", "failed")
+    )
+
+
 def _measured(receipt: dict[str, Any]) -> dict[str, Any] | None:
     usage = receipt.get("usage")
     if (
@@ -307,24 +357,55 @@ def _last_execution(receipts: list[dict[str, Any]]) -> ExecutionIdentityOut | No
     return max(candidates, key=lambda pair: pair[0])[1] if candidates else None
 
 
-def _history(receipts: list[dict[str, Any]]) -> list[UsageSampleOut]:
+@dataclass
+class ReceiptFact:
+    """One immutable-by-convention normalized contribution, shared by read projections."""
+
+    receipt: dict[str, Any]
+    measured: dict[str, Any] | None
+    eligible: bool
+
+    @cached_property
+    def events(self) -> list[tuple[datetime, dict[str, Any], UsageIntervalOut]] | None:
+        return _receipt_events(self)
+
+
+@lru_cache(maxsize=8192)
+def _normalized_receipt(source_revision: str, ticket_key: str | None) -> ReceiptFact:
+    receipt = {**decode_receipt(source_revision)}
+    if ticket_key is not None:
+        receipt["ticket_key"] = ticket_key
+    return ReceiptFact(receipt, _measured(receipt), _eligible(receipt))
+
+
+def _fact(receipt: dict[str, Any] | ReceiptFact) -> ReceiptFact:
+    if isinstance(receipt, ReceiptFact):
+        return receipt
+    source = json.dumps(receipt_input(receipt), sort_keys=True, separators=(",", ":"))
+    return _normalized_receipt(source, receipt.get("ticket_key"))
+
+
+def _receipt_events(
+    fact: ReceiptFact,
+) -> list[tuple[datetime, dict[str, Any], UsageIntervalOut]] | None:
     """Replay observations once per receipt, replacing its cumulative contribution.
 
     A receipt's first retained checkpoint includes its earlier usage. Missing
     checkpoints create no zero prefix. Equal timestamps are one observation of
     the combined scope, independent of receipt/finalization order.
     """
-    events: dict[datetime, dict[int, dict[str, Any]]] = defaultdict(dict)
-    for index, receipt in enumerate(receipts):
-        if not _eligible(receipt):
-            continue
-        final = _measured(receipt)
-        if final is None:
-            continue
+    events = []
+    receipt = fact.receipt
+    if fact.eligible and fact.measured is not None:
+        final = fact.measured
         live = (receipt.get("execution") or {}).get("live_usage") or {}
-        final_at = _instant(receipt.get("finished_at")) or _instant(live.get("measured_at"))
+        final_at = _instant(live.get("measured_at")) or _instant(receipt.get("finished_at"))
+        if _measured({"usage": live.get("usage")}) != final:
+            final_at = _instant(receipt.get("finished_at")) or final_at
         points = live.get("samples")
-        dated = {}
+        dated: dict[datetime, dict[str, Any]] = {}
+        sources: dict[datetime, str | None] = {}
+        conflicts: set[datetime] = set()
         for point in points[-120:] if isinstance(points, list) else []:
             if not isinstance(point, dict):
                 continue
@@ -332,118 +413,359 @@ def _history(receipts: list[dict[str, Any]]) -> list[UsageSampleOut]:
             measured = _measured(
                 {"usage": {"unit": "tokens", "status": "measured", "measured": point}}
             )
-            if (
-                at is not None
-                and (final_at is None or at <= final_at)
-                and measured is not None
-                and measured["input"] <= final["input"]
-                and measured["output"] <= final["output"]
-            ):
+            if at is not None and (final_at is None or at <= final_at) and measured is not None:
+                if at in dated and dated[at] != measured:
+                    conflicts.add(at)
                 dated[at] = measured
+                sources[at] = point.get("source", "native")
         if final is not None and final_at is not None:
+            if dated.get(final_at) != final:
+                sources[final_at] = "final"
             dated[final_at] = final
         if final is not None and not dated:
             # A legacy total without an observation time cannot be placed on a
             # lifetime timeline. Keep the numbers; do not draw a narrower scope.
+            return None
+        previous: tuple[datetime, dict[str, Any]] | None = None
+        for at, measured in sorted(dated.items()):
+            # Pair optional detail before differencing. A newly available cache
+            # split is coverage, not newly consumed non-cache Input.
+            values = {
+                **measured,
+                "remaining_input": (
+                    measured["input"] - measured["cache_read"]
+                    if measured.get("cache_read") is not None
+                    else None
+                ),
+            }
+            current_values = values
+            kind: Literal["baseline", "checkpoint", "batched", "reset"] = "baseline"
+            start_at = None
+            if previous is not None:
+                prior_at, prior = previous
+                start_at = prior_at.isoformat()
+                kind = "checkpoint"
+                if (at - prior_at).total_seconds() > 60 or sources.get(at) == "final":
+                    kind = "batched"
+                if at in conflicts or any(
+                    measured[key] < prior[key] for key in ("input", "output", "total")
+                ):
+                    kind = "reset"
+                values = {
+                    key: value - prior[key]
+                    if kind != "reset"
+                    and value is not None
+                    and prior.get(key) is not None
+                    and value >= prior[key]
+                    else None
+                    for key, value in values.items()
+                }
+                if kind != "reset":
+                    delta = _measured(
+                        {"usage": {"unit": "tokens", "status": "measured", "measured": values}}
+                    )
+                    assert delta is not None
+                    values = {
+                        **delta,
+                        "remaining_input": (
+                            delta["input"] - delta["cache_read"]
+                            if delta.get("cache_read") is not None
+                            else None
+                        ),
+                    }
+            if at in conflicts:
+                kind = "reset"
+                values = {key: None for key in values}
+            events.append((at, measured, UsageIntervalOut(kind=kind, start_at=start_at, **values)))
+            previous = None if at in conflicts else (at, current_values)
+    return events
+
+
+def _history(receipts: list[ReceiptFact]) -> list[UsageSampleOut]:
+    events: dict[datetime, dict[int, dict[str, Any]]] = defaultdict(dict)
+    intervals: dict[datetime, list[UsageIntervalOut]] = defaultdict(list)
+    for index, receipt in enumerate(receipts):
+        points = receipt.events
+        if points is None:
             return []
-        for at, measured in dated.items():
+        for at, measured, interval in points:
             events[at][index] = measured
+            intervals[at].append(interval.model_copy(deep=True))
     current: dict[int, dict[str, Any]] = {}
+    fields = ("input", "output", "total", "cache_read", "cache_write", "reasoning")
+    sums = dict.fromkeys(fields, 0)
+    known = dict.fromkeys(fields, 0)
+    remaining = 0
     samples = []
     ordered = sorted(events.items())
     for position, (at, updates) in enumerate(ordered):
-        current.update(updates)
+        # Replace changed contributions instead of summing every retained
+        # invocation again at each checkpoint of the combined timeline.
+        for index, measured in updates.items():
+            for sign, values in ((-1, current.get(index)), (1, measured)):
+                if values is None:
+                    continue
+                for key in fields:
+                    if values.get(key) is not None:
+                        sums[key] += sign * values[key]
+                        known[key] += sign
+                if values.get("cache_read") is not None:
+                    remaining += sign * (values["input"] - values["cache_read"])
+            current[index] = measured
         if position < len(ordered) - 120:
             continue
-        totals = summarize_receipts(
-            [
-                {"usage": {"unit": "tokens", "status": "measured", "measured": measured}}
-                for measured in current.values()
-            ]
-        ).reported_usage
+        sample_values: dict[str, Any] = {key: sums[key] if known[key] else None for key in fields}
         samples.append(
             UsageSampleOut(
-                at=at.isoformat(), **totals.model_dump(exclude={"unit", "input_with_unknown_cache"})
+                at=at.isoformat(),
+                intervals=intervals[at],
+                **sample_values,
+                remaining_input=remaining if known["cache_read"] else None,
             )
         )
     return samples[-120:]
 
 
+class ReceiptMetrics:
+    """Add normalized facts to multiple requested buckets in one source pass."""
+
+    def __init__(self) -> None:
+        self.total = self.measured_count = self.classified = self.rejects = 0
+        self.usage = dict.fromkeys(
+            ("input", "output", "total", "cache_read", "cache_write", "reasoning"),
+            0,
+        )
+        self.known = dict.fromkeys(self.usage, 0)
+        self.remaining = self.unknown_cache_input = 0
+        self.review_outcomes: dict[str, int] = defaultdict(int)
+
+    def add(self, fact: ReceiptFact) -> None:
+        receipt = fact.receipt
+        if not fact.eligible:
+            return
+        self.total += 1
+        measured = fact.measured
+        if measured is not None:
+            self.measured_count += 1
+            for key in self.usage:
+                if measured[key] is not None:
+                    self.usage[key] += measured[key]
+                    self.known[key] += 1
+            if measured["cache_read"] is not None:
+                self.remaining += measured["input"] - measured["cache_read"]
+            else:
+                self.unknown_cache_input += measured["input"]
+        role = receipt.get("selected_role")
+        outcome = receipt.get("validated_outcome")
+        if classification_known(receipt):
+            self.classified += 1
+            self.rejects += int(role == "review_agent" and outcome == "repair")
+            if role == "review_agent":
+                self.review_outcomes[outcome or "validation_failed"] += 1
+
+    def output(self) -> AgentStatsMetricsOut:
+        return AgentStatsMetricsOut(
+            launch_attempts=self.total,
+            recorded_reviewer_rejects=self.rejects,
+            review_outcomes=dict(self.review_outcomes),
+            reported_usage=AgentStatsUsageOut.model_validate(
+                {
+                    **{
+                        key: value if self.known[key] or not self.total else None
+                        for key, value in self.usage.items()
+                    },
+                    "remaining_input": self.remaining
+                    if self.known["cache_read"] or not self.total
+                    else None,
+                    "input_with_unknown_cache": self.unknown_cache_input
+                    if self.measured_count or not self.total
+                    else None,
+                }
+            ),
+            coverage=AgentStatsCoverageOut(
+                usage_measured_attempts=self.measured_count,
+                usage_unavailable_attempts=self.total - self.measured_count,
+                classification_known_attempts=self.classified,
+                classification_unknown_attempts=self.total - self.classified,
+                usage_status=_coverage(self.measured_count, self.total),
+                classification_status=_coverage(self.classified, self.total),
+                fields={
+                    key: AgentStatsFieldCoverageOut(
+                        measured_attempts=known,
+                        unavailable_attempts=self.total - known,
+                        status=_coverage(known, self.total),
+                    )
+                    for key, known in self.known.items()
+                },
+            ),
+        )
+
+
 def summarize_receipts(
-    receipts: Iterable[dict[str, Any]], *, include_history: bool = False
+    receipts: Iterable[dict[str, Any] | ReceiptFact], *, include_history: bool = False
 ) -> AgentStatsMetricsOut:
     """Summarize deduplicated ticket receipts for every statistics projection."""
-    receipts = list(receipts)
-    total = measured_count = classified = rejects = 0
-    fields = ("input", "output", "total", "cache_read", "cache_write", "reasoning")
-    usage = dict.fromkeys(fields, 0)
-    known = dict.fromkeys(fields, 0)
-    remaining = unknown_cache_input = 0
-    review_outcomes: dict[str, int] = defaultdict(int)
-    for receipt in receipts:
-        if not _eligible(receipt):
-            continue
-        total += 1
-        measured = _measured(receipt)
-        if measured is not None:
-            measured_count += 1
-            for key in usage:
-                if measured[key] is not None:
-                    usage[key] += measured[key]
-                    known[key] += 1
-            if measured["cache_read"] is not None:
-                remaining += measured["input"] - measured["cache_read"]
-            else:
-                unknown_cache_input += measured["input"]
-        role = receipt.get("selected_role")
-        # A fenced invocation has no validated decision. Keep its usage/attempt,
-        # without inventing a quality failure or inferring cancellation from null.
-        outcome = receipt.get("validated_outcome")
-        if outcome is None and receipt.get("cancelled") is True:
-            continue
-        # Other explicit nulls record failed validation; absence is legacy/unfinished.
-        if (
-            isinstance(role, str)
-            and bool(role)
-            and "validated_outcome" in receipt
-            and outcome in (None, "success", "repair", "blocked", "failed")
-        ):
-            classified += 1
-            rejects += int(role == "review_agent" and outcome == "repair")
-            if role == "review_agent":
-                review_outcomes[outcome or "validation_failed"] += 1
-    return AgentStatsMetricsOut(
-        samples=_history(receipts) if include_history else [],
-        last_execution=_last_execution(receipts) if include_history else None,
-        launch_attempts=total,
-        recorded_reviewer_rejects=rejects,
-        review_outcomes=dict(review_outcomes),
-        reported_usage=AgentStatsUsageOut.model_validate(
-            {
-                **{key: usage[key] if known[key] or not total else None for key in fields},
-                "remaining_input": remaining if known["cache_read"] or not total else None,
-                "input_with_unknown_cache": unknown_cache_input
-                if measured_count or not total
-                else None,
-            }
-        ),
-        coverage=AgentStatsCoverageOut(
-            usage_measured_attempts=measured_count,
-            usage_unavailable_attempts=total - measured_count,
-            classification_known_attempts=classified,
-            classification_unknown_attempts=total - classified,
-            usage_status=_coverage(measured_count, total),
-            classification_status=_coverage(classified, total),
-            fields={
-                key: AgentStatsFieldCoverageOut(
-                    measured_attempts=known[key],
-                    unavailable_attempts=total - known[key],
-                    status=_coverage(known[key], total),
+    facts = [_fact(receipt) for receipt in receipts]
+    metrics = ReceiptMetrics()
+    for fact in facts:
+        metrics.add(fact)
+    output = metrics.output()
+    if include_history:
+        output.samples = _history(facts)
+        output.last_execution = _last_execution([fact.receipt for fact in facts])
+    return output
+
+
+@dataclass
+class TicketReceipts:
+    task_id: int
+    project_id: int
+    key: str
+    task_key: str
+    evidence: dict[str, Any]
+    receipts: list[ReceiptFact]
+    tracker_id: int
+    durable_receipts: list[ReceiptFact]
+
+
+class ReceiptProjection:
+    """One request's fresh scope, provisional snapshot and normalized receipt inventory."""
+
+    def __init__(
+        self,
+        session: Session,
+        *,
+        provisional: ProvisionalUsage | None = None,
+        timing_snapshot: list[dict[str, Any]] | None = None,
+    ):
+        self.session = session
+        # Copy live state before fresh scalar SQL, preserving native-exit handoff.
+        self.provisional = provisional_usage() if provisional is None else provisional
+        self.timing = (
+            host_service.invocation_timings() if timing_snapshot is None else timing_snapshot
+        )
+        self.tickets: dict[int, TicketReceipts] = {}
+        self.task_scopes: set[tuple[int | None, int]] = set()
+        self.summaries: dict[tuple[int, ...], AgentStatsMetricsOut] = {}
+
+    def load(
+        self,
+        *,
+        task_ids: set[int] | None = None,
+        ticket_ids: set[int] | None = None,
+        tracker_id: int | None = None,
+    ) -> None:
+        missing_tasks = {tid for tid in task_ids or () if (tracker_id, tid) not in self.task_scopes}
+        missing_tickets = (ticket_ids or set()) - self.tickets.keys()
+        if not missing_tasks and not missing_tickets:
+            return
+        table = TrackerReceiptProjection
+        statement = (
+            select(  # type: ignore[call-overload]
+                TrackerTicket.id,
+                TrackerTicket.task_id,
+                TrackerTicket.project_id,
+                TrackerTicket.key,
+                TrackerTask.key,
+                table.attempt,
+                table.phase,
+                table.current,
+                table.receipt_json,
+                table.inventory,
+                table.timing,
+                TrackerTicket.tracker_id,
+            )
+            .join(TrackerTask, col(TrackerTask.id) == col(TrackerTicket.task_id))
+            .outerjoin(
+                table,
+                col(table.ticket_id) == col(TrackerTicket.id),
+            )
+            .where(
+                or_(
+                    col(TrackerTicket.task_id).in_(missing_tasks),
+                    col(TrackerTicket.id).in_(missing_tickets),
                 )
-                for key in fields
-            },
-        ),
-    )
+            )
+        )
+        if tracker_id is not None:
+            statement = statement.where(col(TrackerTicket.tracker_id) == tracker_id)
+        rows = self.session.execute(statement.order_by(TrackerTicket.id, table.position)).all()
+        ids = {row[0] for row in rows} - self.tickets.keys()
+        evidence: dict[int, dict[str, Any]] = {tid: {"automatic_delivery": {}} for tid in ids}
+        archives: dict[int, dict[int, dict[str, Any]]] = defaultdict(dict)
+        usage: dict[int, list[ReceiptFact]] = defaultdict(list)
+        durable: dict[int, list[ReceiptFact]] = defaultdict(list)
+        if ids:
+            for (
+                tid,
+                _task,
+                pid,
+                key,
+                _task_key,
+                attempt,
+                phase,
+                current,
+                source,
+                inventory,
+                timing,
+                _tracker,
+            ) in rows:
+                if tid not in ids or source is None:
+                    continue
+                # Current/archived object identity is part of work_duration's
+                # ownership check, even when their projected values are equal.
+                receipt = dict(decode_receipt(source))
+                if inventory == "usage":
+                    durable_fact = _normalized_receipt(source, key)
+                    durable[tid].append(durable_fact)
+                    if current and (pid, key) in self.provisional:
+                        selected = provisional_receipt(
+                            pid,
+                            key,
+                            {
+                                "automatic_delivery": {
+                                    "attempt": attempt or None,
+                                    phase: receipt,
+                                }
+                            },
+                            self.provisional,
+                        )
+                        usage[tid].extend(_fact({**r, "ticket_key": key}) for r in selected)
+                    else:
+                        usage[tid].append(durable_fact)
+                if not timing:
+                    continue
+                automatic = evidence[tid]["automatic_delivery"]
+                if current:
+                    automatic["attempt"] = attempt or None
+                    automatic[phase] = receipt
+                else:
+                    occurrence = archives[tid].setdefault(attempt, {"attempt": attempt or None})
+                    occurrence[phase] = receipt
+            for tid in ids:
+                evidence[tid]["automatic_delivery"]["attempts"] = list(archives[tid].values())
+        for tid, task_id, project_id, key, task_key, *tail in rows:
+            if tid in self.tickets:
+                continue
+            source = evidence[tid]
+            self.tickets[tid] = TicketReceipts(
+                task_id,
+                project_id,
+                key,
+                task_key,
+                source,
+                usage[tid],
+                tail[-1],
+                durable[tid],
+            )
+        self.task_scopes.update((tracker_id, tid) for tid in missing_tasks)
+
+    def metrics(self, receipts: list[ReceiptFact]) -> AgentStatsMetricsOut:
+        identity = tuple(id(receipt) for receipt in receipts)
+        if identity not in self.summaries:
+            self.summaries[identity] = summarize_receipts(receipts, include_history=True)
+        # Consumers may mutate their output; never expose a cached mutable model.
+        return self.summaries[identity].model_copy(deep=True)
 
 
 def query_task_agent_stats(
@@ -455,35 +777,28 @@ def query_task_agent_stats(
     work_durations: dict[int, WorkDurationOut] | None = None,
     task_keys: dict[int, str] | None = None,
     timing_snapshot: list[dict[str, Any]] | None = None,
+    projection: ReceiptProjection | None = None,
 ) -> dict[int, AgentStatsMetricsOut]:
     """Batch whole-task totals, independent of visible tickets or graph filters."""
     if not task_ids:
         return {}
-    if provisional is None:
-        provisional = provisional_usage()
-    if work_durations is not None and timing_snapshot is None:
-        timing_snapshot = host_service.invocation_timings()
-    receipts_by_task: dict[int, list[dict[str, Any]]] = defaultdict(list)
+    projection = projection or ReceiptProjection(
+        session,
+        provisional=provisional,
+        timing_snapshot=timing_snapshot,
+    )
+    projection.load(task_ids=task_ids, tracker_id=tracker_id)
+    receipts_by_task: dict[int, list[ReceiptFact]] = defaultdict(list)
     duration_sources: dict[int, list[tuple[str, Any]]] = defaultdict(list)
     projects: dict[int, int] = {}
-    statement = select(
-        col(TrackerTicket.task_id),
-        col(TrackerTicket.project_id),
-        col(TrackerTicket.key),
-        col(TrackerTicket.completion_evidence_json),
-    ).where(
-        col(TrackerTicket.tracker_id) == tracker_id if tracker_id is not None else true(),
-        col(TrackerTicket.task_id).in_(task_ids),
-    )
-    rows = session.execute(statement).all()
-    for task_id, project_id, ticket_key, evidence in rows:
-        duration_sources[task_id].append((ticket_key, evidence))
-        projects[task_id] = project_id
+    for ticket in projection.tickets.values():
+        task_id = ticket.task_id
+        if task_id not in task_ids or (tracker_id is not None and ticket.tracker_id != tracker_id):
+            continue
+        duration_sources[task_id].append((ticket.key, ticket.evidence))
+        projects[task_id] = ticket.project_id
         # Deduplication is ticket-local; never add parent/group subtotals.
-        receipts_by_task[task_id].extend(
-            {**receipt, "ticket_key": ticket_key}
-            for receipt in provisional_receipt(project_id, ticket_key, evidence, provisional)
-        )
+        receipts_by_task[task_id].extend(ticket.receipts)
     if work_durations is not None:
         # Share the fresh scalar receipt read with usage, but never its
         # token eligibility filter or provisional usage substitutions.
@@ -493,16 +808,13 @@ def query_task_agent_stats(
                 duration_sources[task_id],
                 live_calls=[
                     call
-                    for call in timing_snapshot or []
+                    for call in projection.timing
                     if call.get("project_id") == projects.get(task_id)
                     and call.get("task_key") == (task_keys or {}).get(task_id)
                 ],
                 observed_at=observed_at,
             )
-    return {
-        task_id: summarize_receipts(receipts_by_task[task_id], include_history=True)
-        for task_id in task_ids
-    }
+    return {task_id: projection.metrics(receipts_by_task[task_id]) for task_id in task_ids}
 
 
 def query_ticket_agent_stats(
@@ -512,43 +824,31 @@ def query_ticket_agent_stats(
     provisional: ProvisionalUsage | None = None,
     work_durations: dict[int, WorkDurationOut] | None = None,
     timing_snapshot: list[dict[str, Any]] | None = None,
+    projection: ReceiptProjection | None = None,
 ) -> dict[int, AgentStatsMetricsOut]:
     """Fresh scalar evidence avoids stale ORM rows loaded before native exit."""
     if not ticket_ids:
         return {}
-    if provisional is None:
-        provisional = provisional_usage()
-    if work_durations is not None and timing_snapshot is None:
-        timing_snapshot = host_service.invocation_timings()
-    statement = (
-        select(
-            col(TrackerTicket.id),
-            col(TrackerTicket.project_id),
-            col(TrackerTicket.key),
-            col(TrackerTicket.completion_evidence_json),
-            col(TrackerTask.key),
-        )
-        .join(TrackerTask, col(TrackerTask.id) == col(TrackerTicket.task_id))
-        .where(col(TrackerTicket.id).in_(ticket_ids))
+    projection = projection or ReceiptProjection(
+        session,
+        provisional=provisional,
+        timing_snapshot=timing_snapshot,
     )
-    rows = session.execute(statement).all()
+    projection.load(ticket_ids=ticket_ids)
     observed_at = datetime.now(UTC)
     metrics = {}
-    for ticket_id, project_id, key, evidence, task_key in rows:
-        metrics[ticket_id] = summarize_receipts(
-            [
-                {**receipt, "ticket_key": key}
-                for receipt in provisional_receipt(project_id, key, evidence, provisional)
-            ],
-            include_history=True,
-        )
+    for ticket_id, ticket in projection.tickets.items():
+        if ticket_id not in ticket_ids:
+            continue
+        metrics[ticket_id] = projection.metrics(ticket.receipts)
         if work_durations is not None:
             work_durations[ticket_id] = work_duration(
-                [(key, evidence)],
+                [(ticket.key, ticket.evidence)],
                 live_calls=[
                     call
-                    for call in timing_snapshot or []
-                    if call.get("project_id") == project_id and call.get("task_key") == task_key
+                    for call in projection.timing
+                    if call.get("project_id") == ticket.project_id
+                    and call.get("task_key") == ticket.task_key
                 ],
                 observed_at=observed_at,
             )
@@ -565,13 +865,48 @@ def usage_refresh(
     calls: list[dict[str, Any]] | None,
     *,
     task_key: str | None = None,
+    metric_demand: TrackerMetricDemand | None = None,
+    projection: ReceiptProjection | None = None,
 ) -> dict[str, Any]:
     """Safe initial/reconnect snapshot, then minimal affected Work projections."""
+    if metric_demand is not None:
+        if task_key is not None:
+            from stackos.repositories.base import ValidationError
+
+            raise ValidationError("UI metric demand uses complete project scope")
+        from stackos.repositories.tracker import TrackerRepository
+        from stackos.repositories.tracker.ui_projection import ui_snapshot
+
+        snapshot = ui_snapshot(
+            TrackerRepository(session),
+            project_id=project_id,
+            task_key=task_key,
+            task_index_only=True,
+            include_graph=False,
+            task_statuses=None,
+            workflow_key=None,
+            demand=metric_demand,
+            receipt_projection=projection,
+        )
+        return {
+            "projection": "ui",
+            "scope_complete": True,
+            "metric_scope": "demand",
+            "project_id": project_id,
+            "rev": snapshot.tracker.rev,
+            "metric_demand": metric_demand.model_dump(mode="json"),
+            "tasks": [task.model_dump(mode="json") for task in snapshot.tasks],
+            "tickets": [ticket.model_dump(mode="json") for ticket in snapshot.tickets],
+            "replace": True,
+        }
     # Snapshot before SQL: removal implies the receipt commit already happened;
     # otherwise this request owns its counter copy through projection. No DB I/O
     # runs under the registry lock and no finished-call history is retained.
     provisional = provisional_usage(project_id)
     timing_snapshot = host_service.invocation_timings()
+    projection = ReceiptProjection(
+        session, provisional=provisional, timing_snapshot=timing_snapshot
+    )
     task_keys = {call["task_key"] for call in calls or []}
     ticket_keys = {call["ticket_key"] for call in calls or []}
     tasks = (
@@ -608,6 +943,7 @@ def usage_refresh(
                 work_durations=task_durations,
                 task_keys={task.id: task.key for task in tasks if task.id is not None},
                 timing_snapshot=timing_snapshot,
+                projection=projection,
             )
         )
     task_by_id = {task.id: task for task in tasks}
@@ -636,6 +972,7 @@ def usage_refresh(
         provisional=provisional,
         work_durations=ticket_durations,
         timing_snapshot=timing_snapshot,
+        projection=projection,
     )
     return {
         "tasks": [
@@ -692,31 +1029,50 @@ def _launch_day(receipt: dict[str, Any], zone: ZoneInfo) -> date | None:
         return None
 
 
+@dataclass
+class GroupMetrics:
+    metrics: ReceiptMetrics = field(default_factory=ReceiptMetrics)
+    projects: set[tuple[int, str, str]] = field(default_factory=set)
+    roles: set[str | None] = field(default_factory=set)
+    hosts: set[str | None] = field(default_factory=set)
+    models: set[str | None] = field(default_factory=set)
+
+
+def _add_group(
+    groups: dict[tuple, GroupMetrics],
+    group_by: Literal["agent", "model", "agent_model"],
+    pid: int,
+    name: str,
+    slug: str,
+    fact: ReceiptFact,
+) -> None:
+    receipt = fact.receipt
+    launch = receipt["launch"]
+    agent = _text(launch.get("agent")) or _text(receipt.get("agent"))
+    model = _text(launch.get("model"))
+    identity: tuple[Any, ...] = (model,) if group_by == "model" else (pid, agent)
+    if group_by == "agent_model":
+        identity += (model,)
+    group = groups.get(identity)
+    if group is None:
+        group = groups[identity] = GroupMetrics()
+    group.metrics.add(fact)
+    group.projects.add((pid, name, slug))
+    role = receipt.get("selected_role")
+    group.roles.add(role if isinstance(role, str) else None)
+    group.hosts.add(_text(launch.get("host_key")))
+    group.models.add(model)
+
+
 def _group_rows(
-    occurrences: list[tuple[int, str, str, dict[str, Any]]],
+    groups: dict[tuple, GroupMetrics],
     group_by: Literal["agent", "model", "agent_model"],
 ) -> list[AgentStatsRowOut]:
-    groups: dict[tuple, list[tuple[int, str, str, dict[str, Any]]]] = defaultdict(list)
-    for pid, name, slug, receipt in occurrences:
-        launch = receipt["launch"]
-        agent = _text(launch.get("agent")) or _text(receipt.get("agent"))
-        model = _text(launch.get("model"))
-        identity: tuple[Any, ...] = (model,) if group_by == "model" else (pid, agent)
-        if group_by == "agent_model":
-            identity += (model,)
-        groups[identity].append((pid, name, slug, receipt))
     rows = []
-    for identity, members in sorted(
+    for identity, group in sorted(
         groups.items(), key=lambda item: tuple(str(v or "") for v in item[0])
     ):
-        projects = sorted({(pid, name, slug) for pid, name, slug, _ in members})
-        receipts = [receipt for _, _, _, receipt in members]
-        roles = {
-            r.get("selected_role") if isinstance(r.get("selected_role"), str) else None
-            for r in receipts
-        }
-        hosts = {_text(r["launch"].get("host_key")) for r in receipts}
-        models = {_text(r["launch"].get("model")) for r in receipts}
+        projects = sorted(group.projects)
         single_project = projects[0] if len(projects) == 1 else None
         rows.append(
             AgentStatsRowOut(
@@ -726,10 +1082,10 @@ def _group_rows(
                 project_name=single_project[1] if single_project else None,
                 project_slug=single_project[2] if single_project else None,
                 agent_name=identity[1] if group_by != "model" else None,
-                selected_role=next(iter(roles)) if len(roles) == 1 else None,
-                host_key=next(iter(hosts)) if len(hosts) == 1 else None,
-                model=next(iter(models)) if len(models) == 1 else None,
-                **summarize_receipts(receipts).model_dump(),
+                selected_role=next(iter(group.roles)) if len(group.roles) == 1 else None,
+                host_key=next(iter(group.hosts)) if len(group.hosts) == 1 else None,
+                model=next(iter(group.models)) if len(group.models) == 1 else None,
+                **group.metrics.output().model_dump(),
             )
         )
     return rows
@@ -749,64 +1105,119 @@ def query_agent_stats(
     if group_by not in ("agent", "model", "agent_model"):
         raise ValueError("group_by must be agent, model or agent_model")
     provisional = provisional_usage(project_id)
+    timing = host_service.invocation_timings()
+    table = TrackerReceiptProjection
     statement = (
-        select(
+        select(  # type: ignore[call-overload]
             col(Project.id),
             col(Project.name),
             col(Project.slug),
-            col(TrackerTicket.id),
             col(TrackerTicket.key),
-            col(TrackerTicket.completion_evidence_json),
+            col(table.attempt),
+            col(table.phase),
+            col(table.current),
+            col(table.receipt_json),
         )
-        .select_from(TrackerTicket)
+        .select_from(table)
+        .join(TrackerTicket, col(TrackerTicket.id) == col(table.ticket_id))
         .join(TaskTracker, col(TaskTracker.id) == col(TrackerTicket.tracker_id))
         .join(Project, col(Project.id) == col(TrackerTicket.project_id))
         .where(col(TaskTracker.key) == DEFAULT_TRACKER_KEY)
-        .order_by(col(TrackerTicket.id))
+        .where(col(table.inventory) == "usage")
     )
     if project_id is not None:
         statement = statement.where(col(TrackerTicket.project_id) == project_id)
     if is_active is not None:
         statement = statement.where(col(Project.is_active).is_(is_active))
-    occurrences = []
-    by_day: dict[date, list[tuple[int, str, str, dict[str, Any]]]] = defaultdict(list)
-    undated = []
-    for pid, name, slug, _ticket_id, ticket_key, evidence in session.execute(statement):
-        for receipt in provisional_receipt(pid, ticket_key, evidence, provisional):
-            if not _eligible(receipt):
+    selected: Any = statement
+    if start_date is not None and end_date is not None:
+        try:
+            start = datetime.combine(start_date, datetime.min.time(), zone).astimezone(UTC)
+        except OverflowError:
+            start = datetime.min.replace(tzinfo=UTC)
+        try:
+            end = datetime.combine(
+                end_date + timedelta(days=1), datetime.min.time(), zone
+            ).astimezone(UTC)
+        except OverflowError:
+            end = None
+        # Separate disjoint ranges keep both scoped and global date indexes
+        # searchable; undated disclosure deliberately remains lifetime-scoped.
+        selected = statement.where(
+            col(table.launch_at) >= start.replace(tzinfo=None),
+            col(table.launch_at) < end.replace(tzinfo=None) if end is not None else true(),
+        ).union_all(statement.where(col(table.launch_at).is_(None)))
+    totals = ReceiptMetrics()
+    groups: dict[tuple, GroupMetrics] = {}
+    by_day: dict[date, ReceiptMetrics] = defaultdict(ReceiptMetrics)
+    daily_groups: dict[tuple[date, str], dict[tuple, GroupMetrics]] = defaultdict(dict)
+    undated = ReceiptMetrics()
+    for pid, name, slug, ticket_key, attempt, phase, current, source in session.execute(selected):
+        receipt = decode_receipt(source)
+        receipts = [receipt]
+        if current and (pid, ticket_key) in provisional:
+            receipts = provisional_receipt(
+                pid,
+                ticket_key,
+                {
+                    "automatic_delivery": {
+                        "attempt": attempt or None,
+                        phase: receipt,
+                    }
+                },
+                provisional,
+            )
+        for item in receipts:
+            fact = _normalized_receipt(source, None) if item is receipt else _fact(item)
+            receipt = fact.receipt
+            if not isinstance(receipt.get("launch"), dict) or not fact.eligible:
                 continue
             day = _launch_day(receipt, zone)
             if day is None:
-                undated.append(receipt)
+                undated.add(fact)
             if start_date is not None and end_date is not None:
                 if day is None or not start_date <= day <= end_date:
                     continue
-                by_day[day].append((pid, name, slug, receipt))
-            occurrences.append((pid, name, slug, receipt))
+                by_day[day].add(fact)
+                for grouping in ("agent", "model", "agent_model"):
+                    _add_group(daily_groups[day, grouping], grouping, pid, name, slug, fact)
+            totals.add(fact)
+            _add_group(groups, group_by, pid, name, slug, fact)
     daily = []
     if start_date is not None and end_date is not None:
         for offset in range((end_date - start_date).days + 1):
             day = start_date + timedelta(days=offset)
-            members = by_day[day]
             daily.append(
                 AgentStatsDayOut(
                     date=day,
-                    by_agent=_group_rows(members, "agent"),
-                    by_model=_group_rows(members, "model"),
-                    by_agent_model=_group_rows(members, "agent_model"),
-                    **summarize_receipts(r for _, _, _, r in members).model_dump(),
+                    by_agent=_group_rows(daily_groups[day, "agent"], "agent"),
+                    by_model=_group_rows(daily_groups[day, "model"], "model"),
+                    by_agent_model=_group_rows(daily_groups[day, "agent_model"], "agent_model"),
+                    **by_day[day].output().model_dump(),
                 )
             )
+    from stackos.repositories.tracker.delivery_stats import query_delivery_trends
+
+    delivery_trends = query_delivery_trends(
+        session,
+        project_id=project_id,
+        is_active=is_active,
+        start_date=start_date,
+        end_date=end_date,
+        zone=zone,
+        timing=timing,
+    )
     return TrackerAgentStatsOut(
         project_id=project_id,
         is_active=is_active,
         as_of=datetime.now(UTC),
-        totals=summarize_receipts(r for _, _, _, r in occurrences),
-        rows=_group_rows(occurrences, group_by),
+        totals=totals.output(),
+        rows=_group_rows(groups, group_by),
         group_by=group_by,
         start_date=start_date,
         end_date=end_date,
         timezone=timezone,
         daily=daily,
-        undated=summarize_receipts(undated),
+        undated=undated.output(),
+        delivery_trends=delivery_trends,
     )

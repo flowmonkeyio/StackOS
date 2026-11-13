@@ -4,16 +4,11 @@ import type {
   SchemaAuthStatusOut,
 } from '@/api'
 import { ApiError, apiFetch, formatApiError } from '@/lib/client'
-import { callOperation } from '@/lib/operations'
-import { useProjectsStore } from '@/stores/projects'
-import {
-  type OverviewPage,
-  type PortfolioProject,
-} from './ticketOverview'
+import { useProjectsStore, type Project } from '@/stores/projects'
 
 export function useProjectOverview(projectId: Ref<number>) {
   const projects = useProjectsStore()
-  const project = ref<PortfolioProject | null>(null)
+  const project = ref<Project | null>(null)
   const accounts = ref<SchemaAccountOut[]>([])
   const loading = ref(true)
   const connectionsLoaded = ref(false)
@@ -21,12 +16,25 @@ export function useProjectOverview(projectId: Ref<number>) {
   let generation = 0
   let scope: number | null = null
   let retired = false
+  let metadataRead: { id: number; promise: Promise<Project> } | null = null
   onBeforeUnmount(() => {
     retired = true
     generation += 1
   })
 
-  async function load(): Promise<void> {
+  function readMetadata(id: number, revalidate: boolean): Promise<Project> {
+    if (metadataRead?.id === id) return metadataRead.promise
+    const cached = projects.getById(id)
+    if (cached && !revalidate) return Promise.resolve(cached)
+    const request = { id, promise: apiFetch<Project>(`/api/v1/projects/${id}`) }
+    metadataRead = request
+    request.promise = request.promise.finally(() => {
+      if (metadataRead === request) metadataRead = null
+    })
+    return request.promise
+  }
+
+  async function load(revalidateMetadata = false): Promise<void> {
     if (retired) return
     const request = ++generation
     const id = projectId.value
@@ -62,7 +70,7 @@ export function useProjectOverview(projectId: Ref<number>) {
     await Promise.all([
       read(
         'connections',
-        apiFetch<SchemaAuthStatusOut>(`/api/v1/projects/${id}/connections/accounts`),
+        apiFetch<SchemaAuthStatusOut>(`/api/v1/projects/${id}/connections/accounts?summary_only=true`),
         (data) => {
           accounts.value = data.accounts
           connectionsLoaded.value = true
@@ -70,14 +78,11 @@ export function useProjectOverview(projectId: Ref<number>) {
       ),
       read(
         'work',
-        callOperation<OverviewPage<PortfolioProject>>('project.portfolio', {
-          project_id: id,
-          is_active: null,
-          limit: 1,
-        }),
-        (page) => {
-          projects.reconcileProjectMetadata(page.items)
-          project.value = projects.isProjectDeleted(id) ? null : page.items[0] ?? null
+        readMetadata(id, revalidateMetadata),
+        (data) => {
+          if (data.id !== id) throw new Error('Project metadata scope did not match this Home.')
+          projects.reconcileProjectMetadata([data])
+          project.value = projects.isProjectDeleted(id) ? null : projects.getById(id) ?? data
         },
       ),
     ])

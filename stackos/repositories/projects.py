@@ -75,6 +75,9 @@ class ProjectOut(BaseModel):
     schedule_json: dict[str, Any] | None
     primary_workspace_binding_id: int | None = None
     project_dir: str | None = None
+    project_folder_status: (
+        Literal["ready", "directoryless", "missing", "unavailable", "conflict"] | None
+    ) = None
     project_folder_issue: str | None = None
     created_at: datetime
     updated_at: datetime
@@ -289,9 +292,55 @@ class ProjectRepository:
             if row.primary_workspace_binding_id
             else None
         )
-        if binding is None or binding.project_id != row.id or not binding.last_known_root:
-            return out.model_copy(update={"project_folder_issue": setup})
+        if row.primary_workspace_binding_id is None:
+            has_directory = (
+                self._s.exec(
+                    select(WorkspaceBinding.id)
+                    .where(
+                        WorkspaceBinding.project_id == row.id,
+                        col(WorkspaceBinding.last_known_root).is_not(None),
+                        WorkspaceBinding.last_known_root != "",
+                    )
+                    .limit(1)
+                ).first()
+                is not None
+            )
+            return out.model_copy(
+                update={
+                    "project_folder_status": "missing" if has_directory else "directoryless",
+                    "project_folder_issue": setup
+                    if has_directory
+                    else (
+                        "This project has no local folder. Local agent files are unavailable; "
+                        "projects without a local folder can continue using other features."
+                    ),
+                }
+            )
+        if binding is None:
+            return out.model_copy(
+                update={
+                    "project_folder_status": "missing",
+                    "project_folder_issue": setup,
+                }
+            )
+        conflict = (
+            "The configured folder is associated with another project. Repair the existing "
+            "binding in project setup before loading local agents."
+        )
+        if binding.project_id != row.id:
+            return out.model_copy(
+                update={
+                    "project_folder_status": "conflict",
+                    "project_folder_issue": conflict,
+                }
+            )
+        if not binding.last_known_root:
+            return out.model_copy(
+                update={"project_folder_status": "missing", "project_folder_issue": setup}
+            )
         try:
+            if not Path(binding.last_known_root).is_absolute():
+                raise ValueError("unavailable folder")
             root = Path(binding.last_known_root).resolve(strict=True)
             if not root.is_dir() or not root.is_absolute() or root == Path(root.anchor):
                 raise ValueError("unavailable folder")
@@ -306,16 +355,23 @@ class ProjectRepository:
                         owners.add(candidate.project_id)
                 except (OSError, RuntimeError, ValueError):
                     continue
-            if owners != {row.id}:
-                raise ValueError("conflicting folder association")
         except (OSError, RuntimeError, ValueError):
             return out.model_copy(
                 update={
-                    "project_folder_issue": "The configured project folder is unavailable "
-                    "or its binding needs repair. " + setup
+                    "project_folder_status": "unavailable",
+                    "project_folder_issue": "The configured project folder is unavailable. "
+                    "Reconnect that folder and retry, or ask your setup agent to repair "
+                    "this project's existing binding.",
                 }
             )
-        return out.model_copy(update={"project_dir": str(root)})
+        if owners != {row.id}:
+            return out.model_copy(
+                update={
+                    "project_folder_status": "conflict",
+                    "project_folder_issue": conflict,
+                }
+            )
+        return out.model_copy(update={"project_dir": str(root), "project_folder_status": "ready"})
 
     def resolve_identifier(
         self,

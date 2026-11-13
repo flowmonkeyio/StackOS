@@ -7,6 +7,7 @@ import { agentStatsFixture } from './home/agentStatsFixtures'
 import TaskTrackerView from './TaskTrackerView.vue'
 import { ApiError } from '@/lib/client'
 import { defaultBoardFilters, saveBoardFilters } from './task-tracker/boardFilters'
+import dagre from '@dagrejs/dagre'
 
 const mocks = vi.hoisted(() => ({ callOperation: vi.fn(), close: vi.fn(), stream: vi.fn() }))
 vi.mock('@/lib/operations', () => ({ callOperation: mocks.callOperation }))
@@ -32,7 +33,7 @@ function dataMock(tasks = [taskA, taskB], tickets = [ticketA, ticketB], graphNod
         id: `ticket:${ticket.key}`, type: 'ticket', parent_id: null, label: ticket.title,
         status: ticket.status, lane_key: ticket.lane_key, priority_key: ticket.priority_key, data: {},
       }))
-      return result
+      return scoped(result, Number(args.project_id))
     }
     const index = tasks.map(task => {
       const children = tickets.filter(ticket => ticket.task_key === task.key)
@@ -43,8 +44,13 @@ function dataMock(tasks = [taskA, taskB], tickets = [ticketA, ticketB], graphNod
         assignees: [], search_text: children.map(ticket => ticket.title).join(' '),
       }}
     })
-    return trackerSnapshot(index, [])
+    return scoped(trackerSnapshot(index, []), Number(args.project_id))
   })
+}
+function scoped(snapshot: TrackerSnapshot, projectId: number): TrackerSnapshot {
+  return { ...snapshot, tracker: { ...snapshot.tracker, project_id: projectId },
+    tasks: snapshot.tasks.map(task => ({ ...task, project_id: projectId })),
+    tickets: snapshot.tickets.map(ticket => ({ ...ticket, project_id: projectId })) }
 }
 
 async function render(url = '/projects/7/tasks', realDialogs = false, realControls = false, realBoard = false) {
@@ -62,7 +68,7 @@ async function render(url = '/projects/7/tasks', realDialogs = false, realContro
       TrackerBoardPanel: realBoard ? false : { name: 'TrackerBoardPanel', props: ['rows','hideEmptyColumns','editPending','editPendingColumns','editError'], template: '<section data-test="board"><button v-for="row in rows" :key="row.key" @click="$emit(\'openTask\', row.key)">{{ row.task.title }}</button></section>' },
       TrackerGraphPanel: { name: 'TrackerGraphPanel', props: ['loading','activeTaskTitle','selectedTicket','selectionVisible','selectionLabel','flow'], template: '<section data-test="graph" />' },
       TrackerWarningSummary: true,
-      TrackerTaskDetailDialog: realDialogs ? false : { name: 'TrackerTaskDetailDialog', props: ['modelValue','task','tickets','loading','error','contexts','ticket','ticketKey','results','activity'], template: '<aside />' },
+      TrackerTaskDetailDialog: realDialogs ? false : { name: 'TrackerTaskDetailDialog', props: ['modelValue','task','tickets','loading','error','contexts','ticket','ticketKey','results','activity','refreshContent'], template: '<aside />' },
       TrackerTicketDetailPanel: realDialogs ? false : { name: 'TrackerTicketDetailPanel', props: ['modelValue','ticket','parentTask','error','presentation'], template: '<aside />' },
     }},
   })
@@ -73,8 +79,133 @@ async function render(url = '/projects/7/tasks', realDialogs = false, realContro
 const popup = () => new DOMWrapper(document.body)
 
 describe('Work board navigation', () => {
+  it.each(['graph-usage-first', 'graph-event-first', 'board-usage-first', 'board-event-first'])('review probe: accepts a newer UI revision in %s without reporting a stale successful read', async mode => {
+    const { wrapper, controls } = await render(mode.startsWith('graph') ? '/projects/7/tasks?view=graph&task=task-a' : '/projects/7/tasks')
+    try {
+      const stream = mocks.stream.mock.lastCall![0]
+      const frame = (rev: number) => ({ projection: 'ui', scope_complete: true, scope: 'project', project_id: 7,
+        projects: [{ project_id: 7, rev, metric_demand: { task_keys: [], ticket_keys: [] } }], tasks: [], tickets: [], replace: true })
+      stream.onUsage(frame(1))
+      await flushPromises()
+      const normal = mocks.callOperation.getMockImplementation()!
+      mocks.callOperation.mockImplementation(async (name, args) => {
+        const result = await normal(name, args)
+        if (name !== 'tracker.get') return result
+        return { ...result, projection: 'ui', metric_demand: args.metric_demand,
+          tracker: { ...result.tracker, rev: 2 },
+          tasks: result.tasks.map((task: TrackerTask) => ({ ...task, title: task.key === 'task-a' ? 'Fresh task title' : task.title })) }
+      })
+      if (mode.endsWith('event-first')) stream.onEvent({ id: 2, project_id: 7, event_type: 'tracker.tasks.changed', metadata_json: {
+        tracker_id: 1, rev: 2, affected_task_keys: ['task-a'], affected_tasks: [{ task_id: 1, task_key: 'task-a', changed_fields: ['title'], url_path: '/projects/7/tasks?detail=task-a' }],
+      } })
+      stream.onUsage(frame(2))
+      await new Promise(resolve => setTimeout(resolve, 100))
+      await flushPromises()
+      expect.soft(wrapper.text(), 'successful revision 2 responses must not become a stale-response error').not.toContain('older than the saved change')
+      expect.soft(controls().props('taskOptions').find((task: { value: string }) => task.value === 'task-a')).toMatchObject({ label: expect.stringContaining('Fresh task title') })
+      controls().vm.$emit('refresh')
+      await flushPromises()
+      expect(wrapper.text(), 'manual recovery must remain usable').not.toContain('older than the saved change')
+      expect(controls().props('taskOptions').find((task: { value: string }) => task.value === 'task-a')).toMatchObject({ label: expect.stringContaining('Fresh task title') })
+    } finally { wrapper.unmount() }
+  })
+
+  it.each(['revision', 'manual'])('reconciles repeated usage invalidations during a pending %s read without publishing superseded metrics', async trigger => {
+    const { wrapper, controls, board } = await render()
+    try {
+      const stream = mocks.stream.mock.lastCall![0]
+      const frame = () => ({ projection: 'ui', scope_complete: true, scope: 'project', project_id: 7,
+        projects: [{ project_id: 7, rev: 2, metric_demand: { task_keys: [], ticket_keys: [] } }], tasks: [], tickets: [], replace: true })
+      stream.onUsage({ ...frame(), projects: [{ ...frame().projects[0], rev: 1 }] })
+      const read = mocks.callOperation.getMockImplementation()!
+      const pending: Array<(value: TrackerSnapshot) => void> = []
+      const fresh = { ...trackerSnapshot([{ ...taskA, title: 'Current task' }], []), tracker: { ...trackerSnapshot([], []).tracker, rev: 2 } }
+      mocks.callOperation.mockImplementation((name, args) => name === 'tracker.get' && args.task_index_only
+        ? pending.length < 3 ? new Promise(resolve => pending.push(resolve)) : Promise.resolve(fresh)
+        : read(name, args))
+      if (trigger === 'manual') controls().vm.$emit('refresh')
+      else stream.onEvent({ id: 2, project_id: 7, event_type: 'tracker.tasks.changed', metadata_json: { rev: 2, task_key: taskA.key } })
+      for (let i = 0; i < 20; i++) stream.onUsage(frame())
+      expect(pending).toHaveLength(1)
+      pending[0]!({ ...fresh, tasks: [{ ...taskA, title: 'Superseded first read' }] })
+      await flushPromises()
+      expect(pending).toHaveLength(2)
+      expect(board().text()).toContain('Alpha task')
+      stream.onUsage(frame()) // another real change while the follow-up is pending
+      pending[1]!({ ...fresh, tasks: [{ ...taskA, title: 'Superseded second read' }] })
+      await flushPromises()
+      expect(pending).toHaveLength(3)
+      expect(board().text()).toContain('Alpha task')
+      pending[2]!(fresh)
+      await flushPromises()
+      expect(board().text()).toContain('Current task')
+      expect(wrapper.text()).not.toContain('older than the saved change')
+      await new Promise(resolve => setTimeout(resolve, 100))
+      await flushPromises()
+      // Three pending reads cover the initial read and two intervening
+      // generations; at most one existing settled metric batch also runs.
+      expect(mocks.callOperation.mock.calls.filter(([name, args]) => name === 'tracker.get' && args.task_index_only).length).toBeLessThanOrEqual(5)
+      expect(mocks.stream).toHaveBeenCalledTimes(1)
+    } finally { wrapper.unmount() }
+  })
+
+  it('rejects a foreign response even when its pending metric generation was invalidated', async () => {
+    const { wrapper, controls, board } = await render()
+    try {
+      const stream = mocks.stream.mock.lastCall![0]
+      const frame = { projection: 'ui', scope_complete: true, scope: 'project', project_id: 7,
+        projects: [{ project_id: 7, rev: 1, metric_demand: { task_keys: [], ticket_keys: [] } }], tasks: [], tickets: [], replace: true }
+      stream.onUsage(frame)
+      let finish!: (value: TrackerSnapshot) => void
+      mocks.callOperation.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+      controls().vm.$emit('refresh')
+      stream.onUsage(frame)
+      finish(scoped(trackerSnapshot([{ ...taskA, title: 'Foreign task' }], []), 8))
+      await flushPromises()
+      expect(wrapper.text()).toContain('scope did not match')
+      expect(board().text()).toContain('Alpha task')
+      expect(board().text()).not.toContain('Foreign task')
+    } finally { wrapper.unmount() }
+  })
+
+  it('retains graph content through a metric error and clears that error after a fresh success', async () => {
+    const { wrapper } = await render('/projects/7/tasks?view=graph&task=task-a')
+    try {
+      const normal = mocks.callOperation.getMockImplementation()!
+      let fail = true
+      mocks.callOperation.mockImplementation((name, args) => name === 'tracker.get' && args.include_graph && fail
+        ? Promise.reject(new Error('Temporary graph read')) : normal(name, args))
+      const stream = mocks.stream.mock.lastCall![0]
+      const frame = { projection: 'ui', scope_complete: true, scope: 'project', project_id: 7,
+        projects: [{ project_id: 7, rev: 1, metric_demand: { task_keys: [], ticket_keys: [] } }], tasks: [], tickets: [], replace: true }
+      stream.onUsage(frame)
+      stream.onUsage(frame)
+      await vi.waitFor(() => expect(wrapper.text(), JSON.stringify(mocks.callOperation.mock.calls)).toContain('Temporary graph read'))
+      expect(wrapper.findComponent({ name: 'TrackerGraphPanel' }).props('activeTaskTitle')).toBe('Alpha task')
+      fail = false
+      stream.onUsage(frame)
+      await vi.waitFor(() => expect(wrapper.text()).not.toContain('Temporary graph read'))
+      expect(wrapper.findComponent({ name: 'TrackerGraphPanel' }).props('activeTaskTitle')).toBe('Alpha task')
+    } finally { wrapper.unmount() }
+  })
+  it('opens Graph with one actual card click and retains task details through the existing menu', async () => {
+    const { wrapper, router, board, dialog } = await render('/projects/7/tasks', false, false, true)
+    await board().get('[data-task-key="task-a"] .tracker-board__open').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ view: 'graph', task: 'task-a' })
+    expect(dialog().props('modelValue')).toBe(false)
+    wrapper.findComponent({ name: 'UiSegmentedControl' }).vm.$emit('select', 'board')
+    await flushPromises()
+    await board().get('[data-task-key="task-a"] .tracker-board__priority').trigger('click')
+    await board().findAll('[role="menuitem"]').find(item => item.text() === 'Task details')!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.detail).toBe('task-a')
+    expect(dialog().props('task').context_json).toEqual(taskA.context_json)
+    expect(mocks.callOperation.mock.calls.filter(([name, args]) => name === 'tracker.get' && args.task_key === 'task-a')).toHaveLength(1)
+    wrapper.unmount()
+  })
   it.each(['save-first', 'SSE-first', 'in-flight-covered', 'in-flight-stale'])('reconciles a batch revision once across %s and later independent events', async order => {
-    dataMock([taskA, { ...taskB, status: taskA.status, order_index: 1 }], [])
+    dataMock([taskA, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 1 }], [])
     const { wrapper, board } = await render()
     const read = mocks.callOperation.getMockImplementation()!
     const reads: Array<(value: TrackerSnapshot) => void> = []
@@ -88,7 +219,7 @@ describe('Work board navigation', () => {
       tracker_id: 1, rev, affected_task_keys: [taskA.key, taskB.key],
       affected_tasks: [taskA, taskB].map(task => ({ task_id: task.id, task_key: task.key, changed_fields: ['order_index'], url_path: `/projects/7/tasks?detail=${task.key}` })),
     } })
-    const next = (rev: number) => ({ ...trackerSnapshot([{ ...taskA, order_index: 1 }, { ...taskB, status: taskA.status, order_index: 0 }], []), tracker: { ...trackerSnapshot([], []).tracker, rev } })
+    const next = (rev: number) => ({ ...trackerSnapshot([{ ...taskA, order_index: 1 }, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 0 }], []), tracker: { ...trackerSnapshot([], []).tracker, rev } })
     const onEvent = mocks.stream.mock.calls.at(-1)![0].onEvent
     board().vm.$emit('move', { taskKey: taskA.key, anchorKey: taskB.key, placement: 'after' })
     const accepted = { data: { rev: 2, task: taskA, affected_task_keys: [taskA.key, taskB.key], changed: true, replayed: false, idempotency_key: 'test', request_sha256: 'test' }, project_id: 7, run_id: null }
@@ -308,7 +439,7 @@ describe('Work board navigation', () => {
   })
 
   it('reports save success separately from refresh failure, then reconciles by read without another mutation', async () => {
-    dataMock([taskA, { ...taskB, status: taskA.status, order_index: 1 }], [])
+    dataMock([taskA, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 1 }], [])
     const { wrapper, board, controls } = await render()
     const read = mocks.callOperation.getMockImplementation()!
     mocks.callOperation.mockImplementation((name, args) => {
@@ -331,7 +462,7 @@ describe('Work board navigation', () => {
   })
 
   it('retains the accepted revision across read errors and rejects a stale manual retry', async () => {
-    dataMock([taskA, { ...taskB, status: taskA.status, order_index: 1 }], [])
+    dataMock([taskA, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 1 }], [])
     const { wrapper, board, controls } = await render()
     const read = mocks.callOperation.getMockImplementation()!
     mocks.callOperation.mockImplementation((name, args) => {
@@ -359,7 +490,7 @@ describe('Work board navigation', () => {
   })
 
   it('discards an old project burst and pending save while the next project remains interactive', async () => {
-    dataMock([taskA, { ...taskB, status: taskA.status, order_index: 1 }], [])
+    dataMock([taskA, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 1 }], [])
     const { wrapper, router, board } = await render()
     const read = mocks.callOperation.getMockImplementation()!
     let finishRead!: (value: TrackerSnapshot) => void
@@ -389,7 +520,7 @@ describe('Work board navigation', () => {
   })
 
   it('shares save reconciliation with burst reads, retaining the optimistic move until the latest read', async () => {
-    dataMock([taskA, { ...taskB, status: taskA.status, order_index: 1 }], [])
+    dataMock([taskA, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 1 }], [])
     const { wrapper, board } = await render()
     const reads: Array<(value: TrackerSnapshot) => void> = []
     let finishSave!: (value: unknown) => void
@@ -405,25 +536,25 @@ describe('Work board navigation', () => {
     finishSave({ data: {} })
     await flushPromises()
     expect(reads).toHaveLength(1)
-    reads[0]!(trackerSnapshot([taskA, { ...taskB, status: taskA.status, order_index: 1 }], []))
+    reads[0]!(trackerSnapshot([taskA, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 1 }], []))
     await flushPromises()
     expect(board().props('rows').map((row: { key: string }) => row.key)).toEqual([taskB.key, taskA.key])
     expect(reads).toHaveLength(2)
     // A later burst may queue another read, but must not prolong this edit.
     onEvent({ id: 295, event_type: 'tracker.task.changed', metadata_json: { task_key: taskA.key } })
-    reads[1]!(trackerSnapshot([{ ...taskA, order_index: 1 }, { ...taskB, status: taskA.status, order_index: 0 }], []))
+    reads[1]!(trackerSnapshot([{ ...taskA, order_index: 1 }, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 0 }], []))
     await flushPromises()
     expect(reads).toHaveLength(3)
     expect(board().props('editPending')).toBe(false)
     expect(board().props('rows').map((row: { key: string }) => row.key)).toEqual([taskB.key, taskA.key])
     expect(mocks.callOperation.mock.calls.filter(([name]) => name === 'tracker.reorderTask')).toHaveLength(1)
-    reads[2]!(trackerSnapshot([{ ...taskA, order_index: 1 }, { ...taskB, status: taskA.status, order_index: 0 }], []))
+    reads[2]!(trackerSnapshot([{ ...taskA, order_index: 1 }, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 0 }], []))
     await flushPromises()
     wrapper.unmount()
   })
 
   it('settles Board edits while the separately loading graph stays slow', async () => {
-    dataMock([taskA, { ...taskB, status: taskA.status, order_index: 1 }], [])
+    dataMock([taskA, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 1 }], [])
     const { wrapper, board, router } = await render()
     const read = mocks.callOperation.getMockImplementation()!
     let finishSave!: (value: unknown) => void
@@ -439,7 +570,7 @@ describe('Work board navigation', () => {
     expect(graphs).toHaveLength(1)
     finishSave({ data: {} })
     await flushPromises()
-    expect(graphs).toHaveLength(2)
+    expect(graphs).toHaveLength(1) // The pending same-task read is shared.
     expect(board().props('editPending')).toBe(false)
     wrapper.unmount()
     const requests = mocks.callOperation.mock.calls.length
@@ -451,7 +582,7 @@ describe('Work board navigation', () => {
   it('settles an acknowledged save after a refresh deadline and supports a later successful edit', async () => {
     vi.useRealTimers()
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
-    dataMock([taskA, { ...taskB, status: taskA.status, order_index: 1 }], [])
+    dataMock([taskA, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 1 }], [])
     const { wrapper, board, controls } = await render()
     const read = mocks.callOperation.getMockImplementation()!
     const signals: AbortSignal[] = []
@@ -556,6 +687,50 @@ describe('Work board navigation', () => {
     expect(mocks.callOperation.mock.calls.length).toBeGreaterThan(before)
     wrapper.unmount()
   })
+  it('keeps the actual 300-node graph session layout stable through selection, stream metrics and highlight expiry', async () => {
+    const tickets = Array.from({ length: 300 }, (_, index) => ({ ...ticketA, id: index + 100, key: `scale-${index}` }))
+    dataMock([taskA], tickets)
+    const normal = mocks.callOperation.getMockImplementation()!
+    mocks.callOperation.mockImplementation(async (operation, args) => {
+      const result = await normal(operation, args)
+      if (operation === 'tracker.get' && args.task_key && result.graph) {
+        result.graph.nodes = [{ id: 'task:task-a', type: 'task', parent_id: null, data: {}, label: 'Alpha', status: 'in-progress', lane_key: 'implementation', priority_key: 'p2' },
+          ...tickets.map((ticket, index) => ({ id: `ticket:${ticket.key}`, type: 'ticket', parent_id: 'task:task-a', data: { order_index: index }, label: ticket.title, status: ticket.status, lane_key: ticket.lane_key, priority_key: ticket.priority_key }))]
+        result.graph.edges = tickets.slice(1).map((ticket, index) => ({ id: `edge-${index}`, type: 'dependency', source: `ticket:scale-${Math.floor(index / 2)}`, target: `ticket:${ticket.key}`, label: null, data: {} }))
+      }
+      return result
+    })
+    const layout = vi.spyOn(dagre, 'layout')
+    const timerHost: { setTimeout: (handler: TimerHandler, delay?: number, ...args: unknown[]) => number } = window
+    const nativeTimeout = timerHost.setTimeout.bind(timerHost)
+    const expiries: (() => void)[] = []
+    const timeout = vi.spyOn(timerHost, 'setTimeout').mockImplementation((handler, delay, ...args) => {
+      if (delay === 4500 && typeof handler === 'function') expiries.push(() => handler(...args))
+      return nativeTimeout(handler, delay, ...args)
+    })
+    const { wrapper } = await render('/projects/7/tasks?view=graph&task=task-a')
+    try {
+      const graph = () => wrapper.findComponent({ name: 'TrackerGraphPanel' })
+      expect(graph().props('flow').nodes).toHaveLength(300)
+      expect(layout).toHaveBeenCalledTimes(1)
+      layout.mockClear()
+      const positions = graph().props('flow').nodes.map((node: { position: unknown }) => node.position)
+      graph().vm.$emit('nodeClick', { event: new MouseEvent('click'), node: graph().props('flow').nodes[0] })
+      const stream = mocks.stream.mock.calls.at(-1)![0]
+      stream.onUsage({ tasks: [], tickets: [{ key: 'scale-0', agent_stats: agentStatsFixture().totals, active_execution: null }] })
+      stream.onEvent({ id: 9001, event_type: 'tracker.ticket.updated', metadata_json: { task_key: 'task-a', ticket_key: 'scale-0', rev: 1 } })
+      await flushPromises()
+      await vi.waitFor(() => expect(expiries).toHaveLength(2))
+      expect(graph().props('flow').nodes.find((node: { id: string }) => node.id === 'ticket:scale-0').data.recentlyUpdated).toBe(true)
+      expect(graph().props('flow').nodes.map((node: { position: unknown }) => node.position)).toEqual(positions)
+      expect(layout).not.toHaveBeenCalled()
+      // Execute the actual renewed expiry callback; no layout may run there.
+      expiries.at(-1)!(); await flushPromises()
+      expect(graph().props('flow').nodes.find((node: { id: string }) => node.id === 'ticket:scale-0').data.recentlyUpdated).toBe(false)
+      expect(layout).not.toHaveBeenCalled()
+    } finally { wrapper.unmount(); timeout.mockRestore(); layout.mockRestore() }
+  })
+
   it('patches usage projections across Board, Graph and open details without another tracker load', async () => {
     dataMock([taskA], [ticketA], true)
     const { wrapper, board, dialog } = await render('/projects/7/tasks?view=graph&task=task-a&detail=task-a')
@@ -746,7 +921,7 @@ describe('Work board navigation', () => {
     await flushPromises()
     controls().vm.$emit('update:display', { completed: 'none' })
     await flushPromises()
-    controls().vm.$emit('update:filter', { field: 'status', operator: 'is', values: ['complete'] })
+    controls().vm.$emit('update:filter', { field: 'status', operator: 'is', values: ['done'] })
     await flushPromises()
     expect(controls().props('boardFilters').completed).toBe('all')
     await router.push('/projects/7/tasks?work_entry=tickets:failed')
@@ -821,7 +996,7 @@ describe('Work board navigation', () => {
     expect(controls().props('viewMode')).toBe('board')
     expect(board().props('rows')).toHaveLength(2)
     expect(router.currentRoute.value.query.task).toBeUndefined()
-    expect(mocks.callOperation).toHaveBeenCalledWith('tracker.get', { project_id: 7, task_index_only: true, include_graph: false }, { signal: expect.any(AbortSignal) })
+    expect(mocks.callOperation).toHaveBeenCalledWith('tracker.get', { project_id: 7, task_index_only: true, include_graph: false, projection: 'ui', metric_demand: { task_keys: [], ticket_keys: [] } }, { signal: expect.any(AbortSignal) })
     expect(mocks.callOperation).toHaveBeenCalledTimes(1)
     expect(mocks.stream).toHaveBeenLastCalledWith(expect.objectContaining({ projectId: 7, taskKey: undefined }))
     wrapper.unmount()
@@ -1090,6 +1265,24 @@ describe('Work board navigation', () => {
     wrapper.unmount()
   })
 
+  it('retains graph selection across presentation changes and clears it only for a different task', async () => {
+    const { wrapper, router } = await render('/projects/7/tasks?view=graph&task=task-a')
+    const graph = () => wrapper.findComponent({ name: 'TrackerGraphPanel' })
+    graph().vm.$emit('nodeClick', { event: new MouseEvent('click'), node: { id: 'ticket:ticket-a', data: { itemKind: 'ticket', itemKey: 'ticket-a' } } })
+    await flushPromises()
+    expect(graph().props('selectedTicket')?.key).toBe('ticket-a')
+    await wrapper.get('[aria-label="Work view"] [role="tab"]:first-child').trigger('click')
+    await flushPromises()
+    await wrapper.get('[aria-label="Work view"] [role="tab"]:last-child').trigger('click')
+    await flushPromises()
+    expect(graph().props('selectedTicket')?.key).toBe('ticket-a')
+    expect(graph().props('selectionVisible')).toBe(true)
+    await router.push('/projects/7/tasks?view=graph&task=task-b')
+    await flushPromises()
+    expect(graph().props('selectionVisible')).toBe(false)
+    wrapper.unmount()
+  })
+
   it('keeps node selection on the map and opens only explicit Details in the existing side inspector', async () => {
     const { wrapper, router, dialog } = await render('/projects/7/tasks?view=graph&task=task-a', true)
     const map = wrapper.findComponent({ name: 'TrackerGraphPanel' })
@@ -1260,6 +1453,49 @@ describe('Work board navigation', () => {
     wrapper.unmount()
   })
 
+  it.each(['open', 'content-refresh'] as const)('preserves newer accepted UI metrics through a late %s detail response', async path => {
+    const metric = (total: number) => ({ ...agentStatsFixture().totals, reported_usage: { ...agentStatsFixture().totals.reported_usage, total } })
+    dataMock([{ ...taskA, agent_stats: metric(10) }], [], true)
+    const normal = mocks.callOperation.getMockImplementation()!
+    let finish: ((snapshot: TrackerSnapshot) => void) | undefined
+    let pending = path === 'open'
+    let fresh = false
+    mocks.callOperation.mockImplementation(async (name, args) => {
+      if (name === 'tracker.get' && args.task_key && !args.include_graph && pending) return new Promise<TrackerSnapshot>(done => { finish = done })
+      const result = await normal(name, args)
+      if (name !== 'tracker.get' || args.task_key) return result
+      const demand = args.metric_demand as { task_keys: string[]; ticket_keys: string[] }
+      return { ...result, projection: 'ui', metric_demand: demand,
+        tasks: result.tasks.map((task: TrackerTask) => ({ ...task, agent_stats: demand.task_keys.includes(task.key) ? metric(fresh ? 20 : 10) : null,
+          active_execution: fresh ? null : task.active_execution, work_duration: fresh ? null : task.work_duration })) }
+    })
+    const { wrapper, router, board, dialog } = await render()
+    try {
+      const stream = mocks.stream.mock.lastCall![0]
+      const frame = () => stream.onUsage({ projection: 'ui', scope_complete: true, scope: 'project', project_id: 7,
+        projects: [{ project_id: 7, rev: 1, metric_demand: { task_keys: [], ticket_keys: [] } }], tasks: [], tickets: [], replace: true })
+      frame()
+      await router.push('/projects/7/tasks?detail=task-a')
+      await flushPromises()
+      let refresh: Promise<TrackerTask> | undefined
+      if (path === 'content-refresh') {
+        pending = true
+        refresh = dialog().props('refreshContent')('task-a')
+        await flushPromises()
+      }
+      expect(finish).toBeTypeOf('function')
+      fresh = true
+      frame()
+      await vi.waitFor(() => expect(board().props('rows')[0].task.agent_stats?.reported_usage.total).toBe(20))
+      finish!(trackerSnapshot([{ ...taskA, description: 'Full primary content', agent_stats: metric(10) }], []))
+      await refresh
+      await flushPromises()
+      expect(dialog().props('task')).toMatchObject({ description: 'Full primary content', active_execution: null, work_duration: null })
+      expect(dialog().props('task').agent_stats.reported_usage.total).toBe(20)
+      expect(board().props('rows')[0].task.agent_stats.reported_usage.total).toBe(20)
+    } finally { wrapper.unmount() }
+  })
+
   it('refreshes the board for project events without a selected task', async () => {
     const { wrapper, board } = await render()
     const onEvent = mocks.stream.mock.calls.at(-1)![0].onEvent
@@ -1315,7 +1551,7 @@ describe('Work board navigation', () => {
     wrapper.unmount()
   })
 
-  it('saves the popup content through the narrow operation then refetches current details and board aggregates', async () => {
+  it.each(['board', 'graph'] as const)('saves popup content and refreshes only current %s metric demand', async view => {
     const saved = { ...taskB, description: 'Updated description', updated_at: 'revision-2',
       context_json: { operator_inputs: [{ id: 'input-1', text: 'Please check the edge case.', created_at: '2026-10-28T12:00:00Z', actor: 'local-user:operator' }] },
     }
@@ -1325,7 +1561,15 @@ describe('Work board navigation', () => {
       dataMock([taskA, saved])
       return { data: { task: { ...saved, description: 'Older receipt description', ticket_summary: null }, replayed: true } }
     })
-    const { wrapper, board } = await render('/projects/7/tasks?detail=task-b', true)
+    const { wrapper, board } = await render(`/projects/7/tasks?detail=task-b${view === 'graph' ? '&view=graph&task=task-a' : ''}`, true)
+    if (view === 'board') {
+      board().vm.$emit('metricDemand', ['task-a'])
+      await vi.waitFor(() => expect(mocks.callOperation).toHaveBeenCalledWith('tracker.get', expect.objectContaining({
+        metric_demand: { task_keys: ['task-b', 'task-a'], ticket_keys: [] },
+      }), expect.anything()))
+    }
+    await flushPromises()
+    mocks.callOperation.mockClear()
     const button = (text: string) => popup().findAll('button').find(item => item.text() === text)!
     await button('Edit description').trigger('click')
     const fields = popup().findAll('textarea')
@@ -1344,6 +1588,26 @@ describe('Work board navigation', () => {
     expect(board().props('rows').find((row: { key: string }) => row.key === 'task-b').completedCount).toBe(1)
     expect(board().props('rows').find((row: { key: string }) => row.key === 'task-b').totalCount).toBe(1)
     expect(popup().text()).toContain('Changes saved.')
+    const indexes = mocks.callOperation.mock.calls.filter(([name, args]) => name === 'tracker.get' && args.task_index_only)
+    expect(indexes.length).toBeGreaterThan(0)
+    for (const [, args] of indexes) expect(args).toMatchObject({ projection: 'ui', metric_demand: {
+      task_keys: view === 'board' ? ['task-b', 'task-a'] : ['task-b'], ticket_keys: [],
+    } })
+    const currentRead = mocks.callOperation.getMockImplementation()!
+    mocks.callOperation.mockImplementation((name, args, options) => name === 'tracker.updateTaskContent'
+      ? Promise.reject(new ApiError('conflict', 409, {})) : currentRead(name, args, options))
+    await button('Edit description').trigger('click')
+    await popup().findAll('textarea')[0]!.setValue('Draft after another edit')
+    await button('Save description').trigger('click')
+    await flushPromises()
+    mocks.callOperation.mockClear()
+    await button('Load latest content').trigger('click')
+    await flushPromises()
+    const latestIndexes = mocks.callOperation.mock.calls.filter(([name, args]) => name === 'tracker.get' && args.task_index_only)
+    expect(latestIndexes).toHaveLength(1)
+    expect(latestIndexes[0]![1]).toMatchObject({ projection: 'ui', metric_demand: {
+      task_keys: view === 'board' ? ['task-b', 'task-a'] : ['task-b'], ticket_keys: [],
+    } })
     wrapper.unmount()
   })
 
@@ -1415,6 +1679,7 @@ describe('Work board navigation', () => {
 
 function trackerTask(overrides: Partial<TrackerTask> = {}): TrackerTask {
   return {
+    board_column: overrides.status === 'complete' ? 'done' : overrides.status === 'deferred' ? 'backlog' : overrides.status === 'not-started' ? 'todo' : overrides.status ?? 'in-progress',
     id: 1,
     project_id: 7,
     tracker_id: 1,

@@ -160,7 +160,8 @@ def operation_specs() -> list[OperationSpec]:
             ),
             returns=(
                 "One safe project record, the explicit primary_workspace_binding_id, "
-                "resolved project_dir or actionable project_folder_issue. Resolution never "
+                "resolved project_dir, project_folder_status (ready, directoryless, missing, "
+                "unavailable or conflict) and actionable project_folder_issue. Resolution never "
                 "chooses a workspace from binding order, sessions or remote names and grants "
                 "no file access. Explicit task and saved schedule targets stay independent.",
             ),

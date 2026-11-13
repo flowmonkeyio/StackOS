@@ -1,5 +1,15 @@
-import { AgentStatsCoverageOutClassification_status as Classification, AgentStatsCoverageOutUsage_status as Usage, AgentStatsFieldCoverageOutStatus as Field, TrackerAgentStatsOutGroup_by as Group } from '@/api'
+import { AgentStatsCoverageOutClassification_status as Classification, AgentStatsCoverageOutUsage_status as Usage, AgentStatsFieldCoverageOutStatus as Field, DeliveryMetricCoverageOutStatus, TrackerAgentStatsOutGroup_by as Group } from '@/api'
 import type { ActivityGroup, AgentStats, AgentStatsMetrics, AgentStatsRow } from '@/lib/agentActivity'
+
+export function emptyDeliveryTrendsFixture(): AgentStats['delivery_trends'] {
+  const coverage = { status: DeliveryMetricCoverageOutStatus.empty, recorded: 0, unavailable: 0, issues: [] }
+  const count = () => ({ total: 0, coverage: structuredClone(coverage) })
+  return { daily: [], totals: {
+    completed_tasks: count(), completed_tickets: count(), changes_requested: count(), stops: count(),
+    first_review_acceptance: { accepted: 0, reviewed: 0, rate: null, coverage: structuredClone(coverage) },
+    work_time: { total_seconds: 0, coverage: structuredClone(coverage) },
+  } }
+}
 
 export function agentStatsFixture(overrides: Partial<AgentStats> = {}): AgentStats {
   const metrics: AgentStatsMetrics = {
@@ -25,6 +35,7 @@ export function agentStatsFixture(overrides: Partial<AgentStats> = {}): AgentSta
     project_id: 1, is_active: null, as_of: '2026-11-06T20:00:00Z', totals: metrics,
     rows: [row], group_by: Group.model, start_date: '2026-11-01', end_date: '2026-11-07', timezone: 'America/Los_Angeles',
     daily: [{ ...structuredClone(metrics), date: '2026-11-06', by_agent: [{ ...structuredClone(row), group_key: 'fixture-agent' }], by_model: [structuredClone(row)], by_agent_model: [{ ...structuredClone(row), group_key: 'fixture-agent-model' }] }], undated: empty,
+    delivery_trends: emptyDeliveryTrendsFixture(),
     ...overrides,
   }
 }

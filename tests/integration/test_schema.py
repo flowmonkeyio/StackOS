@@ -85,6 +85,7 @@ def test_programmatic_migration_preserves_selected_seed_for_subsequent_requests(
 
 EXPECTED_TABLES: frozenset[str] = frozenset(
     {
+        "tracker_receipt_projections",
         "action_calls",
         "action_delivery_admissions",
         "action_versions",
@@ -683,7 +684,7 @@ def test_global_account_backing_repair_is_a_healthy_noop(
             == before
         )
         assert conn.execute("SELECT version_num FROM alembic_version").fetchone() == (
-            "0047_patterns_setup_merge",
+            "0048_product_receipts_merge",
         )
     finally:
         conn.close()
@@ -1568,6 +1569,14 @@ def _historical_project_fixture_session(engine) -> Iterator[Session]:
     Project-order proof seeds its old database in SQL.
     """
     with engine.begin() as connection:
+        from stackos.db.models import TrackerReceiptProjection
+
+        # Current repository fixture builders use the derived statistics input
+        # table. Restore its absence before the real historical upgrade/backfill.
+        projection_table = TrackerReceiptProjection.__table__
+        add_projection = not sa.inspect(connection).has_table(projection_table.name)
+        if add_projection:
+            projection_table.create(connection)
         before = connection.exec_driver_sql("PRAGMA table_info(projects)").all()
         schedule_columns = connection.exec_driver_sql("PRAGMA table_info(scheduled_jobs)").all()
         add_goal = "goal" not in {column[1] for column in schedule_columns}
@@ -1594,6 +1603,8 @@ def _historical_project_fixture_session(engine) -> Iterator[Session]:
             yield session
     finally:
         with engine.begin() as connection:
+            if add_projection:
+                projection_table.drop(connection)
             if add_goal:
                 connection.exec_driver_sql("ALTER TABLE scheduled_jobs DROP COLUMN goal")
             for name, _ in reversed(additions):
@@ -1749,6 +1760,31 @@ def test_telegram_cutover_retires_active_bindings_preserves_history(isolated_ale
         assert data["historic"] == records[-1][2]
 
 
+def test_tracker_stream_cursor_migration_preserves_history(isolated_alembic: Path) -> None:
+    _run_alembic(["upgrade", "0044_receipt_statistics_index"])
+    with sqlite3.connect(isolated_alembic) as conn:
+        conn.execute(
+            "INSERT INTO projects "
+            "(id, slug, name, domain, locale, is_active, created_at, updated_at) "
+            "VALUES (1, 'cursor', 'Cursor', 'fixture.test', 'en-US', 1, '2026-11-01', '2026-11-01')"
+        )
+        conn.execute(
+            "INSERT INTO project_events (id, project_id, source_type, event_type, metadata_json, "
+            "occurred_at, created_at) VALUES (7, 1, 'tracker_ticket', 'tracker.usage.changed', "
+            "'{\"task_key\":\"retained\"}', '2026-11-01', '2026-11-01')"
+        )
+        before = conn.execute("SELECT * FROM project_events").fetchall()
+    for target in ("head", "0044_receipt_statistics_index", "head"):
+        _run_alembic(
+            ["downgrade" if target == "0044_receipt_statistics_index" else "upgrade", target]
+        )
+        with sqlite3.connect(isolated_alembic) as conn:
+            assert conn.execute("SELECT * FROM project_events").fetchall() == before
+            columns = conn.execute("PRAGMA index_info(ix_project_events_project_cursor)").fetchall()
+            assert [row[2] for row in columns] == (["project_id", "id"] if target == "head" else [])
+            assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
 def test_alembic_upgrade_creates_expected_stackos_tables(isolated_alembic: Path) -> None:
     """One fresh migration proves the table inventory and global Account layout."""
     _run_alembic(["upgrade", "head"])
@@ -1761,7 +1797,7 @@ def test_alembic_upgrade_creates_expected_stackos_tables(isolated_alembic: Path)
     assert not (tables & LEGACY_TABLES)
     with sqlite3.connect(isolated_alembic) as conn:
         assert conn.execute("SELECT version_num FROM alembic_version").fetchall() == [
-            ("0047_patterns_setup_merge",)
+            ("0048_product_receipts_merge",)
         ]
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     assert {"order_index", "cleanup_json", "primary_workspace_binding_id"} <= _table_columns(
@@ -2336,7 +2372,15 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
 
     from stackos.db.models import Plugin, PluginSource, ProjectPlugin, RunPlan, RunPlanStatus
     from stackos.repositories.tracker import TrackerRepository
-    from stackos.repositories.tracker.utils import DEFAULT_LANES, DEFAULT_PRIORITIES
+    from stackos.repositories.tracker.utils import DEFAULT_PRIORITIES
+
+    # 0035's immutable catalog predates Backlog in current tracker setup.
+    migration_lanes = [
+        ("planning", "Planning"),
+        ("implementation", "Implementation"),
+        ("verification", "Verification"),
+        ("done", "Done"),
+    ]
 
     _run_alembic(["upgrade", "0034_work_item_ownership"])
     with sqlite3.connect(isolated_alembic) as conn:
@@ -2432,6 +2476,7 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
             "patterns",
             "pattern_deletions",
             "project_setup_receipts",
+            "tracker_receipt_projections",
         }
         for table, rows in before.items():
             if table == "tracker_revisions":
@@ -2479,10 +2524,13 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
             for row in conn.execute("SELECT config_json FROM project_plugins ORDER BY project_id")
         ] == [{"unrelated": {"enabled": False}}, {"unrelated": {"enabled": False}}, {"keep": 3}]
         tracker_id = conn.execute("SELECT id FROM task_trackers WHERE project_id=2").fetchone()[0]
-        assert conn.execute(
-            "SELECT key, label FROM task_tracker_lanes WHERE tracker_id=? ORDER BY position",
-            (tracker_id,),
-        ).fetchall() == list(DEFAULT_LANES)
+        assert (
+            conn.execute(
+                "SELECT key, label FROM task_tracker_lanes WHERE tracker_id=? ORDER BY position",
+                (tracker_id,),
+            ).fetchall()
+            == migration_lanes
+        )
         assert conn.execute(
             "SELECT key, label, rank FROM task_tracker_priorities "
             "WHERE tracker_id=? ORDER BY position",
@@ -2490,6 +2538,9 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
         ).fetchall() == list(DEFAULT_PRIORITIES)
         assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
         after = conn.execute("SELECT config_json FROM task_trackers ORDER BY id").fetchall()
+        migrated_rows = {
+            table: conn.execute(f"SELECT * FROM {table}").fetchall() for table in preserved_tables
+        }
     # A replay after migration/stamp interruption cannot reinterpret retired defaults.
     migration = importlib.import_module("stackos.db.migrations.versions.0035_generic_task_delivery")
     engine = make_engine(isolated_alembic)
@@ -2498,6 +2549,25 @@ def test_generic_delivery_migration_preserves_settings_and_history(isolated_alem
         assert (
             conn.exec_driver_sql("SELECT config_json FROM task_trackers ORDER BY id").all() == after
         )
+    # Current setup appends Backlog; it must not reinterpret migrated rows or
+    # reorder the existing catalog. Repeating setup must not add a second lane.
+    with Session(engine) as session:
+        repo = TrackerRepository(session)
+        for _ in range(2):
+            assert repo.ensure_tracker(project_id=2).id == tracker_id
+            session.commit()
+    with sqlite3.connect(isolated_alembic) as conn:
+        assert conn.execute(
+            "SELECT key, label, position FROM task_tracker_lanes "
+            "WHERE tracker_id=? ORDER BY position",
+            (tracker_id,),
+        ).fetchall() == [
+            (key, label, index) for index, (key, label) in enumerate(migration_lanes)
+        ] + [("backlog", "Backlog", len(migration_lanes))]
+        assert conn.execute("SELECT config_json FROM task_trackers ORDER BY id").fetchall() == after
+        for table, rows in migrated_rows.items():
+            assert conn.execute(f"SELECT * FROM {table}").fetchall() == rows
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
     engine.dispose()
 
 

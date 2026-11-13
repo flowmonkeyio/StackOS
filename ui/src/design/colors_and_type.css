@@ -78,6 +78,7 @@
   --duration-fast: 120ms;
   --duration-base: 160ms;
   --duration-slow: 240ms;
+  --duration-live-pulse: 1800ms;
   --easing-standard: cubic-bezier(0.2, 0, 0, 1);
   --easing-enter:    cubic-bezier(0, 0, 0.2, 1);
   --easing-exit:     cubic-bezier(0.4, 0, 1, 1);
@@ -163,6 +164,7 @@
   --color-info-subtle:     #f0f9ff;
   --color-info-fg:         #0369a1;
   --color-info-border:     #bae6fd;
+  --color-chart-work:      #7c3aed;
 
   /* Semantic — neutral */
   --color-neutral-default: #52525b;
@@ -255,6 +257,7 @@
   --color-info-subtle:     rgba(14, 165, 233, 0.16);
   --color-info-fg:         #38bdf8;
   --color-info-border:     rgba(14, 165, 233, 0.38);
+  --color-chart-work:      #c4b5fd;
 
   --color-neutral-default: #9c9ca5;
   --color-neutral-subtle:  rgba(148, 148, 160, 0.14);

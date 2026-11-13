@@ -6,6 +6,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export type DomainSection = 'workflows' | 'saved' | 'files'
 
+/** Finance provisions managed files, so its console requires explicit project opt-in. */
+export function isProjectPluginEnabled(plugin: Pick<SchemaPluginOut, 'slug' | 'enabled_for_project'>) {
+  return plugin.slug === 'finance'
+    ? plugin.enabled_for_project === true
+    : plugin.enabled_for_project !== false
+}
+
 /** Shared declaration used by the sidebar and the generic domain renderer. */
 export function domainPage(plugin: SchemaPluginOut | undefined) {
   const ui = plugin?.manifest_json?.ui

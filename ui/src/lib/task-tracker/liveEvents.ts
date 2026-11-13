@@ -45,6 +45,7 @@ export interface TrackerStatusStreamOptions {
   projectId: number | null
   taskKey?: string
   afterId?: number | null
+  uiDemand?: { projects: Record<string, { task_keys?: string[]; ticket_keys?: string[] }> }
   onEvent: (event: ProjectTimelineEvent) => void
   onError?: (error: unknown) => void
   onUsage?: (updates?: UsageProjection) => void
@@ -117,7 +118,7 @@ export function openTrackerStatusStream(options: TrackerStatusStreamOptions): Tr
   }
 
   async function readStream(afterId: number | null): Promise<void> {
-    const response = await apiStream(trackerStatusStreamPath(options.projectId, { taskKey: options.taskKey, afterId }), {
+    const response = await apiStream(trackerStatusStreamPath(options.projectId, { taskKey: options.taskKey, afterId, uiDemand: options.uiDemand }), {
       signal: controller.signal,
     })
     const reader = response.body?.getReader()
@@ -176,7 +177,7 @@ export function openTrackerStatusStream(options: TrackerStatusStreamOptions): Tr
 
 export function trackerStatusStreamPath(
   projectId: number | null,
-  query: URLSearchParams | { taskKey?: string; afterId?: number | null },
+  query: URLSearchParams | { taskKey?: string; afterId?: number | null; uiDemand?: TrackerStatusStreamOptions['uiDemand'] },
 ): string {
   const params =
     query instanceof URLSearchParams
@@ -184,6 +185,7 @@ export function trackerStatusStreamPath(
       : new URLSearchParams()
   if (!(query instanceof URLSearchParams)) {
     if (query.taskKey) params.set('task_key', query.taskKey)
+    if (query.uiDemand) params.set('ui_demand', JSON.stringify(query.uiDemand))
     params.set('limit', '50')
   }
   if (!(query instanceof URLSearchParams) && query.afterId !== null && query.afterId !== undefined) {

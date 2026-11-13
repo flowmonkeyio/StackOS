@@ -40,6 +40,8 @@ class TrackerGraphMixin:
         tickets: list[TrackerTicketOut],
         dependencies: list[TrackerDependencyOut],
         links: list[TrackerLinkOut],
+        *,
+        summary: bool = False,
     ) -> TrackerGraphOut:
         nodes: list[TrackerGraphNodeOut] = []
         edges: list[TrackerGraphEdgeOut] = []
@@ -56,7 +58,9 @@ class TrackerGraphMixin:
                     status=task.status.value,
                     lane_key=task.lane_key,
                     priority_key=task.priority_key,
-                    data=task.model_dump(mode="json"),
+                    data={"key": task.key, "item_id": task.id}
+                    if summary
+                    else task.model_dump(mode="json"),
                 )
             )
         for ticket in tickets:
@@ -72,7 +76,9 @@ class TrackerGraphMixin:
                     status=ticket.status.value,
                     lane_key=ticket.lane_key,
                     priority_key=ticket.priority_key,
-                    data=ticket.model_dump(mode="json"),
+                    data={"key": ticket.key, "item_id": ticket.id}
+                    if summary
+                    else ticket.model_dump(mode="json"),
                 )
             )
             if task_node in task_node_ids:
@@ -120,7 +126,7 @@ class TrackerGraphMixin:
                         status="link",
                         lane_key="external",
                         priority_key="p3",
-                        data=link.model_dump(mode="json"),
+                        data={"item_id": link.id} if summary else link.model_dump(mode="json"),
                     )
                 )
                 edges.append(

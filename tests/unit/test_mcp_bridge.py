@@ -1648,7 +1648,7 @@ def test_registered_board_operations_are_direct_and_keep_grant_denials(run_id: i
     registry = ToolRegistry()
     register_all(registry)
     catalog = {spec.name: _to_tool(spec).model_dump(by_alias=True) for spec in registry.all()}
-    board_operations = {"tracker.updateTaskPriority", "tracker.reorderTask"}
+    board_operations = {"tracker.updateTaskPriority", "tracker.reorderTask", "tracker.placeTask"}
     allowed_by_run = {7: {"resource.upsert"}}
     allowed = _bridge_allowed_tool_names(run_id, allowed_by_run, catalog=catalog)
 

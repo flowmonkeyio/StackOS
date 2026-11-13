@@ -1,9 +1,11 @@
 // @vitest-environment node
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import dagre from '@dagrejs/dagre'
 
 import {
   buildTrackerFlowModel,
+  createTrackerFlowProjector,
   TRACKER_TICKET_NODE_HEIGHT,
   TRACKER_TICKET_NODE_WIDTH,
 } from './graphModel'
@@ -218,6 +220,51 @@ const snapshot: TrackerSnapshot = {
 }
 
 describe('buildTrackerFlowModel', () => {
+  it('does zero layout work for repeated 300-node metric/selection updates', () => {
+    const fixture = structuredClone(snapshot)
+    const ticket = fixture.tickets[0]!, node = fixture.graph!.nodes.find(node => node.id === 'ticket:prepare')!
+    fixture.tickets = Array.from({ length: 300 }, (_, i) => ({ ...ticket, id: i + 100, key: `large-${i}`, title: `Large ${i}` }))
+    fixture.graph!.nodes = [fixture.graph!.nodes[0]!, ...fixture.tickets.map((ticket, i) => ({ ...node, id: `ticket:${ticket.key}`, label: ticket.title, data: { order_index: i } }))]
+    fixture.graph!.edges = fixture.tickets.slice(1).map((ticket, i) => ({ id: `edge-${i}`, type: 'dependency', source: `ticket:large-${Math.floor(i / 2)}`, target: `ticket:${ticket.key}`, label: null, data: {} }))
+    const layout = vi.spyOn(dagre, 'layout'), project = createTrackerFlowProjector()
+    const first = project(fixture)
+    expect(first.nodes).toHaveLength(300)
+    expect(layout).toHaveBeenCalledTimes(1)
+    layout.mockClear()
+    for (let i = 0; i < 20; i++) {
+      fixture.tickets[i]!.agent_stats = agentStatsFixture().totals
+      const current = project(fixture, { selectedNodeId: `ticket:large-${i}`, recentNodeIds: new Set([`ticket:large-${i}`]) })
+      expect(current.nodes.map(node => node.position)).toEqual(first.nodes.map(node => node.position))
+    }
+    project(fixture, { recentNodeIds: new Set() })
+    expect(layout).not.toHaveBeenCalled()
+    fixture.graph!.edges.pop()
+    expect(project(fixture).edges).toHaveLength(298)
+    expect(layout).toHaveBeenCalledTimes(1)
+    layout.mockRestore()
+  })
+  it('retains layout under selection, telemetry and highlight expiry, invalidating real shape changes', () => {
+    const layout = vi.spyOn(dagre, 'layout')
+    const project = createTrackerFlowProjector()
+    const fixture = structuredClone(snapshot)
+    const first = project(fixture)
+    expect(layout).toHaveBeenCalled()
+    layout.mockClear()
+    fixture.tickets[0]!.agent_stats = agentStatsFixture().totals
+    const selected = project(fixture, { selected: { kind: 'ticket', key: 'prepare' }, recentNodeIds: new Set(['ticket:prepare']) })
+    expect(selected.nodes.map(n => n.position)).toEqual(first.nodes.map(n => n.position))
+    expect(selected.nodes.find(n => n.id === 'ticket:prepare')!.data!.agentStats).toBe(fixture.tickets[0]!.agent_stats)
+    project(structuredClone(fixture), { recentNodeIds: new Set() })
+    expect(layout).not.toHaveBeenCalled()
+    fixture.graph!.edges = fixture.graph!.edges.filter(edge => edge.type !== 'dependency')
+    project(fixture)
+    expect(layout).toHaveBeenCalled()
+    layout.mockClear()
+    fixture.graph!.nodes.pop()
+    project(fixture)
+    expect(layout).toHaveBeenCalled()
+    layout.mockRestore()
+  })
   it('preserves each item work projection independently of parent lifecycle and agent call', () => {
     const source = structuredClone(snapshot)
     source.tasks[0]!.started_at = '2026-11-08T00:00:00Z'
