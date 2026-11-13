@@ -145,7 +145,6 @@ const {
 const {
   status: ingressStatus,
   loading: ingressLoading,
-  loadMessage: ingressLoadMessage,
   panelOpen: ingressSetupOpen,
   message: ingressMessage,
   form: ingressForm,
@@ -595,7 +594,7 @@ onBeforeRouteUpdate((to) => {
             :ingress-status="ingressStatus ?? null"
             :loading="ingressLoading"
             :syncing="busyAction === 'ingress:sync'"
-            :message="ingressMessage ?? ingressLoadMessage"
+            :message="ingressMessage"
             @refresh="loadIngressStatus"
             @configure="openIngressSetup"
             @sync="syncIngress"

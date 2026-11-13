@@ -202,6 +202,10 @@ destination read cannot hide accepted bot/channel counts or known-empty siblings
 Confirmed access denial clears the affected accepted presentation. Account mutation
 readbacks retain their originating request-gate scope epoch; a late write cannot
 reclaim a project after exit, replacement or return to a new lifetime.
+Ingress write completions share their editor's authority lifetime: reset, scope
+exit and confirmed denial retire old save/sync/confirmation outcomes. Mutation
+outcomes and readback errors remain distinct; Connectivity shows both when a
+write succeeds but its readback fails, until a successful fresh read clears the error.
 
 Both Home pages share `views/home/AgentActivitySection.vue`: Input / Cache /
 Output headlines, date controls, daily chart with input detail, and an accessible
