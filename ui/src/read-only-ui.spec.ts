@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = dirname(fileURLToPath(import.meta.url))
-const SCOPES = ['components', 'lib', 'stores', 'views']
+const SCOPES = ['components', 'composables', 'lib', 'stores', 'views']
 const WRITE_PATTERNS = [/\bapiWrite\b/, /method:\s*['"`](POST|PATCH|PUT|DELETE)['"`]/]
 const AUTH_SETUP_STORE = join(ROOT, 'stores', 'plugins.ts')
 const PROJECTS_STORE = join(ROOT, 'stores', 'projects.ts')
@@ -126,5 +126,23 @@ describe('restricted UI write contract', () => {
     const source = readFileSync(CAPACITY_CONTROL, 'utf8')
     expect(source).toContain("'tracker.setDeliveryCapacity', { concurrent_tasks: value.value }")
     expect(source).not.toMatch(/project_id|run_token|tracker\.configureDelivery/)
+  })
+
+  it('keeps global pattern maintenance at its shared operation owner', () => {
+    const owner = join(ROOT, 'composables', 'usePatterns.ts')
+    const callers: string[] = []
+    for (const scope of SCOPES) {
+      for (const file of filesUnder(join(ROOT, scope))) {
+        const source = readFileSync(file, 'utf8')
+        const operations = [...source.matchAll(/callOperation(?:<[^\n]+>)?\(\s*['"](pattern\.[^'"]+)['"]/g)].map(match => match[1])
+        if (operations.length) {
+          expect(file).toBe(owner)
+          expect(operations).toEqual(['pattern.list', 'pattern.get', 'pattern.upsert', 'pattern.delete'])
+          expect(source).not.toMatch(/project_id|run_token|bundled_id|source_selector/)
+          callers.push(file)
+        }
+      }
+    }
+    expect(callers).toEqual([owner])
   })
 })

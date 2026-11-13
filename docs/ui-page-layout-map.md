@@ -6,7 +6,7 @@ Status: layout contract for every routed desktop page.
 
 `App.vue` owns the persistent navigation, project switcher, and scrollable main
 viewport. The project picker directly precedes the scrollable project links.
-Overview, Accounts, and Backups sit in a separate App footer above the theme
+Overview, Accounts, Backups, and Patterns sit in a separate App footer above the theme
 control and remain available without a project. `UiPageShell` owns page rhythm
 only: it is always `width: 100%` and
 `min-width: 0`, with no centered maximum-width container. Each route has
@@ -36,6 +36,7 @@ not become narrower when its data or selected mode changes.
 | `/projects/:id/agents` | Agents | `AgentsView` | native project sources, Add/Edit and explicit saved-default adoption |
 | `/projects/:id/finance` | Finance | `FinanceView` | Overview / Expenses & income / Reports; contextual request inspection without inferred task links |
 | `/accounts` | Accounts | `AccountsView` | global named Account inventory and reusable Account setup |
+| `/patterns` and `/patterns/:patternId` | Patterns | `PatternsView` | installation-wide searchable guidance, selective Markdown reading and ordinary add/edit/delete |
 | `/projects/:id/connections` | Connections | `ConnectionsView` | Account attachment plus project-bound communication setup |
 
 `/projects` redirects to the portfolio and does not own a shell. Replaced human

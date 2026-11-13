@@ -16,12 +16,14 @@ import PluginDomainView from './views/PluginDomainView.vue'
 import WorkflowDetailView from './views/WorkflowDetailView.vue'
 import TaskTrackerView from './views/TaskTrackerView.vue'
 import FinanceView from './views/FinanceView.vue'
+import PatternsView from './views/PatternsView.vue'
 
 const routes: RouteRecordRaw[] = [
   { path: '/', name: 'home', component: HomeView },
   { path: '/setup', name: 'local-setup', component: LocalSetupView },
   { path: '/auth-error', name: 'auth-error', component: AuthErrorView },
   { path: '/accounts', name: 'accounts', component: AccountsView },
+  { path: '/patterns/:patternId?', name: 'patterns', component: PatternsView },
   { path: '/projects', redirect: '/' },
   {
     path: '/projects/:id',

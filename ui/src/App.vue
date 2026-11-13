@@ -312,6 +312,19 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
             />
             <span>Backups</span>
           </RouterLink>
+          <RouterLink
+            to="/patterns"
+            class="focus-ring-sb flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors duration-fast hover:bg-sb-hover hover:text-sb-strong"
+            :class="route.path.startsWith('/patterns') ? 'bg-sb-active text-sb-strong' : 'text-sb-fg'"
+            @click="closeDrawer"
+          >
+            <UiIcon
+              name="light-bulb"
+              class="h-4 w-4"
+              aria-hidden="true"
+            />
+            <span>Patterns</span>
+          </RouterLink>
         </nav>
 
         <div class="flex shrink-0 items-center justify-between gap-2 border-t border-sb-border px-4 py-3">

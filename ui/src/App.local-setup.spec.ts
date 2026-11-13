@@ -172,6 +172,7 @@ it.each([null, 7])(
       ['Overview', '/'],
       ['Accounts', '/accounts'],
       ['Backups', '/setup'],
+      ['Patterns', '/patterns'],
     ])
     expect(projectNav.element.nextElementSibling).toBe(appNav.element)
     expect(projectNav.element.previousElementSibling).toBe(

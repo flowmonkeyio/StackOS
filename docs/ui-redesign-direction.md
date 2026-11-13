@@ -448,9 +448,9 @@ questions:
 4. **Library** — What saved information and files belong to this project?
 
 The project picker sits immediately above project navigation. A separate App
-footer holds Overview, Accounts, and Backups outside the project navigation
+footer holds Overview, Accounts, Backups, and Patterns outside the project navigation
 scroll. Overview opens active work across projects and the system/lifecycle surface;
-Backups retains `/setup` and works without a project.
+Backups retains `/setup`; Patterns uses `/patterns`. Both work without a project.
 
 **Setup** contains Connections, Spend, Agents and Plugins. A separate **Plugins**
 group links directly to enabled domain pages; Finance retains its existing

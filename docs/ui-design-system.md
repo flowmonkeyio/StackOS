@@ -53,8 +53,8 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
   contains Connections, Spend, Agents and Plugins. The following **Plugins**
   group contains direct enabled-domain links, including the existing Finance
   destination. Domain links never expand into Data/Workflows submenus.
-- A separated **App** footer holds Overview, Accounts, and Backups outside the
-  project navigation scroll, above the theme control. All three are available
+- A separated **App** footer holds Overview, Accounts, Backups, and Patterns outside the
+  project navigation scroll, above the theme control. All four are available
   without a project. Backups retains the global `/setup` route.
   Domain-specific surfaces are plugin contributions or generic resource links,
   not new top-level product lanes. The root `/` shows local system status and
@@ -66,6 +66,11 @@ All defined in `ui/src/design/tokens.ts` and mirrored as CSS variables in `color
   results/history; Library owns saved information/files; domain pages own their
   workflow details. Finance request inspection stays at its origin even before
   a tracker task exists. See the [route map](./ui-page-layout-map.md).
+- Patterns uses global `/patterns` list and `/patterns/:patternId` reading
+  routes. Search, source selection and clickable freeform tags combine through
+  the shared bounded catalog operation. Source badges are server-derived
+  metadata. Add/edit uses ordinary fields and sanitized Markdown preview;
+  shared dialogs protect dirty drafts and confirm app-wide deletion.
 - Top bar: 52px. Sticky. Solid `bg.surface`, no blur.
 - Page content: max `1536px` (wide), `1280px` (default), `768px` (reading).
 - Page header: title, slug, description, and utility controls (right). Breadcrumbs optional, above title.
