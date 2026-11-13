@@ -33,10 +33,16 @@ async function load(nextProjectId = projectId.value, nextSlug = slug.value) {
   loading.value = true
   error.value = ''
   if (!Number.isSafeInteger(nextProjectId)) { loading.value = false; return }
-  await catalog.refreshPlugins(nextProjectId)
+  const ready = await catalog.refreshPlugins(nextProjectId)
   if (current !== generation) return
-  if (!catalog.error) plugin.value = catalog.plugins.find(item => item.slug === nextSlug)
-  if (catalog.error) error.value = catalog.error
+  if (ready) plugin.value = catalog.plugins.find(item => item.slug === nextSlug)
+  if (!ready) {
+    error.value = catalog.pluginError ?? 'Plugin availability could not be refreshed.'
+    if ([401, 403, 404].includes(catalog.pluginErrorStatus ?? 0)) {
+      plugin.value = undefined
+      workflows.value = []
+    }
+  }
   else if (enabled.value && page.value.sections.includes('workflows')) {
     try {
       const result = await apiFetch<{ templates: SchemaWorkflowTemplateSummaryOut[] }>(`/api/v1/projects/${nextProjectId}/workflow-templates?plugin_slug=${encodeURIComponent(nextSlug)}`)
@@ -103,12 +109,12 @@ onBeforeUnmount(() => { generation++; removeRouteListener() })
       label="Loading domain"
     />
     <UiCallout
-      v-else-if="!enabled"
+      v-else-if="!enabled && !error"
       tone="neutral"
     >
       {{ plugin ? 'This plugin is disabled for this project.' : 'This plugin is unavailable for this project.' }}
     </UiCallout>
-    <template v-else>
+    <template v-else-if="enabled">
       <section
         v-if="page.sections.includes('workflows')"
         class="domain-section"

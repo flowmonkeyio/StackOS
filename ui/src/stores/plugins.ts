@@ -47,6 +47,7 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
   const catalogLoaded = ref(false)
   const catalogError = ref<string | null>(null)
   const pluginError = ref<string | null>(null)
+  const pluginErrorStatus = ref<number | null>(null)
   const loading = ref(false)
   const error = ref<string | null>(null)
   const pluginProjectId = ref<number | null>(null)
@@ -72,6 +73,7 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     catalogLoading.value = false
     catalogError.value = null
     pluginError.value = null
+    pluginErrorStatus.value = null
   })
 
   const enabledPlugins = computed(() =>
@@ -103,6 +105,7 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     if (!options.silent) loading.value = true
     error.value = null
     pluginError.value = null
+    pluginErrorStatus.value = null
     try {
       const pluginQuery = `?project_id=${projectId}`
       const compactQuery = `${pluginQuery}&compact=true`
@@ -115,6 +118,7 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
       if (request.isCurrent()) {
         error.value = formatApiError(err, 'failed to load StackOS plugins')
         pluginError.value = error.value
+        pluginErrorStatus.value = err instanceof ApiError ? err.status : null
       }
       return false
     } finally {
@@ -473,6 +477,8 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     catalogLoading,
     catalogLoaded,
     catalogError,
+    pluginError,
+    pluginErrorStatus,
     loading,
     error,
     pluginProjectId,

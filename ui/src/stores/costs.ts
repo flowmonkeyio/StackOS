@@ -3,7 +3,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { apiFetch, formatApiError } from '@/lib/client'
+import { ApiError, apiFetch, formatApiError } from '@/lib/client'
 import { createProjectRequestGate } from '@/lib/stackos/projectRequestGate'
 import type { components } from '@/api'
 
@@ -26,15 +26,25 @@ export const useCostsStore = defineStore('costs', () => {
   const cost = ref<CostResponse | null>(null)
   const budgets = ref<IntegrationBudget[]>([])
   const history = ref<CostResponse[]>([])
-  const loading = ref(false)
-  const error = ref<string | null>(null)
+  const costLoading = ref(false)
+  const budgetsLoading = ref(false)
+  const historyLoading = ref(false)
+  const budgetsLoaded = ref(false)
+  const costError = ref<string | null>(null)
+  const budgetsError = ref<string | null>(null)
+  const historyErrors = ref<Record<string, string>>({})
+  const loading = computed(() => costLoading.value || budgetsLoading.value || historyLoading.value)
+  const error = computed(() => costError.value || budgetsError.value || Object.values(historyErrors.value)[0] || null)
   const currentProjectId = ref<number | null>(null)
   const month = ref<string | null>(null)
   const requests = createProjectRequestGate((projectId) => {
     cost.value = null
     budgets.value = []
     history.value = []
-    error.value = null
+    costLoading.value = budgetsLoading.value = historyLoading.value = false
+    budgetsLoaded.value = false
+    costError.value = budgetsError.value = null
+    historyErrors.value = {}
     currentProjectId.value = projectId
     month.value = null
   })
@@ -47,9 +57,10 @@ export const useCostsStore = defineStore('costs', () => {
   async function refreshCost(projectId: number, ym: string | null = null): Promise<void> {
     const request = requests.begin(projectId, 'cost')
     if (!ym) ym = defaultMonth()
+    if (month.value !== ym) cost.value = null
     month.value = ym
-    loading.value = true
-    error.value = null
+    costLoading.value = true
+    costError.value = null
     try {
       const params = new URLSearchParams({ month: ym })
       const nextCost = await apiFetch<CostResponse>(
@@ -58,34 +69,46 @@ export const useCostsStore = defineStore('costs', () => {
       if (request.isCurrent()) cost.value = nextCost
     } catch (err) {
       if (request.isCurrent()) {
-        error.value = formatApiError(err, 'failed to load cost')
+        costError.value = formatApiError(err, 'failed to load cost')
+        if (err instanceof ApiError && [401, 403, 404].includes(err.status)) cost.value = null
       }
     } finally {
-      loading.value = request.finish()
+      const current = request.isCurrent()
+      request.finish()
+      if (current) costLoading.value = false
     }
   }
 
   async function refreshBudgets(projectId: number): Promise<void> {
     const request = requests.begin(projectId, 'budgets')
-    loading.value = true
-    error.value = null
+    budgetsLoading.value = true
+    budgetsError.value = null
     try {
       const nextBudgets = await apiFetch<IntegrationBudget[]>(
         `/api/v1/projects/${projectId}/budgets`,
       )
-      if (request.isCurrent()) budgets.value = nextBudgets
+      if (request.isCurrent()) {
+        budgets.value = nextBudgets
+        budgetsLoaded.value = true
+      }
     } catch (err) {
       if (request.isCurrent()) {
-        error.value = formatApiError(err, 'failed to load budgets')
+        budgetsError.value = formatApiError(err, 'failed to load budgets')
+        if (err instanceof ApiError && [401, 403, 404].includes(err.status)) {
+          budgets.value = []
+          budgetsLoaded.value = false
+        }
       }
     } finally {
-      loading.value = request.finish()
+      const current = request.isCurrent()
+      request.finish()
+      if (current) budgetsLoading.value = false
     }
   }
 
   async function refreshHistory(projectId: number, months = 12): Promise<void> {
     const request = requests.begin(projectId, 'history')
-    loading.value = true
+    historyLoading.value = true
     try {
       const now = new Date()
       const ymRange: string[] = []
@@ -103,13 +126,26 @@ export const useCostsStore = defineStore('costs', () => {
         }),
       )
       const next: CostResponse[] = []
-      for (const result of results) {
-        if (result.status === 'fulfilled') next.push(result.value)
+      const failures: Record<string, string> = {}
+      if (request.isCurrent()) {
+        for (const [index, result] of results.entries()) {
+          const ym = ymRange[index]!
+          if (result.status === 'fulfilled') next.push(result.value)
+          else {
+            failures[ym] = formatApiError(result.reason, 'Failed to load history')
+            const previous = history.value.find(row => row.period_start.startsWith(ym))
+            const denied = result.reason instanceof ApiError && [401, 403, 404].includes(result.reason.status)
+            if (previous && !denied) next.push(previous)
+          }
+        }
+        next.sort((a, b) => a.period_start.localeCompare(b.period_start))
+        history.value = next
+        historyErrors.value = failures
       }
-      next.sort((a, b) => (a.period_start < b.period_start ? -1 : 1))
-      if (request.isCurrent()) history.value = next
     } finally {
-      loading.value = request.finish()
+      const current = request.isCurrent()
+      request.finish()
+      if (current) historyLoading.value = false
     }
   }
 
@@ -123,8 +159,10 @@ export const useCostsStore = defineStore('costs', () => {
     cost.value = null
     budgets.value = []
     history.value = []
-    loading.value = false
-    error.value = null
+    costLoading.value = budgetsLoading.value = historyLoading.value = false
+    budgetsLoaded.value = false
+    costError.value = budgetsError.value = null
+    historyErrors.value = {}
     currentProjectId.value = null
     month.value = null
   }
@@ -135,6 +173,13 @@ export const useCostsStore = defineStore('costs', () => {
     history,
     loading,
     error,
+    costLoading,
+    budgetsLoading,
+    historyLoading,
+    budgetsLoaded,
+    costError,
+    budgetsError,
+    historyErrors,
     currentProjectId,
     month,
     hasNoSpendYet,

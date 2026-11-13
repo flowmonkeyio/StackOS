@@ -207,6 +207,22 @@ exit and confirmed denial retire old save/sync/confirmation outcomes. Mutation
 outcomes and readback errors remain distinct; Connectivity shows both when a
 write succeeds but its readback fails, until a successful fresh read clears the error.
 
+Library and domain readers retain accepted resource schemas only for the same
+project and schema query. Type labels and structured selected fields stay mounted
+through compatible refresh failures; the canonical source pagers still own rows,
+cursors and recovery. Workflow details retain the same accepted contract on a
+transient read failure, with an explicit inspection-only stale cue. A new identity,
+mismatched source, disabled plugin or confirmed access failure clears that contract.
+The catalog store exposes the plugin read's own error/status so a sibling catalog
+read cannot masquerade as current plugin availability.
+
+Spend owns independent current-month, budget and history read states in the costs
+store. Unread metrics display placeholders, while accepted zero and empty results
+remain meaningful. Each failed history month is reported; retained values for that
+month are marked stale, and missing months are never filled with zero. Reserved
+status lines and keyboard-accessible error disclosures preserve compatible content
+positions until the operator chooses to expand diagnostics.
+
 Both Home pages share `views/home/AgentActivitySection.vue`: Input / Cache /
 Output headlines, date controls, daily chart with input detail, and an accessible
 Agent / Model / Agent+model `DataTable`. `useAgentStats.ts` owns one dated,

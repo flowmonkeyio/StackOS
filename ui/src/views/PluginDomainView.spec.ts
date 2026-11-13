@@ -4,7 +4,7 @@ import PluginDomainView from './PluginDomainView.vue'
 import { openView, page, plugin, workflow } from './plugin-domain/testSupport'
 
 const client = vi.hoisted(() => ({ apiFetch: vi.fn() }))
-vi.mock('@/lib/client', () => ({ apiFetch: client.apiFetch, formatApiError: (e: unknown) => String(e) }))
+vi.mock('@/lib/client', async importOriginal => ({ ...await importOriginal<typeof import('@/lib/client')>(), apiFetch: client.apiFetch, formatApiError: (e: unknown) => String(e) }))
 const record = (id: number, key = 'engineering-decision', project_id = 1, plugin_slug = 'engineering') => ({ id, project_id, plugin_slug, resource_id: key === 'engineering-decision' ? 1 : 2, resource_key: key, title: `Same title ${id}`, data_json: { decision: `Exact saved decision ${id}` }, created_at: '2026-11-09' })
 const wrappers: Awaited<ReturnType<typeof openView>>['wrapper'][] = []
 async function open(path = '/projects/1/plugins/engineering') {
@@ -98,6 +98,33 @@ describe('Plugin domain', () => {
     expect(document.activeElement).toBe(link.element)
     await link.trigger('click'); await flushPromises()
     expect(router.currentRoute.value.params.templateKey).toBe('engineering.review / exact')
+  })
+
+  it('keeps selected structured domain details and type labels while schemas refresh or fail', async () => {
+    let slow = false
+    let reject!: (error: Error) => void
+    client.apiFetch.mockImplementation((url: string) => {
+      if (url.startsWith('/api/v1/resources?')) return slow ? new Promise((_resolve, fail) => { reject = fail })
+        : Promise.resolve([{ id: 1, plugin_slug: 'engineering', key: 'engineering-decision', name: 'Approved decisions', ui_schema_json: { summary_fields: ['decision'] } }])
+      return Promise.resolve(url.includes('/resource-records?') ? page([record(1)]) : defaults(url))
+    })
+    const { wrapper } = await open()
+    await wrapper.get('[data-source="resource_record:1"]').trigger('click'); await flushPromises()
+    const facts = document.body.querySelector('[aria-label="Saved content"]')!
+    const disclosure = document.body.querySelector('.ui-sidepanel__body details') as HTMLDetailsElement
+    disclosure.open = true
+    slow = true
+    await button(wrapper, 'Refresh').trigger('click'); await flushPromises()
+    expect(document.body.querySelector('[aria-label="Saved content"]')).toBe(facts)
+    expect(wrapper.text()).toContain('Approved decisions')
+    reject(new Error('Schema refresh failed')); await flushPromises()
+    expect(document.body.querySelector('[aria-label="Saved content"]')).toBe(facts)
+    expect(facts.textContent).toContain('Exact saved decision 1')
+    expect(disclosure.open).toBe(true)
+    expect(wrapper.text()).toContain('Showing last accepted labels and fields')
+    slow = false
+    await button(wrapper, 'Retry field descriptions').trigger('click'); await flushPromises()
+    expect(document.body.querySelector('[aria-label="Saved content"]')).toBe(facts)
   })
 
   it('retains the workflow list during a compatible delayed refresh', async () => {

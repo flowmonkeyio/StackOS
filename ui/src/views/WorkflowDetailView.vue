@@ -6,7 +6,7 @@ import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import TemplateRenderer from '@/components/renderers/TemplateRenderer.vue'
 import { UiButton, UiCallout, UiLoadingState, UiPageShell } from '@/components/ui'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
-import { apiFetch, formatApiError } from '@/lib/client'
+import { ApiError, apiFetch, formatApiError } from '@/lib/client'
 import { projectIdFromRoute } from '@/lib/stackos/projectNavigation'
 import { useStackOsCatalogStore } from '@/stores/plugins'
 import { domainLocation } from './plugin-domain/viewModel'
@@ -25,24 +25,41 @@ async function load(nextProjectId = projectId.value, nextSlug = slug.value, next
   const current = ++generation
   error.value = ''
   loading.value = true
-  if (!Number.isSafeInteger(nextProjectId)) { loading.value = false; return }
+  if (!Number.isSafeInteger(nextProjectId) || nextProjectId <= 0 || !nextKey) {
+    template.value = null
+    error.value = 'This workflow identity is invalid.'
+    loading.value = false
+    return
+  }
   if (nextSlug) {
-    await catalog.refreshPlugins(nextProjectId)
+    const ready = await catalog.refreshPlugins(nextProjectId)
     if (current !== generation) return
-    if (catalog.error) error.value = catalog.error
-    else if (!catalog.plugins.some(item => item.slug === nextSlug && item.enabled_for_project !== false)) error.value = 'This plugin is unavailable or disabled for this project.'
+    if (!ready) {
+      error.value = catalog.pluginError ?? 'Plugin availability could not be refreshed.'
+      if ([401, 403, 404].includes(catalog.pluginErrorStatus ?? 0)) template.value = null
+    } else if (!catalog.plugins.some(item => item.slug === nextSlug && item.enabled_for_project !== false)) {
+      error.value = 'This plugin is unavailable or disabled for this project.'
+      template.value = null
+    }
   }
   if (!error.value) {
     try {
       const suffix = nextSlug ? `?plugin_slug=${encodeURIComponent(nextSlug)}` : ''
       const result = await apiFetch<SchemaLoadedWorkflowTemplate>(`/api/v1/projects/${nextProjectId}/workflow-templates/${encodeURIComponent(nextKey)}${suffix}`)
       if (current !== generation) return
-      if (result.summary.key !== nextKey || (result.summary.plugin_slug ?? '') !== nextSlug || result.spec.key !== nextKey) throw new Error('The workflow source does not match this page.')
+      if (result.summary.key !== nextKey || (result.summary.plugin_slug ?? '') !== nextSlug || result.spec.key !== nextKey) {
+        template.value = null
+        throw new Error('The workflow source does not match this page.')
+      }
       template.value = result
-    } catch (err) { if (current === generation) error.value = formatApiError(err, 'Workflow unavailable') }
+    } catch (err) {
+      if (current === generation) {
+        error.value = formatApiError(err, 'Workflow unavailable')
+        if (err instanceof ApiError && [400, 401, 403, 404, 410, 422].includes(err.status)) template.value = null
+      }
+    }
   }
   if (current === generation) {
-    if (error.value) template.value = null
     loading.value = false
   }
 }
@@ -99,8 +116,17 @@ onBeforeUnmount(() => { generation++; removeRouteListener() })
       v-if="loading && !template"
       label="Loading workflow"
     />
+    <div v-if="template" class="min-h-5 text-xs text-fg-muted" role="status">
+      <details v-if="error">
+        <summary class="focus-ring cursor-pointer rounded-sm">Last accepted workflow · refresh required</summary>
+        <UiCallout tone="warning" class="mt-2">
+          {{ error }} Inspection only. <UiButton size="sm" @click="load()">Retry</UiButton>
+        </UiCallout>
+      </details>
+      <p v-else>{{ loading ? 'Refreshing workflow…' : 'Workflow contract · inspection only.' }}</p>
+    </div>
     <UiCallout
-      v-else-if="error"
+      v-if="error && !template"
       tone="danger"
     >
       {{ error }} <UiButton
@@ -111,7 +137,7 @@ onBeforeUnmount(() => { generation++; removeRouteListener() })
       </UiButton>
     </UiCallout>
     <TemplateRenderer
-      v-else-if="template"
+      v-if="template"
       :template="template"
     />
   </UiPageShell>

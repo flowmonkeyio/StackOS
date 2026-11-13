@@ -276,18 +276,16 @@ async function closeDetails() {
             @update:model-value="updateQuery({ type: String($event ?? '') })"
           />
         </div>
-        <UiCallout
-          v-if="resources.schemaError && query.tab === 'saved'"
-          tone="warning"
-        >
-          Field descriptions unavailable. Saved sources remain readable in Details.
-          <UiButton
-            size="sm"
-            @click="resources.refreshSchemas(projectId)"
-          >
-            Retry field descriptions
-          </UiButton>
-        </UiCallout>
+        <div v-if="query.tab === 'saved'" class="min-h-5 text-xs text-fg-muted" role="status">
+          <details v-if="resources.schemaError">
+            <summary class="focus-ring cursor-pointer rounded-sm">Field descriptions need refresh</summary>
+            <UiCallout tone="warning" class="mt-2">
+              {{ resources.schemaLoaded ? 'Field descriptions could not be refreshed. Showing last accepted labels and fields.' : 'Field descriptions unavailable. Saved sources remain readable in Details.' }}
+              <UiButton size="sm" @click="resources.refreshSchemas(projectId)">Retry field descriptions</UiButton>
+            </UiCallout>
+          </details>
+          <p v-else>{{ resources.schemaLoading ? 'Reading field descriptions…' : 'Field descriptions current.' }}</p>
+        </div>
         <div
           ref="list"
           data-library-list

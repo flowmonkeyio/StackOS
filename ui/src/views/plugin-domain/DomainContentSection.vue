@@ -147,17 +147,16 @@ onBeforeUnmount(() => { generation++ })
         @update:model-value="setType"
       />
     </div>
-    <UiCallout
-      v-if="kind === 'saved' && resources.schemaError"
-      tone="warning"
-    >
-      Field descriptions unavailable. Saved content remains readable in Details. <UiButton
-        size="sm"
-        @click="resources.refreshSchemas(projectId, { pluginSlug })"
-      >
-        Retry field descriptions
-      </UiButton>
-    </UiCallout>
+    <div v-if="kind === 'saved'" class="min-h-5 text-xs text-fg-muted" role="status">
+      <details v-if="resources.schemaError">
+        <summary class="focus-ring cursor-pointer rounded-sm">Field descriptions need refresh</summary>
+        <UiCallout tone="warning" class="mt-2">
+          {{ resources.schemaLoaded ? 'Field descriptions could not be refreshed. Showing last accepted labels and fields.' : 'Field descriptions unavailable. Saved content remains readable in Details.' }}
+          <UiButton size="sm" @click="resources.refreshSchemas(projectId, { pluginSlug })">Retry field descriptions</UiButton>
+        </UiCallout>
+      </details>
+      <p v-else>{{ resources.schemaLoading ? 'Reading field descriptions…' : 'Field descriptions current.' }}</p>
+    </div>
     <div
       ref="list"
       class="domain-table"
