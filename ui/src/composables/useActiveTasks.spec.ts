@@ -48,6 +48,30 @@ beforeEach(() => {
 afterEach(() => { wrappers.splice(0).forEach(wrapper => wrapper.unmount()) })
 
 describe('shared Home active-task reads', () => {
+  it('keeps a healthy accepted snapshot live during an ordinary deferred refresh', async () => {
+    vi.mocked(callOperation).mockResolvedValue(page([task()]))
+    const state = home()
+    await flushPromises()
+    stream().onFrame?.(Date.now()); stream().onUsage?.()
+    await flushPromises()
+    expect(state.feed.value.status).toBe('live')
+    const next = deferred<SchemaActiveTasksOut>()
+    vi.mocked(callOperation).mockReturnValueOnce(next.promise)
+    const read = state.refresh()
+    await flushPromises()
+    expect(state.loading.value).toBe(true)
+    expect(state.feed.value.status).toBe('live')
+    expect(state.items.value).toHaveLength(1)
+    next.resolve(page([]))
+    await read
+    const liveRead = deferred<SchemaActiveTasksOut>()
+    vi.mocked(callOperation).mockReturnValueOnce(liveRead.promise)
+    stream().onUsage?.()
+    await flushPromises()
+    expect(state.feed.value.status).toBe('live')
+    liveRead.resolve(page([]))
+    await flushPromises()
+  })
   it('loads one bulk scope, invalidates global frames with no metrics, retains stopped work and removes completed work', async () => {
     vi.mocked(callOperation).mockResolvedValue(page([task(1), task(2)]))
     const state = home()

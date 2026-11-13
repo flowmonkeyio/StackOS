@@ -25,6 +25,7 @@ import type { CommunicationSurface, MessageTone } from './types'
 defineProps<{
   channels: CommunicationSurface[]
   loading: boolean
+  loaded?: boolean
   message: { tone: MessageTone; text: string } | null
 }>()
 
@@ -65,7 +66,7 @@ defineEmits<{
     </UiCallout>
 
     <UiCard
-      v-if="loading"
+      v-if="loading && !loaded && !channels.length"
       aria-label="Loading channels"
     >
       <UiSkeleton
@@ -75,7 +76,7 @@ defineEmits<{
     </UiCard>
 
     <UiEmptyState
-      v-else-if="channels.length === 0"
+      v-else-if="channels.length === 0 && !message"
       title="No channels yet"
       description="Channels appear here once a bot sees a conversation, or when one is registered through StackOS. Each one carries audience and sensitivity so agents know where they are acting."
       icon="megaphone"

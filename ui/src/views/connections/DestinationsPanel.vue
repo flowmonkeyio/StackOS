@@ -18,6 +18,7 @@ import type { CommunicationTarget, MessageTone } from './types'
 defineProps<{
   destinations: CommunicationTarget[]
   loading: boolean
+  loaded?: boolean
   message: { tone: MessageTone; text: string } | null
 }>()
 
@@ -58,7 +59,7 @@ defineEmits<{
     </UiCallout>
 
     <UiCard
-      v-if="loading"
+      v-if="loading && !loaded && !destinations.length"
       aria-label="Loading destinations"
     >
       <UiSkeleton
@@ -68,7 +69,7 @@ defineEmits<{
     </UiCard>
 
     <UiEmptyState
-      v-else-if="destinations.length === 0"
+      v-else-if="destinations.length === 0 && !message"
       title="No destinations yet"
       description="Destinations give agents a safe vocabulary for where they can send — for example a named internal Slack channel — with policy guards on who can use them."
       icon="arrow-right"

@@ -84,8 +84,10 @@ function open(channel: Channel): void {
       if (!current()) return
       channel.snapshotVersion += 1
       if (channel.projectId === null) {
+        // Global frames invalidate the pending read, not the healthy transport.
+        // Keep the accepted snapshot live while its replacement is fetched.
+        // Real disconnect/error/visibility transitions still require a snapshot.
         channel.snapshotReady = false
-        if (channel.connection.status === 'live') publishConnection(channel, 'reconnecting')
       }
       if (updates) {
         const version = ++revision

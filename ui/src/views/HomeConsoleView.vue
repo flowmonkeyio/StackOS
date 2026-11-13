@@ -16,7 +16,7 @@ const { projectId } = useProjectRouteScope()
 const activeTasks = ref<InstanceType<typeof ActiveTaskList> | null>(null)
 const capacityControl = ref<InstanceType<typeof DeliveryCapacityControl> | null>(null)
 const overview = useProjectOverview(projectId)
-const { project, accounts, loading, errors } = overview
+const { project, accounts, loading, connectionsLoaded, errors } = overview
 const projects = useProjectsStore()
 const projectName = computed(() => projects.isProjectDeleted(projectId.value) ? 'Project unavailable'
   : projects.getById(projectId.value)?.name ?? project.value?.name)
@@ -25,8 +25,12 @@ const agents = useAgentStats(projectId)
 onMounted(() => { void agents.load() })
 const { summary: agentSummary, loading: agentsLoading, error: agentsError, filters: agentFilters } = agents
 const { running, refresh } = usePolling(overview.load, { intervalMs: 30_000 })
+const refreshing = ref(false)
 async function refreshAll(): Promise<void> {
-  await Promise.all([refresh(), agents.load(), activeTasks.value?.refresh(), capacityControl.value?.refresh()])
+  refreshing.value = true
+  try {
+    await Promise.all([refresh(), agents.load(), activeTasks.value?.refresh(), capacityControl.value?.refresh()])
+  } finally { refreshing.value = false }
 }
 </script>
 
@@ -46,7 +50,7 @@ async function refreshAll(): Promise<void> {
           variant="secondary"
           size="sm"
           icon-left="refresh"
-          :loading="running"
+          :loading="refreshing || running"
           @click="refreshAll"
         >
           Refresh
@@ -68,6 +72,7 @@ async function refreshAll(): Promise<void> {
     <HomeConnectionsSection
       :accounts="accounts"
       :loading="loading"
+      :loaded="connectionsLoaded"
       :error="errors.connections"
       :project-id="projectId"
     />

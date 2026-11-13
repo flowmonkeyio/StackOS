@@ -1,4 +1,4 @@
-import { computed, nextTick, ref, type ComputedRef } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, type ComputedRef } from 'vue'
 import { storeToRefs } from 'pinia'
 
 import type {
@@ -57,7 +57,14 @@ type NativeAuthorizationMode = 'phone' | 'qr'
 
 export function useAccountCredentials(attachProjectId: ComputedRef<number | null>) {
   const catalogStore = useStackOsCatalogStore()
-  const { globalAccountsStatus, authProviders, loading, error } = storeToRefs(catalogStore)
+  const { globalAccountsStatus, authProviders, accountsLoading, accountsError } = storeToRefs(catalogStore)
+  const usageLoading = ref(false)
+  const usageError = ref<string | null>(null)
+  const loading = computed(() => accountsLoading.value || usageLoading.value)
+  const error = computed(() => accountsError.value ?? usageError.value)
+  let loadGeneration = 0
+  let retired = false
+  onBeforeUnmount(() => { retired = true; loadGeneration += 1 })
   const {
     selectedProviderKey,
     authMethods,
@@ -158,11 +165,24 @@ export function useAccountCredentials(attachProjectId: ComputedRef<number | null
   )
 
   async function load(): Promise<void> {
-    const [, usage] = await Promise.all([
+    if (retired) return
+    const generation = ++loadGeneration
+    usageLoading.value = true
+    await Promise.all([
       catalogStore.refreshAccounts(),
-      callOperation<{ uses: CommunicationAccountUse[] }>('communicationProfile.accountUsage', {}),
+      (async () => {
+        try {
+          const usage = await callOperation<{ uses: CommunicationAccountUse[] }>('communicationProfile.accountUsage', {})
+          if (retired || generation !== loadGeneration) return
+          communicationAccountUses.value = usage.uses ?? []
+          usageError.value = null
+        } catch (cause) {
+          if (!retired && generation === loadGeneration) usageError.value = formatApiError(cause, 'Could not refresh Account usage.')
+        } finally {
+          if (!retired && generation === loadGeneration) usageLoading.value = false
+        }
+      })(),
     ])
-    communicationAccountUses.value = usage.uses ?? []
   }
 
   function ensureSelectableProvider(): void {

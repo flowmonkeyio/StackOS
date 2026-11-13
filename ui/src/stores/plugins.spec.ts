@@ -159,6 +159,108 @@ describe('StackOS catalog store auth controls', () => {
     expect(store.authStatus?.project_id).toBe(2)
   })
 
+  it.each([true, false])('keeps account and project-auth reads independent (accounts first: %s)', async (accountsFirst) => {
+    const store = useStackOsCatalogStore()
+    globalThis.fetch = vi.fn(async (input) => json(authStatus(String(input).includes('/projects/') ? 1 : null))) as typeof fetch
+    await Promise.all([store.refreshAccounts(), store.refreshAuth(1)])
+    const acceptedAccounts = store.globalAccountsStatus
+    const acceptedAuth = store.authStatus
+    const accounts = deferred<Response>()
+    const auth = deferred<Response>()
+    globalThis.fetch = vi.fn((input) => String(input).includes('/projects/') ? auth.promise : accounts.promise) as typeof fetch
+    const accountRead = store.refreshAccounts()
+    const authRead = store.refreshAuth(1)
+    expect(store.globalAccountsStatus).toEqual(acceptedAccounts)
+    expect(store.authStatus).toEqual(acceptedAuth)
+    expect(store.accountsLoading).toBe(true)
+    expect(store.authLoading).toBe(true)
+    if (accountsFirst) {
+      accounts.resolve(json({ detail: 'Accounts offline' }, 503))
+      await accountRead
+      expect(store.accountsError).toContain('Accounts offline')
+      expect(store.authLoading).toBe(true)
+      auth.resolve(json(authStatus(1)))
+    } else {
+      auth.resolve(json({ detail: 'Connections offline' }, 503))
+      await authRead
+      expect(store.authError).toContain('Connections offline')
+      expect(store.accountsLoading).toBe(true)
+      accounts.resolve(json(authStatus(null)))
+    }
+    await Promise.all([accountRead, authRead])
+    expect(store.accountsLoading).toBe(false)
+    expect(store.authLoading).toBe(false)
+    expect(accountsFirst ? store.accountsError : store.authError).toContain('offline')
+    expect(store.globalAccountsStatus).toEqual(acceptedAccounts)
+    expect(store.authStatus).toEqual(acceptedAuth)
+  })
+
+  it('clears project authority after a denied read and ignores results after scope exit', async () => {
+    const store = useStackOsCatalogStore()
+    globalThis.fetch = vi.fn(async () => json(authStatus(1))) as typeof fetch
+    await store.refreshAuth(1)
+    globalThis.fetch = vi.fn(async () => json({ detail: 'Forbidden project' }, 403)) as typeof fetch
+    await store.refreshAuth(2)
+    expect(store.authStatus).toBeNull()
+    expect(store.authError).toContain('Forbidden project')
+    expect(vi.mocked(fetch).mock.calls.every(([, init]) => !init?.method || init.method === 'GET')).toBe(true)
+    const late = deferred<Response>()
+    globalThis.fetch = vi.fn(() => late.promise) as typeof fetch
+    const read = store.refreshAuth(1)
+    store.releaseAuth(1)
+    late.resolve(json(authStatus(1)))
+    await read
+    expect(store.authStatus).toBeNull()
+    expect(store.connectionProjectId).toBeNull()
+    expect(store.authLoading).toBe(false)
+  })
+
+  it('keeps confirmed revocation authoritative when readback fails and an older read arrives', async () => {
+    const store = useStackOsCatalogStore()
+    globalThis.fetch = vi.fn(async () => json(authStatus(null))) as typeof fetch
+    await store.refreshAccounts()
+    const late = deferred<Response>()
+    globalThis.fetch = vi.fn((input) => {
+      if (String(input).endsWith('/revoke')) return Promise.resolve(json({ data: {
+        credential_ref: 'cred_firecrawl', provider_key: 'firecrawl', revoked_at: '2026-11-13T00:00:00Z', status: 'revoked',
+      } }))
+      return late.promise
+    }) as typeof fetch
+    const old = store.refreshAccounts()
+    let readCount = 0
+    const before = globalThis.fetch
+    globalThis.fetch = vi.fn((input, init) => {
+      if (String(input) === '/api/v1/auth/accounts' && ++readCount === 1)
+        return Promise.resolve(json({ detail: 'Readback offline' }, 503))
+      return before(input, init)
+    }) as typeof fetch
+    await store.revokeCredential('cred_firecrawl')
+    late.resolve(json(authStatus(null)))
+    await old
+    expect(store.globalAccountsStatus?.accounts[0]?.status).toBe('revoked')
+    expect(store.accountsError).toContain('Readback offline')
+  })
+
+  it('keeps confirmed attachment changes when both readbacks fail', async () => {
+    const store = useStackOsCatalogStore()
+    globalThis.fetch = vi.fn(async input => json(authStatus(String(input).includes('/projects/') ? 1 : null))) as typeof fetch
+    await Promise.all([store.refreshAccounts(), store.refreshAuth(1)])
+    const account = { ...store.globalAccountsStatus!.accounts[0]!, project_ids: [] as number[] }
+    globalThis.fetch = vi.fn(async (_input, init) => {
+      if (init?.method === 'DELETE') return json({ data: account })
+      if (init?.method === 'POST') return json({ data: { ...account, project_ids: [1] } })
+      return json({ detail: 'Readback offline' }, 503)
+    }) as typeof fetch
+    await store.detachAccount(1, account.credential_ref)
+    expect(store.authStatus?.accounts).toEqual([])
+    expect(store.globalAccountsStatus?.accounts[0]?.project_ids).toEqual([])
+    await store.attachAccount(1, account.credential_ref)
+    expect(store.authStatus?.accounts[0]?.credential_ref).toBe(account.credential_ref)
+    expect(store.globalAccountsStatus?.accounts[0]?.project_ids).toEqual([1])
+    expect(store.authError).toContain('Readback offline')
+    expect(store.accountsError).toContain('Readback offline')
+  })
+
   it('reads the complete schema-free inventory without unused resource or manifest reads', async () => {
     const calls: string[] = []
     globalThis.fetch = vi.fn(async (input) => {

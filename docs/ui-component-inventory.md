@@ -188,6 +188,16 @@ names and canonical status icons with accessible labels. Identical provider/acco
 names retain stable account numbers. Hover/focus discloses full identity and state;
 Manage connections in the header reaches the existing global or project owner.
 
+Home refreshes retain accepted task and connected-tool rows, including accepted
+empty results. An ordinary snapshot read keeps healthy feed status; only transport
+loss, a failed read or an unconfirmed reconnect makes freshness stale. The task
+header reserves its status slot so pending reads do not insert a new banner.
+The catalog store exposes independent account, project-auth and catalog read
+states. Accounts and Connections consume their named state; compatible readbacks
+retain rows and filters, while scope exit and confirmed access denial invalidate
+project-auth content. Connections topology and ingress retain compatible data
+with explicit read errors; panels keep their accepted content mounted during refresh.
+
 Both Home pages share `views/home/AgentActivitySection.vue`: Input / Cache /
 Output headlines, date controls, daily chart with input detail, and an accessible
 Agent / Model / Agent+model `DataTable`. `useAgentStats.ts` owns one dated,

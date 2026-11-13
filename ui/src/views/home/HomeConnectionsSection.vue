@@ -7,7 +7,7 @@ import { resolveStatus } from '@/design/status'
 import { connectionNeedsAttention, connectionStatusKey } from '@/views/connections/credentialPresentation'
 import { providerLabel } from '@/views/connections/formatters'
 
-const props = defineProps<{ accounts: SchemaAccountOut[]; loading: boolean; error?: string | null; projectId?: number }>()
+const props = defineProps<{ accounts: SchemaAccountOut[]; loading: boolean; loaded?: boolean; error?: string | null; projectId?: number }>()
 
 const entries = computed(() => props.accounts.map(account => {
   const provider = providerLabel(account.provider_key)
@@ -32,6 +32,7 @@ const stateColor = {
     section
     class="home-connections"
     aria-label="Connected tools"
+    :aria-busy="loading"
   >
     <UiSectionHeader title="Connected tools">
       <template #actions>
@@ -60,7 +61,7 @@ const stateColor = {
       {{ error }}
     </UiCallout>
     <UiSkeleton
-      v-if="loading"
+      v-if="loading && !loaded && !entries.length"
       shape="block"
       height="3rem"
       class="mt-3"

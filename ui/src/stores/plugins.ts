@@ -24,7 +24,7 @@ import type {
   SchemaWriteResponseAccountAuthStatusOut,
   SchemaWriteResponseAccountSessionOut,
 } from '@/api'
-import { apiFetch, formatApiError } from '@/lib/client'
+import { ApiError, apiFetch, formatApiError } from '@/lib/client'
 import { createProjectRequestGate } from '@/lib/stackos/projectRequestGate'
 import { callOperation } from '@/lib/operations'
 
@@ -38,6 +38,10 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
   const authProviders = ref<SchemaAuthProviderOut[]>([])
   const globalAccountsStatus = ref<SchemaAuthStatusOut | null>(null)
   const authStatus = ref<SchemaAuthStatusOut | null>(null)
+  const accountsLoading = ref(false)
+  const accountsError = ref<string | null>(null)
+  const authLoading = ref(false)
+  const authError = ref<string | null>(null)
   const actions = ref<SchemaActionListItemOut[]>([])
   const catalogLoading = ref(false)
   const catalogLoaded = ref(false)
@@ -48,6 +52,12 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
   const pluginProjectId = ref<number | null>(null)
   const connectionProjectId = ref<number | null>(null)
   let accountRefreshSequence = 0
+  const authRequests = createProjectRequestGate(() => {
+    authStatus.value = null
+    connectionProjectId.value = null
+    authLoading.value = false
+    authError.value = null
+  })
   let pendingPlugins: { projectId: number; promise: Promise<boolean> } | null = null
   const projectRequests = createProjectRequestGate(() => {
     // Incompatible project metadata must disappear immediately. Compatible
@@ -149,51 +159,59 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
   }
 
   async function refreshAuth(projectId: number, options: { silent?: boolean } = {}): Promise<void> {
-    const request = projectRequests.begin(projectId, 'connections', {
-      trackPending: !options.silent,
-    })
-    if (!options.silent) loading.value = true
-    error.value = null
-    if (!options.silent) {
-      authProviders.value = []
-      authStatus.value = null
-    }
+    const request = authRequests.begin(projectId, 'connections', { trackPending: !options.silent })
+    connectionProjectId.value = projectId
+    authLoading.value = true
     try {
       const status = await apiFetch<SchemaAuthStatusOut>(
         `/api/v1/projects/${projectId}/connections/accounts`,
       )
-      const nextAuthProviders = status.providers
       if (!request.isCurrent()) return
-      authProviders.value = nextAuthProviders
       authStatus.value = status
       connectionProjectId.value = projectId
+      authError.value = null
     } catch (err) {
       if (request.isCurrent()) {
-        error.value = formatApiError(err, 'failed to load connections')
+        authError.value = formatApiError(err, 'failed to load connections')
+        if (err instanceof ApiError && [401, 403, 404].includes(err.status)) authStatus.value = null
       }
     } finally {
-      const hasPending = request.finish()
-      if (!options.silent) loading.value = hasPending
+      if (request.isCurrent()) authLoading.value = false
+      request.finish()
     }
   }
 
   async function refreshAccounts(options: { silent?: boolean } = {}): Promise<void> {
     const requestSequence = ++accountRefreshSequence
-    if (!options.silent) loading.value = true
-    error.value = null
-    if (!options.silent) globalAccountsStatus.value = null
+    void options
+    accountsLoading.value = true
     try {
       const status = await apiFetch<SchemaAuthStatusOut>('/api/v1/auth/accounts')
       if (requestSequence !== accountRefreshSequence) return
       authProviders.value = status.providers
       globalAccountsStatus.value = status
+      accountsError.value = null
     } catch (err) {
       if (requestSequence === accountRefreshSequence) {
-        error.value = formatApiError(err, 'failed to load accounts')
+        accountsError.value = formatApiError(err, 'failed to load accounts')
+        if (err instanceof ApiError && [401, 403].includes(err.status)) {
+          globalAccountsStatus.value = null
+          authProviders.value = []
+        }
       }
     } finally {
-      if (!options.silent && requestSequence === accountRefreshSequence) loading.value = false
+      if (requestSequence === accountRefreshSequence) accountsLoading.value = false
     }
+  }
+
+  function releaseAuth(projectId: number): void {
+    // Only retire this consumer's project; a replacement scope may already own it.
+    if (connectionProjectId.value !== projectId) return
+    authRequests.invalidate()
+    authStatus.value = null
+    connectionProjectId.value = null
+    authLoading.value = false
+    authError.value = null
   }
 
   async function storeCredential(
@@ -315,6 +333,16 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
         method: 'POST',
       },
     )
+    accountRefreshSequence += 1
+    authRequests.invalidateOperation('connections')
+    authLoading.value = false
+    for (const snapshot of [globalAccountsStatus.value, authStatus.value]) {
+      const account = snapshot?.accounts.find(row => row.credential_ref === credentialRef)
+      if (account) {
+        account.status = response.data.status
+        account.revoked_at = response.data.revoked_at
+      }
+    }
     await refreshAccounts({ silent: true })
     return response
   }
@@ -328,6 +356,17 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
       `/api/v1/projects/${projectId}/connections/accounts/${encodeURIComponent(credentialRef)}`,
       { method: 'POST' },
     )
+    authRequests.invalidateOperation('connections')
+    if (connectionProjectId.value === projectId && authStatus.value) {
+      authStatus.value.accounts = [
+        ...authStatus.value.accounts.filter(row => row.credential_ref !== credentialRef),
+        response.data,
+      ]
+    }
+    if (globalAccountsStatus.value) {
+      globalAccountsStatus.value.accounts = globalAccountsStatus.value.accounts.map(row =>
+        row.credential_ref === credentialRef ? response.data : row)
+    }
     await Promise.all([refreshAccounts({ silent: true }), refreshAuth(projectId, { silent: true })])
     return response.data
   }
@@ -341,6 +380,14 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
       `/api/v1/projects/${projectId}/connections/accounts/${encodeURIComponent(credentialRef)}`,
       { method: 'DELETE' },
     )
+    authRequests.invalidateOperation('connections')
+    if (connectionProjectId.value === projectId && authStatus.value) {
+      authStatus.value.accounts = authStatus.value.accounts.filter(row => row.credential_ref !== credentialRef)
+    }
+    if (globalAccountsStatus.value) {
+      globalAccountsStatus.value.accounts = globalAccountsStatus.value.accounts.map(row =>
+        row.credential_ref === credentialRef ? response.data : row)
+    }
     await Promise.all([refreshAccounts({ silent: true }), refreshAuth(projectId, { silent: true })])
     return response.data
   }
@@ -406,6 +453,11 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     authProviders,
     globalAccountsStatus,
     authStatus,
+    accountsLoading,
+    accountsError,
+    authLoading,
+    authError,
+    releaseAuth,
     actions,
     catalogLoading,
     catalogLoaded,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
@@ -139,6 +139,7 @@ const {
   surfaces: communicationSurfaces,
   routes: communicationRoutes,
   loading: communicationTopologyLoading,
+  loaded: communicationTopologyLoaded,
   message: communicationTopologyMessage,
   load: loadCommunicationTopology,
 } = useCommunicationTopology(projectId)
@@ -187,30 +188,30 @@ const subNavGroups = computed(() => [
   {
     label: 'Service setup',
     items: [
-      { key: 'services', label: 'Services', icon: 'plug', count: activeConnections.value.length },
+      { key: 'services', label: 'Services', icon: 'plug', count: authStatus.value ? activeConnections.value.length : undefined },
     ],
   },
   {
     label: 'Messaging setup',
     items: [
-      { key: 'bots', label: 'Bots', icon: 'chat', count: communicationProfiles.value.length },
+      { key: 'bots', label: 'Bots', icon: 'chat', count: communicationTopologyLoaded.value ? communicationProfiles.value.length : undefined },
       {
         key: 'channels',
         label: 'Channels',
         icon: 'megaphone',
-        count: communicationSurfaces.value.length,
+        count: communicationTopologyLoaded.value ? communicationSurfaces.value.length : undefined,
       },
       {
         key: 'destinations',
         label: 'Destinations',
         icon: 'arrow-right',
-        count: communicationTargets.value.length,
+        count: communicationTopologyLoaded.value ? communicationTargets.value.length : undefined,
       },
       {
         key: 'handoff-rules',
         label: 'Handoff rules',
         icon: 'git-branch',
-        count: communicationRoutes.value.length,
+        count: communicationTopologyLoaded.value ? communicationRoutes.value.length : undefined,
       },
     ],
   },
@@ -221,7 +222,7 @@ const subNavGroups = computed(() => [
         key: 'connectivity',
         label: 'Connectivity',
         icon: 'globe',
-        count: ingressStatus.value?.routes?.length ?? 0,
+        count: ingressStatus.value?.routes?.length,
       },
     ],
   },
@@ -245,13 +246,15 @@ function applySectionFromQuery(value: unknown): void {
   if (isConnectionSection(value)) activeSection.value = value
 }
 
+let retired = false
+onBeforeUnmount(() => { retired = true })
 async function load(): Promise<void> {
-  if (!projectId.value || Number.isNaN(projectId.value)) return
-  initialLoadComplete.value = false
+  if (retired || !projectId.value || Number.isNaN(projectId.value)) return
+  const requestedProjectId = projectId.value
   try {
     applySectionFromQuery(route.query.section)
-    await loadCredentials()
-    await loadCommunicationSetup()
+    await Promise.all([loadCredentials(), loadCommunicationSetup()])
+    if (retired || requestedProjectId !== projectId.value) return
     if (!handleOAuthReturnQuery(route.query.oauth_status, route.query.provider_key)) {
       const providerKey =
         typeof route.query.provider_key === 'string' ? route.query.provider_key : undefined
@@ -380,6 +383,15 @@ onBeforeRouteUpdate((to) => {
       :breadcrumbs="[{ label: 'Connections' }]"
     >
       <template #actions>
+        <UiButton
+          variant="secondary"
+          size="sm"
+          icon-left="refresh"
+          :loading="loading || communicationSetupLoading"
+          @click="load"
+        >
+          Refresh
+        </UiButton>
         <UiButton variant="primary" size="sm" icon-left="plus" @click="openAddConnection()">
           Add connection
         </UiButton>
@@ -395,7 +407,7 @@ onBeforeRouteUpdate((to) => {
     </UiCallout>
 
     <section
-      v-if="initialLoadComplete && !error"
+      v-if="initialLoadComplete && authStatus"
       class="overflow-hidden rounded-lg border border-strong bg-bg-surface"
       aria-labelledby="connection-state-title"
     >
@@ -509,6 +521,7 @@ onBeforeRouteUpdate((to) => {
         >
           <ConnectedServicesPanel
             :loading="loading"
+            :loaded="authStatus !== null"
             :error="error"
             :service-groups="serviceGroups"
             :connections-count="activeConnections.length"
@@ -526,7 +539,8 @@ onBeforeRouteUpdate((to) => {
             :bots="communicationProfiles"
             :slack-connections="slackConnections"
             :loading="communicationSetupLoading"
-            :message="slackProfileMessage"
+            :loaded="communicationTopologyLoaded"
+            :message="slackProfileMessage ?? communicationSetupMessage"
             @add-connection="openAddConnection"
             @add-bot="openAddBot"
             @edit-bot="editBot"
@@ -541,6 +555,7 @@ onBeforeRouteUpdate((to) => {
           <ChannelsPanel
             :channels="communicationSurfaces"
             :loading="communicationSetupLoading"
+            :loaded="communicationTopologyLoaded"
             :message="communicationSetupMessage"
             @refresh="loadCommunicationSetup"
           />
@@ -554,6 +569,7 @@ onBeforeRouteUpdate((to) => {
           <DestinationsPanel
             :destinations="communicationTargets"
             :loading="communicationSetupLoading"
+            :loaded="communicationTopologyLoaded"
             :message="communicationSetupMessage"
             @refresh="loadCommunicationSetup"
           />
@@ -567,6 +583,7 @@ onBeforeRouteUpdate((to) => {
           <HandoffRulesPanel
             :routes="communicationRoutes"
             :loading="communicationSetupLoading"
+            :loaded="communicationTopologyLoaded"
             :message="communicationSetupMessage"
             @refresh="loadCommunicationSetup"
           />

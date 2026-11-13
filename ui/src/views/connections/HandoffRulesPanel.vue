@@ -18,6 +18,7 @@ import type { CommunicationRoute, MessageTone } from './types'
 defineProps<{
   routes: CommunicationRoute[]
   loading: boolean
+  loaded?: boolean
   message: { tone: MessageTone; text: string } | null
 }>()
 
@@ -58,7 +59,7 @@ defineEmits<{
     </UiCallout>
 
     <UiCard
-      v-if="loading"
+      v-if="loading && !loaded && !routes.length"
       aria-label="Loading handoff rules"
     >
       <UiSkeleton
@@ -68,7 +69,7 @@ defineEmits<{
     </UiCard>
 
     <UiEmptyState
-      v-else-if="routes.length === 0"
+      v-else-if="routes.length === 0 && !message"
       title="No handoff rules"
       description="Handoff rules let agents move a message from one channel to another under explicit policy. They’re registered through StackOS as agents set up cross-channel work."
       icon="git-branch"

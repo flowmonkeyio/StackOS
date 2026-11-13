@@ -1,4 +1,4 @@
-import { computed, ref, type ComputedRef, type Ref } from 'vue'
+import { computed, onBeforeUnmount, ref, type ComputedRef, type Ref } from 'vue'
 
 import { formatApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
@@ -40,17 +40,25 @@ export function useIngressEndpointEditor(options: IngressEndpointEditorOptions) 
     discovery_url: 'http://127.0.0.1:4040/api/endpoints',
   })
   let loadRequestSequence = 0
+  let loadScope: number | null = null
+  let retired = false
+  onBeforeUnmount(() => { retired = true; loadRequestSequence += 1 })
 
   const manualRoutes = computed(() =>
     (status.value?.routes ?? []).filter(routeNeedsManualProviderUpdate),
   )
 
   async function load(): Promise<void> {
-    if (!options.projectId.value || Number.isNaN(options.projectId.value)) return
+    if (retired || !options.projectId.value || Number.isNaN(options.projectId.value)) return
     const requestSequence = ++loadRequestSequence
     const requestedProjectId = options.projectId.value
     loading.value = true
-    status.value = null
+    if (loadScope !== requestedProjectId) {
+      loadScope = requestedProjectId
+      status.value = null
+      lastProviderResults.value = []
+      loadMessage.value = null
+    }
     try {
       const ingress = await callOperation<IngressEndpointStatusOut>('ingressEndpoint.status', {
         project_id: requestedProjectId,

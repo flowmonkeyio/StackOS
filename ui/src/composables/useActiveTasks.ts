@@ -83,7 +83,6 @@ export function useActiveTasks(projectId: number | null) {
   function refresh(): Promise<void> {
     if (retired) return Promise.resolve()
     version += 1
-    snapshotCurrent.value = false
     // Start after the current SSE batch so usage/status companions coalesce.
     pending ??= Promise.resolve().then(drain)
     return pending

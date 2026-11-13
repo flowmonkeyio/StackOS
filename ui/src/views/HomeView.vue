@@ -38,8 +38,12 @@ onMounted(() => {
   void catalog.refreshAccounts()
 })
 
+const refreshing = ref(false)
 async function refresh(): Promise<void> {
-  await Promise.all([activeTasks.value?.refresh(), capacityControl.value?.refresh(), catalog.refreshAccounts(), agents.load(), loadHealth(), loadHostStatuses()])
+  refreshing.value = true
+  try {
+    await Promise.all([activeTasks.value?.refresh(), capacityControl.value?.refresh(), catalog.refreshAccounts(), agents.load(), loadHealth(), loadHostStatuses()])
+  } finally { refreshing.value = false }
 }
 function confirmRepair(): void {
   repairOpen.value = false
@@ -59,7 +63,7 @@ function confirmRepair(): void {
           variant="secondary"
           size="sm"
           icon-left="refresh"
-          :loading="catalog.loading || agentsLoading"
+          :loading="refreshing || catalog.accountsLoading || agentsLoading"
           @click="refresh"
         >
           Refresh
@@ -114,8 +118,9 @@ function confirmRepair(): void {
     </AgentActivitySection>
     <HomeConnectionsSection
       :accounts="accounts"
-      :loading="catalog.loading"
-      :error="catalog.error"
+      :loading="catalog.accountsLoading"
+      :error="catalog.accountsError"
+      :loaded="catalog.globalAccountsStatus !== null"
     />
     <UiConfirmDialog
       v-model="repairOpen"

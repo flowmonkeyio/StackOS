@@ -132,17 +132,17 @@ async function copyRouteUrl(route: IngressEndpointRoute): Promise<void> {
       {{ ingressStatus.blocked_uses[0]?.repair_message }}
     </UiCallout>
 
-    <UiCallout v-else-if="!ingressStatus?.ready" tone="info">
+    <UiCallout v-else-if="ingressStatus && !ingressStatus.ready" tone="info">
       Inbound messaging isn’t reachable yet. Bots can still send replies, but they won’t receive new
       messages until a public address is set. Choose <strong>Set up</strong> to add one, then
       <strong>Refresh routes</strong> to get the required provider URLs.
     </UiCallout>
 
-    <UiCard v-if="loading" aria-label="Loading connectivity">
+    <UiCard v-if="loading && !ingressStatus" aria-label="Loading connectivity">
       <UiSkeleton shape="line" :lines="3" />
     </UiCard>
 
-    <template v-else>
+    <template v-else-if="ingressStatus">
       <UiCard section aria-label="Public endpoint">
         <template #header>
           <div class="flex min-w-0 items-center gap-3">
