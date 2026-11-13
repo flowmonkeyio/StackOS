@@ -193,12 +193,22 @@ class ContextQueryMixin(ContextRepositorySupport):
 
     def latest_event_id(self, *, project_id: int | None) -> int | None:
         """Cheap read watermark, distinct from a stream's emitted status cursor."""
+        position = self.event_position(project_id=project_id)
+        return position[0] if position is not None else None
+
+    def event_position(
+        self, *, project_id: int | None, event_id: int | None = None
+    ) -> tuple[int, int] | None:
+        """Read an event ID and its non-reused project identity, latest by default."""
         if project_id is not None:
             self._require_project(project_id)
-        stmt = select(ProjectEvent.id)
+        stmt = select(ProjectEvent.id, ProjectEvent.project_id)
         if project_id is not None:
             stmt = stmt.where(ProjectEvent.project_id == project_id)
-        return self._s.exec(stmt.order_by(col(ProjectEvent.id).desc()).limit(1)).first()
+        if event_id is not None:
+            stmt = stmt.where(ProjectEvent.id == event_id)
+        row = self._s.exec(stmt.order_by(col(ProjectEvent.id).desc()).limit(1)).first()
+        return (_required_id(row[0]), row[1]) if row is not None else None
 
     def latest_tracker_status_event_id(
         self,

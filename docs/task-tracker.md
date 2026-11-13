@@ -1765,6 +1765,10 @@ A private read watermark also covers unmatched events, so quiet task streams
 do not repeatedly scan other tasks' newer history. It never becomes an emitted
 status ID or heartbeat/reconnect cursor; paged matching events remain ordered
 and are fully drained before that private watermark moves past them.
+Global streams retain the watermark event's owning project identity. Project
+purge can free event IDs for reuse, so a missing/replaced anchor resets only
+private read progress to the last emitted status cursor, even when new events
+have already regrown past the old watermark. Durable cursors never retreat.
 
 ## Operations
 

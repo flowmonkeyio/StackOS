@@ -294,12 +294,23 @@ def _timeline_stream(
                 project_id=project_id, task_key=task_key
             )
 
-    def read_poll(scan_cursor, previous_usage, previous_projects):
+    def read_poll(cursor, scan_anchor, previous_usage, previous_projects):
         # Construct, use and close each Session in its worker. Only detached
         # event models and a serialized transient snapshot cross the await.
         with Session(engine) as session:
             repository = ContextRepository(session)
-            watermark = repository.latest_event_id(project_id=project_id) or 0
+            latest = repository.event_position(project_id=project_id)
+            watermark = latest[0] if latest is not None else 0
+            if project_id is None and scan_anchor is not None and scan_anchor[0] > (cursor or 0):
+                # Project purge can free event IDs for reuse. Validate private
+                # progress by its owning project, whose identity is never reused,
+                # even if new events already grew past the old maximum ID.
+                anchor = latest if watermark == scan_anchor[0] else None
+                if watermark > scan_anchor[0]:
+                    anchor = repository.event_position(project_id=None, event_id=scan_anchor[0])
+                if anchor != scan_anchor:
+                    scan_anchor = None
+            scan_cursor = cursor if scan_anchor is None else max(cursor or 0, scan_anchor[0])
             page = (
                 repository.tracker_status_timeline(
                     project_id=project_id,
@@ -313,9 +324,9 @@ def _timeline_stream(
             )
             # Exhausted reads also cover unmatched events. Keep that private
             # progress separate from the durable cursor carried by status frames.
-            scanned = page.next_cursor
-            if scanned is None:
-                scanned = max(scan_cursor or 0, watermark, page.items[-1].id if page.items else 0)
+            scanned = latest or (0, None)
+            if page.items and (page.next_cursor is not None or page.items[-1].id > watermark):
+                scanned = (page.items[-1].id, page.items[-1].project_id)
 
             usage = usage_executions(project_id)
             if task_key:
@@ -402,18 +413,18 @@ def _timeline_stream(
         previous_projects = None
         if cursor is None and not replay:
             cursor = await run_in_threadpool(latest_cursor)
-        scan_cursor = cursor
+        scan_anchor = None
         while True:
             if await request.is_disconnected():
                 break
             page, usage, projects, frame, scanned = await run_in_threadpool(
-                read_poll, scan_cursor, previous_usage, previous_projects
+                read_poll, cursor, scan_anchor, previous_usage, previous_projects
             )
             # A disconnect during a slow read must not publish its late result
             # or begin another operation. Worker cleanup owns the SQL lifetime.
             if await request.is_disconnected():
                 break
-            scan_cursor = scanned
+            scan_anchor = scanned
             if frame is not None:
                 yield frame
                 previous_usage = usage
