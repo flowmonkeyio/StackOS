@@ -24,6 +24,15 @@ def upgrade() -> None:
             sa.Column("updated_at", sa.DateTime(), nullable=False),
             sqlite_autoincrement=True,
         )
+    # SQLite can retain CREATE TABLE when the following DDL/stamp is
+    # interrupted. Resume the key invariant independently of table creation.
+    inspector = sa.inspect(op.get_bind())
+    unique_keys = inspector.get_unique_constraints("patterns") + [
+        index
+        for index in inspector.get_indexes("patterns")
+        if index["unique"] and index.get("dialect_options", {}).get("sqlite_where") is None
+    ]
+    if not any(key["column_names"] == ["key"] for key in unique_keys):
         op.create_index("ix_patterns_key", "patterns", ["key"], unique=True)
 
 

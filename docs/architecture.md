@@ -261,6 +261,9 @@ The additive catalog migrations resume after partial SQLite DDL or a lost revisi
 stamp without rebuilding records or resetting ID high-water marks. Legacy
 create-all recovery stamps the pre-catalog baseline and runs those same migrations
 before claiming head, including when an older catalog table already exists.
+The public-key unique index is recovered independently of table creation;
+revision `0046_pattern_key_index` also repairs already-stamped older catalogs by
+adding only that missing index, preserving records and identity high-water.
 `pattern.list/get/upsert/delete` are registered once and use the existing MCP,
 generic HTTP, CLI and browser-safe operation adapters. Lists select summary
 columns only; detail loads the body. No semantic content validation or automatic

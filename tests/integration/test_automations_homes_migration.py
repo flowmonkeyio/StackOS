@@ -26,7 +26,7 @@ def test_consolidation_preserves_either_delivered_history(tmp_path, prior_head):
     settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
     settings.ensure_dirs()
     config = alembic_config(settings)
-    assert ScriptDirectory.from_config(config).get_heads() == ["0045_pattern_bundles"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["0046_pattern_key_index"]
     command.upgrade(config, "0041_ui804_consolidation")
     root = tmp_path / "project"
     root.mkdir()
@@ -90,7 +90,7 @@ def test_consolidation_preserves_either_delivered_history(tmp_path, prior_head):
     upgrade_to_head(settings)
     with sqlite3.connect(settings.db_path) as db:
         assert db.execute("SELECT version_num FROM alembic_version").fetchall() == [
-            ("0045_pattern_bundles",)
+            ("0046_pattern_key_index",)
         ]
         assert {
             table: db.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()

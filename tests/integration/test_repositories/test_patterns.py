@@ -117,3 +117,110 @@ def test_pattern_intervening_write_is_not_overwritten(tmp_path, monkeypatch, act
             assert other.get(pattern_id=initial.id).body == "intervening edit"
     finally:
         engine.dispose()
+
+
+@pytest.mark.parametrize("already_stamped", [False, True])
+def test_pattern_interrupted_table_creation_recovers_key_and_identity(
+    tmp_path, monkeypatch, already_stamped
+):
+    """Retry real SQLite DDL, an old bad stamp, restart and lost-stamp recovery."""
+    import importlib
+    import sqlite3
+
+    from alembic import command
+    from alembic.script import ScriptDirectory
+    from fastapi.testclient import TestClient
+
+    from stackos.config import Settings
+    from stackos.db.migrate import alembic_config, current_alembic_version, upgrade_to_head
+    from stackos.server import create_app
+
+    settings = Settings(_env_file=None, data_dir=tmp_path / "data", state_dir=tmp_path / "state")
+    settings.ensure_dirs()
+    config = alembic_config(settings)
+    command.upgrade(config, "0043_automations_homes_merge")
+    migration = importlib.import_module("stackos.db.migrations.versions.0044_patterns")
+    create_table = migration.op.create_table
+
+    def interrupt_after_real_table(name, *args, **kwargs):
+        result = create_table(name, *args, **kwargs)
+        if name == "patterns":
+            raise RuntimeError("fixture interruption after real patterns CREATE TABLE")
+        return result
+
+    with monkeypatch.context() as patch:
+        patch.setattr(migration.op, "create_table", interrupt_after_real_table)
+        with pytest.raises(RuntimeError, match="fixture interruption"):
+            upgrade_to_head(settings)
+    assert current_alembic_version(settings) == "0043_automations_homes_merge"
+    with sqlite3.connect(settings.db_path) as db:
+        assert db.execute("PRAGMA index_list(patterns)").fetchall() == []
+        # Valid retained data and a deleted high ID must survive every recovery.
+        for identity, key in ((1, "retained"), (90, "deleted-high-id")):
+            db.execute(
+                "INSERT INTO patterns VALUES (?,?,'Retained','','Exact bytes\n','[\"freeform\"]',"
+                "3,'2026-11-12','2026-11-12')",
+                (identity, key),
+            )
+        db.execute("DELETE FROM patterns WHERE id=90")
+        original = db.execute("SELECT * FROM patterns WHERE id=1").fetchone()
+        assert db.execute("SELECT seq FROM sqlite_sequence WHERE name='patterns'").fetchone() == (
+            90,
+        )
+
+    if already_stamped:
+        # Reproduce the durable state left by the former 0044 retry: it marked
+        # 0044 complete without its index, then ran the real 0045 migration.
+        command.stamp(config, "0044_patterns")
+        command.upgrade(config, "0045_pattern_bundles")
+        assert current_alembic_version(settings) == "0045_pattern_bundles"
+
+    expected_head = ScriptDirectory.from_config(config).get_current_head()
+    saved = None
+    for recovery in ("startup", "repeat-startup", "lost-stamp"):
+        if recovery == "lost-stamp":
+            with sqlite3.connect(settings.db_path) as db:
+                db.execute("DROP TABLE alembic_version")
+        with TestClient(
+            create_app(settings),
+            base_url="http://127.0.0.1:5199",
+            raise_server_exceptions=False,
+        ) as api:
+            assert current_alembic_version(settings) == expected_head
+            headers = {"Authorization": f"Bearer {settings.token_path.read_text().strip()}"}
+            arguments = payload("after-recovery")
+            for _retry in range(2):
+                response = api.post(
+                    "/api/v1/operations/pattern.upsert/call",
+                    json={"arguments": arguments},
+                    headers=headers,
+                )
+                assert response.status_code == 200, response.text
+                current = response.json()["data"]
+                assert current["id"] > 90
+                if saved is None:
+                    saved = current
+                assert current == saved
+            with sqlite3.connect(settings.db_path) as db:
+                assert (
+                    db.execute(
+                        "SELECT id,key,title,summary,body,tags_json,revision,created_at,updated_at "
+                        "FROM patterns WHERE id=1"
+                    ).fetchone()
+                    == original
+                )
+                assert db.execute(
+                    "SELECT COUNT(*) FROM patterns WHERE key='after-recovery'"
+                ).fetchone() == (1,)
+                assert (
+                    db.execute("SELECT seq FROM sqlite_sequence WHERE name='patterns'").fetchone()[
+                        0
+                    ]
+                    >= 90
+                )
+                key_indexes = [
+                    row
+                    for row in db.execute("PRAGMA index_list(patterns)")
+                    if row[1] == "ix_patterns_key"
+                ]
+                assert len(key_indexes) == 1 and key_indexes[0][2] == 1
