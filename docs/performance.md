@@ -63,6 +63,16 @@ requests instead.
   progress.
 - Setup may load the complete integration/action inventory. Home must not load
   that inventory during initial render or routine polling.
+- Shared task/setup admission projects only managed setup ownership scalars
+  through `ProjectSetupRepository.managed_admissions`. SQL excludes known
+  non-running setup states only when `slot_reserved` is explicitly JSON false;
+  retired reports, launch snapshots and native results are not hydrated or
+  validated. Queue reservation loads only the first eligible request with a
+  retained daemon claim, in request order; missed-job recovery targets its exact
+  job reference. Prior-daemon reservations still count and protect directories
+  and project cleanup. Missing or incompatible ownership scalars return bounded
+  project/request repair context rather than freeing uncertain work. This does
+  not delete history, recreate claims or remove SQLite's JSON predicate work.
 - The global project shell and Plugins directory request compact plugin
   navigation metadata. The directory reads the complete schema-free
   `action.list` inventory with `include_unavailable_integrations=true` and

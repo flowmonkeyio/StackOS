@@ -6,8 +6,10 @@
 import asyncio
 import json
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from dataclasses import replace
 from threading import Event
+from time import perf_counter
 from types import SimpleNamespace
 
 import pytest
@@ -61,6 +63,266 @@ def launch(managed, **choices):
 
 def execute_job(scheduler):
     scheduler.run()
+
+
+def stored_setup(session, project, key, payload):
+    """Persist legacy metadata without validating it through the current model."""
+    from stackos.db.models import AgentRequestAttentionStatus, AgentRequestStatus
+
+    row = AgentRequest(
+        project_id=project,
+        request_key=key,
+        title=key,
+        source_kind="project_setup",
+        status=AgentRequestStatus.FAILED,
+        attention_status=AgentRequestAttentionStatus.READ,
+    )
+    session.add(row)
+    session.flush()
+    row.metadata_json = {
+        "project_setup": {**deepcopy(payload), "project_id": project, "request_id": row.id},
+        "native_execution": {"legacy_report": "x" * 128_000},
+    }
+    session.add(row)
+    session.commit()
+    return row.id
+
+
+@pytest.mark.parametrize("history_count", [0, 1, 40])
+def test_admission_projects_only_relevant_setup_scalars(
+    managed, session, project_id, tmp_path, monkeypatch, history_count, record_property
+):
+    from sqlalchemy import event
+
+    from stackos.repositories.project_setup import SetupAdmissionState, SetupAttempt
+
+    execution, project, scheduler, factory = managed
+    opened = launch(managed, host_key="codex")
+    retired = opened.attempt.model_dump(mode="json")
+    retired["schema_version"] = 999  # Intentionally incompatible full history.
+    retired["managed"]["slot_reserved"] = False
+    for index in range(history_count):
+        retired["status"] = (
+            "needs_input",
+            "success",
+            "partial",
+            "failed",
+            "interrupted",
+            "cancelled",
+        )[index % 6]
+        stored_setup(session, project, f"retired-{index}", retired)
+
+    validations, projected, hydrated, columns, queries = [], [], [], [], []
+    validate = SetupAttempt.model_validate
+    project_state = SetupAdmissionState.model_validate
+
+    def validating(value, *args, **kwargs):
+        validations.append(value["request_id"])
+        return validate(value, *args, **kwargs)
+
+    def loaded(_session, instance):
+        if isinstance(instance, AgentRequest):
+            hydrated.append(instance.id)
+
+    def queried(_connection, cursor, statement, parameters, *_args):
+        if "FROM agent_requests" in statement:
+            columns.append([column[0] for column in cursor.description])
+            queries.append((statement, parameters))
+
+    def projecting(value, *args, **kwargs):
+        projected.append(value["request_id"])
+        return project_state(value, *args, **kwargs)
+
+    monkeypatch.setattr(SetupAttempt, "model_validate", validating)
+    monkeypatch.setattr(SetupAdmissionState, "model_validate", projecting)
+    event.listen(Session, "loaded_as_persistent", loaded)
+    event.listen(session.get_bind(), "after_cursor_execute", queried)
+    try:
+        started = perf_counter()
+        with factory() as check:
+            assert task_delivery.delivery_capacity(check, scheduler)["running_count"] == 1
+            assert execution.setup_directories(check) == [
+                opened.attempt.managed.settings["project_dir"]
+            ]
+        elapsed = perf_counter() - started
+        assert validations == []
+        assert projected == [opened.attempt.request_id] * 2
+        assert hydrated == []
+        assert columns and all(
+            len(selected) == 8
+            and "metadata_json" not in selected
+            and "body_preview" not in selected
+            for selected in columns
+        )
+        record_property("retired_history_count", history_count)
+        record_property("scalar_rows_per_read", len(projected) // 2)
+        record_property("projected_column_count", len(columns[0]))
+        record_property("full_model_validations", len(validations))
+        record_property("hydrated_requests", len(hydrated))
+        record_property("elapsed_seconds_supporting_only", elapsed)
+        # Real ordinary admission in a different project must survive bad retired history.
+        prepared_task(session, project_id)
+        root = tmp_path / "ordinary"
+        root.mkdir()
+        submit(session, project_id, root, scheduler)
+        assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 2
+    finally:
+        event.remove(Session, "loaded_as_persistent", loaded)
+        event.remove(session.get_bind(), "after_cursor_execute", queried)
+    with session.get_bind().connect() as connection:
+        statement, parameters = queries[0]
+        plan = connection.exec_driver_sql("EXPLAIN QUERY PLAN " + statement, parameters).all()
+        record_property("sqlite_query_plan", [row[3] for row in plan])
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"status": "unknown"},
+        {"status": None},
+        {"status": "missing"},
+        {"slot_reserved": None},
+        {"slot_reserved": "missing"},
+        {"slot_reserved": "false"},
+        {"slot_reserved": 0},
+        {"project_dir": None},
+    ],
+)
+def test_uncertain_setup_ownership_returns_bounded_repair_context(managed, session, change):
+    from stackos.repositories.base import ConflictError
+
+    execution, project, scheduler, _factory = managed
+    opened = launch(managed, host_key="codex")
+    payload = opened.attempt.model_dump(mode="json")
+    payload["status"] = "failed"
+    payload["managed"]["slot_reserved"] = False
+    for name, value in change.items():
+        if name == "status":
+            if value == "missing":
+                payload.pop(name)
+            else:
+                payload[name] = value
+        elif name == "project_dir":
+            payload["managed"]["settings"][name] = value
+            payload["managed"]["slot_reserved"] = True
+        else:
+            if value == "missing":
+                payload["managed"].pop(name)
+            else:
+                payload["managed"][name] = value
+    request_id = stored_setup(session, project, "uncertain", payload)
+    for read in (
+        lambda: task_delivery.delivery_capacity(session, scheduler),
+        lambda: execution.setup_directories(session),
+    ):
+        with pytest.raises(ConflictError) as error:
+            read()
+        assert error.value.data == {
+            "project_id": project,
+            "request_id": request_id,
+            "next_action": "inspect_request",
+        }
+    assert (
+        session.get(AgentRequest, request_id).metadata_json["project_setup"]["managed"]
+        == payload["managed"]
+    )
+
+
+def test_setup_reservation_selects_one_current_claimed_candidate(managed, session, monkeypatch):
+    from stackos.repositories.base import ConflictError
+    from stackos.repositories.project_setup import SetupAttempt
+
+    execution, project, scheduler, _factory = managed
+    opened = launch(managed, host_key="codex")
+    queued = opened.attempt.model_dump(mode="json")
+    queued["managed"]["slot_reserved"] = False
+    queued["managed"]["admission_id"] = "prior-daemon"
+    stale = stored_setup(session, project, "stale-queue", queued)
+    queued["managed"]["admission_id"] = task_delivery._admission_id(scheduler)
+    queued["schema_version"] = 999
+    missing_claim = stored_setup(session, project, "lost-claim", queued)
+    queued["schema_version"] = 1
+    first = stored_setup(session, project, "first-current", queued)
+    second = stored_setup(session, project, "second-current", queued)
+    scheduler.project_setup_claims.update({stale: "old", first: "first", second: "second"})
+    validated = []
+    validate = SetupAttempt.model_validate
+
+    def validating(value, *args, **kwargs):
+        validated.append(value["request_id"])
+        return validate(value, *args, **kwargs)
+
+    monkeypatch.setattr(SetupAttempt, "model_validate", validating)
+    assert task_delivery.delivery_capacity(session, scheduler)["queued_count"] == 3
+    assert execution.reserve_setup(session, scheduler)[2]["request_id"] == first
+    assert validated == [first]
+    assert execution.reserve_setup(session, scheduler)[2]["request_id"] == second
+    assert validated == [first, second]
+    assert execution.reserve_setup(session, scheduler) is None
+    assert missing_claim not in scheduler.project_setup_claims
+    # A restarted daemon cannot recreate claims, even for otherwise valid queues.
+    assert execution.reserve_setup(session, QueuedScheduler()) is None
+    # An explicitly selected incompatible body fails with bounded repair context.
+    scheduler.project_setup_claims[missing_claim] = "retained-existing-claim"
+    with pytest.raises(ConflictError) as error:
+        execution.reserve_setup(session, scheduler)
+    assert error.value.data == {
+        "project_id": project,
+        "request_id": missing_claim,
+        "next_action": "inspect_request",
+    }
+    assert validated == [first, second, missing_claim]
+
+
+def test_missed_setup_hydrates_only_exact_job_and_preserves_other_work(
+    managed, session, monkeypatch
+):
+    from stackos.repositories.project_setup import SetupAttempt
+
+    _execution, project, scheduler, factory = managed
+    opened = launch(managed, host_key="codex")
+    payload = opened.attempt.model_dump(mode="json")
+    payload["status"] = "running"
+    payload["schema_version"] = 999
+    payload["managed"]["job_ref"] = "project-setup:unrelated"
+    unrelated = stored_setup(session, project, "unrelated-active", payload)
+    before = deepcopy(session.get(AgentRequest, unrelated).metadata_json)
+    validated = []
+    validate = SetupAttempt.model_validate
+
+    def validating(value, *args, **kwargs):
+        validated.append(value["request_id"])
+        return validate(value, *args, **kwargs)
+
+    monkeypatch.setattr(SetupAttempt, "model_validate", validating)
+    task_delivery.missed_delivery_job(
+        SimpleNamespace(job_id=opened.attempt.managed.job_ref),
+        session_factory=factory,
+        scheduler=scheduler,
+    )
+    session.expire_all()
+    target = session.get(AgentRequest, opened.attempt.request_id).metadata_json["project_setup"]
+    assert target["status"] == "failed" and target["managed"]["slot_reserved"] is False
+    assert validated == [opened.attempt.request_id]
+    assert session.get(AgentRequest, unrelated).metadata_json == before
+    assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 1
+
+
+def test_prior_daemon_reserved_setup_counts_and_fences_ordinary_directory(managed, session):
+    from pathlib import Path
+
+    execution, project, _scheduler, _factory = managed
+    opened = launch(managed, host_key="codex")
+    row, attempt = execution._load(session, project, opened.attempt.request_id)
+    attempt.status = "cancelled"
+    attempt.managed.admission_id = "prior-daemon"
+    execution._save(session, row, attempt)
+    restarted = QueuedScheduler()
+    assert task_delivery.delivery_capacity(session, restarted)["running_count"] == 1
+    assert task_delivery.delivery_capacity(session, restarted)["queued_count"] == 0
+    prepared_task(session, project)
+    with pytest.raises(ValidationError, match="working directory"):
+        submit(session, project, Path(attempt.managed.settings["project_dir"]), restarted)
 
 
 def test_duplicate_start_freezes_choice_and_queued_cancel_retires_once(managed, session):

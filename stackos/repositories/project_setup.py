@@ -16,6 +16,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic import ValidationError as ModelValidationError
 from sqlalchemy import func, or_
+from sqlalchemy import select as sa_select
 from sqlmodel import Session, col, select
 
 from stackos.agents.loader import AgentPresetLoader
@@ -333,6 +334,31 @@ class SetupStartOut(BaseModel):
     next_action: str
 
 
+class SetupAdmissionState(BaseModel):
+    """Scalar ownership evidence, independent of full setup/report compatibility."""
+
+    model_config = ConfigDict(strict=True)
+    project_id: int
+    request_id: int
+    status: Literal[
+        "queued",
+        "running",
+        "needs_input",
+        "success",
+        "partial",
+        "failed",
+        "interrupted",
+        "cancelled",
+    ]
+    reservation: Literal["true", "false"]
+    admission_id: str = Field(min_length=1)
+    project_dir: str = Field(min_length=1)
+
+    @property
+    def slot_reserved(self) -> bool:
+        return self.reservation == "true"
+
+
 class ProjectSetupOut(BaseModel):
     project_id: int
     eligible: bool
@@ -360,6 +386,84 @@ class ProjectSetupOut(BaseModel):
 class ProjectSetupRepository:
     def __init__(self, session: Session) -> None:
         self._s = session
+
+    def managed_admissions(
+        self,
+        *,
+        project_id: int | None = None,
+        admission_id: str | None = None,
+        job_ref: str | None = None,
+    ) -> list[SetupAdmissionState]:
+        """Exclude only proven retired work before projecting ownership scalars.
+
+        An admission filter selects this daemon's unreserved queue in request
+        order; a job filter selects an exact recovery target. Neither reads
+        report, snapshot or native-result bodies, nor grants a writer claim.
+        """
+        metadata = AgentRequest.metadata_json
+        status = func.json_extract(metadata, "$.project_setup.status")
+        reservation = func.json_type(metadata, "$.project_setup.managed.slot_reserved")
+        managed = func.json_type(metadata, "$.project_setup.managed")
+        admission = func.json_extract(metadata, "$.project_setup.managed.admission_id")
+        query = (
+            sa_select(
+                col(AgentRequest.project_id),
+                col(AgentRequest.id).label("request_id"),
+                func.json_extract(metadata, "$.project_setup.project_id").label("owner_project_id"),
+                func.json_extract(metadata, "$.project_setup.request_id").label("owner_request_id"),
+                status.label("status"),
+                reservation.label("reservation"),
+                admission.label("admission_id"),
+                func.json_extract(metadata, "$.project_setup.managed.settings.project_dir").label(
+                    "project_dir"
+                ),
+            )
+            .where(
+                or_(
+                    managed.is_not(None) & (managed != "null"),
+                    func.json_extract(metadata, "$.project_setup.entry_kind") == "managed_ui",
+                ),
+                or_(
+                    status.is_(None),
+                    status.not_in(
+                        ("needs_input", "success", "partial", "failed", "interrupted", "cancelled")
+                    ),
+                    reservation.is_(None),
+                    reservation != "false",
+                ),
+            )
+            .order_by(col(AgentRequest.id))
+        )
+        if project_id is not None:
+            query = query.where(col(AgentRequest.project_id) == project_id)
+        if admission_id is not None:
+            query = query.where(
+                status == "queued", reservation == "false", admission == admission_id
+            )
+        if job_ref is not None:
+            query = query.where(
+                func.json_extract(metadata, "$.project_setup.managed.job_ref") == job_ref
+            )
+        states = []
+        for row in self._s.execute(query).all():
+            values = row._asdict()
+            owner_project = values.pop("owner_project_id")
+            owner_request = values.pop("owner_request_id")
+            try:
+                state = SetupAdmissionState.model_validate(values)
+                if owner_project != state.project_id or owner_request != state.request_id:
+                    raise ValueError("inconsistent setup identity")
+            except (ModelValidationError, ValueError) as exc:
+                raise ConflictError(
+                    "managed setup ownership is uncertain; inspect before admitting another writer",
+                    data={
+                        "project_id": row.project_id,
+                        "request_id": row.request_id,
+                        "next_action": "inspect_request",
+                    },
+                ) from exc
+            states.append(state)
+        return states
 
     def inspect_sources(
         self,

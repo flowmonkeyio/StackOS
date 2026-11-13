@@ -61,6 +61,51 @@ def test_capacity_contract_and_local_operator_save_readback(api, settings):
     assert call(api, "deliveryCapacity", headers=ui).json()["configured_limit"] == 6
 
 
+def test_capacity_keeps_retired_bad_history_out_and_returns_uncertain_owner_context(
+    api, settings, project_id, tmp_path
+):
+    from copy import deepcopy
+
+    from sqlmodel import Session
+
+    from stackos.db.models import AgentRequest
+    from tests.integration.test_repositories.test_managed_setup import stored_setup
+
+    ui = {"Authorization": f"Bearer {derive_ui_token(settings.token_path.read_text().strip())}"}
+    payload = {
+        "schema_version": 999,
+        "entry_kind": "managed_ui",
+        "status": "failed",
+        "managed": {
+            "slot_reserved": False,
+            "admission_id": "prior-daemon",
+            "settings": {"project_dir": str(tmp_path / "owned")},
+        },
+    }
+    with Session(api.app.state.engine) as session:
+        request_id = stored_setup(session, project_id, "legacy-setup", payload)
+    retired = call(api, "deliveryCapacity", headers=ui)
+    assert retired.status_code == 200, retired.text
+    assert retired.json()["running_count"] == 0
+    with Session(api.app.state.engine) as session:
+        row = session.get(AgentRequest, request_id)
+        metadata = deepcopy(row.metadata_json)
+        metadata["project_setup"]["managed"].pop("slot_reserved")
+        row.metadata_json = {**metadata}
+        session.add(row)
+        session.commit()
+        before = row.metadata_json
+    unknown = call(api, "deliveryCapacity", headers=ui)
+    assert unknown.status_code == 409, unknown.text
+    assert unknown.json()["data"] == {
+        "project_id": project_id,
+        "request_id": request_id,
+        "next_action": "inspect_request",
+    }
+    with Session(api.app.state.engine) as session:
+        assert session.get(AgentRequest, request_id).metadata_json == before
+
+
 def test_capacity_uses_existing_database_backup_and_restore(api, settings, tmp_path):
     assert call(api, "setDeliveryCapacity", {"concurrent_tasks": 11}).status_code == 200
     private, public = tmp_path / "keys/private.pem", tmp_path / "keys/public.pem"

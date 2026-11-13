@@ -9,7 +9,7 @@ from pathlib import Path
 
 from apscheduler.jobstores.base import JobLookupError
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func
+from pydantic import ValidationError as ModelValidationError
 from sqlmodel import select
 
 from stackos.artifacts import redact_secret_text
@@ -112,7 +112,17 @@ def _load(session, project_id, request_id):
     from stackos.repositories.project_setup import SetupAttempt
 
     row = AgentRequestRepository(session)._fetch(project_id=project_id, request_id=request_id)
-    attempt = SetupAttempt.model_validate((row.metadata_json or {}).get("project_setup"))
+    try:
+        attempt = SetupAttempt.model_validate((row.metadata_json or {}).get("project_setup"))
+    except ModelValidationError as exc:
+        raise ConflictError(
+            "managed setup request has incompatible metadata; inspect before execution",
+            data={
+                "project_id": project_id,
+                "request_id": request_id,
+                "next_action": "inspect_request",
+            },
+        ) from exc
     if attempt.project_id != project_id or attempt.request_id != request_id or not attempt.managed:
         raise ConflictError("request is not this project's managed setup")
     return row, attempt
@@ -430,40 +440,25 @@ def continue_managed(
     return SetupStartOut(attempt=next_attempt, attached=False, next_action="observe_managed_setup")
 
 
-def capacity_states(session):
-    from stackos.repositories.project_setup import SetupAttempt
-
-    rows = session.exec(
-        select(AgentRequest)
-        .where(func.json_type(AgentRequest.metadata_json, "$.project_setup.managed") == "object")
-        .order_by(AgentRequest.id)
-    ).all()
-    return [(row, SetupAttempt.model_validate(row.metadata_json["project_setup"])) for row in rows]
-
-
 def setup_directories(session):
-    return [
-        attempt.managed.settings["project_dir"]
-        for _, attempt in capacity_states(session)
-        if attempt.status in {"queued", "running"} or attempt.managed.slot_reserved
-    ]
+    from stackos.repositories.project_setup import ProjectSetupRepository
+
+    return [state.project_dir for state in ProjectSetupRepository(session).managed_admissions()]
 
 
 def reserve_setup(session, scheduler):
     """Called only by the shared capacity owner while holding managed_launch_lock."""
+    from stackos.repositories.project_setup import ProjectSetupRepository
     from stackos.task_delivery import _admission_id
 
-    for row, attempt in capacity_states(session):
-        managed = attempt.managed
-        if (
-            attempt.status != "queued"
-            or managed.slot_reserved
-            or managed.admission_id != _admission_id(scheduler)
-        ):
-            continue
-        token = getattr(scheduler, "project_setup_claims", {}).get(row.id)
+    for state in ProjectSetupRepository(session).managed_admissions(
+        admission_id=_admission_id(scheduler)
+    ):
+        token = getattr(scheduler, "project_setup_claims", {}).get(state.request_id)
         if token is None:
             continue  # Restart never manufactures a new claim or resumes old work.
+        row, attempt = _load(session, state.project_id, state.request_id)
+        managed = attempt.managed
         managed.slot_reserved = True
         _save(session, row, attempt)
         return (
@@ -738,10 +733,12 @@ def cancel_managed(project_id, request_id, *, session_factory, scheduler):
 
 def missed_setup(event, *, session_factory, scheduler):
     """A missed callback has no native process and cannot retire itself."""
+    from stackos.repositories.project_setup import ProjectSetupRepository
     from stackos.task_delivery import _request_delivery_drain
 
     with managed_launch_lock, session_factory() as session:
-        for row, attempt in capacity_states(session):
+        for state in ProjectSetupRepository(session).managed_admissions(job_ref=event.job_id):
+            row, attempt = _load(session, state.project_id, state.request_id)
             if (
                 attempt.managed.job_ref == event.job_id
                 and not attempt.managed.callback_started

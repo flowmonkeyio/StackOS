@@ -1222,23 +1222,23 @@ def delivery_capacity(session: Session, scheduler: BaseScheduler) -> dict[str, A
             )
         ).all()
         deliveries = [(metadata or {}).get("delivery", {}) for metadata in states]
-        from stackos.project_setup_execution import capacity_states
+        from stackos.repositories.project_setup import ProjectSetupRepository
 
-        setups = [attempt for _, attempt in capacity_states(session)]
+        setups = ProjectSetupRepository(session).managed_admissions()
         return {
             "scope": "local-user-daemon",
             "configured_limit": configured_limit(session),
             "running_count": sum(bool(state.get("slot_reserved")) for state in deliveries)
-            + sum(bool(attempt.managed.slot_reserved) for attempt in setups),
+            + sum(state.slot_reserved for state in setups),
             "queued_count": sum(
                 state.get("status") == "queued" and not state.get("slot_reserved")
                 for state in deliveries
             )
             + sum(
-                attempt.status == "queued"
-                and not attempt.managed.slot_reserved
-                and attempt.managed.admission_id == identity
-                for attempt in setups
+                state.status == "queued"
+                and not state.slot_reserved
+                and state.admission_id == identity
+                for state in setups
             ),
             "supported_min": 1,
             "supported_max": MAX_TASK_CAPACITY,

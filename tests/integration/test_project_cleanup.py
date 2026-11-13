@@ -54,6 +54,52 @@ def confirmation(target):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("state", ["reserved", "queued", "unknown", "missing", "retired"])
+async def test_cleanup_uses_scalar_setup_ownership_even_on_terminal_requests(
+    fixture, tmp_path, state
+):
+    from stackos.db.models import AgentRequest
+    from tests.integration.test_repositories.test_managed_setup import stored_setup
+
+    session, settings, target, other = fixture
+    payload = {
+        "schema_version": 999,
+        "entry_kind": "managed_ui",
+        "status": "queued" if state == "queued" else "failed",
+        "managed": {
+            "slot_reserved": state == "reserved",
+            "admission_id": "prior-daemon",
+            "settings": {"project_dir": str(tmp_path / "owned")},
+        },
+    }
+    if state == "unknown":
+        payload["status"] = "unknown"
+    if state == "missing":
+        payload["managed"].pop("slot_reserved")
+    request_id = stored_setup(session, target.id, "legacy-managed", payload)
+    before = session.get(AgentRequest, request_id).metadata_json
+    service = ProjectCleanupService(session, settings)
+    if state in {"unknown", "missing"}:
+        with pytest.raises(ConflictError) as error:
+            await service.delete(target.id, confirmation=confirmation(target))
+        assert error.value.data == {
+            "project_id": target.id,
+            "request_id": request_id,
+            "next_action": "inspect_request",
+        }
+    else:
+        result = await service.delete(target.id, confirmation=confirmation(target))
+        assert result.status == ("deleted" if state == "retired" else "blocked")
+        if state != "retired":
+            assert result.blockers == ["managed_setup"]
+    session.expire_all()
+    if state != "retired":
+        assert session.get(AgentRequest, request_id).metadata_json == before
+        assert ProjectRepository(session).get(target.id).cleanup_json is None
+    assert ProjectRepository(session).get(other.id).id == other.id
+
+
+@pytest.mark.asyncio
 async def test_project_cleanup_preserves_installation_patterns(fixture):
     from stackos.repositories.patterns import PatternRepository
     from tests.integration.test_repositories.test_pattern_bundles import bundle, entry
