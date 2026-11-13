@@ -21,3 +21,15 @@ class Pattern(SQLModel, table=True):
     revision: int = Field(default=1)
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: datetime = Field(default_factory=_utcnow)
+    bundled_id: str | None = Field(default=None, max_length=120, unique=True)
+    bundled_version: str | None = Field(default=None, max_length=120)
+    bundled_base_hash: str | None = Field(default=None, max_length=64)
+    content_hash: str | None = Field(default=None, max_length=64)
+
+
+class PatternDeletion(SQLModel, table=True):
+    """Only trusted identity survives explicit bundled deletion."""
+
+    __tablename__ = "pattern_deletions"
+
+    bundled_id: str = Field(primary_key=True, max_length=120)

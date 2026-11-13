@@ -93,7 +93,7 @@ from stackos.db.model_execution_contexts import (
     ExecutionContextArtifact,
     ExecutionContextLink,
 )
-from stackos.db.model_patterns import Pattern
+from stackos.db.model_patterns import Pattern, PatternDeletion
 from stackos.db.model_provider_refs import ProviderObjectReference
 from stackos.db.model_resources import (
     Artifact,
@@ -191,6 +191,7 @@ __all__ = [
     "MetricSnapshot",
     "OAuthState",
     "Pattern",
+    "PatternDeletion",
     "PayloadSecret",
     "Plugin",
     "PluginSource",

@@ -1,17 +1,20 @@
 """One shared catalog and optimistic write boundary for every adapter."""
 
+import hashlib
+import json
 from datetime import datetime
 from typing import Literal, cast
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic import ValidationError as PydanticValidationError
-from sqlalchemy import delete, false, func, or_, update
+from sqlalchemy import JSON, delete, func, literal, or_, update
 from sqlalchemy import select as sa_select
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.engine import CursorResult
 from sqlmodel import Session, col, select
 
 from stackos.db.model_base import _utcnow
+from stackos.db.model_patterns import PatternDeletion
 from stackos.db.models import Pattern
 from stackos.repositories.base import (
     ConflictError,
@@ -79,7 +82,40 @@ class PatternPage(Page[PatternSummary]):
     catalog_total: int
 
 
+class BundledPattern(PatternContent):
+    bundled_id: str = Field(min_length=1, max_length=120, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]*$")
+
+
+class PatternBundle(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: str = Field(min_length=1, max_length=120, pattern=r"^\S+$")
+    entries: list[BundledPattern] = Field(max_length=1000)
+
+    @model_validator(mode="after")
+    def unique_identity(self):
+        for field in ("bundled_id", "key"):
+            values = [getattr(entry, field) for entry in self.entries]
+            if len(values) != len(set(values)):
+                raise ValueError(f"duplicate {field}")
+        return self
+
+
+def _content_hash(*, title: str, summary: str, tags: list[str], body: str) -> str:
+    payload = dict(title=title, summary=summary, tags=tags, body=body)
+    return hashlib.sha256(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def _source(row) -> Literal["custom", "stackos", "customized"]:
+    if row.bundled_id is None:
+        return "custom"
+    return "stackos" if row.content_hash == row.bundled_base_hash else "customized"
+
+
 def _summary(row) -> PatternSummary:
+    source = _source(row)
     return PatternSummary(
         id=row.id,
         pattern_ref=f"pattern:{row.id}",
@@ -93,6 +129,12 @@ def _summary(row) -> PatternSummary:
         etag=f"{row.id}:{row.revision}",
         created_at=row.created_at,
         updated_at=row.updated_at,
+        source=source,
+        source_label={
+            "custom": "Custom",
+            "stackos": "StackOS",
+            "customized": "StackOS · Customized",
+        }[source],
     )
 
 
@@ -135,6 +177,9 @@ class PatternRepository:
             col(Pattern.revision),
             col(Pattern.created_at),
             col(Pattern.updated_at),
+            col(Pattern.bundled_id),
+            col(Pattern.bundled_base_hash),
+            col(Pattern.content_hash),
         )
         text_query = (query or "").strip()
         tag_values = func.json_each(Pattern.tags_json).table_valued("value")
@@ -153,10 +198,14 @@ class PatternRepository:
             statement = statement.where(
                 select(tag_values.c.value).where(tag_values.c.value.in_(tags)).exists()
             )
-        # This owner currently contains only Custom records. The bundled-update
-        # ticket extends this derived boundary, never the editable API payload.
-        if source in {"stackos", "customized"}:
-            statement = statement.where(false())
+        if source == "custom":
+            statement = statement.where(col(Pattern.bundled_id).is_(None))
+        elif source in {"stackos", "customized"}:
+            statement = statement.where(col(Pattern.bundled_id).is_not(None))
+            if source == "customized":
+                statement = statement.where(
+                    col(Pattern.content_hash) != col(Pattern.bundled_base_hash)
+                )
         page = cursor_paginate(
             self._s,
             statement,
@@ -176,6 +225,7 @@ class PatternRepository:
                 "Invalid pattern", data={"errors": safe_validation_errors(exc.errors())}
             ) from exc
         payload = content.model_dump(exclude={"tags"}) | {"tags_json": content.tags}
+        payload["content_hash"] = _content_hash(**content.model_dump(exclude={"key"}))
         # ON CONFLICT allows stable-key create retries without a duplicate or a
         # transaction-wide rollback. A differing existing payload still needs CAS.
         if expected_etag is None:
@@ -216,6 +266,7 @@ class PatternRepository:
         current = self.get(pattern_id=pattern_id)
         if expected_etag != current.etag:
             self._conflict(current)
+        bundled_id = self._s.exec(select(Pattern.bundled_id).where(Pattern.id == pattern_id)).one()
         result = self._s.execute(
             delete(Pattern).where(
                 col(Pattern.id) == pattern_id,
@@ -225,8 +276,110 @@ class PatternRepository:
         if cast(CursorResult, result).rowcount != 1:
             self._s.expire_all()
             self._conflict(self.get(pattern_id=pattern_id))
+        if bundled_id is not None:
+            self._s.execute(
+                insert(PatternDeletion).values(bundled_id=bundled_id).on_conflict_do_nothing()
+            )
         self._s.commit()
         return PatternSummary(**current.model_dump(exclude={"body"}))
+
+    def refresh_bundle(self, raw: str) -> dict[str, int]:
+        """Startup-only trusted input. Validate everything before any writes.
+
+        Revision CAS shares the normal edit/delete boundary. A committed edit
+        after the read wins; failed comparisons never advance its shipped base.
+        """
+        try:
+            bundle = PatternBundle.model_validate_json(raw)
+        except PydanticValidationError as exc:
+            # Do not log article content or unbounded validation input at startup.
+            raise ValidationError("Invalid packaged pattern bundle") from exc
+        result = dict(inserted=0, updated=0, customized=0, deleted=0, collisions=0, concurrent=0)
+        try:
+            for entry in bundle.entries:
+                self._refresh_entry(entry, bundle.version, result)
+            self._s.commit()
+        except Exception:
+            self._s.rollback()
+            raise
+        return result
+
+    def _refresh_entry(self, entry: BundledPattern, version: str, result: dict[str, int]) -> None:
+        if self._s.get(PatternDeletion, entry.bundled_id) is not None:
+            result["deleted"] += 1
+            return
+        row = self._s.exec(select(Pattern).where(Pattern.bundled_id == entry.bundled_id)).first()
+        # Never infer ownership from the public key or title. Preserve collisions.
+        collision = self._s.exec(
+            select(Pattern.id).where(
+                or_(col(Pattern.key) == entry.key, col(Pattern.title) == entry.title),
+                col(Pattern.id) != row.id if row is not None else True,
+            )
+        ).first()
+        if collision is not None:
+            result["collisions"] += 1
+            return
+        content = entry.model_dump(exclude={"bundled_id", "key"})
+        digest = _content_hash(**content)
+        payload = {k: v for k, v in content.items() if k != "tags"} | {
+            "tags_json": entry.tags,
+            "content_hash": digest,
+            "bundled_version": version,
+            "bundled_base_hash": digest,
+        }
+        if row is None:
+            now = _utcnow()
+            values = payload | dict(
+                key=entry.key,
+                bundled_id=entry.bundled_id,
+                revision=1,
+                created_at=now,
+                updated_at=now,
+            )
+            # Guard in the insert itself: another refresh may insert and an
+            # operator may delete after our initial read. Never resurrect it.
+            allowed = (
+                ~select(PatternDeletion)
+                .where(PatternDeletion.bundled_id == entry.bundled_id)
+                .exists()
+            )
+            written = self._s.execute(
+                insert(Pattern)
+                .from_select(
+                    list(values),
+                    sa_select(
+                        *(
+                            literal(value, type_=JSON) if name == "tags_json" else literal(value)
+                            for name, value in values.items()
+                        )
+                    ).where(allowed),
+                )
+                .on_conflict_do_nothing()
+            )
+            if cast(CursorResult, written).rowcount == 1:
+                result["inserted"] += 1
+            elif self._s.get(PatternDeletion, entry.bundled_id) is not None:
+                result["deleted"] += 1
+            else:
+                result["collisions"] += 1
+            return
+        current_hash = _content_hash(
+            title=row.title, summary=row.summary, tags=row.tags_json, body=row.body
+        )
+        if current_hash != row.bundled_base_hash:
+            result["customized"] += 1
+            return
+        if digest == row.bundled_base_hash and version == row.bundled_version:
+            return
+        written = self._s.execute(
+            update(Pattern)
+            .where(
+                col(Pattern.id) == row.id,
+                col(Pattern.revision) == row.revision,
+            )
+            .values(**payload, revision=row.revision + 1, updated_at=_utcnow())
+        )
+        result["updated" if cast(CursorResult, written).rowcount == 1 else "concurrent"] += 1
 
     @staticmethod
     def _conflict(current: PatternDetail):

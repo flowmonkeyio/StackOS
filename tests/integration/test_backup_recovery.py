@@ -40,6 +40,7 @@ def test_pattern_migration_restart_and_encrypted_recovery(tmp_path: Path) -> Non
     from stackos.db.migrate import alembic_config
     from stackos.repositories.patterns import PatternRepository
     from stackos.server import create_app
+    from tests.integration.test_repositories.test_pattern_bundles import bundle, entry
 
     settings = Settings(_env_file=None, data_dir=tmp_path / "data", state_dir=tmp_path / "state")
     settings.ensure_dirs()
@@ -69,6 +70,12 @@ def test_pattern_migration_restart_and_encrypted_recovery(tmp_path: Path) -> Non
             json={"arguments": {"key": content["key"]}},
             headers=headers,
         ).json()
+        with Session(api.app.state.engine) as session:
+            repo = PatternRepository(session)
+            repo.refresh_bundle(bundle(entry(), entry("deleted")))
+            deleted = repo.get(key="deleted")
+            repo.delete(deleted.id, expected_etag=deleted.etag)
+            bundled = repo.get(key="shipped")
     # A second complete lifespan reopens the same isolated DB and preserves identity/content.
     with TestClient(create_app(settings), base_url="http://127.0.0.1:5199") as api:
         restored = api.post(
@@ -92,7 +99,11 @@ def test_pattern_migration_restart_and_encrypted_recovery(tmp_path: Path) -> Non
     restore_backup(settings, archive, private, recovery)
     engine = make_engine(recovery / "data/stackos.db")
     with Session(engine) as session:
-        assert PatternRepository(session).get(key=content["key"]).model_dump(mode="json") == detail
+        repo = PatternRepository(session)
+        assert repo.get(key=content["key"]).model_dump(mode="json") == detail
+        assert repo.get(key="shipped") == bundled
+        assert repo.refresh_bundle(bundle(entry(), entry("deleted")))["deleted"] == 1
+        assert repo.list().catalog_total == 2
     engine.dispose()
 
 

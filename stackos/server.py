@@ -40,6 +40,7 @@ from stackos.crypto import cleanup_old_backup
 from stackos.crypto.aes_gcm import configure_seed_path
 from stackos.db.connection import make_engine
 from stackos.db.migrate import upgrade_to_head
+from stackos.install import bundled_patterns_source
 from stackos.integrations.telegram_tdlib.daemon import (
     build_telegram_runtime,
     restore_telegram_accounts,
@@ -59,6 +60,7 @@ from stackos.jobs.scheduler import (
 from stackos.jobs.workflow_schedules import WorkflowScheduleRuntime
 from stackos.logging import configure_logging, get_logger
 from stackos.mcp import register_mcp
+from stackos.repositories.patterns import PatternRepository
 from stackos.repositories.runs import RunRepository
 
 _SEED_BYTES = 32
@@ -268,6 +270,16 @@ def _build_lifespan(
         engine = make_engine(settings.db_path)
 
         SQLModel.metadata.create_all(engine)
+        try:
+            with Session(engine) as session:
+                refreshed = PatternRepository(session).refresh_bundle(
+                    bundled_patterns_source().read_text(encoding="utf-8")
+                )
+            log.info("pattern_bundle_refreshed", **refreshed)
+        except Exception as exc:
+            # Invalid/missing package assets must preserve local content and
+            # leave the console available for repair. Never log bundle bodies.
+            log.warning("pattern_bundle_refresh_failed", error_type=type(exc).__name__)
         app.state.settings = settings
         app.state.token = token
         app.state.ui_token = derive_ui_token(token)

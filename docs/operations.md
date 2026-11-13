@@ -53,8 +53,8 @@ to block unrelated work or authority to install, scaffold, edit or change setup.
 and an optional positive ID `cursor`. Text searches title, summary, individual
 tags and article body. Any selected tag matches; text, tags and source are ANDed.
 `source` is `all`, `stackos` (all bundled), `customized` (modified bundled), or
-`custom` (user-authored). This catalog initially contains only Custom records;
-trusted bundled ingestion extends the same derived provenance boundary.
+`custom` (user-authored). Server-derived labels are `Custom`, `StackOS`, and
+`StackOS · Customized`. A customized record still matches `stackos`.
 Rows are ordered by ID ascending, with `next_cursor`, `total_estimate` for the
 filtered query and `catalog_total` to distinguish no matches from an empty
 catalog. Reset the cursor when filters change. Lists never include bodies,
@@ -85,6 +85,19 @@ size limits), not applicability or semantic quality. Author guidance should cove
 applicability, recommendations, examples and references plus concrete usage for
 any required technology. Reading an entry neither applies it to a project nor
 authorizes installation or any other side effect.
+
+On startup, after migrations, the catalog refreshes once from package-owned
+`_assets/patterns/bundle.json` (the clone source is
+`stackos/db/bundled_patterns.json`). Wheel packaging includes that asset;
+desktop payloads install the same wheel. There is no runtime source selector or
+refresh operation available to normal API callers. The shipped bundle is empty
+in this delivery. A later package can insert trusted IDs and update entries whose
+exact normalized editable content still matches the last-applied shipped hash.
+Local customizations, user entries and prior baselines on skipped updates are
+preserved. Explicit bundled deletion retains only a trusted-ID marker, so repair
+or update cannot resurrect it; package removal leaves local entries intact.
+Refresh reports bounded counts for collisions, customization and concurrent edits.
+Malformed/missing assets log a bounded startup diagnostic and preserve the catalog.
 
 ## Project display names and catalog order
 

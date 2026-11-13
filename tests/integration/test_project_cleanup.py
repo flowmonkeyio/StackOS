@@ -56,6 +56,7 @@ def confirmation(target):
 @pytest.mark.asyncio
 async def test_project_cleanup_preserves_installation_patterns(fixture):
     from stackos.repositories.patterns import PatternRepository
+    from tests.integration.test_repositories.test_pattern_bundles import bundle, entry
 
     session, settings, target, _other = fixture
     repo = PatternRepository(session)
@@ -66,13 +67,19 @@ async def test_project_cleanup_preserves_installation_patterns(fixture):
         body="Shared Markdown",
         tags=["arbitrary"],
     )
+    repo.refresh_bundle(bundle(entry(), entry("deleted")))
+    deleted = repo.get(key="deleted")
+    repo.delete(deleted.id, expected_etag=deleted.etag)
+    bundled = repo.get(key="shipped")
     result = await ProjectCleanupService(session, settings).delete(
         target.id, confirmation=confirmation(target)
     )
     assert result.status == "deleted"
     session.expire_all()
     assert repo.get(pattern_id=before.id) == before
-    assert repo.list().catalog_total == 1
+    assert repo.get(key="shipped") == bundled
+    assert repo.refresh_bundle(bundle(entry(), entry("deleted")))["deleted"] == 1
+    assert repo.list().catalog_total == 2
 
 
 def put(path: Path, value="sentinel"):

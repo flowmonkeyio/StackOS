@@ -244,8 +244,19 @@ database. It stores a stable ID/key, title, summary, Markdown body, freeform tag
 timestamps and optimistic revision. Project resources remain project-scoped;
 patterns are not resources under a hidden project. Whole-database backup and
 recovery preserve them, and project cleanup leaves them intact. The migration
-creates an empty table. Bundled identity/update bookkeeping belongs in this same
-owner when supplied by trusted packaged assets, never by normal editable inputs.
+creates an empty table. Trusted package assets carry stable bundled IDs and a
+version; the production bundle may be empty. After migration, each daemon startup
+invokes one refresh in this same repository. List/detail reads never refresh.
+The repository hashes normalized title, summary, tags and exact Markdown body,
+excluding key, timestamps and provenance. It stores the current content hash and
+last-applied shipped hash/version; only a matching baseline permits an atomic
+revision-checked replacement. A skipped customization retains its entire record
+and prior baseline. Ordinary saves update the content hash through the same
+revision boundary and cannot set trusted fields. Keys/titles never confer bundled
+identity; collisions are preserved with bounded counts. Explicit bundled deletion
+removes the content and retains only its ID in `pattern_deletions`. Package removal
+does not remove local entries. Content and markers survive whole-DB recovery and
+project deletion. There is no merge, reset or history subsystem.
 `pattern.list/get/upsert/delete` are registered once and use the existing MCP,
 generic HTTP, CLI and browser-safe operation adapters. Lists select summary
 columns only; detail loads the body. No semantic content validation or automatic
