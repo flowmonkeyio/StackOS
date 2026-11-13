@@ -37,6 +37,21 @@ def nonempty_json_text(column, path: str):
     )
 
 
+def valid_delivery_json(column, prefix: str = "$.delivery"):
+    """Validate the canonical handoff without reading frozen instructions into Python."""
+    paths = (
+        "job_ref",
+        "delivery_agent.name",
+        "delivery_agent.instructions",
+        "review_agent.name",
+        "review_agent.instructions",
+    )
+    valid = nonempty_json_text(column, f"{prefix}.{paths[0]}")
+    for path in paths[1:]:
+        valid = valid & nonempty_json_text(column, f"{prefix}.{path}")
+    return valid
+
+
 def task_column(task: TrackerTask | TrackerTaskOut, *, has_execution: bool = False) -> BoardColumn:
     if task.status in TERMINAL_COLUMNS:
         return TERMINAL_COLUMNS[task.status]

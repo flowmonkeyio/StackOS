@@ -468,7 +468,13 @@ def test_ticket_list_preview_tracks_prior_status_and_dependency_updates(session,
         == TrackerItemStatus.IN_PROGRESS
     )
     assert repo.brief(project_id=project_id, ticket_key="b").ticket.dependency_keys == []
-    assert applied.rev == before["TaskTracker"][0]["rev"] + 2
+    # Two accepted ticket edits plus the parent's real lifecycle transition;
+    # rejected entries and the dry-run contribute no revisions.
+    revision = before["TaskTracker"][0]["rev"]
+    assert applied.rev == revision + 3
+    changes = repo.changed(project_id=project_id, since_rev=revision).changes
+    assert [row.entity_kind for row in changes].count("task") == 1
+    assert [row.entity_kind for row in changes].count("ticket") == 2
     events = (
         ContextRepository(session)
         .timeline(project_id=project_id, event_type=TRACKER_TICKET_STATUS_CHANGED)

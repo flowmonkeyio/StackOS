@@ -66,6 +66,7 @@ from stackos.repositories.tracker.schema import (
     TrackerLinkOut,
     TrackerMetricDemand,
     TrackerNextOut,
+    TrackerNotificationChangesOut,
     TrackerPriorityOut,
     TrackerReferenceOut,
     TrackerSearchOut,
@@ -944,8 +945,19 @@ class TrackerQueryMixin:
         project_id: int,
         since_rev: int | None = None,
         limit: int = 50,
-    ) -> TrackerChangedOut:
+        projection: Literal["full", "notifications"] = "full",
+    ) -> TrackerChangedOut | TrackerNotificationChangesOut:
         tracker = self._tracker_or_none(project_id=project_id)
+        if projection == "notifications":
+            from stackos.repositories.tracker.notification_changes import notification_changes
+
+            return notification_changes(
+                self._s,
+                tracker,
+                project_id=project_id,
+                since_rev=since_rev,
+                limit=limit,
+            )
         if tracker is None:
             return TrackerChangedOut(since_rev=since_rev, current_rev=0, changes=[])
         stmt = select(TrackerRevision).where(TrackerRevision.tracker_id == tracker.id)

@@ -1797,10 +1797,62 @@ Timeline metadata includes the entity key, old/new status, and tracker URL
 path, plus event-envelope metadata such as `schema_version` and actor when
 supplied by the producer. Event rows preserve source provenance with `source_type` set to
 `tracker_task` or `tracker_ticket` and `source_id` set to the persisted tracker
-row id. The macOS desktop app consumes this timeline for native notifications,
-but the MVP only displays native notifications for completed tasks. Ticket
-status events remain available for audit, UI timelines, and future notification
-policy without creating native ticket notifications today.
+row id. Ticket status events remain available for audit and UI timelines;
+they do not produce native per-ticket notifications.
+
+### Desktop actionable task notifications
+
+The existing desktop controller reads `tracker.changed` with
+`projection="notifications"`. This is a typed scalar projection of atomic
+`TrackerRevision` before/after snapshots, not another event store or scheduler.
+The default full revision contract remains unchanged. The projection includes
+project ID/name, stable task ID/key/title, revision and before/after lifecycle
+and validated delivery status. It never returns prompts, raw outputs or stop
+reason prose. The task graph retains the actual reason and failure details.
+
+| Type | Canonical transition | Native title and body |
+| --- | --- | --- |
+| `complete` | Task lifecycle changes to `complete` | Task complete; `{task title} · {project name}` |
+| `stopped` | Nonterminal task delivery changes from non-stopped to validated `stopped` | Task needs attention; `{task title} stopped · {project name}` |
+| `failed` | Task lifecycle changes to `failed` outside an already-notified stop | Task failed; `{task title} · {project name}` |
+
+`update_task`/`_record_revision` own lifecycle snapshots; automatic delivery's
+`_update_delivery` uses the same mutation owner. Independent child-ticket
+aggregation records its task transition in that same transaction; workflow
+terminal mirroring retains its existing task snapshot. A repeated stopped write is
+quiet; resume followed by stop is another incident. Failure plus stop in one
+revision selects failure; failure during a retained stop or a later stop of a
+failed task does not duplicate that incident. Progress, review chatter, task
+creation and unchanged lifecycle are quiet. Service/auth/update alerts retain
+their existing owners. There is currently no standalone actionable approval or
+input-needed producer: pending future approval rows and prose do not create
+notifications. Adding one remains a separate extension of that existing owner.
+
+Omitting `since_rev` returns an empty baseline at `current_rev` without scanning
+history. Subsequent reads inspect at most `limit` revisions (1–200, default 50),
+including quiet writes and removed targets; `next_cursor` continues a partial
+page and otherwise `current_rev` is the checkpoint. Compact and raw preserve
+this entire bounded contract. Scalar SQL projection avoids decoding full
+revision/task evidence or counting history. Missing, foreign and replaced task
+identities cannot appear as valid targets.
+
+The controller follows project catalog pages and reads at most four 50-revision
+pages per project per poll. Remaining catch-up continues on the next poll. It
+checkpoints each processed revision/page atomically, so a later project/page
+failure or a normal app restart cannot replay already-processed work. Version 2
+`projectRevisionCursors` in `notification-state.json` are independent of old
+`projectEventWatermarks`; migration preserves those event IDs as history and
+baselines the revision cursor quietly. A first historical load never replays.
+The OS display and local checkpoint are separate operations; an abrupt process
+failure precisely between them cannot provide transactional exactly-once OS
+delivery. Normal restart/reconnect and partial-read retries retain deduplication.
+
+Clicks use the existing task deep link, first re-reading that exact project/key
+through `tracker.get`'s lightweight UI projection with empty metric demand and
+checking its stable task ID. Missing/deleted/reused/foreign targets and failed
+reads perform no navigation, rather than selecting another task by default.
+The native macOS adapter/visuals remain the existing owner; presentation proof
+belongs with changes to the presentation surface.
 
 The browser UI consumes selected-task status changes through the project
 timeline stream:

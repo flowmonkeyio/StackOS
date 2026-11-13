@@ -97,6 +97,7 @@ from stackos.repositories.tracker import (
     TrackerChangedOut,
     TrackerHistoryOut,
     TrackerNextOut,
+    TrackerNotificationChangesOut,
     TrackerReopenOut,
     TrackerSearchOut,
     TrackerSnapshotOut,
@@ -778,9 +779,14 @@ def operation_specs() -> list[OperationSpec]:
             name="tracker.changed",
             summary="Read tracker changes after a known revision.",
             input_model=TrackerChangedInput,
-            output_model=TrackerChangedOut | dict[str, Any],
+            output_model=TrackerChangedOut | TrackerNotificationChangesOut | dict[str, Any],
             handler=tracker_changed,
-            purpose="Use this for efficient context refresh without reloading the whole tracker.",
+            purpose=(
+                "Use this for efficient context refresh without reloading the whole tracker. "
+                "projection=notifications returns a bounded scalar transition page; omit "
+                "since_rev for a quiet baseline, then page with next_cursor and retain "
+                "current_rev. It excludes prompts, reasons and raw outputs."
+            ),
             examples=(
                 OperationExample(
                     title="Refresh from a known revision",

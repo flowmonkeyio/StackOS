@@ -4,212 +4,252 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const {
-  parseStackosDeepLink,
-  resolveStackosDeepLink,
-  stackosTaskDeepLink
-} = require("../src/deep-links");
-const {
-  TASK_STATUS_EVENT,
-  createNotificationController,
-  readNotificationState,
-  shouldNotifyEvent
-} = require("../src/notifications");
-
-const parsed = parseStackosDeepLink("stackos://projects/7/tasks?task=launch-check");
-assert.deepEqual(parsed, {
-  projectId: 7,
-  taskKey: "launch-check",
-  path: "/projects/7/tasks?task=launch-check"
-});
-assert.equal(
-  resolveStackosDeepLink("stackos://projects/7/tasks?task=launch-check", "http://127.0.0.1:5180/"),
-  "http://127.0.0.1:5180/projects/7/tasks?task=launch-check"
-);
-assert.equal(stackosTaskDeepLink(7, "launch-check"), "stackos://projects/7/tasks?task=launch-check");
-assert.equal(parseStackosDeepLink("https://example.com/projects/7/tasks?task=x"), null);
-assert.equal(parseStackosDeepLink("stackos://projects/7/connections"), null);
-assert.equal(parseStackosDeepLink("stackos://projects/7/tasks?task=../bad"), null);
-
-assert.equal(
-  shouldNotifyEvent({
-    event_type: TASK_STATUS_EVENT,
-    metadata_json: { new_status: "complete" }
-  }),
-  true
-);
-assert.equal(
-  shouldNotifyEvent({
-    event_type: "tracker.ticket.status_changed",
-    metadata_json: { new_status: "complete" }
-  }),
-  false
-);
-assert.equal(
-  shouldNotifyEvent({
-    event_type: TASK_STATUS_EVENT,
-    metadata_json: { new_status: "in-progress" }
-  }),
-  false
-);
+const http = require("node:http");
+const { execFile } = require("node:child_process");
+const { promisify } = require("node:util");
+const { parseStackosDeepLink, resolveStackosDeepLink, stackosTaskDeepLink } = require("../src/deep-links");
+const { createNotificationController, notificationType, readNotificationState, writeNotificationState } = require("../src/notifications");
 
 class FakeNotification {
   static instances = [];
-
-  static isSupported() {
-    return true;
-  }
-
-  constructor(options) {
-    this.options = options;
-    this.handlers = {};
-    this.shown = false;
-    FakeNotification.instances.push(this);
-  }
-
-  on(name, handler) {
-    this.handlers[name] = handler;
-  }
-
-  show() {
-    this.shown = true;
-  }
+  static isSupported() { return true; }
+  constructor(options) { this.options = options; this.handlers = {}; FakeNotification.instances.push(this); }
+  on(name, handler) { this.handlers[name] = handler; }
+  show() { this.shown = true; }
 }
 
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "stackos-notifications-"));
-const eventsByProject = new Map([
-  [
-    1,
-    [
-      {
-        id: 4,
-        project_id: 1,
-        event_type: TASK_STATUS_EVENT,
-        summary: "Task old-task changed from in-progress to complete.",
-        metadata_json: {
-          task_key: "old-task",
-          task_title: "Old task",
-          new_status: "complete"
-        }
+const roots = [];
+function temp() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "stackos-notifications-"));
+  roots.push(dir);
+  return dir;
+}
+function change(rev, before = "in-progress", after = "complete", extra = {}) {
+  return { rev, task_id: 9, task_key: "work", task_title: "Work", before_status: before,
+    after_status: after, before_delivery_status: null, after_delivery_status: null, ...extra };
+}
+function page(rev, changes = [], next = null, project = 1) {
+  return { projection: "notifications", project_id: project, project_name: "Project",
+    current_rev: rev, changes, next_cursor: next };
+}
+function setup(overrides = {}) {
+  const dir = overrides.userDataPath || temp();
+  const opened = [];
+  const controller = createNotificationController({ Notification: FakeNotification,
+    userDataPath: dir, openDeepLink: (value) => opened.push(value), ...overrides });
+  return { controller, dir, opened };
+}
+
+async function unitTests() {
+  assert.deepEqual(parseStackosDeepLink("stackos://projects/7/tasks?task=launch-check"), {
+    projectId: 7, taskKey: "launch-check", path: "/projects/7/tasks?view=graph&task=launch-check"
+  });
+  assert.equal(resolveStackosDeepLink("stackos://projects/7/tasks?task=launch-check", "http://127.0.0.1:5180/"),
+    "http://127.0.0.1:5180/projects/7/tasks?view=graph&task=launch-check");
+  assert.equal(stackosTaskDeepLink(7, "launch-check"), "stackos://projects/7/tasks?task=launch-check");
+  for (const link of ["https://example.com/projects/7/tasks?task=x", "stackos://projects/7/connections",
+    "stackos://projects/7/tasks?task=../bad"]) assert.equal(parseStackosDeepLink(link), null);
+
+  assert.equal(notificationType(change(1)), "complete");
+  assert.equal(notificationType(change(1, "in-progress", "failed")), "failed");
+  assert.equal(notificationType(change(1, "complete", "complete")), null);
+  assert.equal(notificationType(change(1, null)), null);
+  assert.equal(notificationType(change(1, "in-progress", "in-progress")), null);
+  assert.equal(notificationType(change(1, "in-progress", "in-progress", {
+    before_delivery_status: "running", after_delivery_status: "stopped" })), "stopped");
+  assert.equal(notificationType(change(1, "in-progress", "failed", {
+    before_delivery_status: "stopped", after_delivery_status: "stopped" })), null);
+  assert.equal(notificationType(change(1, "failed", "failed", {
+    before_delivery_status: "running", after_delivery_status: "stopped" })), null);
+  assert.equal(notificationType(change(1, "in-progress", "failed", {
+    before_delivery_status: "running", after_delivery_status: "stopped" })), "failed");
+
+  let current = page(100, [change(100)]);
+  let failSecond = false;
+  let snapshot = { tasks: [{ id: 9, project_id: 1, key: "work" }] };
+  const requests = [];
+  const service = {
+    authenticatedJsonGet: async (url) => {
+      const parsed = new URL(url, "http://localhost");
+      return parsed.searchParams.has("after") ? { items: [{ id: 2 }] } : { items: [{ id: 1 }], next_cursor: 1 };
+    },
+    authenticatedJsonPost: async (url, body) => {
+      const args = body.arguments;
+      requests.push({ url, args });
+      if (url.includes("tracker.get")) return { ok: true, data: snapshot };
+      if (args.project_id === 2) {
+        if (failSecond) throw new Error("offline");
+        return { ok: true, data: page(20, [], null, 2) };
       }
-    ]
-  ]
-]);
-const opened = [];
-const timelineRequests = [];
-const service = {
-  authenticatedJsonGet: async (pathname) => {
-    const url = new URL(pathname, "http://127.0.0.1:5180");
-    if (url.pathname === "/api/v1/projects") {
-      return { items: [{ id: 1 }] };
+      return { ok: true, data: current };
     }
-    const match = url.pathname.match(/^\/api\/v1\/projects\/(\d+)\/context\/timeline$/);
-    assert.ok(match, `unexpected URL ${pathname}`);
-    assert.equal(url.searchParams.get("event_type"), TASK_STATUS_EVENT);
-    assert.equal(url.searchParams.get("limit"), "50");
-    timelineRequests.push(url);
-    const projectId = Number.parseInt(match[1], 10);
-    const after = Number.parseInt(url.searchParams.get("after") || "0", 10);
-    return {
-      items: (eventsByProject.get(projectId) || []).filter((event) => event.id > after),
-      next_cursor: null
-    };
+  };
+  const { controller, dir, opened } = setup({ service });
+  writeNotificationState(dir, { projectEventWatermarks: { "1": 9000 } });
+  // Construct again to consume a legacy event ID that must never become a revision.
+  const migrated = setup({ service, userDataPath: dir, openDeepLink: (link) => opened.push(link) }).controller;
+  assert.equal((await migrated.pollOnce()).ok, true);
+  assert.equal(FakeNotification.instances.length, 0);
+  assert.equal(requests[0].args.since_rev, null);
+  assert.equal(migrated.state.projectCount, 2);
+  assert.equal(readNotificationState(dir).projectEventWatermarks["1"], 9000);
+  assert.equal(readNotificationState(dir).projectRevisionCursors["1"], 100);
+
+  current = page(103, [change(100), change(101), change(101), change(102, "complete", "complete"),
+    change(103, "in-progress", "in-progress", { after_delivery_status: "stopped" })]);
+  failSecond = true;
+  assert.equal((await migrated.pollOnce()).ok, false);
+  assert.equal(FakeNotification.instances.length, 2);
+  assert.equal(readNotificationState(dir).projectRevisionCursors["1"], 103);
+  assert.deepEqual(FakeNotification.instances.map((n) => n.options), [
+    { title: "Task complete", body: "Work · Project", silent: false },
+    { title: "Task needs attention", body: "Work stopped · Project", silent: false }
+  ]);
+  await FakeNotification.instances[0].handlers.click();
+  assert.deepEqual(opened, ["stackos://projects/1/tasks?task=work"]);
+  for (const tasks of [[], [{ id: 10, project_id: 1, key: "work" }],
+    [{ id: 9, project_id: 2, key: "work" }], [{ id: 9, project_id: 1, key: "foreign" }]]) {
+    snapshot = { tasks };
+    await FakeNotification.instances[0].handlers.click();
+    assert.equal(opened.length, 1);
   }
-};
+  failSecond = false;
+  const restarted = setup({ service, userDataPath: dir }).controller;
+  assert.equal((await restarted.pollOnce()).ok, true);
+  assert.equal(FakeNotification.instances.length, 2);
+  current = page(104, [change(104, "in-progress", "failed")]);
+  assert.equal((await restarted.pollOnce()).ok, true);
+  assert.equal(FakeNotification.instances.at(-1).options.title, "Task failed");
+  // Corrupt/foreign page does not advance the cursor or notify.
+  current = page(105, [change(105)], null, 2);
+  assert.equal((await restarted.pollOnce()).ok, false);
+  assert.equal(readNotificationState(dir).projectRevisionCursors["1"], 104);
 
-const controller = createNotificationController({
-  service,
-  Notification: FakeNotification,
-  openDeepLink: (deepLink) => {
-    opened.push(deepLink);
-  },
-  userDataPath: tmp,
-  setIntervalFn: () => 123,
-  clearIntervalFn: () => {}
-});
+  // Bound catch-up to four pages per poll, preserving quiet-revision cursors.
+  const pagedDir = temp();
+  writeNotificationState(pagedDir, { cursorVersion: 2, projectRevisionCursors: { "1": 0 } });
+  let pageCalls = 0;
+  const paged = setup({ userDataPath: pagedDir, service: {
+    authenticatedJsonGet: async () => ({ items: [{ id: 1 }] }),
+    authenticatedJsonPost: async (_url, { arguments: args }) => {
+      pageCalls += 1;
+      const end = Math.min(args.since_rev + 50, 260);
+      return page(260, [change(end, "in-progress", "in-progress")], end < 260 ? end : null);
+    }
+  } }).controller;
+  assert.equal((await paged.pollOnce()).ok, true);
+  assert.equal(pageCalls, 4);
+  assert.equal(readNotificationState(pagedDir).projectRevisionCursors["1"], 200);
+  assert.equal((await paged.pollOnce()).ok, true);
+  assert.equal(pageCalls, 6);
+  assert.equal(readNotificationState(pagedDir).projectRevisionCursors["1"], 260);
 
-(async () => {
+  // A later page failure must retain earlier page progress across restart.
+  let calls = 0;
+  const partialDir = temp();
+  writeNotificationState(partialDir, { cursorVersion: 2, projectRevisionCursors: { "1": 0 } });
+  const partial = setup({ userDataPath: partialDir, service: {
+    authenticatedJsonGet: async () => ({ items: [{ id: 1 }] }),
+    authenticatedJsonPost: async () => {
+      if (++calls === 2) throw new Error("disconnected between pages");
+      return page(2, [change(1)], 1);
+    }
+  } }).controller;
+  assert.equal((await partial.pollOnce()).ok, false);
+  assert.equal(readNotificationState(partialDir).projectRevisionCursors["1"], 1);
+
+  // Overlapping callers share one read; stop fences a late outcome and timer.
+  let resolveRead;
+  let projectReads = 0;
+  let timerCount = 0;
+  const slowDir = temp();
+  writeNotificationState(slowDir, { cursorVersion: 2, projectRevisionCursors: { "1": 0 } });
+  const slow = setup({ userDataPath: slowDir, setIntervalFn: () => { timerCount += 1; return 1; }, service: {
+    authenticatedJsonGet: async () => { projectReads += 1; return { items: [{ id: 1 }] }; },
+    authenticatedJsonPost: () => new Promise((resolve) => { resolveRead = resolve; })
+  } }).controller;
+  const first = slow.start();
+  const second = slow.pollOnce();
+  await new Promise(setImmediate);
+  slow.stop();
+  const before = FakeNotification.instances.length;
+  resolveRead(page(1, [change(1)]));
+  await Promise.all([first, second]);
+  assert.equal(projectReads, 1);
+  assert.equal(timerCount, 0);
+  assert.equal(FakeNotification.instances.length, before);
+  assert.equal(readNotificationState(slowDir).projectRevisionCursors["1"], 0);
+  controller.stop();
+  await serviceTransport();
+}
+
+async function transportClient() {
+  const service = require("../src/service");
+  assert.deepEqual(await service.authenticatedJsonGet("/projects"), { items: [] });
+  assert.deepEqual(await service.authenticatedJsonPost("/changed", { arguments: { project_id: 7 } }),
+    { current_rev: 8, changes: [] });
+  await assert.rejects(service.authenticatedJsonPost("/missing", {}), { statusCode: 404 });
+}
+
+async function serviceTransport() {
+  const tokenPath = path.join(temp(), "auth.token");
+  fs.writeFileSync(tokenPath, "synthetic-test-token");
+  const seen = [];
+  const server = http.createServer(async (req, res) => {
+    assert.equal(req.headers.authorization, "Bearer synthetic-test-token");
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    seen.push(req.method);
+    res.setHeader("Content-Type", "application/json");
+    if (req.url === "/projects") res.end(JSON.stringify({ items: [] }));
+    else if (req.url === "/changed") {
+      assert.deepEqual(JSON.parse(Buffer.concat(chunks).toString()), { arguments: { project_id: 7 } });
+      res.end(JSON.stringify({ current_rev: 8, changes: [] }));
+    } else { res.statusCode = 404; res.end("{}"); }
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   try {
-    await controller.pollOnce();
-    assert.equal(FakeNotification.instances.length, 0);
-    assert.equal(timelineRequests.length, 1);
-    assert.equal(readNotificationState(tmp).projectEventWatermarks["1"], 4);
+    await promisify(execFile)(process.execPath, [__filename, "--transport-client"], { env: {
+      ...process.env, STACKOS_DESKTOP_DAEMON_HOST: "127.0.0.1",
+      STACKOS_DESKTOP_DAEMON_PORT: String(server.address().port),
+      STACKOS_DESKTOP_AUTH_TOKEN_PATH: tokenPath
+    } });
+    assert.deepEqual(seen, ["GET", "POST", "POST"]);
+  } finally { await new Promise((resolve) => server.close(resolve)); }
+}
 
-    eventsByProject.get(1).push({
-      id: 5,
-      project_id: 1,
-      event_type: TASK_STATUS_EVENT,
-      summary: "Task new-task changed from in-progress to complete.",
-      metadata_json: {
-        task_key: "new-task",
-        task_title: "New task",
-        new_status: "complete"
-      }
-    });
-    eventsByProject.get(1).push({
-      id: 6,
-      project_id: 1,
-      event_type: "tracker.ticket.status_changed",
-      summary: "Ticket ticket-only changed from in-progress to complete.",
-      metadata_json: {
-        ticket_key: "ticket-only",
-        new_status: "complete"
-      }
-    });
-    eventsByProject.get(1).push({
-      id: 7,
-      project_id: 1,
-      event_type: "demo.event.created",
-      summary: "Generic event completed.",
-      metadata_json: {
-        new_status: "complete"
-      }
-    });
+// Real producer/REST envelope fixture supplied by the Python integration test.
+// Only the HTTP adapter and OS Notification are substituted in this mode.
+async function integrationFixture() {
+  const fixture = JSON.parse(fs.readFileSync(0, "utf8"));
+  let phase = 0;
+  let target = fixture.snapshot;
+  const { controller, dir, opened } = setup({ service: {
+    authenticatedJsonGet: async () => fixture.projects,
+    authenticatedJsonPost: async (url, body) => {
+      if (url.includes("tracker.get")) return target;
+      const cursor = body.arguments.since_rev;
+      if (phase === 0) return fixture.baseline;
+      return fixture.pages.find((item) => item.since === cursor).envelope;
+    }
+  } });
+  assert.equal((await controller.pollOnce()).ok, true);
+  assert.equal(FakeNotification.instances.length, 0);
+  phase = 1;
+  assert.equal((await controller.pollOnce()).ok, true);
+  assert.deepEqual(FakeNotification.instances.map((item) => item.options.title),
+    ["Task needs attention", "Task needs attention", "Task complete", "Task failed"]);
+  await FakeNotification.instances[0].handlers.click();
+  assert.deepEqual(opened, [stackosTaskDeepLink(fixture.project_id, "work")]);
+  target = fixture.missing;
+  await FakeNotification.instances[0].handlers.click();
+  assert.equal(opened.length, 1);
+  assert.equal(readNotificationState(dir).projectRevisionCursors[String(fixture.project_id)], fixture.final_rev);
+  console.log("real producer/operation envelope/controller/deep-link fixture ok");
+}
 
-    await controller.pollOnce();
-    assert.equal(timelineRequests.length, 2);
-    assert.equal(FakeNotification.instances.length, 1);
-    assert.equal(FakeNotification.instances[0].options.title, "Task complete: New task");
-    assert.equal(FakeNotification.instances[0].shown, true);
-    FakeNotification.instances[0].handlers.click();
-    assert.deepEqual(opened, ["stackos://projects/1/tasks?task=new-task"]);
-    assert.equal(readNotificationState(tmp).projectEventWatermarks["1"], 7);
-
-    const overlapDir = fs.mkdtempSync(path.join(os.tmpdir(), "stackos-notifications-overlap-"));
-    let resolveProjects;
-    let projectRequests = 0;
-    const slowService = {
-      authenticatedJsonGet: async (pathname) => {
-        const url = new URL(pathname, "http://127.0.0.1:5180");
-        if (url.pathname === "/api/v1/projects") {
-          projectRequests += 1;
-          await new Promise((resolve) => {
-            resolveProjects = resolve;
-          });
-          return { items: [{ id: 1 }] };
-        }
-        return { items: [], next_cursor: null };
-      }
-    };
-    const overlapController = createNotificationController({
-      service: slowService,
-      Notification: FakeNotification,
-      openDeepLink: () => {},
-      userDataPath: overlapDir
-    });
-    const firstPoll = overlapController.pollOnce();
-    const secondPoll = overlapController.pollOnce();
-    assert.equal(projectRequests, 1);
-    resolveProjects();
-    await Promise.all([firstPoll, secondPoll]);
-    assert.equal(projectRequests, 1);
-    fs.rmSync(overlapDir, { recursive: true, force: true });
-
-    console.log("desktop notifications test ok");
-  } finally {
-    fs.rmSync(tmp, { recursive: true, force: true });
-  }
-})().catch((error) => {
-  console.error(error);
-  process.exitCode = 1;
-});
+(process.argv.includes("--transport-client") ? transportClient() :
+  process.argv.includes("--integration-fixture") ? integrationFixture() : unitTests())
+  .then(() => console.log("desktop notifications test ok"))
+  .catch((error) => { console.error(error); process.exitCode = 1; })
+  .finally(() => { for (const dir of roots) fs.rmSync(dir, { recursive: true, force: true }); });

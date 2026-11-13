@@ -796,6 +796,27 @@ class TrackerChangedOut(BaseModel):
     changes: list[TrackerHistoryOut]
 
 
+class TrackerNotificationChangeOut(BaseModel):
+    rev: int
+    task_id: int
+    task_key: str
+    task_title: str
+    before_status: str | None
+    after_status: str | None
+    before_delivery_status: str | None
+    after_delivery_status: str | None
+
+
+class TrackerNotificationChangesOut(BaseModel):
+    projection: Literal["notifications"] = "notifications"
+    project_id: int
+    project_name: str
+    since_rev: int | None
+    current_rev: int
+    next_cursor: int | None = None
+    changes: list[TrackerNotificationChangeOut] = Field(default_factory=list)
+
+
 class TrackerSearchOut(BaseModel):
     project_id: int
     query: str
@@ -906,6 +927,8 @@ __all__ = [
     "TrackerListItemResultOut",
     "TrackerMutationOut",
     "TrackerNextOut",
+    "TrackerNotificationChangeOut",
+    "TrackerNotificationChangesOut",
     "TrackerPriorityOut",
     "TrackerReferenceOut",
     "TrackerReopenOut",

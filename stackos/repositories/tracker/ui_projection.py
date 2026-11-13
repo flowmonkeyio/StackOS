@@ -13,7 +13,7 @@ from stackos.db.models import TrackerTask, TrackerTicket
 from stackos.repositories.base import NotFoundError, ValidationError
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.tracker.agent_stats import ReceiptProjection, query_task_agent_stats
-from stackos.repositories.tracker.board import nonempty_json_text, task_columns
+from stackos.repositories.tracker.board import task_columns, valid_delivery_json
 from stackos.repositories.tracker.schema import (
     TaskDeliveryStateOut,
     TrackerMetricDemand,
@@ -34,20 +34,7 @@ def task_headers(session, tracker_id: int, *, task_key=None, statuses=None, work
     source_paths = ("template_key", "template_version", "run_plan_key", "run_plan_id")
     # Validate the canonical handoff shape without transporting its frozen instructions.
     delivery_paths = ("status", "ticket_key", "reason")
-    required_paths = (
-        "job_ref",
-        "delivery_agent.name",
-        "delivery_agent.instructions",
-        "review_agent.name",
-        "review_agent.instructions",
-    )
-    valid_parts = [
-        nonempty_json_text(TrackerTask.metadata_json, f"$.delivery.{path}")
-        for path in required_paths
-    ]
-    valid = valid_parts[0]
-    for part in valid_parts[1:]:
-        valid = valid & part
+    valid = valid_delivery_json(TrackerTask.metadata_json)
     statement = (
         sa_select(
             TrackerTask,

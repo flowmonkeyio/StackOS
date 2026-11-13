@@ -395,6 +395,14 @@ class TrackerChangedInput(MCPInput):
     project_id: int
     since_rev: int | None = None
     limit: int = Field(default=50, ge=1, le=200)
+    projection: Literal["full", "notifications"] = Field(
+        default="full",
+        description=(
+            "notifications returns bounded task identity and before/after lifecycle/handoff "
+            "states only. Omit since_rev to baseline without historical replay; page with "
+            "next_cursor, then persist current_rev. Full history remains the default."
+        ),
+    )
     response_mode: TrackerResponseMode = Field(
         default="compact",
         description=(

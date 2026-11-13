@@ -215,6 +215,8 @@ def compact_tracker_history_page(value: Any) -> dict[str, Any]:
 
 def compact_tracker_changed(value: Any) -> dict[str, Any]:
     data = _as_dict(value)
+    if data.get("projection") == "notifications":
+        return data  # Already a bounded typed projection; retain its paging contract.
     return _drop_empty(
         {
             "since_rev": _clean(data.get("since_rev")),

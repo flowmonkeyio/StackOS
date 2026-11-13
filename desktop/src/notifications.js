@@ -5,9 +5,10 @@ const path = require("node:path");
 const { stackosTaskDeepLink } = require("./deep-links");
 
 const NOTIFICATION_STATE_FILE = "notification-state.json";
-const TASK_STATUS_EVENT = "tracker.task.status_changed";
-const COMPLETE_STATUS = "complete";
 const DEFAULT_POLL_INTERVAL_MS = 15000;
+const PAGE_SIZE = 50;
+const MAX_PAGES_PER_PROJECT = 4;
+const TERMINAL_STATUSES = new Set(["complete", "failed", "aborted", "deferred", "skipped"]);
 
 function notificationStatePath(userDataPath) {
   return path.join(userDataPath, NOTIFICATION_STATE_FILE);
@@ -15,7 +16,8 @@ function notificationStatePath(userDataPath) {
 
 function readNotificationState(userDataPath) {
   try {
-    return JSON.parse(fs.readFileSync(notificationStatePath(userDataPath), "utf8"));
+    const value = JSON.parse(fs.readFileSync(notificationStatePath(userDataPath), "utf8"));
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
   } catch (_error) {
     return {};
   }
@@ -23,155 +25,178 @@ function readNotificationState(userDataPath) {
 
 function writeNotificationState(userDataPath, state) {
   fs.mkdirSync(userDataPath, { recursive: true });
-  fs.writeFileSync(notificationStatePath(userDataPath), `${JSON.stringify(state, null, 2)}\n`);
+  const target = notificationStatePath(userDataPath);
+  fs.writeFileSync(`${target}.tmp`, `${JSON.stringify(state, null, 2)}\n`);
+  fs.renameSync(`${target}.tmp`, target);
 }
 
 function pageItems(payload) {
   return Array.isArray(payload?.items) ? payload.items : [];
 }
 
+function positiveId(value) {
+  return Number.isSafeInteger(value) && value > 0;
+}
+
 function activeProjectIds(payload) {
-  return pageItems(payload)
-    .map((project) => project.id)
-    .filter((id) => Number.isSafeInteger(id) && id > 0);
+  return pageItems(payload).map((project) => project.id).filter(positiveId);
 }
 
-function shouldNotifyEvent(event) {
-  const metadata = event?.metadata_json || {};
-  return event?.event_type === TASK_STATUS_EVENT && metadata.new_status === COMPLETE_STATUS;
-}
-
-function deepLinkForEvent(event) {
-  const metadata = event?.metadata_json || {};
-  const projectId = event?.project_id;
-  const taskKey = metadata.task_key;
-  if (!Number.isSafeInteger(projectId) || typeof taskKey !== "string") {
-    return null;
+// Failure and stop revisions for one retained incident produce one notice.
+function notificationType(change) {
+  if (!change?.before_status || !change?.after_status) return null;
+  if (change.before_status !== change.after_status) {
+    if (change.after_status === "complete") return "complete";
+    if (change.after_status === "failed" && change.before_delivery_status !== "stopped") return "failed";
   }
-  return stackosTaskDeepLink(projectId, taskKey);
-}
-
-function titleForEvent(event) {
-  const metadata = event?.metadata_json || {};
-  const taskTitle = typeof metadata.task_title === "string" ? metadata.task_title : null;
-  const taskKey = typeof metadata.task_key === "string" ? metadata.task_key : null;
-  return taskTitle || taskKey ? `Task complete: ${taskTitle || taskKey}` : "Task complete";
-}
-
-function bodyForEvent(event) {
-  const metadata = event?.metadata_json || {};
-  if (typeof metadata.task_key === "string" && typeof event?.summary === "string") {
-    return event.summary;
+  if (!TERMINAL_STATUSES.has(change.after_status) &&
+      change.after_delivery_status === "stopped" && change.before_delivery_status !== "stopped") {
+    return "stopped";
   }
-  return "A StackOS tracker task completed.";
+  return null;
+}
+
+function label(value, fallback) {
+  const clean = typeof value === "string" ? value.replace(/[\x00-\x1f\x7f]/g, " ").trim() : "";
+  return (clean || fallback).slice(0, 200);
+}
+
+function operationData(payload) {
+  if (payload?.ok === false) throw new Error("StackOS notification read failed");
+  return payload?.data || payload;
 }
 
 function createNotificationController({
-  service,
-  Notification,
-  openDeepLink,
-  userDataPath,
+  service, Notification, openDeepLink, userDataPath,
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
-  setIntervalFn = setInterval,
-  clearIntervalFn = clearInterval
+  setIntervalFn = setInterval, clearIntervalFn = clearInterval
 }) {
-  const supported =
-    Notification && typeof Notification.isSupported === "function"
-      ? Notification.isSupported()
-      : Boolean(Notification);
+  const supported = Notification && typeof Notification.isSupported === "function"
+    ? Notification.isSupported() : Boolean(Notification);
   const persisted = readNotificationState(userDataPath);
-  const watermarks =
-    persisted && typeof persisted.projectEventWatermarks === "object"
-      ? { ...persisted.projectEventWatermarks }
-      : {};
+  // Event IDs and revisions are different namespaces. Preserve legacy state as
+  // history and baseline an independent, versioned revision cursor.
+  const cursors = persisted.cursorVersion === 2 && persisted.projectRevisionCursors &&
+    typeof persisted.projectRevisionCursors === "object" && !Array.isArray(persisted.projectRevisionCursors)
+    ? { ...persisted.projectRevisionCursors } : {};
   const state = {
-    enabled: supported,
-    status: supported ? "idle" : "unsupported",
-    lastError: null,
-    lastPollAt: null,
-    projectCount: 0,
-    notifiedCount: 0
+    enabled: supported, status: supported ? "idle" : "unsupported",
+    lastError: null, lastPollAt: null, projectCount: 0, notifiedCount: 0
   };
   let timer = null;
   let pollInFlight = null;
+  let generation = 0;
 
-  function saveWatermarks() {
+  function checkpoint(projectId, rev) {
+    cursors[String(projectId)] = rev;
     writeNotificationState(userDataPath, {
-      projectEventWatermarks: watermarks,
+      ...persisted, cursorVersion: 2, projectRevisionCursors: cursors,
       updatedAt: new Date().toISOString()
     });
   }
 
-  function showNotification(event) {
-    const deepLink = deepLinkForEvent(event);
+  function callOperation(name, args) {
+    return service.authenticatedJsonPost(`/api/v1/operations/${name}/call`, {
+      arguments: { ...args, response_mode: "raw" }
+    }).then(operationData);
+  }
+
+  async function openTarget(projectId, change, deepLink) {
+    try {
+      const snapshot = await callOperation("tracker.get", {
+        project_id: projectId, task_key: change.task_key, task_index_only: true,
+        include_graph: false, projection: "ui", metric_demand: { task_keys: [] }
+      });
+      const task = snapshot?.tasks?.find((item) => item.id === change.task_id &&
+        item.project_id === projectId && item.key === change.task_key);
+      if (task) openDeepLink(deepLink);
+    } catch (_error) {
+      // Missing/foreign/reused targets or service loss cannot select other work.
+    }
+  }
+
+  function showNotification(project, change, type) {
+    const deepLink = positiveId(change.task_id) && stackosTaskDeepLink(project.project_id, change.task_key);
+    if (!deepLink) return;
+    const titles = { complete: "Task complete", stopped: "Task needs attention", failed: "Task failed" };
+    const task = label(change.task_title, change.task_key);
+    const name = label(project.project_name, `Project ${project.project_id}`);
     const notification = new Notification({
-      title: titleForEvent(event),
-      body: bodyForEvent(event),
-      silent: false
+      title: titles[type], body: `${task}${type === "stopped" ? " stopped" : ""} · ${name}`, silent: false
     });
-    if (deepLink && typeof notification.on === "function") {
-      notification.on("click", () => openDeepLink(deepLink));
+    if (typeof notification.on === "function") {
+      notification.on("click", () => openTarget(project.project_id, change, deepLink));
     }
     notification.show();
     state.notifiedCount += 1;
   }
 
-  async function timelinePage(projectId, after) {
-    const params = new URLSearchParams({
-      event_type: TASK_STATUS_EVENT,
-      limit: "50"
-    });
-    if (after !== null && after !== undefined) {
-      params.set("after", String(after));
-    }
-    return service.authenticatedJsonGet(
-      `/api/v1/projects/${projectId}/context/timeline?${params.toString()}`
-    );
-  }
-
-  async function pollProject(projectId) {
-    const previous = watermarks[String(projectId)];
-    const firstPoll = previous === undefined || previous === null;
-    let after = firstPoll ? null : Number(previous);
-    let highWater = Number.isSafeInteger(after) ? after : 0;
-    let hasNext = true;
-
-    while (hasNext) {
-      const page = await timelinePage(projectId, after);
-      const items = pageItems(page);
-      for (const event of items) {
-        if (Number.isSafeInteger(event.id) && event.id > highWater) {
-          highWater = event.id;
-        }
-        if (!firstPoll && shouldNotifyEvent(event)) {
-          showNotification(event);
+  async function pollProject(projectId, epoch) {
+    const stored = cursors[String(projectId)];
+    let after = Number.isSafeInteger(stored) && stored >= 0 ? stored : null;
+    for (let pageIndex = 0; pageIndex < MAX_PAGES_PER_PROJECT; pageIndex += 1) {
+      const page = await callOperation("tracker.changed", {
+        project_id: projectId, projection: "notifications", since_rev: after, limit: PAGE_SIZE
+      });
+      if (epoch !== generation) return;
+      if (page?.projection !== "notifications" || page.project_id !== projectId ||
+          !Number.isSafeInteger(page.current_rev) || page.current_rev < (after ?? 0) ||
+          !Array.isArray(page.changes) || page.changes.length > PAGE_SIZE) {
+        throw new Error("Invalid StackOS notification page");
+      }
+      const next = page.next_cursor;
+      const end = next ?? page.current_rev;
+      if (!Number.isSafeInteger(end) || end > page.current_rev ||
+          (next !== null && next !== undefined && end <= (after ?? -1))) {
+        throw new Error("Invalid StackOS notification cursor");
+      }
+      if (after !== null) {
+        for (const change of page.changes) {
+          const current = cursors[String(projectId)] ?? after;
+          if (!positiveId(change.rev) || change.rev <= current || change.rev > end) continue;
+          const type = notificationType(change);
+          if (type) showNotification(page, change, type);
+          checkpoint(projectId, change.rev);
         }
       }
-      after = page?.next_cursor || null;
-      hasNext = Boolean(after);
+      checkpoint(projectId, end);
+      if (next === null || next === undefined) return;
+      after = end;
     }
-
-    watermarks[String(projectId)] = highWater;
   }
 
-  async function runPollOnce() {
-    if (!state.enabled) {
-      return { ok: false, reason: "notifications are not supported", state };
-    }
+  async function runPollOnce(epoch) {
+    if (!state.enabled) return { ok: false, reason: "notifications are not supported", state };
     state.status = "polling";
     state.lastError = null;
+    state.projectCount = 0;
     try {
-      const projects = await service.authenticatedJsonGet("/api/v1/projects?active_only=true&limit=100");
-      const projectIds = activeProjectIds(projects);
-      state.projectCount = projectIds.length;
-      for (const projectId of projectIds) {
-        await pollProject(projectId);
-      }
-      saveWatermarks();
+      let after = null;
+      const seen = new Set();
+      do {
+        const params = new URLSearchParams({ active_only: "true", limit: "100" });
+        if (after !== null) params.set("after", String(after));
+        const projects = await service.authenticatedJsonGet(`/api/v1/projects?${params}`);
+        if (epoch !== generation) return { ok: false, reason: "stopped", state };
+        for (const projectId of activeProjectIds(projects)) {
+          if (seen.has(projectId)) continue;
+          seen.add(projectId);
+          state.projectCount += 1;
+          await pollProject(projectId, epoch);
+          if (epoch !== generation) return { ok: false, reason: "stopped", state };
+        }
+        const next = projects?.next_cursor ?? null;
+        if (next !== null && (!positiveId(next) || next === after || seen.has(`cursor:${next}`))) {
+          throw new Error("Invalid StackOS project cursor");
+        }
+        if (next !== null) seen.add(`cursor:${next}`);
+        after = next;
+      } while (after !== null);
       state.status = "idle";
       state.lastPollAt = new Date().toISOString();
       return { ok: true, state };
     } catch (error) {
+      if (epoch !== generation) return { ok: false, reason: "stopped", state };
       state.status = "error";
       state.lastError = error.message;
       return { ok: false, error: error.message, state };
@@ -179,54 +204,32 @@ function createNotificationController({
   }
 
   function pollOnce() {
-    if (pollInFlight) {
-      return pollInFlight;
-    }
-    pollInFlight = runPollOnce().finally(() => {
-      pollInFlight = null;
-    });
+    if (pollInFlight) return pollInFlight;
+    pollInFlight = runPollOnce(generation).finally(() => { pollInFlight = null; });
     return pollInFlight;
   }
 
   async function start() {
-    if (!state.enabled) {
-      return { ok: false, reason: "notifications are not supported", state };
-    }
-    if (timer) {
-      return { ok: true, alreadyRunning: true, state };
-    }
+    if (!state.enabled) return { ok: false, reason: "notifications are not supported", state };
+    if (timer) return { ok: true, alreadyRunning: true, state };
+    const epoch = generation;
     const result = await pollOnce();
-    timer = setIntervalFn(() => {
-      pollOnce();
-    }, pollIntervalMs);
+    if (epoch === generation && !timer) timer = setIntervalFn(() => { pollOnce(); }, pollIntervalMs);
     return result;
   }
 
   function stop() {
-    if (timer) {
-      clearIntervalFn(timer);
-      timer = null;
-    }
+    generation += 1;
+    if (timer) clearIntervalFn(timer);
+    timer = null;
     state.status = state.enabled ? "idle" : "unsupported";
     return { ok: true, state };
   }
 
-  return {
-    state,
-    pollOnce,
-    start,
-    stop
-  };
+  return { state, pollOnce, start, stop };
 }
 
 module.exports = {
-  DEFAULT_POLL_INTERVAL_MS,
-  TASK_STATUS_EVENT,
-  activeProjectIds,
-  createNotificationController,
-  deepLinkForEvent,
-  notificationStatePath,
-  readNotificationState,
-  shouldNotifyEvent,
-  writeNotificationState
+  DEFAULT_POLL_INTERVAL_MS, activeProjectIds, createNotificationController,
+  notificationStatePath, notificationType, readNotificationState, writeNotificationState
 };

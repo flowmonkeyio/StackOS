@@ -2063,6 +2063,10 @@ class TrackerMutationMixin:
             return
         if self._sync_workflow_task_status(task, now=now, old_column=old_column):
             return
+        # Ticket aggregation is also a task lifecycle producer. Preserve its
+        # before/after state in the existing revision feed, in this transaction.
+        # A shallow row copy avoids serializing prompts on unchanged updates.
+        previous = task.model_copy()
         old = task.status
         if (
             task.metadata_json
@@ -2124,6 +2128,21 @@ class TrackerMutationMixin:
                 task.status,
                 reason="tracker.sync_task_status",
                 old_column=old_column,
+            )
+            tracker = self._s.get(TaskTracker, task.tracker_id)
+            if tracker is None:
+                raise NotFoundError("tracker not found")
+            self._record_revision(
+                tracker,
+                actor="system",
+                change_kind="update",
+                entity_kind="task",
+                entity_id=task.id,
+                entity_key=task.key,
+                summary=f"Aggregated task {task.key} status.",
+                before_json=self._task_snapshot(previous),
+                after_json=self._task_snapshot(task),
+                commit=False,
             )
         elif old_column is not None:
             self._record_task_board_entry(task, old_column)
