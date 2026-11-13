@@ -277,12 +277,16 @@ def test_local_admin_ticket_counts_match_contributing_project_directory(
     assert missing.status_code == 404
 
 
+@pytest.mark.parametrize("cancelled", [False, True])
 def test_agent_statistics_persisted_rest_mcp_parity_scope_and_privacy(
-    mcp_client: MCPClient, seeded_project: dict
+    mcp_client: MCPClient, seeded_project: dict, cancelled: bool
 ) -> None:
     project_id = seeded_project["data"]["id"]
     with Session(mcp_client.test_client.app.state.engine) as session:
         _store(session, project_id, "stats", _repaired())
+        if cancelled:
+            receipt = {**_receipt("review_agent", None, 10), "cancelled": True}
+            _store(session, project_id, "cancelled-review", {"attempt": 1, "review": receipt})
         other = (
             ProjectRepository(session)
             .create(slug="stats-other", name="Archived", domain="other.test")
@@ -310,20 +314,23 @@ def test_agent_statistics_persisted_rest_mcp_parity_scope_and_privacy(
         )
         assert result.status_code == 200, result.text
         stats = _operation_data(result.json())
-        assert stats["totals"]["launch_attempts"] == 4
+        assert stats["totals"]["launch_attempts"] == 4 + int(cancelled)
         assert stats["totals"]["recorded_reviewer_rejects"] == 1
+        assert stats["totals"]["review_outcomes"] == {"success": 1, "repair": 1}
+        assert stats["totals"]["coverage"]["classification_known_attempts"] == 4
+        assert stats["totals"]["coverage"]["classification_unknown_attempts"] == int(cancelled)
         assert stats["totals"]["reported_usage"] == {
             "unit": "tokens",
-            "input": 100,
+            "input": 110 if cancelled else 100,
             "output": 0,
-            "total": 100,
+            "total": 110 if cancelled else 100,
             "cache_read": None,
             "cache_write": None,
             "reasoning": None,
             "remaining_input": None,
-            "input_with_unknown_cache": 100,
+            "input_with_unknown_cache": 110 if cancelled else 100,
         }
-        assert stats["totals"]["coverage"]["usage_measured_attempts"] == 4
+        assert stats["totals"]["coverage"]["usage_measured_attempts"] == 4 + int(cancelled)
         assert "PRIVATE" not in str(stats)
         assert not {"prompt", "instructions", "result", "error", "api_key", "usage"}.intersection(
             stats["rows"][0]
@@ -342,10 +349,12 @@ def test_agent_statistics_persisted_rest_mcp_parity_scope_and_privacy(
             assert result.status_code == 200, result.text
             stats = _operation_data(result.json())
             assert stats["is_active"] is visibility
-            assert stats["totals"]["launch_attempts"] == count
+            assert stats["totals"]["launch_attempts"] == count + (
+                int(cancelled) if visibility is not False else 0
+            )
             assert stats["totals"]["reported_usage"]["total"] == (
                 130 if visibility is None else 100 if visibility else 30
-            )
+            ) + (10 if cancelled and visibility is not False else 0)
     mcp_client.call_tool_structured(
         "workspace.connect",
         {

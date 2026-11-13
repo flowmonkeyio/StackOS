@@ -124,6 +124,7 @@ def run_agent(
         thread_id = None
         execution_error = None
         routed_execution_error = None
+        managed_cancellation = False
 
         def record_session(session_id: str) -> None:
             nonlocal thread_id
@@ -158,6 +159,7 @@ def run_agent(
                 "Codex task-routed stream failed; inspect native host diagnostics."
             )
         except InvocationCancelled as exc:
+            managed_cancellation = True
             execution_error = f"Codex process failed (InvocationCancelled): {exc}"
             routed_execution_error = "Codex task-routed invocation cancelled before launch."
         except (OSError, UnicodeError) as exc:
@@ -203,6 +205,15 @@ def run_agent(
                 native_error = str(event.get("error") or event.get("message") or "Codex failed.")
             if isinstance(event, dict) and event.get("type") == "turn.failed":
                 terminal_error = str(event.get("error") or event.get("message") or "Codex failed.")
+        # A signal or missing final alone is not cancellation. Stream/process/turn
+        # failures remain primary even if their cleanup stopped the process.
+        managed_cancellation = managed_cancellation or (
+            execution_error is None
+            and terminal_error is None
+            and native_error is None
+            and process_control is not None
+            and process_control.cancelled.is_set()
+        )
         execution_error = (
             execution_error
             or terminal_error
@@ -213,11 +224,13 @@ def run_agent(
                 else None
             )
         )
+        if managed_cancellation and routed_execution_error is None:
+            execution_error = "Codex invocation cancelled by managed process control."
         if mcp_config_ref is not None:
             if routed_execution_error is not None:
                 # Stream failure cleanup may set cancelled; retain the initiating failure.
                 execution_error = routed_execution_error
-            elif process_control is not None and process_control.cancelled.is_set():
+            elif managed_cancellation:
                 execution_error = (
                     "Codex task-routed invocation cancelled by managed process control."
                 )
@@ -233,6 +246,12 @@ def run_agent(
             if not isinstance(result, dict):
                 raise ValueError("expected a JSON object")
         except (OSError, ValueError) as exc:
+            if managed_cancellation and isinstance(exc, FileNotFoundError):
+                # No final is expected after a positively identified cancellation.
+                # Keep the native cause/exit/usage; this remains an unsuccessful call.
+                return AgentRunResult(
+                    exit_code, thread_id=thread_id, usage=usage, error=execution_error
+                )
             if mcp_config_ref is not None:
                 return AgentRunResult(
                     exit_code,

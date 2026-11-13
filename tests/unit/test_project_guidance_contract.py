@@ -99,6 +99,60 @@ def test_family_aliases_keep_one_shared_adaptation() -> None:
         assert len({id(role["project_adaptation"]) for role in roles}) == 1
 
 
+def test_proportionate_proof_rules_reach_each_execution_and_planning_consumer() -> None:
+    # Availability/parity only. The scenario fixture requires observed actions and
+    # an independent qualitative assessment, not a phrase-based behavior verdict.
+    agents = AgentPresetLoader()
+    planning = agents.describe_preset(key="stackos.sdlc.planning").preset
+    rules = [
+        rule
+        for rule in planning.prompt_contract.must_do
+        if rule.startswith(
+            ("Prove the requested end-to-end flow", "Base each pass claim", "Establish uncertain")
+        )
+    ]
+    assert len(rules) == 3
+    skill = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
+    main_rules = skill.operating_contract.responsibilities + skill.operating_contract.must_do
+    orchestrator = (ROOT / ".codex/orchestrator/sdlc-delivery-orchestrator.md").read_text()
+    for rule in rules:
+        assert rule in main_rules
+        assert rule in orchestrator
+        for role in ("planning", "test-designer", "delivery", "delivery-reviewer"):
+            source = agents.describe_preset(key=f"stackos.sdlc.{role}").preset
+            local = tomllib.loads((ROOT / f".codex/agents/sdlc-{role}.toml").read_text())
+            assert rule in source.prompt_contract.must_do, role
+            assert rule in local["developer_instructions"], role
+
+
+def test_focused_reads_reach_main_and_each_receiving_role() -> None:
+    # Delivery availability/parity; the separate native rehearsal judges behavior.
+    skill = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
+    guidance = next(
+        rule
+        for rule in skill.operating_contract.must_do
+        if rule.startswith("Re-resolve current guidance identities")
+    )
+    observation = next(
+        rule
+        for rule in skill.operating_contract.must_do
+        if rule.startswith("Start routine observation")
+    )
+    orchestrator = (ROOT / ".codex/orchestrator/sdlc-delivery-orchestrator.md").read_text()
+    assert guidance in orchestrator
+    assert observation in orchestrator
+    assert {"tracker.changed", "tracker.status"} <= set(skill.recommended_tools)
+    agents = AgentPresetLoader()
+    # The separately owned optional core release role has no local SDLC target.
+    for path in sorted((ROOT / ".codex/agents").glob("sdlc-*.toml")):
+        role = path.stem.removeprefix("sdlc-")
+        preset = agents.describe_preset(key=f"stackos.sdlc.{role}").preset
+        adaptation = " ".join(preset.project_adaptation.required_agent_action.split())
+        assert guidance in adaptation, preset.key
+        local = tomllib.loads(path.read_text())["developer_instructions"]
+        assert guidance in local, path
+
+
 @pytest.mark.parametrize("owner", ["planning", "orchestrator"])
 def test_cross_task_inputs_reach_planning_and_dispatch_consumers(owner: str) -> None:
     if owner == "planning":

@@ -304,13 +304,13 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     assert (
         raw_recommended["stackos.sdlc.test-designer"]["preset"]["summary"]["version"]
         == compact_recommended["stackos.sdlc.test-designer"]["preset"]["version"]
-        == "0.6.8"
+        == "0.6.10"
     )
     expected_versions = {
-        "stackos.sdlc.requirements-flow-definer": "0.6.5",
-        "stackos.sdlc.planning": "0.7.16",
-        "stackos.sdlc.delivery": "0.7.15",
-        "stackos.sdlc.delivery-reviewer": "0.6.14",
+        "stackos.sdlc.requirements-flow-definer": "0.6.6",
+        "stackos.sdlc.planning": "0.7.18",
+        "stackos.sdlc.delivery": "0.7.17",
+        "stackos.sdlc.delivery-reviewer": "0.6.16",
     }
     assert set(actual) == set(expected) == set(expected_versions)
     for key, item in actual.items():
@@ -331,6 +331,13 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
         assert "assignment attempt" in full_adaptation["required_agent_action"]
         assert "stale, or contradictory inputs" in full_adaptation["required_agent_action"]
         assert "tracker.reopen" in full_adaptation["required_agent_action"]
+        assert (
+            "this receiving agent has actually read it" in full_adaptation["required_agent_action"]
+        )
+        assert (
+            "Read changed or unknown applicable contracts fully"
+            in full_adaptation["required_agent_action"]
+        )
         assert "full-read/merge" not in full_adaptation["required_agent_action"]
         full_rules = expected[key]["preset"]["preset"]["prompt_contract"]["must_do"]
         has_correction = any("full-read/merge" in rule for rule in full_rules)
@@ -407,7 +414,7 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     compact_skill_binding = compact["required_skill_presets"][0]
     compact_skill = compact_skill_binding["preset"]
     full_skill = raw["required_skill_presets"][0]["preset"]
-    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.17"
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.19"
     full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
     # Skill lists are bounded navigation; raw retains the full contract.
     assert len(compact_skill["must_do"]) == 25
@@ -426,6 +433,12 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
         },
     )
     assert described_skill["preset"] == full_skill
+    observation = next(
+        rule for rule in full_instructions if rule.startswith("Start routine observation")
+    )
+    assert "tracker.changed" in observation
+    assert "no-change observations in the occurrence summary" in observation
+    assert "Refresh relevant state before final claims" in observation
     # Adoption rules may fall beyond the compact list; targeted raw retrieval keeps them complete.
     for requirement in (
         "Diagnose the prerequisite before repeating dependent suites",

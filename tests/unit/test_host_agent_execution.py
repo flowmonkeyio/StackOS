@@ -837,6 +837,7 @@ def codex_task_route(tmp_path, monkeypatch):
         ("exit", 7, "Codex task-routed execution failed"),
         ("signal", -15, "Codex task-routed execution failed"),
         ("terminal", 0, "Codex task-routed execution failed"),
+        ("terminal_cancelled", 0, "Codex task-routed execution failed"),
         ("cancelled", -15, "Codex task-routed invocation cancelled"),
         ("cancelled", 0, "Codex task-routed invocation cancelled"),
         ("process", None, "Codex task-routed process failed"),
@@ -875,7 +876,7 @@ def test_codex_task_routed_failure_keeps_safe_cause(
                 "usage": {"input_tokens": 100, "cached_input_tokens": 80, "output_tokens": 5},
             },
         ]
-        if cause == "terminal":
+        if cause in {"terminal", "terminal_cancelled"}:
             events.append({"type": "turn.failed", "message": "private-native-sentinel"})
         process = subprocess.CompletedProcess(
             command,
@@ -883,7 +884,7 @@ def test_codex_task_routed_failure_keeps_safe_cause(
             "\n".join(map(json.dumps, events)) + "\nprivate-stdout-sentinel",
             "private-stderr-sentinel",
         )
-        if cause in {"cancelled", "stream"}:
+        if cause in {"cancelled", "stream", "terminal_cancelled"}:
             control.stop()
         if cause == "stream":
             # Stream cleanup sets cancelled too; the read failure remains the cause.
@@ -906,7 +907,9 @@ def test_codex_task_routed_failure_keeps_safe_cause(
     assert result.thread_id == "failed-thread"
     assert result.result == (final if payload == "valid" else None)
     assert result.error.startswith(primary)
-    if payload != "valid":
+    if cause == "cancelled" and payload is None:
+        assert "Invalid" not in result.error
+    elif payload != "valid":
         assert (
             "\nInvalid Codex task-routed result; inspect native host diagnostics." in result.error
         )
@@ -918,7 +921,7 @@ def test_codex_task_routed_failure_keeps_safe_cause(
         assert result.usage["snapshot"]["cache_read"] == 80
     else:
         assert result.usage is None
-    assert control.cancelled.is_set() is (cause in {"cancelled", "stream"})
+    assert control.cancelled.is_set() is (cause in {"cancelled", "stream", "terminal_cancelled"})
     assert identities == ["failed-thread"]
     assert len(calls) == 1
     assert ("resume" in calls[0]) is (resume is not None)
@@ -943,11 +946,38 @@ def test_codex_task_routed_cancelled_control_prevents_launch(
     assert not result.ok
     assert result.exit_code is None
     assert result.thread_id is None and result.usage is None and result.result is None
-    assert result.error == (
-        "Codex task-routed invocation cancelled before launch.\n"
-        "Invalid Codex task-routed result; inspect native host diagnostics."
-    )
+    assert result.error == "Codex task-routed invocation cancelled before launch."
     assert control.cancelled.is_set()
+
+
+@pytest.mark.parametrize("payload", [None, "not JSON", "wrong schema", "valid"])
+def test_codex_managed_cancellation_without_task_route(project, monkeypatch, payload):
+    from stackos.host_mcp import progress
+    from stackos.host_mcp.agent_execution import ManagedProcessControl
+
+    control = ManagedProcessControl()
+    final = {"summary": "retained"}
+
+    def execute(command, **kwargs):
+        if payload is not None:
+            text = {
+                "not JSON": "not JSON",
+                "wrong schema": '{"other": true}',
+                "valid": json.dumps(final),
+            }[payload]
+            Path(command[command.index("-o") + 1]).write_text(text)
+        control.stop()
+        return subprocess.CompletedProcess(
+            command, -15, '{"type":"thread.started","thread_id":"cancelled-thread"}', ""
+        )
+
+    monkeypatch.setattr(progress, "run_codex_process", execute)
+    result = codex.run_agent(project, "delivery", "Prompt", SCHEMA, process_control=control)
+    assert not result.ok
+    assert result.exit_code == -15 and result.thread_id == "cancelled-thread"
+    assert result.result == (final if payload == "valid" else None)
+    assert result.error.startswith("Codex invocation cancelled by managed process control.")
+    assert ("Invalid Codex result" in result.error) is (payload in {"not JSON", "wrong schema"})
 
 
 @pytest.mark.parametrize("resume", [None, "failed-thread"])

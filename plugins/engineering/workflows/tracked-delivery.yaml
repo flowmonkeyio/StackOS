@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: engineering.tracked-delivery
 name: Engineering Tracked Delivery
-version: 0.8.2
+version: 0.8.3
 description: Reusable SDLC workflow for requirements, project-native design and proof planning, executable ticket breakdown, delegated delivery with immediate independent review, integrated verification, and truthful release closeout.
 domain: engineering
 owner:
@@ -227,7 +227,7 @@ policies:
     description: New behavior should have one canonical owner and reuse existing operations/adapters instead of duplicating logic.
   - key: evidence_over_assertion
     kind: verification
-    description: Requirements, tests, live/manual checks, and reviewed diffs outweigh author claims or tracker status. Proof traces real callers, producers, affected consumers and actual authorization boundaries, states mock limits and relevant asynchronous lifetime gaps, and comes from project-selected agent-executed checks rather than core command policy.
+    description: Requirements, tests, live/manual checks, and reviewed diffs outweigh author claims or tracker status. Proof traces real callers, producers, affected consumers and actual authorization boundaries, states mock limits and relevant asynchronous lifetime gaps, and comes from project-selected agent-executed checks rather than core command policy. Pass claims require actual command exit status, completion, unhandled errors, tested candidate and covered scope; green assertions cannot conceal a failed command. Preserve failed, blocked and skipped observations; correct affected fixtures without weakening guarantees.
   - key: truthful_tracker_state
     kind: delivery
     description: Tracker tasks and tickets must reflect actual progress, blockers, dependencies, deferred scope, and evidence.
@@ -296,7 +296,7 @@ policies:
     description: Original operator intent and current constraints define the delivery outcome; the agreed plan is fallible evidence. Main owns material outcome admission and terminal-managed repair routing, not routine resolution of necessary omissions. Explicit automatic handoff authorizes mechanical routing of stored scoped rejection without main message relay. Required repairs protect the original outcome or changed-surface correctness/safety; unrelated findings remain nonblocking followups until separately selected by main/operator.
   - key: quality_over_speed
     kind: verification
-    description: The orchestrator chooses proof depth from production risk and user/business impact; speed never justifies skipping the evidence needed for a high-quality outcome.
+    description: Prove the requested end-to-end flow, directly affected existing consumers and relevant failure/recovery transitions with the smallest convincing checks. Follow a demonstrated shared cause through implicated adjacent consumers within the assigned outcome, not a general audit. Stop expanding once assigned obligations are answered unless new evidence, a material change or a mandatory gate warrants more. Do not impose broad suites on every child or an exhaustive state matrix; retain required integration and final signoff. Establish uncertain required proof capabilities early; use normal scoped approval for authorized actions, distinguish approval need from actual denial, honor denial without bypass and apply manual exceptions only to their named proof. Continue unaffected work; unavailable required proof remains blocked.
   - key: mandatory_flow_design
     kind: requirements
     description: Every non-micro delivery needs an explicit user/data/system/business flow design before implementation; micro work must record why flow design is unchanged or not applicable.

@@ -2848,7 +2848,7 @@ export interface components {
             reported_usage: components["schemas"]["AgentStatsUsageOut"];
             /**
              * Review Outcomes
-             * @description Explicit review-role validated outcomes only; validation_failed is an explicit null outcome.
+             * @description Explicit review-role validated outcomes only; validation_failed is an explicit null outcome without evidenced cancellation.
              */
             review_outcomes?: {
                 [key: string]: number;
@@ -2880,7 +2880,7 @@ export interface components {
             reported_usage: components["schemas"]["AgentStatsUsageOut"];
             /**
              * Review Outcomes
-             * @description Explicit review-role validated outcomes only; validation_failed is an explicit null outcome.
+             * @description Explicit review-role validated outcomes only; validation_failed is an explicit null outcome without evidenced cancellation.
              */
             review_outcomes?: {
                 [key: string]: number;
@@ -2916,7 +2916,7 @@ export interface components {
             reported_usage: components["schemas"]["AgentStatsUsageOut"];
             /**
              * Review Outcomes
-             * @description Explicit review-role validated outcomes only; validation_failed is an explicit null outcome.
+             * @description Explicit review-role validated outcomes only; validation_failed is an explicit null outcome without evidenced cancellation.
              */
             review_outcomes?: {
                 [key: string]: number;

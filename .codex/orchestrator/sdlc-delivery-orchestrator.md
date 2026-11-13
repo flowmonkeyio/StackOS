@@ -1,8 +1,8 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.17
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.19
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
-Workflow: `engineering.tracked-delivery` v0.8.2 source contract
+Workflow: `engineering.tracked-delivery` v0.8.3 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
 
 This is the StackOS repository adaptation, not a subagent. The main agent owns
@@ -39,6 +39,12 @@ evidence and recommendations.
 - Rehydrate this guidance stack, the frozen run, operator amendments, tickets,
   current assignments, candidate identities and evidence after resume,
   handoff or compaction. Conversational memory is not durable work state.
+
+## Focused Observation And Guidance Reads
+
+Re-resolve current guidance identities at their existing owners on resume/handoff. Reuse complete content only when its owner/ref and revision or digest match and this receiving agent has actually read it; a retained artifact is a read source, not proof of consumption. Read changed or unknown applicable contracts fully, recover truncation with targeted raw/bounded reads, and avoid repeated unchanged all-role dumps. Preserve frozen native instructions/settings; reconcile affected changed guidance without claiming activation.
+
+Start routine observation with existing compact activity and tracker.changed revision reads, or scoped current reads when no revision is known; expand changed or unknown relevant tickets, receipts, blockers and guidance. Judge progress from actual execution/tool/receipt evidence; token silence alone proves neither a stall nor completion. Record no-change observations in the occurrence summary. Write task context only for changed decisions/actions/blockers, with full-read/merge of supplied JSON preserving unrelated fields and history, and only within the current writer authority. After automatic handoff observe without competing lifecycle writes. Refresh relevant state before final claims. Report actual reads/writes and measured usage with scope and limits; payload size alone does not prove savings.
 
 ## Project Boundaries And Calibration
 
@@ -294,6 +300,10 @@ The following dispatch and acceptance steps apply to terminal-managed delivery:
 
 ## Evidence And Feedback
 
+Prove the requested end-to-end flow, directly affected existing consumers and relevant failure/recovery transitions with the smallest convincing checks. Follow a demonstrated shared cause through implicated adjacent consumers within the assigned outcome, not a general audit. Stop expanding once assigned obligations are answered unless new evidence, a material change or a mandatory gate warrants more. Do not impose broad suites on every child or an exhaustive state matrix; retain required integration and final signoff.
+
+Base each pass claim on actual command exit status, completion and unhandled errors as well as assertions, tested candidate and covered scope. Green assertions with a nonzero exit or unhandled error are failed proof. Diagnose and correct owned code, test or setup defects without suppressing errors or weakening guarantees. Preserve failed, blocked, skipped and not-applicable observations. Reuse complete current evidence with a scope, candidate, prerequisite and environment basis; rerun only invalidated or missing required proof. A later pass can supersede a failure for acceptance without erasing its history.
+
 Require a concise coverage table in the existing review receipt: rule/source,
 applicability, inspected work or executed check with evidence refs, and result
 (passed, failed, not reviewed or not applicable). Required gaps for the assigned
@@ -355,12 +365,7 @@ Native agent thread/session retention does not require keeping a browser open;
 close or stop only within the agreed browser ownership and handoff. Follow
 `docs/browser-automation.md` for lifecycle and tab selection.
 
-A denied optional tool call alone does not stop the assignment. Never bypass the
-denial or repeat the denied action through another tool; use an authorized
-alternative and continue unaffected checks. Protected `.git`/`.codex` write
-denial stops that write and dependent work, not unrelated checks. Required proof
-still unavailable must return blocked; never report unexecuted or failed checks
-as passed. Failures of the assigned agent's own launch/access/model/resume retain the task-stop contract.
+Establish uncertain required proof capabilities early, before lengthy dependent work. Distinguish ordinary approval need, actual denial, unavailable required capability, repairable owned defect and explicit cancellation from concrete tool results; an unexplained signal is not cancellation. Use normal scoped approval for authorized actions; approval need is not denial. A denied optional tool call alone does not stop the assignment. Never bypass the denial or repeat the denied action through another tool; use an authorized alternative and continue unaffected checks. Protected .git/.codex write denial stops that write and dependent work, not unrelated checks. Honor manual exceptions only for their named proof. Required proof still unavailable must return blocked; never report unexecuted or failed checks as passed. Failures of the assigned agent's own launch/access/model/resume retain the task-stop contract.
 
 The main agent adjudicates reviewer claims against the operator contract and
 actual code/evidence: required fix, already covered, unsupported, out of scope,

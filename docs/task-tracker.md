@@ -593,6 +593,11 @@ explicitly. A stopped task or invalid final result alone does not identify why
 the native call ended; an unexplained signal does not establish cancellation.
 Keep the initiating cause separate from a later result-validation or
 error-persistence failure, while preserving credential sanitization.
+Positively identified managed Codex cancellation retains its native exit,
+session and usage evidence without an extra invalid-result diagnostic solely
+because the final file is absent. A present malformed final, initiating stream
+or process failure, unresolved native error or failed turn still retains its
+failure diagnostics, including when cleanup sets a cancellation flag.
 
 | Observed boundary | Meaning and safe recovery |
 | --- | --- |
@@ -888,14 +893,18 @@ Totals and rows include `coverage`: `usage_measured_attempts`,
 `usage_unavailable_attempts`, `classification_known_attempts` and
 `classification_unknown_attempts`. `usage_status` and `classification_status` are
 `empty`, `complete`, `partial` or `unavailable`. Explicit null validated outcomes
-record known validation failure; absent outcomes or roles remain unclassified.
+record known validation failure unless the receipt carries `cancelled=true`.
+That positive fence evidence keeps the attempt and measured usage but leaves its
+decision unclassified; it contributes neither `validation_failed` nor a reviewer
+reject. Null outcomes, unexplained signals and truthy non-boolean cancellation
+values do not establish cancellation. Absent outcomes or roles remain unclassified.
 `coverage.fields` maps each of `input`, `output`, `total`, `cache_read`,
 `cache_write`, `reasoning` to `measured_attempts`, `unavailable_attempts`, and
 `status` with the same coverage enum. Each denominator is all eligible attempts
 in that scope. A partial cache sum describes only known measurements; it does
 not imply zero cache for the others. `review_outcomes` counts explicit
 review-role validated `success`, `repair`, `blocked`, `failed`, or
-`validation_failed` (explicit null); absent/unknown role or outcome remains
+`validation_failed` (explicit null without evidenced cancellation); absent/unknown role or outcome remains
 unclassified. This is not an approval rate. Keep missing-data accounting in the
 API and accessible exact-value coverage. Fixed Input / Cache / Output summaries
 show compact muted N/A when measurement is absent; measured zero remains 0.
@@ -1956,6 +1965,23 @@ checks, compact history summaries, and suggested next actions. Use
 `response_mode="standard"` or `"verbose"` only when diagnostics need the full
 tracker rows with timestamps, metadata, definitions, and source payloads. Use
 `tracker.changed` when you know a previous revision and only need new context.
+
+Routine supervision starts with compact activity and `tracker.changed` from the
+last observed revision. Without a known revision, use a scoped current read to
+establish the baseline. Expand changed or unknown relevant tickets, receipts,
+blockers and guidance; an unchanged tracker revision does not prove that host
+execution or guidance is unchanged. Judge progress from actual invocation,
+tool and receipt evidence, never token silence alone. Before final claims,
+refresh the relevant state rather than reporting an earlier observation as current.
+
+Keep no-change observations in the current occurrence summary. Update task
+context only for changed decisions, actions or blockers and only under the current
+writer contract; after automatic handoff, observers do not compete with StackOS
+lifecycle writes. Read/merge complete supplied JSON fields before an authorized
+write, preserving unrelated context and history. Measure actual reads/writes and
+available usage over a named scope; smaller response payloads alone do not prove
+less work or token savings. This uses existing operations and receipts, with no
+new monitor, scheduler, persistent cache authority or ledger.
 
 `tracker.status` and `tracker.blockers` report active blockers for executable
 work: non-terminal tickets with an explicit blocker reason or incomplete

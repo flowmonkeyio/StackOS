@@ -838,7 +838,7 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
     delivery = loader.describe_preset(key="stackos.sdlc.delivery").preset
     reviewer = loader.describe_preset(key="stackos.sdlc.delivery-reviewer").preset
 
-    assert architecture.version == "0.6.6"
+    assert architecture.version == "0.6.7"
     architecture_text = " ".join(
         [
             *architecture.prompt_contract.responsibilities,
@@ -907,13 +907,13 @@ def test_sdlc_presets_require_project_patterns_and_one_brain_ownership() -> None
 def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -> None:
     loader = AgentPresetLoader()
     expected_versions = {
-        "requirements-flow-definer": "0.6.5",
-        "codebase-explorer": "0.6.5",
-        "planning": "0.7.16",
-        "architecture": "0.6.6",
-        "test-designer": "0.6.8",
-        "delivery": "0.7.15",
-        "delivery-reviewer": "0.6.14",
+        "requirements-flow-definer": "0.6.6",
+        "codebase-explorer": "0.6.6",
+        "planning": "0.7.18",
+        "architecture": "0.6.7",
+        "test-designer": "0.6.10",
+        "delivery": "0.7.17",
+        "delivery-reviewer": "0.6.16",
     }
     presets = {
         key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset for key in expected_versions
