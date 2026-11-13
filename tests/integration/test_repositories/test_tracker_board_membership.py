@@ -340,3 +340,48 @@ def test_placement_survives_closing_and_reopening_file_database(session, project
             assert task.status == "not-started" and task.started_at is None
     finally:
         reopened.dispose()
+
+
+@pytest.mark.parametrize("default_ticket", [False, True])
+def test_initial_receipt_import_also_enters_at_top(session, project_id, default_ticket):
+    repo = TrackerRepository(session)
+    other = repo.create_task(
+        project_id=project_id, key="other", title="Other", status="in-progress"
+    ).data.task
+    identity = {
+        "agent": "worker",
+        "host_key": "codex",
+        "model": "model",
+        "started_at": "2026-11-12T00:00:00+00:00",
+        "ticket_key": "work-work",
+        "invocation_id": "recorded-call",
+    }
+    evidence = {
+        "automatic_delivery": {
+            "attempt": 1,
+            "delivery": {
+                "launch": identity,
+                "execution": identity,
+            },
+        }
+    }
+    task = repo.create_task(
+        project_id=project_id,
+        key="work",
+        title="Work",
+        status="in-progress",
+        metadata_json=delivery("queued"),
+        create_default_ticket=default_ticket,
+        completion_evidence_json=evidence if default_ticket else None,
+    ).data.task
+    if not default_ticket:
+        task = repo.create_ticket(
+            project_id=project_id,
+            task_key="work",
+            key="work-work",
+            title="Recorded work",
+            status="in-progress",
+            completion_evidence_json=evidence,
+        ).data.task
+    assert task.board_column == "in-progress"
+    assert task.order_index < other.order_index

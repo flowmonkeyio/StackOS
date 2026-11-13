@@ -214,8 +214,9 @@ class TrackerMutationMixin:
         )
         if status in TERMINAL_TRACKER_STATUSES:
             row.lane_key = "done"
+        initial_column = task_columns(self._s, [row])[row.id]
         row.order_index = next_task_position(
-            self._s, tracker.id, status, board_column=task_columns(self._s, [row])[row.id]
+            self._s, tracker.id, status, board_column=initial_column
         )
         self._s.add(row)
         self._s.flush()
@@ -243,6 +244,12 @@ class TrackerMutationMixin:
                     now=now,
                 )
             )
+        final_column = task_columns(self._s, [row])[row.id]
+        if final_column != initial_column:
+            row.order_index = next_task_position(
+                self._s, tracker.id, row.status, exclude_task_id=row.id, board_column=final_column
+            )
+            self._s.add(row)
         self._record_revision(
             tracker,
             actor=created_by,
@@ -314,6 +321,7 @@ class TrackerMutationMixin:
         with self._s.begin_nested():
             tracker = self.ensure_tracker(project_id=project_id)
             task = self._task_by_key(tracker.id, task_key)
+            old_column = task_columns(self._s, [task])[task.id]
             key = _slug(key, fallback="ticket", max_length=180)
             if self._ticket_by_key(tracker.id, key, missing_ok=True) is not None:
                 raise ConflictError("tracker ticket key already exists", data={"ticket_key": key})
@@ -364,7 +372,7 @@ class TrackerMutationMixin:
                 self._add_dependency(tracker, ticket, dependency)
             for reference in references_json or []:
                 self._add_reference(tracker, ticket, reference)
-            self._sync_task_status(task, now=now)
+            self._sync_task_status(task, now=now, old_column=old_column)
             self._record_revision(
                 tracker,
                 actor=created_by,
@@ -1164,7 +1172,6 @@ class TrackerMutationMixin:
                 ),
                 project_id=project_id,
             )
-        old_task_status = task.status
         old_task_column = task_columns(self._s, [task])[task.id]
         before = self._ticket_snapshot(ticket)
         old_status = ticket.status
@@ -1179,9 +1186,7 @@ class TrackerMutationMixin:
             actor=actor,
             reason="tracker.update_ticket",
         )
-        self._sync_task_status(task, now=_utcnow())
-        if task.status == old_task_status:
-            self._record_task_board_entry(task, old_task_column)
+        self._sync_task_status(task, now=_utcnow(), old_column=old_task_column)
         self._record_revision(
             tracker,
             actor=actor,
@@ -1268,7 +1273,6 @@ class TrackerMutationMixin:
                 if ticket_task is None:
                     raise NotFoundError("ticket task not found", data={"ticket_key": ticket.key})
                 before = self._ticket_snapshot(ticket)
-                old_task_status = ticket_task.status
                 old_task_column = task_columns(self._s, [ticket_task])[ticket_task.id]
                 old_status = ticket.status
                 self._apply_ticket_patch(tracker, ticket, ticket_patch)
@@ -1280,9 +1284,7 @@ class TrackerMutationMixin:
                     actor=actor,
                     reason="tracker.patch_ticket",
                 )
-                self._sync_task_status(ticket_task, now=_utcnow())
-                if ticket_task.status == old_task_status:
-                    self._record_task_board_entry(ticket_task, old_task_column)
+                self._sync_task_status(ticket_task, now=_utcnow(), old_column=old_task_column)
                 changed_task = ticket_task
                 changed_tickets.append(ticket)
                 self._record_revision(
@@ -2053,11 +2055,13 @@ class TrackerMutationMixin:
                 data={"fields": unknown, "entity_kind": entity_kind},
             )
 
-    def _sync_task_status(self, task: TrackerTask, *, now: datetime) -> None:
+    def _sync_task_status(
+        self, task: TrackerTask, *, now: datetime, old_column: BoardColumn | None = None
+    ) -> None:
         tickets = list(self._s.exec(select(TrackerTicket).where(TrackerTicket.task_id == task.id)))
         if not tickets:
             return
-        if self._sync_workflow_task_status(task, now=now):
+        if self._sync_workflow_task_status(task, now=now, old_column=old_column):
             return
         old = task.status
         if (
@@ -2119,9 +2123,14 @@ class TrackerMutationMixin:
                 old,
                 task.status,
                 reason="tracker.sync_task_status",
+                old_column=old_column,
             )
+        elif old_column is not None:
+            self._record_task_board_entry(task, old_column)
 
-    def _sync_workflow_task_status(self, task: TrackerTask, *, now: datetime) -> bool:
+    def _sync_workflow_task_status(
+        self, task: TrackerTask, *, now: datetime, old_column: BoardColumn | None = None
+    ) -> bool:
         run_plan_id = self._workflow_task_run_plan_id(task)
         if run_plan_id is None:
             return False
@@ -2161,7 +2170,10 @@ class TrackerMutationMixin:
                 old,
                 task.status,
                 reason="tracker.sync_workflow_task_status",
+                old_column=old_column,
             )
+        elif old_column is not None:
+            self._record_task_board_entry(task, old_column)
         return True
 
     def _next_task_position(
