@@ -11,6 +11,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any, Literal
 
+import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlmodel import Session, col, select
 
@@ -206,6 +207,7 @@ class ProjectSetupRepository:
         workflow_key: str,
         *,
         selected_optional_presets: list[str] | None = None,
+        _comparison: bool = False,
     ) -> list[SetupSource]:
         project = ProjectRepository(self._s)
         project.require_available(project_id)
@@ -236,7 +238,11 @@ class ProjectSetupRepository:
             for req in workflow.spec.agent_requirements
             if req.requirement == "optional"
         }
-        if selected - declared_optional:
+        if _comparison:
+            # Applied selections describe the previous template. Promotions and
+            # removals change current declarations without invalidating history.
+            selected.intersection_update(declared_optional)
+        elif selected - declared_optional:
             raise ValidationError("selected optional presets must be declared by the workflow")
         for requirement in workflow.spec.skill_preset_requirements:
             if (
@@ -431,11 +437,25 @@ class ProjectSetupRepository:
                 else []
             )
             out.available_sources = self.inspect_sources(
-                project_id, workflow_key, selected_optional_presets=optional
+                project_id, workflow_key, selected_optional_presets=optional, _comparison=True
             )
-        except (RepositoryError, ValueError) as exc:
+        except (RepositoryError, ValueError, yaml.YAMLError, OSError) as exc:
             out.status = "source_unavailable"
-            out.diagnostic = str(exc)
+            # YAML/schema/read exceptions can contain source text. Keep repair
+            # guidance bounded and avoid copying local content into diagnostics.
+            detail = str(exc)[:300] if isinstance(exc, RepositoryError) else type(exc).__name__
+            if isinstance(exc, yaml.YAMLError):
+                detail = f"invalid YAML: {type(exc).__name__}"
+            mark = getattr(exc, "problem_mark", None)
+            if mark is not None:
+                detail += f" at line {mark.line + 1}, column {mark.column + 1}"
+            out.diagnostic = (
+                f"Setup sources for {workflow_key} are unavailable ({detail}). "
+                "Check the effective workflow and local .stackos/workflows, "
+                ".stackos/agent-presets and .stackos/skill-presets sources. "
+                "Repair the source and retry projectSetup.get; "
+                "retained setup evidence is unchanged."
+            )[:800]
             return out
         if row and row.successful_json:
             applied = VerifiedSetup.model_validate(row.successful_json["verification"])

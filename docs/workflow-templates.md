@@ -593,6 +593,11 @@ template/preset/extension sources, including same-version content and origin
 changes. Missing sources remain diagnostic uncertainty rather than fabricated
 success. Writes reserve project availability against canonical cleanup.
 
+Malformed or unreadable sources return bounded repair diagnostics while retaining
+applied evidence and partial-result/reminder write responses. Comparison follows
+current declarations when previously selected optional presets become required or
+are removed; new success reports still require valid current optional selections.
+
 The two permanent project reminder timestamps control unsolicited presentation
 only. Directoryless projects are ineligible; an unavailable selected folder keeps
 receipts and preferences and exposes folder repair. Receipt rows cascade through

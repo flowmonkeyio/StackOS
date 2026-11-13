@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 import pytest
+import yaml
 from alembic import command
 from pydantic import ValidationError as ModelValidationError
 from sqlalchemy import event, text
@@ -40,8 +41,11 @@ def setup_project(session, tmp_path):
     return project, folder, ProjectSetupRepository(session)
 
 
-def verified_result(repo, project, key="engineering.tracked-delivery"):
-    sources = repo.inspect_sources(project, key)
+def verified_result(
+    repo, project, key="engineering.tracked-delivery", *, selected_optional_presets=None
+):
+    selected = selected_optional_presets or []
+    sources = repo.inspect_sources(project, key, selected_optional_presets=selected)
     template = sources[0].content
     mapping = []
     for field, ref_key, kind in (
@@ -49,7 +53,7 @@ def verified_result(repo, project, key="engineering.tracked-delivery"):
         ("skill_preset_requirements", "skill_preset_ref", "main_agent"),
     ):
         for req in template.get(field, []):
-            if req["requirement"] == "optional":
+            if req["requirement"] == "optional" and req[ref_key] not in selected:
                 continue
             source = next(s for s in sources if s.kind == kind and s.key == req[ref_key])
             mapping.append(
@@ -64,6 +68,7 @@ def verified_result(repo, project, key="engineering.tracked-delivery"):
     # not native consumption or installed activation proof.
     proof = VerifiedSetup(
         sources=sources,
+        selected_optional_presets=selected,
         role_mapping=mapping,
         obligations=[
             {
@@ -518,3 +523,103 @@ async def test_upgrade_encrypted_backup_and_canonical_delete_preserve_repo(sessi
             ProjectSetupRepository(replayed).get(1).model_dump(mode="json") == applied_before_replay
         )
     historical.dispose()
+
+
+@pytest.mark.parametrize("directory", ["workflows", "agent-presets", "skill-presets"])
+@pytest.mark.parametrize("consumer", ["get", "failed", "unfinished", "reminders"])
+def test_malformed_sources_retain_evidence_and_committed_write_responses(
+    setup_project, session, directory, consumer
+):
+    project, root, repo = setup_project
+    key = "engineering.tracked-delivery"
+    saved = repo.record_result(
+        project, key, expected_revision=0, result=verified_result(repo, project)
+    )
+    previous = copy.deepcopy(saved.successful)
+    source = root / ".stackos" / directory / "partial.yaml"
+    source.parent.mkdir(parents=True)
+    source.write_text("presets: [synthetic-private-source-content\n")
+    if consumer in {"failed", "unfinished"}:
+        written = repo.record_result(
+            project,
+            key,
+            expected_revision=1,
+            result=SetupResult(
+                attempt_ref="fixture/partial",
+                result_ref="fixture/partial-result",
+                status=consumer,
+                changes=["partial YAML edit"],
+            ),
+        )
+        assert written.successful == previous
+        assert written.latest_status == consumer and written.partial_changes
+    elif consumer == "reminders":
+        written = repo.set_reminders(project, dismiss_setup=True)
+        assert written.setup_reminder_dismissed_at
+    observed = repo.get(project)
+    workflow = observed.workflows[0]
+    assert workflow.status == "source_unavailable"
+    assert workflow.successful == previous
+    assert observed.configured_count == 1
+    assert "projectSetup.get" in workflow.diagnostic
+    assert len(workflow.diagnostic) <= 800
+    assert "synthetic-private-source-content" not in workflow.diagnostic
+    with Session(session.get_bind()) as reloaded:
+        persisted = ProjectSetupRepository(reloaded).get(project)
+        assert persisted.workflows[0].successful == previous
+        assert persisted.workflows[0].revision == (2 if consumer in {"failed", "unfinished"} else 1)
+        assert bool(persisted.setup_reminder_dismissed_at) == (consumer == "reminders")
+    source.unlink()
+    recovered = repo.get(project)
+    assert recovered.workflows[0].status == "current"
+    assert recovered.workflows[0].diagnostic is None
+    assert recovered.workflows[0].successful == previous
+    assert bool(recovered.setup_reminder_dismissed_at) == (consumer == "reminders")
+
+
+@pytest.mark.parametrize("transition", ["required", "removed"])
+@pytest.mark.parametrize(
+    "field,ref_key",
+    [
+        ("agent_requirements", "agent_preset_ref"),
+        ("skill_preset_requirements", "skill_preset_ref"),
+    ],
+)
+def test_historical_optional_selection_transitions_are_updates_and_new_success_stays_strict(
+    setup_project, field, ref_key, transition
+):
+    project, root, repo = setup_project
+    key = "engineering.tracked-delivery"
+    spec = copy.deepcopy(repo.inspect_sources(project, key)[0].content)
+    declaration = next(item for item in spec[field] if item["requirement"] == "required")
+    declaration["requirement"] = "optional"
+    selected = declaration[ref_key]
+    source = root / ".stackos" / "workflows" / "optional.yaml"
+    source.parent.mkdir(parents=True)
+    source.write_text(yaml.safe_dump(spec))
+    applied = verified_result(repo, project, selected_optional_presets=[selected])
+    saved = repo.record_result(project, key, expected_revision=0, result=applied)
+    previous = copy.deepcopy(saved.successful)
+    assert saved.status == "current"
+    if transition == "required":
+        declaration["requirement"] = "required"
+    else:
+        spec[field].remove(declaration)
+    spec["version"] = "99.0.0"
+    source.write_text(yaml.safe_dump(spec))
+    current = repo.get(project)
+    assert current.update_count == 1
+    assert current.workflows[0].status == "update_available"
+    assert current.workflows[0].successful == previous
+    assert current.workflows[0].available_sources[0].version == "99.0.0"
+    with pytest.raises(ValidationError, match="must be declared"):
+        repo.inspect_sources(project, key, selected_optional_presets=[selected])
+    with pytest.raises(ValidationError, match="must be declared"):
+        repo.record_result(project, key, expected_revision=1, result=applied)
+    assert repo.get(project).workflows[0].revision == 1
+    refreshed = repo.record_result(
+        project, key, expected_revision=1, result=verified_result(repo, project)
+    )
+    assert refreshed.status == "current" and refreshed.revision == 2
+    assert refreshed.successful["verification"]["selected_optional_presets"] == []
+    assert repo.get(project).update_count == 0
