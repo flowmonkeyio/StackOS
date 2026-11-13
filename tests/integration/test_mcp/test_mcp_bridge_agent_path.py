@@ -30,6 +30,68 @@ _CLIENT_INFO_META_KEY = "io.modelcontextprotocol/clientInfo"
 _CLIENT_CAPABILITIES_META_KEY = "io.modelcontextprotocol/clientCapabilities"
 
 
+@pytest.mark.parametrize("entry", ["bound", "global", "global-selected"])
+@pytest.mark.parametrize("response_mode", ["compact", "raw"])
+def test_pattern_discovery_pointer_without_startup_catalog_reads(
+    mcp_client: MCPClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    entry: str,
+    response_mode: str,
+) -> None:
+    from stackos.repositories.patterns import PatternRepository
+
+    def unexpected_read(*args, **kwargs):
+        pytest.fail("Startup/discovery must not fetch pattern summaries or articles")
+
+    monkeypatch.setattr(PatternRepository, "list", unexpected_read)
+    monkeypatch.setattr(PatternRepository, "get", unexpected_read)
+    if entry == "bound":
+        root = tmp_path / "bound-pattern-discovery"
+        root.mkdir()
+        proxy, client = _scoped_bridge(mcp_client, cwd=str(root))
+        arguments = {}
+    else:
+        proxy, client = _bridge(mcp_client)
+        arguments = {"global_session": True}
+        if entry == "global-selected":
+            arguments["project_id"] = _create_project(mcp_client, "pattern-discovery")
+    _initialize(proxy, client)
+    started = _tool_call(
+        proxy, client, "workspace.startSession", arguments | {"response_mode": response_mode}
+    )
+    assert not started["result"].get("isError"), started
+    data = _operation_data(_structured(started))
+    guidance = data["next_step"]["guidance"]
+    assert len(guidance) == 1
+    assert "pattern.list" in guidance[0] and "pattern.get" in guidance[0]
+    assert "no startup catalog scan" in guidance[0]
+    assert (data["project_id"] is None) == (entry == "global")
+    described = _tool_call(
+        proxy,
+        client,
+        "toolbox.describe",
+        {"tool_names": ["pattern.list", "pattern.get"]},
+    )
+    assert not described["result"].get("isError"), described
+    descriptions = _structured(described)
+    assert {item["name"] for item in descriptions["described_tools"]} == {
+        "pattern.list",
+        "pattern.get",
+    }
+    assert "reusable recommendation" in json.dumps(descriptions).lower()
+    searched = _toolbox_call(
+        proxy,
+        client,
+        "operation.list",
+        {"surface": "mcp", "query": "reusable", "mode": "standard", "response_mode": "raw"},
+    )
+    assert not searched["result"].get("isError"), searched
+    assert {"pattern.list", "pattern.get"} <= {
+        item["name"] for item in _structured(searched)["items"]
+    }
+
+
 def test_patterns_global_crud_and_combined_filter_parity(
     mcp_client: MCPClient,
     tmp_path: Path,

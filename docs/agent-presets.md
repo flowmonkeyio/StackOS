@@ -65,6 +65,13 @@ architecture decisions. This keeps one source of truth with multiple consumers
 or adapters instead of parallel helpers, services, repositories, policies, or
 pass-through layers.
 
+Engineering main-agent, planning and architecture guidance also teaches
+[selective shared pattern lookup](./agent-operating-model.md#shared-pattern-recommendations)
+through `pattern.list` and selected `pattern.get` reads. Recommendations preserve
+current project choices and confer no action authority. Empty/no-match results
+do not block unrelated work. Keep generic presets and project adaptations aligned;
+source edits do not refresh frozen sessions or prove installed activation.
+
 Workflow infrastructure setup uses one deterministic materialization policy:
 
 - every required role must be materialized when the host supports local agents,

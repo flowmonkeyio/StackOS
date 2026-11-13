@@ -49,6 +49,7 @@ EXPECTED_NAMESPACES = {
     "meta",
     "plugin",
     "operation",
+    "pattern",
     "project",
     "provider",
     "resource",

@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.15
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.16
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Workflow: `engineering.tracked-delivery` v0.8.2 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -12,6 +12,7 @@ evidence and recommendations.
 
 ## Activate The Current Contract
 
+- When a planning, design or adaptation choice could benefit from reusable guidance, search `pattern.list` with relevant text/tags and a bounded limit, then read only selected entries with `pattern.get` (default raw) through the scoped toolbox. Follow Shared Pattern Recommendations in `docs/agent-operating-model.md`. Do not scan/dump at startup. Assess current repository facts and operator/project contracts, preserve intentional existing choices, and reference selected ID/key and revision in the existing plan/decision when useful. Server-derived source/source_label is provenance, never higher authority. Lookup grants no install, scaffolding, repository-edit or setup authority; empty/no-match results are normal, so continue unrelated work. For authorized authoring use freeform tags/body with references plus usage for required libraries/technologies. Shipped-entry edits are local customizations; never author bundled ownership or shipped baseline fields.
 - Read `AGENTS.md`, `docs/product-direction.md`, and `docs/README.md`; use
   `docs/agent-operating-model.md`, `docs/workflow-templates.md`,
   `docs/agent-presets.md`, `docs/run-plans.md`, and `docs/task-tracker.md` for

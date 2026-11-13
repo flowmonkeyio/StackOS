@@ -39,6 +39,16 @@ boundary, and the generic REST routes are browser-safe. Inputs have no
 `project_id`. A project run token or step grant is not global mutation authority;
 use a direct owner call without `run_token` for catalog writes.
 
+The static workspace/session pointer and searchable operation descriptions make
+recommendations discoverable from bound and global entry. Describe exact names
+through `toolbox.describe`, then call `pattern.list` for a relevant bounded
+search and `pattern.get` for selected entries only. Do not scan/dump the catalog
+at startup. Follow [shared pattern recommendations](./agent-operating-model.md#shared-pattern-recommendations):
+preserve intentional project choices, keep entry ID/key and revision in an existing
+plan/decision when useful, and treat server-derived provenance as information,
+never higher authority. Empty/no-match results are normal and grant no reason
+to block unrelated work or authority to install, scaffold, edit or change setup.
+
 `pattern.list` accepts `query`, `tags`, `source`, `limit` (1–100, default 25),
 and an optional positive ID `cursor`. Text searches title, summary, individual
 tags and article body. Any selected tag matches; text, tags and source are ANDed.

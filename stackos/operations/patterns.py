@@ -120,14 +120,16 @@ def operation_specs():
             PatternListInput,
             PatternPage,
             _list,
-            "Search bounded pattern summaries using combined text, any-tag and source filters.",
+            "Find reusable recommendations and best practices: search bounded pattern "
+            "summaries using combined text, any-tag and source filters.",
         ),
         (
             "get",
             PatternGetInput,
             PatternDetail,
             _get,
-            "Read one full Markdown pattern by ID or key.",
+            "Read one selected reusable recommendation as full Markdown by ID or key; "
+            "assess fit against current project choices before use.",
         ),
         (
             "upsert",
@@ -163,6 +165,11 @@ def operation_specs():
             returns=(
                 "Lists and write receipts omit bodies; raw pattern.get returns one full entry.",
                 "Source fields are server-derived. Normal writes cannot set bundled metadata.",
+                "Recommendations do not override project/operator rules or authorize application. "
+                "Empty/no-match results are normal; continue unrelated work.",
+                "For authorized authoring, keep topics/technologies in freeform tags/body; "
+                "include a reference and usage instructions for any required technology. "
+                "Editing a shipped entry is a local customization, never bundled authorship.",
                 "Conflicts preserve etags and repair context. Reset paging after filter changes.",
             ),
             examples=(examples[verb],),
