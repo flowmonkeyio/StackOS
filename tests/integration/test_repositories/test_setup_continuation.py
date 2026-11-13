@@ -7,6 +7,7 @@ import copy
 import json
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 from sqlmodel import select
@@ -16,6 +17,7 @@ from stackos.host_mcp import service
 from stackos.host_mcp.result import AgentRunResult
 from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.project_setup import ProjectSetupRepository
+from stackos.repositories.tracker import TrackerRepository
 from tests.integration.test_repositories.test_managed_setup import (
     launch,
     managed,  # noqa: F401
@@ -81,6 +83,142 @@ def answer(managed, attempt, **overrides):
         scheduler=scheduler,
         **overrides,
     )
+
+
+@pytest.mark.parametrize("producer", ["cancelled", "missed"])
+@pytest.mark.parametrize("model", [None, "gpt-6.1-sol"])
+def test_never_started_retry_preserves_history_receipts_and_frozen_selection(
+    managed, session, monkeypatch, producer, model
+):
+    execution, project, scheduler, factory = managed
+    repo = ProjectSetupRepository(session)
+    key = "engineering.tracked-delivery"
+    repo.record_result(project, key, expected_revision=0, result=verified_result(repo, project))
+    receipt = copy.deepcopy(repo._row(project, key).model_dump(mode="json"))
+    first = launch(managed, host_key="codex", **({"model": model} if model else {}))
+    if producer == "cancelled":
+        execution.cancel_managed(
+            project, first.attempt.request_id, session_factory=factory, scheduler=scheduler
+        )
+    else:
+        scheduler.jobs.clear()
+        execution.missed_setup(
+            SimpleNamespace(job_id=first.attempt.managed.job_ref),
+            session_factory=factory,
+            scheduler=scheduler,
+        )
+    session.expire_all()
+    prior = repo.get(project).current_attempt
+    assert not prior.managed.callback_started and not prior.managed.slot_reserved
+    assert not prior.thread_id and not prior.partial_changes_possible
+    TrackerRepository(session).configure_main_agent(
+        project_id=project, preferences={"host_key": "codex", "model": "gpt-6-astra"}
+    )
+    retried = execution.continue_managed(
+        project,
+        prior.request_id,
+        expected_revision=prior.revision,
+        session_factory=factory,
+        scheduler=scheduler,
+    )
+    assert retried.attempt.root_request_id == prior.root_request_id
+    assert retried.attempt.predecessor_request_id == prior.request_id
+    assert retried.attempt.managed.settings == prior.managed.settings
+    assert retried.attempt.managed.resume_thread_id is None
+    assert not retried.attempt.partial_changes_possible
+    with pytest.raises(ConflictError):
+        execution.continue_managed(
+            project,
+            prior.request_id,
+            expected_revision=prior.revision,
+            session_factory=factory,
+            scheduler=scheduler,
+        )
+    calls = []
+    definition = service._definition_by_key("codex")
+
+    def runner(root, instructions, prompt, schema, *, on_session, resume_thread_id=None, **kwargs):
+        assert resume_thread_id is None
+        calls.append(json.loads(prompt))
+        on_session("first-native-after-retry")
+        return AgentRunResult(
+            0,
+            thread_id="first-native-after-retry",
+            result={
+                "report_json": json.dumps(
+                    {
+                        "status": "partial",
+                        "progress": {"message": "Checked retry", "evidence_ref": "fixture:retry"},
+                    }
+                )
+            },
+        )
+
+    monkeypatch.setattr(
+        service, "_definition_by_key", lambda _: replace(definition, run_agent=runner)
+    )
+    scheduler.run()
+    session.expire_all()
+    assert len(calls) == 1 and len(session.exec(select(AgentRequest)).all()) == 2
+    assert repo._row(project, key).model_dump(mode="json") == receipt
+    previous = session.get(AgentRequest, prior.request_id)
+    assert previous.metadata_json["project_setup"]["status"] == prior.status
+    assert (
+        previous.metadata_json["project_setup"]["successor_request_id"]
+        == retried.attempt.request_id
+    )
+    assert "native_execution" not in previous.metadata_json
+
+
+@pytest.mark.parametrize(
+    "uncertainty",
+    ["callback", "native", "partial", "thread", "resume", "reserved", "missing_flag", "active"],
+)
+def test_no_fresh_launch_when_prelaunch_evidence_is_uncertain(
+    managed, session, monkeypatch, uncertainty
+):
+    execution, project, scheduler, factory = managed
+    first = launch(managed, host_key="codex")
+    terminal = execution.cancel_managed(
+        project, first.attempt.request_id, session_factory=factory, scheduler=scheduler
+    )
+    row, current = execution._load(session, project, terminal.request_id)
+    if uncertainty == "native":
+        row.metadata_json = {
+            **row.metadata_json,
+            "native_execution": {"execution": {"thread_id": None}},
+        }
+    elif uncertainty == "partial":
+        current.partial_changes_possible = True
+    elif uncertainty == "thread":
+        current.thread_id = "uncertain"
+    elif uncertainty == "resume":
+        current.managed.resume_thread_id = "prior-native"
+    elif uncertainty == "reserved":
+        current.managed.slot_reserved = True
+    elif uncertainty == "callback":
+        current.managed.callback_started = True
+    execution._save(session, row, current)
+    if uncertainty == "missing_flag":
+        metadata = copy.deepcopy(row.metadata_json)
+        del metadata["project_setup"]["managed"]["callback_started"]
+        row.metadata_json = metadata
+        session.add(row)
+        session.commit()
+    elif uncertainty == "active":
+        monkeypatch.setattr(
+            service, "active_request_execution", lambda *args: {"invocation_id": "uncertain"}
+        )
+    with pytest.raises(ConflictError):
+        execution.continue_managed(
+            project,
+            current.request_id,
+            expected_revision=current.revision,
+            session_factory=factory,
+            scheduler=scheduler,
+        )
+    session.expire_all()
+    assert len(session.exec(select(AgentRequest)).all()) == 1
 
 
 def test_answer_once_preserves_native_receipt_and_exact_settings(managed, session, monkeypatch):
@@ -264,16 +402,34 @@ def threaded_managed(managed, session, tmp_path):
         engine.dispose()
 
 
-def test_concurrent_answers_admit_one_successor(threaded_managed, monkeypatch):
+@pytest.mark.parametrize("prelaunch", [False, True])
+def test_concurrent_answers_admit_one_successor(threaded_managed, monkeypatch, prelaunch):
     managed, session = threaded_managed
     question_runner(monkeypatch)
-    launch(managed, host_key="codex")
-    managed[2].run()
+    first = launch(managed, host_key="codex")
+    if prelaunch:
+        managed[0].cancel_managed(
+            managed[1], first.attempt.request_id, session_factory=managed[3], scheduler=managed[2]
+        )
+    else:
+        managed[2].run()
     session.expire_all()
     pending = ProjectSetupRepository(session).get(managed[1]).current_attempt
 
     def attempt_answer(_):
         try:
+            if prelaunch:
+                return (
+                    managed[0]
+                    .continue_managed(
+                        managed[1],
+                        pending.request_id,
+                        expected_revision=pending.revision,
+                        session_factory=managed[3],
+                        scheduler=managed[2],
+                    )
+                    .attempt.request_id
+                )
             return answer(managed, pending).attempt.request_id
         except ConflictError:
             return None

@@ -13,7 +13,7 @@ import SetupQuestionForm from './SetupQuestionForm.vue'
 
 const { projectId } = useProjectRouteScope()
 const setup = useProjectSetup(projectId)
-const { state, attempt, error, writing, running, refresh } = setup
+const { state, attempt, neverStarted, error, writing, running, refresh } = setup
 const recoveryStates = ['partial', 'failed', 'interrupted', 'cancelled']
 const ready = computed(() => state.value?.status === 'current'
   && !!state.value.workflows?.length
@@ -34,8 +34,10 @@ const pendingQuestion = computed(() => attempt.value?.question?.answer_state ===
 const managed = computed(() => attempt.value?.entry_kind === 'managed_ui')
 const available = computed(() => state.value?.folder_status === 'available')
 const retiring = computed(() => !!attempt.value?.managed?.slot_reserved)
-const canContinue = computed(() => managed.value && available.value && !!attempt.value?.thread_id && !retiring.value && !writing.value)
-const recoveryLabel = computed(() => ({ failed: 'Retry remaining', interrupted: 'Resume setup', cancelled: 'Start again' } as Record<string, string>)[attempt.value?.status ?? ''] ?? 'Continue remaining')
+const canContinue = computed(() => managed.value && available.value && (!!attempt.value?.thread_id || neverStarted.value) && !retiring.value && !writing.value)
+const recoveryLabel = computed(() => neverStarted.value
+  ? attempt.value?.status === 'failed' ? 'Retry setup' : 'Start again'
+  : ({ failed: 'Retry remaining', interrupted: 'Resume setup', cancelled: 'Start again' } as Record<string, string>)[attempt.value?.status ?? ''] ?? 'Continue remaining')
 const cancelTarget = ref<SchemaSetupAttempt | null>(null)
 const stateHeading = ref<HTMLElement | null>(null)
 async function sendAnswer(snapshot: SchemaSetupAttempt, text: string): Promise<boolean> {
@@ -348,7 +350,7 @@ const questionKey = computed(() => `${attempt.value?.attempt_ref}:${attempt.valu
           v-if="recoveryStates.includes(attempt.status)"
           class="max-w-2xl text-sm text-fg-muted"
         >
-          {{ managed ? 'Continue only remaining work. The agent will recheck completed workflows if their guidance has changed.' : 'Continue in the agent session where you started setup.' }}
+          {{ neverStarted ? 'Setup stopped before the agent started. Try again with the same agent settings; completed workflow results are kept.' : managed ? 'Continue only remaining work. The agent will recheck completed workflows if their guidance has changed.' : 'Continue in the agent session where you started setup.' }}
         </p>
         <div class="ml-auto flex flex-wrap gap-2">
           <UiButton

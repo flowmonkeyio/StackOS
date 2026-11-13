@@ -630,7 +630,12 @@ Managed questions are answered through revision-checked `projectSetup.answer` in
 the console. The answer links a successor request under the same attempt and
 resumes the exact native session only after the previous invocation retires.
 `projectSetup.continue` recovers remaining partial, failed, interrupted or cancelled
-work with the same frozen selection. Prior execution/usage and successful workflow
+work with the same frozen selection. Confirmed never-started cancelled/missed
+launches use an explicit Start again/Retry setup action: the same owner links one
+first-launch successor only when no callback, native evidence, resume identity or
+possible edits exist. Unknown or possibly started work still requires confirmed
+retirement and the exact native session; missing identity never permits fallback.
+Prior execution/usage and successful workflow
 receipts remain intact; changed source/receipt evidence requires revalidation.
 Recovery reports possible partial edits and never invents rollback or launches a
 competing session. Existing-session questions continue in their original agent.

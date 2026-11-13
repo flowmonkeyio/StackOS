@@ -513,7 +513,8 @@ def operation_specs() -> list[OperationSpec]:
                 ),
                 (
                     "projectSetup.continue",
-                    "Continue remaining interrupted setup work.",
+                    "Recover remaining setup, or retry confirmed never-started work "
+                    "with its frozen settings.",
                     ProjectSetupContinueInput,
                     {"project_id": 1, "request_id": 123, "expected_revision": 2},
                 ),

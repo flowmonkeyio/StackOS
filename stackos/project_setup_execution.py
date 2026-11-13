@@ -192,7 +192,7 @@ def continue_managed(
     question_revision=None,
     answer=None,
 ):
-    """Atomically consume input and link one successor after confirmed native retirement."""
+    """Link one recovery turn after retirement or a confirmed pre-launch stop."""
     from stackos.db.models import TrackerTask
     from stackos.repositories.agent_requests import _hash_token
     from stackos.repositories.project_setup import (
@@ -258,19 +258,37 @@ def continue_managed(
                 data=repair,
             )
         native = (row.metadata_json or {}).get("native_execution") or {}
+        recorded = row.metadata_json["project_setup"]
         identity = native.get("execution") or {}
         thread = identity.get("thread_id")
+        # run_setup persists callback_started/possible edits before entering the
+        # native executor. Only an untouched, fenced terminal callback can retry
+        # without a resume identity. Missing evidence after a possible start is
+        # uncertainty, never permission to substitute a new native session.
+        never_started = (
+            not asking
+            and current.status in {"cancelled", "failed"}
+            and recorded.get("managed", {}).get("callback_started") is False
+            and recorded.get("partial_changes_possible") is False
+            and not current.managed.callback_started
+            and not current.managed.resume_thread_id
+            and not current.thread_id
+            and not current.partial_changes_possible
+            and not current.reports
+            and not current.answers
+            and not native
+        )
         if (
             current.managed.slot_reserved
             or service.active_request_execution(project_id, request_id)
-            or not native.get("finished_at")
+            or (not never_started and not native.get("finished_at"))
             or native.get("stop_error")
         ):
             raise ConflictError(
                 "prior native invocation has not retired; reconcile it before continuing",
                 data=repair,
             )
-        if (
+        if not never_started and (
             not isinstance(thread, str)
             or not thread.strip()
             or thread != current.thread_id
@@ -377,7 +395,7 @@ def continue_managed(
                 "remaining_workflow_keys": remaining,
                 "revalidate_workflow_keys": revalidate,
                 # Native failure/cancellation cannot establish unchanged files.
-                "partial_changes_possible": True,
+                "partial_changes_possible": not never_started,
                 "managed": SetupManagedExecution(
                     settings=settings,
                     binding_id=current.managed.binding_id,

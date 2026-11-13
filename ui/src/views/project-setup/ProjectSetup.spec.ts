@@ -57,6 +57,16 @@ function button(label: string) {
 const writes = () => vi.mocked(callOperation).mock.calls.filter(([name]) => ['projectSetup.start', 'projectSetup.setReminders'].includes(name))
 
 describe('Home project setup', () => {
+  it.each(['cancelled', 'failed'] as const)('opens actionable pre-launch %s recovery without a new agent picker', async status => {
+    state.current_attempt = attemptFixture({ status: SetupAttemptStatus[status], managed: { settings: { host_key: 'codex', model: 'original-model' }, binding_id: 1, admission_id: 'fixture', job_ref: 'fixture', callback_started: false, slot_reserved: false, cancel_requested: status === 'cancelled', resume_thread_id: null, diagnostic: null } })
+    state.launch_preferences = { host_key: 'codex', model: 'newer-saved-model' }
+    const router = await home()
+    await button('View setup').trigger('click'); await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/projects/1/setup')
+    expect(wrapper!.find('[role="dialog"]').exists()).toBe(false)
+    expect(button(status === 'failed' ? 'Retry setup' : 'Start again').attributes('disabled')).toBeUndefined()
+    expect(writes()).toHaveLength(0)
+  })
   it('excludes directoryless projects, including prompts, actions and counts', async () => {
     state = setupFixture({ eligible: false, status: ProjectSetupOutStatus.ineligible, folder_status: ProjectSetupOutFolder_status.directoryless, update_count: 7 })
     await home()

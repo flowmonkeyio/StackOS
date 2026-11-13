@@ -72,6 +72,16 @@ export function useProjectSetup(projectId: Ref<number>) {
   }
 
   const attempt = computed(() => state.value?.current_attempt)
+  // The executor confirms absence of native evidence under its admission lock.
+  // These persisted pre-launch facts only enable the explicit recovery control.
+  const neverStarted = computed(() => {
+    const current = attempt.value
+    return !!current?.managed && current.entry_kind === 'managed_ui'
+      && ['cancelled', 'failed'].includes(current.status)
+      && current.managed.callback_started === false && current.managed.slot_reserved === false
+      && !current.managed.resume_thread_id && !current.thread_id
+      && current.partial_changes_possible === false && current.reports?.length === 0 && current.answers?.length === 0
+  })
 
   // Use the identity rendered with the draft/confirmation, never a newer
   // question observed by polling. The daemon remains the revision/CAS owner.
@@ -131,6 +141,7 @@ export function useProjectSetup(projectId: Ref<number>) {
     if (state.value?.folder_status === 'unavailable') return 'View setup'
     if (current?.status === 'needs_input') return current.question?.response_channel === 'managed_ui' ? 'Answer question' : 'View setup'
     if (current && ['queued', 'running'].includes(current.status)) return 'View setup'
+    if (neverStarted.value) return 'View setup'
     if (current && ['partial', 'failed', 'interrupted', 'cancelled'].includes(current.status)) return 'Continue setup'
     if (state.value?.status === 'updates_available') return 'Update workflows'
     return state.value?.status === 'setup_needed' ? 'Set up project' : 'Manage setup'
@@ -147,5 +158,5 @@ export function useProjectSetup(projectId: Ref<number>) {
     && (!attempt.value || attempt.value.status === 'success')
     && ['setup_needed', 'updates_available'].includes(state.value.status))
 
-  return { state, attempt, error, writing, running, refresh, dismiss, start, answer, continueSetup, cancel, actionLabel, reminder, opensLaunch }
+  return { state, attempt, neverStarted, error, writing, running, refresh, dismiss, start, answer, continueSetup, cancel, actionLabel, reminder, opensLaunch }
 }

@@ -53,6 +53,22 @@ function button(label: string) { return wrapper!.findAll('button').find(item => 
 const writes = () => vi.mocked(callOperation).mock.calls.filter(([name]) => ['projectSetup.answer', 'projectSetup.continue', 'projectSetup.cancel'].includes(name))
 
 describe('setup detail questions and recovery', () => {
+  it.each(['cancelled', 'failed'] as const)('can retry confirmed never-started %s work without changing settings', async status => {
+    state.current_attempt = attemptFixture({ status: SetupAttemptStatus[status], managed: { ...managed, callback_started: false }, thread_id: null })
+    await panel()
+    const retry = button(status === 'failed' ? 'Retry setup' : 'Start again')
+    expect(retry.attributes('disabled')).toBeUndefined()
+    expect(wrapper!.text()).toContain('before the agent started')
+    await Promise.all([retry.trigger('click'), retry.trigger('click')]); await flushPromises()
+    expect(writes()).toHaveLength(1)
+    expect(callOperation).toHaveBeenCalledWith('projectSetup.continue', { project_id: 1, request_id: 10, expected_revision: 1 })
+  })
+  it.each(['callback', 'partial', 'resume', 'reserved'] as const)('does not offer a first launch for uncertain %s work', async uncertainty => {
+    state.current_attempt = attemptFixture({ status: SetupAttemptStatus.cancelled, thread_id: null, managed: { ...managed, callback_started: uncertainty === 'callback', slot_reserved: uncertainty === 'reserved', resume_thread_id: uncertainty === 'resume' ? 'prior-native' : null }, partial_changes_possible: uncertainty === 'partial' })
+    await panel()
+    expect(button('Start again').attributes('disabled')).toBeDefined()
+    expect(writes()).toHaveLength(0)
+  })
   it('focuses the concrete question and sends the rendered identity once through the typed envelope', async () => {
     await panel()
     expect(document.activeElement?.tagName).toBe('TEXTAREA')
