@@ -241,6 +241,9 @@ def operation_specs() -> list[OperationSpec]:
             prerequisites=(
                 "Let the bridge inject cwd, repo_fingerprint, git_remote_url, runtime, and "
                 "client_session_id when possible.",
+                "project_setup reports setup/update needs and the current attempt "
+                "without launching "
+                "or editing setup. Follow its shared guidance_ref before projectSetup.start.",
                 "Existing workspace bindings and deliberate StackOS roots cannot become global.",
                 "auto_bootstrap=false skips folder bootstrap but still records the session; "
                 "workspace.resolve is read-only. Global startup ignores auto_bootstrap.",

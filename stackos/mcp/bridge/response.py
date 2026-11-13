@@ -166,9 +166,19 @@ def _bridge_compact_workspace(structured: dict[str, Any]) -> dict[str, Any]:
         compact_data["needs_connect"] = structured["needs_connect"]
     if isinstance(data.get("runtime"), str):
         compact_data["runtime"] = data["runtime"]
+        if isinstance(data.get("id"), int):
+            compact_data["agent_session_id"] = data["id"]
     if isinstance(data.get("client_session_id"), str):
         compact_data["client_session_id"] = data["client_session_id"]
-    for field in ("repo_hints", "ui_paths", "ui_urls", "ui_health", "setup_state", "next_step"):
+    for field in (
+        "repo_hints",
+        "ui_paths",
+        "ui_urls",
+        "ui_health",
+        "setup_state",
+        "project_setup",
+        "next_step",
+    ):
         if field in data:
             compact_data[field] = data[field]
         elif field in structured:

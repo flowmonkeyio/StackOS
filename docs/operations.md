@@ -143,9 +143,68 @@ unavailable over agent MCP. For example:
 Each true field permanently stamps only its own preference; omitted/false fields
 preserve existing dismissals. Rename, later versions and opening setup do not reset
 them. This operation changes neither setup success nor quiet update counts.
-Infrastructure result writes remain repository-owned until the scoped setup attempt
-reporting operation admits them; this read/dismissal slice grants no execution or
-filesystem authority. See [applied evidence](workflow-templates.md#applied-setup-evidence).
+See [applied evidence](workflow-templates.md#applied-setup-evidence) for the checked
+result contract.
+
+`workspace.startSession` also returns `project_setup`: a compact projection of the
+selected project's eligibility, setup/update counts, current attempt reference,
+repair diagnostics and shared `workflowTemplate.authoringGuide` reference. Profile
+readiness remains separate. Startup creates no setup request, native invocation,
+workflow run or tracker task, and does not edit local guidance. An unselected global
+session has no project summary; selected global calls still require explicit project
+IDs. A summary neither changes workspace binding nor grants filesystem access.
+
+`projectSetup.start` and `projectSetup.report` are scoped agent-MCP operations,
+unavailable through REST/CLI or browser-console calls. Existing-session entry uses
+the session ID returned by startup (`id` in raw; `agent_session_id` in compact).
+The bridge injects and fences `client_session_id`; it must match that session and
+project. For example, through `toolbox.call`:
+
+```json
+{"tool_name":"projectSetup.start","arguments":{"session_id":123,"mode":"setup","workflow_keys":["engineering.tracked-delivery"],"idempotency_key":"setup-this-session"}}
+```
+
+The agent chooses workflows under the shared guide and inspects unknown legacy
+adaptations before deciding what to change. `start` serializes admission with the
+project owner and returns one typed `AgentRequest.metadata_json.project_setup`
+namespace (schema version 1). It records mode, entry kind, stable attempt/root
+request refs, current request/predecessor refs, session/runtime/thread lineage,
+selected workflows, observed receipt revisions, progress, outcomes and question.
+No alternate queue, workflow run or native launch is created. Generic request
+create/claim/release/prepare/link/complete/ignore operations cannot own this namespace.
+Unknown legacy setup requests require inspection, rather than being presumed absent.
+
+The first start returns a claim token for its executing session. Keep it private
+in that session; do not put it in artifacts or guidance. Use a stable idempotency
+key to recover the original response after an uncertain retry. A concurrent start
+attaches as an observer to the existing attempt and receives no writer token.
+Attach does not replace the owner, change its workflow selection or grant report
+authority. There is no expired-lease takeover of setup work.
+
+`projectSetup.report` requires that session, token, `request_id` and the expected
+attempt revision. Its typed `report` includes a status, bounded progress message
+and evidence ref, optional checked workflow results, and a concrete question only
+for `needs_input`. Each workflow result carries `workflow_key`, its expected receipt
+revision and the existing `SetupResult` proof contract, with the exact attempt ref.
+Successful workflow writes advance only after source, role, obligation and readiness
+validation. Failed/unfinished outcomes retain prior success and possible partial
+edits. A report is atomic; a stale/foreign/invalid item changes neither attempt nor
+receipts. Attempt success additionally requires current verified success for every
+selected workflow, including a source/receipt freshness recheck at completion.
+
+Existing-session questions carry `question_id`, `revision`, `prompt`, affected
+`workflow_keys`, `answer_state: "pending"` and `response_channel: "existing_agent"`.
+The agent asks and receives answers in that session, then reports subsequent work.
+Home can display the question and status without promising an external conversation
+link or accepting a browser answer for this entry kind. Report history retains
+question/progress/result refs; sibling native execution metadata stays untouched.
+Terminal reports revoke writer authority and preserve attempt history.
+
+Both operations support compact/raw and refuse ack. Compact retains claim/attempt
+refs, revision, outcomes, question and repair context; raw also retains report history.
+Source verification does not establish native loading or installed activation, and
+structural setup readiness does not imply that deferred per-run inputs are supplied.
+This operation family grants no business execution, provider or repository-file authority.
 
 ## Project workflow schedules
 

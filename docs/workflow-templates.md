@@ -586,6 +586,18 @@ and independent review must check the underlying evidence. A known reload need
 or unknown activation stays visible as `activation_pending`.
 
 Results advance each workflow independently using its expected receipt revision.
+An already-running user agent admits one project-scoped attempt through
+`projectSetup.start`, then reports checked results through `projectSetup.report`.
+The request-owned, versioned setup namespace retains session/request lineage,
+receipt revisions, progress, concrete questions and result refs. Concurrent entries
+attach to the same owner without receiving writer authority; stale/foreign reports
+cannot change receipts. Attempt success rechecks source and receipt freshness.
+Existing-session questions and answers stay in that session. The shared
+`projectSetup.get` state is also consumed by Home; no external conversation navigation,
+business run or tracker delivery task is invented for infrastructure setup. See the
+[operation contract](operations.md#project-setup-receipts-and-reminders) for admission,
+ownership and response details.
+
 Failed/unfinished results retain the previous successful sources and separately
 record possible partial edits. They can still be recorded when the selected folder
 becomes unavailable. Available updates compare the receipt with current effective

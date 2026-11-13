@@ -167,6 +167,10 @@ class AgentRequestRepository:
         self._require_project(project_id, reserve=True)
         if metadata_json is not None and "native_execution" in metadata_json:
             raise ValidationError("native_execution is owned by the native request handoff")
+        if source_kind == "project_setup" or (
+            metadata_json is not None and "project_setup" in metadata_json
+        ):
+            raise ValidationError("project_setup is owned by projectSetup operations")
         self._validate_source_record(project_id, source_resource_record_id)
         if not request_key.strip():
             raise ValidationError("request_key is required")
@@ -279,6 +283,8 @@ class AgentRequestRepository:
         now = _utcnow()
         stmt = select(AgentRequest).where(
             col(AgentRequest.project_id) == project_id,
+            func.coalesce(col(AgentRequest.source_kind), "") != "project_setup",
+            func.json_type(col(AgentRequest.metadata_json), "$.project_setup").is_(None),
             or_(
                 col(AgentRequest.status) == AgentRequestStatus.NEW,
                 (
@@ -321,6 +327,7 @@ class AgentRequestRepository:
 
         ProjectRepository(self._s).require_available(project_id, reserve=True)
         row = self._fetch(project_id=project_id, request_id=request_id)
+        self._require_generic_request(row)
         now = _utcnow()
         if (row.metadata_json or {}).get("native_execution") is not None:
             raise ConflictError(
@@ -471,6 +478,7 @@ class AgentRequestRepository:
         if run_plan_json is None and template_key is None:
             raise ValidationError("run_plan_json or template_key is required")
         row = self._fetch(project_id=project_id, request_id=request_id)
+        self._require_generic_request(row)
         if (row.metadata_json or {}).get("native_execution") is not None:
             raise ConflictError(
                 "native request execution requires explicit resolution, not reclaim"
@@ -585,6 +593,8 @@ class AgentRequestRepository:
         row = self._fetch(project_id=project_id, request_id=request_id)
         evidence = (row.metadata_json or {}).get("native_execution")
         self._verify_claim(row, claim_token, allow_expired=evidence is not None)
+        if metadata_json is not None and "project_setup" in metadata_json:
+            raise ValidationError("project_setup is owned by projectSetup operations")
         if metadata_json is not None and "native_execution" in metadata_json:
             raise ValidationError("native_execution is owned by the native request handoff")
         if evidence is not None:
@@ -630,6 +640,9 @@ class AgentRequestRepository:
     ) -> Envelope[AgentRequestOut]:
         _ = ignored_by
         row = self._fetch(project_id=project_id, request_id=request_id)
+        self._require_generic_request(row)
+        if metadata_json is not None and "project_setup" in metadata_json:
+            raise ValidationError("project_setup is owned by projectSetup operations")
         if (row.metadata_json or {}).get("native_execution") is not None:
             raise ConflictError("an admitted native request requires terminal resolution")
         if metadata_json is not None and "native_execution" in metadata_json:
@@ -727,8 +740,15 @@ class AgentRequestRepository:
             )
 
     def _verify_claim(
-        self, row: AgentRequest, claim_token: str, *, allow_expired: bool = False
+        self,
+        row: AgentRequest,
+        claim_token: str,
+        *,
+        allow_expired: bool = False,
+        _setup_owner: bool = False,
     ) -> None:
+        if not _setup_owner:
+            self._require_generic_request(row)
         if row.status not in {
             AgentRequestStatus.CLAIMED,
             AgentRequestStatus.RUN_CREATED,
@@ -753,6 +773,14 @@ class AgentRequestRepository:
             _hash_token(claim_token),
         ):
             raise ConflictError("claim_token does not match agent request claim")
+
+    @staticmethod
+    def _require_generic_request(row: AgentRequest) -> None:
+        if row.source_kind == "project_setup" or "project_setup" in (row.metadata_json or {}):
+            raise ConflictError(
+                "setup request lifecycle is owned by projectSetup operations",
+                data={"request_id": row.id},
+            )
 
     def _execution_row(
         self,

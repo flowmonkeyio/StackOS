@@ -511,11 +511,20 @@ def _base_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any
 
 def _compact_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any]:
     data = _data(payload)
+    if spec.name in {"projectSetup.start", "projectSetup.report"}:
+        out = _base_payload(spec, payload)
+        body = copy.deepcopy(data)
+        out["data"] = body
+        attempt = body.get("attempt", body)
+        attempt.pop("reports", None)
+        return out
     if spec.name in {"projectSetup.get", "projectSetup.setReminders"}:
         out = _base_payload(spec, payload)
         out["data"] = {
             key: copy.deepcopy(value) for key, value in data.items() if key != "workflows"
         }
+        if isinstance(out["data"].get("current_attempt"), dict):
+            out["data"]["current_attempt"].pop("reports", None)
         workflows = data.get("workflows", [])
         out["data"]["workflow_count"] = len(workflows)
         out["data"]["workflows"] = [
@@ -783,6 +792,11 @@ def _compact_operation_summary(item: dict[str, Any]) -> dict[str, Any]:
 def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
     if not isinstance(data, dict):
         return {"value": data}
+    if operation_name == "workspace.startSession":
+        out = _compact_mapping(data)
+        out["agent_session_id"] = data.get("id")
+        out["project_setup"] = copy.deepcopy(data.get("project_setup"))
+        return out
     if operation_name in {"project.delete", "project.reconcileFileOwnership"}:
         # These typed bounded receipts are already the complete repair contract.
         return copy.deepcopy(data)

@@ -8,20 +8,28 @@ from __future__ import annotations
 
 import hashlib
 import json
+import secrets
 from datetime import UTC, datetime
 from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import ValidationError as ModelValidationError
+from sqlalchemy import func, or_
 from sqlmodel import Session, col, select
 
 from stackos.agents.loader import AgentPresetLoader
 from stackos.db.models import (
+    AgentRequest,
+    AgentRequestAttentionStatus,
+    AgentRequestStatus,
+    AgentSession,
     ProjectSetupReceipt,
     ProjectWorkflowTemplate,
     WorkflowTemplate,
     WorkflowTemplateExtension,
 )
+from stackos.repositories.agent_requests import AgentRequestRepository, _hash_token
 from stackos.repositories.base import ConflictError, RepositoryError, ValidationError
 from stackos.repositories.projects import ProjectRepository
 from stackos.skill_presets.loader import SkillPresetLoader
@@ -178,6 +186,105 @@ class SetupWorkflowOut(BaseModel):
     result_ref: str | None = None
 
 
+SETUP_NAMESPACE = "project_setup"
+SETUP_GUIDANCE_REF = {
+    "tool_name": "workflowTemplate.authoringGuide",
+    "arguments": {"response_mode": "raw"},
+}
+
+
+class SetupProgress(SetupEvidenceModel):
+    message: str = Field(min_length=1, max_length=2000)
+    evidence_ref: str = Field(min_length=1, max_length=1000)
+
+
+class SetupQuestion(SetupEvidenceModel):
+    question_id: str = Field(min_length=1, max_length=120)
+    revision: int = Field(strict=True, ge=1)
+    prompt: str = Field(min_length=1, max_length=2000)
+    workflow_keys: list[str] = Field(min_length=1, max_length=100)
+    answer_state: Literal["pending"] = "pending"
+    response_channel: Literal["existing_agent", "managed_ui"] = "existing_agent"
+
+
+class SetupWorkflowReport(SetupEvidenceModel):
+    workflow_key: str = Field(min_length=1, max_length=200)
+    expected_revision: int = Field(strict=True, ge=0)
+    result: SetupResult
+
+
+class SetupReport(SetupEvidenceModel):
+    status: Literal[
+        "running", "needs_input", "success", "partial", "failed", "interrupted", "cancelled"
+    ]
+    progress: SetupProgress
+    workflow_results: list[SetupWorkflowReport] = Field(default_factory=list, max_length=100)
+    question: SetupQuestion | None = None
+    recovery_condition: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def valid_question(self) -> SetupReport:
+        if (self.status == "needs_input") != (self.question is not None):
+            raise ValueError(
+                "needs_input requires a concrete question; other states cannot ask one"
+            )
+        keys = [item.workflow_key for item in self.workflow_results]
+        if len(keys) != len(set(keys)):
+            raise ValueError("report each workflow only once")
+        return self
+
+
+class SetupWorkflowOutcome(SetupEvidenceModel):
+    receipt_id: int
+    revision: int
+    status: Literal["success", "failed", "unfinished", "needs_input", "cancelled", "interrupted"]
+    result_ref: str
+
+
+class SetupReportReceipt(SetupEvidenceModel):
+    revision: int
+    status: str
+    progress: SetupProgress
+    question: SetupQuestion | None
+    result_refs: list[str]
+    checked_at: datetime
+
+
+class SetupAttempt(SetupEvidenceModel):
+    """Versioned AgentRequest metadata; native execution evidence stays alongside it."""
+
+    schema_version: Literal[1] = 1
+    project_id: int
+    attempt_ref: str
+    root_request_id: int
+    request_id: int
+    predecessor_request_id: int | None = None
+    revision: int = 1
+    mode: Literal["setup", "update"]
+    entry_kind: Literal["existing_agent", "managed_ui"]
+    session_id: int
+    runtime: str
+    thread_id: str | None = None
+    workflow_keys: list[str]
+    observed_receipt_revisions: dict[str, int]
+    outcomes: dict[str, SetupWorkflowOutcome] = Field(default_factory=dict)
+    status: Literal[
+        "running", "needs_input", "success", "partial", "failed", "interrupted", "cancelled"
+    ] = "running"
+    progress: SetupProgress | None = None
+    question: SetupQuestion | None = None
+    recovery_condition: str | None = None
+    reports: list[SetupReportReceipt] = Field(default_factory=list)
+
+
+class SetupStartOut(BaseModel):
+    attempt: SetupAttempt
+    attached: bool
+    claim_token: str | None = None
+    guidance_ref: dict[str, Any] = Field(default_factory=lambda: dict(SETUP_GUIDANCE_REF))
+    next_action: str
+
+
 class ProjectSetupOut(BaseModel):
     project_id: int
     eligible: bool
@@ -193,6 +300,9 @@ class ProjectSetupOut(BaseModel):
     update_count: int = 0
     unknown_count: int = 0
     workflows: list[SetupWorkflowOut] = Field(default_factory=list)
+    current_attempt: SetupAttempt | None = None
+    attempt_diagnostic: str | None = None
+    guidance_ref: dict[str, Any] = Field(default_factory=lambda: dict(SETUP_GUIDANCE_REF))
     detail_ref: dict[str, Any]
     next_action: str
 
@@ -310,7 +420,13 @@ class ProjectSetupRepository:
         )
 
     def record_result(
-        self, project_id: int, workflow_key: str, *, expected_revision: int, result: SetupResult
+        self,
+        project_id: int,
+        workflow_key: str,
+        *,
+        expected_revision: int,
+        result: SetupResult,
+        _commit: bool = True,
     ) -> SetupWorkflowOut:
         # Mutable in-process models cannot bypass the persisted success contract.
         result = SetupResult.model_validate(result.model_dump(mode="json"))
@@ -356,8 +472,322 @@ class ProjectSetupRepository:
             row.successful_json = {**row.latest_result_json, "revision": row.revision}
         row.updated_at = now
         self._s.add(row)
-        self._s.commit()
+        if _commit:
+            self._s.commit()
+        else:
+            self._s.flush()
         return self._workflow(row, project_id, workflow_key)
+
+    def _attempts(self, project_id: int) -> list[tuple[AgentRequest, SetupAttempt]]:
+        rows = self._s.exec(
+            select(AgentRequest)
+            .where(
+                AgentRequest.project_id == project_id,
+                or_(
+                    col(AgentRequest.source_kind) == SETUP_NAMESPACE,
+                    func.json_type(AgentRequest.metadata_json, "$.project_setup").is_not(None),
+                ),
+            )
+            .order_by(col(AgentRequest.id).desc())
+        ).all()
+        attempts = []
+        for row in rows:
+            try:
+                attempt = SetupAttempt.model_validate(
+                    (row.metadata_json or {}).get(SETUP_NAMESPACE)
+                )
+            except ModelValidationError as exc:
+                raise ConflictError(
+                    "setup request has unknown legacy metadata; "
+                    "inspect before starting another writer",
+                    data={
+                        "project_id": project_id,
+                        "request_id": row.id,
+                        "next_action": "inspect_request",
+                    },
+                ) from exc
+            if attempt.project_id != project_id or attempt.request_id != row.id:
+                raise ConflictError(
+                    "setup request identity is inconsistent", data={"request_id": row.id}
+                )
+            attempts.append((row, attempt))
+        return attempts
+
+    def _current_attempt(self, project_id: int) -> SetupAttempt | None:
+        attempts = self._attempts(project_id)
+        active = [a for _, a in attempts if a.status in {"running", "needs_input"}]
+        if len(active) > 1:
+            raise ConflictError(
+                "multiple setup writers require reconciliation", data={"project_id": project_id}
+            )
+        return active[0] if active else (attempts[0][1] if attempts else None)
+
+    def start(
+        self,
+        project_id: int,
+        *,
+        session_id: int,
+        mode: Literal["setup", "update"],
+        workflow_keys: list[str],
+    ) -> SetupStartOut:
+        """Reserve the project before admission; attachment never issues writer authority."""
+        try:
+            ProjectRepository(self._s).require_available(project_id, reserve=True)
+            state = self.get(project_id)
+            if not state.eligible or state.folder_status != "available":
+                raise ValidationError(
+                    "setup requires an available selected project folder",
+                    data={
+                        "project_id": project_id,
+                        "folder_status": state.folder_status,
+                        "next_action": state.next_action,
+                    },
+                )
+            session = self._s.get(AgentSession, session_id)
+            if session is None or session.project_id != project_id:
+                raise ConflictError(
+                    "agent session does not belong to the setup project",
+                    data={"project_id": project_id},
+                )
+            current = self._current_attempt(project_id)
+            if current and current.status in {"running", "needs_input"}:
+                self._s.commit()
+                return SetupStartOut(
+                    attempt=current, attached=True, next_action="observe_existing_attempt"
+                )
+            if (
+                mode not in {"setup", "update"}
+                or not workflow_keys
+                or len(workflow_keys) > 100
+                or any(not key.strip() or len(key) > 200 for key in workflow_keys)
+                or len(set(workflow_keys)) != len(workflow_keys)
+            ):
+                raise ValidationError("select unique workflow keys and setup/update mode")
+            token = secrets.token_urlsafe(32)
+            now = datetime.now(UTC).replace(tzinfo=None)
+            row = AgentRequest(
+                project_id=project_id,
+                request_key=f"project-setup:{secrets.token_hex(16)}",
+                title="Project setup" if mode == "setup" else "Project workflow update",
+                source_kind=SETUP_NAMESPACE,
+                status=AgentRequestStatus.CLAIMED,
+                attention_status=AgentRequestAttentionStatus.READ,
+                claimed_by=f"agent-session:{session_id}",
+                claim_token_hash=_hash_token(token),
+                claimed_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+            self._s.add(row)
+            self._s.flush()
+            assert row.id is not None
+            attempt = SetupAttempt(
+                project_id=project_id,
+                attempt_ref=f"agent-request:{row.id}",
+                root_request_id=row.id,
+                request_id=row.id,
+                mode=mode,
+                entry_kind="existing_agent",
+                session_id=session_id,
+                runtime=session.runtime,
+                thread_id=session.thread_id,
+                workflow_keys=workflow_keys,
+                observed_receipt_revisions={
+                    key: (receipt.revision if (receipt := self._row(project_id, key)) else 0)
+                    for key in workflow_keys
+                },
+            )
+            row.metadata_json = {SETUP_NAMESPACE: attempt.model_dump(mode="json")}
+            self._s.add(row)
+            self._s.commit()
+            return SetupStartOut(
+                attempt=attempt,
+                attached=False,
+                claim_token=token,
+                next_action="execute_in_existing_session",
+            )
+        except Exception:
+            self._s.rollback()
+            raise
+
+    def report(
+        self,
+        project_id: int,
+        *,
+        request_id: int,
+        session_id: int,
+        claim_token: str,
+        expected_revision: int,
+        report: SetupReport,
+    ) -> SetupAttempt:
+        try:
+            report = SetupReport.model_validate(report.model_dump(mode="json"))
+            ProjectRepository(self._s).require_available(project_id, reserve=True)
+            requests = AgentRequestRepository(self._s)
+            row = requests._fetch(project_id=project_id, request_id=request_id)
+            requests._verify_claim(row, claim_token, _setup_owner=True)
+            current = self._current_attempt(project_id)
+            if (
+                current is None
+                or current.request_id != request_id
+                or current.session_id != session_id
+            ):
+                raise ConflictError(
+                    "report does not own the current setup attempt",
+                    data={"project_id": project_id, "request_id": request_id},
+                )
+            if (
+                current.status not in {"running", "needs_input"}
+                or current.revision != expected_revision
+            ):
+                raise ConflictError(
+                    "setup attempt revision or status changed",
+                    data={
+                        "request_id": request_id,
+                        "revision": current.revision,
+                        "status": current.status,
+                    },
+                )
+            if current.entry_kind != "existing_agent":
+                raise ConflictError("this reporting entry requires an existing agent session")
+            if report.question is not None and (
+                report.question.response_channel != "existing_agent"
+                or not set(report.question.workflow_keys).issubset(current.workflow_keys)
+            ):
+                raise ValidationError(
+                    "question must stay in the owning session and selected workflows"
+                )
+            outcomes = dict(current.outcomes)
+            for item in report.workflow_results:
+                if (
+                    item.workflow_key not in current.workflow_keys
+                    or item.result.attempt_ref != current.attempt_ref
+                ):
+                    raise ConflictError("workflow result does not belong to this setup attempt")
+                if item.expected_revision != current.observed_receipt_revisions[item.workflow_key]:
+                    raise ConflictError(
+                        "report receipt revision differs from the attempt observation"
+                    )
+                saved = self.record_result(
+                    project_id,
+                    item.workflow_key,
+                    expected_revision=item.expected_revision,
+                    result=item.result,
+                    _commit=False,
+                )
+                current.observed_receipt_revisions[item.workflow_key] = saved.revision
+                assert saved.receipt_id is not None
+                outcomes[item.workflow_key] = SetupWorkflowOutcome(
+                    receipt_id=saved.receipt_id,
+                    revision=saved.revision,
+                    status=item.result.status,
+                    result_ref=item.result.result_ref,
+                )
+            if report.status == "success" and any(
+                key not in outcomes or outcomes[key].status != "success"
+                for key in current.workflow_keys
+            ):
+                raise ValidationError(
+                    "every selected workflow needs verified success before attempt success"
+                )
+            if report.status == "success":
+                # A previous progress report can precede another source/receipt
+                # change. Closing the attempt must not bless that stale proof.
+                for key, outcome in outcomes.items():
+                    receipt = self._row(project_id, key)
+                    if (
+                        receipt is None
+                        or receipt.revision != outcome.revision
+                        or receipt.successful_json is None
+                    ):
+                        raise ConflictError(
+                            "workflow receipt changed; revalidate before completion",
+                            data={"workflow_key": key},
+                        )
+                    proof = VerifiedSetup.model_validate(receipt.successful_json["verification"])
+                    sources = self.inspect_sources(
+                        project_id, key, selected_optional_presets=proof.selected_optional_presets
+                    )
+                    if self._identity(sources) != self._identity(proof.sources):
+                        raise ConflictError(
+                            "workflow sources changed; revalidate before completion",
+                            data={"workflow_key": key},
+                        )
+            current.revision += 1
+            current.status = report.status
+            current.progress = report.progress
+            current.question = report.question
+            current.recovery_condition = report.recovery_condition
+            current.outcomes = outcomes
+            current.reports.append(
+                SetupReportReceipt(
+                    revision=current.revision,
+                    status=report.status,
+                    progress=report.progress,
+                    question=report.question,
+                    result_refs=[item.result.result_ref for item in report.workflow_results],
+                    checked_at=datetime.now(UTC),
+                )
+            )
+            if len(current.model_dump_json().encode()) > 2_000_000:
+                raise ValidationError(
+                    "setup attempt exceeds 2 MB; retain detailed evidence by reference"
+                )
+            row.metadata_json = {
+                **(row.metadata_json or {}),
+                SETUP_NAMESPACE: current.model_dump(mode="json"),
+            }
+            row.updated_at = datetime.now(UTC).replace(tzinfo=None)
+            if report.status not in {"running", "needs_input"}:
+                row.status = (
+                    AgentRequestStatus.RESOLVED
+                    if report.status == "success"
+                    else AgentRequestStatus.FAILED
+                )
+                row.completed_at = row.updated_at
+                row.claim_token_hash = None
+            self._s.add(row)
+            self._s.commit()
+            return current
+        except Exception:
+            self._s.rollback()
+            raise
+
+    def startup_summary(self, project_id: int) -> dict[str, Any]:
+        state = self.get(project_id)
+        summary = state.model_dump(
+            mode="json",
+            include={
+                "project_id",
+                "eligible",
+                "folder_status",
+                "status",
+                "configured_count",
+                "update_count",
+                "unknown_count",
+                "attempt_diagnostic",
+                "guidance_ref",
+                "detail_ref",
+                "next_action",
+            },
+        )
+        summary["current_attempt"] = (
+            state.current_attempt.model_dump(
+                mode="json",
+                include={
+                    "attempt_ref",
+                    "root_request_id",
+                    "request_id",
+                    "revision",
+                    "mode",
+                    "entry_kind",
+                    "status",
+                },
+            )
+            if state.current_attempt
+            else None
+        )
+        return summary
 
     @staticmethod
     def _identity(sources: list[SetupSource]) -> list[tuple[str, str, str | None]]:
@@ -517,6 +947,12 @@ class ProjectSetupRepository:
         unknown = sum(
             item.status != "current" and item.status != "update_available" for item in aggregate
         )
+        attempt = None
+        attempt_diagnostic = None
+        try:
+            attempt = self._current_attempt(project_id)
+        except ConflictError as exc:
+            attempt_diagnostic = str(exc)
         status: Literal[
             "ineligible", "folder_unavailable", "setup_needed", "updates_available", "current"
         ] = (
@@ -542,6 +978,8 @@ class ProjectSetupRepository:
             configured_count=configured,
             update_count=updates,
             unknown_count=unknown,
+            current_attempt=attempt,
+            attempt_diagnostic=attempt_diagnostic,
             workflows=[
                 item
                 for item in workflows
