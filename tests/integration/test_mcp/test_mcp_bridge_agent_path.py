@@ -30,6 +30,184 @@ _CLIENT_INFO_META_KEY = "io.modelcontextprotocol/clientInfo"
 _CLIENT_CAPABILITIES_META_KEY = "io.modelcontextprotocol/clientCapabilities"
 
 
+def test_patterns_global_crud_and_combined_filter_parity(
+    mcp_client: MCPClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Real bridge + MCP + REST dispatcher; CLI substitutes transport only."""
+    from typer.testing import CliRunner
+
+    import stackos.cli.operation_commands as cli
+    from stackos.auth import derive_ui_token
+    from stackos.cli import app
+
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+
+    def call(name, arguments=None):
+        result = _toolbox_call(proxy, client, name, arguments)
+        assert not result["result"].get("isError"), result
+        return _structured(result)
+
+    assert call("pattern.list")["catalog_total"] == 0
+    content = dict(
+        key="fixture-a",
+        title="Example",
+        summary="Synthetic guidance",
+        body="needle [reference](https://example.test)\n\nUse `example run`.\n",
+        tags=["free topic", "any technology"],
+    )
+    denied = _toolbox_call(proxy, client, "pattern.upsert", content)
+    assert denied["result"]["isError"] is True
+    started = _tool_call(proxy, client, "workspace.startSession", {"global_session": True})
+    assert not started["result"].get("isError"), started
+    assert proxy.global_session is True and proxy.scoped_project_id is None
+    created = call("pattern.upsert", content)["data"]
+    assert created["source"] == "custom" and created["source_label"] == "Custom"
+    assert "body" not in created
+    assert call("pattern.upsert", content)["data"] == created
+    detail = call("pattern.get", {"pattern_id": created["id"]})
+    assert detail["body"] == content["body"] and detail["id"] == created["id"]
+    assert "body" not in call("pattern.get", {"key": content["key"], "response_mode": "compact"})
+    for key, tags, body in (
+        ("fixture-b", ["alternate"], "needle"),
+        ("fixture-c", ["excluded"], "needle"),
+        ("fixture-d", ["free topic"], "no match"),
+    ):
+        call("pattern.upsert", content | dict(key=key, tags=tags, body=body))
+
+    query = {"query": "needle", "tags": ["free topic", "alternate"], "source": "custom", "limit": 1}
+    page = call("pattern.list", query)
+    assert [item["id"] for item in page["items"]] == [created["id"]]
+    assert page["total_estimate"] == 2 and page["catalog_total"] == 4
+    assert "body" not in json.dumps(page)
+    api = mcp_client.test_client
+    headers = {"Authorization": f"Bearer {mcp_client.auth_token}"}
+
+    def http(name, arguments, request_headers=headers):
+        response = api.post(
+            f"/api/v1/operations/{name}/call",
+            json={"arguments": arguments},
+            headers=request_headers,
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    def cli_transport(method, path, *, body=None, **kwargs):
+        response = api.request(method, path, json=body, headers=headers)
+        response.raise_for_status()
+        return response.json()
+
+    monkeypatch.setattr(cli, "_api_request", cli_transport)
+    for arguments in (
+        query,
+        query | {"cursor": page["next_cursor"]},
+        query | {"source": "stackos"},
+        query | {"source": "customized"},
+    ):
+        expected = call("pattern.list", arguments)
+        assert http("pattern.list", arguments) == expected
+        result = CliRunner().invoke(
+            app,
+            ["ops", "call", "pattern.list", "--input", "-"],
+            input=json.dumps(arguments),
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0, result.stdout
+        assert json.loads(result.stdout) == expected
+    assert http("pattern.get", {"key": content["key"]}) == detail
+
+    # Two real bound project bridges see the same installation record. Reads
+    # and writes carry no project_id; the bridge must not inject a fake scope.
+    for name in ("pattern-owner-a", "pattern-owner-b"):
+        root = tmp_path / name
+        root.mkdir()
+        bound, bound_client = _scoped_bridge(mcp_client, cwd=str(root))
+        _initialize(bound, bound_client)
+        result = _tool_call(bound, bound_client, "workspace.startSession", {})
+        assert not result["result"].get("isError"), result
+        assert bound.scoped_project_id is not None
+        result = _toolbox_call(bound, bound_client, "pattern.get", {"key": content["key"]})
+        assert _structured(result) == detail
+
+    # Authentication and strict input reject before mutation. Provenance is
+    # server-owned, even when supplied alongside otherwise legitimate content.
+    for field in ("source", "source_label", "bundled_id", "shipped_version", "shipped_base_hash"):
+        rejected = _toolbox_call(proxy, client, "pattern.upsert", content | {field: "forged"})
+        assert rejected["result"]["isError"] is True
+    for token in ("", "foreign-token"):
+        response = api.post(
+            "/api/v1/operations/pattern.upsert/call",
+            json={"arguments": content | {"key": "unauthorized"}},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 401
+    assert call("pattern.list")["catalog_total"] == 4
+    stale = _toolbox_call(proxy, client, "pattern.upsert", content | {"body": "changed"})
+    assert stale["result"]["isError"] is True
+    assert _structured(stale)["data"]["current_etag"] == created["etag"]
+
+    updated = call("pattern.upsert", content | {"body": "updated once", "expected_etag": "1"})[
+        "data"
+    ]
+    assert updated["revision"] == 2
+    assert http("pattern.get", {"pattern_id": created["id"]})["body"] == "updated once"
+    # The browser-safe generic route shares the same owner and etag check.
+    ui_headers = {"Authorization": f"Bearer {derive_ui_token(mcp_client.auth_token)}"}
+    ui_row = http("pattern.upsert", content | {"key": "ui-fixture"}, ui_headers)["data"]
+    http(
+        "pattern.delete", {"pattern_id": ui_row["id"], "expected_etag": ui_row["etag"]}, ui_headers
+    )
+    call("pattern.delete", {"pattern_id": created["id"], "expected_etag": updated["etag"]})
+    missing = _toolbox_call(proxy, client, "pattern.get", {"pattern_id": created["id"]})
+    assert missing["result"]["isError"] is True
+    assert (
+        api.post(
+            "/api/v1/operations/pattern.get/call",
+            json={"arguments": {"pattern_id": created["id"]}},
+            headers=headers,
+        ).status_code
+        == 404
+    )
+
+
+def test_patterns_project_run_token_is_not_global_write_authority(
+    mcp_client: MCPClient,
+    mcp_settings: Settings,
+) -> None:
+    from stackos.db.models import Run, RunKind, RunStatus
+
+    engine = make_engine(mcp_settings.db_path)
+    project_id = _create_project(mcp_client, "run-fixture")
+    with Session(engine) as session:
+        # A full-grant sentinel deliberately verifies the handler's independent
+        # boundary too: even a project-granted caller cannot mutate this owner.
+        run = Run(
+            project_id=project_id,
+            kind=RunKind.SKILL_RUN,
+            status=RunStatus.RUNNING,
+            client_session_id="pattern-project-run",
+            metadata_json={"skill_name": "__test__"},
+        )
+        session.add(run)
+        session.commit()
+    response = mcp_client.call_tool(
+        "pattern.upsert",
+        {
+            "run_token": "pattern-project-run",
+            "key": "foreign-run",
+            "title": "Denied",
+            "summary": "",
+            "body": "Denied",
+            "tags": [],
+        },
+    )
+    assert response["result"]["isError"] is True
+    assert mcp_client.call_tool_structured("pattern.list", {})["catalog_total"] == 0
+    engine.dispose()
+
+
 class _BridgeHttpClient:
     """httpx-like adapter that posts bridge requests into TestClient."""
 

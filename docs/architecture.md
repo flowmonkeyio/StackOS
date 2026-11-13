@@ -222,6 +222,7 @@ Core StackOS tables include:
 - `auth_providers`, `credential_accounts`, `credentials`,
   `credential_scopes`, `credential_usage_events`, `credential_refresh_events`
 - `payload_secrets`
+- `patterns` (installation-wide, without `project_id`)
 - `resources`, `resource_records`
 - `artifacts`
 - `workflow_templates`, `workflow_template_versions`,
@@ -237,6 +238,18 @@ Core StackOS tables include:
 Plugin tables may exist for first-party domains when they provide durable
 domain resources. Those tables are plugin-owned and should not drive core UI
 or MCP design.
+
+`PatternRepository` owns the shared local Patterns catalog in the existing
+database. It stores a stable ID/key, title, summary, Markdown body, freeform tags,
+timestamps and optimistic revision. Project resources remain project-scoped;
+patterns are not resources under a hidden project. Whole-database backup and
+recovery preserve them, and project cleanup leaves them intact. The migration
+creates an empty table. Bundled identity/update bookkeeping belongs in this same
+owner when supplied by trusted packaged assets, never by normal editable inputs.
+`pattern.list/get/upsert/delete` are registered once and use the existing MCP,
+generic HTTP, CLI and browser-safe operation adapters. Lists select summary
+columns only; detail loads the body. No semantic content validation or automatic
+project application occurs.
 
 ## MCP And Permissions
 

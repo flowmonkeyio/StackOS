@@ -511,6 +511,12 @@ def _base_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any
 
 def _compact_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, Any]:
     data = _data(payload)
+    if spec.name in {"pattern.list", "pattern.get", "pattern.upsert", "pattern.delete"}:
+        # Catalog pages/receipts already bound their summary payload. Preserve
+        # paging and etags exactly; only the explicit detail body is removed.
+        out = copy.deepcopy(payload)
+        (out.get("data") or out).pop("body", None)
+        return out
     if spec.name in {
         "tracker.taskActivity",
         "tracker.taskResults",

@@ -31,6 +31,71 @@ from tests.helpers.finance_workspace import (
 )
 
 
+def test_pattern_migration_restart_and_encrypted_recovery(tmp_path: Path) -> None:
+    from alembic import command
+    from fastapi.testclient import TestClient
+    from sqlmodel import Session
+
+    from stackos.db.connection import make_engine
+    from stackos.db.migrate import alembic_config
+    from stackos.repositories.patterns import PatternRepository
+    from stackos.server import create_app
+
+    settings = Settings(_env_file=None, data_dir=tmp_path / "data", state_dir=tmp_path / "state")
+    settings.ensure_dirs()
+    # Upgrade a real previous-head DB through normal app startup, with no seed content.
+    command.upgrade(alembic_config(settings), "0043_automations_homes_merge")
+    with TestClient(create_app(settings), base_url="http://127.0.0.1:5199") as api:
+        headers = {"Authorization": f"Bearer {settings.token_path.read_text().strip()}"}
+        page_response = api.post(
+            "/api/v1/operations/pattern.list/call", json={"arguments": {}}, headers=headers
+        )
+        assert page_response.status_code == 200, page_response.text
+        page = page_response.json()
+        assert page["catalog_total"] == 0
+        content = dict(
+            key="backup-fixture",
+            title="Synthetic",
+            summary="Applicability",
+            body="[Reference](https://example.test/docs)\n\nRun `example`.\n",
+            tags=["freeform"],
+        )
+        created = api.post(
+            "/api/v1/operations/pattern.upsert/call", json={"arguments": content}, headers=headers
+        )
+        assert created.status_code == 200, created.text
+        detail = api.post(
+            "/api/v1/operations/pattern.get/call",
+            json={"arguments": {"key": content["key"]}},
+            headers=headers,
+        ).json()
+    # A second complete lifespan reopens the same isolated DB and preserves identity/content.
+    with TestClient(create_app(settings), base_url="http://127.0.0.1:5199") as api:
+        restored = api.post(
+            "/api/v1/operations/pattern.get/call",
+            json={"arguments": {"key": content["key"]}},
+            headers=headers,
+        )
+        assert restored.status_code == 200 and restored.json() == detail
+    key_dir, archive_dir = tmp_path / "keys", tmp_path / "archives"
+    key_dir.mkdir()
+    archive_dir.mkdir()
+    private, public = key_dir / "private.pem", key_dir / "public.pem"
+    generate_recovery_key(settings, private, public)
+    save_policy(
+        settings,
+        BackupPolicy(recipient_public_key=public.read_text(), destination=archive_dir),
+    )
+    archive = archive_dir / "patterns.sbak"
+    create_backup(settings, output=archive)
+    recovery = tmp_path / "recovery"
+    restore_backup(settings, archive, private, recovery)
+    engine = make_engine(recovery / "data/stackos.db")
+    with Session(engine) as session:
+        assert PatternRepository(session).get(key=content["key"]).model_dump(mode="json") == detail
+    engine.dispose()
+
+
 def test_manual_and_due_backups_recover_finance_and_matching_account_seed(tmp_path: Path) -> None:
     settings = Settings(_env_file=None, data_dir=tmp_path / "data", state_dir=tmp_path / "state")
     settings.data_dir.mkdir()

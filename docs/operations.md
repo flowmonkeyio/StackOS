@@ -28,6 +28,52 @@ behavior. Operations define the callable contract around that behavior:
 - enabled surfaces
 - agent guidance, prerequisites, return notes, and examples
 
+## Shared Patterns
+
+`pattern.list`, `pattern.get`, `pattern.upsert` and `pattern.delete` use one
+installation-wide catalog, independent of projects. Discover and read it before
+choosing a project. MCP writes require an established bound session or a declared
+`workspace.startSession(global_session=true)` session; a global session needs no
+selected project for catalog CRUD. HTTP/CLI use the existing authenticated owner
+boundary, and the generic REST routes are browser-safe. Inputs have no
+`project_id`. A project run token or step grant is not global mutation authority;
+use a direct owner call without `run_token` for catalog writes.
+
+`pattern.list` accepts `query`, `tags`, `source`, `limit` (1–100, default 25),
+and an optional positive ID `cursor`. Text searches title, summary, individual
+tags and article body. Any selected tag matches; text, tags and source are ANDed.
+`source` is `all`, `stackos` (all bundled), `customized` (modified bundled), or
+`custom` (user-authored). This catalog initially contains only Custom records;
+trusted bundled ingestion extends the same derived provenance boundary.
+Rows are ordered by ID ascending, with `next_cursor`, `total_estimate` for the
+filtered query and `catalog_total` to distinguish no matches from an empty
+catalog. Reset the cursor when filters change. Lists never include bodies,
+including in raw mode. `pattern.get` takes exactly one of `pattern_id` or `key`
+and defaults to raw, returning one full Markdown entry. Compact get omits body.
+
+Create through `stackos ops call pattern.upsert --input pattern.json` or
+`POST /api/v1/operations/pattern.upsert/call` with this `arguments` object:
+
+```json
+{"key":"my-guidance","title":"My guidance","summary":"When it applies","body":"Markdown recommendation, examples and references with usage instructions.","tags":["freeform topic"]}
+```
+
+This example is an input contract, not shipped content. A stable-key retry with
+identical content returns the existing record. A differing save must include the
+current `expected_etag` from get/list. Delete takes `pattern_id` and
+`expected_etag`. Missing records return 404; absent/stale edit tokens return 409
+with `current_etag`, identity and repair guidance. Re-read and reconcile the draft
+before retrying. Write receipts contain summaries, refs, revision and etag, never
+the body. Compact/raw are supported; ack is intentionally unavailable.
+
+`source` and `source_label` are server-derived output, never editable tags or
+write fields. Ordinary APIs reject bundled identity, shipped version/hash and
+provenance fields. Core validates structure (title/key, Markdown, freeform tags,
+size limits), not applicability or semantic quality. Author guidance should cover
+applicability, recommendations, examples and references plus concrete usage for
+any required technology. Reading an entry neither applies it to a project nor
+authorizes installation or any other side effect.
+
 ## Project display names and catalog order
 
 `project.update` changes display names through the existing project repository.

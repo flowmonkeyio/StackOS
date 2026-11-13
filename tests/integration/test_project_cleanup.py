@@ -53,6 +53,28 @@ def confirmation(target):
     return {"permanent": True, "project_id": target.id, "project_slug": target.slug}
 
 
+@pytest.mark.asyncio
+async def test_project_cleanup_preserves_installation_patterns(fixture):
+    from stackos.repositories.patterns import PatternRepository
+
+    session, settings, target, _other = fixture
+    repo = PatternRepository(session)
+    before = repo.upsert(
+        key="shared-fixture",
+        title="Synthetic",
+        summary="Across projects",
+        body="Shared Markdown",
+        tags=["arbitrary"],
+    )
+    result = await ProjectCleanupService(session, settings).delete(
+        target.id, confirmation=confirmation(target)
+    )
+    assert result.status == "deleted"
+    session.expire_all()
+    assert repo.get(pattern_id=before.id) == before
+    assert repo.list().catalog_total == 1
+
+
 def put(path: Path, value="sentinel"):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(value)

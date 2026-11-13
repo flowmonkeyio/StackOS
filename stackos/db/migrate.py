@@ -95,7 +95,12 @@ def _stamp_create_all_schema_if_needed(settings: Settings, cfg: Config) -> bool:
         # version eligible for retry rather than silently claiming completion.
         from sqlmodel import Session
 
+        from stackos.db.models import Pattern
         from stackos.repositories.tracker.ordering import normalize_default_columns
+
+        # Pre-Alembic installations skip DDL when stamped. Materialize this
+        # independent empty owner too; never populate recommendation content.
+        Pattern.metadata.tables["patterns"].create(engine, checkfirst=True)
 
         with Session(engine) as session:
             normalize_default_columns(session)
