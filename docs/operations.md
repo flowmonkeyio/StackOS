@@ -181,6 +181,16 @@ attaches as an observer to the existing attempt and receives no writer token.
 Attach does not replace the owner, change its workflow selection or grant report
 authority. There is no expired-lease takeover of setup work.
 
+Setup replay rechecks the bound session and original normalized request before
+returning any cached response. The key binds the session, attempt, token, expected
+revision and complete report; changing only `response_mode` preserves an exact
+retry, including compact-to-raw recovery. Foreign or changed-intent reuse returns
+structured repair context and never exposes the owner's token. A cached start is
+usable only while its original attempt/claim remains active. Exact terminal-report
+retries return that historical request without restoring its claim or changing a
+successor; cached running progress cannot represent a finished attempt. Older cache
+entries lacking original-intent evidence reject for inspection.
+
 `projectSetup.report` requires that session, token, `request_id` and the expected
 attempt revision. Its typed `report` includes a status, bounded progress message
 and evidence ref, optional checked workflow results, and a concrete question only

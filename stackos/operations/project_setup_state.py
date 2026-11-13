@@ -1,8 +1,12 @@
-"""Shared read projection and explicit local reminder preferences."""
+"""Shared setup admission, reports, read projection and reminder preferences."""
 
-from typing import Literal
+import hashlib
+import hmac
+import json
+from typing import Any, Literal
 
 from pydantic import ConfigDict, Field
+from pydantic import ValidationError as ModelValidationError
 
 from stackos.db.models import AgentSession
 from stackos.mcp.context import MCPContext
@@ -17,6 +21,8 @@ from stackos.operations.spec import (
     OperationSurface,
     OperationSurfaces,
 )
+from stackos.repositories.agent_requests import AgentRequestRepository
+from stackos.repositories.base import ConflictError
 from stackos.repositories.project_setup import (
     ProjectSetupOut,
     ProjectSetupRepository,
@@ -24,6 +30,8 @@ from stackos.repositories.project_setup import (
     SetupReport,
     SetupStartOut,
 )
+
+SETUP_REPLAY_DIGEST_FIELD = "_project_setup_request_digest"
 
 
 class ProjectSetupGetInput(MCPInput):
@@ -115,6 +123,98 @@ def _require_setup_session(
         )
 
 
+def setup_request_digest(inp: ProjectSetupStartInput | ProjectSetupReportInput) -> str:
+    # Parsed defaults and canonical JSON normalize the intent. Only response
+    # presentation and the lookup key may differ on a retry. Session, attempt,
+    # token, expected revision and the complete report stay bound to the key.
+    intent = inp.model_dump(mode="json", exclude={"response_mode", "idempotency_key"})
+    return hashlib.sha256(
+        json.dumps(intent, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+
+
+def validate_setup_replay(
+    name: str,
+    inp: ProjectSetupStartInput | ProjectSetupReportInput,
+    ctx: MCPContext,
+    cached: dict[str, Any],
+) -> dict[str, Any]:
+    """Reauthorize before exposing any cached token or reporting success."""
+    _require_setup_session(inp, ctx)
+    digest = cached.get(SETUP_REPLAY_DIGEST_FIELD)
+    repair = {"operation": name, "project_id": inp.project_id, "next_action": "inspect_setup"}
+    if not isinstance(digest, str) or not hmac.compare_digest(digest, setup_request_digest(inp)):
+        raise ConflictError(
+            "setup idempotency key belongs to another intent/session or lacks retry evidence",
+            data=repair,
+        )
+    data = cached.get("data")
+    try:
+        result = (
+            SetupStartOut.model_validate(data)
+            if isinstance(inp, ProjectSetupStartInput)
+            else SetupAttempt.model_validate(data)
+        )
+        saved = result.attempt if isinstance(result, SetupStartOut) else result
+        requests = AgentRequestRepository(ctx.session)
+        row = requests._fetch(project_id=inp.project_id, request_id=saved.request_id)
+        current = SetupAttempt.model_validate((row.metadata_json or {}).get("project_setup"))
+    except ModelValidationError as exc:
+        raise ConflictError(
+            "setup retry evidence is unreadable; inspect the attempt", data=repair
+        ) from exc
+    if (
+        saved.project_id != inp.project_id
+        or current.project_id != inp.project_id
+        or current.request_id != saved.request_id
+        or current.attempt_ref != saved.attempt_ref
+        or current.root_request_id != saved.root_request_id
+        or current.session_id != saved.session_id
+    ):
+        raise ConflictError("cached setup attempt identity changed", data=repair)
+    if isinstance(inp, ProjectSetupStartInput):
+        active = ProjectSetupRepository(ctx.session)._current_attempt(inp.project_id)
+        if (
+            current.status not in {"running", "needs_input"}
+            or active is None
+            or active.request_id != saved.request_id
+        ):
+            raise ConflictError(
+                "cached setup start is no longer active; inspect current setup", data=repair
+            )
+        assert isinstance(result, SetupStartOut)
+        if not result.attached:
+            if current.session_id != inp.session_id or result.claim_token is None:
+                raise ConflictError(
+                    "cached setup start does not belong to this session", data=repair
+                )
+            requests._verify_claim(row, result.claim_token, _setup_owner=True)
+        elif result.claim_token is not None:
+            raise ConflictError(
+                "cached setup attachment cannot grant writer authority", data=repair
+            )
+    else:
+        if (
+            current.session_id != inp.session_id
+            or saved.request_id != inp.request_id
+            or saved.revision != inp.expected_revision + 1
+            or current.revision < saved.revision
+        ):
+            raise ConflictError(
+                "cached report does not match this setup attempt/revision", data=repair
+            )
+        if current.status in {"running", "needs_input"}:
+            requests._verify_claim(row, inp.claim_token, _setup_owner=True)
+        elif saved.status in {"running", "needs_input"}:
+            raise ConflictError("cached progress belongs to a finished setup attempt", data=repair)
+        elif saved.status != current.status or saved.revision != current.revision:
+            raise ConflictError("cached terminal report no longer matches its attempt", data=repair)
+        # Terminal reports revoke the live claim. The original token/intent is
+        # still checked by the saved digest above; its exact retry returns only
+        # this historical request, without reacquiring or mutating any successor.
+    return {key: value for key, value in cached.items() if key != SETUP_REPLAY_DIGEST_FIELD}
+
+
 async def project_setup_get(
     inp: ProjectSetupGetInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> ProjectSetupOut:
@@ -164,6 +264,8 @@ def operation_specs() -> list[OperationSpec]:
                     "question and repair context. "
                     "Raw retains report history.",
                     "Setup creates no business run, tracker task or native launch.",
+                    "Retry the same session and normalized request with the same key; "
+                    "only response_mode may change. Foreign/changed intent rejects before replay.",
                 ),
                 examples=(example,),
             )
