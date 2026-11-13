@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { callOperation } from '@/lib/operations'
-import { reorderTask, saveTaskPriority } from './taskBoard'
+import { placeTask, reorderTask, saveTaskPriority } from './taskBoard'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
 
@@ -16,9 +16,12 @@ describe('bounded Board operation client', () => {
     await saveTaskPriority(priority)
     const move = { ...base, anchor_task_key: 'hidden-neighbor', placement: 'before' as const }
     await reorderTask(move)
+    const placement = { ...base, board_column: 'backlog' as const }
+    await placeTask(placement)
     expect(vi.mocked(callOperation).mock.calls).toEqual([
       ['tracker.updateTaskPriority', priority, undefined], ['tracker.updateTaskPriority', priority, undefined],
       ['tracker.reorderTask', move, undefined],
+      ['tracker.placeTask', placement, undefined],
     ])
   })
 

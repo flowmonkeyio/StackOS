@@ -2213,6 +2213,16 @@ Storage access and parsing are guarded; absent, malformed or invalid records
 use the existing defaults. Storage failure leaves controls usable in memory.
 There are no Vue watchers or server/account preference settings.
 
+Saved version-2 task Status clauses use `board_column` identities in the same
+eight-column order. Ticket status clauses still use lifecycle values. On reading
+an older unversioned inclusion, Not started expands to Backlog/Todo/In progress/
+Stopped, In progress expands to Todo/In progress/Stopped, Deferred becomes
+Backlog and Complete becomes Done; other terminal values are retained. A legacy
+exclusion hides a column only if all its possible lifecycle cohorts were excluded.
+Ambiguous filters deliberately broaden so retained queued, deferred or stopped
+work is not silently lost when columns combine lifecycle values. The next explicit
+preference save records version 2. Per-project scope and hide-empty choices remain.
+
 | Preference | Meaning |
 | --- | --- |
 | Text | Substring across task and ticket/index search fields, case insensitive |
@@ -2224,7 +2234,7 @@ There are no Vue watchers or server/account preference settings.
 
 Missing status/completed choices default to Status is not Aborted and Completed
 Past week. Clear all saves empty clauses and Completed All, retaining the
-empty-column display choice. Complete selected explicitly with Completed None
+empty-column display choice. Done selected explicitly with Completed None
 reconciles to All in controls and storage readback.
 
 Filter edits do not navigate or create history entries. URL `view`, `task`,
@@ -2344,8 +2354,9 @@ The Work UI provides two views, Board and Graph. It renders:
   through loading, errors, editing and disclosure changes; the body scrolls
   while header and footer remain visible. The ticket list shows at most six
   40px rows in a 240px scrolling region, with every record reachable.
-  Board task cards and the map's explicit Task details action open a task
-  popup independently of the map selection. Ticket details inside it offer
+  Board task cards open that task's Graph in one click. Their existing card menu
+  and the map's explicit Task details action open a task popup independently of
+  the map selection. Ticket details inside it offer
   Back to task; View graph opens the map for that exact task. URL
   history preserves these identities, and unavailable tasks are explicit.
   Task-to-ticket inspection starts at the ticket heading; Back restores the

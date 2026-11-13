@@ -9,6 +9,7 @@ export type TrackerStatus =
   | 'failed'
   | 'skipped'
 export type TrackerNodeKind = 'task' | 'ticket' | 'group'
+export type BoardColumn = `${SchemaTrackerTaskOut['board_column']}`
 export type TrackerEdgeKind = 'contains' | 'dependency' | 'link'
 
 export type ActiveExecution = SchemaActiveExecutionOut
@@ -56,7 +57,7 @@ export interface TrackerPriority {
 }
 
 export interface TrackerTask {
-  board_column?: `${SchemaTrackerTaskOut['board_column']}`
+  board_column?: BoardColumn
   work_duration?: SchemaWorkDurationOut | null
   active_execution?: ActiveExecution | null
   id: number

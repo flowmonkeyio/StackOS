@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { UiButton, UiCheckbox, UiFormField, UiInput, UiSelect } from '@/components/ui'
-import { trackerStatus } from '@/design/status'
-import type { TrackerStatus } from '@/lib/task-tracker/types'
+import { boardColumnStatus, trackerStatus } from '@/design/status'
+import type { BoardColumn, TrackerStatus } from '@/lib/task-tracker/types'
 import type { TrackerSelectOption } from './viewTypes'
 import type { BoardFilterClause, BoardFilterField, FilterOperator, TaskPriority } from './boardFilters'
 
@@ -18,6 +18,7 @@ const values = ref<string[]>(props.clause && 'values' in props.clause ? [...prop
 const operator = ref<FilterOperator>(props.clause && 'operator' in props.clause ? props.clause.operator : 'is')
 const operators = [{ value: 'is', label: 'is' }, { value: 'is-not', label: 'is not' }]
 const statuses = Object.entries(trackerStatus).map(([value, status]) => ({ value, label: status.label }))
+const columns = Object.entries(boardColumnStatus).map(([value, status]) => ({ value, label: status.label }))
 const priorities = ['p0', 'p1', 'p2', 'p3'].map(value => ({ value, label: value.toUpperCase() }))
 const options = computed(() => props.field === 'workflow' ? props.workflowOptions : props.assigneeOptions)
 const singleOptions = computed(() => {
@@ -32,7 +33,7 @@ function toggle(value: string, checked: boolean): void {
 function apply(): void {
   switch (props.field) {
     case 'text': emit('apply', { field: 'text', value: value.value }); break
-    case 'status': emit('apply', { field: 'status', operator: operator.value, values: values.value as TrackerStatus[] }); break
+    case 'status': emit('apply', { field: 'status', operator: operator.value, values: values.value as BoardColumn[] }); break
     case 'priority': emit('apply', { field: 'priority', operator: operator.value, values: values.value as TaskPriority[] }); break
     case 'workflow': case 'assignee': emit('apply', { field: props.field, operator: operator.value, value: value.value }); break
     case 'ticket-status': emit('apply', { field: 'ticket-status', value: value.value as TrackerStatus }); break
@@ -69,7 +70,7 @@ function apply(): void {
       :aria-label="`${field} values`"
     >
       <UiCheckbox
-        v-for="option in field === 'status' ? statuses : priorities"
+        v-for="option in field === 'status' ? columns : priorities"
         :key="option.value"
         :label="option.label"
         :model-value="values.includes(option.value)"

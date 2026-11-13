@@ -562,9 +562,11 @@ useProjectScopedLoader({
         :hide-empty-columns="boardFilters.hideEmptyColumns"
         :selected-task-key="detailTaskKey"
         @open-task="openTaskDetail"
+        @open-graph="viewDependencies"
         @refresh="load()"
         @move="boardEdits.move"
         @priority="boardEdits.priority($event.taskKey, $event.priority)"
+        @place="boardEdits.place($event.taskKey, $event.boardColumn)"
       />
     </div>
     <template v-if="viewMode === 'graph' && snapshot">

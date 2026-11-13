@@ -87,6 +87,18 @@ export const trackerStatus = defineStatuses({
 });
 
 // Task execution metadata does not change its tracker/workflow lifecycle.
+// Ordered presentation of the repository's board_column, separate from lifecycle.
+export const boardColumnStatus = defineStatuses({
+  backlog: { label: 'Backlog', tone: 'neutral', icon: 'inbox' },
+  todo: { label: 'Todo', tone: 'neutral', icon: 'clock' },
+  'in-progress': { label: 'In progress', tone: 'info', icon: 'loader' },
+  stopped: { label: 'Stopped', tone: 'warning', icon: 'pause' },
+  done: { label: 'Done', tone: 'success', icon: 'check-circle' },
+  aborted: { label: 'Aborted', tone: 'danger', icon: 'circle-slash' },
+  failed: { label: 'Failed', tone: 'danger', icon: 'x-circle' },
+  skipped: { label: 'Skipped', tone: 'neutral', icon: 'skip-forward' },
+});
+
 export const deliveryStatus = defineStatuses({
   queued: { label: 'Delivery queued', tone: 'neutral', icon: 'clock' },
   running: { label: 'Delivering', tone: 'info', icon: 'loader', dot: true, inFlight: true },

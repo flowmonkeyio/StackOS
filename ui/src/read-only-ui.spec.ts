@@ -117,7 +117,7 @@ describe('restricted UI write contract', () => {
   it('keeps tracker calls limited to the bounded task content, Board and capacity owners', () => {
     const allowedOperations = new Map([
       [TASK_CONTENT_CONTROLLER, ['tracker.updateTaskContent']],
-      [TASK_BOARD_CLIENT, ['tracker.updateTaskPriority', 'tracker.reorderTask']],
+      [TASK_BOARD_CLIENT, ['tracker.updateTaskPriority', 'tracker.reorderTask', 'tracker.placeTask']],
       [CAPACITY_CONTROL, ['tracker.deliveryCapacity', 'tracker.setDeliveryCapacity']],
     ])
     const callers: string[] = []

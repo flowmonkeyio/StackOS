@@ -73,8 +73,22 @@ async function render(url = '/projects/7/tasks', realDialogs = false, realContro
 const popup = () => new DOMWrapper(document.body)
 
 describe('Work board navigation', () => {
+  it('opens Graph with one actual card click and retains task details through the existing menu', async () => {
+    const { wrapper, router, board, dialog } = await render('/projects/7/tasks', false, false, true)
+    await board().get('[data-task-key="task-a"] .tracker-board__open').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ view: 'graph', task: 'task-a' })
+    expect(dialog().props('modelValue')).toBe(false)
+    wrapper.findComponent({ name: 'UiSegmentedControl' }).vm.$emit('select', 'board')
+    await flushPromises()
+    await board().get('[data-task-key="task-a"] .tracker-board__priority').trigger('click')
+    await board().findAll('[role="menuitem"]').find(item => item.text() === 'Task details')!.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query.detail).toBe('task-a')
+    wrapper.unmount()
+  })
   it.each(['save-first', 'SSE-first', 'in-flight-covered', 'in-flight-stale'])('reconciles a batch revision once across %s and later independent events', async order => {
-    dataMock([taskA, { ...taskB, status: taskA.status, order_index: 1 }], [])
+    dataMock([taskA, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 1 }], [])
     const { wrapper, board } = await render()
     const read = mocks.callOperation.getMockImplementation()!
     const reads: Array<(value: TrackerSnapshot) => void> = []
@@ -88,7 +102,7 @@ describe('Work board navigation', () => {
       tracker_id: 1, rev, affected_task_keys: [taskA.key, taskB.key],
       affected_tasks: [taskA, taskB].map(task => ({ task_id: task.id, task_key: task.key, changed_fields: ['order_index'], url_path: `/projects/7/tasks?detail=${task.key}` })),
     } })
-    const next = (rev: number) => ({ ...trackerSnapshot([{ ...taskA, order_index: 1 }, { ...taskB, status: taskA.status, order_index: 0 }], []), tracker: { ...trackerSnapshot([], []).tracker, rev } })
+    const next = (rev: number) => ({ ...trackerSnapshot([{ ...taskA, order_index: 1 }, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 0 }], []), tracker: { ...trackerSnapshot([], []).tracker, rev } })
     const onEvent = mocks.stream.mock.calls.at(-1)![0].onEvent
     board().vm.$emit('move', { taskKey: taskA.key, anchorKey: taskB.key, placement: 'after' })
     const accepted = { data: { rev: 2, task: taskA, affected_task_keys: [taskA.key, taskB.key], changed: true, replayed: false, idempotency_key: 'test', request_sha256: 'test' }, project_id: 7, run_id: null }
@@ -308,7 +322,7 @@ describe('Work board navigation', () => {
   })
 
   it('reports save success separately from refresh failure, then reconciles by read without another mutation', async () => {
-    dataMock([taskA, { ...taskB, status: taskA.status, order_index: 1 }], [])
+    dataMock([taskA, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 1 }], [])
     const { wrapper, board, controls } = await render()
     const read = mocks.callOperation.getMockImplementation()!
     mocks.callOperation.mockImplementation((name, args) => {
@@ -331,7 +345,7 @@ describe('Work board navigation', () => {
   })
 
   it('retains the accepted revision across read errors and rejects a stale manual retry', async () => {
-    dataMock([taskA, { ...taskB, status: taskA.status, order_index: 1 }], [])
+    dataMock([taskA, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 1 }], [])
     const { wrapper, board, controls } = await render()
     const read = mocks.callOperation.getMockImplementation()!
     mocks.callOperation.mockImplementation((name, args) => {
@@ -359,7 +373,7 @@ describe('Work board navigation', () => {
   })
 
   it('discards an old project burst and pending save while the next project remains interactive', async () => {
-    dataMock([taskA, { ...taskB, status: taskA.status, order_index: 1 }], [])
+    dataMock([taskA, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 1 }], [])
     const { wrapper, router, board } = await render()
     const read = mocks.callOperation.getMockImplementation()!
     let finishRead!: (value: TrackerSnapshot) => void
@@ -389,7 +403,7 @@ describe('Work board navigation', () => {
   })
 
   it('shares save reconciliation with burst reads, retaining the optimistic move until the latest read', async () => {
-    dataMock([taskA, { ...taskB, status: taskA.status, order_index: 1 }], [])
+    dataMock([taskA, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 1 }], [])
     const { wrapper, board } = await render()
     const reads: Array<(value: TrackerSnapshot) => void> = []
     let finishSave!: (value: unknown) => void
@@ -405,25 +419,25 @@ describe('Work board navigation', () => {
     finishSave({ data: {} })
     await flushPromises()
     expect(reads).toHaveLength(1)
-    reads[0]!(trackerSnapshot([taskA, { ...taskB, status: taskA.status, order_index: 1 }], []))
+    reads[0]!(trackerSnapshot([taskA, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 1 }], []))
     await flushPromises()
     expect(board().props('rows').map((row: { key: string }) => row.key)).toEqual([taskB.key, taskA.key])
     expect(reads).toHaveLength(2)
     // A later burst may queue another read, but must not prolong this edit.
     onEvent({ id: 295, event_type: 'tracker.task.changed', metadata_json: { task_key: taskA.key } })
-    reads[1]!(trackerSnapshot([{ ...taskA, order_index: 1 }, { ...taskB, status: taskA.status, order_index: 0 }], []))
+    reads[1]!(trackerSnapshot([{ ...taskA, order_index: 1 }, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 0 }], []))
     await flushPromises()
     expect(reads).toHaveLength(3)
     expect(board().props('editPending')).toBe(false)
     expect(board().props('rows').map((row: { key: string }) => row.key)).toEqual([taskB.key, taskA.key])
     expect(mocks.callOperation.mock.calls.filter(([name]) => name === 'tracker.reorderTask')).toHaveLength(1)
-    reads[2]!(trackerSnapshot([{ ...taskA, order_index: 1 }, { ...taskB, status: taskA.status, order_index: 0 }], []))
+    reads[2]!(trackerSnapshot([{ ...taskA, order_index: 1 }, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 0 }], []))
     await flushPromises()
     wrapper.unmount()
   })
 
   it('settles Board edits while the separately loading graph stays slow', async () => {
-    dataMock([taskA, { ...taskB, status: taskA.status, order_index: 1 }], [])
+    dataMock([taskA, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 1 }], [])
     const { wrapper, board, router } = await render()
     const read = mocks.callOperation.getMockImplementation()!
     let finishSave!: (value: unknown) => void
@@ -451,7 +465,7 @@ describe('Work board navigation', () => {
   it('settles an acknowledged save after a refresh deadline and supports a later successful edit', async () => {
     vi.useRealTimers()
     vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] })
-    dataMock([taskA, { ...taskB, status: taskA.status, order_index: 1 }], [])
+    dataMock([taskA, { ...taskB, status: taskA.status, board_column: taskA.board_column, order_index: 1 }], [])
     const { wrapper, board, controls } = await render()
     const read = mocks.callOperation.getMockImplementation()!
     const signals: AbortSignal[] = []
@@ -746,7 +760,7 @@ describe('Work board navigation', () => {
     await flushPromises()
     controls().vm.$emit('update:display', { completed: 'none' })
     await flushPromises()
-    controls().vm.$emit('update:filter', { field: 'status', operator: 'is', values: ['complete'] })
+    controls().vm.$emit('update:filter', { field: 'status', operator: 'is', values: ['done'] })
     await flushPromises()
     expect(controls().props('boardFilters').completed).toBe('all')
     await router.push('/projects/7/tasks?work_entry=tickets:failed')
@@ -1415,6 +1429,7 @@ describe('Work board navigation', () => {
 
 function trackerTask(overrides: Partial<TrackerTask> = {}): TrackerTask {
   return {
+    board_column: overrides.status === 'complete' ? 'done' : overrides.status === 'deferred' ? 'backlog' : overrides.status === 'not-started' ? 'todo' : overrides.status ?? 'in-progress',
     id: 1,
     project_id: 7,
     tracker_id: 1,

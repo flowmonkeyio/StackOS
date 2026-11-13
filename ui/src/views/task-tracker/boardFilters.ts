@@ -1,11 +1,11 @@
-import { trackerStatus } from '@/design/status'
-import type { TrackerStatus } from '@/lib/task-tracker/types'
+import { boardColumnStatus, trackerStatus } from '@/design/status'
+import type { BoardColumn, TrackerStatus } from '@/lib/task-tracker/types'
 
 export type FilterOperator = 'is' | 'is-not'
 export type TaskPriority = 'p0' | 'p1' | 'p2' | 'p3'
 export type BoardFilterClause =
   | { field: 'text'; value: string }
-  | { field: 'status'; operator: FilterOperator; values: TrackerStatus[] }
+  | { field: 'status'; operator: FilterOperator; values: BoardColumn[] }
   | { field: 'priority'; operator: FilterOperator; values: TaskPriority[] }
   | { field: 'workflow'; operator: FilterOperator; value: string }
   | { field: 'assignee'; operator: FilterOperator; value: string }
@@ -27,6 +27,13 @@ export const completedOptions: { value: CompletedWindow; label: string }[] = [
   { value: 'none', label: 'None' },
 ]
 const statuses = Object.keys(trackerStatus) as TrackerStatus[]
+const columns = Object.keys(boardColumnStatus) as BoardColumn[]
+// v1 saved lifecycle filters. Expand split cohorts rather than losing stopped,
+// queued or deferred work; ticket-status filters retain their lifecycle values.
+const legacyColumns: Record<TrackerStatus, BoardColumn[]> = {
+  'not-started': ['backlog', 'todo', 'in-progress', 'stopped'], 'in-progress': ['todo', 'in-progress', 'stopped'],
+  complete: ['done'], deferred: ['backlog'], aborted: ['aborted'], failed: ['failed'], skipped: ['skipped'],
+}
 const priorities: TaskPriority[] = ['p0', 'p1', 'p2', 'p3']
 const clauseFields: BoardFilterField[] = ['text', 'status', 'priority', 'workflow', 'assignee', 'ticket-status', 'blocked']
 const text = (value: unknown): string => typeof value === 'string' ? value.trim() : ''
@@ -38,7 +45,8 @@ export function defaultBoardFilters(): BoardFilterState {
 /** Storage is untrusted. An invalid record leaves the existing defaults intact. */
 export function normalizeBoardFilters(value: unknown): BoardFilterState {
   if (!value || typeof value !== 'object') return defaultBoardFilters()
-  const state = value as Partial<BoardFilterState>
+  const state = value as Partial<BoardFilterState> & { version?: number }
+  if (state.version !== undefined && state.version !== 2) return defaultBoardFilters()
   if (!Array.isArray(state.clauses) || !completedOptions.some(option => option.value === state.completed)
     || typeof state.hideEmptyColumns !== 'boolean') return defaultBoardFilters()
   const clauses: BoardFilterClause[] = []
@@ -52,9 +60,14 @@ export function normalizeBoardFilters(value: unknown): BoardFilterState {
       if (!statuses.includes(clause.value)) return defaultBoardFilters()
       clauses.push({ field: clause.field, value: clause.value })
     } else if (clause.field === 'status' || clause.field === 'priority') {
-      const allowed: readonly string[] = clause.field === 'status' ? statuses : priorities
+      const allowed: readonly string[] = clause.field === 'status' ? (state.version === 2 ? columns : statuses) : priorities
       if (!Array.isArray(clause.values) || !clause.values.length || clause.values.some(item => !allowed.includes(item))) return defaultBoardFilters()
-      clauses.push({ ...clause, values: [...new Set(clause.values)] } as BoardFilterClause)
+      const values = clause.field === 'status' && state.version !== 2
+        ? clause.operator === 'is'
+          ? clause.values.flatMap(item => legacyColumns[item as TrackerStatus])
+          : columns.filter(column => statuses.filter(status => legacyColumns[status].includes(column)).every(status => (clause.values as readonly string[]).includes(status)))
+        : clause.values
+      if (values.length) clauses.push({ ...clause, values: [...new Set(values)] } as BoardFilterClause)
     } else {
       if (!text(clause.value)) return defaultBoardFilters()
       clauses.push({ ...clause })
@@ -69,7 +82,7 @@ export function readBoardFilters(projectId: number): BoardFilterState {
 }
 
 export function saveBoardFilters(projectId: number, state: BoardFilterState): void {
-  try { window.localStorage.setItem(`stackos:work-board-filters:${projectId}`, JSON.stringify(state)) }
+  try { window.localStorage.setItem(`stackos:work-board-filters:${projectId}`, JSON.stringify({ ...state, version: 2 })) }
   catch { /* Local preferences remain usable when storage is unavailable. */ }
 }
 
@@ -82,7 +95,7 @@ export function boardFiltersFromEntry(entry: unknown): BoardFilterState | null {
 }
 
 function reconcileBoardFilters(state: BoardFilterState): BoardFilterState {
-  const completeSelected = state.clauses.some(clause => clause.field === 'status' && clause.operator === 'is' && clause.values.includes('complete'))
+  const completeSelected = state.clauses.some(clause => clause.field === 'status' && clause.operator === 'is' && clause.values.includes('done'))
   return {
     ...state,
     clauses: clauseFields.flatMap(field => state.clauses.filter(clause => clause.field === field)),
@@ -111,7 +124,7 @@ export function clearBoardFilters(state: BoardFilterState): BoardFilterState {
 export function boardFilterLabel(clause: BoardFilterClause): string {
   switch (clause.field) {
     case 'text': return `Text: ${clause.value}`
-    case 'status': return `Status ${clause.operator === 'is-not' ? 'is not' : 'is'}: ${clause.values.map(value => trackerStatus[value].label).join(', ')}`
+    case 'status': return `Status ${clause.operator === 'is-not' ? 'is not' : 'is'}: ${clause.values.map(value => boardColumnStatus[value].label).join(', ')}`
     case 'priority': return `Priority ${clause.operator === 'is-not' ? 'is not' : 'is'}: ${clause.values.map(value => value.toUpperCase()).join(', ')}`
     case 'workflow': return `Workflow ${clause.operator === 'is-not' ? 'is not' : 'is'}: ${clause.value}`
     case 'assignee': return `Assignee ${clause.operator === 'is-not' ? 'is not' : 'is'}: ${clause.value}`
