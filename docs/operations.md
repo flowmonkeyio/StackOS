@@ -251,6 +251,15 @@ Add `template_key` for a workflow hint. Normal grants and approvals apply to
 any work the main agent chooses; enabled configuration alone is not evidence
 of desktop availability.
 
+## Task Board writes
+
+Task Board writes use `tracker.placeTask`, `tracker.updateTaskPriority` and
+`tracker.reorderTask` through the registered MCP/REST/CLI surfaces. Placement
+accepts only Backlog/Todo for eligible nonstarted work; reorder uses the shared
+projected Board column. Neither grants delivery execution authority. All retain
+strict snapshots, intent-bound idempotency and raw save receipts. See
+[Board membership and order writes](task-tracker.md#board-priority-and-order-writes).
+
 ## Local task admission capacity
 
 `tracker.deliveryCapacity` and `tracker.setDeliveryCapacity` use the same

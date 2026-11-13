@@ -49,6 +49,7 @@ from stackos.repositories.tracker.agent_stats import (
     query_task_agent_stats,
     query_ticket_agent_stats,
 )
+from stackos.repositories.tracker.board import task_columns
 from stackos.repositories.tracker.counts import query_ticket_counts
 from stackos.repositories.tracker.schema import (
     ActiveExecutionOut,
@@ -1017,6 +1018,7 @@ class TrackerQueryMixin:
         include_ticket_summary: bool = False,
     ) -> list[TrackerTaskOut]:
         summaries = self._task_ticket_summaries(tracker_id, rows) if include_ticket_summary else {}
+        columns = task_columns(self._s, rows)
         durations: dict[int, WorkDurationOut] = {}
         metrics = query_task_agent_stats(
             self._s,
@@ -1028,6 +1030,7 @@ class TrackerQueryMixin:
         return [
             TrackerTaskOut.model_validate(row).model_copy(
                 update={
+                    "board_column": columns[row.id],
                     "ticket_summary": summaries.get(row.id),
                     "agent_stats": metrics.get(_required_id(row.id, "task")),
                     "work_duration": durations.get(_required_id(row.id, "task")),

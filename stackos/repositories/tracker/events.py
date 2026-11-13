@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 from urllib.parse import quote
 
@@ -19,7 +20,9 @@ from stackos.repositories.tracker.agent_stats import (
     invocation_timing_facts,
     summarize_receipts,
 )
+from stackos.repositories.tracker.board import BoardColumn, task_columns
 from stackos.repositories.tracker.ordering import next_task_position
+from stackos.repositories.tracker.utils import _utcnow
 
 TRACKER_TASK_STATUS_CHANGED = "tracker.task.status_changed"
 TRACKER_TASK_CHANGED = "tracker.task.changed"
@@ -114,6 +117,17 @@ class TrackerEventMixin:
 
     _s: Session
 
+    def _record_task_board_entry(self, task: TrackerTask, old_column: BoardColumn) -> None:
+        column = task_columns(self._s, [task])[task.id]
+        if column == old_column:
+            return
+        task.order_index = next_task_position(
+            self._s, task.tracker_id, task.status, exclude_task_id=task.id, board_column=column
+        )
+        task.updated_at = max(_utcnow(), task.updated_at + timedelta(microseconds=1))
+        self._s.add(task)
+        self._record_tracker_task_change_event(task, ["board_column", "order_index"])
+
     def _record_tracker_tasks_change_event(
         self,
         *,
@@ -199,6 +213,7 @@ class TrackerEventMixin:
         reason: str | None = None,
         source: str | None = None,
         trigger_ticket: TrackerTicket | None = None,
+        old_column: BoardColumn | None = None,
     ) -> ProjectEvent | None:
         old_value = _status_value(old_status)
         new_value = _status_value(new_status)
@@ -207,10 +222,19 @@ class TrackerEventMixin:
 
         # Every canonical task status writer reaches this hook once, before
         # recording its snapshot. Same-status writes leave manual order intact.
-        task.order_index = next_task_position(
-            self._s, task.tracker_id, task.status, exclude_task_id=task.id
-        )
-        self._s.add(task)
+        current_column = task_columns(self._s, [task])[task.id]
+        if old_column is None:
+            previous = task.model_copy(update={"status": old_value})
+            old_column = task_columns(self._s, [previous])[task.id] if old_value else None
+        if old_column != current_column:
+            task.order_index = next_task_position(
+                self._s,
+                task.tracker_id,
+                task.status,
+                exclude_task_id=task.id,
+                board_column=current_column,
+            )
+            self._s.add(task)
 
         metadata: dict[str, Any] = {
             "entity_kind": "task",

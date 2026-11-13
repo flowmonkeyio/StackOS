@@ -607,6 +607,10 @@ class TrackerReorderTaskInput(TrackerTaskBoardInput):
     placement: Literal["before", "after"]
 
 
+class TrackerPlaceTaskInput(TrackerTaskBoardInput):
+    board_column: Literal["backlog", "todo"]
+
+
 class TrackerUpdateTaskContentInput(MCPInput):
     """Human content edits cannot supply tracker or workflow execution state."""
 
@@ -883,6 +887,7 @@ __all__ = [
     "TrackerNextInput",
     "TrackerPatchInput",
     "TrackerPickInput",
+    "TrackerPlaceTaskInput",
     "TrackerProjectInput",
     "TrackerRejectTaskInput",
     "TrackerReleaseInput",

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from stackos.db.models import (
     TrackerItemStatus,
@@ -217,6 +217,9 @@ class WorkDurationOut(BaseModel):
 
 
 class TrackerTaskOut(BaseModel):
+    board_column: Literal[
+        "backlog", "todo", "in-progress", "stopped", "done", "aborted", "failed", "skipped"
+    ] = Field(default="todo", description="Projected Board column; lifecycle status is unchanged.")
     active_execution: ActiveExecutionOut | None = None
     work_duration: WorkDurationOut | None = None
     model_config = ConfigDict(from_attributes=True)
@@ -254,6 +257,21 @@ class TrackerTaskOut(BaseModel):
             "Whole-task receipt metrics, including all tickets regardless of visible filters."
         ),
     )
+
+    @model_validator(mode="after")
+    def legacy_board_column(self) -> TrackerTaskOut:
+        # Old intent receipts predate this additive field. Reuse the same
+        # projection rather than replaying a fabricated Todo for terminal work.
+        if "board_column" not in self.model_fields_set:
+            from stackos.repositories.tracker.board import task_column
+
+            self.board_column = task_column(
+                self,
+                has_execution=bool(
+                    self.active_execution or (self.agent_stats and self.agent_stats.last_execution)
+                ),
+            )
+        return self
 
 
 class TaskDeliveryStateOut(BaseModel):

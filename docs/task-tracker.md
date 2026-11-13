@@ -1467,7 +1467,44 @@ and consumption remain separate claims.
 
 ## Board priority and order writes
 
-`tracker.updateTaskPriority` and `tracker.reorderTask` are strict, browser-safe
+Board membership is the repository's `TrackerTaskOut.board_column` projection.
+It does not replace the task/ticket lifecycle or run-plan authority. The columns
+are exactly Backlog, Todo, In progress, Stopped, Done, Aborted, Failed and Skipped:
+
+| Existing facts, evaluated in order | Column |
+| --- | --- |
+| `complete` | Done (`done`) |
+| `aborted`, `failed`, `skipped` | Aborted, Failed, Skipped |
+| `deferred`, retaining its resume owner/condition | Backlog |
+| Nonterminal, validated canonical delivery `stopped` | Stopped |
+| Delivery `queued`, no actual invocation recorded | Todo |
+| Delivery `queued` with a prior actual invocation, or delivery `running` | In progress |
+| Remaining lifecycle `in-progress` | In progress |
+| Remaining `not-started` with `lane_key=backlog` | Backlog |
+| Remaining `not-started` in any other lane | Todo |
+
+Absent live execution never means stopped. Queued membership uses recorded
+actual invocation events or canonical current/archive invocation receipts;
+workflow `started_at`, a pending launch or a saved session alone is insufficient.
+Already-started delivery waiting between calls stays In progress. Terminal
+lifecycle wins over retained delivery metadata. Deferred records retain their
+condition and map to Backlog even though their internal terminal lane is `done`.
+
+The existing `lane_key` owns explicit Backlog/Todo placement. Normal tracker
+setup includes a generic `backlog` lane; existing catalogs acquire a missing
+Backlog entry on the next setup write, preserving their other lanes and order.
+Legacy task rows are not rewritten: existing nonstarted lanes stay Todo until
+explicitly moved. No lifecycle enum, placement table or data migration is added.
+
+`tracker.placeTask` accepts only `board_column: backlog|todo` plus the same
+snapshot and retry fields as other Board intents. It changes only lane and
+arrival rank on `not-started` work without an open validated delivery handoff.
+Todo preserves an existing non-backlog lane; leaving Backlog selects the normal
+`implementation` lane. Deferred work requires its existing explicit resume
+authority first. Placement never launches, stops, resumes, reopens or finishes
+delivery or a workflow. Repeated same-column placement preserves manual order.
+
+`tracker.placeTask`, `tracker.updateTaskPriority` and `tracker.reorderTask` are strict, browser-safe
 operations exposed through the same registry to REST, CLI and MCP. They use
 the existing task `priority_key` and integer `order_index`, with no separate
 ranking store. The UI client is `lib/stackos/taskBoard.ts`.
@@ -1475,7 +1512,7 @@ ranking store. The UI client is `lib/stackos/taskBoard.ts`.
 Both require `project_id`, `task_key`, `expected_status`, `expected_updated_at`
 and a stable `idempotency_key`. Priority accepts only `priority_key: p0|p1|p2|p3`.
 Reorder accepts `anchor_task_key` and `placement: before|after`. The anchor
-must currently belong to the same project and status column as the moved task.
+must currently belong to the same project and projected Board column as the moved task.
 There is no lifecycle, ticket-priority or execution-policy payload. These direct
 tracker intents do not accept a run token or arbitrary patch fields.
 
@@ -1496,12 +1533,13 @@ No-op receipts still make retries stable. All changed ranks, revision, events
 and retry receipt commit together; the moved task's snapshot also advances when
 a tied integer remains unchanged but its relative position changes.
 
-New tasks and real task status transitions prepend to the full destination
+New tasks and genuine projected-column entries prepend to the full destination
 column using that same persisted rank. The repository reserves the SQLite
 writer before allocating a rank, so concurrent arrivals serialize. Direct
-patches, child-ticket rollups and workflow mirroring share the status-transition
-hook; same-status writes and title, usage or priority updates retain manual
-order. Arrival placement does not change priority or ticket scheduling.
+patches, delivery stop/resume metadata, child-ticket invocation receipts,
+rollups and workflow mirroring use the existing rank owner. Same-column writes
+and title, usage or priority updates retain manual order. Arrival placement does
+not change priority or ticket scheduling.
 
 Migration `0039_tracker_board_arrivals` normalizes existing untouched columns
 once. Complete tracker revisions, creation receipts and rank snapshots establish

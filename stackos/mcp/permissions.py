@@ -171,6 +171,7 @@ _SYSTEM_TOOLS: frozenset[str] = frozenset(
         "tracker.updateTask",
         "tracker.updateTaskPriority",
         "tracker.reorderTask",
+        "tracker.placeTask",
         "tracker.updateTicket",
         "tracker.patch",
         "tracker.pick",

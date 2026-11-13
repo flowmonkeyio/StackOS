@@ -19,6 +19,7 @@ from stackos.operations.tracker.schemas import (
     TrackerLinkRunPlanInput,
     TrackerPatchInput,
     TrackerPickInput,
+    TrackerPlaceTaskInput,
     TrackerRejectTaskInput,
     TrackerReleaseInput,
     TrackerReopenInput,
@@ -374,6 +375,20 @@ async def tracker_update_task_priority(
 
 async def tracker_reorder_task(
     inp: TrackerReorderTaskInput,
+    ctx: MCPContext,
+    _emitter: ProgressEmitter,
+) -> WriteEnvelope[TrackerTaskBoardOut]:
+    env = TrackerRepository(ctx.session).update_task_board(
+        **inp.model_dump(exclude={"run_token", "expected_etag", "response_mode"}),
+        actor="local-user:operator"
+        if str(ctx.extras.get("auth_scope")).startswith("ui-")
+        else None,
+    )
+    return WriteEnvelope[TrackerTaskBoardOut](data=env.data, project_id=env.project_id)
+
+
+async def tracker_place_task(
+    inp: TrackerPlaceTaskInput,
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> WriteEnvelope[TrackerTaskBoardOut]:

@@ -78,6 +78,7 @@ _SCALAR_KEEP_FIELDS = frozenset(
         "ok",
         "valid",
         "status",
+        "board_column",
         "state",
         "phase",
         "availability_status",
@@ -1084,6 +1085,7 @@ def _compact_tracker_task_rollup(task: Any, ticket: Any) -> dict[str, Any]:
         "task_key": _compact_value(task.get("key")),
         "status": status,
         "lane_key": _compact_value(task.get("lane_key")),
+        "board_column": _compact_value(task.get("board_column")),
         "completion_evidence_present": evidence_present,
     }
     if isinstance(ticket, dict):

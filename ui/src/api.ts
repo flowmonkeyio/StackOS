@@ -8130,6 +8130,42 @@ export interface components {
             /** Title */
             title: string | null;
         };
+        /** TrackerPlaceTaskInput */
+        TrackerPlaceTaskInput: {
+            /**
+             * Board Column
+             * @enum {string}
+             */
+            board_column: TrackerPlaceTaskInputBoard_column;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: null;
+            expected_status: components["schemas"]["TrackerItemStatus"];
+            /**
+             * Expected Updated At
+             * Format: date-time
+             */
+            expected_updated_at: string;
+            /** Idempotency Key */
+            idempotency_key: string;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Response Mode
+             * @default raw
+             * @enum {string}
+             */
+            response_mode: TrackerPlaceTaskInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: null;
+            /** Task Key */
+            task_key: string;
+        };
         /** TrackerPriorityOut */
         TrackerPriorityOut: {
             /** Key */
@@ -8332,6 +8368,13 @@ export interface components {
              * @default null
              */
             agent_stats: components["schemas"]["AgentStatsMetricsOut"] | null;
+            /**
+             * Board Column
+             * @description Projected Board column; lifecycle status is unchanged.
+             * @default todo
+             * @enum {string}
+             */
+            board_column: TrackerTaskOutBoard_column;
             /** Completed At */
             completed_at: string | null;
             /** Completion Evidence Json */
@@ -9964,6 +10007,7 @@ export type SchemaTrackerGraphNodeOut = components['schemas']['TrackerGraphNodeO
 export type SchemaTrackerGraphOut = components['schemas']['TrackerGraphOut'];
 export type SchemaTrackerLaneOut = components['schemas']['TrackerLaneOut'];
 export type SchemaTrackerLinkOut = components['schemas']['TrackerLinkOut'];
+export type SchemaTrackerPlaceTaskInput = components['schemas']['TrackerPlaceTaskInput'];
 export type SchemaTrackerPriorityOut = components['schemas']['TrackerPriorityOut'];
 export type SchemaTrackerReorderTaskInput = components['schemas']['TrackerReorderTaskInput'];
 export type SchemaTrackerSnapshotOut = components['schemas']['TrackerSnapshotOut'];
@@ -13738,6 +13782,15 @@ export enum TrackerLinkKind {
     action_call = "action-call",
     external = "external"
 }
+export enum TrackerPlaceTaskInputBoard_column {
+    backlog = "backlog",
+    todo = "todo"
+}
+export enum TrackerPlaceTaskInputResponse_mode {
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
 export enum TrackerReorderTaskInputPlacement {
     before = "before",
     after = "after"
@@ -13759,6 +13812,16 @@ export enum TrackerTaskActivityInputResponse_mode {
     raw = "raw",
     standard = "standard",
     verbose = "verbose"
+}
+export enum TrackerTaskOutBoard_column {
+    backlog = "backlog",
+    todo = "todo",
+    in_progress = "in-progress",
+    stopped = "stopped",
+    done = "done",
+    aborted = "aborted",
+    failed = "failed",
+    skipped = "skipped"
 }
 export enum TrackerTaskResultsInputResponse_mode {
     compact = "compact",

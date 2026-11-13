@@ -218,10 +218,19 @@ def test_board_schema_denies_lifecycle_and_unbounded_fields(api, project_id, ope
         assert response.status_code == 422, response.text
 
 
-def test_cli_board_call_reaches_real_rest_owner(api, project_id, monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    ("operation", "field", "value"),
+    [
+        ("tracker.updateTaskPriority", "priority_key", "p3"),
+        ("tracker.placeTask", "board_column", "backlog"),
+    ],
+)
+def test_cli_board_call_reaches_real_rest_owner(
+    api, project_id, monkeypatch, tmp_path, operation, field, value
+):
     task = _create(api, project_id, "cli-board")
     path = tmp_path / "intent.json"
-    path.write_text(json.dumps({**_arguments(task), "priority_key": "p3"}))
+    path.write_text(json.dumps({**_arguments(task), field: value}))
 
     def request(method, path, *, body=None, **kwargs):
         response = api.request(method, path, json=body)
@@ -229,11 +238,9 @@ def test_cli_board_call_reaches_real_rest_owner(api, project_id, monkeypatch, tm
         return response.json()
 
     monkeypatch.setattr(operation_cli, "_api_request", request)
-    result = CliRunner().invoke(
-        app, ["ops", "call", "tracker.updateTaskPriority", "--input", str(path)]
-    )
+    result = CliRunner().invoke(app, ["ops", "call", operation, "--input", str(path)])
     assert result.exit_code == 0, result.stdout
-    assert json.loads(result.stdout)["data"]["task"]["priority_key"] == "p3"
+    assert json.loads(result.stdout)["data"]["task"][field] == value
 
 
 def test_board_intents_cannot_reach_another_projects_task_or_anchor(api, project_id):
@@ -268,6 +275,69 @@ def test_board_intents_cannot_reach_another_projects_task_or_anchor(api, project
     )
     assert anchor.status_code == 409, anchor.text
     for candidate in (task, other):
+        current = api.post(
+            "/api/v1/operations/tracker.get/call",
+            json={
+                "arguments": {
+                    "project_id": candidate["project_id"],
+                    "task_key": candidate["key"],
+                    "response_mode": "raw",
+                }
+            },
+        ).json()["tasks"][0]
+        assert current == candidate
+
+
+def test_place_task_uses_scoped_browser_operation_without_lifecycle_authority(api, project_id):
+    task = _create(api, project_id, "place-local")
+    foreign = api.post(
+        "/api/v1/projects",
+        json={
+            "slug": "place-foreign",
+            "name": "Foreign",
+            "domain": "example.org",
+            "locale": "en-US",
+        },
+    ).json()["data"]["id"]
+    other = _create(api, foreign, "place-other")
+    token = derive_ui_token(api.headers["authorization"].removeprefix("Bearer "))
+    headers = {"authorization": f"Bearer {token}"}
+    path = "/api/v1/operations/tracker.placeTask/call"
+    denied = api.post(
+        path,
+        headers=headers,
+        json={
+            "arguments": {
+                **_arguments(other),
+                "project_id": project_id,
+                "board_column": "backlog",
+            }
+        },
+    )
+    assert denied.status_code == 404, denied.text
+    assert denied.json()["code"] == -32004
+    assert denied.json()["data"]["task_key"] == other["key"]
+    arguments = {**_arguments(task), "board_column": "backlog"}
+    saved = api.post(path, headers=headers, json={"arguments": arguments})
+    assert saved.status_code == 200, saved.text
+    data = saved.json()["data"]
+    assert data["task"]["board_column"] == data["task"]["lane_key"] == "backlog"
+    assert data["task"]["status"] == task["status"]
+    assert data["task"]["metadata_json"] is None
+    replay = api.post(path, headers=headers, json={"arguments": arguments})
+    assert replay.json()["data"]["replayed"] is True
+    extra = api.post(
+        path,
+        headers=headers,
+        json={
+            "arguments": {
+                **arguments,
+                "status": "in-progress",
+            }
+        },
+    )
+    assert extra.status_code == 422
+    for candidate in (data["task"], other):
         current = api.post(
             "/api/v1/operations/tracker.get/call",
             json={

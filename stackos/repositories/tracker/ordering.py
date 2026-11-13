@@ -6,6 +6,7 @@ from datetime import timedelta
 from typing import Any
 
 from sqlalchemy import func, update
+from sqlalchemy.orm import load_only
 from sqlmodel import Session, col, select
 
 from stackos.db.models import (
@@ -15,9 +16,61 @@ from stackos.db.models import (
     TrackerRevision,
     TrackerTask,
 )
+from stackos.repositories.tracker.board import TERMINAL_COLUMNS, BoardColumn, task_columns
 from stackos.repositories.tracker.utils import _utcnow
 
 NORMALIZATION_KIND = "board-arrivals-normalization"
+
+
+def task_column_rows(
+    session: Session,
+    tracker_id: int,
+    project_id: int,
+    column: BoardColumn,
+    *,
+    exclude_task_id: int | None = None,
+) -> list[TrackerTask]:
+    """Complete projected cohort, without decoding unrelated task content."""
+    statuses = {status for status, value in TERMINAL_COLUMNS.items() if value == column}
+    if column in {"backlog", "todo", "in-progress", "stopped"}:
+        statuses.add("not-started")
+    if column in {"todo", "in-progress", "stopped"}:
+        statuses.add("in-progress")
+    statement = (
+        select(TrackerTask)
+        .where(
+            TrackerTask.tracker_id == tracker_id,
+            TrackerTask.project_id == project_id,
+            col(TrackerTask.status).in_(statuses),
+        )
+        .options(
+            load_only(
+                *(
+                    getattr(TrackerTask, field)
+                    for field in (
+                        "project_id",
+                        "key",
+                        "status",
+                        "lane_key",
+                        "metadata_json",
+                        "order_index",
+                        "created_at",
+                        "updated_at",
+                    )
+                )
+            )
+        )
+        .order_by(
+            col(TrackerTask.order_index),
+            col(TrackerTask.created_at).desc(),
+            col(TrackerTask.id).desc(),
+        )
+    )
+    if exclude_task_id is not None:
+        statement = statement.where(TrackerTask.id != exclude_task_id)
+    tasks = list(session.exec(statement).all())
+    columns = task_columns(session, tasks)
+    return [task for task in tasks if columns[task.id] == column]
 
 
 def next_task_position(
@@ -26,6 +79,7 @@ def next_task_position(
     status: TrackerItemStatus,
     *,
     exclude_task_id: int | None = None,
+    board_column: BoardColumn | None = None,
 ) -> int:
     """Reserve the writer, then prepend to the complete destination column.
 
@@ -39,13 +93,40 @@ def next_task_position(
         .values(rev=col(TaskTracker.rev))
         .execution_options(synchronize_session=False)
     )
-    statement = select(func.min(TrackerTask.order_index)).where(
-        TrackerTask.tracker_id == tracker_id, TrackerTask.status == status
+    destination: BoardColumn
+    if board_column is not None:
+        destination = board_column
+    elif status == "not-started":
+        destination = "todo"
+    elif status == "in-progress":
+        destination = "in-progress"
+    else:
+        destination = TERMINAL_COLUMNS[status]
+    tracker = session.get(TaskTracker, tracker_id)
+    assert tracker is not None
+    terminal_status = next(
+        (
+            value
+            for value, column in TERMINAL_COLUMNS.items()
+            if column == destination and column != "backlog"
+        ),
+        None,
     )
-    if exclude_task_id is not None:
-        statement = statement.where(TrackerTask.id != exclude_task_id)
-    minimum = session.exec(statement).one()
-    return minimum - 1 if minimum is not None else 0
+    if terminal_status is not None:
+        minimum_query = select(func.min(TrackerTask.order_index)).where(
+            TrackerTask.tracker_id == tracker_id,
+            TrackerTask.project_id == tracker.project_id,
+            TrackerTask.status == terminal_status,
+        )
+        if exclude_task_id is not None:
+            minimum_query = minimum_query.where(TrackerTask.id != exclude_task_id)
+        minimum = session.exec(minimum_query).one()
+        return minimum - 1 if minimum is not None else 0
+    tasks = task_column_rows(
+        session, tracker_id, tracker.project_id, destination, exclude_task_id=exclude_task_id
+    )
+    first_rank = min((task.order_index for task in tasks), default=None)
+    return first_rank - 1 if first_rank is not None else 0
 
 
 def normalize_default_columns(session: Session) -> list[dict[str, Any]]:
