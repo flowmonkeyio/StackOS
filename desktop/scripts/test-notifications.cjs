@@ -7,8 +7,10 @@ const path = require("node:path");
 const http = require("node:http");
 const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
+const vm = require("node:vm");
 const { parseStackosDeepLink, resolveStackosDeepLink, stackosTaskDeepLink } = require("../src/deep-links");
-const { createNotificationController, notificationType, readNotificationState, writeNotificationState } = require("../src/notifications");
+const { createNotificationController, notificationType, notificationPresentation, registerNotificationIpc,
+  readNotificationState, writeNotificationState } = require("../src/notifications");
 
 class FakeNotification {
   static instances = [];
@@ -16,6 +18,7 @@ class FakeNotification {
   constructor(options) { this.options = options; this.handlers = {}; FakeNotification.instances.push(this); }
   on(name, handler) { this.handlers[name] = handler; }
   show() { this.shown = true; }
+  close() { this.closed = true; this.handlers.close?.(); }
 }
 
 const roots = [];
@@ -55,6 +58,8 @@ async function unitTests() {
   assert.equal(notificationType(change(1, "complete", "complete")), null);
   assert.equal(notificationType(change(1, null)), null);
   assert.equal(notificationType(change(1, "in-progress", "in-progress")), null);
+  assert.equal(notificationType(change(1, "in-progress", "in-progress", {
+    approval_status: "pending", requires_input: true })), null);
   assert.equal(notificationType(change(1, "in-progress", "in-progress", {
     before_delivery_status: "running", after_delivery_status: "stopped" })), "stopped");
   assert.equal(notificationType(change(1, "in-progress", "failed", {
@@ -180,7 +185,120 @@ async function unitTests() {
   assert.equal(FakeNotification.instances.length, before);
   assert.equal(readNotificationState(slowDir).projectRevisionCursors["1"], 0);
   controller.stop();
+  await presentationTests();
   await serviceTransport();
+}
+
+async function presentationTests() {
+  const catalog = [
+    ["complete", "Task complete", "Work · Project", "success"],
+    ["stopped", "Task needs attention", "Work stopped · Project", "warning"],
+    ["failed", "Task failed", "Work · Project", "danger"]
+  ];
+  for (const [type, title, body, tone] of catalog) {
+    assert.deepEqual(notificationPresentation(page(1), change(1), type), {
+      projectId: 1, taskId: 9, taskKey: "work", revision: 1,
+      title, body, tone, actionLabel: "Open task"
+    });
+  }
+  const long = notificationPresentation({ project_name: "😀".repeat(200) },
+    { task_title: "A\n\t" + "B".repeat(500) }, "stopped");
+  assert.equal(Array.from(long.body).length, 211);
+  assert.ok(!long.body.includes("\n"));
+  assert.ok(!long.body.includes("\ufffd"));
+  const missing = notificationPresentation({}, { task_key: "internal-key" }, "complete");
+  assert.equal(missing.body, "Task · Project");
+
+  let current = page(0);
+  const service = {
+    authenticatedJsonGet: async () => ({ items: [{ id: 1 }] }),
+    authenticatedJsonPost: async (url) => url.includes("tracker.get")
+      ? { tasks: [{ project_id: 1, id: 9, key: "work" }] } : current
+  };
+  const notices = [];
+  const { controller, opened } = setup({ service, onNotice: (notice) => notices.push(notice) });
+  await controller.pollOnce();
+  current = page(1, [change(1)]);
+  await controller.pollOnce();
+  const first = FakeNotification.instances.at(-1);
+  current = page(2, [change(2, "in-progress", "in-progress", { after_delivery_status: "stopped" })]);
+  await controller.pollOnce();
+  assert.equal(first.closed, true);
+  assert.deepEqual(notices.map((n) => n.tone), ["success", "warning"]);
+  await controller.pollOnce();
+  assert.equal(notices.length, 2);
+  const latest = FakeNotification.instances.at(-1);
+  latest.handlers.failed();
+  assert.equal(notices.at(-1).nativeStatus, "failed");
+  assert.equal(controller.state.nativeStatus, "failed");
+  controller.stop();
+  const count = notices.length;
+  latest.handlers.failed();
+  assert.equal(notices.length, count, "late native failure after stop must not publish");
+
+  // Both native-unavailable and native-failed paths retain in-app delivery,
+  // checkpoint the event and suppress it on replay.
+  for (const Notification of [class { static isSupported() { return false; } },
+    class { static isSupported() { return true; } constructor() { throw new Error("disabled"); } }]) {
+    const received = [];
+    current = page(0);
+    const fallback = setup({ service, Notification, onNotice: (notice) => received.push(notice) }).controller;
+    await fallback.pollOnce();
+    current = page(1, [change(1)]);
+    assert.equal((await fallback.pollOnce()).ok, true);
+    await fallback.pollOnce();
+    assert.equal(received.length, 1);
+    assert.ok(["unsupported", "failed"].includes(received[0].nativeStatus));
+  }
+
+  // Exercise the real notification IPC caller with the controller's real target
+  // validation, including foreign frame/window denies without reads/navigation.
+  const handlers = {};
+  const sent = [];
+  const frame = { url: "http://127.0.0.1:5180/projects/1" };
+  const contents = { mainFrame: frame, send: (...args) => sent.push(args) };
+  const window = { isDestroyed: () => false, webContents: contents };
+  const publish = registerNotificationIpc({
+    ipcMain: { handle: (channel, fn) => { handlers[channel] = fn; } },
+    controller, getWindow: () => window, trustedUrl: "http://127.0.0.1:5180/"
+  });
+  const open = handlers["stackos:notifications:open-task"];
+  const target = { projectId: 1, taskId: 9, taskKey: "work" };
+  assert.equal((await open({ sender: contents, senderFrame: frame }, target)).ok, true);
+  assert.equal(opened.length, 1);
+  for (const event of [{ sender: {}, senderFrame: frame },
+    { sender: contents, senderFrame: { url: frame.url } },
+    { sender: contents, senderFrame: null }]) {
+    assert.equal((await open(event, target)).ok, false);
+  }
+  frame.url = "https://foreign.test/";
+  assert.equal((await open({ sender: contents, senderFrame: frame }, target)).ok, false);
+  publish(notices[0]);
+  assert.equal(sent.length, 0);
+  frame.url = "http://127.0.0.1:5180/";
+  assert.equal((await open({ sender: contents, senderFrame: frame }, { ...target, projectId: 2 })).ok, false);
+  assert.equal(opened.length, 1);
+  publish(notices[0]);
+  assert.equal(sent[0][0], "stackos:notifications:task");
+
+  let exposed;
+  let listener;
+  let removed;
+  const invokes = [];
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../src/preload.js"), "utf8"), {
+    require: () => ({ contextBridge: { exposeInMainWorld: (_name, api) => { exposed = api; } },
+      ipcRenderer: { on: (_channel, fn) => { listener = fn; },
+        removeListener: (_channel, fn) => { removed = fn; },
+        invoke: (...args) => { invokes.push(args); } } })
+  });
+  let received;
+  const unsubscribe = exposed.onTaskNotice((notice) => { received = notice; });
+  listener({ privateElectronEvent: true }, notices[0]);
+  assert.equal(received, notices[0]);
+  exposed.openNotificationTask(target);
+  assert.deepEqual(invokes[0], ["stackos:notifications:open-task", target]);
+  unsubscribe();
+  assert.equal(removed, listener);
 }
 
 async function transportClient() {
@@ -224,7 +342,8 @@ async function integrationFixture() {
   const fixture = JSON.parse(fs.readFileSync(0, "utf8"));
   let phase = 0;
   let target = fixture.snapshot;
-  const { controller, dir, opened } = setup({ service: {
+  const notices = [];
+  const { controller, dir, opened } = setup({ onNotice: (notice) => notices.push(notice), service: {
     authenticatedJsonGet: async () => fixture.projects,
     authenticatedJsonPost: async (url, body) => {
       if (url.includes("tracker.get")) return target;
@@ -239,6 +358,10 @@ async function integrationFixture() {
   assert.equal((await controller.pollOnce()).ok, true);
   assert.deepEqual(FakeNotification.instances.map((item) => item.options.title),
     ["Task needs attention", "Task needs attention", "Task complete", "Task failed"]);
+  assert.deepEqual(notices.map((item) => item.tone), ["warning", "warning", "success", "danger"]);
+  assert.ok(notices.every((item, index) => item.projectId === fixture.project_id &&
+    item.actionLabel === "Open task" && item.body === FakeNotification.instances[index].options.body &&
+    !item.body.includes("private") && item.body.length < 230));
   await FakeNotification.instances[0].handlers.click();
   assert.deepEqual(opened, [stackosTaskDeepLink(fixture.project_id, "work")]);
   target = fixture.missing;

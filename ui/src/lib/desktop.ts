@@ -16,6 +16,18 @@ export interface DesktopHealth {
   [key: string]: unknown
 }
 
+export interface DesktopTaskNotice {
+  projectId: number
+  taskId: number
+  taskKey: string
+  revision: number
+  title: string
+  body: string
+  tone: 'success' | 'warning' | 'danger'
+  actionLabel: string
+  nativeStatus: 'system-controlled' | 'unsupported' | 'failed'
+}
+
 export interface DesktopStatus {
   health?: DesktopHealth | null
   command?: { mode?: string; [key: string]: unknown } | null
@@ -139,6 +151,8 @@ export type DesktopBackupAction =
   | 'restoreBackup'
 
 interface DesktopBridge {
+  onTaskNotice?(listener: (notice: DesktopTaskNotice) => void): () => void
+  openNotificationTask?(target: Pick<DesktopTaskNotice, 'projectId' | 'taskId' | 'taskKey'>): Promise<DesktopCommandResult>
   status(): Promise<DesktopStatus>
   installOrRepair(): Promise<DesktopCommandResult>
   restartService(): Promise<DesktopCommandResult>
@@ -186,6 +200,9 @@ function runBackupAction(action: DesktopBackupAction): Promise<DesktopBackupResu
 }
 
 export const desktop = {
+  onTaskNotice: (listener: (notice: DesktopTaskNotice) => void): (() => void) => bridge()?.onTaskNotice?.(listener) ?? (() => {}),
+  openNotificationTask: (target: Pick<DesktopTaskNotice, 'projectId' | 'taskId' | 'taskKey'>) =>
+    safe((b) => b.openNotificationTask?.(target) ?? Promise.resolve({ ok: false })),
   isShell: isDesktopShell,
   status: () => safe((b) => b.status()),
   installOrRepair: () => safe((b) => b.installOrRepair()),

@@ -1,9 +1,10 @@
-// Toast store — global error / success / info toasts.
+// Shared toast queue. Optional stable keys replace a notice in place, and
+// optional actions stay with the caller. Attention notices may pass a zero TTL.
 //
 // Constraints (deliberate, terse on purpose):
 // - Auto-dismiss after 5 s.
 // - At most 3 stacked: oldest is evicted when a 4th arrives.
-// - Caller can pass `kind: 'error' | 'success' | 'info'` and an optional
+// - Caller can pass `kind: 'error' | 'success' | 'warning' | 'info'` and an optional
 //   `detail` string for a second line.
 // - Toasts are addressable via the returned `id` so a caller can dismiss
 //   programmatically (e.g. once a long-running save finishes).
@@ -11,9 +12,15 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 
-export type ToastKind = 'error' | 'success' | 'info'
+export type ToastKind = 'error' | 'success' | 'info' | 'warning'
 
-export interface Toast {
+interface ToastOptions {
+  key?: string
+  actionLabel?: string
+  onAction?: () => void
+}
+
+export interface Toast extends ToastOptions {
   id: number
   kind: ToastKind
   title: string
@@ -29,10 +36,16 @@ export const useToastsStore = defineStore('toasts', () => {
   const timers = new Map<number, ReturnType<typeof setTimeout>>()
   let nextId = 1
 
-  function add(kind: ToastKind, title: string, detail?: string, ttlMs = DEFAULT_TTL_MS): number {
-    const id = nextId++
-    const toast: Toast = { id, kind, title, detail, createdAt: Date.now() }
-    items.value.push(toast)
+  function add(kind: ToastKind, title: string, detail?: string, ttlMs = DEFAULT_TTL_MS, options: ToastOptions = {}): number {
+    const existing = options.key ? items.value.find((t) => t.key === options.key) : undefined
+    const id = existing?.id ?? nextId++
+    const toast: Toast = { id, kind, title, detail, createdAt: Date.now(), ...options }
+    if (existing) {
+      const timer = timers.get(id)
+      if (timer !== undefined) clearTimeout(timer)
+      timers.delete(id)
+      items.value.splice(items.value.indexOf(existing), 1, toast)
+    } else items.value.push(toast)
     while (items.value.length > MAX_STACK) {
       const evicted = items.value.shift()
       if (evicted) {

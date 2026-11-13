@@ -57,8 +57,22 @@ function notificationType(change) {
 }
 
 function label(value, fallback) {
-  const clean = typeof value === "string" ? value.replace(/[\x00-\x1f\x7f]/g, " ").trim() : "";
-  return (clean || fallback).slice(0, 200);
+  const clean = typeof value === "string" ? value.replace(/[\x00-\x1f\x7f]/g, " ").replace(/\s+/g, " ").trim() : "";
+  const chars = Array.from(clean || fallback);
+  return chars.length > 100 ? `${chars.slice(0, 99).join("")}…` : chars.join("");
+}
+
+function notificationPresentation(project, change, type) {
+  const titles = { complete: "Task complete", stopped: "Task needs attention", failed: "Task failed" };
+  const tones = { complete: "success", stopped: "warning", failed: "danger" };
+  const task = label(change.task_title, "Task");
+  const name = label(project.project_name, "Project");
+  return {
+    projectId: project.project_id, taskId: change.task_id, taskKey: change.task_key,
+    revision: change.rev, title: titles[type],
+    body: `${task}${type === "stopped" ? " stopped" : ""} · ${name}`,
+    tone: tones[type], actionLabel: "Open task"
+  };
 }
 
 function operationData(payload) {
@@ -67,7 +81,7 @@ function operationData(payload) {
 }
 
 function createNotificationController({
-  service, Notification, openDeepLink, userDataPath,
+  service, Notification, openDeepLink, userDataPath, onNotice,
   pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
   setIntervalFn = setInterval, clearIntervalFn = clearInterval
 }) {
@@ -80,12 +94,15 @@ function createNotificationController({
     typeof persisted.projectRevisionCursors === "object" && !Array.isArray(persisted.projectRevisionCursors)
     ? { ...persisted.projectRevisionCursors } : {};
   const state = {
-    enabled: supported, status: supported ? "idle" : "unsupported",
+    enabled: supported || typeof onNotice === "function", status: "idle",
+    nativeStatus: supported ? "supported" : "unsupported",
     lastError: null, lastPollAt: null, projectCount: 0, notifiedCount: 0
   };
   let timer = null;
   let pollInFlight = null;
   let generation = 0;
+  const nativeNotices = new Map();
+  if (!state.enabled) state.status = "unsupported";
 
   function checkpoint(projectId, rev) {
     cursors[String(projectId)] = rev;
@@ -101,33 +118,67 @@ function createNotificationController({
     }).then(operationData);
   }
 
-  async function openTarget(projectId, change, deepLink) {
+  async function openTask(target) {
+    const { projectId, taskId, taskKey } = target || {};
+    const deepLink = positiveId(projectId) && positiveId(taskId) && stackosTaskDeepLink(projectId, taskKey);
+    if (!deepLink) return { ok: false, reason: "Task is no longer available" };
     try {
       const snapshot = await callOperation("tracker.get", {
-        project_id: projectId, task_key: change.task_key, task_index_only: true,
+        project_id: projectId, task_key: taskKey, task_index_only: true,
         include_graph: false, projection: "ui", metric_demand: { task_keys: [] }
       });
-      const task = snapshot?.tasks?.find((item) => item.id === change.task_id &&
-        item.project_id === projectId && item.key === change.task_key);
-      if (task) openDeepLink(deepLink);
+      const task = snapshot?.tasks?.find((item) => item.id === taskId &&
+        item.project_id === projectId && item.key === taskKey);
+      if (task) {
+        openDeepLink(deepLink);
+        return { ok: true };
+      }
     } catch (_error) {
       // Missing/foreign/reused targets or service loss cannot select other work.
     }
+    return { ok: false, reason: "Task is no longer available" };
   }
 
   function showNotification(project, change, type) {
     const deepLink = positiveId(change.task_id) && stackosTaskDeepLink(project.project_id, change.task_key);
     if (!deepLink) return;
-    const titles = { complete: "Task complete", stopped: "Task needs attention", failed: "Task failed" };
-    const task = label(change.task_title, change.task_key);
-    const name = label(project.project_name, `Project ${project.project_id}`);
-    const notification = new Notification({
-      title: titles[type], body: `${task}${type === "stopped" ? " stopped" : ""} · ${name}`, silent: false
-    });
-    if (typeof notification.on === "function") {
-      notification.on("click", () => openTarget(project.project_id, change, deepLink));
+    const notice = notificationPresentation(project, change, type);
+    const key = `${notice.projectId}:${notice.taskId}`;
+    const epoch = generation;
+    let nativeStatus = supported ? "system-controlled" : "unsupported";
+    const publish = () => { if (epoch === generation) onNotice?.({ ...notice, nativeStatus }); };
+    if (supported) {
+      const previous = nativeNotices.get(key);
+      nativeNotices.delete(key);
+      try {
+        previous?.close?.();
+        // macOS supplies the native layout and the packaged StackOS app icon.
+        const notification = new Notification({ title: notice.title, body: notice.body, silent: false });
+        nativeNotices.set(key, notification);
+        while (nativeNotices.size > 3) {
+          const oldest = nativeNotices.keys().next().value;
+          nativeNotices.get(oldest)?.close?.();
+          nativeNotices.delete(oldest);
+        }
+        if (typeof notification.on === "function") {
+          notification.on("click", () => openTask(notice));
+          notification.on("close", () => {
+            if (nativeNotices.get(key) === notification) nativeNotices.delete(key);
+          });
+          notification.on("failed", () => {
+            if (epoch !== generation || nativeNotices.get(key) !== notification) return;
+            state.nativeStatus = "failed";
+            nativeStatus = "failed";
+            publish();
+          });
+        }
+        notification.show();
+      } catch (_error) {
+        state.nativeStatus = "failed";
+        nativeStatus = "failed";
+      }
     }
-    notification.show();
+    publish();
     state.notifiedCount += 1;
   }
 
@@ -226,10 +277,33 @@ function createNotificationController({
     return { ok: true, state };
   }
 
-  return { state, pollOnce, start, stop };
+  return { state, pollOnce, start, stop, openTask };
+}
+
+function registerNotificationIpc({ ipcMain, controller, getWindow, trustedUrl }) {
+  function trusted(event) {
+    const window = getWindow();
+    try {
+      return window && !window.isDestroyed() && event.sender === window.webContents &&
+        event.senderFrame === window.webContents.mainFrame &&
+        new URL(event.senderFrame.url).origin === new URL(trustedUrl).origin;
+    } catch (_error) { return false; }
+  }
+  ipcMain.handle("stackos:notifications:open-task", (event, target) => {
+    if (!trusted(event)) return { ok: false, reason: "Untrusted notification action" };
+    return controller.openTask(target);
+  });
+  return (notice) => {
+    const window = getWindow();
+    if (window && trusted({ sender: window.webContents, senderFrame: window.webContents.mainFrame })) {
+      try { window.webContents.send("stackos:notifications:task", notice); }
+      catch (_error) { /* A closing renderer must not replay the native notice. */ }
+    }
+  };
 }
 
 module.exports = {
   DEFAULT_POLL_INTERVAL_MS, activeProjectIds, createNotificationController,
-  notificationStatePath, notificationType, readNotificationState, writeNotificationState
+  notificationStatePath, notificationType, notificationPresentation, readNotificationState,
+  writeNotificationState, registerNotificationIpc
 };

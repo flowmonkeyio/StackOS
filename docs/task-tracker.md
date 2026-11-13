@@ -1854,6 +1854,29 @@ reads perform no navigation, rather than selecting another task by default.
 The native macOS adapter/visuals remain the existing owner; presentation proof
 belongs with changes to the presentation surface.
 
+The same controller forwards its bounded presentation to the trusted desktop
+renderer's existing toast queue, without another read loop or notification
+history. Both surfaces use the catalog wording above and retain project/task
+identity; each name is normalized and limited to 100 Unicode characters with
+an ellipsis. Missing names use “Task”/“Project”, never internal keys or IDs.
+Native macOS notifications use the packaged StackOS app identity/icon and system
+layout. New notices replace a retained native/toast notice for the same task;
+the active presentation is bounded to three notices. In-app completion is
+success-toned and expires after five seconds; stopped is warning-toned and
+failure is danger-toned, both retained until dismissed or replaced. `UiToast`
+owns the accessible severity, wrapping and “Open task” action. That action uses
+the same exact-target revalidation as a native click, via main-frame-only IPC.
+An unavailable task produces a readable in-app message without changing target.
+
+Native support is not proof of permission or visible delivery: macOS notification
+settings, Focus and system policy control display. The controller reports native
+support/failure separately from polling, keeps in-app delivery available when the
+native adapter is unsupported or fails, and does not retry historical events to
+work around system settings. It cannot detect a silently disabled macOS banner.
+Plain browser and older desktop shells without the subscription remain unchanged.
+There is no dedicated approval notice until an authoritative actionable source
+exists; a future pending approval is never presented as a current request.
+
 The browser UI consumes selected-task status changes through the project
 timeline stream:
 

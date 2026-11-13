@@ -15,6 +15,8 @@ import ProjectRenameDialog from '@/components/ProjectRenameDialog.vue'
 import ProjectDeleteDialog from '@/components/ProjectDeleteDialog.vue'
 import PluginNavRenderer from '@/components/renderers/PluginNavRenderer.vue'
 import UiIcon from '@/components/ui/UiIcon.vue'
+import UiToast from '@/components/ui/UiToast.vue'
+import { useTaskNotifications } from '@/composables/useTaskNotifications'
 import { useProjectNavigation } from '@/composables/useProjectNavigation'
 import { useAuthStore } from '@/stores/auth'
 import { useToastsStore } from '@/stores/toasts'
@@ -22,6 +24,7 @@ import { useToastsStore } from '@/stores/toasts'
 const auth = useAuthStore()
 const toasts = useToastsStore()
 const route = useRoute()
+useTaskNotifications()
 
 const { items: toastItems } = storeToRefs(toasts)
 const {
@@ -102,28 +105,6 @@ function closeDrawer(): void {
 
 function dismissToast(id: number): void {
   toasts.dismiss(id)
-}
-
-const TOAST_TONE = {
-  error: {
-    icon: 'x-circle',
-    iconClass: 'text-danger',
-    barClass: 'bg-danger',
-  },
-  success: {
-    icon: 'check-circle',
-    iconClass: 'text-success',
-    barClass: 'bg-success',
-  },
-  info: {
-    icon: 'info',
-    iconClass: 'text-info',
-    barClass: 'bg-info',
-  },
-} as const
-
-function toastTone(kind: string) {
-  return TOAST_TONE[kind as keyof typeof TOAST_TONE] ?? TOAST_TONE.info
 }
 
 const isAuthErrorRoute = computed(() => route.name === 'auth-error')
@@ -339,49 +320,21 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
     >
       <ul
         v-if="toastItems.length > 0"
-        class="pointer-events-none fixed inset-x-4 top-3 z-toast mx-auto flex max-w-sm flex-col gap-2 sm:left-auto sm:right-4 sm:mx-0"
-        aria-live="polite"
+        class="pointer-events-none fixed inset-x-4 top-3 z-toast mx-auto flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2 sm:left-auto sm:right-4 sm:mx-0"
       >
         <li
           v-for="t in toastItems"
           :key="t.id"
-          role="status"
-          class="toast-enter pointer-events-auto relative overflow-hidden rounded-lg border border-default bg-bg-surface p-3 pl-4 text-sm shadow-lg"
+          class="toast-enter"
         >
-          <span
-            :class="['absolute inset-y-0 left-0 w-1', toastTone(t.kind).barClass]"
-            aria-hidden="true"
+          <UiToast
+            :tone="t.kind === 'error' ? 'danger' : t.kind"
+            :title="t.title"
+            :description="t.detail"
+            :action-label="t.actionLabel"
+            @action="t.onAction?.()"
+            @dismiss="dismissToast(t.id)"
           />
-          <div class="flex items-start gap-2.5">
-            <UiIcon
-              :name="toastTone(t.kind).icon"
-              :class="['mt-0.5 h-4 w-4 shrink-0', toastTone(t.kind).iconClass]"
-              aria-hidden="true"
-            />
-            <div class="min-w-0 flex-1">
-              <div class="font-medium text-fg-strong">
-                {{ t.title }}
-              </div>
-              <div
-                v-if="t.detail"
-                class="mt-0.5 text-xs text-fg-muted"
-              >
-                {{ t.detail }}
-              </div>
-            </div>
-            <button
-              type="button"
-              class="focus-ring -m-1 rounded-sm p-1 text-fg-subtle transition-colors duration-fast hover:text-fg-default"
-              :aria-label="`Dismiss ${t.title}`"
-              @click="dismissToast(t.id)"
-            >
-              <UiIcon
-                name="close"
-                class="h-3.5 w-3.5"
-                aria-hidden="true"
-              />
-            </button>
-          </div>
         </li>
       </ul>
 
