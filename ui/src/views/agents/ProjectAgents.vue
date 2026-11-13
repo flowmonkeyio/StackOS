@@ -255,7 +255,7 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
           </button>
         </div>
         <p
-          v-else-if="projectDir && !error"
+          v-else-if="projectDir && (loaded || !error)"
           class="rounded-lg border border-default p-6 text-sm text-fg-muted"
         >
           {{ search ? 'No matching agents.' : 'No project agents yet. Add an agent to create its project file.' }}

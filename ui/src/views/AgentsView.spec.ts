@@ -25,6 +25,16 @@ function setup(items = [row]) {
 }
 afterEach(() => { wrapper?.unmount(); vi.resetAllMocks() })
 describe('Agents list and native editor', () => {
+  it('keeps the accepted empty presentation mounted when a list refresh fails', async () => {
+    const w = setup([]); await flushPromises()
+    const empty = w.findAll('p').find(node => node.text().includes('No project agents yet'))!.element
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation((name, args) => name === 'projectAgent.list'
+      ? Promise.reject(new Error('Temporary list failure')) : basics(name, args))
+    await w.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click'); await flushPromises()
+    expect(w.findAll('p').find(node => node.text().includes('No project agents yet'))?.element).toBe(empty)
+    expect(w.text()).toContain('Temporary list failure')
+  })
   it('retains the editor, draft and list through guarded same-folder refresh and transient failure', async () => {
     const w = setup(); await flushPromises()
     await w.get('.agent-row').trigger('click'); await flushPromises()
