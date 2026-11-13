@@ -43,7 +43,7 @@ describe('continuous Home task rows', () => {
     } finally { wrapper.unmount() }
   })
 
-  it('discloses the full execution identity and owner on focus without navigating or showing the row tooltip', async () => {
+  it('keeps text hints and focused execution details without a full-row hover or focus tooltip', async () => {
     vi.useFakeTimers()
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
     await router.push('/')
@@ -57,8 +57,18 @@ describe('continuous Home task rows', () => {
         wrapper.get<HTMLElement>(selector).element.focus()
         await vi.advanceTimersByTimeAsync(350)
       }
+      const link = wrapper.get('a')
+      expect(link.attributes('title')).toBeUndefined()
+      expect(link.attributes('aria-label')).toBe(`Open task graph: ${task.project.name} · ${task.title} · ${task.goal}`)
+      expect(wrapper.get('.active-task-row__project').attributes('title')).toBe(task.project.name)
+      expect(wrapper.get('.active-task-row__title').attributes('title')).toBe(task.title)
+      expect(wrapper.get('.active-task-row__goal').attributes('title')).toBe(task.goal)
+      await link.trigger('mouseenter')
+      await vi.advanceTimersByTimeAsync(350)
+      expect(wrapper.find('[role="tooltip"]').exists()).toBe(false)
+      await link.trigger('mouseleave')
       await focus('a')
-      expect(wrapper.get('[role="tooltip"]').text()).toContain(task.title)
+      expect(wrapper.find('[role="tooltip"]').exists()).toBe(false)
       await focus('.active-execution-line')
       expect(wrapper.findAll('[role="tooltip"]')).toHaveLength(1)
       expect(wrapper.get('[role="tooltip"]').text()).toContain(model)
@@ -68,8 +78,7 @@ describe('continuous Home task rows', () => {
       await wrapper.setProps({ task: activeTaskFixture({ delivery: null, agent_stats: null, owner }) })
       expect(wrapper.get('[role="tooltip"]').text()).toBe(`Assigned: ${owner}`)
       await focus('a')
-      expect(wrapper.findAll('[role="tooltip"]')).toHaveLength(1)
-      expect(wrapper.get('[role="tooltip"]').text()).toContain(task.title)
+      expect(wrapper.find('[role="tooltip"]').exists()).toBe(false)
     } finally { wrapper.unmount() }
   })
 

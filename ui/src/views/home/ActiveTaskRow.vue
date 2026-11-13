@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import type { SchemaActiveTaskOut } from '@/api'
 import AgentUsageSummary from '@/components/domain/AgentUsageSummary.vue'
 import ActiveExecutionLine from '@/components/domain/ActiveExecutionLine.vue'
-import { UiBadge, UiIcon, UiTooltip } from '@/components/ui'
+import { UiBadge, UiIcon } from '@/components/ui'
 import TaskPriorityBadge from '@/views/task-tracker/TaskPriorityBadge.vue'
 import { isAutomaticDeliveryTask, taskDeliveryState } from '@/lib/task-tracker/delivery'
 import { executionStatus } from '@/lib/task-tracker/execution'
@@ -25,93 +25,84 @@ const fullText = computed(() => `${props.global ? `${props.task.project.name} ·
 
 <template>
   <li class="active-task-row">
-    <UiTooltip
-      :content="fullText"
-      class="active-task-row__tooltip"
+    <RouterLink
+      :to="destination"
+      class="active-task-row__link focus-ring-inset"
+      :aria-label="`Open task graph: ${fullText}`"
     >
-      <RouterLink
-        :to="destination"
-        class="active-task-row__link focus-ring-inset"
-        :aria-label="`Open task graph: ${fullText}`"
-        :title="fullText"
-      >
-        <span class="active-task-row__identity">
-          <span
-            v-if="global"
-            class="active-task-row__project"
-            :title="task.project.name"
-          >{{ task.project.name }}</span>
-          <span
-            class="active-task-row__title"
-            :title="task.title"
-          >{{ task.title }}</span>
-          <span
-            class="active-task-row__goal"
-            :class="{ 'text-warning-fg': delivery?.reason }"
-            :title="subtitle"
-          >{{ subtitle || '\u00a0' }}</span>
-          <span class="active-task-row__facts">
-            <TaskPriorityBadge :priority="task.priority_key" />
-            <span class="active-task-row__automated">
-              <UiBadge
-                v-if="automated"
-                tone="info"
-              >Automated</UiBadge>
-            </span>
-            <span
-              class="active-task-row__completion"
-              :aria-label="`${completion} tickets complete`"
-              :title="`${completion} tickets complete`"
-            >
-              <UiIcon
-                name="tasks"
-                :size="14"
-                aria-hidden="true"
-              />{{ completion }}
-            </span>
+      <span class="active-task-row__identity">
+        <span
+          v-if="global"
+          class="active-task-row__project"
+          :title="task.project.name"
+        >{{ task.project.name }}</span>
+        <span
+          class="active-task-row__title"
+          :title="task.title"
+        >{{ task.title }}</span>
+        <span
+          class="active-task-row__goal"
+          :class="{ 'text-warning-fg': delivery?.reason }"
+          :title="subtitle"
+        >{{ subtitle || '\u00a0' }}</span>
+        <span class="active-task-row__facts">
+          <TaskPriorityBadge :priority="task.priority_key" />
+          <span class="active-task-row__automated">
             <UiBadge
-              :tone="state.tone"
-              dot
-              variant="outline"
-            >{{ state.label }}</UiBadge>
+              v-if="automated"
+              tone="info"
+            >Automated</UiBadge>
           </span>
-        </span>
-        <span class="active-task-row__usage">
-          <AgentUsageSummary
-            v-if="automated"
-            :metrics="task.agent_stats"
-            :active="!!task.active_execution"
-            compact
-          />
           <span
-            v-else
-            class="sr-only"
-          >Manual task; automated usage is not applicable.</span>
+            class="active-task-row__completion"
+            :aria-label="`${completion} tickets complete`"
+            :title="`${completion} tickets complete`"
+          >
+            <UiIcon
+              name="tasks"
+              :size="14"
+              aria-hidden="true"
+            />{{ completion }}
+          </span>
+          <UiBadge
+            :tone="state.tone"
+            dot
+            variant="outline"
+          >{{ state.label }}</UiBadge>
         </span>
-        <ActiveExecutionLine
-          :item="task"
-          :execution="task.active_execution"
-          :last-execution="automated ? task.agent_stats?.last_execution : null"
-          :owner="task.owner ?? 'Unassigned'"
-          class="active-task-row__execution"
-          focusable
+      </span>
+      <span class="active-task-row__usage">
+        <AgentUsageSummary
+          v-if="automated"
+          :metrics="task.agent_stats"
+          :active="!!task.active_execution"
+          compact
         />
-        <UiIcon
-          class="active-task-row__arrow"
-          name="chevron-right"
-          :size="16"
-          aria-hidden="true"
-        />
-      </RouterLink>
-    </UiTooltip>
+        <span
+          v-else
+          class="sr-only"
+        >Manual task; automated usage is not applicable.</span>
+      </span>
+      <ActiveExecutionLine
+        :item="task"
+        :execution="task.active_execution"
+        :last-execution="automated ? task.agent_stats?.last_execution : null"
+        :owner="task.owner ?? 'Unassigned'"
+        class="active-task-row__execution"
+        focusable
+      />
+      <UiIcon
+        class="active-task-row__arrow"
+        name="chevron-right"
+        :size="16"
+        aria-hidden="true"
+      />
+    </RouterLink>
   </li>
 </template>
 
 <style scoped>
 .active-task-row + .active-task-row { border-top: 1px solid var(--color-border-subtle); }
-.active-task-row__tooltip { display: block; width: 100%; }
-.active-task-row__tooltip > :deep(.ui-tooltip__bubble) { white-space: normal; width: max-content; max-width: min(32rem, calc(100vw - 32px)); overflow-wrap: anywhere; }
-.active-task-row__tooltip:has(.active-execution-line:hover, .active-execution-line:focus) > :deep(.ui-tooltip__bubble) { display: none; }
 .active-task-row__link { display: grid; grid-template-columns: minmax(0, 1fr) 240px 270px 16px; gap: 24px; align-items: center; min-height: 112px; padding: 12px 8px; color: var(--color-fg-default); text-decoration: none; }
 .active-task-row__link:hover { background: var(--color-bg-surface-alt); }
 .active-task-row__identity { min-width: 0; display: grid; grid-template-rows: 20px 20px 28px; align-content: center; }
