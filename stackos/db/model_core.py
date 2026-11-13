@@ -41,6 +41,8 @@ class Project(SQLModel, table=True):
     is_active: bool = Field(default=False)
     cleanup_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
     schedule_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    setup_reminder_dismissed_at: datetime | None = None
+    update_reminder_dismissed_at: datetime | None = None
     # Optional reverse link: bindings still own their project; exclude this edge
     # from metadata's creation order to avoid a cyclic table-sort dependency.
     primary_workspace_binding_id: int | None = Field(
@@ -51,6 +53,23 @@ class Project(SQLModel, table=True):
         ),
     )
     created_at: datetime = Field(default_factory=_utcnow, nullable=False)
+    updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
+
+
+class ProjectSetupReceipt(SQLModel, table=True):
+    """Current verified setup and latest observation; not a source version registry."""
+
+    __tablename__ = "project_setup_receipts"
+    __table_args__ = (UniqueConstraint("project_id", "workflow_key"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    project_id: int = Field(
+        sa_column=Column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    )
+    workflow_key: str = Field(max_length=200)
+    revision: int = Field(default=0)
+    successful_json: dict[str, Any] | None = Field(default=None, sa_column=Column(JSON))
+    latest_result_json: dict[str, Any] = Field(default_factory=dict, sa_column=Column(JSON))
     updated_at: datetime = Field(default_factory=_utcnow, nullable=False)
 
 
@@ -303,5 +322,6 @@ __all__ = [
     "Plugin",
     "Project",
     "ProjectPlugin",
+    "ProjectSetupReceipt",
     "Provider",
 ]

@@ -146,6 +146,27 @@ primitive.
 
 ## Common Flows
 
+- Ordinary project goals: inspect repository intent and existing setup, then select
+  the applicable configured workflow by its outcome and boundaries. Users need not
+  name workflows. Follow current project methods for substantive work; answer
+  harmless questions directly. If a newly relevant goal needs workflow setup,
+  resolve it from the current catalog and use the shared infrastructure method
+  within the user's authority before execution. Ask only for missing intent or
+  material conflicts, not a workflow-name questionnaire.
+- Setup/update from either entrypoint: read `projectSetup.get` and follow its
+  `guidance_ref` to `workflowTemplate.authoringGuide` with `response_mode=raw`.
+  Its `project_setup_method` owns the shared agent prompt, bounded inputs,
+  setup/update mode instructions, compact notices, concrete questions and result
+  wording. Use those instructions together with the guide's three-phase protocol,
+  materialization policy and completion contract; do not maintain another prompt.
+  Inspect before `projectSetup.start`; adopt verified legacy setup without invented
+  versions or forced rewrites. Compare previous applied sources, current local
+  choices and new effective sources on update. Preserve compatible overrides and
+  the full applicable source obligations, mapping roles/rules to exact targets and
+  evidence. Material unresolved loss cannot complete. Keep independent successes
+  and partial edits truthful through `projectSetup.report`; source changes do not
+  prove installed or loaded activation. A startup notice is advisory and does not
+  block an ordinary question or authorize setup writes/business execution.
 - Person asks what to do after installation: call `toolbox.call` for
   `guide.gettingStarted` with `response_mode=raw`. This global read is allowed
   before workspace binding. Answer from the returned content and always link

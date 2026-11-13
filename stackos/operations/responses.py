@@ -518,6 +518,47 @@ def _compact_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, 
         (out.get("data") or out).pop("body", None)
         return out
     if spec.name in {
+        "projectSetup.start",
+        "projectSetup.report",
+        "projectSetup.cancel",
+        "projectSetup.answer",
+        "projectSetup.continue",
+    }:
+        out = _base_payload(spec, payload)
+        body = copy.deepcopy(data)
+        out["data"] = body
+        attempt = body.get("attempt", body)
+        attempt.pop("reports", None)
+        return out
+    if spec.name in {"projectSetup.get", "projectSetup.setReminders"}:
+        out = _base_payload(spec, payload)
+        out["data"] = {
+            key: copy.deepcopy(value) for key, value in data.items() if key != "workflows"
+        }
+        if isinstance(out["data"].get("current_attempt"), dict):
+            out["data"]["current_attempt"].pop("reports", None)
+        workflows = data.get("workflows", [])
+        out["data"]["workflow_count"] = len(workflows)
+        out["data"]["workflows"] = [
+            {
+                key: item.get(key)
+                for key in (
+                    "workflow_key",
+                    "receipt_id",
+                    "revision",
+                    "status",
+                    "diagnostic",
+                    "latest_status",
+                    "partial_changes",
+                    "attempt_ref",
+                    "result_ref",
+                )
+            }
+            for item in workflows[:25]
+        ]
+        out["data"]["workflows_truncated"] = len(workflows) > 25
+        return out
+    if spec.name in {
         "tracker.taskActivity",
         "tracker.taskResults",
         "tracker.activeTasks",
@@ -763,6 +804,11 @@ def _compact_operation_summary(item: dict[str, Any]) -> dict[str, Any]:
 def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
     if not isinstance(data, dict):
         return {"value": data}
+    if operation_name == "workspace.startSession":
+        out = _compact_mapping(data)
+        out["agent_session_id"] = data.get("id")
+        out["project_setup"] = copy.deepcopy(data.get("project_setup"))
+        return out
     if operation_name in {"project.delete", "project.reconcileFileOwnership"}:
         # These typed bounded receipts are already the complete repair contract.
         return copy.deepcopy(data)
@@ -1264,7 +1310,19 @@ def _compact_workflow_authoring_guide(data: dict[str, Any]) -> dict[str, Any]:
         "setup_completion_contract",
         "canonical_operations",
     )
-    return {key: _compact_value(data[key]) for key in keys if key in data}
+    out = {key: _compact_value(data[key]) for key in keys if key in data}
+    method = data.get("project_setup_method")
+    if isinstance(method, dict):
+        # Prompt consumers must fetch the complete instructions, never a clipped prompt.
+        out["project_setup_method"] = {
+            "version": method.get("version"),
+            "modes": list(method.get("mode_prompts", {})),
+            "guidance_ref": {
+                "tool_name": "workflowTemplate.authoringGuide",
+                "arguments": {"response_mode": "raw"},
+            },
+        }
+    return out
 
 
 def _compact_agent_preset_list(data: dict[str, Any]) -> dict[str, Any]:

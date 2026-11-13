@@ -528,6 +528,23 @@ about separately from StackOS permissions.
 
 ## Setup Path
 
+Ordinary goals activate the applicable configured method after the agent inspects
+project intent and current setup. Select from workflow outcomes/use boundaries,
+without asking users for workflow names. A harmless question needs no business
+run. For newly relevant methods, use `workflowTemplate.authoringGuide` and its
+`project_setup_method` within current setup authority. That owner supplies the
+shared setup/update prompt, bounded mode inputs, notices and question/result
+wording for both existing-session and managed entrypoints. Startup notices are
+advisory; they do not grant writes or prevent answering ordinary questions.
+
+Inspect and adopt valid legacy adaptations without inventing prior versions.
+For updates compare previous applied sources, current local choices and new
+effective sources. Preserve compatible choices and all applicable operating rules,
+including declared resilience/authority obligations. Bind role and source-obligation
+coverage to exact targets and checks through `projectSetup.report`; material loss
+prevents that workflow's success while independent work can finish. Prove actual
+loading separately from saved-source syntax and installed state.
+
 Project and workspace are separate concepts. A project is the durable StackOS
 container for tasks, tickets, workflows, credentials refs, resources, run
 plans, communications, and audit. A workspace is the daemon-owned binding from

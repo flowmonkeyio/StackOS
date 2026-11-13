@@ -180,6 +180,7 @@ class AgentCapabilities:
     sandboxes: tuple[AgentSandbox, ...] = ()
     review_sandbox: AgentSandbox | None = None
     models: tuple[str, ...] = ()
+    recommended_model: str | None = None
     custom_models: bool = False
     provider_selection: bool = False
     profile_selection: bool = False

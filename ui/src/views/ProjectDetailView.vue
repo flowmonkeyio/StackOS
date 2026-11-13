@@ -23,7 +23,7 @@ const project = computed(() => projects.getById(projectId.value))
 
 // The Home console (project-home) renders its own page chrome, so this shell
 // steps aside for it and only wraps the configuration tabs.
-const isHome = computed<boolean>(() => route.name === 'project-home')
+const isHome = computed<boolean>(() => route.name === 'project-home' || route.name === 'project-setup')
 
 const activeKey = computed<string>(() => {
   const name = String(route.name ?? '')

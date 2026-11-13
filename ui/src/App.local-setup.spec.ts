@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import App from './App.vue'
 import appRouter from './router'
+import ProjectSetupView from './views/project-setup/ProjectSetupView.vue'
 import {
   AgentStatsCoverageOutClassification_status,
   AgentStatsCoverageOutUsage_status,
@@ -243,9 +244,13 @@ it.each([null, 7])(
   },
 )
 
-it('removes project Setup while retaining app and project configuration routes', () => {
+it('keeps project setup a bounded Home child while retaining app and configuration routes', () => {
   const paths = appRouter.getRoutes().map((route) => route.path)
-  expect(paths).not.toContain('/projects/:id/setup')
+  const setup = appRouter.getRoutes().find(route => route.name === 'project-setup')
+  expect(setup?.path).toBe('/projects/:id/setup')
+  expect(setup?.components?.default).toBe(ProjectSetupView)
+  // The removed generic configuration page is not restored. Existing sidebar
+  // assertions above still prohibit a standalone project Setup destination.
   expect(appRouter.hasRoute('project-detail-setup')).toBe(false)
   expect(paths).toEqual(expect.arrayContaining([
     '/setup',

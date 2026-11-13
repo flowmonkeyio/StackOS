@@ -35,6 +35,7 @@ class HostMcpAgentExecutionOut(BaseModel):
     sandboxes: list[AgentSandbox]
     review_sandbox: AgentSandbox | None
     models: list[str]
+    recommended_model: str | None = None
     custom_models: bool
     provider_selection: bool
     profile_selection: bool

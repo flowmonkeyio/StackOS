@@ -10,6 +10,12 @@ function plugin(slug: string, order = 10, enabled = true): SchemaPluginOut {
 }
 
 describe('project navigation', () => {
+  it('keeps Home selected only for its bounded setup child', () => {
+    const home = coreNavSections(7)[0]!.items[0]!
+    expect(isStackOsNavItemActive(home, '/projects/7/setup')).toBe(true)
+    expect(isStackOsNavItemActive(home, '/projects/7/tasks')).toBe(false)
+    expect(isStackOsNavItemActive(home, '/projects/8/setup')).toBe(false)
+  })
   it('connects the primary and Setup destinations without category pages', () => {
     const sections = coreNavSections(7)
     expect(sections.map(section => section.items.map(item => [item.label, item.to]))).toEqual([

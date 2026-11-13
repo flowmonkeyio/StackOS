@@ -275,6 +275,17 @@ class ProjectCleanupService:
             )
         ).all()
         if any(
+            (setup := (r.metadata_json or {}).get("project_setup", {})).get("managed")
+            and (
+                setup["managed"].get("slot_reserved")
+                or setup.get("status") in {"queued", "running"}
+            )
+            for r in claim
+        ):
+            # Native retirement, not an expired request lease, releases setup's
+            # writer reservation. Restart may have lost the in-memory handle.
+            blockers.append("managed_setup")
+        if any(
             r.claim_expires_at is None
             or r.claim_expires_at > datetime.now(UTC).replace(tzinfo=None)
             for r in claim

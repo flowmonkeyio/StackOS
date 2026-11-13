@@ -51,6 +51,7 @@ EXPECTED_NAMESPACES = {
     "operation",
     "pattern",
     "project",
+    "projectSetup",
     "provider",
     "resource",
     "run",

@@ -336,7 +336,7 @@ def test_pattern_bundle_interrupted_migration_retries_without_losing_identity(
     assert current_alembic_version(settings) == "0044_patterns"
     upgrade_to_head(settings)
     upgrade_to_head(settings)
-    assert current_alembic_version(settings) == "0046_pattern_key_index"
+    assert current_alembic_version(settings) == "0047_patterns_setup_merge"
     with sqlite3.connect(settings.db_path) as db:
         assert (
             db.execute(
@@ -442,7 +442,7 @@ def test_pattern_catalog_stamp_recovery_completes_schema_before_http_reads(
             db.execute("UPDATE alembic_version SET version_num=?", (stamp,))
     for startup in range(2):
         with TestClient(create_app(settings), base_url="http://127.0.0.1:5199") as api:
-            assert current_alembic_version(settings) == "0046_pattern_key_index"
+            assert current_alembic_version(settings) == "0047_patterns_setup_merge"
             headers = {"Authorization": f"Bearer {settings.token_path.read_text().strip()}"}
             response = api.post(
                 "/api/v1/operations/pattern.list/call", json={"arguments": {}}, headers=headers
@@ -492,7 +492,7 @@ def test_pattern_current_create_all_stamp_preserves_bundled_ownership(tmp_path):
         db.execute("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
         db.execute("INSERT INTO alembic_version VALUES ('0001_initial_empty')")
     upgrade_to_head(settings)
-    assert current_alembic_version(settings) == "0046_pattern_key_index"
+    assert current_alembic_version(settings) == "0047_patterns_setup_merge"
     engine = make_engine(settings.db_path)
     try:
         with Session(engine) as session:

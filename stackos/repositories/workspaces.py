@@ -180,6 +180,7 @@ class AgentSessionOut(BaseModel):
     needs_connect: bool = False
     auto_bootstrap: bool = False
     global_session: bool = False
+    project_setup: dict[str, Any] | None = None
     project_was_created: bool | None = None
     binding_was_created: bool | None = None
     candidate_workspaces: list[NamedWorkspaceCandidateOut] = Field(default_factory=list)
@@ -692,6 +693,7 @@ class WorkspaceRepository:
                 data=AgentSessionOut.model_validate(row).model_copy(
                     update={
                         "global_session": True,
+                        "project_setup": self._project_setup_summary(project_id),
                         "needs_connect": not selected,
                         "candidate_workspaces": resolution.candidate_workspaces,
                         "candidate_projects": resolution.candidate_projects if not selected else [],
@@ -795,7 +797,15 @@ class WorkspaceRepository:
                     "next_step": resolution.next_step,
                 }
             )
+        out.project_setup = self._project_setup_summary(row.project_id)
         return Envelope(data=out, project_id=row.project_id)
+
+    def _project_setup_summary(self, project_id: int | None) -> dict[str, Any] | None:
+        if project_id is None:
+            return None
+        from stackos.repositories.project_setup import ProjectSetupRepository
+
+        return ProjectSetupRepository(self._s).startup_summary(project_id)
 
     def _project_candidates(self) -> list[WorkspaceProjectCandidateOut]:
         page = ProjectRepository(self._s).list(active_only=False, limit=10)

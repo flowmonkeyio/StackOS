@@ -188,6 +188,172 @@ Ordinary deletion confirmation and editable artifact metadata cannot grant
 custody. After reconciliation, retry `project.delete` with the original ID/slug;
 its operation ID is preserved, including across restart.
 
+## Project setup receipts and reminders
+
+`projectSetup.get({"project_id": 1})` reads shared setup status without launching
+an agent or changing completion. Optional `workflow_key` selects detail while
+project counts remain aggregate. The bound MCP bridge injects and fences project
+scope. Directoryless projects return `ineligible` with no update count; a selected
+unavailable folder returns `folder_unavailable`, retained evidence/preferences and
+an actionable folder diagnostic. Existing adaptations without receipts are unknown.
+
+Compact/raw modes are supported; ack is refused. Compact keeps project eligibility,
+counts, permanent reminder timestamps, workflow receipt IDs/revisions, latest outcome,
+partial-change flags, attempt/result refs and `detail_ref` for full evidence. Raw
+includes receipt-owned source snapshots, role/obligation mappings, checked readiness,
+activation status and the latest partial result. Source identity never proves
+installed activation. Missing source evidence remains diagnostic uncertainty.
+
+`projectSetup.setReminders` is a browser-safe local-admin REST/CLI operation,
+unavailable over agent MCP. For example:
+
+```json
+{"project_id": 1, "dismiss_setup": true, "dismiss_updates": false}
+```
+
+Each true field permanently stamps only its own preference; omitted/false fields
+preserve existing dismissals. Rename, later versions and opening setup do not reset
+them. This operation changes neither setup success nor quiet update counts.
+See [applied evidence](workflow-templates.md#applied-setup-evidence) for the checked
+result contract.
+
+`workspace.startSession` also returns `project_setup`: a compact projection of the
+selected project's eligibility, setup/update counts, current attempt reference,
+repair diagnostics and shared `workflowTemplate.authoringGuide` reference. Profile
+readiness remains separate. Startup creates no setup request, native invocation,
+workflow run or tracker task, and does not edit local guidance. An unselected global
+session has no project summary; selected global calls still require explicit project
+IDs. A summary neither changes workspace binding nor grants filesystem access.
+
+`projectSetup.start` supports existing-session agent-MCP entry and authenticated
+console REST entry with `entry_kind: "managed_ui"`. `projectSetup.report` remains
+agent-MCP only; CLI cannot start setup. Existing-session entry uses
+the session ID returned by startup (`id` in raw; `agent_session_id` in compact).
+The bridge injects and fences `client_session_id`; it must match that session and
+project. For example, through `toolbox.call`:
+
+```json
+{"tool_name":"projectSetup.start","arguments":{"session_id":123,"mode":"setup","workflow_keys":["engineering.tracked-delivery"],"idempotency_key":"setup-this-session"}}
+```
+
+The agent chooses workflows under the shared guide and inspects unknown legacy
+adaptations before deciding what to change. `start` serializes admission with the
+project owner and returns one typed `AgentRequest.metadata_json.project_setup`
+namespace (schema version 1). It records mode, entry kind, stable attempt/root
+request refs, current request/predecessor refs, session/runtime/thread lineage,
+selected workflows, observed receipt revisions, progress, outcomes and question.
+No alternate queue, workflow run or native launch is created. Generic request
+create/claim/release/prepare/link/complete/ignore operations cannot own this namespace.
+Unknown legacy setup requests require inspection, rather than being presumed absent.
+
+The first start returns a claim token for its executing session. Keep it private
+in that session; do not put it in artifacts or guidance. Use a stable idempotency
+key to recover the original response after an uncertain retry. A concurrent start
+attaches as an observer to the existing attempt and receives no writer token.
+Attach does not replace the owner, change its workflow selection or grant report
+authority. There is no expired-lease takeover of setup work.
+
+Setup replay rechecks the bound session and original normalized request before
+returning any cached response. The key binds the session, attempt, token, expected
+revision and complete report; changing only `response_mode` preserves an exact
+retry, including compact-to-raw recovery. Foreign or changed-intent reuse returns
+structured repair context and never exposes the owner's token. A cached start is
+usable only while its original attempt/claim remains active. Exact terminal-report
+retries return that historical request without restoring its claim or changing a
+successor; cached running progress cannot represent a finished attempt. Older cache
+entries lacking original-intent evidence reject for inspection.
+
+`projectSetup.report` requires that session, token, `request_id` and the expected
+attempt revision. Its typed `report` includes a status, bounded progress message
+and evidence ref, optional checked workflow results, and a concrete question only
+for `needs_input`. Each workflow result carries `workflow_key`, its expected receipt
+revision and the existing `SetupResult` proof contract, with the exact attempt ref.
+Successful workflow writes advance only after source, role, obligation and readiness
+validation. Failed/unfinished outcomes retain prior success and possible partial
+edits. A report is atomic; a stale/foreign/invalid item changes neither attempt nor
+receipts. Attempt success additionally requires current verified success for every
+selected workflow, including a source/receipt freshness recheck at completion.
+
+Existing-session questions carry `question_id`, `revision`, `prompt`, affected
+`workflow_keys`, `answer_state: "pending"` and `response_channel: "existing_agent"`.
+The agent asks and receives answers in that session, then reports subsequent work.
+Home can display the question and status without promising an external conversation
+link or accepting a browser answer for this entry kind. Report history retains
+question/progress/result refs; sibling native execution metadata stays untouched.
+
+Managed console entry needs only the selected project and setup/update mode;
+`workflow_keys` can be omitted so the coordinator chooses from the operator goal.
+Optional typed `preferences` contain only `host_key`, `model`, `provider`, `profile`.
+Save these choices through local-admin `tracker.configureDelivery({"project_id":1,
+"main_agent":{"host_key":"codex","model":"gpt-6.1-sol"}})`. That form merges
+only `delivery.main_agent`, preserving specialist roles, unrelated settings and
+already admitted snapshots. `projectSetup.get.launch_preferences` reads saved choices;
+`hostMcp.status.agent_execution` supplies supported and recommended models from the
+existing host catalog. Neither catalog nor recommendation proves account model access.
+An omitted model keeps the native host default; recommendation metadata is advisory.
+
+One managed attempt creates one request-native coordinator, consuming the same
+authoring-guide reference and project setup method as existing-session entry.
+Start/return attaches to active work without exposing its writer token, replacing
+its selection or cancelling it on navigation. The frozen request contains the exact
+folder/binding and host choices. Invalid/missing hosts or unavailable/mismatched
+folders fail before native spawn; no host/model fallback is performed. Managed work
+queues through the existing shared task capacity drain and executor. Native identity,
+usage, immutable execution evidence and checked workflow reports remain on AgentRequest;
+infrastructure setup creates no business run or tracker task.
+
+The coordinator receives a private request claim token. Managed progress reports
+also require its project bridge session, active native invocation and expected
+attempt revision. The first authorized report binds that session; observers and
+foreign/stale/cancelled reports cannot change receipts. Final native output supplies
+a JSON-encoded `SetupReport` through `report_json`; all receipt validation stays with
+the existing setup repository. A finished invocation asking a question releases its
+slot and retains its exact native identity for the continuation owner.
+
+Console-only `projectSetup.cancel({"project_id":1,"request_id":123})` fences that
+managed request through the existing native cancellation owner. Queued work can be
+cancelled before spawn. Running cancellation remains pending until actual native
+retirement; callback lifetime retains the reservation, completed workflow receipts
+and partial-change reports. A timeout, missing in-memory handle or daemon restart
+does not establish exit. Unconfirmed prior-daemon invocations retain their reservation
+and actionable reconciliation diagnostic instead of silently launching replacements.
+The canonical project cleanup guard also retains these managed reservations after
+request lease expiry; confirmed deletion cannot race an unconfirmed native writer.
+Terminal reports revoke writer authority and preserve attempt history.
+
+Console-only `projectSetup.answer` takes `project_id`, the current `request_id`,
+`expected_revision`, `question_id`, `question_revision` and a bounded `answer`.
+It consumes that pending question once and admits one linked successor request
+only after the prior invocation and its callback have retired. Existing-agent
+questions must be answered in their original session. Stale, foreign, duplicate,
+missing-session and unconfirmed-exit inputs return repair context without consuming
+an answer or launching work. A stable idempotency key supports exact response replay;
+changed answers under the same key reject. Both compact and raw retain lineage;
+neither exposes the coordinator's claim token. These writes are unavailable via
+agent MCP and CLI.
+
+Console-only `projectSetup.continue` takes the same project/request/revision fields
+without question/answer fields. It continues partial, failed, interrupted or explicitly
+cancelled work in the exact recorded native session with frozen host/model/provider/
+profile and folder. A pending question requires `answer` instead. Each invocation
+has its own immutable request execution and usage receipt under the stable attempt;
+the predecessor retains its answered question and successor ref. Missing native
+identity, unsupported selection or resume failure is actionable failure, never a
+fresh-session fallback. Reconnect preserves pending answers and unconfirmed live work.
+
+Continuation retains successful workflow outcomes and compares their current receipt
+revisions and source evidence. Its prompt names remaining workflows and changed
+successes requiring revalidation; receipt advancement still requires checked reports.
+It warns of possible partial file edits and implies no rollback. A changed source
+cannot pass final completion using an older success receipt. Browser rendering and
+integrated setup journeys consume this shared state through `projectSetup.get`.
+
+Both operations support compact/raw and refuse ack. Compact retains claim/attempt
+refs, revision, outcomes, question and repair context; raw also retains report history.
+Source verification does not establish native loading or installed activation, and
+structural setup readiness does not imply that deferred per-run inputs are supplied.
+This operation family grants no business execution, provider or repository-file authority.
+
 ## Project workflow schedules
 
 Project folder setup has one owner: `Project.primary_workspace_binding_id`.

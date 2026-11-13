@@ -958,6 +958,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                     sandboxes=("workspace-write", "read-only"),
                     review_sandbox="workspace-write",
                     models=("gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"),
+                    recommended_model="gpt-6.1-sol",
                     provider_selection=True,
                     auth_status_command=("codex", "login", "status"),
                     notes="Native sandbox; login status establishes credential presence only.",

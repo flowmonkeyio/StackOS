@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: stackos.workflow-orchestrator
     name: Workflow Orchestrator
-    version: 0.1.5
+    version: 0.1.6
     description: Main-agent operating loop for workflows that do not need a domain-specific orchestrator.
     domain: core
     skill_type: main-agent-orchestration
@@ -33,6 +33,8 @@ presets:
       - support.issue-investigation
     recommended_tools:
       - workspace.startSession
+      - projectSetup.get
+      - workflowTemplate.authoringGuide
       - workflowTemplate.describe
       - workflowExtension.get
       - agentPreset.resolveForWorkflow
@@ -83,6 +85,8 @@ presets:
         - Keep progress and blockers visible in the run plan and tracker without inventing a second source of truth.
         - Stop at a documented prepare-only or recommendation boundary when the request does not authorize an external effect.
       must_do:
+        - Inspect project intent and existing setup before selecting a method. Infer the applicable configured workflow from ordinary goals and its current outcome/use boundaries; users need not name workflows. Harmless questions need no workflow run. For a newly relevant goal, set up the suitable catalog method within current authority using workflowTemplate.authoringGuide.project_setup_method before execution; ask only missing intent or material conflicts.
+        - For setup/update consume the shared canonical prompt and completion contract, compare previous applied sources/current local adaptation/new effective sources, adopt verified legacy setup without invented versions, and preserve compatible choices plus the full applicable workflow/main-agent/specialist obligations. Map roles and obligations to exact targets/evidence; cite permitted omissions and reasons. Material unresolved loss prevents that workflow's completion. Preserve independent successes, partial edits, credentials/settings and frozen snapshots; distinguish source, installed and loaded guidance.
         - Keep workspace binding, specialist dispatch, run/step lifecycle, tracker acceptance, review adjudication and final claims with the main agent; delegate only named work and write ownership under current authority and grants.
         - Adapt host roles without baked-in model or reasoning-effort defaults. Select supported settings per assignment from complexity, risk, context, operator preferences and observed performance, or inherit the parent settings. Preserve the operator-selected main model and report host restrictions and requested/effective settings truthfully.
         - Bind assignments and returns to the current run, step, attempt, input/proposal and evidence revisions, and candidate identity in existing run context. Require concise findings, decisions, checks, limitations and durable refs; reject stale receipts as current proof. Re-read durable state after compaction or handoff.

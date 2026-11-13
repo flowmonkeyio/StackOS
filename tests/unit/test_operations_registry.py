@@ -11,12 +11,19 @@ def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
     names = {item.name for item in registry.all()}
-    assert len(names) == 254
+    assert len(names) == 261
     assert not names.intersection(
         {"actionCall.aggregate", "actionCall.aggregateAll", "actionCall.queryAll"}
     )
     assert {
         "action.execute",
+        "projectSetup.get",
+        "projectSetup.start",
+        "projectSetup.report",
+        "projectSetup.answer",
+        "projectSetup.continue",
+        "projectSetup.cancel",
+        "projectSetup.setReminders",
         "actionCall.cancel",
         "actionCall.get",
         "actionCall.items",
@@ -551,6 +558,11 @@ def test_operation_registry_surface_filter() -> None:
 
     cli_names = {item.name for item in registry.by_surface("cli")}
     assert cli_names == {item.name for item in registry.all()} - {
+        "projectSetup.start",
+        "projectSetup.report",
+        "projectSetup.answer",
+        "projectSetup.continue",
+        "projectSetup.cancel",
         "projectAgent.list",
         "projectAgent.get",
         "projectAgent.create",
@@ -580,6 +592,10 @@ def test_operation_registry_surface_filter() -> None:
     assert registry.get("runPlan.update").surfaces.mcp.enabled is True
     assert registry.get("runPlan.update").grant_policy == "direct-run-audit-write"
     assert registry.list_out(surface="rest").items[0].surfaces["rest"].enabled is True
+    setup_cancel = registry.get("projectSetup.cancel")
+    assert setup_cancel.surfaces.rest.enabled and setup_cancel.surfaces.rest.browser_safe
+    assert not setup_cancel.surfaces.mcp.enabled and not setup_cancel.surfaces.cli.enabled
+    assert setup_cancel.grant_policy == "local-admin-console-write"
 
 
 def test_operation_registry_filters_and_groups_operation_list() -> None:

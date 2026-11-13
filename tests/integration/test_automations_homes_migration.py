@@ -6,12 +6,12 @@ import sqlite3
 import pytest
 from alembic import command
 from alembic.script import ScriptDirectory
-from sqlmodel import Session
 
 from stackos.config import Settings
 from stackos.db.connection import make_engine
 from stackos.db.migrate import alembic_config, upgrade_to_head
 from stackos.repositories.agent_requests import AgentRequestRepository
+from tests.integration.test_schema import _historical_project_fixture_session
 
 
 @pytest.mark.parametrize(
@@ -26,7 +26,7 @@ def test_consolidation_preserves_either_delivered_history(tmp_path, prior_head):
     settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
     settings.ensure_dirs()
     config = alembic_config(settings)
-    assert ScriptDirectory.from_config(config).get_heads() == ["0046_pattern_key_index"]
+    assert ScriptDirectory.from_config(config).get_heads() == ["0047_patterns_setup_merge"]
     command.upgrade(config, "0041_ui804_consolidation")
     root = tmp_path / "project"
     root.mkdir()
@@ -60,7 +60,7 @@ def test_consolidation_preserves_either_delivered_history(tmp_path, prior_head):
         )
     engine = make_engine(settings.db_path)
     try:
-        with Session(engine) as session:
+        with _historical_project_fixture_session(engine) as session:
             AgentRequestRepository(session).create(
                 project_id=1,
                 request_key="admitted",
@@ -80,9 +80,13 @@ def test_consolidation_preserves_either_delivered_history(tmp_path, prior_head):
             db.execute("INSERT INTO task_delivery_capacity VALUES (1, 7)")
         if prior_head == "0042_schedule_main_thread":
             db.execute("UPDATE scheduled_jobs SET goal='Edited goal' WHERE id=1")
-        snapshots = {
-            table: db.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
+        columns = {
+            table: ",".join(row[1] for row in db.execute(f"PRAGMA table_info({table})"))
             for table in ("projects", "workspace_bindings", "agent_requests")
+        }
+        snapshots = {
+            table: db.execute(f"SELECT {names} FROM {table} ORDER BY id").fetchall()
+            for table, names in columns.items()
         }
         saved_inputs = db.execute("SELECT inputs_json FROM scheduled_jobs").fetchall()
 
@@ -90,11 +94,11 @@ def test_consolidation_preserves_either_delivered_history(tmp_path, prior_head):
     upgrade_to_head(settings)
     with sqlite3.connect(settings.db_path) as db:
         assert db.execute("SELECT version_num FROM alembic_version").fetchall() == [
-            ("0046_pattern_key_index",)
+            ("0047_patterns_setup_merge",)
         ]
         assert {
-            table: db.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
-            for table in snapshots
+            table: db.execute(f"SELECT {names} FROM {table} ORDER BY id").fetchall()
+            for table, names in columns.items()
         } == snapshots
         assert db.execute("SELECT inputs_json FROM scheduled_jobs").fetchall() == saved_inputs
         goal, enabled, execution, status = db.execute(

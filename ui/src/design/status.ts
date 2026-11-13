@@ -100,6 +100,24 @@ export const projectState = defineStatuses({
   blocked: { label: 'Blocked', tone: 'danger', icon: 'octagon-alert' },
 });
 
+// Shared project setup attempt and per-workflow receipt presentation.
+export const projectSetupStatus = defineStatuses({
+  queued: { label: 'Queued', tone: 'neutral' },
+  running: { label: 'Running', tone: 'info', dot: true, inFlight: true },
+  needs_input: { label: 'Needs input', tone: 'warning', description: 'The last setup check requested input.' },
+  success: { label: 'Configured', tone: 'success', description: 'Workflow guidance is configured.' },
+  current: { label: 'Current', tone: 'success', description: 'Workflow guidance is configured.' },
+  partial: { label: 'Partly configured', tone: 'warning', description: 'Some setup results are complete; remaining work needs attention.' },
+  failed: { label: 'Failed', tone: 'danger', description: 'Setup could not finish; inspect the result before retrying.' },
+  interrupted: { label: 'Interrupted', tone: 'warning', description: 'Setup stopped before verification finished.' },
+  cancelled: { label: 'Cancelled', tone: 'neutral', description: 'Setup was stopped; completed results are kept.' },
+  unfinished: { label: 'Incomplete', tone: 'warning', description: 'Setup still needs checking.' },
+  unknown: { label: 'Not verified', tone: 'neutral', description: 'Setup has not been verified yet.' },
+  update_available: { label: 'Update available', tone: 'info', description: 'New workflow guidance is available.' },
+  source_unavailable: { label: 'Source unavailable', tone: 'warning', description: 'Restore the workflow source before checking setup.' },
+  activation_pending: { label: 'Reload needed', tone: 'warning', description: 'Guidance is recorded; activation still needs checking.' },
+});
+
 export const integrationHealth = defineStatuses({
   provider_disabled: { label: 'Provider disabled', tone: 'neutral', icon: 'circle' },
   connected_blocked: { label: 'Connected · actions blocked', tone: 'warning', icon: 'alert-triangle' },
@@ -195,6 +213,7 @@ export const statusRegistry = {
   tracker: trackerStatus,
   delivery: deliveryStatus,
   project: projectState,
+  projectSetup: projectSetupStatus,
   integration: integrationHealth,
   budget: budgetState,
   connection: connectionStatus,

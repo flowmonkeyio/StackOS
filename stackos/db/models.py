@@ -49,6 +49,7 @@ from stackos.db.model_core import (
     Plugin,
     Project,
     ProjectPlugin,
+    ProjectSetupReceipt,
     Provider,
 )
 from stackos.db.model_durable_actions import (
@@ -199,6 +200,7 @@ __all__ = [
     "ProjectCredential",
     "ProjectEvent",
     "ProjectPlugin",
+    "ProjectSetupReceipt",
     "ProjectWorkflowTemplate",
     "Provider",
     "ProviderObjectReference",

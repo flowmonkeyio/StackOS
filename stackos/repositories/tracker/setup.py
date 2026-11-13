@@ -47,6 +47,17 @@ class TrackerSetupMixin:
         tracker = self._tracker_or_none(project_id=project_id)
         return deepcopy((tracker.config_json or {}).get("delivery", {})) if tracker else {}
 
+    def configure_main_agent(self, *, project_id: int, preferences: dict[str, Any]):
+        """Save only typed launch choices, leaving role contracts and snapshots intact."""
+        from stackos.project_setup_execution import MainAgentPreferences, resolve_preferences
+
+        selected = MainAgentPreferences.model_validate(preferences).model_dump(exclude_none=True)
+        resolve_preferences(self._s, project_id, selected, inherit_saved=False)
+        defaults = self.delivery_defaults(project_id=project_id)
+        return self.configure_delivery(
+            project_id=project_id, delivery={**defaults, "main_agent": selected}
+        )
+
     def adopt_delivery_sources(
         self, *, project_id: int, project_dir: str, sources: dict[str, Any], preview: bool
     ) -> dict[str, Any]:

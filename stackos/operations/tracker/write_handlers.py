@@ -48,7 +48,12 @@ async def tracker_configure_delivery(
     if ctx.extras.get("surface") != "rest" or ctx.extras.get("trusted_local_admin") is not True:
         raise ValidationError("Delivery defaults require authenticated local-admin setup")
     repo = TrackerRepository(ctx.session)
-    if inp.adopt_sources is not None:
+    if inp.main_agent is not None:
+        result = repo.configure_main_agent(
+            project_id=inp.project_id,
+            preferences=inp.main_agent.model_dump(exclude_none=True),
+        ).model_dump(mode="json")
+    elif inp.adopt_sources is not None:
         assert inp.project_dir is not None
         result = repo.adopt_delivery_sources(
             project_id=inp.project_id,

@@ -51,7 +51,7 @@ from stackos.repositories.plugins import PluginRepository
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.secrets import PayloadSecretRepository
 
-HEAD_REVISION = "0046_pattern_key_index"
+HEAD_REVISION = "0047_patterns_setup_merge"
 
 
 @pytest.fixture

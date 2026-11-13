@@ -9,7 +9,6 @@ import sqlalchemy as sa
 from alembic import command
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
-from sqlmodel import Session
 
 from stackos.config import Settings
 from stackos.db.connection import make_engine
@@ -17,6 +16,7 @@ from stackos.db.migrate import alembic_config
 from stackos.db.models import AgentRequest
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.run_plans import RunPlanRepository
+from tests.integration.test_schema import _historical_project_fixture_session
 
 
 def legacy(tmp_path):
@@ -71,7 +71,7 @@ def legacy(tmp_path):
 def test_transition_preserves_history_context_and_does_not_retarget(tmp_path):
     settings, config, _root = legacy(tmp_path)
     engine = make_engine(settings.db_path)
-    with Session(engine) as session:
+    with _historical_project_fixture_session(engine) as session:
         plan = (
             RunPlanRepository(session)
             .create(

@@ -544,6 +544,16 @@ same definitions live in
 [`stackos/workflows/authoring_guide.py`](../stackos/workflows/authoring_guide.py).
 The phase summaries below are navigation, not another copy of that procedure.
 
+The guide's `project_setup_method` authors the shared setup/update agent prompt,
+bounded input contract, mode instructions, session notices and concrete question/
+result wording for both existing-session and managed entrypoints. Consumers load
+it with `response_mode=raw`; they do not keep separate prompt text. Inspect repository
+intent and current setup before inferring workflows from ordinary goals and the
+catalog's outcome/use boundaries. Ask only for missing intent or material conflicts.
+Harmless questions need no workflow run; a newly relevant goal can set up the
+appropriate method within current authority. The public getting-started guide
+remains the human walkthrough.
+
 ### 1. Workflow Infrastructure Setup
 
 Bind the intended workspace, describe the effective workflow, inspect its
@@ -559,6 +569,94 @@ Prove readiness with structural and strict read-only `runPlan.validate` calls;
 return the guide's complete setup proof, including deferred inputs and exact
 preset mappings. Do not create a run plan, workflow tracker work or business
 output as setup proof.
+
+### Applied setup evidence
+
+`ProjectSetupRepository` owns one current receipt per project/workflow key.
+`projectSetup.get` is the shared Home/agent read. Template selection, an active
+version pointer, a source hash, or a reminder dismissal never establishes applied
+setup. Legacy setup without verified provenance remains unknown and can be
+inspected/adopted by the setup agent.
+
+A successful repository result records the effective template origin/version,
+main-agent and specialist sources, meaningful extension provenance, bounded source
+snapshots, local adaptation/file provenance, role decisions, source-obligation
+coverage, host syntax/registration/reference and behavior checks, activation
+evidence, the separate readiness tuple, deferred input keys, time and attempt/result
+refs. Snapshot digests cover canonical JSON. Snapshots are receipt-owned comparison
+evidence, so the prior applied base remains available after a source disappears;
+live overrides remain under their existing owners. There is no second source
+version registry or empty extension for bookkeeping.
+
+An update compares previous applied snapshots, current local choices and new
+effective template/main-agent/specialist sources. Verified legacy setup can be
+adopted without forced rewrites; unknown historical versions remain unknown.
+Map the full applicable source obligations to exact adapted targets and proof,
+preserving compatible overrides and declared resilience rules with their original
+conditions and owners. Adaptations and source-permitted omissions need reasons;
+material unresolved loss cannot complete the affected workflow. Finish independent
+workflows and ask a concrete question for the incompatible choice. This is agent
+judgment with receipt evidence, not a runtime semantic policy engine.
+
+Agents judge compatible adaptations and source-policy exceptions. Explicit
+unresolved obligations, missing required role mappings, failed checks and
+unjustified required omissions prevent success. This structural validation does
+not judge semantic completeness or prove actual host loading; the executing agent
+and independent review must check the underlying evidence. A known reload need
+or unknown activation stays visible as `activation_pending`.
+
+Results advance each workflow independently using its expected receipt revision.
+An already-running user agent admits one project-scoped attempt through
+`projectSetup.start`, then reports checked results through `projectSetup.report`.
+The request-owned, versioned setup namespace retains session/request lineage,
+receipt revisions, progress, concrete questions and result refs. Concurrent entries
+attach to the same owner without receiving writer authority; stale/foreign reports
+cannot change receipts. Attempt success rechecks source and receipt freshness.
+Existing-session questions and answers stay in that session. The shared
+`projectSetup.get` state is also consumed by Home; no external conversation navigation,
+business run or tracker delivery task is invented for infrastructure setup. See the
+[operation contract](operations.md#project-setup-receipts-and-reminders) for admission,
+ownership and response details.
+
+Home's managed entry invokes one request-native coordinator with the same
+`workflowTemplate.authoringGuide` setup-method reference. It freezes the supported
+project agent selection and folder association, queues through shared task capacity,
+and records native session/usage alongside setup reports. Closing Home does not
+cancel work. Cancellation fences the owning invocation and preserves successful
+workflow receipts and partial reports; unknown native retirement stays explicit.
+Managed launch does not create a business workflow run or delivery task.
+
+Managed questions are answered through revision-checked `projectSetup.answer` in
+the console. The answer links a successor request under the same attempt and
+resumes the exact native session only after the previous invocation retires.
+`projectSetup.continue` recovers remaining partial, failed, interrupted or cancelled
+work with the same frozen selection. Confirmed never-started cancelled/missed
+launches use an explicit Start again/Retry setup action: the same owner links one
+first-launch successor only when no callback, native evidence, resume identity or
+possible edits exist. Unknown or possibly started work still requires confirmed
+retirement and the exact native session; missing identity never permits fallback.
+Prior execution/usage and successful workflow
+receipts remain intact; changed source/receipt evidence requires revalidation.
+Recovery reports possible partial edits and never invents rollback or launches a
+competing session. Existing-session questions continue in their original agent.
+
+Failed/unfinished results retain the previous successful sources and separately
+record possible partial edits. They can still be recorded when the selected folder
+becomes unavailable. Available updates compare the receipt with current effective
+template/preset/extension sources, including same-version content and origin
+changes. Missing sources remain diagnostic uncertainty rather than fabricated
+success. Writes reserve project availability against canonical cleanup.
+
+Malformed or unreadable sources return bounded repair diagnostics while retaining
+applied evidence and partial-result/reminder write responses. Comparison follows
+current declarations when previously selected optional presets become required or
+are removed; new success reports still require valid current optional selections.
+
+The two permanent project reminder timestamps control unsolicited presentation
+only. Directoryless projects are ineligible; an unavailable selected folder keeps
+receipts and preferences and exposes folder repair. Receipt rows cascade through
+the existing project cleanup, while encrypted whole-database backup/restore includes
+the rows and preferences. Repository folders and existing backups are preserved.
 
 ### 2. Workflow Prerequisite Setup
 

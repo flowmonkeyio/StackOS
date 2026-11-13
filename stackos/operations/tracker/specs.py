@@ -264,11 +264,14 @@ def operation_specs() -> list[OperationSpec]:
             ),
             purpose=(
                 "Replace TaskTracker.config_json.delivery only, preserving other tracker keys. "
-                "This changes future handoffs, never task snapshots or stored ticket evidence."
+                "Or supply main_agent alone to replace only typed main-agent launch choices, "
+                "preserving specialist contracts and other defaults. This changes future "
+                "admissions, never task snapshots or stored ticket evidence."
             ),
             prerequisites=(
                 "Requires authenticated local-admin REST setup; no MCP or workflow grants.",
-                "Read tracker.get response_mode=raw first; include all desired delivery defaults. "
+                "For full delivery replacement, read tracker.get raw and include all desired "
+                "defaults. The main_agent-only form preserves the other fields. "
                 "Do not store secrets in instructions or selections.",
             ),
             returns=("Saved tracker configuration and revision; inspect with tracker.get raw.",),
@@ -294,6 +297,13 @@ def operation_specs() -> list[OperationSpec]:
                                 },
                             },
                         },
+                    },
+                ),
+                OperationExample(
+                    title="Save main-agent launch choices",
+                    arguments={
+                        "project_id": 1,
+                        "main_agent": {"host_key": "codex", "model": "gpt-6.1-sol"},
                     },
                 ),
             ),

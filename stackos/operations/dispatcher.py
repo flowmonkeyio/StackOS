@@ -164,7 +164,7 @@ class OperationDispatcher:
                 and ctx.idempotency_key is not None
                 and ctx.project_id is not None
             ):
-                self._idempotency_record(spec.name, ctx, payload)
+                self._idempotency_record(spec.name, ctx, parsed, payload)
             shaped = shape_operation_response(spec, payload, response_mode=response_mode)
             return OperationDispatchResult(payload=shaped, duration_ms=duration_ms)
 
@@ -191,6 +191,15 @@ class OperationDispatcher:
                     from stackos.operations.runs import validate_owner_replay
 
                     return validate_owner_replay(operation_name, parsed, ctx, cached)
+                if operation_name in {
+                    "projectSetup.start",
+                    "projectSetup.report",
+                    "projectSetup.answer",
+                    "projectSetup.continue",
+                }:
+                    from stackos.operations.project_setup_state import validate_setup_replay
+
+                    return validate_setup_replay(operation_name, parsed, ctx, cached)
                 return cached
             raise ConflictError(
                 "idempotency key is already in-flight",
@@ -221,10 +230,23 @@ class OperationDispatcher:
         self,
         operation_name: str,
         ctx: Any,
+        parsed: Any,
         payload: dict[str, Any],
     ) -> None:
         assert ctx.project_id is not None
         assert ctx.idempotency_key is not None
+        if operation_name in {
+            "projectSetup.start",
+            "projectSetup.report",
+            "projectSetup.answer",
+            "projectSetup.continue",
+        }:
+            from stackos.operations.project_setup_state import (
+                SETUP_REPLAY_DIGEST_FIELD,
+                setup_request_digest,
+            )
+
+            payload = {**payload, SETUP_REPLAY_DIGEST_FIELD: setup_request_digest(parsed)}
         IdempotencyKeyRepository(ctx.session).update_response(
             project_id=ctx.project_id,
             tool_name=operation_name,

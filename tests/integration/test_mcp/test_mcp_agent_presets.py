@@ -633,7 +633,7 @@ def test_website_seo_analysis_presets_resolve_end_to_end(
     assert resolved["required_skill_presets"][0]["preset"]["summary"]["key"] == (
         "stackos.workflow-orchestrator"
     )
-    assert resolved["required_skill_presets"][0]["preset"]["summary"]["version"] == "0.1.5"
+    assert resolved["required_skill_presets"][0]["preset"]["summary"]["version"] == "0.1.6"
     assert resolved["unresolved_requirements"] == []
     assert resolved["unresolved_skill_preset_requirements"] == []
 
@@ -664,7 +664,7 @@ def test_agency_setup_presets_resolve_without_specialists(
         assert raw["unresolved_skill_preset_requirements"] == []
         raw_summary = raw["required_skill_presets"][0]["preset"]["summary"]
         assert raw_summary["key"] == "stackos.workflow-orchestrator"
-        assert raw_summary["version"] == "0.1.5"
+        assert raw_summary["version"] == "0.1.6"
         assert raw_summary["generic_preset"] is True
         assert raw_summary["adaptation_required"] is True
         assert compact["required_agents"] == []
@@ -672,7 +672,7 @@ def test_agency_setup_presets_resolve_without_specialists(
         assert compact["required_skill_presets"][0]["preset"]["key"] == (
             "stackos.workflow-orchestrator"
         )
-        assert compact["required_skill_presets"][0]["preset"]["version"] == "0.1.5"
+        assert compact["required_skill_presets"][0]["preset"]["version"] == "0.1.6"
 
 
 def test_finance_workflow_presets_resolve_end_to_end(mcp_client: MCPClient) -> None:
