@@ -346,7 +346,7 @@ def test_codex_local_seo_agents_track_seo_workflows() -> None:
     assert "seo.content-refresh, seo.website-analysis (required)" in (
         REPO_ROOT / ".codex/agents/sdlc-delivery-reviewer.toml"
     ).read_text(encoding="utf-8")
-    assert "Source skill preset: `stackos.workflow-orchestrator` v0.1.5" in (orchestrator_text)
+    assert "Source skill preset: `stackos.workflow-orchestrator` v0.1.6" in (orchestrator_text)
     assert "not a subagent" in orchestrator_text
     assert "unavailable optional providers do not block a ready route" in orchestrator_text
     assert "parallel planning, review, evidence" in orchestrator_text

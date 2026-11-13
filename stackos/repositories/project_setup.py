@@ -33,6 +33,7 @@ from stackos.repositories.agent_requests import AgentRequestRepository, _hash_to
 from stackos.repositories.base import ConflictError, RepositoryError, ValidationError
 from stackos.repositories.projects import ProjectRepository
 from stackos.skill_presets.loader import SkillPresetLoader
+from stackos.workflows.authoring_guide import PROJECT_SETUP_NOTICES
 from stackos.workflows.template_loader import WorkflowTemplateLoader
 
 
@@ -303,6 +304,7 @@ class ProjectSetupOut(BaseModel):
     current_attempt: SetupAttempt | None = None
     attempt_diagnostic: str | None = None
     guidance_ref: dict[str, Any] = Field(default_factory=lambda: dict(SETUP_GUIDANCE_REF))
+    notice: str | None = None
     detail_ref: dict[str, Any]
     next_action: str
 
@@ -773,6 +775,7 @@ class ProjectSetupRepository:
                 "unknown_count",
                 "attempt_diagnostic",
                 "guidance_ref",
+                "notice",
                 "detail_ref",
                 "next_action",
             },
@@ -986,6 +989,12 @@ class ProjectSetupRepository:
             unknown_count=unknown,
             current_attempt=attempt,
             attempt_diagnostic=attempt_diagnostic,
+            notice=(
+                None
+                if (status == "setup_needed" and row.setup_reminder_dismissed_at)
+                or (status == "updates_available" and row.update_reminder_dismissed_at)
+                else PROJECT_SETUP_NOTICES.get(status)
+            ),
             workflows=[
                 item
                 for item in workflows

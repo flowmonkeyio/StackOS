@@ -7,6 +7,7 @@ from sqlmodel import Session, select
 
 from stackos.db.models import RunPlan, TrackerTask
 from stackos.repositories.project_setup import ProjectSetupRepository
+from stackos.workflows.authoring_guide import PROJECT_SETUP_NOTICES
 from tests.integration.test_repositories.test_project_setup import verified_result
 
 from .test_mcp_bridge_agent_path import (
@@ -35,6 +36,7 @@ def test_setup_read_injected_project_and_foreign_rejection(mcp_client, tmp_path)
     assert data["project_id"] == own
     assert data["eligible"] is True
     assert data["status"] == "setup_needed"
+    assert data["notice"] == PROJECT_SETUP_NOTICES["setup_needed"]
     rejected = _toolbox_call(proxy, client, "projectSetup.get", {"project_id": other})
     assert _is_bridge_scope_error(rejected), rejected
     denied = _toolbox_call(proxy, client, "projectSetup.setReminders", {"dismiss_setup": True})
@@ -59,6 +61,7 @@ def test_existing_session_setup_owner_report_and_startup_projection(mcp_client, 
     summary = startup["project_setup"]
     assert summary["eligible"] and summary["current_attempt"] is None
     assert summary["guidance_ref"]["tool_name"] == "workflowTemplate.authoringGuide"
+    assert summary["notice"] == PROJECT_SETUP_NOTICES["setup_needed"]
     assert "available_sources" not in json.dumps(summary)
     assert startup["setup_state"]["project_scoped_tools_usable"]
     args = {"session_id": session_id, "workflow_keys": ["agency.project-setup"]}

@@ -6330,6 +6330,11 @@ export interface components {
             /** Next Action */
             next_action: string;
             /**
+             * Notice
+             * @default null
+             */
+            notice: string | null;
+            /**
              * Project Folder Issue
              * @default null
              */

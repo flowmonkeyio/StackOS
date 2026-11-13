@@ -200,6 +200,18 @@ consumers use its exact source identity and settings under their own authority.
 
 ### Workflow setup
 
+The agent infers workflows from ordinary goals, repository intent and current
+configured methods, using the catalog's outcomes/use boundaries. Users need not
+learn workflow names. Both setup entrypoints consume the authored
+`workflowTemplate.authoringGuide.project_setup_method`; its mode instructions
+and report contract own adoption and the previous/local/new update comparison.
+Map required/recommended role decisions and the full applicable source obligations
+to exact adapted files/session packets, with main-agent guidance separate from
+specialists. Preserve compatible overrides and conditional resilience rules;
+justify adaptations and only source-permitted omissions. Material unresolved
+loss prevents completion. Host syntax/registration, references, actual behavior
+and loading/reload each require evidence; saved versions alone prove none of them.
+
 Engineering setup uses the same workflow path as other domains. Start with the
 workflow that matches the work, resolve its agents with
 `agentPreset.resolveForWorkflow`, then create/start a run plan when executing

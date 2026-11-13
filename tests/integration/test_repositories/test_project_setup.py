@@ -30,6 +30,7 @@ from stackos.repositories.base import ConflictError, NotFoundError, ValidationEr
 from stackos.repositories.project_setup import ProjectSetupRepository, SetupResult, VerifiedSetup
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.workspaces import WorkspaceRepository
+from stackos.workflows.authoring_guide import PROJECT_SETUP_NOTICES
 from tests.helpers.sqlite_schema import capture_database_snapshot, restore_database_snapshot
 
 
@@ -271,6 +272,18 @@ def test_material_loss_and_incomplete_proof_cannot_claim_success(setup_project, 
     with pytest.raises(ModelValidationError):
         VerifiedSetup.model_validate(proof)
     assert repo.get(project).configured_count == 0
+
+
+def test_startup_notice_is_advisory_and_respects_permanent_dismissal(setup_project):
+    project, _, repo = setup_project
+    before = repo.startup_summary(project)
+    assert before["notice"] == PROJECT_SETUP_NOTICES["setup_needed"]
+    assert before["guidance_ref"]["arguments"]["response_mode"] == "raw"
+    repo.set_reminders(project, dismiss_setup=True)
+    after = repo.startup_summary(project)
+    assert after["notice"] is None
+    assert after["status"] == "setup_needed"
+    assert after["detail_ref"] == before["detail_ref"]
 
 
 def test_required_role_mapping_and_reload_truth(setup_project):

@@ -50,7 +50,7 @@ def test_generic_workflow_orchestrator_keeps_the_normal_loop_small() -> None:
     ).lower()
 
     assert loaded.preset.metadata_json["boundary"]["not_a_subagent"] is True
-    assert loaded.preset.version == "0.1.5"
+    assert loaded.preset.version == "0.1.6"
     assert len(loaded.preset.applies_to_workflows) == 23
     assert {"agency.setup", "agency.project-setup"} <= set(loaded.preset.applies_to_workflows)
     assert "seo.website-analysis" in loaded.preset.applies_to_workflows

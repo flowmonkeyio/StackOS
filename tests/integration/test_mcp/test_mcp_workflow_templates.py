@@ -124,6 +124,13 @@ outputs:
     assert authoring_guide["source_of_truth_operation"] == "workflowTemplate.authoringGuide"
     assert "workflow_setup_protocol" in compact_authoring_guide
     assert "agent_materialization_policy" in compact_authoring_guide
+    from stackos.workflows.authoring_guide import project_setup_method
+
+    assert authoring_guide["project_setup_method"] == project_setup_method().model_dump()
+    method_ref = compact_authoring_guide["project_setup_method"]
+    assert set(method_ref["modes"]) == {"setup", "update"}
+    assert method_ref["guidance_ref"]["arguments"] == {"response_mode": "raw"}
+    assert "shared_prompt" not in method_ref  # No silently truncated executable prompt.
     assert "package_authoring_path" not in compact_authoring_guide
     assert any("response_mode=raw" in item for item in compact_authoring_guide["response_guidance"])
     assert {item["key"] for item in authoring_guide["intent_modes"]} == {

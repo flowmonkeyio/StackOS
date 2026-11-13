@@ -544,6 +544,16 @@ same definitions live in
 [`stackos/workflows/authoring_guide.py`](../stackos/workflows/authoring_guide.py).
 The phase summaries below are navigation, not another copy of that procedure.
 
+The guide's `project_setup_method` authors the shared setup/update agent prompt,
+bounded input contract, mode instructions, session notices and concrete question/
+result wording for both existing-session and managed entrypoints. Consumers load
+it with `response_mode=raw`; they do not keep separate prompt text. Inspect repository
+intent and current setup before inferring workflows from ordinary goals and the
+catalog's outcome/use boundaries. Ask only for missing intent or material conflicts.
+Harmless questions need no workflow run; a newly relevant goal can set up the
+appropriate method within current authority. The public getting-started guide
+remains the human walkthrough.
+
 ### 1. Workflow Infrastructure Setup
 
 Bind the intended workspace, describe the effective workflow, inspect its
@@ -577,6 +587,16 @@ refs. Snapshot digests cover canonical JSON. Snapshots are receipt-owned compari
 evidence, so the prior applied base remains available after a source disappears;
 live overrides remain under their existing owners. There is no second source
 version registry or empty extension for bookkeeping.
+
+An update compares previous applied snapshots, current local choices and new
+effective template/main-agent/specialist sources. Verified legacy setup can be
+adopted without forced rewrites; unknown historical versions remain unknown.
+Map the full applicable source obligations to exact adapted targets and proof,
+preserving compatible overrides and declared resilience rules with their original
+conditions and owners. Adaptations and source-permitted omissions need reasons;
+material unresolved loss cannot complete the affected workflow. Finish independent
+workflows and ask a concrete question for the incompatible choice. This is agent
+judgment with receipt evidence, not a runtime semantic policy engine.
 
 Agents judge compatible adaptations and source-policy exceptions. Explicit
 unresolved obligations, missing required role mappings, failed checks and

@@ -1291,7 +1291,19 @@ def _compact_workflow_authoring_guide(data: dict[str, Any]) -> dict[str, Any]:
         "setup_completion_contract",
         "canonical_operations",
     )
-    return {key: _compact_value(data[key]) for key in keys if key in data}
+    out = {key: _compact_value(data[key]) for key in keys if key in data}
+    method = data.get("project_setup_method")
+    if isinstance(method, dict):
+        # Prompt consumers must fetch the complete instructions, never a clipped prompt.
+        out["project_setup_method"] = {
+            "version": method.get("version"),
+            "modes": list(method.get("mode_prompts", {})),
+            "guidance_ref": {
+                "tool_name": "workflowTemplate.authoringGuide",
+                "arguments": {"response_mode": "raw"},
+            },
+        }
+    return out
 
 
 def _compact_agent_preset_list(data: dict[str, Any]) -> dict[str, Any]:
