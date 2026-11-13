@@ -92,6 +92,17 @@ def test_pattern_discovery_pointer_without_startup_catalog_reads(
     }
 
 
+@pytest.fixture
+def empty_pattern_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the empty-catalog CRUD scenario independent of shipped content."""
+    import stackos.server as server
+
+    asset = tmp_path / "empty-patterns.json"
+    asset.write_text('{"version":"empty-fixture","entries":[]}')
+    monkeypatch.setattr(server, "bundled_patterns_source", lambda: asset)
+
+
+@pytest.mark.usefixtures("empty_pattern_bundle")
 def test_patterns_global_crud_and_combined_filter_parity(
     mcp_client: MCPClient,
     tmp_path: Path,
@@ -234,6 +245,78 @@ def test_patterns_global_crud_and_combined_filter_parity(
     )
 
 
+def test_patterns_shipped_content_readback_parity(
+    mcp_client: MCPClient,
+    mcp_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Actual startup bundle through bridge/HTTP/CLI; CLI replaces transport only."""
+    from typer.testing import CliRunner
+
+    import stackos.cli.operation_commands as cli
+    from stackos.cli import app
+    from stackos.db.model_patterns import Pattern
+    from stackos.install import bundled_patterns_source
+
+    expected = json.loads(bundled_patterns_source().read_text())
+    assert expected["entries"]
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+    api = mcp_client.test_client
+    headers = {"Authorization": f"Bearer {mcp_client.auth_token}"}
+
+    def http(method, path, *, body=None, **kwargs):
+        response = api.request(method, path, json=body, headers=headers)
+        response.raise_for_status()
+        return response.json()
+
+    monkeypatch.setattr(cli, "_api_request", http)
+
+    def parity(name, arguments):
+        result = _toolbox_call(proxy, client, name, arguments)
+        assert not result["result"].get("isError"), result
+        data = _structured(result)
+        assert (
+            http("POST", f"/api/v1/operations/{name}/call", body={"arguments": arguments}) == data
+        )
+        result = CliRunner().invoke(
+            app,
+            ["ops", "call", name, "--input", "-"],
+            input=json.dumps(arguments),
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0, result.stdout
+        assert json.loads(result.stdout) == data
+        return data
+
+    page = parity("pattern.list", {"source": "stackos", "limit": 100})
+    assert page["catalog_total"] == page["total_estimate"] == len(expected["entries"])
+    assert {row["key"] for row in page["items"]} == {item["key"] for item in expected["entries"]}
+    assert all("body" not in row for row in page["items"])
+    for item in expected["entries"]:
+        detail = parity("pattern.get", {"key": item["key"]})
+        assert {key: detail[key] for key in ("key", "title", "summary", "body")} == {
+            key: item[key] for key in ("key", "title", "summary", "body")
+        }
+        assert detail["tags"] == sorted(set(item["tags"]))
+        assert detail["source"] == "stackos" and detail["source_label"] == "StackOS"
+    query = {"query": "safe structured logs", "tags": ["logging"], "source": "stackos"}
+    assert [row["key"] for row in parity("pattern.list", query)["items"]] == [
+        "bounded-logging-and-explicit-context"
+    ]
+    assert parity("pattern.list", query | {"tags": ["testing"]})["items"] == []
+    engine = make_engine(mcp_settings.db_path)
+    try:
+        with Session(engine) as session:
+            rows = session.exec(select(Pattern).order_by(Pattern.id)).all()
+            assert [row.bundled_id for row in rows] == [
+                item["bundled_id"] for item in expected["entries"]
+            ]
+            assert all(row.bundled_version == expected["version"] for row in rows)
+    finally:
+        engine.dispose()
+
+
 @pytest.mark.parametrize("transport", ["http", "global-mcp", "cli"])
 def test_patterns_recreated_key_rejects_old_record_preconditions(
     mcp_client: MCPClient,
@@ -363,6 +446,7 @@ def test_patterns_project_run_token_is_not_global_write_authority(
     from stackos.db.models import Run, RunKind, RunStatus
 
     engine = make_engine(mcp_settings.db_path)
+    before = mcp_client.call_tool_structured("pattern.list", {})
     project_id = _create_project(mcp_client, "run-fixture")
     with Session(engine) as session:
         # A full-grant sentinel deliberately verifies the handler's independent
@@ -388,7 +472,7 @@ def test_patterns_project_run_token_is_not_global_write_authority(
         },
     )
     assert response["result"]["isError"] is True
-    assert mcp_client.call_tool_structured("pattern.list", {})["catalog_total"] == 0
+    assert mcp_client.call_tool_structured("pattern.list", {}) == before
     engine.dispose()
 
 

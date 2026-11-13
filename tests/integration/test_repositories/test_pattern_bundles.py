@@ -33,6 +33,56 @@ def stored(session, key):
     return session.exec(select(Pattern).where(Pattern.key == key)).one().model_dump()
 
 
+def test_reviewed_bundle_update_preserves_operator_records(session):
+    """Real shipped content follows the same update/customization owner as fixtures."""
+    from stackos.install import bundled_patterns_source
+
+    raw = bundled_patterns_source().read_text()
+    reviewed = json.loads(raw)
+    untouched, edited, deleted, omitted, *_, collision = reviewed["entries"]
+    repo = PatternRepository(session)
+    custom = repo.upsert(
+        key=collision["key"],
+        title="Operator guidance",
+        summary="Local",
+        body="Keep my local recommendation.\n",
+        tags=["operator"],
+    )
+    result = repo.refresh_bundle(raw)
+    assert result["inserted"] == len(reviewed["entries"]) - 1
+    assert result["collisions"] == 1
+    detail = repo.get(key=edited["key"])
+    repo.upsert(
+        **detail.model_dump(include={"key", "title", "summary", "body", "tags"})
+        | {"body": detail.body + "\nOperator addition.\n", "expected_etag": detail.etag}
+    )
+    detail = repo.get(key=deleted["key"])
+    repo.delete(detail.id, expected_etag=detail.etag)
+    preserved = {item["key"]: stored(session, item["key"]) for item in (edited, omitted, collision)}
+    later = json.loads(raw)
+    later["version"] += "-fixture-update"
+    later["entries"] = [item for item in later["entries"] if item["key"] != omitted["key"]]
+    for item in later["entries"]:
+        item["body"] += "\nSynthetic later-package revision.\n"
+    result = repo.refresh_bundle(json.dumps(later))
+    assert result["customized"] == result["deleted"] == result["collisions"] == 1
+    assert repo.get(key=untouched["key"]).body == (
+        untouched["body"] + "\nSynthetic later-package revision.\n"
+    )
+    assert stored(session, untouched["key"])["bundled_version"] == later["version"]
+    for key, before in preserved.items():
+        assert stored(session, key) == before
+    assert repo.get(key=edited["key"]).source_label == "StackOS · Customized"
+    assert repo.get(key=collision["key"]) == custom
+    assert session.exec(select(PatternDeletion)).one().bundled_id == deleted["bundled_id"]
+    snapshot = [row.model_dump() for row in session.exec(select(Pattern).order_by(Pattern.id))]
+    repo.refresh_bundle(json.dumps(later))
+    session.expire_all()
+    assert [
+        row.model_dump() for row in session.exec(select(Pattern).order_by(Pattern.id))
+    ] == snapshot
+
+
 def test_pattern_bundle_updates_preserve_custom_content_and_baselines(session):
     repo = PatternRepository(session)
     repo.refresh_bundle(bundle(entry(), entry("edited"), entry("removed")))
@@ -423,8 +473,10 @@ def test_pattern_catalog_stamp_recovery_completes_schema_before_http_reads(
 
     from stackos.config import Settings
     from stackos.db.migrate import alembic_config, current_alembic_version
+    from stackos.install import bundled_patterns_source
     from stackos.server import create_app
 
+    shipped_count = len(json.loads(bundled_patterns_source().read_text())["entries"])
     settings = Settings(_env_file=None, data_dir=tmp_path / "data", state_dir=tmp_path / "state")
     settings.ensure_dirs()
     command.upgrade(alembic_config(settings), "0044_patterns")
@@ -448,7 +500,9 @@ def test_pattern_catalog_stamp_recovery_completes_schema_before_http_reads(
                 "/api/v1/operations/pattern.list/call", json={"arguments": {}}, headers=headers
             )
             assert response.status_code == 200
-            assert response.json()["catalog_total"] == (0 if catalog == "missing" else 1)
+            assert response.json()["catalog_total"] == shipped_count + (
+                0 if catalog == "missing" else 1
+            )
             with Session(api.app.state.engine) as session:
                 repo = PatternRepository(session)
                 if catalog == "prior":

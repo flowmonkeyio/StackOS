@@ -91,7 +91,10 @@ def test_packaged_pattern_startup_refresh(built_wheel: Path, tmp_path: Path, lay
     with zipfile.ZipFile(built_wheel) as wheel:
         wheel.extractall(package)
     asset = package / "stackos/_assets/patterns/bundle.json"
-    assert json.loads(asset.read_text()) == {"version": "1", "entries": []}
+    source = Path(__file__).resolve().parents[3] / "stackos/db/bundled_patterns.json"
+    assert asset.read_bytes() == source.read_bytes()
+    reviewed = json.loads(source.read_text())
+    assert reviewed["entries"], "The production bundle contains reviewed recommendations"
     # Replace only a disposable package's trusted asset, not a runtime selector.
     script = """
 import json, sys
@@ -115,7 +118,20 @@ with TestClient(create_app(settings), base_url='http://127.0.0.1:5199') as api:
                             json={'arguments': arguments}, headers=headers)
         assert response.status_code == 200, response.text
         return response.json()
-    if phase == 'empty':
+    if phase == 'reviewed':
+        expected = json.loads(bundled_patterns_source().read_text())
+        page = call('list', {'source':'stackos', 'limit':100})
+        assert page['catalog_total'] == len(expected['entries'])
+        assert page['total_estimate'] == len(expected['entries'])
+        assert all('body' not in row for row in page['items'])
+        for item in expected['entries']:
+            detail = call('get', {'key':item['key']})
+            for field in ['key', 'title', 'summary', 'body']:
+                assert detail[field] == item[field]
+            assert detail['tags'] == sorted(set(tag.strip() for tag in item['tags']))
+            assert detail['source_label'] == 'StackOS'
+            assert detail['source'] == 'stackos'
+    elif phase == 'empty':
         assert call('list', {})['catalog_total'] == 0
     elif phase == 'v1':
         edited = call('get', {'key': 'edited'})
@@ -146,7 +162,14 @@ with TestClient(create_app(settings), base_url='http://127.0.0.1:5199') as api:
         env.pop("PYTHONHOME", None)
         env.pop("PYTHONPATH", None)
         result = subprocess.run(
-            [sys.executable, "-c", script, str(package), str(tmp_path / "runtime"), phase],
+            [
+                sys.executable,
+                "-c",
+                script,
+                str(package),
+                str(tmp_path / ("reviewed-runtime" if phase == "reviewed" else "runtime")),
+                phase,
+            ],
             cwd=tmp_path,
             env=env,
             capture_output=True,
@@ -162,6 +185,13 @@ with TestClient(create_app(settings), base_url='http://127.0.0.1:5199') as api:
             )
         )
 
+    shipped = run("reviewed")
+    for row, item in zip(shipped["rows"], reviewed["entries"], strict=True):
+        assert row["bundled_id"] == item["bundled_id"]
+        assert row["bundled_version"] == reviewed["version"]
+        assert row["body"] == item["body"]
+    assert run("reviewed") == shipped
+    asset.write_text(bundle())
     run("empty")
     asset.write_text(bundle(entry(), entry("edited"), entry("deleted"), entry("removed")))
     v1 = run("v1")

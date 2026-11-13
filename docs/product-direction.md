@@ -91,9 +91,10 @@ recommendations. Patterns are Markdown guidance with freeform tags, independent
 of project setup and onboarding. The same registered operations serve agents,
 CLI, HTTP and the console. Reading guidance does not select a project or
 authorize applying it. Core validates record structure and concurrent writes;
-agents and operators judge applicability and content quality. The catalog starts
-empty; domain taxonomies, technology registries and automatic project copies are
-outside this owner.
+agents and operators judge applicability and content quality. Package-owned
+engineering recommendations populate the catalog at startup while preserving
+local customizations and explicit deletions. Domain taxonomies, technology
+registries and automatic project copies are outside this owner.
 
 [`architecture.md`](./architecture.md) is the detailed contract for these
 layers.
