@@ -540,6 +540,7 @@ onBeforeRouteUpdate((to) => {
             :slack-connections="slackConnections"
             :loading="communicationSetupLoading"
             :loaded="communicationTopologyLoaded"
+            :credentials-loaded="authStatus !== null"
             :message="slackProfileMessage ?? communicationSetupMessage"
             @add-connection="openAddConnection"
             @add-bot="openAddBot"

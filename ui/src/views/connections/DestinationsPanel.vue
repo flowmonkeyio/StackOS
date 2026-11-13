@@ -38,7 +38,7 @@ defineEmits<{
       as="h3"
     >
       <template #actions>
-        <UiCountBadge :value="destinations.length" />
+        <UiCountBadge v-if="loaded || destinations.length" :value="destinations.length" />
         <UiButton
           size="sm"
           variant="secondary"
@@ -77,7 +77,7 @@ defineEmits<{
     />
 
     <UiCard
-      v-else
+      v-else-if="destinations.length"
       section
       :padded="false"
       class="overflow-hidden"

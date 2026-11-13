@@ -133,7 +133,7 @@ function statusLabel(connection: ConnectionRow): string {
       as="h3"
     >
       <template #actions>
-        <UiCountBadge :value="connectionsCount" />
+        <UiCountBadge v-if="loaded || connectionsCount" :value="connectionsCount" />
       </template>
     </UiSectionHeader>
 

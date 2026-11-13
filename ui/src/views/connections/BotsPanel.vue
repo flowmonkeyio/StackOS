@@ -28,6 +28,7 @@ const props = defineProps<{
   slackConnections: ConnectionRow[]
   loading: boolean
   loaded?: boolean
+  credentialsLoaded?: boolean
   message: { tone: MessageTone; text: string } | null
 }>()
 
@@ -72,7 +73,7 @@ function userCount(bot: CommunicationProfile): number {
       as="h3"
     >
       <template #actions>
-        <UiCountBadge :value="bots.length" />
+        <UiCountBadge v-if="loaded || bots.length" :value="bots.length" />
         <UiDropdownMenu
           :items="addBotItems"
           placement="bottom-end"
@@ -97,7 +98,7 @@ function userCount(bot: CommunicationProfile): number {
       </template>
     </UiSectionHeader>
 
-    <UiCallout v-if="!loading && !message && !hasMessagingConnection && bots.length === 0" tone="info">
+    <UiCallout v-if="!loading && !message && credentialsLoaded !== false && !hasMessagingConnection && bots.length === 0" tone="info">
       Connect a Slack bot first, then give it an identity and access rules here. Telegram bot and
       user sessions are configured as Accounts under Services.
       <template #actions>

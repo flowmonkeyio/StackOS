@@ -45,6 +45,10 @@ describe('ConnectionsView ingress and topology', () => {
       expect(wrapper.text()).not.toContain('0 visible')
       expect(wrapper.text()).not.toContain('Needs setup')
       expect(wrapper.text()).toContain('0 services connected')
+      for (const name of ['BotsPanel', 'ChannelsPanel', 'DestinationsPanel', 'HandoffRulesPanel']) {
+        expect(wrapper.findComponent({ name }).findComponent({ name: 'UiCountBadge' }).exists()).toBe(false)
+      }
+      expect(wrapper.find('[aria-label="Channel list"]').exists()).toBe(false)
     } finally { wrapper.unmount() }
   })
 
