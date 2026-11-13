@@ -63,7 +63,14 @@ dev-ui: ## Run Vite dev server alongside the daemon
 	@if [ -d ui ]; then cd ui && pnpm dev; else echo "ui/ not available in this checkout"; exit 0; fi
 
 ui-deps: ## Prepare locked UI dependencies once for all requested UI targets
-	@if [ -d ui ]; then cd ui && pnpm install --frozen-lockfile --silent; else echo "ui/ not available in this checkout"; exit 0; fi
+	@if [ -d ui ]; then \
+	  cd ui && pnpm install --frozen-lockfile --reporter=append-only; \
+	  status=$$?; \
+	  if [ "$$status" -ne 0 ]; then \
+	    echo "UI dependency setup failed (exit $$status): pnpm install --frozen-lockfile" >&2; \
+	  fi; \
+	  exit "$$status"; \
+	else echo "ui/ not available in this checkout"; exit 0; fi
 
 build-ui: ui-deps ## Build Vue UI into stackos/ui_dist/
 	@if [ -d ui ]; then cd ui && pnpm build; else echo "ui/ not available in this checkout"; exit 0; fi

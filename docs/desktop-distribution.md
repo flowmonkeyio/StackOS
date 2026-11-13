@@ -599,12 +599,34 @@ release system.
 
 ## Verification
 
-Scaffold checks that do not require Electron dependencies:
+Dependency-light scaffold inspection needs Node.js and the source checkout,
+without installed desktop packages or a running Electron app:
 
 ```bash
-make desktop-doctor
-pnpm --dir desktop check
+node desktop/scripts/doctor.mjs
+node --check desktop/src/main.js
 ```
+
+The complete desktop check requires the packages in `desktop/package.json`,
+including the `electron-builder` dev dependency. Prepare them with the frozen
+lockfile before running either equivalent check command:
+
+```bash
+pnpm --dir desktop install --frozen-lockfile
+pnpm --dir desktop check
+# Equivalent to the preceding check, not an additional gate:
+make desktop-doctor
+```
+
+The `check` script runs syntax inspection, the scaffold doctor and regression
+scripts. In particular, `test-release-metadata-refresh.cjs` invokes
+`refresh-notarized-update-metadata.cjs`, which loads electron-builder's blockmap
+implementation; `test-build-mac-isolation.cjs` also loads its configuration and
+file-matching implementation. These checks use synthetic artifacts and do not
+launch the desktop app or perform signed release packaging. A missing builder
+module is a dependency setup failure, not a successful scaffold-only check.
+Do not install dependencies concurrently with checks or packaging that use the
+same dependency directory.
 
 Release checks, once dependencies and signing are configured:
 

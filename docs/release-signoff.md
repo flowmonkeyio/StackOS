@@ -26,6 +26,13 @@ The signoff UI build waits for all checks to finish because
 it rewrites the committed bundle that wheel packaging tests read. UI dependency
 preparation uses the frozen lockfile and runs once per Make invocation, shared
 by the UI test and build targets. Standalone UI targets also prepare their deps.
+Preparation streams pnpm's diagnostics and reports its exit status on failure;
+it does not retry with an unlocked install or another package manager. A failed
+`ui-deps` prerequisite stops its consuming UI checks. Finish dependency setup
+before running checks against that environment; do not run a separate install
+concurrently with signoff. For desktop checks, the standalone Node scaffold
+doctor and the complete `make desktop-doctor` have different prerequisites; see
+[desktop verification](./desktop-distribution.md#verification).
 
 Use one complete gate for an unchanged candidate. `make test` runs the same
 Python suite and UI unit tests; running it and then `make signoff` in separate
@@ -113,6 +120,20 @@ Tests that need non-default settings set them explicitly through fixtures,
 `monkeypatch`, or `Settings` arguments and use disposable data/state directories
 or a sandbox HOME. The reset applies only to source tests; production host
 subprocesses still inherit their service settings and CLI PATH context.
+
+For a bounded subprocess timeout, preserve the failing command, candidate,
+stdout/stderr and suite context before diagnosis. The Finance evidence FIFO
+regression in `tests/integration/test_routes/test_finance_project_storage.py`
+has a two-second alarm around the evidence read and a separate 15-second
+subprocess deadline that includes imports and fixture setup. A subprocess
+timeout alone does not identify a blocked evidence read. Check the exact
+variants in isolation and, when needed, once in the original suite context
+with stable dependencies and the normal worker cap. An isolated pass does not
+turn a failed signoff into a pass. Retain both safeguards; change the harness
+only for a demonstrated cause, and route a recurring unexplained timeout to
+the existing test owner with stage/timing evidence rather than raising the
+deadline blindly. Finance functionality outside that reproduced cause remains
+separately scoped work.
 
 The 2026-10-26 audit removed these costs while retaining distinct failure checks:
 
