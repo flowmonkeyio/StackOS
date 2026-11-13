@@ -461,7 +461,7 @@ onBeforeRouteUpdate((to) => {
             >Messaging identities</span
           >
           <span class="mt-1 block text-sm font-semibold text-fg-strong"
-            >{{ communicationProfiles.length }} configured</span
+            >{{ communicationTopologyLoaded ? `${communicationProfiles.length} configured` : 'Unavailable' }}</span
           >
         </button>
         <button
@@ -473,7 +473,7 @@ onBeforeRouteUpdate((to) => {
             >Places</span
           >
           <span class="mt-1 block text-sm font-semibold text-fg-strong"
-            >{{ communicationSurfaces.length }} visible</span
+            >{{ communicationTopologyLoaded ? `${communicationSurfaces.length} visible` : 'Unavailable' }}</span
           >
         </button>
         <button
@@ -486,9 +486,9 @@ onBeforeRouteUpdate((to) => {
           >
           <span
             class="mt-1 block text-sm font-semibold"
-            :class="ingressStatus?.ready ? 'text-success-fg' : 'text-warning-fg'"
+            :class="!ingressStatus ? 'text-fg-muted' : ingressStatus.ready ? 'text-success-fg' : 'text-warning-fg'"
           >
-            {{ ingressStatus?.ready ? 'Reachable' : 'Needs setup' }}
+            {{ !ingressStatus ? 'Unavailable' : ingressStatus.ready ? 'Reachable' : 'Needs setup' }}
           </span>
         </button>
       </div>
