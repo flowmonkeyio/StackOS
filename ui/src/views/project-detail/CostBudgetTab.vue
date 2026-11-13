@@ -34,7 +34,7 @@ const costsStore = useCostsStore()
 
 const { projectId } = useProjectRouteScope()
 const { cost, budgets, history, hasNoSpendYet, month, loading, error,
-  costLoading, budgetsLoading, historyLoading, budgetsLoaded, costError, budgetsError, historyErrors } = storeToRefs(costsStore)
+  costLoading, budgetsLoading, historyLoading, budgetsLoaded, costError, budgetsError, historyErrors, historyEmpty } = storeToRefs(costsStore)
 
 type IntegrationKindLabels = { [Key in IntegrationKind]: string }
 
@@ -320,7 +320,7 @@ const { refresh } = useProjectScopedLoader({
       />
 
       <UiEmptyState
-        v-if="history.length && !failedMonths.length && !historyHasSpend"
+        v-if="historyEmpty"
         title="No cost history yet"
         description="The trend appears once a monthly snapshot records vendor spend."
         icon="banknotes"
@@ -331,7 +331,7 @@ const { refresh } = useProjectScopedLoader({
         <details v-if="failedMonths.length">
           <summary class="focus-ring cursor-pointer rounded-sm">History is incomplete · {{ failedMonths.length }} months failed</summary>
           <UiCallout tone="warning" class="my-2">
-            <p>{{ history.length ? 'Available months are shown below. Failed months with retained values are marked stale.' : 'Cost history is unavailable.' }}</p>
+            <p>{{ historyEmpty ? 'Showing last accepted empty history. Refresh is incomplete.' : history.length ? 'Available months are shown below. Failed months with retained values are marked stale.' : 'Cost history is unavailable.' }}</p>
             <ul class="mt-2 space-y-1">
               <li v-for="ym in failedMonths" :key="ym">{{ ym }}: {{ historyErrors[ym] }}</li>
             </ul>
@@ -339,7 +339,7 @@ const { refresh } = useProjectScopedLoader({
         </details>
         <p v-else>{{ historyLoading ? 'Reading cost history…' : 'Cost history current.' }}</p>
       </div>
-      <UiCard v-if="history.length && (historyHasSpend || failedMonths.length)">
+      <UiCard v-if="!historyEmpty && history.length && (historyHasSpend || failedMonths.length)">
         <UiSparkline
           :points="sparklinePoints"
           aria-label="Cost sparkline (last 12 months)"

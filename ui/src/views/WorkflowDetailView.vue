@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import type { SchemaLoadedWorkflowTemplate } from '@/api'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
 import TemplateRenderer from '@/components/renderers/TemplateRenderer.vue'
-import { UiButton, UiCallout, UiLoadingState, UiPageShell } from '@/components/ui'
+import { UiButton, UiCallout, UiPageShell, UiSkeleton } from '@/components/ui'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { ApiError, apiFetch, formatApiError } from '@/lib/client'
 import { projectIdFromRoute } from '@/lib/stackos/projectNavigation'
@@ -112,10 +112,34 @@ onBeforeUnmount(() => { generation++; removeRouteListener() })
         </UiButton>
       </template>
     </ProjectPageHeader>
-    <UiLoadingState
+    <div
       v-if="loading && !template"
-      label="Loading workflow"
-    />
+      role="status"
+      aria-label="Loading workflow"
+      aria-busy="true"
+      class="space-y-4"
+    >
+      <p class="min-h-5 text-xs text-fg-muted">Loading workflow</p>
+      <div class="workflow-loading" aria-hidden="true">
+        <div class="space-y-4">
+          <UiSkeleton width="7rem" :height="20" />
+          <div class="overflow-hidden rounded-lg border border-default bg-bg-surface">
+            <div v-for="stage in 3" :key="stage" class="flex items-center gap-5 border-b border-subtle px-5 py-3 last:border-b-0">
+              <UiSkeleton shape="block" :width="28" :height="28" />
+              <UiSkeleton width="55%" />
+            </div>
+          </div>
+        </div>
+        <div class="min-w-0 space-y-6">
+          <div v-for="section in 2" :key="section" class="space-y-4">
+            <UiSkeleton width="9rem" :height="20" />
+            <div class="rounded-lg border border-default bg-bg-surface p-4">
+              <UiSkeleton :lines="3" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     <div v-if="template" class="min-h-5 text-xs text-fg-muted" role="status">
       <details v-if="error">
         <summary class="focus-ring cursor-pointer rounded-sm">Last accepted workflow · refresh required</summary>
@@ -145,4 +169,6 @@ onBeforeUnmount(() => { generation++; removeRouteListener() })
 
 <style scoped>
 .workflow-page :deep(.ui-page-header h1) { white-space: normal; overflow-wrap: anywhere; }
+.workflow-loading { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 32px; }
+@media (max-width: 900px) { .workflow-loading { grid-template-columns: minmax(0, 1fr); gap: 24px; } }
 </style>

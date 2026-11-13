@@ -33,6 +33,8 @@ export const useCostsStore = defineStore('costs', () => {
   const costError = ref<string | null>(null)
   const budgetsError = ref<string | null>(null)
   const historyErrors = ref<Record<string, string>>({})
+  const historyEmpty = ref(false)
+  let historyRange = ''
   const loading = computed(() => costLoading.value || budgetsLoading.value || historyLoading.value)
   const error = computed(() => costError.value || budgetsError.value || Object.values(historyErrors.value)[0] || null)
   const currentProjectId = ref<number | null>(null)
@@ -45,6 +47,8 @@ export const useCostsStore = defineStore('costs', () => {
     budgetsLoaded.value = false
     costError.value = budgetsError.value = null
     historyErrors.value = {}
+    historyEmpty.value = false
+    historyRange = ''
     currentProjectId.value = projectId
     month.value = null
   })
@@ -117,6 +121,11 @@ export const useCostsStore = defineStore('costs', () => {
         const ym = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`
         ymRange.push(ym)
       }
+      const range = ymRange.join(',')
+      if (historyRange !== range) {
+        historyEmpty.value = false
+        historyRange = range
+      }
       const results = await Promise.allSettled(
         ymRange.map(async (ym) => {
           const params = new URLSearchParams({ month: ym })
@@ -127,6 +136,7 @@ export const useCostsStore = defineStore('costs', () => {
       )
       const next: CostResponse[] = []
       const failures: Record<string, string> = {}
+      let accessLost = false
       if (request.isCurrent()) {
         for (const [index, result] of results.entries()) {
           const ym = ymRange[index]!
@@ -135,12 +145,17 @@ export const useCostsStore = defineStore('costs', () => {
             failures[ym] = formatApiError(result.reason, 'Failed to load history')
             const previous = history.value.find(row => row.period_start.startsWith(ym))
             const denied = result.reason instanceof ApiError && [401, 403, 404].includes(result.reason.status)
+            accessLost ||= denied
             if (previous && !denied) next.push(previous)
           }
         }
         next.sort((a, b) => a.period_start.localeCompare(b.period_start))
         history.value = next
         historyErrors.value = failures
+        // A transient failure cannot change an accepted empty presentation.
+        // A first partial read cannot establish empty history either.
+        if (accessLost || next.some(row => row.total_usd > 0)) historyEmpty.value = false
+        else if (!Object.keys(failures).length) historyEmpty.value = next.length > 0
       }
     } finally {
       const current = request.isCurrent()
@@ -163,6 +178,8 @@ export const useCostsStore = defineStore('costs', () => {
     budgetsLoaded.value = false
     costError.value = budgetsError.value = null
     historyErrors.value = {}
+    historyEmpty.value = false
+    historyRange = ''
     currentProjectId.value = null
     month.value = null
   }
@@ -180,6 +197,7 @@ export const useCostsStore = defineStore('costs', () => {
     costError,
     budgetsError,
     historyErrors,
+    historyEmpty,
     currentProjectId,
     month,
     hasNoSpendYet,

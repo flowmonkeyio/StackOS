@@ -112,4 +112,28 @@ describe('CostBudgetTab', () => {
     expect(w.text()).not.toContain('No cost history yet')
     expect(w.get('table').element).toBe(table)
   })
+
+  it('keeps the accepted zero-history presentation mounted through failure and recovery', async () => {
+    globalThis.fetch = vi.fn(async input => Response.json(String(input).includes('/budgets') ? [] : costFor(input, 0))) as typeof fetch
+    const w = await open()
+    const history = w.get('section[aria-label="12-month history"]')
+    const empty = history.get('.ui-empty-state').element
+    let release!: () => void
+    const pending = new Promise<void>(resolve => { release = resolve })
+    globalThis.fetch = vi.fn(async input => {
+      if (String(input).includes('/budgets')) return Response.json([])
+      await pending
+      return Response.json({ detail: 'History refresh failed' }, { status: 503 })
+    }) as typeof fetch
+    await w.get('button').trigger('click'); await flushPromises()
+    expect(history.get('.ui-empty-state').element).toBe(empty)
+    release(); await flushPromises()
+    expect(history.get('.ui-empty-state').element).toBe(empty)
+    expect(history.findComponent({ name: 'UiSparkline' }).exists()).toBe(false)
+    expect(history.text()).toContain('History is incomplete')
+    globalThis.fetch = vi.fn(async input => Response.json(String(input).includes('/budgets') ? [] : costFor(input, 0))) as typeof fetch
+    await w.get('button').trigger('click'); await flushPromises()
+    expect(history.get('.ui-empty-state').element).toBe(empty)
+    expect(history.text()).not.toContain('History is incomplete')
+  })
 })

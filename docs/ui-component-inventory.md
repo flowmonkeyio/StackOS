@@ -222,6 +222,11 @@ remain meaningful. Each failed history month is reported; retained values for th
 month are marked stale, and missing months are never filled with zero. Reserved
 status lines and keyboard-accessible error disclosures preserve compatible content
 positions until the operator chooses to expand diagnostics.
+Accepted-empty workflow lists and complete empty history keep their presentation
+through transient refresh failure; an initial partial history read cannot establish
+empty history. Confirmed denial clears the affected list or history acceptance.
+Workflow and domain cold reads use layout-shaped `UiSkeleton` placeholders,
+replaced by the real content or explicit unavailable/disabled result.
 
 Both Home pages share `views/home/AgentActivitySection.vue`: Input / Cache /
 Output headlines, date controls, daily chart with input detail, and an accessible

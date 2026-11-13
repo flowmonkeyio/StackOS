@@ -201,6 +201,40 @@ describe('costs store', () => {
     expect(store.currentProjectId).toBeNull()
     expect(store.loading).toBe(false)
   })
+
+  it('establishes empty history only from a complete read and retires it on range changes or denial', async () => {
+    const store = useCostsStore()
+    let count = 0
+    globalThis.fetch = vi.fn(async input => {
+      const month = new URL(String(input), 'http://localhost').searchParams.get('month')!
+      const row = { ...ZERO_COST, period_start: `${month}-01T00:00:00Z` }
+      return ++count === 1 ? Response.json(row) : Response.json({ detail: 'Partial history' }, { status: 503 })
+    }) as typeof fetch
+    await store.refreshHistory(1, 2)
+    expect(store.historyEmpty).toBe(false)
+    globalThis.fetch = vi.fn(async input => {
+      const month = new URL(String(input), 'http://localhost').searchParams.get('month')!
+      return Response.json({ ...ZERO_COST, period_start: `${month}-01T00:00:00Z` })
+    }) as typeof fetch
+    await store.refreshHistory(1, 2)
+    expect(store.historyEmpty).toBe(true)
+    globalThis.fetch = vi.fn(async () => Response.json({ detail: 'Temporary' }, { status: 503 })) as typeof fetch
+    await store.refreshHistory(1, 2)
+    expect(store.historyEmpty).toBe(true)
+    const changedRange = store.refreshHistory(1, 3)
+    expect(store.historyEmpty).toBe(false)
+    await changedRange
+    globalThis.fetch = vi.fn(async input => {
+      const month = new URL(String(input), 'http://localhost').searchParams.get('month')!
+      return Response.json({ ...ZERO_COST, period_start: `${month}-01T00:00:00Z` })
+    }) as typeof fetch
+    await store.refreshHistory(1, 3)
+    expect(store.historyEmpty).toBe(true)
+    globalThis.fetch = vi.fn(async () => Response.json({ detail: 'Denied' }, { status: 403 })) as typeof fetch
+    await store.refreshHistory(1, 3)
+    expect(store.historyEmpty).toBe(false)
+    expect(store.history).toEqual([])
+  })
 })
 
 function deferred<T>() {

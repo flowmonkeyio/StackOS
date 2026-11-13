@@ -14,6 +14,20 @@ async function open(path = '/projects/1/plugins/engineering/workflows/engineerin
 describe('Workflow detail', () => {
   beforeEach(() => { client.apiFetch.mockReset().mockImplementation(async (url: string) => url.startsWith('/api/v1/plugins?') ? [plugin(), plugin('support')] : workflow()) })
   afterEach(() => { wrappers.forEach(wrapper => wrapper.unmount()); wrappers.length = 0; document.body.innerHTML = '' })
+  it.each([
+    '/projects/1/plugins/engineering/workflows/engineering.tracked-delivery',
+    '/projects/1/workflows/customer.weekly-review',
+  ])('uses layout-shaped initial structure without inventing stages or permission: %s', async path => {
+    let resolve!: (value: unknown) => void
+    client.apiFetch.mockImplementation((url: string) => url.startsWith('/api/v1/plugins?') ? Promise.resolve([plugin()]) : new Promise(value => { resolve = value }))
+    const { wrapper } = await open(path)
+    expect(wrapper.get('[aria-label="Loading workflow"]').findAll('.ui-skeleton').length).toBeGreaterThan(3)
+    expect(wrapper.find('ol').exists()).toBe(false)
+    expect(wrapper.text()).not.toMatch(/Start run|Ready for this project/)
+    resolve(path.includes('/plugins/') ? workflow() : configuredWorkflow()); await flushPromises()
+    expect(wrapper.find('[aria-label="Loading workflow"]').exists()).toBe(false)
+    expect(wrapper.find('ol').exists()).toBe(true)
+  })
   function configuredWorkflow(key = 'customer.weekly-review') {
     const result = workflow(key)
     result.summary.plugin_slug = null
