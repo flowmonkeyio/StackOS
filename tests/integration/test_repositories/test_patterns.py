@@ -25,12 +25,12 @@ def test_pattern_crud_retry_revision_and_missing(session: Session):
     assert repo.list().items == []
     first = repo.upsert(**payload())
     assert first.source == "custom" and first.source_label == "Custom"
-    assert first.revision == 1 and first.etag == "1"
+    assert first.revision == 1
     assert repo.upsert(**payload()) == first
     assert repo.get(key=first.key) == first
     with pytest.raises(ConflictError) as absent:
         repo.upsert(**payload(body="changed"))
-    assert absent.value.data["current_etag"] == "1"
+    assert absent.value.data["current_etag"] == first.etag
     changed = repo.upsert(**payload(body="changed"), expected_etag=first.etag)
     assert changed.id == first.id and changed.revision == 2
     with pytest.raises(ConflictError):
@@ -113,7 +113,7 @@ def test_pattern_intervening_write_is_not_overwritten(tmp_path, monkeypatch, act
                     first.upsert(**payload(body="stale edit"), expected_etag=initial.etag)
                 else:
                     first.delete(initial.id, expected_etag=initial.etag)
-            assert conflict.value.data["current_etag"] == "2"
+            assert conflict.value.data["current_etag"] == other.get(pattern_id=initial.id).etag
             assert other.get(pattern_id=initial.id).body == "intervening edit"
     finally:
         engine.dispose()

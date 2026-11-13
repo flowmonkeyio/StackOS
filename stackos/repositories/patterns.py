@@ -64,7 +64,7 @@ class PatternSummary(BaseModel):
     summary: str
     tags: list[str]
     revision: int
-    etag: str
+    etag: str = Field(description="Opaque record identity/revision token; copy it unchanged.")
     created_at: datetime
     updated_at: datetime
     source: Literal["custom", "stackos", "customized"] = "custom"
@@ -88,7 +88,9 @@ def _summary(row) -> PatternSummary:
         summary=row.summary,
         tags=row.tags_json,
         revision=row.revision,
-        etag=str(row.revision),
+        # Keys can be reused after deletion; bind the precondition to the
+        # non-reused row ID too so an old draft cannot target its replacement.
+        etag=f"{row.id}:{row.revision}",
         created_at=row.created_at,
         updated_at=row.updated_at,
     )

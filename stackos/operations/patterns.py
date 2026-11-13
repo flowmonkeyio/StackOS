@@ -111,7 +111,7 @@ def operation_specs():
         ),
         "delete": OperationExample(
             title="Delete a selected entry at its current revision",
-            arguments={"pattern_id": 1, "expected_etag": "1"},
+            arguments={"pattern_id": 1, "expected_etag": "1:1"},
         ),
     }
     definitions = [

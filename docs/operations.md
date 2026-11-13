@@ -60,9 +60,11 @@ Create through `stackos ops call pattern.upsert --input pattern.json` or
 
 This example is an input contract, not shipped content. A stable-key retry with
 identical content returns the existing record. A differing save must include the
-current `expected_etag` from get/list. Delete takes `pattern_id` and
-`expected_etag`. Missing records return 404; absent/stale edit tokens return 409
-with `current_etag`, identity and repair guidance. Re-read and reconcile the draft
+current `expected_etag` from get/list. Copy this opaque token unchanged: it binds
+the record identity and revision, so deleting and recreating the same key cannot
+make an old draft current again. Do not derive it from `revision`. Delete takes
+`pattern_id` and `expected_etag`. Missing records return 404; absent/stale edit
+tokens return 409 with `current_etag`, identity and repair guidance. Re-read and reconcile the draft
 before retrying. Write receipts contain summaries, refs, revision and etag, never
 the body. Compact/raw are supported; ack is intentionally unavailable.
 

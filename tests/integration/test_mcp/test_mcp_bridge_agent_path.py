@@ -148,9 +148,9 @@ def test_patterns_global_crud_and_combined_filter_parity(
     assert stale["result"]["isError"] is True
     assert _structured(stale)["data"]["current_etag"] == created["etag"]
 
-    updated = call("pattern.upsert", content | {"body": "updated once", "expected_etag": "1"})[
-        "data"
-    ]
+    updated = call(
+        "pattern.upsert", content | {"body": "updated once", "expected_etag": created["etag"]}
+    )["data"]
     assert updated["revision"] == 2
     assert http("pattern.get", {"pattern_id": created["id"]})["body"] == "updated once"
     # The browser-safe generic route shares the same owner and etag check.
@@ -169,6 +169,128 @@ def test_patterns_global_crud_and_combined_filter_parity(
             headers=headers,
         ).status_code
         == 404
+    )
+
+
+@pytest.mark.parametrize("transport", ["http", "global-mcp", "cli"])
+def test_patterns_recreated_key_rejects_old_record_preconditions(
+    mcp_client: MCPClient,
+    mcp_settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    transport: str,
+) -> None:
+    """A stale draft cannot edit/delete a replacement at the same reusable key."""
+    import io
+    from urllib.error import HTTPError
+    from urllib.parse import urlsplit
+
+    from typer.testing import CliRunner
+
+    import stackos.cli.api_client as cli_api
+    from stackos.cli import app
+
+    api = mcp_client.test_client
+    headers = {"Authorization": f"Bearer {mcp_client.auth_token}"}
+    proxy, client = _bridge(mcp_client)
+    _initialize(proxy, client)
+    started = _tool_call(proxy, client, "workspace.startSession", {"global_session": True})
+    assert not started["result"].get("isError"), started
+    assert proxy.scoped_project_id is None
+
+    def urlopen_fixture(request, timeout):
+        # Substitute socket transport only. Real CLI token loading, headers,
+        # HTTPError mapping, parsing and output run against the ASGI daemon.
+        response = api.request(
+            request.method,
+            urlsplit(request.full_url).path,
+            content=request.data,
+            headers=dict(request.header_items()),
+        )
+        body = io.BytesIO(response.content)
+        if response.is_error:
+            raise HTTPError(
+                request.full_url,
+                response.status_code,
+                response.reason_phrase,
+                response.headers,
+                body,
+            )
+        return body
+
+    monkeypatch.setattr("urllib.request.urlopen", urlopen_fixture)
+    monkeypatch.setattr(cli_api, "get_settings", lambda: mcp_settings)
+
+    def invoke(name, arguments):
+        if transport == "http":
+            response = api.post(
+                f"/api/v1/operations/{name}/call", json={"arguments": arguments}, headers=headers
+            )
+            return response.status_code, response.json()
+        if transport == "global-mcp":
+            result = _toolbox_call(proxy, client, name, arguments)
+            body = _structured(result)
+            if result["result"].get("isError"):
+                assert body["code"] == -32008, result
+                return 409, body
+            return 200, body
+        result = CliRunner().invoke(
+            app,
+            ["ops", "call", name, "--input", "-"],
+            input=json.dumps(arguments),
+            catch_exceptions=False,
+        )
+        if result.exit_code == 0:
+            return 200, json.loads(result.stdout)
+        assert result.exit_code == 1, result.output
+        prefix = "daemon API error 409: "
+        assert prefix in result.output, result.output
+        return 409, json.loads(result.output.split(prefix, 1)[1].strip())
+
+    original = dict(
+        key="reusable-fixture",
+        title="Original",
+        summary="Applicability",
+        body="Original recommendation",
+        tags=["old"],
+    )
+    status, result = invoke("pattern.upsert", original)
+    assert status == 200, result
+    first = result["data"]
+    assert (
+        invoke("pattern.delete", {"pattern_id": first["id"], "expected_etag": first["etag"]})[0]
+        == 200
+    )
+    replacement = original | dict(title="Replacement", body="Replacement content", tags=["new"])
+    status, result = invoke("pattern.upsert", replacement)
+    assert status == 200, result
+    current = result["data"]
+    assert current["id"] != first["id"] and current["revision"] == first["revision"]
+    snapshot = invoke("pattern.get", {"key": original["key"]})
+
+    for name, arguments in (
+        ("pattern.upsert", original | {"body": "Stale draft", "expected_etag": first["etag"]}),
+        ("pattern.delete", {"pattern_id": current["id"], "expected_etag": first["etag"]}),
+    ):
+        status, rejection = invoke(name, arguments)
+        assert status == 409, rejection
+        assert rejection["data"]["pattern_id"] == current["id"]
+        assert rejection["data"]["current_etag"] == current["etag"]
+        assert invoke("pattern.get", {"key": original["key"]}) == snapshot
+
+    status, saved = invoke(
+        "pattern.upsert",
+        replacement
+        | {
+            "body": "Legitimate save",
+            "expected_etag": current["etag"],
+        },
+    )
+    assert status == 200 and saved["data"]["revision"] == 2, saved
+    assert (
+        invoke(
+            "pattern.delete", {"pattern_id": current["id"], "expected_etag": saved["data"]["etag"]}
+        )[0]
+        == 200
     )
 
 
