@@ -102,7 +102,11 @@ are released when the read settles or the project scope exits.
 
 Home connected tools use the existing `summary_only=true` account read.
 Project headings reuse canonical project metadata rather than polling the
-portfolio's work aggregates. Full account setup reads remain unchanged.
+portfolio's work aggregates. Explicit project Home Refresh revalidates one
+project record; Overview Refresh uses the existing paginated project catalog.
+Pending project metadata reads are shared, and canonical newer metadata wins
+over an older late response even when active-task results are empty.
+Full account setup reads remain unchanged.
 Task context facts appear independently of file previews. More details admits
 artifact reads with at most four in flight; one failed preview preserves other
 contexts and files. These local ownership checks do not replace the assembled

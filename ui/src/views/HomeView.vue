@@ -4,6 +4,7 @@ import { UiButton, UiConfirmDialog, UiPageHeader, UiPageShell, UiSegmentedContro
 import { isDesktopShell } from '@/lib/desktop'
 import { GETTING_STARTED_URL } from '@/lib/externalLinks'
 import { useStackOsCatalogStore } from '@/stores/plugins'
+import { useProjectsStore } from '@/stores/projects'
 import ActiveTaskList from './home/ActiveTaskList.vue'
 import DeliveryCapacityControl from './home/DeliveryCapacityControl.vue'
 import HomeConnectionsSection from './home/HomeConnectionsSection.vue'
@@ -18,6 +19,7 @@ const repairOpen = ref(false)
 const activeTasks = ref<InstanceType<typeof ActiveTaskList> | null>(null)
 const capacityControl = ref<InstanceType<typeof DeliveryCapacityControl> | null>(null)
 const catalog = useStackOsCatalogStore()
+const projects = useProjectsStore()
 const accounts = computed(() => catalog.homeAccounts)
 const agents = useAgentStats()
 const usageVisibility = ref<boolean | null>(true)
@@ -39,7 +41,7 @@ onMounted(() => {
 })
 
 async function refresh(): Promise<void> {
-  await Promise.all([activeTasks.value?.refresh(), capacityControl.value?.refresh(), catalog.refreshHomeAccounts(), agents.load(), loadHealth(), loadHostStatuses()])
+  await Promise.all([projects.loadAll(), activeTasks.value?.refresh(), capacityControl.value?.refresh(), catalog.refreshHomeAccounts(), agents.load(), loadHealth(), loadHostStatuses()])
 }
 function confirmRepair(): void {
   repairOpen.value = false

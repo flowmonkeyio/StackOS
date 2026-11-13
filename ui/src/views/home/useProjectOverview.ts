@@ -13,11 +13,24 @@ export function useProjectOverview(projectId: Ref<number>) {
   const loading = ref(true)
   const errors = ref<Record<string, string>>({})
   let generation = 0
+  let metadataRead: { id: number; promise: Promise<Project> } | null = null
   onBeforeUnmount(() => {
     generation += 1
   })
 
-  async function load(): Promise<void> {
+  function readMetadata(id: number, revalidate: boolean): Promise<Project> {
+    if (metadataRead?.id === id) return metadataRead.promise
+    const cached = projects.getById(id)
+    if (cached && !revalidate) return Promise.resolve(cached)
+    const request = { id, promise: apiFetch<Project>(`/api/v1/projects/${id}`) }
+    metadataRead = request
+    request.promise = request.promise.finally(() => {
+      if (metadataRead === request) metadataRead = null
+    })
+    return request.promise
+  }
+
+  async function load(revalidateMetadata = false): Promise<void> {
     const request = ++generation
     const id = projectId.value
     async function read<T>(key: string, promise: Promise<T>, commit: (data: T) => void) {
@@ -46,11 +59,11 @@ export function useProjectOverview(projectId: Ref<number>) {
       ),
       read(
         'work',
-        projects.getById(id) ? Promise.resolve(projects.getById(id)!) : apiFetch<Project>(`/api/v1/projects/${id}`),
+        readMetadata(id, revalidateMetadata),
         (data) => {
           if (data.id !== id) throw new Error('Project metadata scope did not match this Home.')
           projects.reconcileProjectMetadata([data])
-          project.value = projects.isProjectDeleted(id) ? null : data
+          project.value = projects.isProjectDeleted(id) ? null : projects.getById(id) ?? data
         },
       ),
     ])

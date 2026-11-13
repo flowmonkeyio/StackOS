@@ -148,7 +148,7 @@ it('routes menu intents through the real shell, shared store and canonical opera
 })
 
 it.each(['/projects/1', '/'])(
-  'updates the real route label after rename and retains it across a late portfolio response on %s',
+  'updates the real route label after rename and retains it across a late metadata response on %s',
   async (path) => {
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -159,30 +159,35 @@ it.each(['/projects/1', '/'])(
     }
     projects.items = [project]
     projects.activeProjectId = project.id
-    let deferPortfolio = false
-    let finishPortfolio!: () => void
+    let deferMetadata = false
+    let finishMetadata!: () => void
     const writes: unknown[] = []
     globalThis.fetch = vi.fn(async (input, init) => {
       const url = String(input)
       if (url.startsWith('/api/v1/projects?')) return json({ items: [project], next_cursor: null, total_estimate: 1 })
+      if (url === '/api/v1/projects/1') {
+        const snapshot = { ...project }
+        if (deferMetadata) return new Promise<Response>(resolve => { finishMetadata = () => resolve(json(snapshot)) })
+        return json(snapshot)
+      }
       if (url.includes('/operations/project.update/')) {
         const args = JSON.parse(String(init?.body)).arguments
         writes.push(args)
-        project = { ...project, name: args.patch.name }
+        project = { ...project, name: args.patch.name, updated_at: '2026-09-07T21:00:00Z' }
         return json({ data: project })
       }
       if (url.includes('/operations/project.portfolio/') || url.includes('/operations/tracker.activeTasks')) {
         const page = url.includes('tracker.activeTasks')
           ? activeTasksFixture(url.includes('activeTasksAll') ? null : 1, [activeTaskFixture({ project: { ...project }, title: 'Fixture work' })])
           : { items: [portfolioFixture({ ...project })], next_cursor: null, total_estimate: 1 }
-        if (deferPortfolio && (path === '/' ? url.includes('tracker.activeTasks') : url.includes('project.portfolio'))) return new Promise<Response>((resolve) => { finishPortfolio = () => resolve(json(page)) })
+        if (deferMetadata && path === '/' && url.includes('tracker.activeTasks')) return new Promise<Response>((resolve) => { finishMetadata = () => resolve(json(page)) })
         return json(page)
       }
       if (url.includes('tracker.ticketCounts')) return json(ticketSummaryFixture())
       if (url.includes('tracker.agentStats')) return json(agentStatsFixture())
       if (url.includes('workflowExtension.list')) return json({ extensions: [] })
       if (url.includes('/workflow-templates')) return json({ templates: [] })
-      if (url.includes('/connections/accounts')) return json({ accounts: [] })
+      if (url.includes('/connections/accounts') || url === '/api/v1/auth/accounts?summary_only=true') return json({ accounts: [] })
       return json([])
     })
     const router = createRouter({ history: createMemoryHistory(), routes: [
@@ -206,10 +211,10 @@ it.each(['/projects/1', '/'])(
     expect(visibleLabel()).toContain('Alpha')
 
     // This read started with the old name and will finish after the rename.
-    deferPortfolio = true
+    deferMetadata = true
     await view.findAll('button').find((button) => button.text() === 'Refresh')!.trigger('click')
     await flushPromises()
-    expect(finishPortfolio).toBeTypeOf('function')
+    expect(finishMetadata).toBeTypeOf('function')
     const selector = app.getComponent(ProjectSwitcher)
     await selector.get('button').trigger('click')
     await flushPromises()
@@ -228,7 +233,7 @@ it.each(['/projects/1', '/'])(
     expect(projects.getById(1)?.slug).toBe('business-one')
     expect(router.currentRoute.value.fullPath).toBe(path)
 
-    finishPortfolio()
+    finishMetadata()
     await flushPromises()
     expect(visibleLabel()).toContain('Alpha Studio')
     expect(projects.activeProject?.name).toBe('Alpha Studio')
@@ -236,9 +241,9 @@ it.each(['/projects/1', '/'])(
   },
 )
 
-it.each(['/projects/1', '/'])(
-  'reconciles a newer canonical name through the existing Refresh flow on %s',
-  async (path) => {
+it.each([['/projects/1', true], ['/projects/1', false], ['/', true], ['/', false]] as const)(
+  'reconciles canonical metadata through Refresh on %s (active work=%s)',
+  async (path, activeWork) => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const projects = useProjectsStore()
@@ -248,21 +253,23 @@ it.each(['/projects/1', '/'])(
     }
     projects.items = [project]
     projects.activeProjectId = 1
-    const portfolioRequests: unknown[] = []
-    globalThis.fetch = vi.fn(async (input, init) => {
+    const metadataRequests: string[] = []
+    globalThis.fetch = vi.fn(async (input) => {
       const url = String(input)
-      if (url.startsWith('/api/v1/projects?')) return json({ items: [project], next_cursor: null, total_estimate: 1 })
+      if (url.startsWith('/api/v1/projects?') || url === '/api/v1/projects/1') {
+        metadataRequests.push(url)
+        return json(url === '/api/v1/projects/1' ? project : { items: [project], next_cursor: null, total_estimate: 1 })
+      }
       if (url.includes('/operations/project.portfolio/') || url.includes('/operations/tracker.activeTasks')) {
-        portfolioRequests.push(JSON.parse(String(init?.body)).arguments)
         return json(url.includes('tracker.activeTasks')
-          ? activeTasksFixture(url.includes('activeTasksAll') ? null : 1, [activeTaskFixture({ project: { ...project }, title: 'Fixture work' })])
+          ? activeTasksFixture(url.includes('activeTasksAll') ? null : 1, activeWork ? [activeTaskFixture({ project: { ...project }, title: 'Fixture work' })] : [])
           : { items: [portfolioFixture({ ...project })], next_cursor: null, total_estimate: 1 })
       }
       if (url.includes('tracker.ticketCounts')) return json(ticketSummaryFixture())
       if (url.includes('tracker.agentStats')) return json(agentStatsFixture())
       if (url.includes('workflowExtension.list')) return json({ extensions: [] })
       if (url.includes('/workflow-templates')) return json({ templates: [] })
-      if (url.includes('/connections/accounts')) return json({ accounts: [] })
+      if (url.includes('/connections/accounts') || url === '/api/v1/auth/accounts?summary_only=true') return json({ accounts: [] })
       return json([])
     })
     const router = createRouter({ history: createMemoryHistory(), routes: [
@@ -280,15 +287,15 @@ it.each(['/projects/1', '/'])(
     await flushPromises()
     const view = path === '/' ? app.getComponent(HomeView) : app.getComponent(HomeConsoleView)
     const visibleLabel = () => path === '/'
-      ? app.getComponent(ActiveTaskList).get('.active-task-row__project').text()
+      ? app.getComponent(ProjectSwitcher).get('button').text()
       : view.get('h1').text()
     expect(visibleLabel()).toContain('Alpha')
-    const beforeReads = portfolioRequests.length
+    const beforeReads = metadataRequests.length
     const refresh = view.findAll('button').find((button) => button.text() === 'Refresh')!
     project = { ...project, name: 'Alpha Agency', updated_at: '2026-09-07T21:00:00Z', domain: 'updated.test' }
     await refresh.trigger('click')
     await flushPromises()
-    expect(portfolioRequests.length).toBeGreaterThan(beforeReads)
+    expect(metadataRequests).toHaveLength(beforeReads + 1)
     expect(visibleLabel()).toContain('Alpha Agency')
     expect(app.getComponent(ProjectSwitcher).get('button').text()).toContain('Alpha Agency')
     expect(projects.activeProject?.name).toBe('Alpha Agency')
@@ -296,6 +303,8 @@ it.each(['/projects/1', '/'])(
     expect(projects.activeProject?.slug).toBe('business-one')
     expect(projects.activeProjectId).toBe(1)
     expect(router.currentRoute.value.fullPath).toBe(path)
+    if (path === '/' && activeWork) expect(app.getComponent(ActiveTaskList).get('.active-task-row__project').text()).toBe('Alpha Agency')
+    expect(vi.mocked(globalThis.fetch).mock.calls.some(([url]) => String(url).includes('project.portfolio'))).toBe(false)
 
     // A subsequent older authoritative snapshot cannot undo the newer record.
     project = { ...project, name: 'Alpha', updated_at: '2026-09-07T20:00:00Z' }
