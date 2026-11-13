@@ -476,13 +476,15 @@ def reserve_setup(session, scheduler, capacities):
 
 
 def schedule_setup(*, project_id, state, session_factory, scheduler):
+    from stackos.jobs.scheduler import task_executor
+
     try:
         scheduler.add_job(
             run_setup,
             trigger="date",
             id=state["job_ref"],
             jobstore="memory",
-            executor="task-delivery",
+            executor=task_executor(scheduler, project_id),
             kwargs={
                 "project_id": project_id,
                 "request_id": state["request_id"],

@@ -45,8 +45,10 @@ from stackos.operations.tracker.schemas import TaskDeliveryAgent, TaskDeliveryAg
 from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
 from stackos.repositories.run_plans import RunPlanRepository
 from stackos.repositories.tracker import TrackerRepository
+from stackos.repositories.tracker.board import task_column
 from stackos.repositories.tracker.events import record_execution_change
 from stackos.repositories.tracker.schema import (
+    TaskDeliveryStateOut,
     TrackerCorrectionIntent,
     TrackerDeliveryScopeExclusion,
 )
@@ -581,8 +583,7 @@ def _queue_delivery(session: Session, repo: TrackerRepository, project_id, task_
             changes.get("step_id"),
             starting=True,
         )
-        if task.status not in {TrackerItemStatus.NOT_STARTED, TrackerItemStatus.IN_PROGRESS}:
-            raise ValidationError("Task must be open before starting delivery")
+        _validate_start_placement(task, workflow=changes.get("run_plan_id") is not None)
         # Directory ownership spans this daemon's task jobs. Git metadata is
         # deliberately absent from this identity; non-Git directories work too.
         active_directories = session.exec(
@@ -1333,6 +1334,8 @@ def drain_delivery(*, session_factory, scheduler: BaseScheduler) -> None:
     """Drain the existing metadata queue; no priority policy or second queue."""
     from apscheduler.schedulers.base import STATE_STOPPED
 
+    from stackos.jobs.scheduler import task_executor
+
     if getattr(scheduler, "state", None) == STATE_STOPPED and getattr(
         scheduler, "task_delivery_started", False
     ):
@@ -1357,7 +1360,7 @@ def drain_delivery(*, session_factory, scheduler: BaseScheduler) -> None:
                 trigger="date",
                 id=state["job_ref"],
                 jobstore="memory",
-                executor="task-delivery",
+                executor=task_executor(scheduler, project_id),
                 kwargs={
                     "session_factory": session_factory,
                     "project_id": project_id,
@@ -1471,6 +1474,29 @@ def missed_delivery_job(event, *, session_factory, scheduler):
     _request_delivery_drain(session_factory, scheduler)
 
 
+def _validate_start_placement(task, *, workflow: bool) -> None:
+    """Check canonical placement before a queued snapshot can change projection.
+
+    A running workflow step has its own validated launch scope. Explicit retained-
+    handoff recovery may also carry prior invocation history. The caller checks
+    that scope and freezes prepared agents without resetting lifecycle or history.
+    """
+    if task.status not in {TrackerItemStatus.NOT_STARTED, TrackerItemStatus.IN_PROGRESS}:
+        raise ValidationError("Task must be open before starting delivery")
+    column = task_column(task)
+    retained = TaskDeliveryStateOut.from_metadata(task.metadata_json)
+    if column == "todo" or (
+        column in {"stopped", "in-progress"}
+        and (workflow or (retained is not None and retained.status in {"stopped", "complete"}))
+    ):
+        return
+    raise ValidationError(
+        "Fresh automatic delivery requires a prepared Todo task. "
+        "Place Backlog work in Todo before an explicit handoff; manually active work stays manual.",
+        data={"board_column": column, "next_operations": ["tracker.get", "tracker.placeTask"]},
+    )
+
+
 def start_delivery(
     *,
     session: Session,
@@ -1530,8 +1556,7 @@ def start_delivery(
         return _receipt(task_key, previous)
     _retain_reservation(previous, _admission_id(scheduler))
     _workflow_scope(repo, project_id, task, run_plan_id, step_id, starting=True)
-    if task.status not in {TrackerItemStatus.NOT_STARTED, TrackerItemStatus.IN_PROGRESS}:
-        raise ValidationError("Task must be open before starting delivery")
+    _validate_start_placement(task, workflow=run_plan_id is not None)
     snapshot = repo.get(project_id=project_id, task_key=task_key, include_graph=False)
     retained_agents = None
     saved_agents = previous.get("agents") or {

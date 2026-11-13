@@ -24,8 +24,9 @@ Per audit MAJOR-23 the executor map is:
 - ``default`` — ``AsyncIOExecutor`` for short jobs.
 - ``long`` — ``ThreadPoolExecutor(max_workers=3)`` for genuinely
   blocking calls, including encrypted backups.
-- ``task-delivery`` — a separate bounded pool of 32 workers. The task
-  admission owner applies the persisted 1..32 limit (default 3) before scheduling.
+- ``task-delivery:<project_id>`` — lazily registered project pools of 32 workers.
+  The shared task/setup admission owner applies each persisted 1..32 project
+  limit before scheduling. Limit changes never replace or resize these pools.
 
 Job defaults:
 
@@ -50,6 +51,7 @@ from apscheduler.executors.pool import ThreadPoolExecutor
 from apscheduler.jobstores.memory import MemoryJobStore
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.base import BaseScheduler
 from sqlalchemy.engine import Engine
 from sqlmodel import Session
 
@@ -65,6 +67,18 @@ RUNS_REAPER_JOB_ID = "background-runs-reaper"
 JOB_DEFAULT_MISFIRE_GRACE_SECONDS = 3600  # 1h — generous default
 REAPER_MISFIRE_GRACE_SECONDS = 600  # 10 min — reaper should run promptly
 RUNNER_MISFIRE_GRACE_SECONDS = 7200  # 2h
+
+
+def task_executor(scheduler: BaseScheduler, project_id: int) -> str:
+    """Reuse APScheduler's executor owner without an aggregate project ceiling."""
+    alias = f"task-delivery:{project_id}"
+    # Use the scheduler's own registry lock for concurrent task/setup drains.
+    # add_executor starts a new pool when the scheduler is already running;
+    # scheduler shutdown owns its retirement along with every other executor.
+    with scheduler._executors_lock:
+        if alias not in scheduler._executors:
+            scheduler.add_executor(ThreadPoolExecutor(max_workers=MAX_TASK_CAPACITY), alias=alias)
+    return alias
 
 
 def build_scheduler(settings: Settings, engine: Engine) -> AsyncIOScheduler:
@@ -83,7 +97,6 @@ def build_scheduler(settings: Settings, engine: Engine) -> AsyncIOScheduler:
     executors: dict[str, Any] = {
         "default": AsyncIOExecutor(),
         "long": ThreadPoolExecutor(max_workers=3),
-        "task-delivery": ThreadPoolExecutor(max_workers=MAX_TASK_CAPACITY),
     }
     jobstores: dict[str, Any] = {
         # Kept available for simple picklable jobs.

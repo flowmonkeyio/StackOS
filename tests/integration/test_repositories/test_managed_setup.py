@@ -548,6 +548,65 @@ def test_setup_and_delivery_compete_in_both_orders(
     assert capacity_counts(session, scheduler)["running_count"] == 0
 
 
+def test_setup_uses_its_project_limit_and_retains_claims_while_other_project_is_full(
+    managed, session, project_id, tmp_path, monkeypatch
+):
+    execution, setup_project, scheduler, factory = managed
+    assert setup_project != project_id
+    save_limits(session, {project_id: 1, setup_project: 1})
+    prepared_task(session, project_id)
+    monkeypatch.setattr(task_delivery, "_select_work", lambda *args: (None, None, False))
+    for key in ("deliver", "unrelated"):
+        root = tmp_path / key
+        root.mkdir()
+        submit(session, project_id, root, scheduler, task_key=key)
+    opened = launch(managed, host_key="codex")
+    payload = opened.attempt.model_dump(mode="json")
+    payload["managed"]["slot_reserved"] = False
+    waiting = stored_setup(session, setup_project, "waiting", payload)
+    scheduler.project_setup_claims[waiting] = "existing-fixture-claim"
+    claims = dict(scheduler.project_setup_claims)
+    task_delivery.drain_delivery(session_factory=factory, scheduler=scheduler)
+    rows = task_delivery.delivery_capacity(session, scheduler)["projects"]
+    assert {r["project_id"]: (r["running_count"], r["queued_count"]) for r in rows} == {
+        project_id: (1, 1),
+        setup_project: (1, 1),
+    }
+    assert len(scheduler.jobs) == 2
+    assert scheduler.project_setup_claims == claims
+    save_limits(session, {setup_project: 2})
+    task_delivery.drain_delivery(session_factory=factory, scheduler=scheduler)
+    assert len(scheduler.jobs) == 3
+    assert scheduler.project_setup_claims == claims
+    assert scheduler.jobs[-1][1]["executor"] == f"task-delivery:{setup_project}"
+    assert scheduler.jobs[-1][1]["kwargs"]["claim_token"] == "existing-fixture-claim"
+    assert capacity_counts(session, scheduler) == {"running_count": 3, "queued_count": 1}
+    # A new scheduler has no authority to recreate these claims or resume them.
+    assert reserve_setup(execution, session, QueuedScheduler()) is None
+
+
+def test_setup_native_error_is_failed_without_cancellation(managed, session, monkeypatch):
+    _execution, _project, scheduler, _factory = managed
+    definition = service._definition_by_key("codex")
+
+    def runner(*args, on_session, **kwargs):
+        on_session("native-error-fixture")
+        return AgentRunResult(1, thread_id="native-error-fixture", error="ordinary native error")
+
+    monkeypatch.setattr(
+        service, "_definition_by_key", lambda key: replace(definition, run_agent=runner)
+    )
+    opened = launch(managed, host_key="codex")
+    execute_job(scheduler)
+    session.expire_all()
+    row = session.get(AgentRequest, opened.attempt.request_id)
+    setup = row.metadata_json["project_setup"]
+    assert setup["status"] == "failed"
+    assert setup["managed"]["cancel_requested"] is False
+    assert setup["managed"]["slot_reserved"] is False
+    assert "ordinary native error" in setup["managed"]["diagnostic"]
+
+
 @pytest.mark.parametrize("queue_removal_fails", [False, True])
 def test_live_cancel_retains_reports_fences_late_report_and_releases_after_callback(
     threaded_session, tmp_path, monkeypatch, queue_removal_fails
