@@ -6288,6 +6288,42 @@ export interface components {
              */
             updated_at: string;
         };
+        /** ProjectSetupAnswerInput */
+        ProjectSetupAnswerInput: {
+            /** Answer */
+            answer: string;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /** Expected Revision */
+            expected_revision: number;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Id */
+            project_id: number;
+            /** Question Id */
+            question_id: string;
+            /** Question Revision */
+            question_revision: number;
+            /** Request Id */
+            request_id: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: ProjectSetupAnswerInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
         /** ProjectSetupCancelInput */
         ProjectSetupCancelInput: {
             /**
@@ -6310,6 +6346,36 @@ export interface components {
              * @enum {string}
              */
             response_mode: ProjectSetupCancelInputResponse_mode;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** ProjectSetupContinueInput */
+        ProjectSetupContinueInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /** Expected Revision */
+            expected_revision: number;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Project Id */
+            project_id: number;
+            /** Request Id */
+            request_id: number;
+            /**
+             * Response Mode
+             * @default compact
+             * @enum {string}
+             */
+            response_mode: ProjectSetupContinueInputResponse_mode;
             /**
              * Run Token
              * @default null
@@ -7561,11 +7627,29 @@ export interface components {
              */
             run_token: string | null;
         };
+        /** SetupAnswer */
+        SetupAnswer: {
+            /** Answer */
+            answer: string;
+            /**
+             * Answered At
+             * Format: date-time
+             */
+            answered_at: string;
+            /** Question Id */
+            question_id: string;
+            /** Question Request Id */
+            question_request_id: number;
+            /** Question Revision */
+            question_revision: number;
+        };
         /**
          * SetupAttempt
          * @description Versioned AgentRequest metadata; native execution evidence stays alongside it.
          */
         SetupAttempt: {
+            /** Answers */
+            answers?: components["schemas"]["SetupAnswer"][];
             /** Attempt Ref */
             attempt_ref: string;
             /**
@@ -7589,6 +7673,11 @@ export interface components {
                 [key: string]: components["schemas"]["SetupWorkflowOutcome"];
             };
             /**
+             * Partial Changes Possible
+             * @default false
+             */
+            partial_changes_possible: boolean;
+            /**
              * Predecessor Request Id
              * @default null
              */
@@ -7604,10 +7693,14 @@ export interface components {
              * @default null
              */
             recovery_condition: string | null;
+            /** Remaining Workflow Keys */
+            remaining_workflow_keys?: string[];
             /** Reports */
             reports?: components["schemas"]["SetupReportReceipt"][];
             /** Request Id */
             request_id: number;
+            /** Revalidate Workflow Keys */
+            revalidate_workflow_keys?: string[];
             /**
              * Revision
              * @default 1
@@ -7631,6 +7724,11 @@ export interface components {
              * @enum {string}
              */
             status: SetupAttemptStatus;
+            /**
+             * Successor Request Id
+             * @default null
+             */
+            successor_request_id: number | null;
             /**
              * Thread Id
              * @default null
@@ -7662,6 +7760,11 @@ export interface components {
             diagnostic: string | null;
             /** Job Ref */
             job_ref: string;
+            /**
+             * Resume Thread Id
+             * @default null
+             */
+            resume_thread_id: string | null;
             /** Settings */
             settings: {
                 [key: string]: unknown;
@@ -7684,9 +7787,9 @@ export interface components {
             /**
              * Answer State
              * @default pending
-             * @constant
+             * @enum {string}
              */
-            answer_state: "pending";
+            answer_state: SetupQuestionAnswer_state;
             /** Prompt */
             prompt: string;
             /** Question Id */
@@ -10479,7 +10582,9 @@ export type SchemaProjectFileOwnershipResult = components['schemas']['ProjectFil
 export type SchemaProjectMoveInput = components['schemas']['ProjectMoveInput'];
 export type SchemaProjectOut = components['schemas']['ProjectOut'];
 export type SchemaProjectPluginOut = components['schemas']['ProjectPluginOut'];
+export type SchemaProjectSetupAnswerInput = components['schemas']['ProjectSetupAnswerInput'];
 export type SchemaProjectSetupCancelInput = components['schemas']['ProjectSetupCancelInput'];
+export type SchemaProjectSetupContinueInput = components['schemas']['ProjectSetupContinueInput'];
 export type SchemaProjectSetupGetInput = components['schemas']['ProjectSetupGetInput'];
 export type SchemaProjectSetupOut = components['schemas']['ProjectSetupOut'];
 export type SchemaProjectSetupRemindersInput = components['schemas']['ProjectSetupRemindersInput'];
@@ -10512,6 +10617,7 @@ export type SchemaScheduledJobOut = components['schemas']['ScheduledJobOut'];
 export type SchemaScheduledNativeExecutionOut = components['schemas']['ScheduledNativeExecutionOut'];
 export type SchemaScheduledRunOut = components['schemas']['ScheduledRunOut'];
 export type SchemaSetDeliveryCapacityInput = components['schemas']['SetDeliveryCapacityInput'];
+export type SchemaSetupAnswer = components['schemas']['SetupAnswer'];
 export type SchemaSetupAttempt = components['schemas']['SetupAttempt'];
 export type SchemaSetupManagedExecution = components['schemas']['SetupManagedExecution'];
 export type SchemaSetupProgress = components['schemas']['SetupProgress'];
@@ -14121,7 +14227,19 @@ export enum ProjectMoveInputScope {
     project = "project",
     catalog = "catalog"
 }
+export enum ProjectSetupAnswerInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
 export enum ProjectSetupCancelInputResponse_mode {
+    compact = "compact",
+    raw = "raw",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum ProjectSetupContinueInputResponse_mode {
     compact = "compact",
     raw = "raw",
     standard = "standard",
@@ -14271,6 +14389,10 @@ export enum SetupAttemptStatus {
     failed = "failed",
     interrupted = "interrupted",
     cancelled = "cancelled"
+}
+export enum SetupQuestionAnswer_state {
+    pending = "pending",
+    answered = "answered"
 }
 export enum SetupQuestionResponse_channel {
     existing_agent = "existing_agent",

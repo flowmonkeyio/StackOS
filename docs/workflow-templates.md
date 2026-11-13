@@ -626,6 +626,15 @@ cancel work. Cancellation fences the owning invocation and preserves successful
 workflow receipts and partial reports; unknown native retirement stays explicit.
 Managed launch does not create a business workflow run or delivery task.
 
+Managed questions are answered through revision-checked `projectSetup.answer` in
+the console. The answer links a successor request under the same attempt and
+resumes the exact native session only after the previous invocation retires.
+`projectSetup.continue` recovers remaining partial, failed, interrupted or cancelled
+work with the same frozen selection. Prior execution/usage and successful workflow
+receipts remain intact; changed source/receipt evidence requires revalidation.
+Recovery reports possible partial edits and never invents rollback or launches a
+competing session. Existing-session questions continue in their original agent.
+
 Failed/unfinished results retain the previous successful sources and separately
 record possible partial edits. They can still be recorded when the selected folder
 becomes unavailable. Available updates compare the receipt with current effective

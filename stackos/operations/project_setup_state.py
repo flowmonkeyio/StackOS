@@ -171,6 +171,44 @@ class ProjectSetupCancelInput(MCPInput):
     response_mode: Literal["compact", "raw", "standard", "verbose"] = "compact"
 
 
+class ProjectSetupContinueInput(ProjectSetupCancelInput):
+    expected_revision: int = Field(strict=True, ge=1)
+
+
+class ProjectSetupAnswerInput(ProjectSetupContinueInput):
+    question_id: str = Field(min_length=1, max_length=120)
+    question_revision: int = Field(strict=True, ge=1)
+    answer: str = Field(min_length=1, max_length=8000)
+
+
+async def project_setup_continue(inp: ProjectSetupContinueInput, ctx: MCPContext, _emit):
+    from starlette.concurrency import run_in_threadpool
+
+    from stackos.project_setup_execution import continue_managed
+
+    _require_console(ctx)
+    ctx.session.commit()
+    answer = (
+        {
+            "question_id": inp.question_id,
+            "question_revision": inp.question_revision,
+            "answer": inp.answer,
+        }
+        if isinstance(inp, ProjectSetupAnswerInput)
+        else {}
+    )
+    result = await run_in_threadpool(
+        continue_managed,
+        inp.project_id,
+        inp.request_id,
+        expected_revision=inp.expected_revision,
+        session_factory=ctx.extras["session_factory"],
+        scheduler=ctx.extras["scheduler"],
+        **answer,
+    )
+    return WriteEnvelope(project_id=inp.project_id, data=result)
+
+
 async def project_setup_cancel(inp: ProjectSetupCancelInput, ctx: MCPContext, _emit):
     from starlette.concurrency import run_in_threadpool
 
@@ -188,7 +226,9 @@ async def project_setup_cancel(inp: ProjectSetupCancelInput, ctx: MCPContext, _e
     return WriteEnvelope(project_id=inp.project_id, data=attempt)
 
 
-def setup_request_digest(inp: ProjectSetupStartInput | ProjectSetupReportInput) -> str:
+def setup_request_digest(
+    inp: ProjectSetupStartInput | ProjectSetupReportInput | ProjectSetupContinueInput,
+) -> str:
     # Parsed defaults and canonical JSON normalize the intent. Only response
     # presentation and the lookup key may differ on a retry. Session, attempt,
     # token, expected revision and the complete report stay bound to the key.
@@ -200,11 +240,40 @@ def setup_request_digest(inp: ProjectSetupStartInput | ProjectSetupReportInput) 
 
 def validate_setup_replay(
     name: str,
-    inp: ProjectSetupStartInput | ProjectSetupReportInput,
+    inp: ProjectSetupStartInput | ProjectSetupReportInput | ProjectSetupContinueInput,
     ctx: MCPContext,
     cached: dict[str, Any],
 ) -> dict[str, Any]:
     """Reauthorize before exposing any cached token or reporting success."""
+    if isinstance(inp, ProjectSetupContinueInput):
+        _require_console(ctx)
+        if cached.get(SETUP_REPLAY_DIGEST_FIELD) != setup_request_digest(inp):
+            raise ConflictError("setup idempotency key belongs to another answer/continuation")
+        continuation_saved = SetupStartOut.model_validate(cached["data"])
+        requests = AgentRequestRepository(ctx.session)
+        previous = requests._fetch(project_id=inp.project_id, request_id=inp.request_id)
+        predecessor = SetupAttempt.model_validate(
+            (previous.metadata_json or {}).get("project_setup")
+        )
+        row = requests._fetch(
+            project_id=inp.project_id, request_id=continuation_saved.attempt.request_id
+        )
+        continuation_current = SetupAttempt.model_validate(
+            (row.metadata_json or {}).get("project_setup")
+        )
+        if (
+            predecessor.successor_request_id != continuation_current.request_id
+            or continuation_current.predecessor_request_id != inp.request_id
+            or continuation_current.attempt_ref != predecessor.attempt_ref
+        ):
+            raise ConflictError("continuation retry lineage changed; inspect setup")
+        continuation_saved.attempt = continuation_current
+        continuation_saved.claim_token = None
+        return {
+            key: value
+            for key, value in {**cached, "data": continuation_saved.model_dump(mode="json")}.items()
+            if key != SETUP_REPLAY_DIGEST_FIELD
+        }
     if isinstance(inp, ProjectSetupStartInput) and inp.entry_kind == "managed_ui":
         _require_console(ctx)
         if cached.get(SETUP_REPLAY_DIGEST_FIELD) != setup_request_digest(inp):
@@ -397,6 +466,56 @@ def operation_specs() -> list[OperationSpec]:
                             },
                         },
                     ),
+                ),
+            )
+        ],
+        *[
+            OperationSpec(
+                name=name,
+                summary=summary,
+                input_model=model,
+                output_model=WriteEnvelope[SetupStartOut],
+                handler=project_setup_continue,
+                grant_policy="local-admin-console-write",
+                mutating=True,
+                response_policy=OperationResponsePolicy(),
+                category="project",
+                surfaces=OperationSurfaces(
+                    mcp=OperationSurface(enabled=False),
+                    cli=OperationSurface(enabled=False),
+                    rest=OperationSurface(
+                        enabled=True, browser_safe=True, path=f"/api/v1/operations/{name}/call"
+                    ),
+                ),
+                purpose="Link one successor request in the exact native session after retirement.",
+                prerequisites=(
+                    "Authenticated console; exact current request/revision; confirmed native exit.",
+                ),
+                returns=(
+                    "Compact/raw retain lineage, question, revision, outcomes and recovery. "
+                    "No writer token is exposed.",
+                ),
+                examples=(OperationExample(title=summary, arguments=example),),
+            )
+            for name, summary, model, example in (
+                (
+                    "projectSetup.answer",
+                    "Answer the current managed setup question once.",
+                    ProjectSetupAnswerInput,
+                    {
+                        "project_id": 1,
+                        "request_id": 123,
+                        "expected_revision": 2,
+                        "question_id": "goal",
+                        "question_revision": 1,
+                        "answer": "Maintain this project",
+                    },
+                ),
+                (
+                    "projectSetup.continue",
+                    "Continue remaining interrupted setup work.",
+                    ProjectSetupContinueInput,
+                    {"project_id": 1, "request_id": 123, "expected_revision": 2},
                 ),
             )
         ],

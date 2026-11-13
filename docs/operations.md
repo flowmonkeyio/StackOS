@@ -250,6 +250,33 @@ The canonical project cleanup guard also retains these managed reservations afte
 request lease expiry; confirmed deletion cannot race an unconfirmed native writer.
 Terminal reports revoke writer authority and preserve attempt history.
 
+Console-only `projectSetup.answer` takes `project_id`, the current `request_id`,
+`expected_revision`, `question_id`, `question_revision` and a bounded `answer`.
+It consumes that pending question once and admits one linked successor request
+only after the prior invocation and its callback have retired. Existing-agent
+questions must be answered in their original session. Stale, foreign, duplicate,
+missing-session and unconfirmed-exit inputs return repair context without consuming
+an answer or launching work. A stable idempotency key supports exact response replay;
+changed answers under the same key reject. Both compact and raw retain lineage;
+neither exposes the coordinator's claim token. These writes are unavailable via
+agent MCP and CLI.
+
+Console-only `projectSetup.continue` takes the same project/request/revision fields
+without question/answer fields. It continues partial, failed, interrupted or explicitly
+cancelled work in the exact recorded native session with frozen host/model/provider/
+profile and folder. A pending question requires `answer` instead. Each invocation
+has its own immutable request execution and usage receipt under the stable attempt;
+the predecessor retains its answered question and successor ref. Missing native
+identity, unsupported selection or resume failure is actionable failure, never a
+fresh-session fallback. Reconnect preserves pending answers and unconfirmed live work.
+
+Continuation retains successful workflow outcomes and compares their current receipt
+revisions and source evidence. Its prompt names remaining workflows and changed
+successes requiring revalidation; receipt advancement still requires checked reports.
+It warns of possible partial file edits and implies no rollback. A changed source
+cannot pass final completion using an older success receipt. Browser rendering and
+integrated setup journeys consume this shared state through `projectSetup.get`.
+
 Both operations support compact/raw and refuse ack. Compact retains claim/attempt
 refs, revision, outcomes, question and repair context; raw also retains report history.
 Source verification does not establish native loading or installed activation, and

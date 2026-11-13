@@ -204,8 +204,16 @@ class SetupQuestion(SetupEvidenceModel):
     revision: int = Field(strict=True, ge=1)
     prompt: str = Field(min_length=1, max_length=2000)
     workflow_keys: list[str] = Field(max_length=100)
-    answer_state: Literal["pending"] = "pending"
+    answer_state: Literal["pending", "answered"] = "pending"
     response_channel: Literal["existing_agent", "managed_ui"] = "existing_agent"
+
+
+class SetupAnswer(SetupEvidenceModel):
+    question_id: str = Field(min_length=1, max_length=120)
+    question_revision: int = Field(strict=True, ge=1)
+    question_request_id: int
+    answer: str = Field(min_length=1, max_length=8000)
+    answered_at: datetime
 
 
 class SetupWorkflowReport(SetupEvidenceModel):
@@ -230,6 +238,8 @@ class SetupReport(SetupEvidenceModel):
             raise ValueError(
                 "needs_input requires a concrete question; other states cannot ask one"
             )
+        if self.question and self.question.answer_state != "pending":
+            raise ValueError("new reports can only ask pending questions")
         keys = [item.workflow_key for item in self.workflow_results]
         if len(keys) != len(set(keys)):
             raise ValueError("report each workflow only once")
@@ -272,6 +282,7 @@ class SetupManagedExecution(SetupEvidenceModel):
     callback_started: bool = False
     cancel_requested: bool = False
     diagnostic: str | None = None
+    resume_thread_id: str | None = None
 
 
 class SetupAttempt(SetupEvidenceModel):
@@ -283,6 +294,7 @@ class SetupAttempt(SetupEvidenceModel):
     root_request_id: int
     request_id: int
     predecessor_request_id: int | None = None
+    successor_request_id: int | None = None
     revision: int = 1
     mode: Literal["setup", "update"]
     entry_kind: Literal["existing_agent", "managed_ui"]
@@ -307,6 +319,10 @@ class SetupAttempt(SetupEvidenceModel):
     question: SetupQuestion | None = None
     recovery_condition: str | None = None
     reports: list[SetupReportReceipt] = Field(default_factory=list)
+    answers: list[SetupAnswer] = Field(default_factory=list)
+    remaining_workflow_keys: list[str] = Field(default_factory=list)
+    revalidate_workflow_keys: list[str] = Field(default_factory=list)
+    partial_changes_possible: bool = False
 
 
 class SetupStartOut(BaseModel):
@@ -552,8 +568,11 @@ class ProjectSetupRepository:
         active = [
             a
             for _, a in attempts
-            if a.status in {"queued", "running", "needs_input"}
-            or (a.managed is not None and a.managed.slot_reserved)
+            if a.successor_request_id is None
+            and (
+                a.status in {"queued", "running", "needs_input"}
+                or (a.managed is not None and a.managed.slot_reserved)
+            )
         ]
         if len(active) > 1:
             raise ConflictError(
@@ -751,6 +770,12 @@ class ProjectSetupRepository:
                 raise ValidationError(
                     "question must stay in the owning session and selected workflows"
                 )
+            if report.question and any(
+                answer.question_id == report.question.question_id
+                and answer.question_revision >= report.question.revision
+                for answer in current.answers
+            ):
+                raise ConflictError("question was already answered; consume the recorded answer")
             outcomes = dict(current.outcomes)
             for item in report.workflow_results:
                 if (
@@ -822,6 +847,9 @@ class ProjectSetupRepository:
             current.question = report.question
             current.recovery_condition = report.recovery_condition
             current.outcomes = outcomes
+            current.partial_changes_possible = current.partial_changes_possible or bool(
+                any(item.result.changes for item in report.workflow_results)
+            )
             current.reports.append(
                 SetupReportReceipt(
                     revision=current.revision,

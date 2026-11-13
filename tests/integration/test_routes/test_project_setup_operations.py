@@ -126,6 +126,81 @@ def test_console_managed_start_duplicate_cancel_and_preferences(
     assert read.json()["launch_preferences"] == {"host_key": "codex", "model": "gpt-6.1-sol"}
 
 
+def test_console_answer_scope_replay_and_continuation(api, settings, tmp_path, monkeypatch):
+    from sqlmodel import select
+
+    from stackos.db.models import AgentRequest
+    from tests.integration.test_repositories.test_setup_continuation import question_runner
+
+    with Session(api.app.state.engine) as session:
+        project = (
+            WorkspaceRepository(session)
+            .start_session(runtime="codex", cwd=str(tmp_path))
+            .project_id
+        )
+        foreign = (
+            ProjectRepository(session)
+            .create(slug="foreign-answer", name="Foreign", domain="example.com")
+            .data.id
+        )
+    scheduler = QueuedScheduler()
+    api.app.state.operation_services["scheduler"] = scheduler
+    monkeypatch.setattr(service, "inspect_host", lambda _: SimpleNamespace(available=True))
+    question_runner(monkeypatch)
+    ui = {"Authorization": f"Bearer {derive_ui_token(settings.token_path.read_text().strip())}"}
+
+    def call(name, arguments):
+        return api.post(
+            f"/api/v1/operations/projectSetup.{name}/call",
+            json={"arguments": arguments},
+            headers=ui,
+        )
+
+    started = call("start", {"project_id": project, "entry_kind": "managed_ui"})
+    assert started.status_code == 200, started.text
+    scheduler.run()
+    pending = call("get", {"project_id": project, "response_mode": "raw"}).json()["current_attempt"]
+    arguments = {
+        "project_id": project,
+        "request_id": pending["request_id"],
+        "expected_revision": pending["revision"],
+        "question_id": "goal",
+        "question_revision": 1,
+        "answer": "Maintain this project",
+        "idempotency_key": "one-answer",
+    }
+    denied = call("answer", {**arguments, "project_id": foreign})
+    assert denied.status_code == 404, denied.text
+    assert (
+        call(
+            "continue",
+            {
+                key: value
+                for key, value in arguments.items()
+                if key in {"project_id", "request_id", "expected_revision"}
+            },
+        ).status_code
+        == 409
+    )
+    result = call("answer", arguments)
+    assert result.status_code == 200, result.text
+    successor = result.json()["data"]["attempt"]
+    assert successor["predecessor_request_id"] == pending["request_id"]
+    assert "reports" not in successor and successor["answers"][0]["question_id"] == "goal"
+    assert result.json()["data"]["claim_token"] is None
+    assert call("answer", {**arguments, "answer": "Different intent"}).status_code == 409
+    assert call("answer", {**arguments, "idempotency_key": "duplicate"}).status_code == 409
+    replay = call("answer", {**arguments, "response_mode": "raw"})
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["data"]["attempt"]["request_id"] == successor["request_id"]
+    scheduler.run()
+    # Consumed-answer replay recovers its receipt, without another native admission.
+    replay = call("answer", arguments)
+    assert replay.status_code == 200 and replay.json()["data"]["attempt"]["status"] == "partial"
+    with Session(api.app.state.engine) as session:
+        assert len(session.exec(select(AgentRequest)).all()) == 2
+
+
 @pytest.mark.parametrize("directory", ["workflows", "agent-presets", "skill-presets"])
 @pytest.mark.parametrize("response_mode", ["compact", "raw"])
 def test_source_parse_errors_keep_registered_read_and_reminder_responses_truthful(

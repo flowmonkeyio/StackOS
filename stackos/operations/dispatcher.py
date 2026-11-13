@@ -191,7 +191,12 @@ class OperationDispatcher:
                     from stackos.operations.runs import validate_owner_replay
 
                     return validate_owner_replay(operation_name, parsed, ctx, cached)
-                if operation_name in {"projectSetup.start", "projectSetup.report"}:
+                if operation_name in {
+                    "projectSetup.start",
+                    "projectSetup.report",
+                    "projectSetup.answer",
+                    "projectSetup.continue",
+                }:
                     from stackos.operations.project_setup_state import validate_setup_replay
 
                     return validate_setup_replay(operation_name, parsed, ctx, cached)
@@ -230,7 +235,12 @@ class OperationDispatcher:
     ) -> None:
         assert ctx.project_id is not None
         assert ctx.idempotency_key is not None
-        if operation_name in {"projectSetup.start", "projectSetup.report"}:
+        if operation_name in {
+            "projectSetup.start",
+            "projectSetup.report",
+            "projectSetup.answer",
+            "projectSetup.continue",
+        }:
             from stackos.operations.project_setup_state import (
                 SETUP_REPLAY_DIGEST_FIELD,
                 setup_request_digest,
