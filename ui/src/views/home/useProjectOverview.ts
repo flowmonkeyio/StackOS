@@ -3,7 +3,7 @@ import type {
   SchemaAccountOut,
   SchemaAuthStatusOut,
 } from '@/api'
-import { apiFetch, formatApiError } from '@/lib/client'
+import { ApiError, apiFetch, formatApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
 import { useProjectsStore } from '@/stores/projects'
 import {
@@ -47,11 +47,16 @@ export function useProjectOverview(projectId: Ref<number>) {
         delete next[key]
         errors.value = next
       } catch (err) {
-        if (request === generation)
+        if (request === generation && id === projectId.value) {
+          if (key === 'connections' && err instanceof ApiError && [401, 403, 404].includes(err.status)) {
+            accounts.value = []
+            connectionsLoaded.value = false
+          }
           errors.value = {
             ...errors.value,
             [key]: formatApiError(err, `Could not refresh ${key}.`),
           }
+        }
       }
     }
     await Promise.all([

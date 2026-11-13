@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { computed, defineComponent, ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { callOperation } from '@/lib/operations'
+import { ApiError } from '@/lib/client'
 import { useCommunicationTopology } from './useCommunicationTopology'
 import { useIngressEndpointEditor } from './useIngressEndpointEditor'
 
@@ -15,6 +16,66 @@ function deferred<T>() {
 }
 
 describe('Connections compatible read lifetimes', () => {
+  it.each([true, false])('keeps initial successful empty siblings known through partial failure (failure first: %s)', async failureFirst => {
+    let topology!: ReturnType<typeof useCommunicationTopology>
+    const wrapper = mount(defineComponent({ setup() {
+      topology = useCommunicationTopology(computed(() => 1))
+      return () => null
+    } }))
+    try {
+      const target = deferred<never>(), siblings = deferred<never>()
+      vi.mocked(callOperation).mockImplementation(name => name === 'communicationTarget.list' ? target.promise : siblings.promise)
+      const read = topology.load()
+      if (failureFirst) {
+        target.reject(new Error('Target offline'))
+        await flushPromises()
+        expect(topology.states.value.targets.loading).toBe(false)
+        expect(topology.states.value.profiles.loading).toBe(true)
+        siblings.resolve({ items: [] } as never)
+      } else {
+        siblings.resolve({ items: [] } as never)
+        await flushPromises()
+        expect(topology.states.value.profiles.loaded).toBe(true)
+        expect(topology.states.value.targets.loading).toBe(true)
+        target.reject(new Error('Target offline'))
+      }
+      await read
+      expect(topology.states.value.targets.loaded).toBe(false)
+      for (const key of ['profiles', 'surfaces', 'routes'] as const) {
+        expect(topology.states.value[key]).toEqual({ loaded: true, loading: false, message: null })
+      }
+      vi.mocked(callOperation).mockClear().mockResolvedValue({ items: [] })
+      await topology.load('targets')
+      expect(callOperation).toHaveBeenCalledOnce()
+      expect(callOperation).toHaveBeenCalledWith('communicationTarget.list', { project_id: 1, limit: 50 })
+      expect(topology.loaded.value).toBe(true)
+      expect(topology.message.value).toBeNull()
+    } finally { wrapper.unmount() }
+  })
+
+  it('clears only denied topology sources and ignores an older result after denial', async () => {
+    let topology!: ReturnType<typeof useCommunicationTopology>
+    const wrapper = mount(defineComponent({ setup() {
+      topology = useCommunicationTopology(computed(() => 1))
+      return () => null
+    } }))
+    try {
+      vi.mocked(callOperation).mockResolvedValue({ items: [{ key: 'accepted' }] })
+      await topology.load()
+      const old = deferred<never>()
+      vi.mocked(callOperation).mockReturnValueOnce(old.promise)
+      const pending = topology.load('profiles')
+      vi.mocked(callOperation).mockRejectedValue(new ApiError('Permission revoked', 403, {}))
+      await topology.load('profiles')
+      old.resolve({ items: [{ key: 'obsolete' }] } as never)
+      await pending
+      expect(topology.profiles.value).toEqual([])
+      expect(topology.states.value.profiles.loaded).toBe(false)
+      expect(topology.states.value.profiles.message?.text).toContain('Permission revoked')
+      expect(topology.targets.value[0]?.key).toBe('accepted')
+      expect(topology.states.value.targets.loaded).toBe(true)
+    } finally { wrapper.unmount() }
+  })
   it.each([true, false])('retains all four collections through pending and partial failure (failure first: %s)', async failureFirst => {
     let topology!: ReturnType<typeof useCommunicationTopology>
     const id = ref(1)
@@ -95,5 +156,29 @@ describe('Connections compatible read lifetimes', () => {
     late.resolve({ endpoint: { key: 'obsolete' }, routes: [] } as never)
     await pending
     expect(ingress.status.value).toEqual(accepted)
+  })
+
+  it('clears denied ingress and rejects a late earlier read without losing its error', async () => {
+    let ingress!: ReturnType<typeof useIngressEndpointEditor>
+    const wrapper = mount(defineComponent({ setup() {
+      ingress = useIngressEndpointEditor({ projectId: computed(() => 1), busyAction: ref(null), onTopologyChanged: vi.fn() })
+      return () => null
+    } }))
+    try {
+      vi.mocked(callOperation).mockResolvedValue({ endpoint: { key: 'private-A' }, routes: [], ready: true })
+      await ingress.load()
+      ingress.openPanel()
+      const old = deferred<never>()
+      vi.mocked(callOperation).mockReturnValueOnce(old.promise)
+      const pending = ingress.load()
+      vi.mocked(callOperation).mockRejectedValue(new ApiError('Permission revoked', 403, {}))
+      await ingress.load()
+      old.resolve({ endpoint: { key: 'obsolete' }, routes: [], ready: true } as never)
+      await pending
+      expect(ingress.status.value).toBeNull()
+      expect(ingress.panelOpen.value).toBe(false)
+      expect(ingress.loading.value).toBe(false)
+      expect(ingress.loadMessage.value?.text).toContain('Permission revoked')
+    } finally { wrapper.unmount() }
   })
 })

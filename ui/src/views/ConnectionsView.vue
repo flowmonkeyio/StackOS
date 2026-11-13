@@ -139,8 +139,7 @@ const {
   surfaces: communicationSurfaces,
   routes: communicationRoutes,
   loading: communicationTopologyLoading,
-  loaded: communicationTopologyLoaded,
-  message: communicationTopologyMessage,
+  states: topologyReads,
   load: loadCommunicationTopology,
 } = useCommunicationTopology(projectId)
 const {
@@ -161,9 +160,6 @@ const {
 })
 const communicationSetupLoading = computed(
   () => communicationTopologyLoading.value || ingressLoading.value,
-)
-const communicationSetupMessage = computed(
-  () => communicationTopologyMessage.value ?? ingressLoadMessage.value,
 )
 const {
   panelOpen: slackProfilePanelOpen,
@@ -194,24 +190,24 @@ const subNavGroups = computed(() => [
   {
     label: 'Messaging setup',
     items: [
-      { key: 'bots', label: 'Bots', icon: 'chat', count: communicationTopologyLoaded.value ? communicationProfiles.value.length : undefined },
+      { key: 'bots', label: 'Bots', icon: 'chat', count: topologyReads.value.profiles.loaded ? communicationProfiles.value.length : undefined },
       {
         key: 'channels',
         label: 'Channels',
         icon: 'megaphone',
-        count: communicationTopologyLoaded.value ? communicationSurfaces.value.length : undefined,
+        count: topologyReads.value.surfaces.loaded ? communicationSurfaces.value.length : undefined,
       },
       {
         key: 'destinations',
         label: 'Destinations',
         icon: 'arrow-right',
-        count: communicationTopologyLoaded.value ? communicationTargets.value.length : undefined,
+        count: topologyReads.value.targets.loaded ? communicationTargets.value.length : undefined,
       },
       {
         key: 'handoff-rules',
         label: 'Handoff rules',
         icon: 'git-branch',
-        count: communicationTopologyLoaded.value ? communicationRoutes.value.length : undefined,
+        count: topologyReads.value.routes.loaded ? communicationRoutes.value.length : undefined,
       },
     ],
   },
@@ -461,7 +457,7 @@ onBeforeRouteUpdate((to) => {
             >Messaging identities</span
           >
           <span class="mt-1 block text-sm font-semibold text-fg-strong"
-            >{{ communicationTopologyLoaded ? `${communicationProfiles.length} configured` : 'Unavailable' }}</span
+            >{{ topologyReads.profiles.loaded ? `${communicationProfiles.length} configured` : 'Unavailable' }}</span
           >
         </button>
         <button
@@ -473,7 +469,7 @@ onBeforeRouteUpdate((to) => {
             >Places</span
           >
           <span class="mt-1 block text-sm font-semibold text-fg-strong"
-            >{{ communicationTopologyLoaded ? `${communicationSurfaces.length} visible` : 'Unavailable' }}</span
+            >{{ topologyReads.surfaces.loaded ? `${communicationSurfaces.length} visible` : 'Unavailable' }}</span
           >
         </button>
         <button
@@ -538,10 +534,10 @@ onBeforeRouteUpdate((to) => {
           <BotsPanel
             :bots="communicationProfiles"
             :slack-connections="slackConnections"
-            :loading="communicationSetupLoading"
-            :loaded="communicationTopologyLoaded"
+            :loading="topologyReads.profiles.loading"
+            :loaded="topologyReads.profiles.loaded"
             :credentials-loaded="authStatus !== null"
-            :message="slackProfileMessage ?? communicationSetupMessage"
+            :message="slackProfileMessage ?? topologyReads.profiles.message"
             @add-connection="openAddConnection"
             @add-bot="openAddBot"
             @edit-bot="editBot"
@@ -555,10 +551,10 @@ onBeforeRouteUpdate((to) => {
         >
           <ChannelsPanel
             :channels="communicationSurfaces"
-            :loading="communicationSetupLoading"
-            :loaded="communicationTopologyLoaded"
-            :message="communicationSetupMessage"
-            @refresh="loadCommunicationSetup"
+            :loading="topologyReads.surfaces.loading"
+            :loaded="topologyReads.surfaces.loaded"
+            :message="topologyReads.surfaces.message"
+            @refresh="loadCommunicationTopology('surfaces')"
           />
         </div>
 
@@ -569,10 +565,10 @@ onBeforeRouteUpdate((to) => {
         >
           <DestinationsPanel
             :destinations="communicationTargets"
-            :loading="communicationSetupLoading"
-            :loaded="communicationTopologyLoaded"
-            :message="communicationSetupMessage"
-            @refresh="loadCommunicationSetup"
+            :loading="topologyReads.targets.loading"
+            :loaded="topologyReads.targets.loaded"
+            :message="topologyReads.targets.message"
+            @refresh="loadCommunicationTopology('targets')"
           />
         </div>
 
@@ -583,10 +579,10 @@ onBeforeRouteUpdate((to) => {
         >
           <HandoffRulesPanel
             :routes="communicationRoutes"
-            :loading="communicationSetupLoading"
-            :loaded="communicationTopologyLoaded"
-            :message="communicationSetupMessage"
-            @refresh="loadCommunicationSetup"
+            :loading="topologyReads.routes.loading"
+            :loaded="topologyReads.routes.loaded"
+            :message="topologyReads.routes.message"
+            @refresh="loadCommunicationTopology('routes')"
           />
         </div>
 
@@ -597,10 +593,10 @@ onBeforeRouteUpdate((to) => {
         >
           <ConnectivityPanel
             :ingress-status="ingressStatus ?? null"
-            :loading="communicationSetupLoading"
+            :loading="ingressLoading"
             :syncing="busyAction === 'ingress:sync'"
-            :message="ingressMessage ?? communicationSetupMessage"
-            @refresh="loadCommunicationSetup"
+            :message="ingressMessage ?? ingressLoadMessage"
+            @refresh="loadIngressStatus"
             @configure="openIngressSetup"
             @sync="syncIngress"
             @confirm-manual="syncIngress"

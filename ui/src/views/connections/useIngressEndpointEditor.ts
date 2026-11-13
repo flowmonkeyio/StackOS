@@ -1,6 +1,6 @@
 import { computed, onBeforeUnmount, ref, type ComputedRef, type Ref } from 'vue'
 
-import { formatApiError } from '@/lib/client'
+import { ApiError, formatApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
 
 import {
@@ -68,7 +68,8 @@ export function useIngressEndpointEditor(options: IngressEndpointEditorOptions) 
       status.value = applyProviderResultsToIngressStatus(ingress ?? null, lastProviderResults.value)
       loadMessage.value = null
     } catch (err) {
-      if (requestSequence === loadRequestSequence) {
+      if (requestSequence === loadRequestSequence && requestedProjectId === options.projectId.value) {
+        if (err instanceof ApiError && [401, 403, 404].includes(err.status)) reset()
         loadMessage.value = {
           tone: 'danger',
           text: formatApiError(err, 'failed to load connectivity setup'),

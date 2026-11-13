@@ -197,6 +197,11 @@ states. Accounts and Connections consume their named state; compatible readbacks
 retain rows and filters, while scope exit and confirmed access denial invalidate
 project-auth content. Connections topology and ingress retain compatible data
 with explicit read errors; panels keep their accepted content mounted during refresh.
+Topology acceptance, pending state and errors belong to each collection, so a failed
+destination read cannot hide accepted bot/channel counts or known-empty siblings.
+Confirmed access denial clears the affected accepted presentation. Account mutation
+readbacks retain their originating request-gate scope epoch; a late write cannot
+reclaim a project after exit, replacement or return to a new lifetime.
 
 Both Home pages share `views/home/AgentActivitySection.vue`: Input / Cache /
 Output headlines, date controls, daily chart with input detail, and an accessible

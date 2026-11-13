@@ -173,7 +173,11 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     } catch (err) {
       if (request.isCurrent()) {
         authError.value = formatApiError(err, 'failed to load connections')
-        if (err instanceof ApiError && [401, 403, 404].includes(err.status)) authStatus.value = null
+        if (err instanceof ApiError && [401, 403, 404].includes(err.status)) {
+          authStatus.value = null
+          authRequests.invalidate()
+          authLoading.value = false
+        }
       }
     } finally {
       if (request.isCurrent()) authLoading.value = false
@@ -351,13 +355,14 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     projectId: number,
     credentialRef: string,
   ): Promise<SchemaAccountOut> {
+    const isCurrentScope = authRequests.captureScope(projectId)
     error.value = null
     const response = await apiFetch<{ data: SchemaAccountOut }>(
       `/api/v1/projects/${projectId}/connections/accounts/${encodeURIComponent(credentialRef)}`,
       { method: 'POST' },
     )
-    authRequests.invalidateOperation('connections')
-    if (connectionProjectId.value === projectId && authStatus.value) {
+    if (isCurrentScope()) authRequests.invalidateOperation('connections')
+    if (isCurrentScope() && authStatus.value) {
       authStatus.value.accounts = [
         ...authStatus.value.accounts.filter(row => row.credential_ref !== credentialRef),
         response.data,
@@ -367,7 +372,7 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
       globalAccountsStatus.value.accounts = globalAccountsStatus.value.accounts.map(row =>
         row.credential_ref === credentialRef ? response.data : row)
     }
-    await Promise.all([refreshAccounts({ silent: true }), refreshAuth(projectId, { silent: true })])
+    await refreshAccountReadbacks(projectId, isCurrentScope)
     return response.data
   }
 
@@ -375,20 +380,21 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     projectId: number,
     credentialRef: string,
   ): Promise<SchemaAccountOut> {
+    const isCurrentScope = authRequests.captureScope(projectId)
     error.value = null
     const response = await apiFetch<{ data: SchemaAccountOut }>(
       `/api/v1/projects/${projectId}/connections/accounts/${encodeURIComponent(credentialRef)}`,
       { method: 'DELETE' },
     )
-    authRequests.invalidateOperation('connections')
-    if (connectionProjectId.value === projectId && authStatus.value) {
+    if (isCurrentScope()) authRequests.invalidateOperation('connections')
+    if (isCurrentScope() && authStatus.value) {
       authStatus.value.accounts = authStatus.value.accounts.filter(row => row.credential_ref !== credentialRef)
     }
     if (globalAccountsStatus.value) {
       globalAccountsStatus.value.accounts = globalAccountsStatus.value.accounts.map(row =>
         row.credential_ref === credentialRef ? response.data : row)
     }
-    await Promise.all([refreshAccounts({ silent: true }), refreshAuth(projectId, { silent: true })])
+    await refreshAccountReadbacks(projectId, isCurrentScope)
     return response.data
   }
 
@@ -406,15 +412,13 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     projectId: number,
     credentialRef: string,
   ): Promise<TelegramAccountSessionStatus> {
+    const isCurrentScope = authRequests.captureScope(projectId)
     error.value = null
     const response = await apiFetch<SchemaWriteResponseAccountSessionOut>(
       `/api/v1/projects/${projectId}/connections/accounts/${encodeURIComponent(credentialRef)}/session/connect`,
       { method: 'POST' },
     )
-    await Promise.all([
-      refreshAccounts({ silent: true }),
-      refreshAuth(projectId, { silent: true }),
-    ])
+    await refreshAccountReadbacks(projectId, isCurrentScope)
     return response.data
   }
 
@@ -422,16 +426,23 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     projectId: number,
     credentialRef: string,
   ): Promise<TelegramAccountSessionStatus> {
+    const isCurrentScope = authRequests.captureScope(projectId)
     error.value = null
     const response = await apiFetch<SchemaWriteResponseAccountSessionOut>(
       `/api/v1/projects/${projectId}/connections/accounts/${encodeURIComponent(credentialRef)}/session/disconnect`,
       { method: 'POST' },
     )
+    await refreshAccountReadbacks(projectId, isCurrentScope)
+    return response.data
+  }
+
+  async function refreshAccountReadbacks(projectId: number, isCurrentScope: () => boolean): Promise<void> {
+    // The Account mutation is confirmed globally, but its originating route may
+    // have exited (including A -> B -> A) while the write was in flight.
     await Promise.all([
       refreshAccounts({ silent: true }),
-      refreshAuth(projectId, { silent: true }),
+      ...(isCurrentScope() ? [refreshAuth(projectId, { silent: true })] : []),
     ])
-    return response.data
   }
 
   function actionsFor(pluginSlug: string): SchemaActionListItemOut[] {
