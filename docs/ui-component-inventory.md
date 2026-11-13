@@ -60,6 +60,8 @@ no-ops, scrolls only the supplied vertical container, and cleans up its one
 animation-frame loop and gesture listeners on every termination path. Movement
 announcements and focus/visibility restoration accompany menu and drop intents;
 there is no decorative movement animation.
+The list contains vertical overscroll only; horizontal input can chain to an
+ancestor such as the Board. Consumers keep their existing overflow ownership.
 
 `ProjectSwitcher` consumes this primitive for the complete, stored project
 catalog. Its closed sidebar trigger retains its geometry; only the open menu is

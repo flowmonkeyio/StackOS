@@ -263,7 +263,8 @@ onBeforeUnmount(() => { finish(false); focusKey = null })
 </template>
 
 <style scoped>
-.ui-reorder-list { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: var(--reorder-gap, 8px); overflow-y: auto; overscroll-behavior: contain; min-height: 0; }
+/* Keep vertical boundaries local without trapping a horizontal ancestor (Board). */
+.ui-reorder-list { display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: var(--reorder-gap, 8px); overflow-y: auto; overscroll-behavior-x: auto; overscroll-behavior-y: contain; min-height: 0; }
 .ui-reorder-list__item { position: relative; min-width: 0; box-sizing: border-box; }
 .ui-reorder-list__placeholder { opacity: .4; }
 .ui-reorder-list__before::before, .ui-reorder-list__after::after { content: ''; position: absolute; z-index: 1; left: 0; right: 0; height: 2px; background: var(--color-border-focus); pointer-events: none; }

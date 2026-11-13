@@ -68,6 +68,16 @@ async function tick(time: number) {
 }
 
 describe('neutral vertical list reorder', () => {
+  it('contains vertical overscroll while allowing horizontal input to reach the parent', () => {
+    const style = document.createElement('style')
+    style.textContent = reorderSource.match(/<style scoped>([\s\S]*?)<\/style>/)![1]
+    document.head.append(style); styles.push(style)
+    const { list } = render()
+    const computed = getComputedStyle(list.element)
+    expect(computed.getPropertyValue('overscroll-behavior-x')).toBe('auto')
+    expect(computed.getPropertyValue('overscroll-behavior-y')).toBe('contain')
+  })
+
   it.each(['generic', 'Board'] as const)('keeps %s boundary markers inside the scroll viewport without moving the items', async consumer => {
     const style = document.createElement('style')
     style.textContent = [reorderSource, ...(consumer === 'Board' ? [boardSource] : [])]
