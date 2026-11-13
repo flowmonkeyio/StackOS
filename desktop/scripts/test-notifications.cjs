@@ -371,8 +371,58 @@ async function integrationFixture() {
   console.log("real producer/operation envelope/controller/deep-link fixture ok");
 }
 
+// Generate the real long-name/native-failure regression for the approved native
+// browser route. The existing source preview supplies emitTaskNotice/clearNotices.
+// Run: node desktop/scripts/test-notifications.cjs --stack-fixture /tmp/stack.js
+// Then: stackos.browser --session <ref> eval /tmp/stack.js --tab-id <owned-tab>
+async function stackFixture() {
+  const target = process.argv[process.argv.indexOf("--stack-fixture") + 1];
+  if (!target) throw new Error("--stack-fixture requires an output file");
+  const notices = [1, 2, 3].map((id) => ({
+    ...notificationPresentation({ project_id: 1, project_name: "W".repeat(200) }, {
+      task_id: id, task_key: `work-${id}`, task_title: "W".repeat(200), rev: id
+    }, "stopped"), nativeStatus: "failed"
+  }));
+  fs.writeFileSync(target, "(async () => { window.clearNotices();\n" + notices.map((notice) =>
+    `window.emitTaskNotice(${JSON.stringify(notice)});`).join("\n") +
+    `\nreturn await (${checkStackBounds.toString()})(); })()`);
+}
+
+async function checkStackBounds() {
+  await new Promise(window.requestAnimationFrame);
+  const notices = Array.from(document.querySelectorAll(".ui-toast"));
+  if (notices.length !== 3) throw new Error("Expected three retained notices");
+  const stack = notices[0].closest("ul");
+  await Promise.all(Array.from(stack.children).flatMap((item) =>
+    item.getAnimations().map((animation) => animation.finished)));
+  const bounds = stack.getBoundingClientRect();
+  if (bounds.top < 0 || bounds.bottom > window.innerHeight) {
+    throw new Error(`Notification stack extends outside viewport: ${bounds.top}..${bounds.bottom}`);
+  }
+  for (const notice of notices) {
+    const controls = Array.from(notice.querySelectorAll("button"));
+    if (!notice.textContent.includes("Check system notification settings.") || controls.length !== 2) {
+      throw new Error("Expected native fallback content and both notice controls");
+    }
+    for (const control of controls) {
+      control.focus();
+      await new Promise(window.requestAnimationFrame);
+      const box = control.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+      if (box.top < bounds.top || box.bottom > bounds.bottom || !control.contains(hit)) {
+        throw new Error("Retained notice control is clipped or cannot be reached");
+      }
+    }
+  }
+  return { passed: true, notices: notices.length, controls: 6,
+    viewportHeight: window.innerHeight, stackHeight: bounds.height,
+    clientHeight: stack.clientHeight, scrollHeight: stack.scrollHeight, scrollTop: stack.scrollTop };
+}
+
 (process.argv.includes("--transport-client") ? transportClient() :
-  process.argv.includes("--integration-fixture") ? integrationFixture() : unitTests())
-  .then(() => console.log("desktop notifications test ok"))
+  process.argv.includes("--integration-fixture") ? integrationFixture() :
+  process.argv.includes("--stack-fixture") ? stackFixture() : unitTests())
+  .then(() => console.log(process.argv.includes("--stack-fixture")
+    ? "desktop notification stack fixture generated" : "desktop notifications test ok"))
   .catch((error) => { console.error(error); process.exitCode = 1; })
   .finally(() => { for (const dir of roots) fs.rmSync(dir, { recursive: true, force: true }); });

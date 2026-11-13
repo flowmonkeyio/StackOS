@@ -1867,6 +1867,8 @@ failure is danger-toned, both retained until dismissed or replaced. `UiToast`
 owns the accessible severity, wrapping and “Open task” action. That action uses
 the same exact-target revalidation as a native click, via main-frame-only IPC.
 An unavailable task produces a readable in-app message without changing target.
+The fixed in-app stack stays within the viewport and scrolls when needed; keyboard
+focus can reach every retained notice and action without dismissing other notices.
 
 Native support is not proof of permission or visible delivery: macOS notification
 settings, Focus and system policy control display. The controller reports native

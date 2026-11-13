@@ -320,12 +320,14 @@ const isAuthErrorRoute = computed(() => route.name === 'auth-error')
     >
       <ul
         v-if="toastItems.length > 0"
-        class="pointer-events-none fixed inset-x-4 top-3 z-toast mx-auto flex w-80 max-w-[calc(100vw-2rem)] flex-col gap-2 sm:left-auto sm:right-4 sm:mx-0"
+        class="focus-ring pointer-events-auto fixed inset-x-4 top-3 z-toast mx-auto flex max-h-[calc(100dvh-1.5rem)] w-80 max-w-[calc(100vw-2rem)] flex-col gap-2 overflow-y-auto overscroll-contain rounded-lg sm:left-auto sm:right-4 sm:mx-0"
+        aria-label="Notifications"
+        tabindex="0"
       >
         <li
           v-for="t in toastItems"
           :key="t.id"
-          class="toast-enter"
+          class="toast-enter shrink-0"
         >
           <UiToast
             :tone="t.kind === 'error' ? 'danger' : t.kind"
