@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useId } from 'vue'
 import type { SchemaMainAgentPreferences, SchemaProjectSetupOut, SchemaSetupAttempt } from '@/api'
 import { UiButton, UiCallout, UiDialog, UiFormField, UiInput, UiSelect } from '@/components/ui'
 import type { DesktopAgentExecutionCapabilities, DesktopMcpHostStatus } from '@/lib/desktop'
@@ -23,27 +23,41 @@ const model = ref(typeof saved.model === 'string' ? saved.model : '')
 const provider = ref(typeof saved.provider === 'string' ? saved.provider : '')
 const profile = ref(typeof saved.profile === 'string' ? saved.profile : '')
 const changing = ref(!hostKey.value)
+const customModel = ref(false)
+const CUSTOM_MODEL = '__custom_model__'
+const customModelId = `setup-custom-model-${useId()}`
 let disposed = false
 onBeforeUnmount(() => { disposed = true })
 const supported = computed(() => hosts.value.filter(host => host.agent_execution?.sandboxes.includes('workspace-write')))
 const host = computed(() => supported.value.find(item => item.host_key === hostKey.value))
 const catalog = computed(() => host.value?.agent_execution)
+const usesCustomModel = computed(() => !!catalog.value?.custom_models && (
+  customModel.value || !catalog.value.models.length
+  || (!!model.value && !catalog.value.models.includes(model.value))
+))
+const selectedModel = computed(() => usesCustomModel.value ? CUSTOM_MODEL : model.value)
 const retainsSavedHost = computed(() => hostKey.value === saved.host_key)
 const clearedSavedChoice = computed(() => retainsSavedHost.value && (
   (typeof saved.provider === 'string' && !provider.value.trim())
   || (typeof saved.profile === 'string' && !profile.value.trim())
 ))
 const ready = computed(() => props.state.folder_status === 'available' && host.value?.available && !clearedSavedChoice.value
+  && (!usesCustomModel.value || !!model.value.trim())
   && (!catalog.value?.requires_provider_model || (provider.value.trim() && model.value.trim())))
 const hostOptions = computed(() => supported.value.map(item => ({ value: item.host_key, label: item.display_name || item.host_key, disabled: !item.available })))
 const modelOptions = computed(() => {
   const options = (catalog.value?.models ?? []).map(value => ({ value, label: value === catalog.value?.recommended_model ? `${value} (Recommended)` : value }))
-  if (model.value && !options.some(option => option.value === model.value)) options.push({ value: model.value, label: model.value })
+  if (!catalog.value?.custom_models && model.value && !options.some(option => option.value === model.value)) options.push({ value: model.value, label: model.value })
   // The launch API inherits omitted/null settings on the saved host. Do not
   // offer a "default" choice that would silently keep a saved explicit model.
   if (!catalog.value?.requires_provider_model && !(retainsSavedHost.value && saved.model)) options.unshift({ value: '', label: 'Agent default' })
+  if (catalog.value?.custom_models) options.push({ value: CUSTOM_MODEL, label: 'Enter custom model' })
   return options
 })
+function changeModel(value: string | number | null): void {
+  customModel.value = value === CUSTOM_MODEL
+  if (!customModel.value) model.value = String(value ?? '')
+}
 function appliedVersions(successful: Record<string, unknown> | null): string {
   const verification = successful?.verification
   if (!verification || typeof verification !== 'object' || !('sources' in verification) || !Array.isArray(verification.sources)) return 'Not verified'
@@ -54,6 +68,8 @@ function changeHost(value: string | number | null): void {
   if (next === hostKey.value) return
   hostKey.value = next
   model.value = host.value?.agent_execution?.recommended_model ?? ''
+  customModel.value = !!host.value?.agent_execution?.custom_models && !!model.value
+    && !host.value.agent_execution.models.includes(model.value)
   provider.value = ''
   profile.value = ''
 }
@@ -66,6 +82,9 @@ async function loadHosts(): Promise<void> {
     hosts.value = result.items
     // A saved choice is never silently replaced, including when unavailable.
     if (!hostKey.value) changeHost(supported.value.find(item => item.available)?.host_key ?? '')
+    // Keep explicit custom entry active when its value is cleared or happens
+    // to equal a fixed choice; only selecting a listed option leaves this mode.
+    if (catalog.value?.custom_models && model.value && !catalog.value.models.includes(model.value)) customModel.value = true
   } catch (cause) {
     if (!disposed) catalogError.value = setupErrorMessage(cause, 'Agent apps could not be checked.')
   } finally { if (!disposed) loading.value = false }
@@ -186,9 +205,21 @@ async function submit(): Promise<void> {
           </UiFormField>
           <UiFormField label="Model">
             <UiSelect
-              v-model="model"
+              v-if="!catalog?.custom_models || catalog.models.length"
+              :model-value="selectedModel"
               :options="modelOptions"
               :disabled="pending"
+              @update:model-value="changeModel"
+            />
+            <UiInput
+              v-if="usesCustomModel"
+              :id="catalog?.models.length ? customModelId : undefined"
+              v-model="model"
+              :class="catalog?.models.length ? 'mt-2' : ''"
+              :disabled="pending"
+              placeholder="Enter model name or alias"
+              aria-label="Custom model"
+              required
             />
           </UiFormField>
           <UiFormField
