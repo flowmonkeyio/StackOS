@@ -156,4 +156,34 @@ describe('native project agents', () => {
     expect(agents.items.value).toEqual([])
     expect(vi.mocked(callOperation).mock.calls).toEqual([['projectAgent.list', expect.objectContaining({ project_dir: '/fixture' })]])
   })
+  it('ignores a late save after switching projects and never writes the old draft to the next scope', async () => {
+    const { agents, id, dir } = setup(); await flushPromises(); await agents.edit(definition())
+    agents.draft.value!.description = 'Old project edit'
+    let resolveSave!: (value: unknown) => void
+    const next = { ...definition('next'), project_id: 2, project_dir: '/second' }
+    vi.mocked(callOperation).mockImplementation(async operation => operation === 'projectAgent.update'
+      ? new Promise(resolve => { resolveSave = resolve })
+      : { data: { project_id: 2, project_dir: '/second', items: [next] } })
+    const save = agents.save()
+    id.value = 2; dir.value = '/second'; await agents.refresh()
+    expect(agents.draft.value).toBeNull()
+    resolveSave({ project_id: 1, data: { ...definition(), fields: { ...definition().fields, description: 'Old project edit' } } }); await save
+    expect(agents.items.value).toEqual([next])
+    expect(agents.draft.value).toBeNull(); expect(agents.message.value).toBe('')
+    await agents.save()
+    const writes = vi.mocked(callOperation).mock.calls.filter(([operation]) => /create|update/.test(operation))
+    expect(writes).toEqual([['projectAgent.update', expect.objectContaining({ project_id: 1, project_dir: '/fixture' })]])
+  })
+  it('rejects a late full-source read across rapid project switches back to the original folder', async () => {
+    const { agents, id, dir } = setup(); await flushPromises()
+    let resolveRead!: (value: unknown) => void
+    vi.mocked(callOperation).mockImplementationOnce(() => new Promise(resolve => { resolveRead = resolve }))
+    const read = agents.edit(definition())
+    id.value = 2; dir.value = ''; await agents.refresh()
+    id.value = 1; dir.value = '/fixture'; await agents.refresh()
+    resolveRead(definition()); await read
+    expect(agents.items.value).toEqual([definition()])
+    expect(agents.draft.value).toBeNull(); expect(agents.reading.value).toBe(false)
+    expect(callOperation).not.toHaveBeenCalledWith('projectAgent.update', expect.anything())
+  })
 })

@@ -161,7 +161,13 @@ Its model picker uses the shared `hostMcp.status` loader and the source host's
 and custom native names remain selectable. Catalog loading or retry never
 replaces the source draft, and a listed model does not establish account access.
 The normal page omits the project-folder path; missing or mismatched setup
-still provides an actionable error.
+still provides an actionable error. Agents resolves the selected project's
+primary folder through `project.get`, including on Refresh and Retry. It shows
+directoryless, missing, unavailable and conflicting binding states separately;
+directoryless projects remain usable without onboarding. Repair uses the existing
+explicit project/binding setup owner and never a manual folder picker or recent
+worktree inference. Project changes clear the previous list and editor before
+loading the next folder, and late reads or saves cannot replace the current view.
 
 `source_ref` is `{host_key, native_name, source_path}`, where `source_path` is
 the exact workspace-relative path. Reads return the SHA256 `digest`, editable

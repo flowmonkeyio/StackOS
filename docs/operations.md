@@ -131,7 +131,13 @@ unselected after migration. Setup selects an existing same-project directory
 binding from `workspace.listBindings` through the local-admin `project.update`
 patch `{"primary_workspace_binding_id": <binding_id>}`. This does not rebind a
 workspace or grant filesystem access. `project.get` returns that exact
-`project_dir` or an actionable `project_folder_issue`.
+`project_dir`, `project_folder_status` (`ready`, `directoryless`, `missing`,
+`unavailable`, or `conflict`) and an actionable `project_folder_issue` when local
+files cannot be used. No selected primary with no directory bindings means a
+supported directoryless project; an unselected existing directory or a stale
+primary reference needs explicit setup. Unavailable roots and cross-project
+conflicts fail closed without selecting a newer worktree. Reads and retries do
+not repair data or change a session binding.
 
 `schedule.list`, `schedule.set`, `schedule.toggle`, `schedule.remove` and
 `schedule.runs` share `ScheduledJobRepository` through MCP, registered REST

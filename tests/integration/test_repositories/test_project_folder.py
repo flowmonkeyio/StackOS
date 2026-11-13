@@ -173,4 +173,87 @@ def test_invalid_wrong_project_named_and_unavailable_binding(session: Session, t
     session.add(row)
     session.commit()
     assert projects.get(first.id).project_dir is None
+    assert projects.get(first.id).project_folder_status == "conflict"
     assert session.get(Project, first.id).primary_workspace_binding_id == binding.id
+    row.project_id = first.id
+    row.last_known_root = "relative-folder"
+    session.add(row)
+    session.commit()
+    assert projects.get(first.id).project_folder_status == "unavailable"
+    assert projects.get(first.id).project_dir is None
+
+
+def test_folder_states_are_distinct_and_reads_never_choose_or_repair_bindings(
+    session: Session, tmp_path: Path
+):
+    projects = ProjectRepository(session)
+    project = projects.create(slug="folder-states", name="Folder states", domain="states.test").data
+    other = projects.create(slug="foreign-folder", name="Foreign", domain="foreign.test").data
+    workspaces = WorkspaceRepository(session)
+    workspaces.connect(project_id=project.id, workspace_alias="directoryless")
+    assert projects.get(project.id).project_folder_status == "directoryless"
+    assert "without a local folder" in projects.get(project.id).project_folder_issue
+    root = tmp_path / "primary"
+    root.mkdir()
+    primary = workspaces.connect(
+        project_id=project.id, repo_fingerprint="path:states", last_known_root=str(root)
+    ).data
+    assert projects.get(project.id).project_folder_status == "missing"
+    assert projects.get(project.id).primary_workspace_binding_id is None
+    chosen = projects.update(project.id, primary_workspace_binding_id=primary.id).data
+    assert chosen.project_folder_status == "ready"
+    assert chosen.project_dir == str(root)
+    # A newer task tree must never replace the selected root, even when it disappears.
+    latest = tmp_path / "latest"
+    latest.mkdir()
+    workspaces.connect(
+        project_id=project.id, repo_fingerprint="path:latest", last_known_root=str(latest)
+    )
+    root.rmdir()
+    unavailable = projects.get(project.id)
+    assert unavailable.project_folder_status == "unavailable"
+    assert unavailable.project_dir is None
+    assert unavailable.primary_workspace_binding_id == primary.id
+    root.mkdir()
+    assert projects.get(project.id).project_folder_status == "ready"
+    # Reproduce legacy conflicting rows that current binding writes reject.
+    conflict = WorkspaceBinding(
+        project_id=other.id, repo_fingerprint="path:legacy-conflict", last_known_root=str(root)
+    )
+    session.add(conflict)
+    session.commit()
+    assert projects.get(project.id).project_folder_status == "conflict"
+    assert projects.get(project.id).project_dir is None
+    assert "another project" in projects.get(project.id).project_folder_issue
+    session.delete(conflict)
+    session.commit()
+    assert projects.get(project.id).project_dir == str(root)
+    assert session.get(Project, project.id).primary_workspace_binding_id == primary.id
+
+
+def test_stale_primary_reference_is_missing_or_conflicting_without_fallback(
+    session: Session, tmp_path: Path
+):
+    projects = ProjectRepository(session)
+    project = projects.create(slug="stale-folder", name="Stale", domain="stale.test").data
+    row = session.get(Project, project.id)
+    row.primary_workspace_binding_id = 99999
+    # Inspect a corrupt legacy reference without disabling the current FK invariant.
+    with session.no_autoflush:
+        assert projects._out(row).project_folder_status == "missing"
+    row.primary_workspace_binding_id = None
+    foreign = projects.create(slug="foreign-primary", name="Foreign", domain="foreign.test").data
+    binding = (
+        WorkspaceRepository(session)
+        .connect(
+            project_id=foreign.id,
+            repo_fingerprint="path:foreign-primary",
+            last_known_root=str(tmp_path),
+        )
+        .data
+    )
+    row.primary_workspace_binding_id = binding.id
+    session.add(row)
+    session.commit()
+    assert projects.get(project.id).project_folder_status == "conflict"
+    assert projects.get(project.id).project_dir is None

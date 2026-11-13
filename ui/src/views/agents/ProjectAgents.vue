@@ -12,7 +12,7 @@ import { agentError, agentIdentity, useProjectAgents, type AgentSummary, type Ag
 const props = defineProps<{ projectId: number; standalone?: boolean }>()
 const codexLogo = resolveAgentHostLogo('codex')
 let reloadAgents = () => {}
-const { projectDir, folderIssue, folderLoading, refreshFolder } = useProjectFolder(toRef(props, 'projectId'), () => reloadAgents())
+const { projectDir, folderIssue, folderStatus, folderTitle, folderLoading, refreshFolder } = useProjectFolder(toRef(props, 'projectId'), () => reloadAgents())
 const search = ref('')
 const features = ref('null')
 const skills = ref('null')
@@ -110,7 +110,7 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
         <UiButton
           icon-left="refresh"
           :disabled="loading || reading || saving || !projectDir"
-          @click="guarded(() => { close(); void refresh() })"
+          @click="guarded(() => { void refreshFolder() })"
         >
           Refresh
         </UiButton>
@@ -143,7 +143,7 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
         <UiButton
           icon-left="refresh"
           :disabled="loading || reading || saving || !projectDir"
-          @click="guarded(() => { close(); void refresh() })"
+          @click="guarded(() => { void refreshFolder() })"
         >
           Refresh
         </UiButton>
@@ -163,8 +163,8 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
     />
     <UiCallout
       v-if="!folderLoading && folderIssue"
-      tone="warning"
-      title="Project folder needs setup"
+      :tone="folderStatus === 'directoryless' ? 'info' : 'warning'"
+      :title="folderTitle"
     >
       {{ folderIssue }}
       <UiButton

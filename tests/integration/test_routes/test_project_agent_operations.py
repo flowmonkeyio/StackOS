@@ -66,6 +66,7 @@ def test_explicit_project_folder_setup_readback_preserves_worktree_authority(
     )
     assert read.status_code == 200, read.text
     assert read.json()["project_dir"] == primary["project_dir"]
+    assert read.json()["project_folder_status"] == "ready"
     # Both direct and operation adapters use the same owner; wrong-project choices reject.
     assert api.get(f"/api/v1/projects/{project_id}").json()["project_dir"] == primary["project_dir"]
     rejected = api.patch(
@@ -88,6 +89,95 @@ def test_explicit_project_folder_setup_readback_preserves_worktree_authority(
         assert created.status_code == 200, created.text
         assert created.json()["data"]["project_dir"] == scope["project_dir"]
     assert call(api, "list", {**task, "project_id": other_project}).status_code == 422
+
+
+def test_project_folder_states_through_console_reads_and_foreign_writes_are_inert(
+    api, project_id, tmp_path, settings
+):
+    from stackos.repositories.projects import ProjectRepository
+
+    ui = {"Authorization": f"Bearer {derive_ui_token(settings.token_path.read_text().strip())}"}
+
+    def read():
+        response = api.post(
+            "/api/v1/operations/project.get/call",
+            json={"arguments": {"project_id": project_id, "response_mode": "raw"}},
+            headers=ui,
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["id"] == project_id
+        return response.json()
+
+    assert read()["project_folder_status"] == "directoryless"
+    root = tmp_path / "primary-state"
+    scope = bind(api, project_id, root)
+    assert read()["project_folder_status"] == "missing"
+    with Session(api.app.state.engine) as session:
+        primary = session.exec(
+            select(WorkspaceBinding).where(WorkspaceBinding.last_known_root == str(root))
+        ).one()
+        ProjectRepository(session).update(project_id, primary_workspace_binding_id=primary.id)
+        foreign = (
+            ProjectRepository(session)
+            .create(slug="foreign-agent-state", name="Foreign", domain="foreign.test")
+            .data
+        )
+    assert read()["project_folder_status"] == "ready"
+    created = call(
+        api,
+        "create",
+        {
+            **scope,
+            "fields": {
+                "name": "owner",
+                "description": "Owner",
+                "developer_instructions": "Retain this source.",
+            },
+        },
+        headers=ui,
+    )
+    assert created.status_code == 200, created.text
+    source = created.json()["data"]
+    path = root / source["source_ref"]["source_path"]
+    original = path.read_bytes()
+    denied = call(
+        api,
+        "update",
+        {
+            **scope,
+            "project_id": foreign.id,
+            "source_ref": source["source_ref"],
+            "expected_digest": source["digest"],
+            "patch": {"description": "Foreign edit"},
+        },
+        headers=ui,
+    )
+    assert denied.status_code == 422, denied.text
+    assert denied.json()["data"]["code"] == "missing_scope"
+    assert path.read_bytes() == original
+    with Session(api.app.state.engine) as session:
+        conflict = WorkspaceBinding(
+            project_id=foreign.id,
+            repo_fingerprint="fixture:conflicting-agent-root",
+            last_known_root=str(root),
+        )
+        session.add(conflict)
+        session.commit()
+        conflict_id = conflict.id
+    assert read()["project_folder_status"] == "conflict"
+    assert read()["project_dir"] is None
+    assert call(api, "list", scope, headers=ui).status_code == 422
+    assert path.read_bytes() == original
+    with Session(api.app.state.engine) as session:
+        session.delete(session.get(WorkspaceBinding, conflict_id))
+        session.commit()
+    moved = tmp_path / "temporarily-offline"
+    root.rename(moved)
+    assert read()["project_folder_status"] == "unavailable"
+    assert read()["project_dir"] is None
+    moved.rename(root)
+    assert read()["project_folder_status"] == "ready"
+    assert path.read_bytes() == original
 
 
 def test_local_ui_add_get_edit_exact_readback(api, project_id, tmp_path, settings):

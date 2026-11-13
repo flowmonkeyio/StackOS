@@ -6219,6 +6219,8 @@ export interface components {
             project_dir?: string | null;
             /** Project Folder Issue */
             project_folder_issue?: string | null;
+            /** Project Folder Status */
+            project_folder_status?: ProjectOutProject_folder_statusAnyOf0 | null;
             /** Schedule Json */
             schedule_json: {
                 [key: string]: unknown;
@@ -13529,6 +13531,13 @@ export enum ProjectMoveInputResponse_modeAnyOf0 {
 export enum ProjectMoveInputScope {
     project = "project",
     catalog = "catalog"
+}
+export enum ProjectOutProject_folder_statusAnyOf0 {
+    ready = "ready",
+    directoryless = "directoryless",
+    missing = "missing",
+    unavailable = "unavailable",
+    conflict = "conflict"
 }
 export enum ProjectUpdateInputResponse_modeAnyOf0 {
     compact = "compact",

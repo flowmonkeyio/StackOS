@@ -55,6 +55,40 @@ describe('Agents list and native editor', () => {
     expect(wrapper.findAll('button').find(button => button.text() === 'Add agent')!.attributes('disabled')).toBeDefined()
     expect(callOperation).toHaveBeenCalledTimes(1)
   })
+  it.each([
+    ['directoryless', 'Local agents need a project folder'],
+    ['missing', 'Project folder is not selected'],
+    ['unavailable', 'Project folder is unavailable'],
+    ['conflict', 'Project folder binding conflicts'],
+  ])('shows the %s state without onboarding or choosing another directory', async (status, title) => {
+    vi.mocked(callOperation).mockResolvedValue({ id: 1, project_dir: null, project_folder_status: status, project_folder_issue: 'Project folder state from its owner.' })
+    wrapper = mount(ProjectAgents, { props: { projectId: 1 } }); await flushPromises()
+    expect(wrapper.text()).toContain(title)
+    expect(wrapper.text()).not.toContain('Project folder needs setup')
+    expect(wrapper.find('.agent-row').exists()).toBe(false)
+    expect(wrapper.find('aside').exists()).toBe(false)
+    expect(wrapper.findAll('button').find(button => button.text() === 'Add agent')!.attributes('disabled')).toBeDefined()
+    expect(vi.mocked(callOperation).mock.calls.map(([name]) => name)).toEqual(['project.get'])
+  })
+  it('retries the selected project owner and loads only its explicitly repaired binding', async () => {
+    vi.mocked(callOperation).mockResolvedValue({ id: 1, project_dir: null, project_folder_status: 'missing', project_folder_issue: 'Select an existing binding in project setup.' })
+    wrapper = mount(ProjectAgents, { props: { projectId: 1 } }); await flushPromises()
+    vi.mocked(callOperation).mockImplementation(async operation => operation === 'project.get'
+      ? { id: 1, project_dir: '/fixture/project', project_folder_status: 'ready' }
+      : { data: { project_id: 1, project_dir: '/fixture/project', items: [row] } })
+    await wrapper.findAll('button').find(button => button.text() === 'Retry project folder')!.trigger('click'); await flushPromises()
+    expect(wrapper.find('.agent-row').exists()).toBe(true)
+    expect(vi.mocked(callOperation).mock.calls.map(([name]) => name)).toEqual(['project.get', 'project.get', 'projectAgent.list'])
+    expect(vi.mocked(callOperation).mock.calls.every(([, args]) => args.project_id === 1)).toBe(true)
+  })
+  it('rechecks the authoritative binding on Refresh instead of retaining an unavailable folder', async () => {
+    const w = setup(); await flushPromises()
+    vi.mocked(callOperation).mockResolvedValue({ id: 1, project_dir: null, project_folder_status: 'unavailable', project_folder_issue: 'Reconnect the configured folder and retry.' })
+    await w.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click'); await flushPromises()
+    expect(callOperation).toHaveBeenLastCalledWith('project.get', expect.objectContaining({ project_id: 1 }))
+    expect(w.find('.agent-row').exists()).toBe(false)
+    expect(w.text()).toContain('Project folder is unavailable')
+  })
   it('lists actual domains, opens full instructions and protects dirty drafts from refresh', async () => {
     const w = setup(); await flushPromises()
     expect(w.text()).not.toContain('/fixture/project')
