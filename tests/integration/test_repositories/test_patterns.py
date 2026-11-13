@@ -132,7 +132,7 @@ def test_pattern_interrupted_table_creation_recovers_key_and_identity(
     from fastapi.testclient import TestClient
 
     from stackos.config import Settings
-    from stackos.db.migrate import alembic_config, current_alembic_version, upgrade_to_head
+    from stackos.db.migrate import alembic_config, current_alembic_version
     from stackos.server import create_app
 
     settings = Settings(_env_file=None, data_dir=tmp_path / "data", state_dir=tmp_path / "state")
@@ -151,7 +151,9 @@ def test_pattern_interrupted_table_creation_recovers_key_and_identity(
     with monkeypatch.context() as patch:
         patch.setattr(migration.op, "create_table", interrupt_after_real_table)
         with pytest.raises(RuntimeError, match="fixture interruption"):
-            upgrade_to_head(settings)
+            # Recreate the historical Patterns interruption independently of
+            # later sibling migrations; startup below still upgrades all heads.
+            command.upgrade(config, "0044_patterns")
     assert current_alembic_version(settings) == "0043_automations_homes_merge"
     with sqlite3.connect(settings.db_path) as db:
         assert db.execute("PRAGMA index_list(patterns)").fetchall() == []
