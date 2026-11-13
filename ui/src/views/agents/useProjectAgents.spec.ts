@@ -17,6 +17,22 @@ function setup(onDraftReplaced?: (fields: AgentFields | null) => void) {
   return { agents, id, dir }
 }
 describe('native project agents', () => {
+  it('revokes retained sources and ignores a late editor read after list denial', async () => {
+    const { agents } = setup(); await flushPromises(); await agents.edit(definition())
+    let resolveRead!: (value: unknown) => void
+    vi.mocked(callOperation).mockImplementationOnce(() => new Promise(resolve => { resolveRead = resolve }))
+    const read = agents.edit(definition())
+    vi.mocked(callOperation).mockRejectedValueOnce(new ApiError('Denied', 403, { detail: 'Denied' }))
+    await agents.refresh()
+    resolveRead(definition()); await read
+    expect(agents.draft.value).toBeNull()
+    expect(agents.items.value).toEqual([])
+    expect(agents.ready.value).toBe(false)
+    expect(agents.error.value).toContain('Denied')
+    const calls = vi.mocked(callOperation).mock.calls.length
+    await agents.save()
+    expect(vi.mocked(callOperation).mock.calls).toHaveLength(calls)
+  })
   beforeEach(() => { vi.mocked(callOperation).mockImplementation(async (operation) => operation === 'projectAgent.list' ? { data: { project_id: 1, project_dir: '/fixture', items: [definition()] } } : definition()) })
   afterEach(() => { cleanup?.(); vi.resetAllMocks() })
   it('reads full source and sends only changed fields with both preconditions, never dispatching', async () => {

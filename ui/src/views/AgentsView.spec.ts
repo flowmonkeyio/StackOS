@@ -25,6 +25,49 @@ function setup(items = [row]) {
 }
 afterEach(() => { wrapper?.unmount(); vi.resetAllMocks() })
 describe('Agents list and native editor', () => {
+  it('retains the editor, draft and list through guarded same-folder refresh and transient failure', async () => {
+    const w = setup(); await flushPromises()
+    await w.get('.agent-row').trigger('click'); await flushPromises()
+    const editor = w.get('aside').element, list = w.get('.agent-list').element
+    await w.get('input[pattern]').setValue('unsaved_name')
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    let rejectFolder!: (cause: unknown) => void
+    vi.mocked(callOperation).mockImplementation((name, args) => name === 'project.get'
+      ? new Promise((_resolve, reject) => { rejectFolder = reject }) : basics(name, args))
+    await w.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click')
+    await w.findAll('button').find(button => button.text() === 'Refresh sources')!.trigger('click')
+    expect(w.get('aside').element).toBe(editor)
+    expect(w.get('.agent-list').element).toBe(list)
+    expect(w.get<HTMLInputElement>('input[pattern]').element.value).toBe('unsaved_name')
+    expect(w.findAll('button').find(button => button.text() === 'Save changes')!.attributes('disabled')).toBeDefined()
+    rejectFolder(new Error('Offline')); await flushPromises()
+    expect(w.get('aside').element).toBe(editor)
+    expect(w.text()).toContain('Offline')
+    expect(w.get<HTMLInputElement>('input[pattern]').element.value).toBe('unsaved_name')
+    vi.mocked(callOperation).mockImplementation(basics)
+    await w.findAll('button').find(button => button.text() === 'Retry project folder')!.trigger('click')
+    await w.findAll('button').find(button => button.text() === 'Refresh sources')!.trigger('click'); await flushPromises()
+    expect(w.get('aside').element).toBe(editor)
+    expect(w.get('.agent-list').element).toBe(list)
+    expect(w.get<HTMLInputElement>('input[pattern]').element.value).toBe('unsaved_name')
+    expect(w.findAll('button').find(button => button.text() === 'Save changes')!.attributes('disabled')).toBeUndefined()
+  })
+  it('clears the old draft when current folder validation confirms a different folder or denial', async () => {
+    const w = setup(); await flushPromises()
+    await w.get('.agent-row').trigger('click'); await flushPromises()
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    let resolveList!: (value: unknown) => void
+    vi.mocked(callOperation).mockImplementation((name, args) => name === 'project.get'
+      ? Promise.resolve({ id: 1, project_dir: '/second' }) : name === 'projectAgent.list'
+        ? new Promise(resolve => { resolveList = resolve }) : basics(name, args))
+    await w.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click'); await flushPromises()
+    expect(w.find('aside').exists()).toBe(false)
+    expect(w.find('.agent-row').exists()).toBe(false)
+    resolveList({ data: { project_id: 1, project_dir: '/fixture/project', items: [row] } }); await flushPromises()
+    expect(w.find('aside').exists()).toBe(false)
+    expect(w.find('.agent-row').exists()).toBe(false)
+    expect(w.text()).toContain('different project folder')
+  })
   it('rejects a wrong-project folder response without exposing or editing its agents', async () => {
     vi.mocked(callOperation).mockResolvedValue({ id: 2, project_dir: '/other-project' })
     wrapper = mount(ProjectAgents, { props: { projectId: 1 } }); await flushPromises()
@@ -66,7 +109,7 @@ describe('Agents list and native editor', () => {
     expect(w.findAllComponents(UiSelect)[0]!.props('options')[0]).toEqual({ value: '', label: 'Default (inherited)' })
     await w.get('input[pattern]').setValue('new_name')
     await w.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click')
-    expect(w.text()).toContain('Discard unsaved changes?')
+    expect(w.text()).toContain('Refresh project sources?')
     expect(w.get<HTMLInputElement>('input[pattern]').element.value).toBe('new_name')
     await w.findAll('button').find(button => button.text() === 'Cancel')!.trigger('click')
     expect(w.get<HTMLInputElement>('input[pattern]').element.value).toBe('new_name')

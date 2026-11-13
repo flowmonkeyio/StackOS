@@ -52,6 +52,30 @@ afterEach(() => {
 })
 
 describe('reviewed save and private originals', () => {
+  it('retains typed facts during authority validation and rejects late previews until current again', async () => {
+    let finishPreview!: (value: unknown) => void
+    vi.mocked(callOperation).mockImplementation(async name => name === 'finance.record.get'
+      ? { data: detail } : new Promise(resolve => { finishPreview = resolve }))
+    const panel = mount(FinanceRecordPanel, { props, global: { stubs: { teleport: true } } })
+    await flushPromises()
+    await panel.get('[data-test="edit-record"]').trigger('click')
+    await panel.get('[data-test="date"]').setValue('2026-09-01')
+    await panel.get('[data-test="reason"]').setValue('Sourced correction')
+    await panel.get('form').trigger('submit'); await flushPromises()
+    await panel.setProps({ authorityCurrent: false })
+    expect(panel.get<HTMLInputElement>('[data-test="date"]').element.value).toBe('2026-09-01')
+    expect(panel.get('[data-test="preview-edit"]').attributes('disabled')).toBeDefined()
+    expect(panel.get('fieldset').attributes('disabled')).toBeUndefined()
+    const calls = vi.mocked(callOperation).mock.calls.length
+    await panel.get('form').trigger('submit')
+    expect(vi.mocked(callOperation).mock.calls).toHaveLength(calls)
+    finishPreview({ data: { preview_digest: 'b'.repeat(64), source_snapshot: snapshot, state: 'valid' } }); await flushPromises()
+    expect(panel.find('[data-test="save-edit"]').exists()).toBe(false)
+    await panel.setProps({ authorityCurrent: true })
+    expect(panel.get<HTMLInputElement>('[data-test="date"]').element.value).toBe('2026-09-01')
+    expect(panel.get('[data-test="preview-edit"]').attributes('disabled')).toBeUndefined()
+    panel.unmount()
+  })
   it.each(['success', 'stale', 'uncertain'])(
     'preserves exact preview and scope through %s save',
     async (outcome) => {

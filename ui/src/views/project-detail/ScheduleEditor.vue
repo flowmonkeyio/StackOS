@@ -104,6 +104,7 @@ async function save(): Promise<void> {
   try {
     if (scopeChanged.value || disposed) throw new Error('Project changed. Reopen this automation from the current project.')
     if (enabled.value && folderLoading.value) throw new Error('Wait for the project folder to load.')
+    if (enabled.value && folderIssue.value) throw new Error(folderIssue.value)
     if (enabled.value && !projectDir.value) throw new Error(folderIssue.value || 'Set the project folder once in project setup before enabling this automation.')
     if (goalError.value || templateError.value) return
     const configuration: ScheduleConfiguration = {

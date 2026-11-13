@@ -144,6 +144,79 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 describe('Finance management', () => {
+  it('keeps selected records and their panel through both status and query refresh', async () => {
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    const { wrapper } = await mounted()
+    await wrapper.findAll('button').find(button => button.text() === 'Expenses & income')!.trigger('click')
+    await wrapper.get('tbody tr').trigger('click'); await flushPromises()
+    const panel = wrapper.getComponent({ name: 'FinanceRecordPanel' })
+    const panelUID = panel.vm.$.uid, table = wrapper.get('table').element
+    let resolveStatus!: (value: unknown) => void, resolveQuery!: (value: unknown) => void
+    let queryArgs: Record<string, unknown> = {}
+    vi.mocked(callOperation).mockImplementation((name, args) => name === 'finance.status'
+      ? new Promise(resolve => { resolveStatus = resolve }) : name === 'finance.query'
+        ? new Promise(resolve => { resolveQuery = resolve; queryArgs = args }) : basics(name, args))
+    await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+    expect(panel.props('authorityCurrent')).toBe(false)
+    expect(panel.props('modelValue')).toBe(true)
+    expect(panel.props('recordRef')).toBe('receipt:one')
+    expect(wrapper.get('table').element).toBe(table)
+    resolveStatus({ data: { project_id: 1, readiness: 'ready', access: [access] } }); await flushPromises()
+    expect(wrapper.getComponent({ name: 'FinanceRecordPanel' }).vm.$.uid).toBe(panelUID)
+    expect(wrapper.get('table').element).toBe(table)
+    expect(panel.props('authorityCurrent')).toBe(false)
+    resolveQuery({ data: projection(queryArgs) }); await flushPromises()
+    expect(panel.props('authorityCurrent')).toBe(true)
+    expect(panel.props('recordRef')).toBe('receipt:one')
+    expect(panel.props('modelValue')).toBe(true)
+    expect(wrapper.get('table').element).toBe(table)
+    wrapper.unmount()
+  })
+  it('clears incompatible query content immediately and cannot restore it after a newer denial', async () => {
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    const { wrapper } = await mounted()
+    let resolveQuery!: (value: unknown) => void
+    vi.mocked(callOperation).mockImplementation((name, args) => name === 'finance.query'
+      ? new Promise(resolve => { resolveQuery = resolve }) : basics(name, args))
+    const filters = wrapper.getComponent({ name: 'FinanceFilters' })
+    filters.vm.$emit('apply', { ...filters.props('query'), q: 'changed identity' }); await flushPromises()
+    expect(wrapper.text()).not.toContain('USD 90,071,992,547,409.93')
+    vi.mocked(callOperation).mockRejectedValueOnce(new ApiError('Denied', 403, { detail: 'Denied' }))
+    await wrapper.get('[data-test="refresh-finance"]').trigger('click'); await flushPromises()
+    resolveQuery({ data: projection({}, 'Old denied data') }); await flushPromises()
+    expect(wrapper.text()).not.toContain('USD 90,071,992,547,409.93')
+    expect(wrapper.text()).not.toContain('Old denied data')
+    expect(wrapper.find('[aria-label="Finance views"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+  it('retains report DOM and filters during compatible validation and transient errors without export authority', async () => {
+    const OriginalURL = URL
+    vi.stubGlobal('URL', class extends OriginalURL {
+      static override createObjectURL = vi.fn(() => 'blob:retained')
+      static override revokeObjectURL = vi.fn()
+    })
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => name === 'finance.report.render'
+      ? { state: 'current', snapshot, content_base64: btoa('Retained report'), content_type: 'text/markdown', filename: 'report.md' }
+      : basics(name, args))
+    const { wrapper } = await mounted()
+    await wrapper.findAll('button').find(button => button.text() === 'Reports')!.trigger('click')
+    await wrapper.findAll('button').find(button => button.text() === 'View period report')!.trigger('click'); await flushPromises()
+    const reportNode = wrapper.getComponent({ name: 'MarkdownView' }).element
+    let rejectStatus!: (cause: unknown) => void
+    vi.mocked(callOperation).mockImplementation((name, args) => name === 'finance.status'
+      ? new Promise((_resolve, reject) => { rejectStatus = reject }) : basics(name, args))
+    await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+    expect(wrapper.getComponent({ name: 'MarkdownView' }).element).toBe(reportNode)
+    expect(wrapper.text()).toContain('Last-known')
+    expect(wrapper.findAll('button').find(button => button.text() === 'Prepare CSV export')!.attributes('disabled')).toBeDefined()
+    expect(wrapper.get('a[download]').attributes('href')).toBeUndefined()
+    rejectStatus(new Error('Offline')); await flushPromises()
+    expect(wrapper.getComponent({ name: 'MarkdownView' }).element).toBe(reportNode)
+    expect(wrapper.text()).toContain('Last-known')
+    expect(wrapper.findAll('button').find(button => button.text() === 'Prepare CSV export')!.attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
   it('resolves an older contextual request beyond the bounded queue page by its exact identity', async () => {
     const basics = vi.mocked(callOperation).getMockImplementation()!
     const request = { id: 703, project_id: 1, title: 'Older Finance request', status: 'new', run_plan_id: null,
@@ -1781,13 +1854,14 @@ describe('Finance management', () => {
     ).toBe(true)
     wrapper.unmount()
   })
-  it('keeps failed loading explicit instead of showing stale totals', async () => {
+  it('labels retained totals after a transient validation failure', async () => {
     const { wrapper } = await mounted()
     vi.mocked(callOperation).mockRejectedValue(new Error('Synthetic denial'))
     await wrapper.get('[data-test="refresh-finance"]').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('unavailable')
-    expect(wrapper.text()).not.toContain('USD 90,071,992,547,409.93')
+    expect(wrapper.text()).toContain('Last-known Finance data')
+    expect(wrapper.text()).toContain('USD 90,071,992,547,409.93')
     wrapper.unmount()
   })
   it('invalidates a pending query before refreshing managed project data', async () => {
