@@ -4,6 +4,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { defineComponent, nextTick, onMounted } from 'vue'
 import { createMemoryHistory, createRouter, useRoute } from 'vue-router'
 
+import { PatternSummarySource, type SchemaPatternPage } from '@/api'
 import App from './App.vue'
 import PatternsView from './views/PatternsView.vue'
 import { useProjectsStore, type Project } from '@/stores/projects'
@@ -141,8 +142,12 @@ describe('App', () => {
     const projects = useProjectsStore()
     projects.items = [projectFixture(1, 'Alpha'), projectFixture(2, 'Beta')]
     projects.activeProjectId = 1
+    const patterns: SchemaPatternPage = {
+      items: [{ id: 1, pattern_ref: 'pattern:1', key: 'synthetic', title: 'Shared example', summary: 'All projects', source: PatternSummarySource.custom, source_label: 'Custom', tags: [], revision: 1, etag: '1:1', created_at: '2026-11-12T00:00:00Z', updated_at: '2026-11-12T00:00:00Z' }],
+      next_cursor: null, total_estimate: 1, catalog_total: 1,
+    }
     globalThis.fetch = vi.fn(async (url: string | URL | Request) => String(url).includes('/operations/pattern.list/')
-      ? json({ items: [{ id: 1, key: 'synthetic', title: 'Shared example', summary: 'All projects', source: 'custom', source_label: 'Custom', tags: [], etag: '1:1', updated_at: '2026-11-12' }], next_cursor: null, total_estimate: 1, catalog_total: 1 })
+      ? json(patterns)
       : json([])) as typeof fetch
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/patterns/:patternId?', component: PatternsView }] })
     await router.push('/patterns')

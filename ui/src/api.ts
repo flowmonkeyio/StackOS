@@ -6058,6 +6058,249 @@ export interface components {
              */
             total_estimate: number;
         };
+        /** PatternDeleteInput */
+        PatternDeleteInput: {
+            /** Expected Etag */
+            expected_etag: string;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Pattern Id */
+            pattern_id: number;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: PatternDeleteInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** PatternDetail */
+        PatternDetail: {
+            /** Body */
+            body: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Etag
+             * @description Opaque record identity/revision token; copy it unchanged.
+             */
+            etag: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            /** Pattern Ref */
+            pattern_ref: string;
+            /** Revision */
+            revision: number;
+            /**
+             * Source
+             * @default custom
+             * @enum {string}
+             */
+            source: PatternDetailSource;
+            /**
+             * Source Label
+             * @default Custom
+             */
+            source_label: string;
+            /** Summary */
+            summary: string;
+            /** Tags */
+            tags: string[];
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** PatternGetInput */
+        PatternGetInput: {
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Key
+             * @default null
+             */
+            key: string | null;
+            /**
+             * Pattern Id
+             * @default null
+             */
+            pattern_id: number | null;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: PatternGetInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+        };
+        /** PatternListInput */
+        PatternListInput: {
+            /**
+             * Cursor
+             * @default null
+             */
+            cursor: number | null;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /**
+             * Limit
+             * @default 25
+             */
+            limit: number;
+            /**
+             * Query
+             * @default null
+             */
+            query: string | null;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: PatternListInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /**
+             * Source
+             * @default all
+             * @enum {string}
+             */
+            source: PatternListInputSource;
+            /** Tags */
+            tags?: string[];
+        };
+        /** PatternPage */
+        PatternPage: {
+            /** Catalog Total */
+            catalog_total: number;
+            /** Items */
+            items: components["schemas"]["PatternSummary"][];
+            /**
+             * Next Cursor
+             * @default null
+             */
+            next_cursor: number | null;
+            /**
+             * Total Estimate
+             * @default 0
+             */
+            total_estimate: number;
+        };
+        /** PatternSummary */
+        PatternSummary: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Etag
+             * @description Opaque record identity/revision token; copy it unchanged.
+             */
+            etag: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            /** Pattern Ref */
+            pattern_ref: string;
+            /** Revision */
+            revision: number;
+            /**
+             * Source
+             * @default custom
+             * @enum {string}
+             */
+            source: PatternSummarySource;
+            /**
+             * Source Label
+             * @default Custom
+             */
+            source_label: string;
+            /** Summary */
+            summary: string;
+            /** Tags */
+            tags: string[];
+            /** Title */
+            title: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** PatternUpsertInput */
+        PatternUpsertInput: {
+            /** Body */
+            body: string;
+            /**
+             * Expected Etag
+             * @default null
+             */
+            expected_etag: string | null;
+            /**
+             * Idempotency Key
+             * @default null
+             */
+            idempotency_key: string | null;
+            /** Key */
+            key: string;
+            /**
+             * Response Mode
+             * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
+             * @default null
+             */
+            response_mode: PatternUpsertInputResponse_modeAnyOf0 | null;
+            /**
+             * Run Token
+             * @default null
+             */
+            run_token: string | null;
+            /** Summary */
+            summary: string;
+            /** Tags */
+            tags?: string[];
+            /** Title */
+            title: string;
+        };
         /**
          * PermissionVerificationOut
          * @description Safe, manifest-owned grant evidence posture exposed to callers.
@@ -10313,6 +10556,20 @@ export interface components {
              */
             run_id: number | null;
         };
+        /** WriteEnvelope[PatternSummary] */
+        WriteEnvelope_PatternSummary_: {
+            data: components["schemas"]["PatternSummary"];
+            /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id: number | null;
+        };
         /** WriteEnvelope[ProjectCleanupResult] */
         WriteEnvelope_ProjectCleanupResult_: {
             data: components["schemas"]["ProjectCleanupResult"];
@@ -10897,6 +11154,13 @@ export type SchemaPageResponseRunOut = components['schemas']['PageResponse_RunOu
 export type SchemaPageResponseRunPlanSummaryOut = components['schemas']['PageResponse_RunPlanSummaryOut_'];
 export type SchemaPageActionCallAuditOut = components['schemas']['Page_ActionCallAuditOut_'];
 export type SchemaPageScheduledRunOut = components['schemas']['Page_ScheduledRunOut_'];
+export type SchemaPatternDeleteInput = components['schemas']['PatternDeleteInput'];
+export type SchemaPatternDetail = components['schemas']['PatternDetail'];
+export type SchemaPatternGetInput = components['schemas']['PatternGetInput'];
+export type SchemaPatternListInput = components['schemas']['PatternListInput'];
+export type SchemaPatternPage = components['schemas']['PatternPage'];
+export type SchemaPatternSummary = components['schemas']['PatternSummary'];
+export type SchemaPatternUpsertInput = components['schemas']['PatternUpsertInput'];
 export type SchemaPermissionVerificationOut = components['schemas']['PermissionVerificationOut'];
 export type SchemaPluginCatalogOut = components['schemas']['PluginCatalogOut'];
 export type SchemaPluginEnableRequest = components['schemas']['PluginEnableRequest'];
@@ -11031,6 +11295,7 @@ export type SchemaWriteEnvelopeDurableActionJobOut = components['schemas']['Writ
 export type SchemaWriteEnvelopeFinanceCommitOut = components['schemas']['WriteEnvelope_FinanceCommitOut_'];
 export type SchemaWriteEnvelopeFinanceStatusOut = components['schemas']['WriteEnvelope_FinanceStatusOut_'];
 export type SchemaWriteEnvelopeLocalAgentChatMessageOut = components['schemas']['WriteEnvelope_LocalAgentChatMessageOut_'];
+export type SchemaWriteEnvelopePatternSummary = components['schemas']['WriteEnvelope_PatternSummary_'];
 export type SchemaWriteEnvelopeProjectCleanupResult = components['schemas']['WriteEnvelope_ProjectCleanupResult_'];
 export type SchemaWriteEnvelopeProjectFileOwnershipResult = components['schemas']['WriteEnvelope_ProjectFileOwnershipResult_'];
 export type SchemaWriteEnvelopeProjectOut = components['schemas']['WriteEnvelope_ProjectOut_'];
@@ -14499,6 +14764,50 @@ export enum OperationResponsePolicyOutDefault_mode {
 export enum OperationSummaryOutIdempotency_policy {
     dispatcher = "dispatcher",
     handler = "handler"
+}
+export enum PatternDeleteInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum PatternDetailSource {
+    custom = "custom",
+    stackos = "stackos",
+    customized = "customized"
+}
+export enum PatternGetInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum PatternListInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
+}
+export enum PatternListInputSource {
+    all = "all",
+    stackos = "stackos",
+    customized = "customized",
+    custom = "custom"
+}
+export enum PatternSummarySource {
+    custom = "custom",
+    stackos = "stackos",
+    customized = "customized"
+}
+export enum PatternUpsertInputResponse_modeAnyOf0 {
+    compact = "compact",
+    raw = "raw",
+    ack = "ack",
+    standard = "standard",
+    verbose = "verbose"
 }
 export enum PermissionVerificationOutEnforcement {
     local_required = "local_required",

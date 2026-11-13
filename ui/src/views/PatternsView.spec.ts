@@ -2,31 +2,46 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
+import { PatternDetailSource, PatternSummarySource } from '@/api'
+import type { SchemaPatternDetail as PatternDetail, SchemaPatternPage, SchemaWriteEnvelopePatternSummary } from '@/api'
 import PatternsView from './PatternsView.vue'
 import { ApiError } from '@/lib/client'
 import { formatAbsoluteDateTime, formatShortDate } from '@/lib/stackos/time'
-import type { PatternDetail, PatternSummary } from '@/composables/usePatterns'
 
 const operation = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/operations', () => ({ callOperation: operation }))
 const entry = (id = 1, extra: Partial<PatternDetail> = {}): PatternDetail => ({
   id,
+  pattern_ref: `pattern:${id}`,
   key: `fixture-${id}`,
   title: `Guidance ${id}`,
   summary: 'When this applies',
   tags: ['arbitrary-topic'],
   etag: `${id}:1`,
-  source: 'custom',
+  revision: 1,
+  source: PatternDetailSource.custom,
   source_label: 'Custom',
+  created_at: '2026-11-12T12:00:00Z',
   updated_at: '2026-11-12T12:00:00Z',
   body: 'Use [Vue](https://vuejs.org/guide/).\n\n```ts\nconst count = ref(0)\n```\n<script>bad()</script>',
   ...extra,
 })
 const page = (
-  items: PatternSummary[] = [],
+  items: PatternDetail[] = [],
   next_cursor: number | null = null,
   catalog_total = items.length,
-) => ({ items, next_cursor, total_estimate: catalog_total, catalog_total })
+): SchemaPatternPage => ({
+  items: items.map(({ body: _body, source, ...summary }) => ({
+    ...summary,
+    source: PatternSummarySource[source],
+  })),
+  next_cursor,
+  total_estimate: catalog_total,
+  catalog_total,
+})
+const receipt = (detail = entry()): SchemaWriteEnvelopePatternSummary => ({
+  data: page([detail]).items[0]!, project_id: null, run_id: null,
+})
 const wrappers: VueWrapper[] = []
 async function open(path = '/patterns') {
   const router = createRouter({
@@ -80,7 +95,7 @@ describe('Patterns', () => {
   beforeEach(() =>
     operation
       .mockReset()
-      .mockImplementation(async (name) => (name === 'pattern.list' ? page() : entry())),
+      .mockImplementation(async (name) => name === 'pattern.list' ? page() : name === 'pattern.get' ? entry() : receipt()),
   )
   afterEach(() => {
     wrappers.forEach((w) => w.unmount())
@@ -161,8 +176,8 @@ describe('Patterns', () => {
       name === 'pattern.list'
         ? page([
             entry(),
-            entry(2, { source: 'stackos', source_label: 'StackOS' }),
-            entry(3, { source: 'customized', source_label: 'StackOS · Customized' }),
+            entry(2, { source: PatternDetailSource.stackos, source_label: 'StackOS' }),
+            entry(3, { source: PatternDetailSource.customized, source_label: 'StackOS · Customized' }),
           ])
         : entry(),
     )
@@ -235,7 +250,7 @@ describe('Patterns', () => {
     )
     operation.mockImplementation(async (name) =>
       name === 'pattern.upsert'
-        ? { data: entry() }
+        ? receipt()
         : name === 'pattern.get'
           ? entry()
           : page([entry()]),
@@ -266,7 +281,7 @@ describe('Patterns', () => {
     expect(router.currentRoute.value.path).toBe('/patterns/1')
     operation.mockImplementation(async (name) =>
       name === 'pattern.upsert'
-        ? { data: entry() }
+        ? receipt()
         : name === 'pattern.get'
           ? entry()
           : page([entry()]),
@@ -293,7 +308,7 @@ describe('Patterns', () => {
     operation.mockImplementation(async (name) =>
       name === 'pattern.list'
         ? page([entry()])
-        : entry(1, { source: 'stackos', source_label: 'StackOS' }),
+        : entry(1, { source: PatternDetailSource.stackos, source_label: 'StackOS' }),
     )
     const { router } = await open('/patterns/1')
     await click('Delete pattern')
@@ -311,7 +326,7 @@ describe('Patterns', () => {
     await click('Delete pattern', document.querySelector('[role="dialog"]')!)
     expect(document.body.textContent).toContain('Delete unavailable')
     operation.mockImplementation(async (name) =>
-      name === 'pattern.delete' ? { data: entry() } : page(),
+      name === 'pattern.delete' ? receipt() : page(),
     )
     await click('Delete pattern', document.querySelector('[role="dialog"]')!)
     expect(router.currentRoute.value.path).toBe('/patterns')
@@ -335,7 +350,7 @@ describe('Patterns', () => {
   })
 
   it('does not navigate or reload after a save settles beyond the owning component lifetime', async () => {
-    const pending = deferred<{ data: PatternSummary }>()
+    const pending = deferred<SchemaWriteEnvelopePatternSummary>()
     const { wrapper, router } = await open()
     await click('Add pattern')
     await field('Title', 'Pending example')
@@ -348,7 +363,7 @@ describe('Patterns', () => {
     wrapper.unmount()
     const retainedPath = router.currentRoute.value.path
     const count = operation.mock.calls.length
-    pending.resolve({ data: entry() })
+    pending.resolve(receipt())
     await flushPromises()
     expect(operation.mock.calls).toHaveLength(count)
     expect(router.currentRoute.value.path).toBe(retainedPath)

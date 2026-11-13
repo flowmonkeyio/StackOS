@@ -1,29 +1,19 @@
 import { onBeforeUnmount, ref } from 'vue'
 
+import { PatternListInputSource } from '@/api'
+import type {
+  SchemaPatternDeleteInput,
+  SchemaPatternDetail,
+  SchemaPatternGetInput,
+  SchemaPatternListInput,
+  SchemaPatternPage,
+  SchemaPatternSummary,
+  SchemaPatternUpsertInput,
+  SchemaWriteEnvelopePatternSummary,
+} from '@/api'
 import { ApiError, formatApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
 
-export interface PatternSummary {
-  id: number
-  key: string
-  title: string
-  summary: string
-  tags: string[]
-  etag: string
-  source: 'custom' | 'stackos' | 'customized'
-  source_label: string
-  updated_at: string
-}
-
-export interface PatternDetail extends PatternSummary {
-  body: string
-}
-export interface PatternPage {
-  items: PatternSummary[]
-  next_cursor: number | null
-  total_estimate: number
-  catalog_total: number
-}
 export interface PatternDraft {
   key: string
   title: string
@@ -33,15 +23,15 @@ export interface PatternDraft {
 }
 
 export function usePatterns() {
-  const page = ref<PatternPage | null>(null)
+  const page = ref<SchemaPatternPage | null>(null)
   const loading = ref(false)
   const error = ref('')
   const query = ref('')
-  const source = ref('all')
+  const source = ref(PatternListInputSource.all)
   const tags = ref<string[]>([])
   const cursor = ref<number | null>(null)
   const previous = ref<(number | null)[]>([])
-  const detail = ref<PatternDetail | null>(null)
+  const detail = ref<SchemaPatternDetail | null>(null)
   const detailLoading = ref(false)
   const detailError = ref('')
   const missing = ref(false)
@@ -59,15 +49,16 @@ export function usePatterns() {
     error.value = ''
     page.value = null
     try {
-      const result = await callOperation<PatternPage>(
+      const args: Pick<SchemaPatternListInput, 'query' | 'source' | 'tags' | 'limit' | 'cursor'> = {
+        query: query.value || null,
+        source: source.value,
+        tags: [...tags.value],
+        limit: 25,
+        cursor: cursor.value,
+      }
+      const result = await callOperation<SchemaPatternPage>(
         'pattern.list',
-        {
-          query: query.value || null,
-          source: source.value,
-          tags: [...tags.value],
-          limit: 25,
-          cursor: cursor.value,
-        },
+        args,
         { signal: listAbort.signal },
       )
       if (!disposed && request === listRequest) page.value = result
@@ -78,7 +69,7 @@ export function usePatterns() {
     }
   }
 
-  function filter(values: { query?: string; source?: string; tags?: string[] }) {
+  function filter(values: { query?: string; source?: SchemaPatternListInput['source']; tags?: string[] }) {
     if (values.query !== undefined) query.value = values.query
     if (values.source !== undefined) source.value = values.source
     if (values.tags !== undefined) tags.value = values.tags
@@ -115,9 +106,10 @@ export function usePatterns() {
     }
     detailAbort = new AbortController()
     try {
-      const result = await callOperation<PatternDetail>(
+      const args: Pick<SchemaPatternGetInput, 'pattern_id'> = { pattern_id: id }
+      const result = await callOperation<SchemaPatternDetail>(
         'pattern.get',
-        { pattern_id: id },
+        args,
         { signal: detailAbort.signal },
       )
       if (!disposed && request === detailRequest) detail.value = result
@@ -132,15 +124,21 @@ export function usePatterns() {
   }
 
   async function save(draft: PatternDraft, etag?: string) {
-    const result = await callOperation<{ data: PatternSummary }>('pattern.upsert', {
+    const args: Pick<SchemaPatternUpsertInput, 'key' | 'title' | 'summary' | 'body' | 'tags'>
+      & Partial<Pick<SchemaPatternUpsertInput, 'expected_etag'>> = {
       ...draft,
       ...(etag ? { expected_etag: etag } : {}),
-    })
+    }
+    const result = await callOperation<SchemaWriteEnvelopePatternSummary>('pattern.upsert', args)
     return result.data
   }
 
-  async function remove(entry: PatternSummary) {
-    await callOperation('pattern.delete', { pattern_id: entry.id, expected_etag: entry.etag })
+  async function remove(entry: Pick<SchemaPatternSummary, 'id' | 'etag'>) {
+    const args: Pick<SchemaPatternDeleteInput, 'pattern_id' | 'expected_etag'> = {
+      pattern_id: entry.id,
+      expected_etag: entry.etag,
+    }
+    await callOperation<SchemaWriteEnvelopePatternSummary>('pattern.delete', args)
   }
 
   onBeforeUnmount(() => {

@@ -28,6 +28,7 @@ export interface DesktopAgentExecutionCapabilities {
   sandboxes: Array<'read-only' | 'workspace-write' | 'normal'>
   review_sandbox: 'read-only' | 'workspace-write' | 'normal' | null
   models: string[]
+  recommended_model?: string | null
   custom_models: boolean
   provider_selection: boolean
   profile_selection: boolean

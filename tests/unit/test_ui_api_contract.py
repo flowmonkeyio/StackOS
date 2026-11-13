@@ -8,6 +8,7 @@ import runpy
 from pathlib import Path
 
 import pytest
+from pydantic.json_schema import models_json_schema
 
 from stackos.actions.repository.durable import DurableActionItemOut, DurableActionJobOut
 from stackos.config import Settings
@@ -34,6 +35,7 @@ from stackos.operations.finance import (
     FinanceStatusInput,
 )
 from stackos.operations.project_setup import ProjectFileOwnershipInput, ProjectFileOwnershipResult
+from stackos.operations.registry import build_operation_registry
 from stackos.operations.tracker.schemas import (
     TrackerAgentStatsAllInput,
     TrackerAgentStatsInput,
@@ -163,6 +165,53 @@ def test_ui_generation_includes_registry_owned_durable_contracts(
             {"$ref": "#/components/schemas/AgentStatsMetricsOut"},
             {"type": "null"},
         ]
+
+    # Compare complete schemas from the actual registry models and their proper
+    # input/output modes, including every referenced content and envelope schema.
+    # Field-name/substr checks alone missed the Pattern generator omission.
+    patterns = {
+        spec.name: spec
+        for spec in build_operation_registry().by_surface("rest")
+        if spec.name.startswith("pattern.")
+    }
+    assert set(patterns) == {"pattern.list", "pattern.get", "pattern.upsert", "pattern.delete"}
+    contracts = [
+        (model, mode)
+        for spec in patterns.values()
+        for model, mode in (
+            (spec.input_model, "validation"),
+            (spec.output_model, "serialization"),
+        )
+    ]
+    roots, expected = models_json_schema(contracts, ref_template="#/components/schemas/{model}")
+    for root in roots.values():
+        assert root["$ref"].rsplit("/", 1)[-1] in schemas
+    for name, schema in expected["$defs"].items():
+        assert schemas[name] == schema
+        alias = re.sub(r"[^a-zA-Z0-9]", "", name)
+        assert f"export type Schema{alias} =" in generated
+
+    summary = schemas["PatternSummary"]
+    assert {"id", "pattern_ref", "revision", "etag", "created_at", "updated_at"} <= set(
+        summary["required"]
+    )
+    assert {"source", "source_label"} <= summary["properties"].keys()
+    assert "body" not in summary["properties"]
+    assert "body" in schemas["PatternDetail"]["required"]
+    assert schemas["PatternPage"]["properties"]["items"]["items"] == {
+        "$ref": "#/components/schemas/PatternSummary"
+    }
+    assert {"items", "next_cursor", "total_estimate", "catalog_total"} <= schemas["PatternPage"][
+        "properties"
+    ].keys()
+    for operation in ("pattern.upsert", "pattern.delete"):
+        ref = roots[(patterns[operation].output_model, "serialization")]["$ref"]
+        envelope = schemas[ref.rsplit("/", 1)[-1]]
+        assert envelope["properties"]["data"] == {"$ref": "#/components/schemas/PatternSummary"}
+    assert (
+        not {"source", "source_label", "bundle_key", "shipped_hash"}
+        & schemas["PatternUpsertInput"]["properties"].keys()
+    )
 
 
 def test_finance_precision_history_native_schema_and_generated_types() -> None:

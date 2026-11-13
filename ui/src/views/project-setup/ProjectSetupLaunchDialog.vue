@@ -2,11 +2,10 @@
 import { computed, onBeforeUnmount, onMounted, ref, useId } from 'vue'
 import type { SchemaMainAgentPreferences, SchemaProjectSetupOut, SchemaSetupAttempt } from '@/api'
 import { UiButton, UiCallout, UiDialog, UiFormField, UiInput, UiSelect } from '@/components/ui'
-import type { DesktopAgentExecutionCapabilities, DesktopMcpHostStatus } from '@/lib/desktop'
+import type { DesktopMcpHostStatus } from '@/lib/desktop'
 import { callOperation } from '@/lib/operations'
 import { setupErrorMessage } from './useProjectSetup'
 
-type SetupHost = DesktopMcpHostStatus & { agent_execution?: DesktopAgentExecutionCapabilities & { recommended_model?: string | null } }
 const props = defineProps<{
   state: SchemaProjectSetupOut
   pending: boolean
@@ -14,7 +13,7 @@ const props = defineProps<{
   start: (preferences: SchemaMainAgentPreferences) => Promise<SchemaSetupAttempt | null>
 }>()
 const emit = defineEmits<{ close: []; started: [] }>()
-const hosts = ref<SetupHost[]>([])
+const hosts = ref<DesktopMcpHostStatus[]>([])
 const loading = ref(true)
 const catalogError = ref<string | null>(null)
 const saved = props.state.launch_preferences ?? {}
@@ -77,7 +76,7 @@ async function loadHosts(): Promise<void> {
   loading.value = true
   catalogError.value = null
   try {
-    const result = await callOperation<{ items: SetupHost[] }>('hostMcp.status', {})
+    const result = await callOperation<{ items: DesktopMcpHostStatus[] }>('hostMcp.status', {})
     if (disposed) return
     hosts.value = result.items
     // A saved choice is never silently replaced, including when unavailable.

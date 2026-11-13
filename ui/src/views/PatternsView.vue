@@ -2,6 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router'
 
+import { PatternListInputSource } from '@/api'
+import type { SchemaPatternDetail as PatternDetail, SchemaPatternSummary as PatternSummary } from '@/api'
 import DataTable from '@/components/DataTable.vue'
 import type { DataTableColumn } from '@/components/types'
 import MarkdownView from '@/components/MarkdownView.vue'
@@ -23,9 +25,7 @@ import {
 } from '@/components/ui'
 import {
   usePatterns,
-  type PatternDetail,
   type PatternDraft,
-  type PatternSummary,
 } from '@/composables/usePatterns'
 import { ApiError, formatApiError } from '@/lib/client'
 import { formatAbsoluteDateTime, formatShortDate } from '@/lib/stackos/time'
@@ -56,10 +56,10 @@ const columns: DataTableColumn<PatternSummary>[] = [
   { key: 'updated_at', label: 'Updated', widthClass: 'w-28', cellClass: 'whitespace-nowrap' },
 ]
 const sourceOptions = [
-  { value: 'all', label: 'All sources' },
-  { value: 'stackos', label: 'StackOS' },
-  { value: 'customized', label: 'Customized' },
-  { value: 'custom', label: 'Custom' },
+  { value: PatternListInputSource.all, label: 'All sources' },
+  { value: PatternListInputSource.stackos, label: 'StackOS' },
+  { value: PatternListInputSource.customized, label: 'Customized' },
+  { value: PatternListInputSource.custom, label: 'Custom' },
 ]
 const editorOpen = ref(false)
 const editing = ref<PatternDetail | null>(null)
@@ -328,7 +328,7 @@ onBeforeUnmount(() => {
             :model-value="source"
             :options="sourceOptions"
             aria-label="Pattern source"
-            @update:model-value="patterns.filter({ source: String($event) })"
+            @update:model-value="patterns.filter({ source: sourceOptions.find(option => option.value === $event)?.value ?? PatternListInputSource.all })"
           />
         </div>
       </div>
@@ -349,7 +349,7 @@ onBeforeUnmount(() => {
         <UiButton
           size="sm"
           variant="ghost"
-          @click="patterns.filter({ query: '', source: 'all', tags: [] })"
+          @click="patterns.filter({ query: '', source: PatternListInputSource.all, tags: [] })"
         >
           Clear filters
         </UiButton>

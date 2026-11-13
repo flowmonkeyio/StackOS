@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { callOperation } from '@/lib/operations'
+import type { DesktopAgentExecutionCapabilities, DesktopMcpHostStatus } from '@/lib/desktop'
 import Dialog from './ProjectSetupLaunchDialog.vue'
 import { setupFixture } from './setupFixtures'
 
@@ -11,18 +12,26 @@ afterEach(() => { wrapper?.unmount(); document.body.innerHTML = '' })
 
 // Capability combinations from the canonical host catalog, without requiring
 // those native apps or credentials to be installed in a component test.
-const hosts = [{
+const capabilities: DesktopAgentExecutionCapabilities = {
+  sandboxes: ['workspace-write'], review_sandbox: 'read-only', models: [],
+  custom_models: false, provider_selection: false, profile_selection: false, requires_provider_model: false,
+  notes: 'Fixture', sources: [], checked_on: '2026-11-13', credential_status: 'not_checked', model_access: 'not_checked',
+}
+const hosts: DesktopMcpHostStatus[] = [{
   host_key: 'hermes', display_name: 'Hermes', available: true,
-  agent_execution: { sandboxes: ['workspace-write'], models: [], recommended_model: null,
+  agent_execution: { ...capabilities, models: [], recommended_model: null,
     custom_models: true, provider_selection: true, profile_selection: true, requires_provider_model: true },
 }, {
   host_key: 'grok', display_name: 'Grok', available: true,
-  agent_execution: { sandboxes: ['workspace-write'], models: ['grok-build'], recommended_model: null,
+  agent_execution: { ...capabilities, models: ['grok-build'], recommended_model: null,
     custom_models: true, provider_selection: false, profile_selection: false, requires_provider_model: false },
 }, {
   host_key: 'fixed', display_name: 'Fixed app', available: true,
-  agent_execution: { sandboxes: ['workspace-write'], models: ['recommended-model'], recommended_model: 'recommended-model',
+  agent_execution: { ...capabilities, models: ['recommended-model'], recommended_model: 'recommended-model',
     custom_models: false, provider_selection: false, profile_selection: false, requires_provider_model: false },
+}, {
+  host_key: 'native', display_name: 'Native default app', available: true,
+  agent_execution: { ...capabilities, models: ['native-model'] },
 }]
 
 async function dialog(key: string, preferences: Record<string, string> = {}) {
@@ -98,4 +107,14 @@ it('uses only the selected host capability and preserves fixed recommendations',
   expect(select.props('modelValue')).toBe('recommended-model')
   expect(select.props('options').some((option: { label: string }) => /custom/i.test(option.label))).toBe(false)
   expect(wrapper!.text()).toContain('recommended-model (Recommended)')
+})
+
+it.each(['native', 'grok'])('keeps the native default when %s has no recommendation', async key => {
+  const start = await dialog(key)
+  const select = field('Model').findComponent({ name: 'UiSelect' })
+  expect(select.props('modelValue')).toBe('')
+  expect(select.props('options')).toContainEqual({ value: '', label: 'Agent default' })
+  expect(wrapper!.text()).not.toContain('(Recommended)')
+  await button('Start setup').trigger('click')
+  expect(start).toHaveBeenCalledWith({ host_key: key, model: null, provider: null, profile: null })
 })
