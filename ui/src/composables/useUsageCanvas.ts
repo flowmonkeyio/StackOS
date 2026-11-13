@@ -105,7 +105,9 @@ export function useUsageCanvas(canvas: Ref<HTMLCanvasElement | null>, paint: () 
     }
     schedule()
   })
-  onUpdated(() => { if (!motionEnabled()) { previous = null; cancelAnimation(canvas.value) }; schedule() })
+  // A pending snapshot also makes the feed non-live. Keep the last drawing as
+  // comparison data; only a fresh, enabled paint may animate its replacement.
+  onUpdated(() => { if (!motionEnabled()) cancelAnimation(canvas.value); schedule() })
   onBeforeUnmount(() => {
     cancelAnimation(canvas.value)
     cancelUsagePaint(draw)

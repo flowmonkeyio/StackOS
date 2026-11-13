@@ -135,7 +135,9 @@ until visible. Meaningful comparable geometry updates use one compositor-only
 opacity fade with the shared base duration/easing; there is no canvas animation
 loop. Compact traces require an active execution and fresh feed. Home consumes
 freshness from its existing statistics subscription. Initial/revealed charts,
-scope/metric changes and unrelated renders stay still. Hidden/offscreen,
+scope/metric changes and unrelated renders stay still.
+Pending snapshots cancel motion while retaining the last drawing for comparison;
+only a fresh accepted change may animate its replacement. Hidden/offscreen,
 reduced-motion and teardown boundaries cancel finite motion. Live dots use the
 same visibility owner and a restrained opacity pulse only while actual execution
 and fresh connection are present; reduced motion disables the pulse. Exact
