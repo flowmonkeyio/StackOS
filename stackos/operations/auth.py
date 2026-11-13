@@ -115,7 +115,8 @@ def operation_specs() -> list[OperationSpec]:
             surfaces=_surfaces(rest_path="/api/v1/auth/accounts", cli_name="account.list"),
             purpose=(
                 "Inspect reusable Account readiness and safe provider identity without "
-                "exposing encrypted or plaintext credential material."
+                "exposing encrypted or plaintext credential material. Home uses summary_only=true "
+                "to skip provider setup inventories while retaining all Account readiness fields."
             ),
             when_to_use=(
                 "Before attaching an existing Account to a project.",
@@ -238,7 +239,8 @@ def operation_specs() -> list[OperationSpec]:
             ),
             purpose=(
                 "Inspect project-authorized Accounts. An Account omitted from this result "
-                "cannot be used by actions in the project."
+                "cannot be used by actions in the project. summary_only=true skips provider setup "
+                "inventories, preserving the same attached Accounts and readiness fields."
             ),
             when_to_use=("Before selecting a credential_ref for project execution.",),
             returns=("Sanitized attached Accounts and provider setup metadata.",),

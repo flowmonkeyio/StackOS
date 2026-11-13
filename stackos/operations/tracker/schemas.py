@@ -28,7 +28,7 @@ from stackos.host_mcp.project_agents import AgentSourceRef
 from stackos.mcp.contract import MCPInput
 from stackos.repositories.tracker.agent_stats import stats_timezone
 from stackos.repositories.tracker.inspection_schema import ResultSourceKind
-from stackos.repositories.tracker.schema import TrackerCorrectionIntent
+from stackos.repositories.tracker.schema import TrackerCorrectionIntent, TrackerMetricDemand
 
 TrackerResponseMode = Literal["compact", "raw", "standard", "verbose"]
 AgentRole = Annotated[str, Field(pattern=r"^[a-zA-Z0-9_][a-zA-Z0-9_-]{0,159}$", strict=True)]
@@ -296,9 +296,13 @@ class TrackerGetInput(MCPInput):
             "This is intended for operator task indexes before one focused graph is loaded."
         ),
     )
+    projection: Literal["full", "ui"] = "full"
+    metric_demand: TrackerMetricDemand | None = None
 
     @model_validator(mode="after")
     def validate_task_index_scope(self) -> TrackerGetInput:
+        if self.metric_demand is not None and self.projection != "ui":
+            raise ValueError("metric_demand requires projection=ui")
         if not self.task_index_only:
             return self
         if self.include_graph:

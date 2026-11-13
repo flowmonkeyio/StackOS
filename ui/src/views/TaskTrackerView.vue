@@ -31,6 +31,7 @@ import { buildAssigneeOptions, buildTaskProgressRows, buildWorkflowOptions, grou
 import { boardFiltersFromEntry, clearBoardFilters, readBoardFilters, removeBoardFilter, saveBoardFilters, updateBoardDisplay, updateBoardFilter } from './task-tracker/boardFilters'
 import type { BoardFilterClause, BoardFilterField, BoardFilterState } from './task-tracker/boardFilters'
 import { useTaskBoardEdits } from './task-tracker/useTaskBoardEdits'
+import { currentFocusedDetail } from './task-tracker/detailUtils'
 
 const route = useRoute()
 const router = useRouter()
@@ -282,7 +283,10 @@ async function readDetail(taskKey: string, minRevision?: number): Promise<void> 
     void contexts.load(null)
   }
   try {
-    const next = await callOperation<TrackerSnapshot>('tracker.get', {
+    const next = currentFocusedDetail(
+      graph.graphSnapshot.value, projectId.value, taskKey,
+      Math.max(snapshot.value?.tracker.rev ?? 0, minRevision ?? 0),
+    ) ?? await callOperation<TrackerSnapshot>('tracker.get', {
       project_id: projectId.value, task_key: taskKey, include_graph: false,
     })
     if (!currentScope() || sequence !== detailSequence || detailTaskKey.value !== taskKey) return

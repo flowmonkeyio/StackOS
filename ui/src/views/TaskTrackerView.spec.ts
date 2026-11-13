@@ -85,6 +85,8 @@ describe('Work board navigation', () => {
     await board().findAll('[role="menuitem"]').find(item => item.text() === 'Task details')!.trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query.detail).toBe('task-a')
+    expect(dialog().props('task').context_json).toEqual(taskA.context_json)
+    expect(mocks.callOperation.mock.calls.filter(([name, args]) => name === 'tracker.get' && args.task_key === 'task-a')).toHaveLength(1)
     wrapper.unmount()
   })
   it.each(['save-first', 'SSE-first', 'in-flight-covered', 'in-flight-stale'])('reconciles a batch revision once across %s and later independent events', async order => {

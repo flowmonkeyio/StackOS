@@ -2461,6 +2461,54 @@ workflow mirroring preserves these description/input additions.
 
 ## Graph Projection
 
+`tracker.get(projection="ui")` is an additive summary contract. Default `full`
+and raw agent/detail reads retain every primary field. UI discovery uses
+`task_index_only=true, include_graph=false`; it returns every matching task's
+identity, lifecycle, projected Board column, rank, workflow/owner/search facts,
+dates and complete ticket rollup. The task scope is complete independently of
+metric demand. Existing Board clauses and completed-display preferences select
+demand from these facts; no new hidden-column controls are needed.
+
+`metric_demand: {task_keys: [], ticket_keys: []}` names at most 200 identities,
+including any caller overscan, in one batch. Empty demand means no metrics.
+The backend adds **zero overscan**: only exact demanded keys enter receipt reads,
+decoding, duration and usage aggregation. Unrequested `agent_stats`,
+`work_duration` and `active_execution` are null, meaning **not requested**, never
+zero, unavailable measurement coverage, or Live. Demanded values use the same
+canonical receipts, partial coverage, invocation identity and final precedence
+as full reads. `projection`, `scope_complete`, `metric_scope="demand"` and echoed `metric_demand` describe
+that distinction explicitly; compact mode preserves the complete UI projection.
+UI consumers own a measured viewport allowance within the 200-identity cap,
+coalescing Board/filter/completed-display or selected Graph demand at the shared
+reader. Hiding a column or selecting Graph removes its Board metric keys.
+
+A selected UI graph requires `task_key` and reads that task directly, without
+hydrating unrelated task JSON. It retains lightweight ticket hierarchy,
+dependencies, counts and safe external link navigation; graph node data contains
+record identity references instead of a second copy of context/evidence or card
+metrics. Task/ticket summaries omit primary instructions, context and evidence;
+full focused inspection remains the owner of those fields. A current full
+focused graph may supply the detail dialog's primary records directly when its
+project/task/revision covers the current index and requested revision. Summary
+graphs, foreign scope and older revisions require a full detail read. Secondary
+context/results/history panes retain their existing reads and hierarchy.
+
+The existing project/global timeline stream accepts `ui_demand`, JSON encoding
+`{"projects":{"1":{"task_keys":["core-tracker"],"ticket_keys":[]}}}`.
+Composite project/key identity and a combined 200-identity cap apply. Project
+streams reject foreign project demand; missing/foreign tasks or tickets reject
+before streaming. UI frames retain complete lightweight selected scope and
+revision/dirty facts, but metrics only for explicit demand. Each frame is a
+current replacement (`replace=true`), including cleared demand and hidden
+entities' null metrics. Global scope includes active available projects, with
+per-project revisions; the project store remains display-name/deletion truth.
+Omitting `ui_demand` preserves legacy unscoped and task-scoped feed semantics,
+durable timeline cursors, and transient usage-frame identity. This option does
+not change stream execution-thread or polling ownership.
+`ui_demand` and legacy `task_key` cannot be combined: the shared UI transport
+keeps complete project/global discovery and expresses selected-view demand only
+through explicit metric keys.
+
 Storage is normalized and not Vue Flow-specific. `tracker.get` returns an
 optional graph projection so the UI can compose Vue Flow without rediscovering
 relationships:

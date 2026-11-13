@@ -469,15 +469,125 @@ class TrackerGraphOut(BaseModel):
     layout_hints: dict[str, Any] = Field(default_factory=dict)
 
 
+class TrackerMetricDemand(BaseModel):
+    """Exact current UI demand. Empty means no metrics, never all metrics."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    task_keys: list[str] = Field(default_factory=list, max_length=200)
+    ticket_keys: list[str] = Field(default_factory=list, max_length=200)
+
+    @model_validator(mode="after")
+    def bounded_batch(self) -> TrackerMetricDemand:
+        if len(self.task_keys) + len(self.ticket_keys) > 200:
+            raise ValueError("metric demand supports at most 200 identities including overscan")
+        if any(not key.strip() for key in [*self.task_keys, *self.ticket_keys]):
+            raise ValueError("metric demand keys must be nonempty")
+        self.task_keys = list(dict.fromkeys(self.task_keys))
+        self.ticket_keys = list(dict.fromkeys(self.ticket_keys))
+        return self
+
+
+class TrackerUsageDemand(BaseModel):
+    """Composite identity for the existing project/global usage transport."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    projects: dict[int, TrackerMetricDemand] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def bounded_scope(self) -> TrackerUsageDemand:
+        if any(project_id <= 0 for project_id in self.projects):
+            raise ValueError("Demand project ids must be positive")
+        if sum(len(d.task_keys) + len(d.ticket_keys) for d in self.projects.values()) > 200:
+            raise ValueError("UI feed demand supports at most 200 identities including overscan")
+        return self
+
+
+class TrackerTaskSummaryOut(BaseModel):
+    """Complete discovery/filter facts; primary instructions belong to a full read."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    tracker_id: int
+    key: str
+    title: str
+    goal: str
+    description: str
+    status: TrackerItemStatus
+    board_column: str
+    priority_key: str
+    lane_key: str
+    owner: str | None
+    task_type: str
+    order_index: int
+    source_kind: TrackerSourceKind
+    source_json: dict[str, Any] | None
+    delivery: TaskDeliveryStateOut | None
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+    ticket_summary: TrackerTaskTicketSummaryOut | None = None
+    agent_stats: AgentStatsMetricsOut | None = None
+    work_duration: WorkDurationOut | None = None
+    active_execution: ActiveExecutionOut | None = None
+
+
+class TrackerTicketSummaryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    project_id: int
+    tracker_id: int
+    task_id: int
+    task_key: str = ""
+    parent_ticket_id: int | None
+    parent_ticket_key: str | None = None
+    run_plan_id: int | None
+    run_plan_step_id: int | None
+    run_id: int | None
+    key: str
+    title: str
+    goal: str
+    source_kind: TrackerSourceKind
+    metadata_json: dict[str, Any] | None = None
+    status: TrackerItemStatus
+    kind: TrackerTicketKind
+    assignee: str | None
+    priority_key: str
+    lane_key: str
+    order_index: int
+    blocker_reason: str | None
+    created_at: datetime
+    updated_at: datetime
+    started_at: datetime | None
+    completed_at: datetime | None
+    dependency_keys: list[str] = Field(default_factory=list)
+    blocked_by: list[str] = Field(default_factory=list)
+    blocked_by_titles: list[str] = Field(default_factory=list)
+    reference_count: int = 0
+    link_count: int = 0
+    agent_stats: AgentStatsMetricsOut | None = None
+    work_duration: WorkDurationOut | None = None
+    active_execution: ActiveExecutionOut | None = None
+
+
 class TrackerSnapshotOut(BaseModel):
     tracker: TrackerSummaryOut
     lanes: list[TrackerLaneOut]
     priorities: list[TrackerPriorityOut]
-    tasks: list[TrackerTaskOut]
-    tickets: list[TrackerTicketOut]
+    tasks: list[TrackerTaskOut] | list[TrackerTaskSummaryOut]
+    tickets: list[TrackerTicketOut] | list[TrackerTicketSummaryOut]
     dependencies: list[TrackerDependencyOut]
     links: list[TrackerLinkOut]
     graph: TrackerGraphOut | None = None
+    projection: Literal["full", "ui"] = "full"
+    scope_complete: bool = True
+    metric_scope: Literal["all", "demand"] = "all"
+    metric_demand: TrackerMetricDemand | None = None
 
 
 class AgentStatsUsageOut(BaseModel):

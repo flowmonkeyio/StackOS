@@ -512,6 +512,19 @@ relevant object Details may expose safe contextual metadata.
 
 ## Agent activity reads
 
+For Home connected tools, existing `account.list` and `connection.list` accept
+`summary_only=true` (also on their existing GET routes). This skips provider
+setup inventory construction and returns the exact same safe Account records:
+status/setup-required, auth method, expiry/revocation, last-test diagnostics,
+scopes, safe identity and project attachments remain complete in compact/raw
+mode. `providers` is empty and `summary_only` is explicit. Default setup APIs
+retain the full provider inventory. Home display names come from the current
+project store or `project.get`, not `project.portfolio` supervision.
+
+Work summary and exact metric demand use the existing `tracker.get` and timeline
+stream owners. See [UI summary/demand](./task-tracker.md#graph-projection) for
+complete lightweight scope, null unrequested metrics and legacy compatibility.
+
 Home uses `tracker.activeTasks` (`project_id`, direct-read) and
 `tracker.activeTasksAll` (local-admin-read). Both are read-only registry
 operations exposed through REST/CLI/MCP, with the global operation denied to

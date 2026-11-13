@@ -204,6 +204,7 @@ export interface TrackerGraph {
 }
 
 export interface TrackerSnapshot {
+  projection?: 'full' | 'ui'
   tracker: TrackerSummary
   lanes: TrackerLane[]
   priorities: TrackerPriority[]

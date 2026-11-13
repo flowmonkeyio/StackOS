@@ -573,8 +573,25 @@ def operation_specs() -> list[OperationSpec]:
                 "unavailable coverage; lifecycle timestamps and token silence are never "
                 "substitutes. "
                 "Compact responses preserve metrics and their usage/classification coverage."
+                " Explicit projection=ui returns complete lightweight task/filter/count facts "
+                "without primary context/evidence. Supply metric_demand with up to 200 exact "
+                "task/ticket keys including any caller overscan; empty demand computes no metrics. "
+                "Unrequested metrics are null, not zero or Live. Use task_index_only with "
+                "include_graph=false for discovery; selected graph reads require task_key. "
+                "Full/default and raw agent inspection retain complete primary contracts."
             ),
             examples=(
+                OperationExample(
+                    title="Discover all tasks and measure only demanded cards",
+                    arguments={
+                        "project_id": 1,
+                        "projection": "ui",
+                        "task_index_only": True,
+                        "include_graph": False,
+                        "metric_demand": {"task_keys": ["core-tracker"]},
+                        "response_mode": "raw",
+                    },
+                ),
                 OperationExample(
                     title="Load the complete operator task index",
                     arguments={

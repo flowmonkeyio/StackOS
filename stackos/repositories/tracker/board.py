@@ -4,11 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Literal
 
-from sqlalchemy import func
-from sqlmodel import Session, select
+from sqlalchemy import case, func
+from sqlmodel import Session, col, select
 
-from stackos.db.models import ProjectEvent, TrackerTask
-from stackos.repositories.tracker.schema import TaskDeliveryStateOut
+from stackos.db.models import ProjectEvent, TrackerReceiptProjection, TrackerTask, TrackerTicket
+from stackos.repositories.tracker.schema import TaskDeliveryStateOut, TrackerTaskSummaryOut
 
 if TYPE_CHECKING:
     from stackos.repositories.tracker.agent_stats import ReceiptProjection
@@ -26,10 +26,25 @@ TERMINAL_COLUMNS: dict[str, BoardColumn] = {
 }
 
 
+def nonempty_json_text(column, path: str):
+    """SQL counterpart of canonical string.strip validation, without returning text."""
+    whitespace = (
+        " \t\n\v\f\r\x1c\x1d\x1e\x1f\x85\xa0\u1680\u2000\u2001\u2002\u2003"
+        "\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000"
+    )
+    return (func.json_type(column, path) == "text") & (
+        func.json_quote(func.trim(func.json_extract(column, path), whitespace)) != '""'
+    )
+
+
 def task_column(task: TrackerTask | TrackerTaskOut, *, has_execution: bool = False) -> BoardColumn:
     if task.status in TERMINAL_COLUMNS:
         return TERMINAL_COLUMNS[task.status]
-    delivery = TaskDeliveryStateOut.from_metadata(task.metadata_json)
+    delivery = (
+        task.delivery
+        if isinstance(task, TrackerTaskSummaryOut)
+        else TaskDeliveryStateOut.from_metadata(task.metadata_json)
+    )
     if delivery is not None:
         if delivery.status == "stopped":
             return "stopped"
@@ -47,6 +62,7 @@ def task_columns(
     tasks: list[TrackerTask],
     *,
     projection: ReceiptProjection | None = None,
+    lightweight: bool = False,
 ) -> dict[int | None, BoardColumn]:
     # Only queued work needs historical evidence. A workflow's started_at is
     # lifecycle state, not proof that a native host call has ever begun.
@@ -55,7 +71,14 @@ def task_columns(
         for task in tasks
         if (
             task.status in {"not-started", "in-progress"}
-            and (state := TaskDeliveryStateOut.from_metadata(task.metadata_json)) is not None
+            and (
+                state := (
+                    task.delivery
+                    if isinstance(task, TrackerTaskSummaryOut)
+                    else TaskDeliveryStateOut.from_metadata(task.metadata_json)
+                )
+            )
+            is not None
             and state.status == "queued"
         )
     ]
@@ -80,6 +103,48 @@ def task_columns(
         # Older actual invocation receipts remain valid after restart or event
         # retention. Launch/session records alone do not establish execution.
         missing = {task.id for task in queued} - executed
+        if missing and lightweight:
+            # Board membership needs only actual invocation identity. Never load or
+            # decode receipt/history payloads merely to discover a queued column.
+            receipt = TrackerReceiptProjection.receipt_json
+            prefix = case(
+                (
+                    func.json_type(receipt, "$.execution") == "object",
+                    case(
+                        (func.json_extract(receipt, "$.execution") != "{}", "$.execution."),
+                        else_="$.launch.",
+                    ),
+                ),
+                else_="$.launch.",
+            )
+            fields = ("agent", "host_key", "model", "started_at", "invocation_id", "ticket_key")
+            rows = session.execute(
+                select(
+                    TrackerTicket.task_id,
+                    TrackerTicket.key,
+                    *[func.json_extract(receipt, prefix + field) for field in fields],
+                )
+                .join(
+                    TrackerReceiptProjection,
+                    col(TrackerReceiptProjection.ticket_id) == col(TrackerTicket.id),
+                )
+                .where(
+                    col(TrackerTicket.task_id).in_(missing),
+                    TrackerReceiptProjection.inventory == "usage",
+                    (
+                        (func.json_type(receipt, "$.execution") == "object")
+                        & (func.json_extract(receipt, "$.execution") != "{}")
+                    )
+                    | (func.json_type(receipt, "$.exit_code") == "integer")
+                    | nonempty_json_text(receipt, "$.thread_id")
+                    | (func.json_type(receipt, "$.result") == "object"),
+                )
+            ).all()
+            for task_id, key, *values in rows:
+                identity = dict(zip(fields, values, strict=True))
+                if _last_execution([{"execution": identity, "ticket_key": key}]) is not None:
+                    executed.add(task_id)
+            missing = set()  # Scalar discovery is complete; never fall through to metrics.
         if missing:
             if projection is None:
                 projection = ReceiptProjection(session)

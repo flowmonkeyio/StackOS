@@ -8,9 +8,10 @@ import time
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ValidationError as ModelValidationError
 from sqlalchemy.engine import Engine
 from sqlmodel import Session
 
@@ -36,6 +37,7 @@ from stackos.context import (
 from stackos.context.repository.utils import MAX_CONTEXT_LIMIT
 from stackos.host_mcp.service import usage_executions
 from stackos.repositories.tracker.agent_stats import usage_refresh
+from stackos.repositories.tracker.schema import TrackerMetricDemand, TrackerUsageDemand
 
 router = APIRouter(prefix="/api/v1/projects/{project_id}", tags=["project-memory"])
 global_router = APIRouter(prefix="/api/v1", tags=["project-memory"])
@@ -213,6 +215,7 @@ async def context_timeline_stream(
     heartbeat_ms: int = Query(default=15_000, ge=1000, le=120_000),
     max_events: int | None = Query(default=None, ge=1, le=200),
     replay: bool = Query(default=False),
+    ui_demand: str | None = Query(default=None, max_length=20000),
     engine: Engine = Depends(get_engine),
 ) -> StreamingResponse:
     """Stream tracker status timeline updates as Server-Sent Events."""
@@ -227,6 +230,7 @@ async def context_timeline_stream(
         max_events,
         replay,
         engine,
+        ui_demand,
     )
 
 
@@ -234,15 +238,41 @@ async def context_timeline_stream(
 async def global_context_timeline_stream(
     request: Request,
     after: int | None = Query(default=None, ge=0),
+    ui_demand: str | None = Query(default=None, max_length=20000),
     engine: Engine = Depends(get_engine),
 ) -> StreamingResponse:
     """The same local-admin tracker transport for Overview's global usage scope."""
-    return _timeline_stream(None, request, None, after, 50, 1000, 15_000, None, False, engine)
+    return _timeline_stream(
+        None, request, None, after, 50, 1000, 15_000, None, False, engine, ui_demand
+    )
 
 
 def _timeline_stream(
-    project_id, request, task_key, after, limit, poll_ms, heartbeat_ms, max_events, replay, engine
+    project_id,
+    request,
+    task_key,
+    after,
+    limit,
+    poll_ms,
+    heartbeat_ms,
+    max_events,
+    replay,
+    engine,
+    ui_demand=None,
 ) -> StreamingResponse:
+    demand = None
+    if ui_demand is not None:
+        if task_key is not None:
+            raise HTTPException(
+                status_code=422,
+                detail="UI demand uses complete project scope; express selected keys in ui_demand",
+            )
+        try:
+            demand = TrackerUsageDemand.model_validate_json(ui_demand)
+        except ModelValidationError as exc:
+            raise HTTPException(status_code=422, detail="Invalid bounded UI metric demand") from exc
+        with Session(engine) as session:
+            _ui_usage_scope(session, project_id, task_key, demand)
 
     async def event_source():
         cursor = after
@@ -274,7 +304,34 @@ def _timeline_stream(
             # It has no durable event ID and never advances the timeline cursor.
             if usage != previous_usage or page.items:
                 updates = None
-                if project_id is not None:
+                if demand is not None:
+                    with Session(engine) as session:
+                        projects = _ui_usage_scope(session, project_id, task_key, demand)
+                        scopes = [
+                            usage_refresh(
+                                session,
+                                pid,
+                                None,
+                                task_key=task_key,
+                                metric_demand=demand.projects.get(pid, TrackerMetricDemand()),
+                            )
+                            for pid in projects
+                        ]
+                    updates = {
+                        "projection": "ui",
+                        "scope_complete": True,
+                        "metric_scope": "demand",
+                        "replace": True,
+                        "scope": "project" if project_id is not None else "global",
+                        "project_id": project_id,
+                        "projects": [
+                            {key: scope[key] for key in ("project_id", "rev", "metric_demand")}
+                            for scope in scopes
+                        ],
+                        "tasks": [task for scope in scopes for task in scope["tasks"]],
+                        "tickets": [ticket for scope in scopes for ticket in scope["tickets"]],
+                    }
+                elif project_id is not None:
                     affected = [
                         item.metadata_json
                         for item in page.items
@@ -293,7 +350,23 @@ def _timeline_stream(
                         )
                         updates["replace"] = previous_usage is None
                 yield sse_frame(
-                    event="tracker-usage", data={"executions": usage, "updates": updates}
+                    event="tracker-usage",
+                    data={
+                        "executions": usage
+                        if demand is None
+                        else [
+                            call
+                            for call in usage
+                            if (
+                                (current := demand.projects.get(call["project_id"])) is not None
+                                and (
+                                    call["task_key"] in current.task_keys
+                                    or call["ticket_key"] in current.ticket_keys
+                                )
+                            )
+                        ],
+                        "updates": updates,
+                    },
                 )
                 previous_usage = usage
 
@@ -323,6 +396,73 @@ def _timeline_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+def _ui_usage_scope(session, project_id, task_key, demand: TrackerUsageDemand) -> list[int]:
+    """Validate composite demand before streaming, without reading receipt payloads."""
+    from sqlalchemy import func
+    from sqlmodel import col, select
+
+    from stackos.db.models import Project, TaskTracker, TrackerTask, TrackerTicket
+    from stackos.repositories.projects import ProjectRepository
+    from stackos.repositories.tracker.utils import DEFAULT_TRACKER_KEY
+
+    if project_id is not None:
+        ProjectRepository(session).require_available(project_id)
+        projects = [project_id]
+    else:
+        projects = list(
+            session.exec(
+                select(Project.id).where(
+                    col(Project.is_active).is_(True),
+                    func.json_type(Project.cleanup_json).is_(None)
+                    | (func.json_type(Project.cleanup_json) == "null"),
+                )
+            )
+        )
+    if not demand.projects.keys() <= set(projects):
+        raise HTTPException(
+            status_code=422, detail="UI metric demand is outside the selected project scope"
+        )
+    for pid in projects:
+        requested = demand.projects.get(pid, TrackerMetricDemand())
+        if not (requested.task_keys or requested.ticket_keys or task_key is not None):
+            continue
+        tasks = dict(
+            session.exec(
+                select(TrackerTask.key, TrackerTask.id)
+                .join(TaskTracker, col(TaskTracker.id) == col(TrackerTask.tracker_id))
+                .where(
+                    TrackerTask.project_id == pid,
+                    TaskTracker.key == DEFAULT_TRACKER_KEY,
+                    TrackerTask.key == task_key if task_key is not None else True,
+                )
+            ).all()
+        )
+        if task_key is not None and task_key not in tasks:
+            raise HTTPException(status_code=404, detail="Task not found in selected project")
+        if not set(requested.task_keys) <= tasks.keys():
+            raise HTTPException(
+                status_code=422, detail="UI metric task demand is outside the selected scope"
+            )
+        tickets = (
+            set(
+                session.exec(
+                    select(TrackerTicket.key).where(
+                        TrackerTicket.project_id == pid,
+                        col(TrackerTicket.task_id).in_(tasks.values()),
+                        col(TrackerTicket.key).in_(requested.ticket_keys),
+                    )
+                )
+            )
+            if requested.ticket_keys
+            else set()
+        )
+        if tickets != set(requested.ticket_keys):
+            raise HTTPException(
+                status_code=422, detail="UI metric ticket demand is outside the selected scope"
+            )
+    return projects
 
 
 def sse_frame(*, event: str, data: dict[str, Any], event_id: str | None = None) -> str:

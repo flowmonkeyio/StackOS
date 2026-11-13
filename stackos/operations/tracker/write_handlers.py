@@ -38,6 +38,7 @@ from stackos.repositories.tracker import (
     TrackerRepository,
     TrackerTaskBoardOut,
     TrackerTaskContentOut,
+    TrackerTaskOut,
 )
 
 
@@ -543,6 +544,7 @@ async def tracker_reopen(
             include_graph=False,
         )
         task = snapshot.tasks[0] if snapshot.tasks else None
+        assert task is None or isinstance(task, TrackerTaskOut)  # This is the default full read.
         out = TrackerReopenOut(
             tracker=snapshot.tracker,
             task=task,

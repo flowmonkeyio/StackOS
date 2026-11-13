@@ -938,6 +938,8 @@ def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
 
 
 def _compact_account_inventory(data: dict[str, Any]) -> dict[str, Any]:
+    if data.get("summary_only") is True:
+        return copy.deepcopy(data)
     out = _compact_mapping(data)
     accounts = data.get("accounts")
     if isinstance(accounts, list):

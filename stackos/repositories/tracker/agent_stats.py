@@ -32,6 +32,7 @@ from stackos.repositories.tracker.schema import (
     AgentStatsUsageOut,
     ExecutionIdentityOut,
     TrackerAgentStatsOut,
+    TrackerMetricDemand,
     UsageIntervalOut,
     UsageSampleOut,
     WorkDurationOut,
@@ -831,8 +832,31 @@ def usage_refresh(
     calls: list[dict[str, Any]] | None,
     *,
     task_key: str | None = None,
+    metric_demand: TrackerMetricDemand | None = None,
 ) -> dict[str, Any]:
     """Safe initial/reconnect snapshot, then minimal affected Work projections."""
+    if metric_demand is not None:
+        from stackos.repositories.tracker import TrackerRepository
+
+        snapshot = TrackerRepository(session).get(
+            project_id=project_id,
+            task_key=task_key,
+            task_index_only=True,
+            include_graph=False,
+            projection="ui",
+            metric_demand=metric_demand,
+        )
+        return {
+            "projection": "ui",
+            "scope_complete": True,
+            "metric_scope": "demand",
+            "project_id": project_id,
+            "rev": snapshot.tracker.rev,
+            "metric_demand": metric_demand.model_dump(mode="json"),
+            "tasks": [task.model_dump(mode="json") for task in snapshot.tasks],
+            "tickets": [ticket.model_dump(mode="json") for ticket in snapshot.tickets],
+            "replace": True,
+        }
     # Snapshot before SQL: removal implies the receipt commit already happened;
     # otherwise this request owns its counter copy through projection. No DB I/O
     # runs under the registry lock and no finished-call history is retained.

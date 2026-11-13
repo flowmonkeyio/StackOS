@@ -158,6 +158,8 @@ async def tracker_get(
         assignee=inp.assignee,
         include_graph=inp.include_graph,
         task_index_only=inp.task_index_only,
+        projection=inp.projection,
+        metric_demand=inp.metric_demand,
     )
 
 

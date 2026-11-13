@@ -99,6 +99,9 @@ def compact_tracker_status(value: Any) -> dict[str, Any]:
 
 def compact_tracker_snapshot(value: Any) -> dict[str, Any]:
     data = _as_dict(value)
+    if data.get("projection") == "ui":
+        # UI discovery is deliberately complete; metric demand owns its heavy bound.
+        return data
     tracker = _as_dict(data.get("tracker"))
     tasks = _as_list(data.get("tasks"))
     tickets = _as_list(data.get("tickets"))

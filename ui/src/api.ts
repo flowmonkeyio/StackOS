@@ -3305,6 +3305,11 @@ export interface components {
             provider_key: string | null;
             /** Providers */
             providers: components["schemas"]["AuthProviderOut"][];
+            /**
+             * Summary Only
+             * @default false
+             */
+            summary_only: boolean;
         };
         /** AuthTestOut */
         AuthTestOut: {
@@ -7948,8 +7953,16 @@ export interface components {
              * @default true
              */
             include_graph: boolean;
+            /** @default null */
+            metric_demand: components["schemas"]["TrackerMetricDemand"] | null;
             /** Project Id */
             project_id: number;
+            /**
+             * Projection
+             * @default full
+             * @enum {string}
+             */
+            projection: TrackerGetInputProjection;
             /**
              * Response Mode
              * @description Agent response shape. compact returns next-call-sufficient refs, raw returns the full redacted payload, and ack returns a minimal success envelope for safe internal writes. standard aliases raw; verbose aliases raw with any operation-specific diagnostics.
@@ -8130,6 +8143,16 @@ export interface components {
             /** Title */
             title: string | null;
         };
+        /**
+         * TrackerMetricDemand
+         * @description Exact current UI demand. Empty means no metrics, never all metrics.
+         */
+        TrackerMetricDemand: {
+            /** Task Keys */
+            task_keys?: string[];
+            /** Ticket Keys */
+            ticket_keys?: string[];
+        };
         /** TrackerPlaceTaskInput */
         TrackerPlaceTaskInput: {
             /**
@@ -8225,12 +8248,31 @@ export interface components {
             lanes: components["schemas"]["TrackerLaneOut"][];
             /** Links */
             links: components["schemas"]["TrackerLinkOut"][];
+            /** @default null */
+            metric_demand: components["schemas"]["TrackerMetricDemand"] | null;
+            /**
+             * Metric Scope
+             * @default all
+             * @enum {string}
+             */
+            metric_scope: TrackerSnapshotOutMetric_scope;
             /** Priorities */
             priorities: components["schemas"]["TrackerPriorityOut"][];
+            /**
+             * Projection
+             * @default full
+             * @enum {string}
+             */
+            projection: TrackerSnapshotOutProjection;
+            /**
+             * Scope Complete
+             * @default true
+             */
+            scope_complete: boolean;
             /** Tasks */
-            tasks: components["schemas"]["TrackerTaskOut"][];
+            tasks: components["schemas"]["TrackerTaskOut"][] | components["schemas"]["TrackerTaskSummaryOut"][];
             /** Tickets */
-            tickets: components["schemas"]["TrackerTicketOut"][];
+            tickets: components["schemas"]["TrackerTicketOut"][] | components["schemas"]["TrackerTicketSummaryOut"][];
             tracker: components["schemas"]["TrackerSummaryOut"];
         };
         /**
@@ -8488,6 +8530,67 @@ export interface components {
             task_key: string;
         };
         /**
+         * TrackerTaskSummaryOut
+         * @description Complete discovery/filter facts; primary instructions belong to a full read.
+         */
+        TrackerTaskSummaryOut: {
+            /** @default null */
+            active_execution: components["schemas"]["ActiveExecutionOut"] | null;
+            /** @default null */
+            agent_stats: components["schemas"]["AgentStatsMetricsOut"] | null;
+            /** Board Column */
+            board_column: string;
+            /** Completed At */
+            completed_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            delivery: components["schemas"]["TaskDeliveryStateOut"] | null;
+            /** Description */
+            description: string;
+            /** Goal */
+            goal: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            /** Lane Key */
+            lane_key: string;
+            /** Order Index */
+            order_index: number;
+            /** Owner */
+            owner: string | null;
+            /** Priority Key */
+            priority_key: string;
+            /** Project Id */
+            project_id: number;
+            /** Source Json */
+            source_json: {
+                [key: string]: unknown;
+            } | null;
+            source_kind: components["schemas"]["TrackerSourceKind"];
+            /** Started At */
+            started_at: string | null;
+            status: components["schemas"]["TrackerItemStatus"];
+            /** Task Type */
+            task_type: string;
+            /** @default null */
+            ticket_summary: components["schemas"]["TrackerTaskTicketSummaryOut"] | null;
+            /** Title */
+            title: string;
+            /** Tracker Id */
+            tracker_id: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** @default null */
+            work_duration: components["schemas"]["WorkDurationOut"] | null;
+        };
+        /**
          * TrackerTaskTicketSummaryOut
          * @description Ticket rollup used by lightweight task-index reads.
          */
@@ -8630,6 +8733,97 @@ export interface components {
             source_json: {
                 [key: string]: unknown;
             } | null;
+            source_kind: components["schemas"]["TrackerSourceKind"];
+            /** Started At */
+            started_at: string | null;
+            status: components["schemas"]["TrackerItemStatus"];
+            /** Task Id */
+            task_id: number;
+            /**
+             * Task Key
+             * @default
+             */
+            task_key: string;
+            /** Title */
+            title: string;
+            /** Tracker Id */
+            tracker_id: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /** @default null */
+            work_duration: components["schemas"]["WorkDurationOut"] | null;
+        };
+        /** TrackerTicketSummaryOut */
+        TrackerTicketSummaryOut: {
+            /** @default null */
+            active_execution: components["schemas"]["ActiveExecutionOut"] | null;
+            /** @default null */
+            agent_stats: components["schemas"]["AgentStatsMetricsOut"] | null;
+            /** Assignee */
+            assignee: string | null;
+            /** Blocked By */
+            blocked_by?: string[];
+            /** Blocked By Titles */
+            blocked_by_titles?: string[];
+            /** Blocker Reason */
+            blocker_reason: string | null;
+            /** Completed At */
+            completed_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Dependency Keys */
+            dependency_keys?: string[];
+            /** Goal */
+            goal: string;
+            /** Id */
+            id: number;
+            /** Key */
+            key: string;
+            kind: components["schemas"]["TrackerTicketKind"];
+            /** Lane Key */
+            lane_key: string;
+            /**
+             * Link Count
+             * @default 0
+             */
+            link_count: number;
+            /**
+             * Metadata Json
+             * @default null
+             */
+            metadata_json: {
+                [key: string]: unknown;
+            } | null;
+            /** Order Index */
+            order_index: number;
+            /** Parent Ticket Id */
+            parent_ticket_id: number | null;
+            /**
+             * Parent Ticket Key
+             * @default null
+             */
+            parent_ticket_key: string | null;
+            /** Priority Key */
+            priority_key: string;
+            /** Project Id */
+            project_id: number;
+            /**
+             * Reference Count
+             * @default 0
+             */
+            reference_count: number;
+            /** Run Id */
+            run_id: number | null;
+            /** Run Plan Id */
+            run_plan_id: number | null;
+            /** Run Plan Step Id */
+            run_plan_step_id: number | null;
             source_kind: components["schemas"]["TrackerSourceKind"];
             /** Started At */
             started_at: string | null;
@@ -10069,6 +10263,7 @@ export type SchemaTrackerGraphNodeOut = components['schemas']['TrackerGraphNodeO
 export type SchemaTrackerGraphOut = components['schemas']['TrackerGraphOut'];
 export type SchemaTrackerLaneOut = components['schemas']['TrackerLaneOut'];
 export type SchemaTrackerLinkOut = components['schemas']['TrackerLinkOut'];
+export type SchemaTrackerMetricDemand = components['schemas']['TrackerMetricDemand'];
 export type SchemaTrackerPlaceTaskInput = components['schemas']['TrackerPlaceTaskInput'];
 export type SchemaTrackerPriorityOut = components['schemas']['TrackerPriorityOut'];
 export type SchemaTrackerReorderTaskInput = components['schemas']['TrackerReorderTaskInput'];
@@ -10080,8 +10275,10 @@ export type SchemaTrackerTaskContentOut = components['schemas']['TrackerTaskCont
 export type SchemaTrackerTaskInputOut = components['schemas']['TrackerTaskInputOut'];
 export type SchemaTrackerTaskOut = components['schemas']['TrackerTaskOut'];
 export type SchemaTrackerTaskResultsInput = components['schemas']['TrackerTaskResultsInput'];
+export type SchemaTrackerTaskSummaryOut = components['schemas']['TrackerTaskSummaryOut'];
 export type SchemaTrackerTaskTicketSummaryOut = components['schemas']['TrackerTaskTicketSummaryOut'];
 export type SchemaTrackerTicketOut = components['schemas']['TrackerTicketOut'];
+export type SchemaTrackerTicketSummaryOut = components['schemas']['TrackerTicketSummaryOut'];
 export type SchemaTrackerUpdateTaskContentInput = components['schemas']['TrackerUpdateTaskContentInput'];
 export type SchemaTrackerUpdateTaskPriorityInput = components['schemas']['TrackerUpdateTaskPriorityInput'];
 export type SchemaUiTokenResponse = components['schemas']['UiTokenResponse'];
@@ -10245,6 +10442,7 @@ export interface operations {
         parameters: {
             query?: {
                 provider_key?: string | null;
+                summary_only?: boolean;
             };
             header?: never;
             path?: never;
@@ -10806,6 +11004,7 @@ export interface operations {
         parameters: {
             query?: {
                 after?: number | null;
+                ui_demand?: string | null;
             };
             header?: never;
             path?: never;
@@ -11526,6 +11725,7 @@ export interface operations {
         parameters: {
             query?: {
                 provider_key?: string | null;
+                summary_only?: boolean;
             };
             header?: never;
             path: {
@@ -11866,6 +12066,7 @@ export interface operations {
                 heartbeat_ms?: number;
                 max_events?: number | null;
                 replay?: boolean;
+                ui_demand?: string | null;
             };
             header?: never;
             path: {
@@ -13809,6 +14010,10 @@ export enum TrackerGetInputBlock_stateAnyOf0 {
     blocked = "blocked",
     open = "open"
 }
+export enum TrackerGetInputProjection {
+    full = "full",
+    ui = "ui"
+}
 export enum TrackerGetInputResponse_modeAnyOf0 {
     compact = "compact",
     raw = "raw",
@@ -13862,6 +14067,14 @@ export enum TrackerReorderTaskInputResponse_mode {
     raw = "raw",
     standard = "standard",
     verbose = "verbose"
+}
+export enum TrackerSnapshotOutMetric_scope {
+    all = "all",
+    demand = "demand"
+}
+export enum TrackerSnapshotOutProjection {
+    full = "full",
+    ui = "ui"
 }
 export enum TrackerSourceKind {
     manual = "manual",
