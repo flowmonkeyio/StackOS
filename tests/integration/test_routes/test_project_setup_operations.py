@@ -102,6 +102,106 @@ def test_console_existing_agent_cancel_requires_ack_revision_and_fences_replay(
         )
 
 
+@pytest.mark.parametrize("report_status", [None, "running", "needs_input"])
+def test_external_cancel_records_unreported_edit_uncertainty(
+    api, settings, tmp_path, report_status
+):
+    from stackos.db.models import AgentRequest
+    from stackos.repositories.project_setup import SetupReport
+
+    key = "agency.project-setup"
+    with Session(api.app.state.engine) as session:
+        opened = WorkspaceRepository(session).start_session(runtime="codex", cwd=str(tmp_path))
+        repo = ProjectSetupRepository(session)
+        repo.record_result(
+            opened.project_id,
+            key,
+            expected_revision=0,
+            result=verified_result(repo, opened.project_id, key),
+        )
+        receipt_before = repo._row(opened.project_id, key).model_dump(mode="json")
+        started = repo.start(
+            opened.project_id, session_id=opened.data.id, mode="setup", workflow_keys=[key]
+        )
+        before = started.attempt
+        if report_status:
+            before = repo.report(
+                opened.project_id,
+                request_id=before.request_id,
+                session_id=opened.data.id,
+                claim_token=started.claim_token,
+                expected_revision=before.revision,
+                report=SetupReport(
+                    status=report_status,
+                    progress={
+                        "message": "Setup is in progress",
+                        "evidence_ref": "fixture/progress",
+                    },
+                    question={
+                        "question_id": "local-choice",
+                        "revision": 1,
+                        "prompt": "Keep the local guidance?",
+                        "workflow_keys": [key],
+                        "answer_state": "pending",
+                        "response_channel": "existing_agent",
+                    }
+                    if report_status == "needs_input"
+                    else None,
+                ),
+            )
+        assert before.partial_changes_possible is False
+        snapshot = before.model_dump(mode="json")
+    # An external writer can change files before it reports any result.
+    edited = tmp_path / "partial-guidance.md"
+    edited.write_text("Unreported external setup edit.\n")
+    api.app.state.operation_services["scheduler"] = QueuedScheduler()
+    ui = {"Authorization": f"Bearer {derive_ui_token(settings.token_path.read_text().strip())}"}
+    args = {
+        "project_id": opened.project_id,
+        "request_id": before.request_id,
+        "expected_revision": before.revision,
+        "external_work_stopped": True,
+        "idempotency_key": "cancel-unreported",
+        "response_mode": "raw",
+    }
+    path = "/api/v1/operations/projectSetup.cancel/call"
+    response = api.post(path, json={"arguments": args}, headers=ui)
+    assert response.status_code == 200, response.text
+    cancelled = response.json()["data"]
+    assert cancelled["partial_changes_possible"] is True
+    assert cancelled == {
+        **snapshot,
+        "status": "cancelled",
+        "revision": before.revision + 1,
+        "partial_changes_possible": True,
+        "recovery_condition": cancelled["recovery_condition"],
+    }
+    readback = api.post(
+        "/api/v1/operations/projectSetup.get/call",
+        json={"arguments": {"project_id": opened.project_id, "response_mode": "raw"}},
+        headers=ui,
+    )
+    assert readback.status_code == 200, readback.text
+    assert readback.json()["current_attempt"] == cancelled
+    with Session(api.app.state.engine) as session:
+        row = session.get(AgentRequest, before.request_id)
+        assert row.claim_token_hash is None
+        assert row.metadata_json["project_setup"]["partial_changes_possible"] is True
+        repo = ProjectSetupRepository(session)
+        assert repo._row(opened.project_id, key).model_dump(mode="json") == receipt_before
+        successor = repo.start(
+            opened.project_id, session_id=opened.data.id, mode="setup", workflow_keys=[key]
+        )
+    replay = api.post(path, json={"arguments": args}, headers=ui)
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["data"] == cancelled
+    with Session(api.app.state.engine) as session:
+        repo = ProjectSetupRepository(session)
+        assert repo.get(opened.project_id).current_attempt == successor.attempt
+        assert repo._row(opened.project_id, key).model_dump(mode="json") == receipt_before
+    assert edited.read_text() == "Unreported external setup edit.\n"
+
+
 def test_browser_reminders_are_independent_permanent_and_not_completion(api, project_id, settings):
     ui = {"Authorization": f"Bearer {derive_ui_token(settings.token_path.read_text().strip())}"}
     path = "/api/v1/operations/projectSetup.setReminders/call"

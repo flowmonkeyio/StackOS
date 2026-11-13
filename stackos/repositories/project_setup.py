@@ -710,6 +710,8 @@ class ProjectSetupRepository:
                 )
             current.status = "cancelled"
             current.revision += 1
+            # External file edits may precede the first result report.
+            current.partial_changes_possible = True
             current.recovery_condition = (
                 "Operator acknowledged stopping external setup work. StackOS revoked this "
                 "claim; it did not stop the agent or verify native retirement. Completed "

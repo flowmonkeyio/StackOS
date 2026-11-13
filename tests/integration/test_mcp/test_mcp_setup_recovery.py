@@ -148,9 +148,9 @@ def test_bridge_replacement_cancel_and_deliberate_new_owner(mcp_client, mcp_app,
         "answers",
         "question",
         "progress",
-        "partial_changes_possible",
     ):
         assert cancelled[field] == retained[field]
+    assert cancelled["partial_changes_possible"] is True
     late = copy.deepcopy(report)
     late.update(expected_revision=3, idempotency_key="A-late")
     for operation, arguments in (

@@ -84,6 +84,7 @@ def test_duplicate_start_freezes_choice_and_queued_cancel_retires_once(managed, 
     session.expire_all()
     attempt = ProjectSetupRepository(session).get(project).current_attempt
     assert attempt.status == "cancelled"
+    assert attempt.partial_changes_possible is False
     assert attempt.managed.settings["model"] == "gpt-6.1-sol"
     assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 0
     assert not session.exec(select(RunPlan)).all()
