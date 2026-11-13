@@ -7,6 +7,7 @@ import { agentStatsFixture } from './home/agentStatsFixtures'
 import TaskTrackerView from './TaskTrackerView.vue'
 import { ApiError } from '@/lib/client'
 import { defaultBoardFilters, saveBoardFilters } from './task-tracker/boardFilters'
+import dagre from '@dagrejs/dagre'
 
 const mocks = vi.hoisted(() => ({ callOperation: vi.fn(), close: vi.fn(), stream: vi.fn() }))
 vi.mock('@/lib/operations', () => ({ callOperation: mocks.callOperation }))
@@ -597,6 +598,50 @@ describe('Work board navigation', () => {
     expect(mocks.callOperation.mock.calls.length).toBeGreaterThan(before)
     wrapper.unmount()
   })
+  it('keeps the actual 300-node graph session layout stable through selection, stream metrics and highlight expiry', async () => {
+    const tickets = Array.from({ length: 300 }, (_, index) => ({ ...ticketA, id: index + 100, key: `scale-${index}` }))
+    dataMock([taskA], tickets)
+    const normal = mocks.callOperation.getMockImplementation()!
+    mocks.callOperation.mockImplementation(async (operation, args) => {
+      const result = await normal(operation, args)
+      if (operation === 'tracker.get' && args.task_key && result.graph) {
+        result.graph.nodes = [{ id: 'task:task-a', type: 'task', parent_id: null, data: {}, label: 'Alpha', status: 'in-progress', lane_key: 'implementation', priority_key: 'p2' },
+          ...tickets.map((ticket, index) => ({ id: `ticket:${ticket.key}`, type: 'ticket', parent_id: 'task:task-a', data: { order_index: index }, label: ticket.title, status: ticket.status, lane_key: ticket.lane_key, priority_key: ticket.priority_key }))]
+        result.graph.edges = tickets.slice(1).map((ticket, index) => ({ id: `edge-${index}`, type: 'dependency', source: `ticket:scale-${Math.floor(index / 2)}`, target: `ticket:${ticket.key}`, label: null, data: {} }))
+      }
+      return result
+    })
+    const layout = vi.spyOn(dagre, 'layout')
+    const timerHost: { setTimeout: (handler: TimerHandler, delay?: number, ...args: unknown[]) => number } = window
+    const nativeTimeout = timerHost.setTimeout.bind(timerHost)
+    const expiries: (() => void)[] = []
+    const timeout = vi.spyOn(timerHost, 'setTimeout').mockImplementation((handler, delay, ...args) => {
+      if (delay === 4500 && typeof handler === 'function') expiries.push(() => handler(...args))
+      return nativeTimeout(handler, delay, ...args)
+    })
+    const { wrapper } = await render('/projects/7/tasks?view=graph&task=task-a')
+    try {
+      const graph = () => wrapper.findComponent({ name: 'TrackerGraphPanel' })
+      expect(graph().props('flow').nodes).toHaveLength(300)
+      expect(layout).toHaveBeenCalledTimes(1)
+      layout.mockClear()
+      const positions = graph().props('flow').nodes.map((node: { position: unknown }) => node.position)
+      graph().vm.$emit('nodeClick', { event: new MouseEvent('click'), node: graph().props('flow').nodes[0] })
+      const stream = mocks.stream.mock.calls.at(-1)![0]
+      stream.onUsage({ tasks: [], tickets: [{ key: 'scale-0', agent_stats: agentStatsFixture().totals, active_execution: null }] })
+      stream.onEvent({ id: 9001, event_type: 'tracker.ticket.updated', metadata_json: { task_key: 'task-a', ticket_key: 'scale-0', rev: 1 } })
+      await flushPromises()
+      await vi.waitFor(() => expect(expiries).toHaveLength(2))
+      expect(graph().props('flow').nodes.find((node: { id: string }) => node.id === 'ticket:scale-0').data.recentlyUpdated).toBe(true)
+      expect(graph().props('flow').nodes.map((node: { position: unknown }) => node.position)).toEqual(positions)
+      expect(layout).not.toHaveBeenCalled()
+      // Execute the actual renewed expiry callback; no layout may run there.
+      expiries.at(-1)!(); await flushPromises()
+      expect(graph().props('flow').nodes.find((node: { id: string }) => node.id === 'ticket:scale-0').data.recentlyUpdated).toBe(false)
+      expect(layout).not.toHaveBeenCalled()
+    } finally { wrapper.unmount(); timeout.mockRestore(); layout.mockRestore() }
+  })
+
   it('patches usage projections across Board, Graph and open details without another tracker load', async () => {
     dataMock([taskA], [ticketA], true)
     const { wrapper, board, dialog } = await render('/projects/7/tasks?view=graph&task=task-a&detail=task-a')
@@ -1128,6 +1173,24 @@ describe('Work board navigation', () => {
     expect(controls().props('taskOptions')[0].value).toBe('task-new')
     expect(controls().props('activeTaskKey')).toBe('task-a')
     expect(router.currentRoute.value.query.task).toBe('task-a')
+    wrapper.unmount()
+  })
+
+  it('retains graph selection across presentation changes and clears it only for a different task', async () => {
+    const { wrapper, router } = await render('/projects/7/tasks?view=graph&task=task-a')
+    const graph = () => wrapper.findComponent({ name: 'TrackerGraphPanel' })
+    graph().vm.$emit('nodeClick', { event: new MouseEvent('click'), node: { id: 'ticket:ticket-a', data: { itemKind: 'ticket', itemKey: 'ticket-a' } } })
+    await flushPromises()
+    expect(graph().props('selectedTicket')?.key).toBe('ticket-a')
+    await wrapper.get('[aria-label="Work view"] [role="tab"]:first-child').trigger('click')
+    await flushPromises()
+    await wrapper.get('[aria-label="Work view"] [role="tab"]:last-child').trigger('click')
+    await flushPromises()
+    expect(graph().props('selectedTicket')?.key).toBe('ticket-a')
+    expect(graph().props('selectionVisible')).toBe(true)
+    await router.push('/projects/7/tasks?view=graph&task=task-b')
+    await flushPromises()
+    expect(graph().props('selectionVisible')).toBe(false)
     wrapper.unmount()
   })
 

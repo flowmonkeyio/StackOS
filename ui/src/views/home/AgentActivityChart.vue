@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, onUpdated, ref, useId } from 'vue'
+import { computed, onBeforeUnmount, ref, useId } from 'vue'
+import { useUsageCanvas } from '@/composables/useUsageCanvas'
 import { BarController, BarElement, CategoryScale, Chart, LinearScale, Tooltip, type ChartOptions, type Plugin } from 'chart.js'
 import { UiButton, UiButtonGroup } from '@/components/ui'
 import { activitySeries, exactUsage, formatTokens, formatUsage, usageFields, usageValue, type ActivityGroup, type ActivityView, type AgentStatsDay } from '@/lib/agentActivity'
@@ -10,12 +11,16 @@ const view = defineModel<ActivityView>('view', { default: 'tokens' })
 const selectedDay = ref<number | null>(null)
 const hoverDay = ref<number | null>(null)
 const canvas = ref<HTMLCanvasElement | null>(null)
+const plot = ref<HTMLElement | null>(null)
 const detailId = `daily-values-${useId()}`
 let chart: Chart<'bar'> | null = null
-let observer: MutationObserver | null = null
+const visible = useUsageCanvas(canvas, paint, plot)
 let signature = ''
+let sizeSignature = ''
 const title = computed(() => view.value === 'tokens' ? 'Tokens per day' : `Tokens by ${props.group === 'model' ? 'model' : props.group === 'agent_model' ? 'agent + model' : 'agent'} per day`)
-const series = computed(() => activitySeries(props.days, view.value, props.global, props.group))
+const series = computed<ReturnType<typeof activitySeries>>(previous => visible.value
+  ? activitySeries(props.days, view.value, props.global, props.group) : previous ?? [])
+const dataSignature = computed(() => JSON.stringify([series.value, props.days.map(day => [day.date, usageValue(day, 'total')]), props.group, view.value]))
 const focused = computed(() => selectedDay.value == null ? null : props.days[selectedDay.value] ?? null)
 type DailyField = (typeof usageFields)[number]['key'] | 'total'
 const dailyFields = computed(() => [...usageFields.map(field => field.key), 'total' as const].filter(key => props.days.some(day => day.launch_attempts > 0 && dailyValue(day, key) != null)))
@@ -86,10 +91,13 @@ const totalsPlugin: Plugin<'bar'> = {
 }
 function paint(): void {
   if (!canvas.value) return
-  const next = JSON.stringify([props.days, props.global, props.group, view.value, document.documentElement.dataset.theme])
+  const style = getComputedStyle(canvas.value)
+  const width = plot.value?.clientWidth ?? canvas.value.clientWidth
+  const height = plot.value?.clientHeight ?? canvas.value.clientHeight
+  const size = JSON.stringify([width, height, window.devicePixelRatio])
+  const next = JSON.stringify([dataSignature.value, document.documentElement.dataset.theme, style.fontFamily, size])
   if (chart && signature === next) return
   signature = next
-  const style = getComputedStyle(canvas.value)
   const token = (name: string) => style.getPropertyValue(`--color-${name}`).trim()
   const data = {
     labels: props.days.map(day => dayLabel(day.date)),
@@ -99,7 +107,7 @@ function paint(): void {
     })),
   }
   const options: ChartOptions<'bar'> = {
-    responsive: true, maintainAspectRatio: false, animation: false,
+    responsive: false, maintainAspectRatio: false, animation: false, devicePixelRatio: window.devicePixelRatio || 1,
     layout: { padding: { top: 22, right: 8 } },
     interaction: { mode: 'index', intersect: false },
     scales: {
@@ -120,20 +128,22 @@ function paint(): void {
     },
     onHover: (_event, elements) => { if (document.activeElement !== canvas.value) selectedDay.value = elements[0]?.index ?? null },
   }
-  if (chart) { chart.data = data; chart.options = options; chart.update('none') }
-  else chart = new Chart(canvas.value, { type: 'bar', data, options, plugins: [totalsPlugin] })
+  if (chart) {
+    chart.data = data; chart.options = options
+    if (sizeSignature !== size) chart.resize(width, height)
+    chart.update('none')
+  } else {
+    canvas.value.width = width; canvas.value.height = height
+    chart = new Chart(canvas.value, { type: 'bar', data, options, plugins: [totalsPlugin] })
+  }
+  sizeSignature = size
 }
-onMounted(() => {
-  paint()
-  observer = new MutationObserver(paint)
-  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
-})
-onUpdated(paint)
-onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy(); chart = null })
+onBeforeUnmount(() => { chart?.destroy(); chart = null })
 </script>
 
 <template>
   <figure
+    :data-visible="visible"
     class="activity-chart"
     aria-label="Daily recorded agent usage"
   >
@@ -161,6 +171,7 @@ onBeforeUnmount(() => { observer?.disconnect(); chart?.destroy(); chart = null }
     </figcaption>
     <div class="activity-chart__body">
       <div
+        ref="plot"
         class="activity-chart__plot"
         @mouseleave="hoverDay = null"
       >

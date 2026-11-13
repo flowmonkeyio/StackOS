@@ -18,12 +18,12 @@ import TaskPriorityBadge from './TaskPriorityBadge.vue'
 import { taskPriorities, type TaskPriority } from './taskPriority'
 import type { BoardMove } from './useTaskBoardEdits'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   rows: TaskProgressRow[]; selectedTaskKey?: string; hideEmptyColumns?: boolean
   editPending?: boolean; editPendingColumns?: string[]; editError?: string | null; interactionKey?: string
   metricsActive?: boolean
   metricDemandEnabled?: boolean
-}>()
+}>(), { metricsActive: true, selectedTaskKey: undefined, editPendingColumns: undefined, editError: null, interactionKey: undefined })
 const emit = defineEmits<{
   (e: 'openTask', key: string): void; (e: 'refresh'): void
   (e: 'openGraph', key: string): void
@@ -203,7 +203,7 @@ function priorityItems(row: TaskProgressRow) {
                   :title="subtitle(row)"
                 >{{ subtitle(row) }}</span>
                 <AgentUsageSummary
-                  v-if="isAutomaticDeliveryTask(row.task) && (!metricDemandEnabled || demanded.has(row.key))"
+                  v-if="metricsActive !== false && isAutomaticDeliveryTask(row.task) && (!metricDemandEnabled || demanded.has(row.key))"
                   :metrics="row.task.agent_stats"
                   :active="!!row.task.active_execution"
                   compact

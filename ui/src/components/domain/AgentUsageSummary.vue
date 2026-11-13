@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { usageFields, usageValue, formatUsage, exactUsage, type AgentStatsMetrics } from '@/lib/agentActivity'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useUsageFeed } from '@/composables/useUsageFeed'
+import { useUsageVisibility } from '@/composables/useUsageCanvas'
+import { prepareUsageSamples, usageTraces, usageWindowAnchor } from '@/lib/liveUsage'
 import UsageTrace from './UsageTrace.vue'
 
 const props = withDefaults(defineProps<{ metrics?: AgentStatsMetrics | null; compact?: boolean; inline?: boolean; active?: boolean }>(), { metrics: null, compact: false, inline: false, active: false })
 const feed = useUsageFeed()
-const endAt = computed(() => props.active ? feed?.value.receivedAt ?? undefined : undefined)
+const root = ref<HTMLElement | null>(null)
+const visible = useUsageVisibility(root)
+const endAt = computed(() => prepared.value ? usageWindowAnchor(prepared.value, props.active ? feed?.value.receivedAt ?? undefined : undefined) : undefined)
 const fields = computed(() => usageFields.map(field => ({
   ...field,
   value: usageValue(props.metrics, field.key),
@@ -14,11 +18,14 @@ const fields = computed(() => usageFields.map(field => ({
   exact: exactUsage(props.metrics, field.key),
 })))
 const samples = computed(() => props.metrics?.samples ?? [])
+const prepared = computed(() => visible.value && props.compact ? prepareUsageSamples(samples.value) : null)
+const traces = computed(() => prepared.value ? usageTraces(prepared.value, endAt.value) : null)
 const scopeTitle = 'Numbers are task or ticket totals, including delivery and review. Bars show newly reported tokens in one-minute intervals, with a separate zero-based scale for each metric. Missing history stays empty.'
 </script>
 
 <template>
   <dl
+    ref="root"
     class="agent-usage-summary"
     :class="{ 'agent-usage-summary--compact': compact, 'agent-usage-summary--inline': compact && inline }"
     :style="compact ? undefined : { gridTemplateColumns: `repeat(${fields.length}, minmax(0, 1fr))` }"
@@ -41,10 +48,11 @@ const scopeTitle = 'Numbers are task or ticket totals, including delivery and re
         {{ field.formatted }}
       </dd>
       <UsageTrace
-        v-if="compact"
+        v-if="compact && visible"
         :samples="samples"
         :metric="field.key"
         :end-at="endAt"
+        :prepared-geometry="traces?.[field.key]"
       />
     </div>
   </dl>

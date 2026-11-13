@@ -107,3 +107,24 @@ Task context facts appear independently of file previews. More details admits
 artifact reads with at most four in flight; one failed preview preserves other
 contexts and files. These local ownership checks do not replace the assembled
 Home/graph/render benchmarks or final release signoff.
+
+The mounted graph session retains one geometry-only layout at `graphModel`.
+Node membership/order/grouping, dependency endpoints and fixed card dimensions
+identify layout; telemetry, labels, selection and highlight expiry only project
+current indexed node/edge data. No old metric snapshot is kept in the layout.
+Graph metric summaries mount only for the existing viewport demand. Board
+retains its mounted controls and scroll, while inactive summaries unmount.
+Full graph topology, edges, keyboard selection and the minimap remain available;
+Vue Flow's visible-element culling is not enabled (uninitialized nodes still
+mount and it would change keyboard discovery without demonstrated necessity).
+
+`AgentUsageSummary` prepares timestamps once for all three metric traces.
+The existing feed clock advances a window only at a bucket boundary or when a
+retained source observation becomes eligible. `useUsageCanvas` shares viewport,
+size, theme and pixel-density observation; its event-driven paints join the
+`usageUpdates` visibility owner in one animation-frame batch, without a new
+timer. Offscreen summaries defer sample preparation with 160px vertical
+overscan. Hidden dirty data does not invalidate unrelated visible charts.
+Home's existing Chart.js primitive uses this same size/paint ownership with
+animation and Chart.js responsive scheduling disabled, and defers series work
+until visible. Exact values, unknown coverage and temporal gaps are unchanged.

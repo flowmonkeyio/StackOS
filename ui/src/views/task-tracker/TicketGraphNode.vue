@@ -8,7 +8,7 @@ import { executionStatus } from '@/lib/task-tracker/execution'
 import type { TrackerVueNodeData } from '@/lib/task-tracker/graphModel'
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
 
-const props = defineProps<{ data: TrackerVueNodeData }>()
+const props = withDefaults(defineProps<{ data: TrackerVueNodeData; metricsVisible?: boolean }>(), { metricsVisible: true })
 const isBlocked = computed(() => !isTerminalTrackerStatus(props.data.status) && (props.data.blockedBy?.length ?? 0) > 0)
 const state = computed(() => executionStatus(props.data.status, props.data.activeExecution, props.data.deliveryStopped
   ? { status: 'stopped', ticketKey: props.data.itemKey, reason: props.data.deliveryStopReason ?? null } : null))
@@ -72,7 +72,7 @@ const blocker = computed(() => `Blocked by: ${props.data.blockedBy?.join(', ')}`
       {{ data.deliveryStopped ? data.deliveryStopReason : data.subtitle }}
     </p>
     <AgentUsageSummary
-      v-if="data.taskAutomated"
+      v-if="data.taskAutomated && metricsVisible !== false"
       class="ticket-graph-node__usage"
       :metrics="data.agentStats"
       :active="!!data.activeExecution"

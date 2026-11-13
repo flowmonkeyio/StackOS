@@ -530,10 +530,11 @@ const removeRouteListener = router.afterEach(async (to, from, failure) => {
   consumeBoardEntry()
   if (!snapshot.value) return
   const mapChanged = to.query.view !== from.query.view || to.query.task !== from.query.task
+  const previousMapTaskKey = mapTaskKey.value
   if (viewMode.value === 'graph' && mapChanged) {
     mapTaskKey.value = resolveMapTaskKey()
   }
-  if (mapChanged) graph.clearFocus()
+  if (mapTaskKey.value !== previousMapTaskKey) graph.clearFocus()
   if (mapChanged) metricsCurrent.value = false
   if (to.query.detail && to.query.detail !== from.query.detail) graphDetailPanelOpen.value = false
   if (mapChanged && !mapNeedsCanonicalRoute()) graph.restartStatusStream()

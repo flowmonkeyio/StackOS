@@ -4,7 +4,7 @@ import type { Edge, EdgeMouseEvent, NodeMouseEvent } from '@vue-flow/core'
 import { trackerStatus } from '@/design/status'
 import { callOperation } from '@/lib/operations'
 import { graphFocusFor, graphItemFromNodeId } from '@/lib/task-tracker/graphFocus'
-import { buildTrackerFlowModel, type TrackerVueNodeData } from '@/lib/task-tracker/graphModel'
+import { createTrackerFlowProjector, type TrackerVueNodeData } from '@/lib/task-tracker/graphModel'
 import { isTerminalTrackerStatus } from '@/lib/task-tracker/status'
 import type {
   TrackerSelectedItem,
@@ -217,9 +217,10 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
     storageKey: viewportStorageKey,
     refocusScopeKey: flowRenderKey,
   })
+  const projectFlow = createTrackerFlowProjector()
   const flow = computed(() =>
     filteredSnapshot.value
-      ? buildTrackerFlowModel(filteredSnapshot.value, {
+      ? projectFlow(filteredSnapshot.value, {
           selected: selected.value,
           highlightedNodeIds: relationFocus.value.nodeIds,
           highlightedEdgeIds: relationFocus.value.edgeIds,

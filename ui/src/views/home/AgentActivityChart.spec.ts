@@ -1,9 +1,11 @@
-import { mount } from '@vue/test-utils'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
 import AgentActivityChart from './AgentActivityChart.vue'
 import { agentStatsFixture, groupedAgentStatsFixture } from './agentStatsFixtures'
 
+enableAutoUnmount(afterEach)
+const frame = () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
 const mocks = vi.hoisted(() => ({ created: vi.fn(), updated: vi.fn(), destroyed: vi.fn(), active: vi.fn() }))
 vi.mock('chart.js', () => ({
   Chart: class {
@@ -12,6 +14,7 @@ vi.mock('chart.js', () => ({
     options: unknown
     constructor(_canvas: unknown, config: { data: unknown; options: unknown }) { this.data = config.data; this.options = config.options; mocks.created(config) }
     update = mocks.updated
+    resize = vi.fn()
     destroy = mocks.destroyed
     setActiveElements = mocks.active
   }, BarController: {}, BarElement: {}, CategoryScale: {}, LinearScale: {}, Tooltip: {},
@@ -20,9 +23,24 @@ afterEach(() => { vi.clearAllMocks(); vi.restoreAllMocks(); delete document.docu
 function render() { return mount(AgentActivityChart, { props: { days: agentStatsFixture().daily, timezone: 'America/Los_Angeles' } }) }
 
 describe('Daily stacked usage chart', () => {
+  it('prepares only the 365 displayed buckets and does not update geometry for pointer selection', async () => {
+    const day = agentStatsFixture().daily[0]!
+    const days = Array.from({ length: 365 }, (_, index) => ({ ...structuredClone(day), date: new Date(Date.UTC(2025, 0, index + 1)).toISOString().slice(0, 10) }))
+    const wrapper = mount(AgentActivityChart, { props: { days, timezone: 'UTC' } })
+    await frame()
+    expect(mocks.created.mock.calls[0]![0].data.datasets.map((item: { data: unknown[] }) => item.data.length)).toEqual([365, 365, 365])
+    expect(mocks.created.mock.calls[0]![0].options.animation).toBe(false)
+    expect(mocks.created.mock.calls[0]![0].options.responsive).toBe(false)
+    mocks.updated.mockClear()
+    mocks.created.mock.calls[0]![0].options.onHover({}, [{ index: 200 }])
+    await nextTick(); await frame()
+    expect(mocks.updated).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   it.each(['agent', 'model', 'agent_model'] as const)('uses %s identities in bars, legend, pointer tooltip and keyboard values', async group => {
     const fixture = groupedAgentStatsFixture(group)
     const wrapper = mount(AgentActivityChart, { props: { days: fixture.daily, timezone: 'UTC', group, view: 'agents' } })
+    await frame()
     const config = mocks.created.mock.calls[0]![0]
     const labels = config.data.datasets.map((item: { label: string }) => item.label)
     expect(wrapper.findAll('.activity-chart__legend-label').map(item => item.text())).toEqual(labels)
@@ -34,6 +52,7 @@ describe('Daily stacked usage chart', () => {
     expect(wrapper.get('[aria-live="polite"]').text()).toContain('Tokens: 600 tokens')
     for (const label of labels) expect(wrapper.get('[aria-live="polite"]').text()).toContain(label)
     await wrapper.setProps({ group: group === 'model' ? 'agent_model' : 'model' })
+    await frame()
     expect(mocks.updated).toHaveBeenCalled()
     expect(mocks.created).toHaveBeenCalledOnce()
     wrapper.unmount()
@@ -43,6 +62,7 @@ describe('Daily stacked usage chart', () => {
     const days = agentStatsFixture().daily
     days.push({ ...agentStatsFixture().undated, date: '2026-11-07', by_agent: [], by_model: [], by_agent_model: [] })
     const wrapper = mount(AgentActivityChart, { props: { days, timezone: 'UTC' } })
+    await frame()
     const config = mocks.created.mock.calls[0]![0]
     expect(config.data.datasets.map((item: { data: (number | null)[] }) => item.data)).toEqual([[30, null], [40, null], [30, null]])
     expect(wrapper.findAll('tbody tr:last-child td').map(item => item.text())).toEqual(['N/A', 'N/A', 'N/A', 'N/A'])
@@ -59,6 +79,7 @@ describe('Daily stacked usage chart', () => {
     const days = agentStatsFixture().daily
     days[0]!.reported_usage = { ...days[0]!.reported_usage, input: 150, cache_read: 80, remaining_input: 20, output: 8, total: 158, input_with_unknown_cache: 50 }
     const wrapper = mount(AgentActivityChart, { props: { days, timezone: 'UTC' } })
+    await frame()
     const config = mocks.created.mock.calls[0]![0]
     expect(config.data.datasets.map((item: { label: string; data: number[] }) => [item.label, item.data])).toEqual([['Input', [20]], ['Cache', [80]], ['Output', [8]]])
     expect(wrapper.get('[aria-label^="Input:"]').attributes('aria-label')).toBe('Input: 20 tokens.')
@@ -70,6 +91,7 @@ describe('Daily stacked usage chart', () => {
   })
   it('offers exactly two views with equal measured totals, exact values and a fixed daily table', async () => {
     const wrapper = render()
+    await frame()
     const config = mocks.created.mock.calls[0]![0]
     expect(config.data.datasets.map((item: { data: number[] }) => item.data)).toEqual([[30], [40], [30]])
     expect(config.data.datasets.map((item: { label: string }) => item.label)).toEqual(['Input', 'Cache', 'Output'])
@@ -91,6 +113,7 @@ describe('Daily stacked usage chart', () => {
     const headers = wrapper.findAll('th[scope="col"]').map(item => item.text())
     expect(headers).toEqual(['Date', 'Input', 'Cache', 'Output', 'Total'])
     await wrapper.findAll('button')[1]!.trigger('click')
+    await frame()
     expect(wrapper.text()).toContain('Tokens by agent per day')
     expect(wrapper.get('[aria-label="Chart legend"]').text()).toBe('same-name')
     expect(wrapper.get('.activity-chart__legend-label').attributes('title')).toBe('same-name')
@@ -106,6 +129,7 @@ describe('Daily stacked usage chart', () => {
     const days = agentStatsFixture().daily
     days.push({ ...structuredClone(days[0]!), date: '2026-11-07' })
     const wrapper = mount(AgentActivityChart, { attachTo: document.body, props: { days, timezone: 'UTC' } })
+    await frame()
     const canvas = wrapper.get('canvas')
     ;(canvas.element as HTMLCanvasElement).focus()
     await canvas.trigger('keydown', { key: 'End' })
@@ -128,6 +152,7 @@ describe('Daily stacked usage chart', () => {
     days[0]!.by_agent = Array.from({ length: 12 }, (_, index) => ({ ...structuredClone(row), group_key: `agent-${index}`, agent_name: `Recorded agent ${index}` }))
     days[0]!.reported_usage.total = 1200
     const wrapper = mount(AgentActivityChart, { props: { days, timezone: 'UTC', view: 'agents' } })
+    await frame()
     const config = mocks.created.mock.calls[0]![0]
     config.options.plugins.tooltip.external({ tooltip: { opacity: 1, dataPoints: [{ dataIndex: 0 }] } })
     await nextTick()
@@ -146,9 +171,11 @@ describe('Daily stacked usage chart', () => {
   it('omits unsupported cache, distinguishes a partial stack and preserves zero/theme lifecycle', async () => {
     vi.spyOn(window, 'getComputedStyle').mockImplementation(() => ({ fontFamily: 'Inter', getPropertyValue: (key: string) => `${document.documentElement.dataset.theme ?? 'light'}:${key}` }) as CSSStyleDeclaration)
     const wrapper = render()
+    await frame()
     const days = agentStatsFixture().daily
     days[0]!.reported_usage = { ...days[0]!.reported_usage, cache_read: null, remaining_input: null, input_with_unknown_cache: 70, output: 0, total: 70 }
     await wrapper.setProps({ days })
+    await frame()
     const chart = mocks.updated.mock.contexts.at(-1) as { data: { datasets: { data: (number | null)[]; backgroundColor: string }[] }; options: { plugins: { tooltip: { external: (context: unknown) => void } } } }
     expect(chart.data.datasets.map(item => item.data)).toEqual([[0]])
     chart.options.plugins.tooltip.external({ tooltip: { opacity: 1, dataPoints: [{ dataIndex: 0 }] } })

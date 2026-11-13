@@ -217,7 +217,36 @@ function armFreshness(channel: Channel): void {
   }, FEED_STALE_MS)
 }
 
+const visibilityListeners = new Set<() => void>()
+const paints = new Set<() => void>()
+let paintFrame: number | null = null
+export function queueUsagePaint(paint: () => void): void {
+  paints.add(paint)
+  if (document.hidden || paintFrame !== null) return
+  paintFrame = requestAnimationFrame(() => {
+    paintFrame = null
+    if (document.hidden) return
+    const pending = [...paints]
+    paints.clear()
+    pending.forEach(draw => draw())
+  })
+}
+export function cancelUsagePaint(paint: () => void): void {
+  paints.delete(paint)
+  if (!paints.size && paintFrame !== null) { cancelAnimationFrame(paintFrame); paintFrame = null }
+}
+export function subscribeUsageVisibility(listener: () => void): () => void {
+  if (!channels.size && !visibilityListeners.size) document.addEventListener('visibilitychange', visibilityChanged)
+  visibilityListeners.add(listener)
+  return () => {
+    visibilityListeners.delete(listener)
+    if (!channels.size && !visibilityListeners.size) document.removeEventListener('visibilitychange', visibilityChanged)
+  }
+}
 function visibilityChanged(): void {
+  if (document.hidden && paintFrame !== null) { cancelAnimationFrame(paintFrame); paintFrame = null }
+  visibilityListeners.forEach(listener => listener())
+  if (!document.hidden && paints.size) queueUsagePaint([...paints][0]!)
   for (const channel of channels.values()) {
     if (document.hidden) { close(channel); publishConnection(channel, 'paused') }
     else { open(channel); channel.listeners.forEach((listener) => listener.resume ? listener.resume() : listener.usage()) }
@@ -225,7 +254,7 @@ function visibilityChanged(): void {
 }
 
 export function subscribeUsageUpdates(projectId: number | null, listener: Listener): () => void {
-  if (!channels.size) document.addEventListener('visibilitychange', visibilityChanged)
+  if (!channels.size && !visibilityListeners.size) document.addEventListener('visibilitychange', visibilityChanged)
   let channel = channels.get(projectId)
   if (!channel) {
     channel = {
@@ -247,6 +276,6 @@ export function subscribeUsageUpdates(projectId: number | null, listener: Listen
       close(channel)
       channels.delete(projectId)
     }
-    if (!channels.size) document.removeEventListener('visibilitychange', visibilityChanged)
+    if (!channels.size && !visibilityListeners.size) document.removeEventListener('visibilitychange', visibilityChanged)
   }
 }

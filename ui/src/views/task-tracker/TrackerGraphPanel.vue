@@ -75,6 +75,7 @@ const demand = useVisibleMetricDemand(root, '.vue-flow__node[data-id]', node => 
   const id = node.dataset.id
   return id?.startsWith('ticket:') ? id.slice(7) : undefined
 }, keys => emit('metricDemand', keys))
+const demanded = computed(() => new Set(demand.keys.value))
 function viewportChanged(value: ViewportTransform): void {
   demand.schedule()
   emit('viewportChangeEnd', value)
@@ -121,7 +122,7 @@ async function applyViewportIntent(): Promise<void> {
   const primaryFocusNodeId =
     props.primaryFocusNodeId && availableNodeIds.has(props.primaryFocusNodeId)
       ? props.primaryFocusNodeId
-      : (activeFlowNodeId ?? focusNodeIds[0] ?? null)
+      : (activeFlowNodeId ?? focusNodeIds[0] ?? props.flow.nodes[0]?.id ?? null)
   const shouldRefocus = Boolean(props.refocusKey) && props.refocusKey !== appliedRefocusKey.value
   if (props.graphFitOnInit && (shouldRefocus || (!props.initialViewport && !viewportReady.value))) {
     await fitView({ padding: props.flow.nodes.length <= 12 ? 0.08 : 0.16, minZoom: 0.16, maxZoom: 0.9, duration: 0 })
@@ -325,7 +326,10 @@ onMounted(() => {
         @pane-click="$emit('paneClick', $event)"
       >
         <template #node-tracker-ticket="nodeProps">
-          <TicketGraphNode v-bind="nodeProps" />
+          <TicketGraphNode
+            v-bind="nodeProps"
+            :metrics-visible="demanded.has(nodeProps.data.itemKey)"
+          />
         </template>
         <Background pattern-color="var(--color-border-subtle)" />
         <MiniMap

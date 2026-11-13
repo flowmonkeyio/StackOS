@@ -1,5 +1,5 @@
-import { mount } from '@vue/test-utils'
-import { describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { WorkDurationOutCoverage } from '@/api'
 import type { BoardColumn, TrackerStatus, TrackerTask } from '@/lib/task-tracker/types'
 import { boardColumnStatus } from '@/design/status'
@@ -9,6 +9,8 @@ import { buildTaskProgressRows } from './viewModel'
 import TrackerBoardPanel from './TrackerBoardPanel.vue'
 import TaskTrackerCommandPanel from './TaskTrackerCommandPanel.vue'
 import RunAbortAction from '@/components/domain/RunAbortAction.vue'
+
+enableAutoUnmount(afterEach)
 
 const agent = { name: 'worker', instructions: 'Execute the assigned contract.' }
 const automaticMetadata = { delivery: { status: 'running', job_ref: 'synthetic:never-execute', delivery_agent: agent, review_agent: agent } }

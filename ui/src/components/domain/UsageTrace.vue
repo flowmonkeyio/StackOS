@@ -1,31 +1,37 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, onUpdated, ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { SchemaUsageSampleOut } from '@/api'
-import { usageTrace, usageTraceDescription, type LiveMetric } from '@/lib/liveUsage'
+import { prepareUsageSamples, preparedUsageTrace, usageTrace, usageTraceDescription, usageWindowAnchor, type LiveMetric, type UsageTraceGeometry } from '@/lib/liveUsage'
+import { useUsageCanvas } from '@/composables/useUsageCanvas'
 
-const props = defineProps<{ samples: SchemaUsageSampleOut[]; metric: LiveMetric; endAt?: number; barCount?: number }>()
-const geometry = computed(() => usageTrace(props.samples, props.metric, props.endAt, props.barCount))
-const description = computed(() => usageTraceDescription(geometry.value, props.metric))
+const props = defineProps<{ samples: SchemaUsageSampleOut[]; metric: LiveMetric; endAt?: number; barCount?: number; preparedGeometry?: UsageTraceGeometry }>()
 const canvas = ref<HTMLCanvasElement | null>(null)
-let sizeObserver: ResizeObserver | undefined
-let themeObserver: MutationObserver | undefined
-let resolution: MediaQueryList | undefined
+const visible = useUsageCanvas(canvas, draw)
+const prepared = computed(() => visible.value && !props.preparedGeometry ? prepareUsageSamples(props.samples) : null)
+const anchor = computed(() => prepared.value ? usageWindowAnchor(prepared.value, props.endAt) : undefined)
+const empty = usageTrace([], 'input')
+const geometry = computed(() => visible.value ? props.preparedGeometry ?? (prepared.value ? preparedUsageTrace(prepared.value, props.metric, anchor.value, props.barCount) : empty) : empty)
+const description = computed(() => usageTraceDescription(geometry.value, props.metric))
+let signature = ''
 
 function draw(): void {
   const element = canvas.value
   if (!element) return
   const width = element.clientWidth, height = element.clientHeight
   if (!width || !height) return
+  const ratio = window.devicePixelRatio || 1
+  const style = getComputedStyle(element)
+  const muted = style.getPropertyValue('--color-fg-muted').trim() || style.color
+  const next = JSON.stringify([geometry.value, width, height, ratio, style.color, muted])
+  if (next === signature) return
   const context = element.getContext('2d')
   if (!context) return
-  const ratio = window.devicePixelRatio || 1
+  signature = next
   const pixelWidth = Math.round(width * ratio), pixelHeight = Math.round(height * ratio)
   if (element.width !== pixelWidth) element.width = pixelWidth
   if (element.height !== pixelHeight) element.height = pixelHeight
   context.setTransform(pixelWidth / width, 0, 0, pixelHeight / height, 0, 0)
   context.clearRect(0, 0, width, height)
-  const style = getComputedStyle(element)
-  const muted = style.getPropertyValue('--color-fg-muted').trim() || style.color
   const baseline = height - 1.5
   const left = 1, trackWidth = width - 2
   context.strokeStyle = muted
@@ -55,31 +61,6 @@ function draw(): void {
   })
 }
 
-function observeResolution(): void {
-  resolution?.removeEventListener('change', resolutionChanged)
-  resolution = window.matchMedia?.(`(resolution: ${window.devicePixelRatio || 1}dppx)`)
-  resolution?.addEventListener('change', resolutionChanged)
-}
-function resolutionChanged(): void { draw(); observeResolution() }
-
-onMounted(() => {
-  if (typeof ResizeObserver !== 'undefined' && canvas.value) {
-    sizeObserver = new ResizeObserver(draw)
-    sizeObserver.observe(canvas.value)
-  }
-  themeObserver = new MutationObserver(draw)
-  themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] })
-  window.addEventListener('resize', draw)
-  observeResolution()
-  draw()
-})
-onUpdated(draw)
-onBeforeUnmount(() => {
-  sizeObserver?.disconnect()
-  themeObserver?.disconnect()
-  window.removeEventListener('resize', draw)
-  resolution?.removeEventListener('change', resolutionChanged)
-})
 </script>
 
 <template>

@@ -17,16 +17,40 @@ export interface UsageTraceGeometry {
 const MINUTE = 60_000
 export const DEFAULT_USAGE_BAR_COUNT = 20
 
+export function prepareUsageSamples(samples: SchemaUsageSampleOut[]) {
+  const ordered = samples.map(sample => ({ sample, at: Date.parse(sample.at),
+    starts: (sample.intervals ?? []).map(interval => interval.start_at ? Date.parse(interval.start_at) : null) }))
+    .sort((a, b) => a.at - b.at)
+  const latestAt = ordered.reduce((latest, row) => Number.isFinite(row.at) ? Math.max(latest, row.at) : latest, -Infinity)
+  return { ordered, latestAt }
+}
+export type PreparedUsageSamples = ReturnType<typeof prepareUsageSamples>
+
+// A heartbeat only changes geometry when the minute changes or a retained
+// source observation becomes eligible. Do not admit future samples early.
+export function usageWindowAnchor(prepared: PreparedUsageSamples, endAt?: number): number | undefined {
+  if (endAt == null || !Number.isFinite(endAt)) return endAt
+  let anchor = Math.floor(endAt / MINUTE) * MINUTE
+  for (const { at } of prepared.ordered) if (Number.isFinite(at) && at <= endAt) anchor = Math.max(anchor, at)
+  return anchor
+}
+
+export function usageTraces(prepared: PreparedUsageSamples, endAt?: number, barCount = DEFAULT_USAGE_BAR_COUNT) {
+  return { input: preparedUsageTrace(prepared, 'input', endAt, barCount),
+    cache_read: preparedUsageTrace(prepared, 'cache_read', endAt, barCount),
+    output: preparedUsageTrace(prepared, 'output', endAt, barCount) }
+}
+
 // The producer pairs each invocation before combining lifetime counters. First
 // retained totals and gaps cannot become bars when another invocation joins.
 // Source checkpoint increments use their source minute; batches get a neutral
 // marker with their amount/bounds, never a height or an invented distribution.
 export function usageTrace(samples: SchemaUsageSampleOut[], metric: LiveMetric, endAt?: number, barCount = DEFAULT_USAGE_BAR_COUNT): UsageTraceGeometry {
+  return preparedUsageTrace(prepareUsageSamples(samples), metric, endAt, barCount)
+}
+
+export function preparedUsageTrace({ ordered, latestAt }: PreparedUsageSamples, metric: LiveMetric, endAt?: number, barCount = DEFAULT_USAGE_BAR_COUNT): UsageTraceGeometry {
   const count = Number.isFinite(barCount) ? Math.min(60, Math.max(5, Math.floor(barCount))) : DEFAULT_USAGE_BAR_COUNT
-  const latestAt = samples.reduce((latest, sample) => {
-    const at = Date.parse(sample.at)
-    return Number.isFinite(at) ? Math.max(latest, at) : latest
-  }, -Infinity)
   const anchor = endAt != null && Number.isFinite(endAt) ? endAt : latestAt
   const windowEnd = Number.isFinite(anchor) ? (Math.floor(anchor / MINUTE) + 1) * MINUTE : null
   const windowStart = windowEnd == null ? null : windowEnd - count * MINUTE
@@ -35,16 +59,15 @@ export function usageTrace(samples: SchemaUsageSampleOut[], metric: LiveMetric, 
   let previous: { at: number; value: number } | null = null
   let baselineAt: number | null = null
 
-  const ordered = [...samples].sort((a, b) => Date.parse(a.at) - Date.parse(b.at))
   let lastSample: SchemaUsageSampleOut | null = null
-  for (const sample of ordered) {
-    const at = Date.parse(sample.at)
+  let lastAt: number | null = null
+  for (const { sample, at, starts } of ordered) {
     if (Number.isFinite(at) && at > anchor) continue
     const value = sampleValue(sample, metric)
     const index = windowStart == null ? -1 : Math.floor((at - windowStart) / MINUTE)
     const bucket = buckets[index]
     const valid = Number.isFinite(at) && value != null && Number.isFinite(value) && value >= 0
-    if (lastSample && at === Date.parse(lastSample.at)) {
+    if (lastSample && at === lastAt) {
       const priorIntervals = lastSample.intervals ?? []
       const sameIntervals = (sample.intervals ?? []).length === priorIntervals.length
         && (sample.intervals ?? []).every((interval, i) => {
@@ -57,6 +80,7 @@ export function usageTrace(samples: SchemaUsageSampleOut[], metric: LiveMetric, 
       continue
     }
     lastSample = sample
+    lastAt = at
     if (!valid) {
       if (bucket) { bucket.value = null; gaps.add(index) }
       previous = null
@@ -64,12 +88,12 @@ export function usageTrace(samples: SchemaUsageSampleOut[], metric: LiveMetric, 
       continue
     }
     if (sample.intervals != null) {
-      for (const interval of sample.intervals) {
+      for (const [intervalIndex, interval] of sample.intervals.entries()) {
         const change = sampleValue(interval, metric)
         if (interval.kind === 'checkpoint') {
           if (bucket && change != null && change >= 0 && !gaps.has(index)) bucket.value = (bucket.value ?? 0) + change
         } else if (bucket) {
-          bucket.observations.push({ kind: interval.kind, at, startAt: interval.start_at ? Date.parse(interval.start_at) : null, value: change })
+          bucket.observations.push({ kind: interval.kind, at, startAt: starts[intervalIndex] ?? null, value: change })
           if (interval.kind === 'reset') { bucket.value = null; gaps.add(index) }
         }
       }

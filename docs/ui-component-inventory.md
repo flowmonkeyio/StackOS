@@ -121,6 +121,12 @@ header: labels stay above fixed number/canvas columns in the same shared rendere
 This changes arrangement only; reporting intervals, scope and chart ownership
 remain unchanged.
 
+Compact summaries prepare all three metrics together only while visible.
+`useUsageCanvas` shares viewport/resize/theme/DPR observation and batches paint
+through the existing feed visibility owner. Same-minute heartbeats and unrelated
+component updates retain geometry and pixels. The Home chart uses the same
+primitive; hidden updates wait until reveal. No per-chart timer is introduced.
+
 Project Automations reuses this inline compact renderer for historical task runs.
 `SchedulesTab` owns exactly two shared underline tabs, Automations and Runs;
 `ScheduleEditor` uses the existing dialog/form primitives for inert drafts and

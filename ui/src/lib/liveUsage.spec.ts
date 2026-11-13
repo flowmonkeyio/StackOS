@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_USAGE_BAR_COUNT, sampleValue, usageTrace, usageTraceDescription } from './liveUsage'
+import { DEFAULT_USAGE_BAR_COUNT, prepareUsageSamples, preparedUsageTrace, sampleValue, usageTrace, usageTraceDescription, usageWindowAnchor } from './liveUsage'
 import { UsageIntervalOutKind, type SchemaUsageIntervalOut, type SchemaUsageSampleOut } from '@/api'
 
 const start = Date.parse('2026-11-09T00:00:00Z')
@@ -14,6 +14,16 @@ const interval = (kind: UsageIntervalOutKind, input: number, start_at: string | 
 const values = (samples: SchemaUsageSampleOut[], metric: 'input' | 'cache_read' | 'output' = 'input', endAt?: number) => usageTrace(samples, metric, endAt).buckets.map(bucket => bucket.value)
 
 describe('reported activity bars', () => {
+  it('retains the active minute without dropping current observations or admitting future source samples', () => {
+    const prepared = prepareUsageSamples([sample(0, 100), sample(2, 102), sample(40, 140)])
+    const early = usageWindowAnchor(prepared, start + 10_000)
+    expect(early).toBe(start + 2000)
+    expect(usageWindowAnchor(prepared, start + 20_000)).toBe(early)
+    expect(preparedUsageTrace(prepared, 'input', early).buckets.at(-1)?.value).toBe(2)
+    const later = usageWindowAnchor(prepared, start + 50_000)
+    expect(preparedUsageTrace(prepared, 'input', later).buckets.at(-1)?.value).toBe(40)
+    expect(usageWindowAnchor(prepared, start + 60_000)).toBe(start + 60_000)
+  })
   it('reserves twenty unknown intervals and treats the first retained total only as a baseline', () => {
     const empty = usageTrace([], 'input')
     expect(empty.state).toBe('empty')
