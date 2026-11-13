@@ -28,7 +28,7 @@ import {
   type PatternSummary,
 } from '@/composables/usePatterns'
 import { ApiError, formatApiError } from '@/lib/client'
-import { formatAbsoluteDateTime } from '@/lib/stackos/time'
+import { formatAbsoluteDateTime, formatShortDate } from '@/lib/stackos/time'
 
 const route = useRoute()
 const router = useRouter()
@@ -424,12 +424,7 @@ onBeforeUnmount(() => {
             <time
               :datetime="row.updated_at"
               :title="formatAbsoluteDateTime(row.updated_at)"
-            >{{
-              new Date(row.updated_at).toLocaleDateString(undefined, {
-                month: 'short',
-                day: 'numeric',
-              })
-            }}</time>
+            >{{ formatShortDate(row.updated_at) }}</time>
           </template>
         </DataTable>
         <div class="flex items-center justify-between gap-3 text-xs text-fg-muted">

@@ -4,6 +4,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import PatternsView from './PatternsView.vue'
 import { ApiError } from '@/lib/client'
+import { formatAbsoluteDateTime, formatShortDate } from '@/lib/stackos/time'
 import type { PatternDetail, PatternSummary } from '@/composables/usePatterns'
 
 const operation = vi.hoisted(() => vi.fn())
@@ -86,6 +87,23 @@ describe('Patterns', () => {
     wrappers.length = 0
     document.body.innerHTML = ''
     vi.restoreAllMocks()
+    vi.useRealTimers()
+  })
+
+  it('keeps naive UTC Updated dates consistent with the tooltip and detail across a local day boundary', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-13T12:00:00Z'))
+    const timestamp = '2026-11-13T03:14:32.014182'
+    const explicitUtc = `${timestamp}Z`
+    const record = entry(1, { updated_at: timestamp })
+    operation.mockImplementation(async name => name === 'pattern.list' ? page([record]) : record)
+    const { wrapper, router } = await open()
+    const updated = wrapper.get('tbody time')
+    expect(updated.text()).toBe(formatShortDate(explicitUtc))
+    expect(updated.attributes('title')).toBe(formatAbsoluteDateTime(explicitUtc))
+    await router.push('/patterns/1')
+    await flushPromises()
+    expect(wrapper.text()).toContain(`Updated ${formatAbsoluteDateTime(explicitUtc)}`)
   })
 
   it('keeps loading, empty catalog, no matches and request failure distinct with retry', async () => {
