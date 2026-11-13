@@ -22,6 +22,61 @@ def _operation_data(response):
 
 
 @pytest.mark.parametrize("mode", ["raw", "compact"])
+def test_temporal_usage_evidence_survives_tracker_and_home_adapters(api, project_id, mode):
+    from stackos.repositories.tracker import TrackerRepository
+    from tests.integration.test_repositories.test_retained_usage import receipt
+
+    points = [
+        {
+            "at": f"2026-11-08T00:{minute:02}:00Z",
+            "input": count,
+            "output": 0,
+            "total": count,
+            "cache_read": 0,
+        }
+        for minute, count in [(0, 1000), (1, 1100), (4, 2000)]
+    ]
+    with Session(api.app.state.engine) as session:
+        repo = TrackerRepository(session)
+        repo.create_task(
+            project_id=project_id, key="temporal", title="Temporal", status="in-progress"
+        )
+        repo.create_ticket(
+            project_id=project_id, task_key="temporal", key="temporal-child", title="Child"
+        )
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="temporal-child",
+            patch_json={
+                "status": "in-progress",
+                "completion_evidence_json": {
+                    "automatic_delivery": {
+                        "attempt": 1,
+                        "delivery": receipt(240, (2000, 0, 0), samples=points),
+                    }
+                },
+            },
+        )
+    for operation, scope in (
+        ("tracker.get", {"task_index_only": True, "include_graph": False}),
+        ("tracker.get", {"task_key": "temporal", "include_graph": False}),
+        ("tracker.activeTasks", {}),
+    ):
+        response = api.post(
+            f"/api/v1/operations/{operation}/call",
+            json={"arguments": {"project_id": project_id, "response_mode": mode, **scope}},
+        )
+        assert response.status_code == 200, response.text
+        data = _operation_data(response)
+        task = data["items" if operation == "tracker.activeTasks" else "tasks"][0]
+        stats = task["agent_stats"]
+        assert stats["reported_usage"]["input"] == 2000
+        assert [
+            (p["intervals"][0]["kind"], p["intervals"][0]["input"]) for p in stats["samples"]
+        ] == [("baseline", 1000), ("checkpoint", 100), ("batched", 900)]
+
+
+@pytest.mark.parametrize("mode", ["raw", "compact"])
 def test_work_duration_survives_real_tracker_adapters(api, project_id, mode):
     from tests.integration.test_repositories.test_work_duration import receipt, store
 

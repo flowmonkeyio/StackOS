@@ -23,6 +23,7 @@ from stackos.repositories.tracker.schema import (
     AgentStatsUsageOut,
     ExecutionIdentityOut,
     TrackerAgentStatsOut,
+    UsageIntervalOut,
     UsageSampleOut,
     WorkDurationOut,
 )
@@ -315,6 +316,7 @@ def _history(receipts: list[dict[str, Any]]) -> list[UsageSampleOut]:
     the combined scope, independent of receipt/finalization order.
     """
     events: dict[datetime, dict[int, dict[str, Any]]] = defaultdict(dict)
+    intervals: dict[datetime, list[UsageIntervalOut]] = defaultdict(list)
     for index, receipt in enumerate(receipts):
         if not _eligible(receipt):
             continue
@@ -322,9 +324,13 @@ def _history(receipts: list[dict[str, Any]]) -> list[UsageSampleOut]:
         if final is None:
             continue
         live = (receipt.get("execution") or {}).get("live_usage") or {}
-        final_at = _instant(receipt.get("finished_at")) or _instant(live.get("measured_at"))
+        final_at = _instant(live.get("measured_at")) or _instant(receipt.get("finished_at"))
+        if _measured({"usage": live.get("usage")}) != final:
+            final_at = _instant(receipt.get("finished_at")) or final_at
         points = live.get("samples")
-        dated = {}
+        dated: dict[datetime, dict[str, Any]] = {}
+        sources: dict[datetime, str | None] = {}
+        conflicts: set[datetime] = set()
         for point in points[-120:] if isinstance(points, list) else []:
             if not isinstance(point, dict):
                 continue
@@ -332,22 +338,72 @@ def _history(receipts: list[dict[str, Any]]) -> list[UsageSampleOut]:
             measured = _measured(
                 {"usage": {"unit": "tokens", "status": "measured", "measured": point}}
             )
-            if (
-                at is not None
-                and (final_at is None or at <= final_at)
-                and measured is not None
-                and measured["input"] <= final["input"]
-                and measured["output"] <= final["output"]
-            ):
+            if at is not None and (final_at is None or at <= final_at) and measured is not None:
+                if at in dated and dated[at] != measured:
+                    conflicts.add(at)
                 dated[at] = measured
+                sources[at] = point.get("source", "native")
         if final is not None and final_at is not None:
+            if dated.get(final_at) != final:
+                sources[final_at] = "final"
             dated[final_at] = final
         if final is not None and not dated:
             # A legacy total without an observation time cannot be placed on a
             # lifetime timeline. Keep the numbers; do not draw a narrower scope.
             return []
-        for at, measured in dated.items():
+        previous: tuple[datetime, dict[str, Any]] | None = None
+        for at, measured in sorted(dated.items()):
             events[at][index] = measured
+            # Pair optional detail before differencing. A newly available cache
+            # split is coverage, not newly consumed non-cache Input.
+            values = {
+                **measured,
+                "remaining_input": (
+                    measured["input"] - measured["cache_read"]
+                    if measured.get("cache_read") is not None
+                    else None
+                ),
+            }
+            current_values = values
+            kind: Literal["baseline", "checkpoint", "batched", "reset"] = "baseline"
+            start_at = None
+            if previous is not None:
+                prior_at, prior = previous
+                start_at = prior_at.isoformat()
+                kind = "checkpoint"
+                if (at - prior_at).total_seconds() > 60 or sources.get(at) == "final":
+                    kind = "batched"
+                if at in conflicts or any(
+                    measured[key] < prior[key] for key in ("input", "output", "total")
+                ):
+                    kind = "reset"
+                values = {
+                    key: value - prior[key]
+                    if kind != "reset"
+                    and value is not None
+                    and prior.get(key) is not None
+                    and value >= prior[key]
+                    else None
+                    for key, value in values.items()
+                }
+                if kind != "reset":
+                    delta = _measured(
+                        {"usage": {"unit": "tokens", "status": "measured", "measured": values}}
+                    )
+                    assert delta is not None
+                    values = {
+                        **delta,
+                        "remaining_input": (
+                            delta["input"] - delta["cache_read"]
+                            if delta.get("cache_read") is not None
+                            else None
+                        ),
+                    }
+            if at in conflicts:
+                kind = "reset"
+                values = {key: None for key in values}
+            intervals[at].append(UsageIntervalOut(kind=kind, start_at=start_at, **values))
+            previous = None if at in conflicts else (at, current_values)
     current: dict[int, dict[str, Any]] = {}
     samples = []
     ordered = sorted(events.items())
@@ -363,7 +419,9 @@ def _history(receipts: list[dict[str, Any]]) -> list[UsageSampleOut]:
         ).reported_usage
         samples.append(
             UsageSampleOut(
-                at=at.isoformat(), **totals.model_dump(exclude={"unit", "input_with_unknown_cache"})
+                at=at.isoformat(),
+                intervals=intervals[at],
+                **totals.model_dump(exclude={"unit", "input_with_unknown_cache"}),
             )
         )
     return samples[-120:]

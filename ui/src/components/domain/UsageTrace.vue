@@ -38,20 +38,21 @@ function draw(): void {
   context.lineTo(width - left, baseline)
   context.stroke()
   context.globalAlpha = 1
-  const { state, buckets, maximum, baselineAt, startAt } = geometry.value
+  const { buckets, maximum } = geometry.value
   const slotWidth = trackWidth / buckets.length
   const barWidth = Math.min(2, slotWidth * 0.65)
-  if (state === 'point' && baselineAt != null && startAt != null) {
-    const index = Math.floor((baselineAt - startAt) / 60_000)
-    context.fillStyle = muted
-    context.fillRect(left + (index + 0.5) * slotWidth - barWidth / 2, baseline - 3, barWidth, 3)
-  } else if (state === 'bars' && maximum > 0) {
+  if (maximum > 0) {
     buckets.forEach((bucket, index) => {
       if (bucket.value == null || bucket.value === 0) return
       const barHeight = Math.max(1, bucket.value / maximum * (height - 4))
       context.fillRect(left + (index + 0.5) * slotWidth - barWidth / 2, baseline - barHeight, barWidth, barHeight)
     })
   }
+  context.fillStyle = muted
+  buckets.forEach((bucket, index) => {
+    if (!bucket.observations.length) return
+    context.fillRect(left + (index + 0.5) * slotWidth - barWidth / 2, baseline - 3, barWidth, 3)
+  })
 }
 
 function observeResolution(): void {

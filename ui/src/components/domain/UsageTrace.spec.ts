@@ -1,11 +1,12 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { SchemaUsageSampleOut } from '@/api'
+import { UsageIntervalOutKind, type SchemaUsageSampleOut } from '@/api'
 import UsageTrace from './UsageTrace.vue'
 
 const sample = (second: number): SchemaUsageSampleOut => ({
   at: `2026-11-08T01:00:0${second}Z`, input: 100 + second * 2, cache_read: 80,
   output: 5 + second, total: 105 + second * 3, cache_write: null, reasoning: null, remaining_input: null,
+  source: null, intervals: null,
 })
 function drawing() {
   const context = { setTransform: vi.fn(), clearRect: vi.fn(), setLineDash: vi.fn(), beginPath: vi.fn(), moveTo: vi.fn(), lineTo: vi.fn(), stroke: vi.fn(), fillRect: vi.fn(), strokeStyle: '', fillStyle: '' }
@@ -38,7 +39,7 @@ describe('reported activity mini-canvas', () => {
     context.fillRect.mockClear()
     await wrapper.setProps({ samples: [sample(0), sample(2)] })
     expect(context.lineTo).toHaveBeenLastCalledWith(31, 14.5)
-    expect(context.fillRect).toHaveBeenLastCalledWith(firstX, 2.5, firstWidth, 12)
+    expect(context.fillRect).toHaveBeenCalledWith(firstX, 2.5, firstWidth, 12)
     expect(wrapper.attributes('role')).toBe('img')
     expect(wrapper.attributes('aria-label')).toContain('4 tokens')
     expect(wrapper.attributes('title')).toBe(wrapper.attributes('aria-label'))
@@ -98,7 +99,7 @@ describe('reported activity mini-canvas', () => {
     color.mockReturnValue(style('rgb(4, 5, 6)'))
     document.documentElement.setAttribute('data-theme', 'dark')
     await flushPromises()
-    expect(context.fillStyle).toBe('rgb(4, 5, 6)')
+    expect(context.fillStyle).toBe('rgb(100, 100, 100)') // neutral baseline marker
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(70)
     resize()
     expect((wrapper.element as HTMLCanvasElement).width).toBe(140)
@@ -119,5 +120,16 @@ describe('reported activity mini-canvas', () => {
     document.documentElement.setAttribute('data-theme', 'light')
     await flushPromises()
     expect(context.clearRect).toHaveBeenCalledTimes(count)
+  })
+
+  it('renders a late batch as a fixed neutral tick without scaling it as a spike', () => {
+    const context = drawing()
+    const wrapper = mount(UsageTrace, { props: { metric: 'input', samples: [{
+      ...sample(2), intervals: [{ kind: UsageIntervalOutKind.batched, start_at: '2026-11-08T00:00:00Z', input: 1000000, remaining_input: 1000000, output: null, total: null, cache_read: null, cache_write: null, reasoning: null }],
+    }] } })
+    expect(wrapper.attributes('data-state')).toBe('batched')
+    expect(context.fillRect.mock.calls.every(call => call[3] === 3)).toBe(true)
+    expect(wrapper.attributes('aria-label')).toContain('1,000,000 tokens; consumption time unavailable')
+    wrapper.unmount()
   })
 })

@@ -6,6 +6,7 @@ import json
 import os
 import sqlite3
 import subprocess
+from collections import deque
 from collections.abc import Callable
 from contextlib import closing, suppress
 from datetime import datetime
@@ -93,11 +94,13 @@ class CodexCounterReader:
         except (OSError, ValueError, TypeError):
             self.close()
 
-    def read(self) -> tuple[str, dict[str, Any]] | None:
+    def read(self) -> list[tuple[str, dict[str, Any]]]:
         self._open()
         if self.file is None:
-            return None
-        latest = None
+            return []
+        # Preserve source checkpoints across a delayed collector read. Trimming
+        # keeps a baseline, never moves the collapsed prefix into the last point.
+        samples: deque[tuple[str, dict[str, Any]]] = deque(maxlen=120)
         # Bounded working memory even when a native transcript line is huge.
         # Only counter event lines are decoded; all other bytes are discarded.
         while chunk := self.file.readline(64 * 1024):
@@ -135,10 +138,10 @@ class CodexCounterReader:
                     reasoning=counters.get("reasoning_output_tokens"),
                 )
                 if usage:
-                    latest = (stamp, usage)
+                    samples.append((stamp, usage))
             except (ValueError, TypeError, AttributeError):
                 continue
-        return latest
+        return list(samples)
 
     def close(self) -> None:
         if self.file is not None:

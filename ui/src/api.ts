@@ -8740,6 +8740,57 @@ export interface components {
             /** Token */
             token: string;
         };
+        /**
+         * UsageIntervalOut
+         * @description One invocation's change, before combining lifetime counters across calls.
+         */
+        UsageIntervalOut: {
+            /**
+             * Cache Read
+             * @default null
+             */
+            cache_read: number | null;
+            /**
+             * Cache Write
+             * @default null
+             */
+            cache_write: number | null;
+            /**
+             * Input
+             * @default null
+             */
+            input: number | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: UsageIntervalOutKind;
+            /**
+             * Output
+             * @default null
+             */
+            output: number | null;
+            /**
+             * Reasoning
+             * @default null
+             */
+            reasoning: number | null;
+            /**
+             * Remaining Input
+             * @default null
+             */
+            remaining_input: number | null;
+            /**
+             * Start At
+             * @default null
+             */
+            start_at: string | null;
+            /**
+             * Total
+             * @default null
+             */
+            total: number | null;
+        };
         /** UsageSampleOut */
         UsageSampleOut: {
             /** At */
@@ -8756,6 +8807,12 @@ export interface components {
             cache_write: number | null;
             /** Input */
             input: number;
+            /**
+             * Intervals
+             * @description Per-invocation temporal evidence; null on legacy counter-only payloads.
+             * @default null
+             */
+            intervals: components["schemas"]["UsageIntervalOut"][] | null;
             /** Output */
             output: number;
             /**
@@ -8769,6 +8826,11 @@ export interface components {
              * @default null
              */
             remaining_input: number | null;
+            /**
+             * Source
+             * @default null
+             */
+            source: UsageSampleOutSourceAnyOf0 | null;
             /** Total */
             total: number;
         };
@@ -10023,6 +10085,7 @@ export type SchemaTrackerTicketOut = components['schemas']['TrackerTicketOut'];
 export type SchemaTrackerUpdateTaskContentInput = components['schemas']['TrackerUpdateTaskContentInput'];
 export type SchemaTrackerUpdateTaskPriorityInput = components['schemas']['TrackerUpdateTaskPriorityInput'];
 export type SchemaUiTokenResponse = components['schemas']['UiTokenResponse'];
+export type SchemaUsageIntervalOut = components['schemas']['UsageIntervalOut'];
 export type SchemaUsageSampleOut = components['schemas']['UsageSampleOut'];
 export type SchemaValidationError = components['schemas']['ValidationError'];
 export type SchemaWorkDurationOut = components['schemas']['WorkDurationOut'];
@@ -13855,6 +13918,16 @@ export enum TrackerUpdateTaskPriorityInputResponse_mode {
     raw = "raw",
     standard = "standard",
     verbose = "verbose"
+}
+export enum UsageIntervalOutKind {
+    baseline = "baseline",
+    checkpoint = "checkpoint",
+    batched = "batched",
+    reset = "reset"
+}
+export enum UsageSampleOutSourceAnyOf0 {
+    native = "native",
+    final = "final"
 }
 export enum WorkDurationOutCoverage {
     complete = "complete",

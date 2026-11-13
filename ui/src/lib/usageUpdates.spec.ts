@@ -84,7 +84,7 @@ describe('one shared usage transport', () => {
     const start = usageCheckpoint()
     const measured = agentStatsFixture().totals
     measured.last_execution = { invocation_id: 'finished-call', agent: 'Actual reviewer', host_key: 'codex', model: 'recorded-model', started_at: '2026-11-08T01:00:00Z', ticket_key: 'child' }
-    measured.samples = Array.from({ length: 120 }, (_, i) => ({ at: `2026-11-08T01:${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}Z`, input: i, cache_read: 0, remaining_input: i, output: i, total: i * 2, cache_write: null, reasoning: null }))
+    measured.samples = Array.from({ length: 120 }, (_, i) => ({ at: `2026-11-08T01:${String(Math.floor(i / 60)).padStart(2, '0')}:${String(i % 60).padStart(2, '0')}Z`, input: i, cache_read: 0, remaining_input: i, output: i, total: i * 2, cache_write: null, reasoning: null, source: null, intervals: null }))
     stream.onUsage?.({ tasks: [{ key: 'task', agent_stats: measured, active_execution: null }], tickets: [], replace: true })
     const stale = { tasks: [{ key: 'task', agent_stats: null }], tickets: [] } as unknown as TrackerSnapshot
     patchUsageAfter(stale, 8, start)

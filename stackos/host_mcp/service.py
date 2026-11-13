@@ -231,28 +231,29 @@ def _sample_invocations(now: datetime | None = None) -> None:
             if call.reader is None:
                 continue
             try:
-                sample = call.reader.read()
+                samples = call.reader.read()
             except (OSError, ValueError):
                 call.reader.close()
                 call.reader = None
                 continue
-            if sample is None:
-                continue
-            stamp, raw = sample
-            measured = datetime.fromisoformat(stamp)
-            if measured < datetime.fromisoformat(call.started_at) or (
-                call.measured_at and measured <= datetime.fromisoformat(call.measured_at)
-            ):
-                continue
-            usage = normalize_usage(
-                raw, session_id=call.session_id, resumed=call.resumed, previous=call.previous_usage
-            )
-            if usage["status"] != "measured":
-                continue
-            call.usage = usage
-            call.measured_at = stamp
-            if measured.timestamp() >= cutoff:
-                call.samples.append({"at": stamp, **usage["measured"]})
+            for stamp, raw in samples:
+                measured = datetime.fromisoformat(stamp)
+                if measured < datetime.fromisoformat(call.started_at) or (
+                    call.measured_at and measured <= datetime.fromisoformat(call.measured_at)
+                ):
+                    continue
+                usage = normalize_usage(
+                    raw,
+                    session_id=call.session_id,
+                    resumed=call.resumed,
+                    previous=call.previous_usage,
+                )
+                if usage["status"] != "measured":
+                    continue
+                call.usage = usage
+                call.measured_at = stamp
+                if measured.timestamp() >= cutoff:
+                    call.samples.append({"at": stamp, "source": "native", **usage["measured"]})
 
 
 def _collect() -> None:
@@ -319,7 +320,9 @@ def _finish(
                     or final["measured"] != call.usage["measured"]
                 ):
                     call.measured_at = datetime.now(UTC).isoformat()
-                    call.samples.append({"at": call.measured_at, **final["measured"]})
+                    call.samples.append(
+                        {"at": call.measured_at, "source": "final", **final["measured"]}
+                    )
                 call.usage = final
         call.finished = True
         if call.reader:

@@ -159,6 +159,20 @@ class TrackerTaskTicketSummaryOut(BaseModel):
     search_text: str = ""
 
 
+class UsageIntervalOut(BaseModel):
+    """One invocation's change, before combining lifetime counters across calls."""
+
+    kind: Literal["baseline", "checkpoint", "batched", "reset"]
+    start_at: str | None = None
+    input: int | None = None
+    output: int | None = None
+    total: int | None = None
+    cache_read: int | None = None
+    cache_write: int | None = None
+    reasoning: int | None = None
+    remaining_input: int | None = None
+
+
 class UsageSampleOut(BaseModel):
     at: str
     input: int
@@ -169,6 +183,11 @@ class UsageSampleOut(BaseModel):
     reasoning: int | None = None
     remaining_input: int | None = Field(
         default=None, description="Cumulative non-cache Input from paired measurements only."
+    )
+    source: Literal["native", "final"] | None = None
+    intervals: list[UsageIntervalOut] | None = Field(
+        default=None,
+        description="Per-invocation temporal evidence; null on legacy counter-only payloads.",
     )
 
 

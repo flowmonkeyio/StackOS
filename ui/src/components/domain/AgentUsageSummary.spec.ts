@@ -10,6 +10,7 @@ import AgentUsageSummary from './AgentUsageSummary.vue'
 const sample = (seconds: number, cache: number | null = 80): SchemaUsageSampleOut => ({
   at: `2026-11-08T01:00:0${seconds}Z`, input: 100 + seconds * 2, cache_read: cache,
   output: 5 + seconds, total: 105 + seconds * 3, cache_write: null, reasoning: null, remaining_input: null,
+  source: null, intervals: null,
 })
 
 describe('fixed compact lifetime usage', () => {

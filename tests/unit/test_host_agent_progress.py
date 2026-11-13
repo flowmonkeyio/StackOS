@@ -59,10 +59,23 @@ class Reader:
     def read(self):
         self.reads += 1
         value, self.value = self.value, None
-        return value
+        return [value] if value else []
 
     def close(self):
         self.closed = True
+
+
+def test_delayed_collector_keeps_each_source_checkpoint_and_fixed_resume_baseline():
+    invocation = call(resumed=True)
+    invocation.reader = Reader()
+    invocation.reader.read = lambda: [counter(1), counter(2), counter(1), counter(3)]
+    service._active_invocations[invocation.invocation_id] = invocation
+    service._sample_invocations(datetime.fromisoformat(counter(3)[0]))
+    assert [(p["at"], p["input"]) for p in invocation.samples] == [
+        (counter(i)[0], i * 10) for i in (1, 2, 3)
+    ]
+    assert invocation.usage["measured"]["input"] == 30
+    assert invocation.previous_usage["snapshot"]["input"] == 100
 
 
 def test_single_owner_bounds_replaces_fixed_resume_baseline_and_project_scopes():
@@ -282,7 +295,7 @@ def test_exact_rollout_cursor_partial_lines_and_counter_only_parsing(tmp_path):
         json.dumps({"type": "session_meta", "payload": {"id": sid, "cwd": str(tmp_path)}}) + "\n"
     )
     reader = CodexCounterReader(sid, tmp_path, home=tmp_path)
-    assert waiting.read() is None and waiting.file is not None
+    assert waiting.read() == [] and waiting.file is not None
     waiting.close()
     event = {
         "type": "event_msg",
@@ -302,18 +315,27 @@ def test_exact_rollout_cursor_partial_lines_and_counter_only_parsing(tmp_path):
     encoded = json.dumps(event)
     with file.open("a") as out:
         out.write("not json transcript bytes\n" + encoded[:30])
-    assert reader.read() is None
+    assert reader.read() == []
     offset = reader.cursor
     with file.open("a") as out:
         out.write(encoded[30:] + "\n")
-    stamp, usage = reader.read()
+    ((stamp, usage),) = reader.read()
     assert stamp == event["timestamp"] and usage["snapshot"]["cache_read"] == 90
-    assert reader.cursor > offset and reader.read() is None
+    assert reader.cursor > offset and reader.read() == []
+    # A delayed poll must preserve each source instant, rather than returning
+    # only the last cumulative counter and losing the intervening minutes.
+    with file.open("a") as out:
+        for minute in (1, 2, 3):
+            event["timestamp"] = f"2026-11-08T01:0{minute}:10Z"
+            out.write(json.dumps(event) + "\n")
+    assert [stamp for stamp, _ in reader.read()] == [
+        f"2026-11-08T01:0{minute}:10Z" for minute in (1, 2, 3)
+    ]
     resumed = CodexCounterReader(sid, tmp_path, home=tmp_path, resumed=True)
-    assert resumed.cursor == file.stat().st_size and resumed.read() is None
+    assert resumed.cursor == file.stat().st_size and resumed.read() == []
     with file.open("a") as out:
         out.write(encoded + "\n")
-    assert resumed.read()[1]["snapshot"]["total"] == 132
+    assert resumed.read()[0][1]["snapshot"]["total"] == 132
     resumed.close()
     reader.close()
     assert reader.file is None and not reader.pending

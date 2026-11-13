@@ -2075,7 +2075,9 @@ per call. One daemon collector samples at five-second intervals only while calls
 are active. Codex identity is exposed before process exit; the exact native
 rollout path is resolved once by exact ID in the native thread index, metadata
 checks its ID and working directory, and
-subsequent reads advance a byte cursor. A newly announced file may not exist yet;
+subsequent reads advance a byte cursor and retain up to 120 source checkpoints
+from each read, rather than collapsing them into the last timestamp. A newly
+announced file may not exist yet;
 the reader waits for that exact path, without searching historical sessions.
 Resumes skip the pre-invocation file prefix and use the unchanged previous
 invocation baseline and native ID.
@@ -2156,9 +2158,21 @@ Each Input / Cache / Output metric reserves fixed number and mini-canvas slots
 before the first measurement, during execution, between calls and after terminal
 states or reload. Slots do not hide according to activity, sample count or text
 fit, and values do not wrap or resize the card. Numbers remain lifetime totals;
-bars show newly reported increments within the same task or ticket scope. Each
-bar covers one minute, with its delta assigned to the later observation's minute,
-not an inferred consumption time. `DEFAULT_USAGE_BAR_COUNT` sets the shared
+the temporal projection pairs checkpoints within each invocation before combining
+task or ticket scope. `agent_stats.samples[].intervals` retains each change's
+kind, start boundary and paired counters. First retained cumulative contributions
+are `baseline`, never activity from another call. Native changes spanning at most
+one minute are `checkpoint` and use the source event's minute, including events
+read late in one collector poll. Longer gaps and final-only changes are `batched`;
+counter decreases are `reset`. Optional field gaps are not bridged. A final save
+does not move an existing native observation to receipt-save time.
+
+Bars show source checkpoint increments, not per-token consumption times.
+Baselines and batches use fixed neutral ticks with accessible amounts and
+available interval bounds, never proportional bar heights or even spreading
+across missing minutes. Legacy counter-only frames preserve the first baseline
+and mark differences spanning more than a minute as batched observations.
+`DEFAULT_USAGE_BAR_COUNT` sets the shared
 default of 20 intervals; `UsageTrace.barCount` supports 5–60. Bars stay at most
 2 CSS pixels wide as the chart uses the available metric-column width.
 Every chart keeps the same baseline. The first observation supplies a neutral

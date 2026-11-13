@@ -122,6 +122,8 @@ def test_lifetime_oracle_reopen_all_outcomes_scope_and_zero_idle_readers(session
         assert {t["key"] for t in refresh["tasks"]} == {"task-a"}
         assert {t["key"] for t in refresh["tickets"]} == {"one", "two"}
         assert refresh["tickets"][0]["agent_stats"]["samples"]
+        intervals = refresh["tickets"][0]["agent_stats"]["samples"][0]["intervals"]
+        assert intervals[0]["kind"] == "baseline"
     assert not service.usage_executions(project_id)
 
 
@@ -143,6 +145,133 @@ def test_bounded_measured_points_and_missing_cache_leave_supported_output():
     assert result.samples[-1].output == 150
     assert result.samples[-1].remaining_input is None
     assert result.samples[-1].cache_read is None
+
+
+def test_temporal_projection_separates_retained_baselines_gaps_and_real_checkpoints():
+    def point(second, count):
+        return {
+            "at": f"2026-11-08T00:{second // 60:02}:{second % 60:02}Z",
+            "input": count,
+            "output": count,
+            "total": count * 2,
+            "cache_read": 0,
+        }
+
+    first = receipt(10, (100, 100, 0), samples=[point(0, 10), point(10, 100)])
+    second = receipt(
+        150,
+        (1080, 1080, 0),
+        samples=[
+            point(70, 1000),
+            point(80, 1010),
+            point(150, 1080),
+        ],
+    )
+    result = summarize_receipts([second, first], include_history=True)
+    intervals = [s.intervals[0] for s in result.samples]
+    assert [(i.kind, i.input) for i in intervals] == [
+        ("baseline", 10),
+        ("checkpoint", 90),
+        ("baseline", 1000),
+        ("checkpoint", 10),
+        ("batched", 70),
+    ]
+    assert intervals[-1].start_at == "2026-11-08T00:01:20+00:00"
+    assert result.samples[-1].input == result.reported_usage.input == 1180
+    assert sum(i.input for i in intervals) == 1180
+
+
+def test_temporal_projection_orders_deduplicates_and_marks_counter_reset():
+    points = [
+        {
+            "at": f"2026-11-08T00:00:{second:02}Z",
+            "input": count,
+            "output": 0,
+            "total": count,
+            "cache_read": 0,
+        }
+        for second, count in [(20, 5), (0, 10), (10, 20), (10, 20), (30, 8)]
+    ]
+    value = receipt(30, (8, 0, 0), samples=points)
+    result = summarize_receipts([value], include_history=True)
+    assert [(s.intervals[0].kind, s.intervals[0].input) for s in result.samples] == [
+        ("baseline", 10),
+        ("checkpoint", 10),
+        ("reset", None),
+        ("checkpoint", 3),
+    ]
+    assert result.samples[-1].input == result.reported_usage.input == 8
+
+
+def test_final_only_change_is_batched_and_receipt_save_never_moves_native_time():
+    value = receipt(
+        20,
+        (20, 2, 0),
+        samples=[
+            {"at": "2026-11-08T00:00:10Z", "input": 10, "output": 1, "total": 11, "cache_read": 0},
+            {
+                "at": "2026-11-08T00:00:20Z",
+                "input": 20,
+                "output": 2,
+                "total": 22,
+                "cache_read": 0,
+                "source": "final",
+            },
+        ],
+    )
+    value["finished_at"] = "2026-11-09T00:00:00Z"
+    result = summarize_receipts([value], include_history=True)
+    assert result.samples[-1].at == "2026-11-08T00:00:20+00:00"
+    assert result.samples[-1].intervals[0].kind == "batched"
+    assert result.samples[-1].intervals[0].input == 10
+
+
+def test_new_or_reset_cache_coverage_cannot_appear_as_noncache_activity():
+    points = [
+        {
+            "at": f"2026-11-08T00:00:{second:02}Z",
+            "input": count,
+            "output": 0,
+            "total": count,
+            "cache_read": cache,
+        }
+        for second, count, cache in [(0, 100, None), (10, 200, 150), (20, 210, 10)]
+    ]
+    result = summarize_receipts([receipt(20, (210, 0, 10), samples=points)], include_history=True)
+    assert [p.intervals[0].remaining_input for p in result.samples] == [None, None, None]
+    assert result.samples[-1].remaining_input == 200
+
+
+def test_conflicting_same_time_counters_do_not_supply_a_delta_baseline():
+    points = [
+        {
+            "at": f"2026-11-08T00:00:{second:02}Z",
+            "input": count,
+            "output": 0,
+            "total": count,
+            "cache_read": 0,
+        }
+        for second, count in [(0, 10), (10, 20), (10, 30), (20, 40)]
+    ]
+    result = summarize_receipts([receipt(20, (40, 0, 0), samples=points)], include_history=True)
+    assert [p.intervals[0].kind for p in result.samples] == ["baseline", "reset", "baseline"]
+    assert result.samples[-1].input == 40
+
+
+def test_later_final_counter_does_not_replace_a_native_checkpoint():
+    value = receipt(20, (20, 2, 0))
+    value["usage"] = normalize_usage(
+        usage_snapshot("fixture", "invocation", 30, 3, cache_read=0),
+        session_id="native",
+        resumed=False,
+    )
+    value["finished_at"] = "2026-11-08T00:00:40Z"
+    result = summarize_receipts([value], include_history=True)
+    assert [(p.at, p.input) for p in result.samples] == [
+        ("2026-11-08T00:00:20+00:00", 20),
+        ("2026-11-08T00:00:40+00:00", 30),
+    ]
+    assert result.samples[-1].intervals[0].kind == "batched"
 
 
 def test_terminal_flush_saves_history_before_release_and_reopen(session, project_id):
