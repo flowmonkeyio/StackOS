@@ -4,16 +4,11 @@ import type {
   SchemaAuthStatusOut,
 } from '@/api'
 import { apiFetch, formatApiError } from '@/lib/client'
-import { callOperation } from '@/lib/operations'
-import { useProjectsStore } from '@/stores/projects'
-import {
-  type OverviewPage,
-  type PortfolioProject,
-} from './ticketOverview'
+import { useProjectsStore, type Project } from '@/stores/projects'
 
 export function useProjectOverview(projectId: Ref<number>) {
   const projects = useProjectsStore()
-  const project = ref<PortfolioProject | null>(null)
+  const project = ref<Project | null>(null)
   const accounts = ref<SchemaAccountOut[]>([])
   const loading = ref(true)
   const errors = ref<Record<string, string>>({})
@@ -28,7 +23,7 @@ export function useProjectOverview(projectId: Ref<number>) {
     async function read<T>(key: string, promise: Promise<T>, commit: (data: T) => void) {
       try {
         const data = await promise
-        if (request !== generation) return
+        if (request !== generation || projectId.value !== id) return
         commit(data)
         const next = { ...errors.value }
         delete next[key]
@@ -44,21 +39,18 @@ export function useProjectOverview(projectId: Ref<number>) {
     await Promise.all([
       read(
         'connections',
-        apiFetch<SchemaAuthStatusOut>(`/api/v1/projects/${id}/connections/accounts`),
+        apiFetch<SchemaAuthStatusOut>(`/api/v1/projects/${id}/connections/accounts?summary_only=true`),
         (data) => {
           accounts.value = data.accounts
         },
       ),
       read(
         'work',
-        callOperation<OverviewPage<PortfolioProject>>('project.portfolio', {
-          project_id: id,
-          is_active: null,
-          limit: 1,
-        }),
-        (page) => {
-          projects.reconcileProjectMetadata(page.items)
-          project.value = projects.isProjectDeleted(id) ? null : page.items[0] ?? null
+        projects.getById(id) ? Promise.resolve(projects.getById(id)!) : apiFetch<Project>(`/api/v1/projects/${id}`),
+        (data) => {
+          if (data.id !== id) throw new Error('Project metadata scope did not match this Home.')
+          projects.reconcileProjectMetadata([data])
+          project.value = projects.isProjectDeleted(id) ? null : data
         },
       ),
     ])

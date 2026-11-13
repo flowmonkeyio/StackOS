@@ -205,6 +205,7 @@ export interface TrackerGraph {
 
 export interface TrackerSnapshot {
   projection?: 'full' | 'ui'
+  metric_demand?: { task_keys: string[]; ticket_keys: string[] } | null
   tracker: TrackerSummary
   lanes: TrackerLane[]
   priorities: TrackerPriority[]

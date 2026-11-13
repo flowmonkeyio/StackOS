@@ -359,6 +359,10 @@ def _timeline_stream(
                         "scope_complete": True,
                         "metric_scope": "demand",
                         "replace": True,
+                        # Coverage for same-poll status companions, including
+                        # legacy writers without a tracker revision. This is
+                        # not an SSE id and never advances the durable cursor.
+                        "covered_event_id": max((item.id for item in page.items), default=None),
                         "scope": "project" if project_id is not None else "global",
                         "project_id": project_id,
                         "projects": [

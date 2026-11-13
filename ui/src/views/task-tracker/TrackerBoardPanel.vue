@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { useVisibleMetricDemand } from './useVisibleMetricDemand'
 import { UiBadge, UiDropdownMenu, UiIcon, UiReorderList, UiReorderHandle } from '@/components/ui'
 import type { DropdownItem } from '@/components/ui/UiDropdownMenu.vue'
 import { boardColumnStatus } from '@/design/status'
@@ -20,6 +21,8 @@ import type { BoardMove } from './useTaskBoardEdits'
 const props = defineProps<{
   rows: TaskProgressRow[]; selectedTaskKey?: string; hideEmptyColumns?: boolean
   editPending?: boolean; editPendingColumns?: string[]; editError?: string | null; interactionKey?: string
+  metricsActive?: boolean
+  metricDemandEnabled?: boolean
 }>()
 const emit = defineEmits<{
   (e: 'openTask', key: string): void; (e: 'refresh'): void
@@ -27,7 +30,12 @@ const emit = defineEmits<{
   (e: 'move', move: BoardMove): void
   (e: 'priority', edit: { taskKey: string; priority: TaskPriority }): void
   (e: 'place', edit: { taskKey: string; boardColumn: BoardPlacement }): void
+  (e: 'metricDemand', keys: string[]): void
 }>()
+const root = ref<HTMLElement | null>(null)
+const demand = useVisibleMetricDemand(root, '[data-task-key]', node => node.dataset.taskKey,
+  keys => emit('metricDemand', keys), () => props.metricsActive !== false)
+const demanded = computed(() => new Set(demand.keys.value))
 const columns = computed(() => (Object.keys(boardColumnStatus) as BoardColumn[]).map((status) => ({
   status,
   rows: props.rows.filter((row) => row.task.board_column === status),
@@ -71,6 +79,7 @@ function priorityItems(row: TaskProgressRow) {
 
 <template>
   <section
+    ref="root"
     class="tracker-board focus-ring"
     :style="{ gridTemplateColumns: `repeat(${Math.max(columns.length, 1)}, minmax(300px, 1fr))` }"
     aria-label="Task board"
@@ -194,7 +203,7 @@ function priorityItems(row: TaskProgressRow) {
                   :title="subtitle(row)"
                 >{{ subtitle(row) }}</span>
                 <AgentUsageSummary
-                  v-if="isAutomaticDeliveryTask(row.task)"
+                  v-if="isAutomaticDeliveryTask(row.task) && (!metricDemandEnabled || demanded.has(row.key))"
                   :metrics="row.task.agent_stats"
                   :active="!!row.task.active_execution"
                   compact

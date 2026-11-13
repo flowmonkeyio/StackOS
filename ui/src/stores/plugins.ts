@@ -40,6 +40,21 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
   const providers = ref<SchemaProviderOut[]>([])
   const authProviders = ref<SchemaAuthProviderOut[]>([])
   const globalAccountsStatus = ref<SchemaAuthStatusOut | null>(null)
+  const homeAccounts = ref<SchemaAccountOut[]>([])
+  const homeAccountsLoading = ref(false)
+  const homeAccountsError = ref<string | null>(null)
+  let homeAccountsRead: Promise<void> | null = null
+  function refreshHomeAccounts(): Promise<void> {
+    if (homeAccountsRead) return homeAccountsRead
+    homeAccountsLoading.value = true
+    homeAccountsRead = apiFetch<SchemaAuthStatusOut>('/api/v1/auth/accounts?summary_only=true').then(status => {
+      homeAccounts.value = status.accounts
+      homeAccountsError.value = null
+    }).catch(cause => {
+      homeAccountsError.value = formatApiError(cause, 'Could not refresh connected tools.')
+    }).finally(() => { homeAccountsRead = null; homeAccountsLoading.value = false })
+    return homeAccountsRead
+  }
   const authStatus = ref<SchemaAuthStatusOut | null>(null)
   const actions = ref<SchemaActionOut[]>([])
   const resources = ref<SchemaResourceOut[]>([])
@@ -426,6 +441,7 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
     providers,
     authProviders,
     globalAccountsStatus,
+    homeAccounts, homeAccountsLoading, homeAccountsError, refreshHomeAccounts,
     authStatus,
     actions,
     resources,

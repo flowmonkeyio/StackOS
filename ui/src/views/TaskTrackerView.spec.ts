@@ -32,7 +32,7 @@ function dataMock(tasks = [taskA, taskB], tickets = [ticketA, ticketB], graphNod
         id: `ticket:${ticket.key}`, type: 'ticket', parent_id: null, label: ticket.title,
         status: ticket.status, lane_key: ticket.lane_key, priority_key: ticket.priority_key, data: {},
       }))
-      return result
+      return scoped(result, Number(args.project_id))
     }
     const index = tasks.map(task => {
       const children = tickets.filter(ticket => ticket.task_key === task.key)
@@ -43,8 +43,13 @@ function dataMock(tasks = [taskA, taskB], tickets = [ticketA, ticketB], graphNod
         assignees: [], search_text: children.map(ticket => ticket.title).join(' '),
       }}
     })
-    return trackerSnapshot(index, [])
+    return scoped(trackerSnapshot(index, []), Number(args.project_id))
   })
+}
+function scoped(snapshot: TrackerSnapshot, projectId: number): TrackerSnapshot {
+  return { ...snapshot, tracker: { ...snapshot.tracker, project_id: projectId },
+    tasks: snapshot.tasks.map(task => ({ ...task, project_id: projectId })),
+    tickets: snapshot.tickets.map(ticket => ({ ...ticket, project_id: projectId })) }
 }
 
 async function render(url = '/projects/7/tasks', realDialogs = false, realControls = false, realBoard = false) {
@@ -73,6 +78,26 @@ async function render(url = '/projects/7/tasks', realDialogs = false, realContro
 const popup = () => new DOMWrapper(document.body)
 
 describe('Work board navigation', () => {
+  it('retains graph content through a metric error and clears that error after a fresh success', async () => {
+    const { wrapper } = await render('/projects/7/tasks?view=graph&task=task-a')
+    try {
+      const normal = mocks.callOperation.getMockImplementation()!
+      let fail = true
+      mocks.callOperation.mockImplementation((name, args) => name === 'tracker.get' && args.include_graph && fail
+        ? Promise.reject(new Error('Temporary graph read')) : normal(name, args))
+      const stream = mocks.stream.mock.lastCall![0]
+      const frame = { projection: 'ui', scope_complete: true, scope: 'project', project_id: 7,
+        projects: [{ project_id: 7, rev: 1, metric_demand: { task_keys: [], ticket_keys: [] } }], tasks: [], tickets: [], replace: true }
+      stream.onUsage(frame)
+      stream.onUsage(frame)
+      await vi.waitFor(() => expect(wrapper.text(), JSON.stringify(mocks.callOperation.mock.calls)).toContain('Temporary graph read'))
+      expect(wrapper.findComponent({ name: 'TrackerGraphPanel' }).props('activeTaskTitle')).toBe('Alpha task')
+      fail = false
+      stream.onUsage(frame)
+      await vi.waitFor(() => expect(wrapper.text()).not.toContain('Temporary graph read'))
+      expect(wrapper.findComponent({ name: 'TrackerGraphPanel' }).props('activeTaskTitle')).toBe('Alpha task')
+    } finally { wrapper.unmount() }
+  })
   it('opens Graph with one actual card click and retains task details through the existing menu', async () => {
     const { wrapper, router, board, dialog } = await render('/projects/7/tasks', false, false, true)
     await board().get('[data-task-key="task-a"] .tracker-board__open').trigger('click')
@@ -455,7 +480,7 @@ describe('Work board navigation', () => {
     expect(graphs).toHaveLength(1)
     finishSave({ data: {} })
     await flushPromises()
-    expect(graphs).toHaveLength(2)
+    expect(graphs).toHaveLength(1) // The pending same-task read is shared.
     expect(board().props('editPending')).toBe(false)
     wrapper.unmount()
     const requests = mocks.callOperation.mock.calls.length
@@ -837,7 +862,7 @@ describe('Work board navigation', () => {
     expect(controls().props('viewMode')).toBe('board')
     expect(board().props('rows')).toHaveLength(2)
     expect(router.currentRoute.value.query.task).toBeUndefined()
-    expect(mocks.callOperation).toHaveBeenCalledWith('tracker.get', { project_id: 7, task_index_only: true, include_graph: false }, { signal: expect.any(AbortSignal) })
+    expect(mocks.callOperation).toHaveBeenCalledWith('tracker.get', { project_id: 7, task_index_only: true, include_graph: false, projection: 'ui', metric_demand: { task_keys: [], ticket_keys: [] } }, { signal: expect.any(AbortSignal) })
     expect(mocks.callOperation).toHaveBeenCalledTimes(1)
     expect(mocks.stream).toHaveBeenLastCalledWith(expect.objectContaining({ projectId: 7, taskKey: undefined }))
     wrapper.unmount()

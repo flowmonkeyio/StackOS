@@ -18,7 +18,7 @@ const repairOpen = ref(false)
 const activeTasks = ref<InstanceType<typeof ActiveTaskList> | null>(null)
 const capacityControl = ref<InstanceType<typeof DeliveryCapacityControl> | null>(null)
 const catalog = useStackOsCatalogStore()
-const accounts = computed(() => catalog.globalAccountsStatus?.accounts ?? [])
+const accounts = computed(() => catalog.homeAccounts)
 const agents = useAgentStats()
 const usageVisibility = ref<boolean | null>(true)
 function setUsageVisibility(value: string | number): void {
@@ -35,11 +35,11 @@ onMounted(() => {
   void agents.load()
   void loadHealth()
   void loadHostStatuses()
-  void catalog.refreshAccounts()
+  void catalog.refreshHomeAccounts()
 })
 
 async function refresh(): Promise<void> {
-  await Promise.all([activeTasks.value?.refresh(), capacityControl.value?.refresh(), catalog.refreshAccounts(), agents.load(), loadHealth(), loadHostStatuses()])
+  await Promise.all([activeTasks.value?.refresh(), capacityControl.value?.refresh(), catalog.refreshHomeAccounts(), agents.load(), loadHealth(), loadHostStatuses()])
 }
 function confirmRepair(): void {
   repairOpen.value = false
@@ -114,8 +114,8 @@ function confirmRepair(): void {
     </AgentActivitySection>
     <HomeConnectionsSection
       :accounts="accounts"
-      :loading="catalog.loading"
-      :error="catalog.error"
+      :loading="catalog.homeAccountsLoading"
+      :error="catalog.homeAccountsError"
     />
     <UiConfirmDialog
       v-model="repairOpen"

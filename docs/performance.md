@@ -75,3 +75,31 @@ behind it.
 
 These are regression budgets, not permission to make small local datasets wait
 for the full budget.
+
+## Current UI read ownership
+
+`usageUpdates` retains one lightweight `ui_demand={"projects":{}}` transport
+per mounted project/global scope. View selection changes metric demand, not
+transport identity. Complete headers, counts and revisions remain available;
+heavy usage is requested through `tracker.get(projection="ui")` in bounded
+viewport batches. Board excludes filtered/offscreen columns and adds 160px of
+vertical overscan. Selected Graph requests the visible ticket window plus its
+task, within the existing 200-identity contract. A scoped response older than
+the accepted revision cannot establish Live freshness.
+
+Home's analytics and active-task readers share pending admission through
+`usageReads`: scope/filter/group changes have independent identities, manual
+callers join pending work, and real in-flight invalidations require one fresh
+follow-up per burst. The initial stream replacement precedes the first bulk
+read. An error or a one-second admission deadline releases useful reads while
+freshness remains unconfirmed; reconnect/visibility changes still revalidate.
+No response cache survives the last subscriber. Graph and one full primary
+detail can be reused only within the mounted project and accepted revision.
+
+Home connected tools use the existing `summary_only=true` account read.
+Project headings reuse canonical project metadata rather than polling the
+portfolio's work aggregates. Full account setup reads remain unchanged.
+Task context facts appear independently of file previews. More details admits
+artifact reads with at most four in flight; one failed preview preserves other
+contexts and files. These local ownership checks do not replace the assembled
+Home/graph/render benchmarks or final release signoff.

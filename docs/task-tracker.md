@@ -2181,6 +2181,14 @@ usage projections, including the initial snapshot, reconnect and later
 receipt-only changes. Unscoped project/global streams retain their full scope;
 transient usage frames never advance the durable status-event cursor.
 
+UI-demand replacements additionally report `covered_event_id`: the highest
+durable event read in that same poll, or null for a transient-only frame.
+This is coverage metadata, not an SSE `id` or a tracker revision. Home's shared
+read owner coalesces those same-poll status companions even for existing writers
+without a revision, while later event IDs still invalidate. Graph retains the
+structured events for highlights. The legacy unscoped and explicit task-key
+contracts are unchanged; initial/reconnect replacements still revalidate data.
+
 Each statistics projection copies provisional counters before selecting fresh
 receipt evidence. If a call disappears before that copy, its handoff has already
 committed; if it disappears afterwards, the request keeps its own counter copy.

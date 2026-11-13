@@ -346,6 +346,12 @@ def test_ui_feed_and_legacy_scope_contracts_through_real_route(api, project_id):
     assert response.status_code == 200, response.text
     updates = parse_usage(response.text)["updates"]
     assert updates["replace"] and updates["scope_complete"] and updates["projection"] == "ui"
+    status_ids = [int(line[4:]) for line in response.text.splitlines() if line.startswith("id: ")]
+    assert status_ids and updates["covered_event_id"] >= max(status_ids)
+    usage_frame = next(
+        frame for frame in response.text.split("\n\n") if "event: tracker-usage\n" in frame
+    )
+    assert not any(line.startswith("id:") for line in usage_frame.splitlines())
     assert {task["key"] for task in updates["tasks"]} == {"visible", "hidden"}
     assert [ticket["key"] for ticket in updates["tickets"]] == ["visible-child"]
     hidden = next(task for task in updates["tasks"] if task["key"] == "hidden")
@@ -370,6 +376,7 @@ def test_ui_feed_and_legacy_scope_contracts_through_real_route(api, project_id):
     scoped = api.get(route, params={**base, "task_key": "visible"})
     assert [task["key"] for task in parse_usage(scoped.text)["updates"]["tasks"]] == ["visible"]
     legacy = api.get(route, params=base)
+    assert "covered_event_id" not in parse_usage(legacy.text)["updates"]
     assert {task["key"] for task in parse_usage(legacy.text)["updates"]["tasks"]} == {
         "visible",
         "hidden",

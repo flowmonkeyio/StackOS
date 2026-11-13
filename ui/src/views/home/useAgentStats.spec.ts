@@ -8,7 +8,7 @@ import { agentStatsFixture } from './agentStatsFixtures'
 import { subscribeUsageUpdates } from '@/lib/usageUpdates'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
-vi.mock('@/lib/usageUpdates', () => ({ subscribeUsageUpdates: vi.fn(() => vi.fn()) }))
+vi.mock('@/lib/usageUpdates', () => ({ subscribeUsageUpdates: vi.fn(() => vi.fn()), awaitUsageBaseline: vi.fn(async () => {}) }))
 const wrappers: ReturnType<typeof mount>[] = []
 beforeEach(() => { vi.mocked(callOperation).mockReset(); vi.mocked(subscribeUsageUpdates).mockClear() })
 afterEach(() => wrappers.splice(0).forEach(wrapper => wrapper.unmount()))
@@ -59,6 +59,7 @@ describe('Agent activity query', () => {
     const listener = vi.mocked(subscribeUsageUpdates).mock.calls[0]![1]
     listener.usage()
     listener.usage()
+    await flushPromises()
     wrappers.pop()!.unmount()
     resolve(agentStatsFixture())
     await flushPromises()
@@ -89,6 +90,7 @@ describe('Agent activity query', () => {
     expect(stats.summary.value?.totals.launch_attempts).toBe(4)
     vi.mocked(callOperation).mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
     const old = stats.load()
+    await flushPromises()
     id.value = 2
     expect(stats.summary.value).toBeNull()
     vi.mocked(callOperation).mockResolvedValueOnce(agentStatsFixture({ project_id: 2 }))
@@ -122,6 +124,7 @@ describe('Agent activity query', () => {
     vi.mocked(callOperation).mockImplementationOnce(() => new Promise(done => { resolve = done }))
     const stats = setup()
     const load = stats.load()
+    await flushPromises()
     wrappers.pop()!.unmount()
     resolve(agentStatsFixture())
     await load
@@ -137,6 +140,7 @@ describe('Agent activity query', () => {
     let resolveGroup!: (value: unknown) => void
     vi.mocked(callOperation).mockImplementationOnce(() => new Promise(resolve => { resolveGroup = resolve }))
     const pending = stats.setFilters({ group_by: 'agent' as never })
+    await flushPromises()
     expect(stats.loading.value).toBe(true)
     expect(stats.summary.value?.group_by).toBe('model')
     expect(stats.summary.value?.daily).toEqual(daily)
@@ -157,6 +161,7 @@ describe('Agent activity query', () => {
     let resolveOld!: (value: unknown) => void
     vi.mocked(callOperation).mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
     const old = stats.load()
+    await flushPromises()
     vi.mocked(callOperation).mockResolvedValueOnce(agentStatsFixture({ start_date: '2026-11-01' }))
     await stats.setFilters({ start_date: '2026-11-01', end_date: '2026-11-03', group_by: 'agent' as never })
     resolveOld(agentStatsFixture({ start_date: '2025-01-01' }))
