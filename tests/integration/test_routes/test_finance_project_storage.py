@@ -239,11 +239,14 @@ def test_console_readiness_uses_explicit_project_enablement_and_preserves_unavai
     assert master.read_bytes() == original
 
     # This setup grant does not admit unrelated browser mutations or unknown projects.
-    assert api.post(
-        "/api/v1/operations/plugin.disable/call",
-        headers={"Authorization": f"Bearer {ui}"},
-        json={"arguments": {"project_id": project_id, "plugin_slug": "finance"}},
-    ).status_code == 403
+    assert (
+        api.post(
+            "/api/v1/operations/plugin.disable/call",
+            headers={"Authorization": f"Bearer {ui}"},
+            json={"arguments": {"project_id": project_id, "plugin_slug": "finance"}},
+        ).status_code
+        == 403
+    )
     missing = api.post(
         "/api/v1/operations/plugin.enable/call",
         headers={"Authorization": f"Bearer {ui}"},

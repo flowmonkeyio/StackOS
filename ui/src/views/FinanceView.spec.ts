@@ -6,6 +6,8 @@ import FinanceView from './FinanceView.vue'
 import { insightFixture } from './finance/insightsFixtures'
 import { callOperation } from '@/lib/operations'
 import { ApiError, apiFetch } from '@/lib/client'
+import { useStackOsCatalogStore } from '@/stores/plugins'
+import { pluginContributionSections } from '@/lib/stackos/nav'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
 vi.mock('@/lib/client', async (original) => ({ ...await original<typeof import('@/lib/client')>(), apiFetch: vi.fn() }))
@@ -145,6 +147,40 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 describe('Finance management', () => {
+  it('keeps enabled navigation after a pre-enable shell read arrives late and Finance refreshes', async () => {
+    let enabled = false
+    let release!: (rows: unknown) => void
+    const basics = vi.mocked(callOperation).getMockImplementation()!
+    vi.mocked(callOperation).mockImplementation(async (name, args) => {
+      if (name === 'plugin.enable') {
+        enabled = true
+        return { data: { project_id: 1, plugin_slug: 'finance', enabled: true } }
+      }
+      if (name === 'finance.status' && !enabled)
+        throw new ApiError('disabled', 403, { detail: 'disabled', data: { finance_code: 'plugin_not_enabled' } })
+      return basics(name, args)
+    })
+    const finance = { slug: 'finance', name: 'Finance', enabled_for_project: true }
+    vi.mocked(apiFetch)
+      .mockImplementationOnce(() => new Promise(resolve => { release = resolve }))
+      .mockResolvedValue([finance])
+    const { wrapper } = await mounted()
+    const catalog = useStackOsCatalogStore()
+    const pendingShell = catalog.refreshPlugins(1)
+    await wrapper.get('[data-test="enable-finance"]').trigger('click')
+    await flushPromises()
+    expect(apiFetch).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('USD 90,071,992,547,409.93')
+    release([{ ...finance, enabled_for_project: false }])
+    await pendingShell
+    const navigation = () => pluginContributionSections(1, catalog.enabledPlugins).flatMap(section => section.items)
+    expect(navigation()).toContainEqual(expect.objectContaining({ to: '/projects/1/finance' }))
+    await wrapper.get('[data-test="refresh-finance"]').trigger('click')
+    await flushPromises()
+    expect(navigation()).toContainEqual(expect.objectContaining({ to: '/projects/1/finance' }))
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
   it('explicitly enables only the selected project and retries authoritative status', async () => {
     let enabled = false
     const basics = vi.mocked(callOperation).getMockImplementation()!

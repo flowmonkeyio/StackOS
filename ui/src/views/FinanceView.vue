@@ -340,7 +340,7 @@ async function enableFinance() {
   try {
     await callOperation('plugin.enable', { project_id: id, plugin_slug: 'finance' })
     if (!active || sequence !== scopeSequence || id !== projectId.value) return
-    void catalog.refreshPlugins(id, { silent: true })
+    void catalog.refreshPlugins(id, { silent: true, force: true })
     await loadStatus()
   } catch {
     if (active && sequence === scopeSequence && id === projectId.value)

@@ -57,11 +57,15 @@ export const useStackOsCatalogStore = defineStore('stackosCatalog', () => {
 
   function refreshPlugins(
     projectId: number,
-    options: { silent?: boolean } = {},
+    options: { silent?: boolean; force?: boolean } = {},
   ): Promise<boolean> {
     // The shell and a domain detail can mount together. Share their read so
     // neither consumer cancels the other's project discovery.
-    if (pendingPlugins?.projectId === projectId) return pendingPlugins.promise
+    if (pendingPlugins?.projectId === projectId && !options.force) return pendingPlugins.promise
+    // A completed setup mutation supersedes both writers of plugin readiness.
+    // readPlugins begins a new compact-read generation; also retire any older
+    // full-catalog read so it cannot restore pre-mutation plugin rows.
+    if (options.force) projectRequests.invalidateOperation('catalog')
     const promise = readPlugins(projectId, options)
     pendingPlugins = { projectId, promise }
     void promise.finally(() => {
