@@ -435,3 +435,56 @@ def test_attempt_operations_are_agent_only_and_keep_repair_response_modes():
         assert not spec.surfaces.rest.enabled and not spec.surfaces.cli.enabled
         assert spec.response_policy.allowed_modes == ("compact", "raw")
         assert spec.response_policy.ack_safe is False
+
+
+def test_folder_loss_after_verified_progress_blocks_success_but_keeps_recovery_reporting(
+    attempt, session
+):
+    project, session_id, repo = attempt
+    opened = repo.start(
+        project, session_id=session_id, mode="setup", workflow_keys=["agency.project-setup"]
+    )
+    result = verified_result(repo, project, "agency.project-setup")
+    result.attempt_ref = opened.attempt.attempt_ref
+    repo.report(
+        project,
+        request_id=opened.attempt.request_id,
+        session_id=session_id,
+        claim_token=opened.claim_token,
+        expected_revision=1,
+        report=SetupReport(
+            status="running",
+            progress={"message": "Checked", "evidence_ref": "fixture/checked"},
+            workflow_results=[
+                {"workflow_key": "agency.project-setup", "expected_revision": 0, "result": result}
+            ],
+        ),
+    )
+    root = Path(session.get(AgentSession, session_id).cwd)
+    root.rename(root.with_name("unavailable-during-completion"))
+    with pytest.raises(ConflictError, match="available selected project folder"):
+        repo.report(
+            project,
+            request_id=opened.attempt.request_id,
+            session_id=session_id,
+            claim_token=opened.claim_token,
+            expected_revision=2,
+            report=SetupReport(
+                status="success", progress={"message": "Done", "evidence_ref": "fixture/done"}
+            ),
+        )
+    assert repo.get(project).current_attempt.revision == 2
+    recovered = repo.report(
+        project,
+        request_id=opened.attempt.request_id,
+        session_id=session_id,
+        claim_token=opened.claim_token,
+        expected_revision=2,
+        report=SetupReport(
+            status="interrupted",
+            progress={"message": "Folder disappeared", "evidence_ref": "fixture/folder-lost"},
+            recovery_condition="Restore the selected folder and revalidate",
+        ),
+    )
+    assert recovered.status == "interrupted"
+    assert repo.get(project).configured_count == 1

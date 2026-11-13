@@ -691,6 +691,12 @@ class ProjectSetupRepository:
                     "every selected workflow needs verified success before attempt success"
                 )
             if report.status == "success":
+                project = ProjectRepository(self._s).get(project_id)
+                if project.project_dir is None:
+                    raise ConflictError(
+                        "setup completion needs an available selected project folder",
+                        data={"project_id": project_id, "next_action": "repair_project_folder"},
+                    )
                 # A previous progress report can precede another source/receipt
                 # change. Closing the attempt must not bless that stale proof.
                 for key, outcome in outcomes.items():
