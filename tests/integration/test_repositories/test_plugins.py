@@ -23,6 +23,35 @@ from stackos.repositories.projects import IntegrationBudgetRepository
 pytestmark = pytest.mark.fresh_catalog
 
 
+@pytest.mark.parametrize(
+    "reader, table",
+    [
+        ("list_capabilities", "capabilities"),
+        ("list_providers", "providers"),
+    ],
+)
+def test_metadata_lists_do_not_repeat_parent_manifest_per_row(
+    session: Session, project_id: int, reader: str, table: str
+) -> None:
+    repo = PluginRepository(session)
+    repo.sync_builtin_plugins()
+    statements: list[str] = []
+
+    def capture(_conn, _cursor, statement, _parameters, _context, _many):
+        statements.append(statement)
+
+    engine = session.get_bind()
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        rows = getattr(repo, reader)(project_id=project_id)
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+    assert len(rows) > 25
+    reads = [statement for statement in statements if f"FROM {table} " in statement]
+    assert reads
+    assert all("plugins.manifest_json" not in statement for statement in reads)
+
+
 def test_action_summaries_preserve_live_metadata_without_loading_schemas(
     session: Session, project_id: int
 ) -> None:

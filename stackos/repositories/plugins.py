@@ -293,10 +293,12 @@ class PluginRepository:
         project_id: int | None = None,
     ) -> list[CapabilityOut]:
         self.sync_builtin_plugins()
-        stmt = select(Capability, Plugin).join(Plugin, col(Capability.plugin_id) == col(Plugin.id))
+        stmt = select(Capability).join(Plugin, col(Capability.plugin_id) == col(Plugin.id))
         if plugin_slug is not None:
             stmt = stmt.where(col(Plugin.slug) == plugin_slug)
-        rows = list(self._s.exec(stmt.order_by(col(Capability.key).asc())).all())
+        capabilities = self._s.exec(stmt.order_by(col(Capability.key).asc())).all()
+        plugins = self._plugins_by_id({row.plugin_id for row in capabilities})
+        rows = [(row, plugins[row.plugin_id]) for row in capabilities if row.plugin_id in plugins]
         rows = self._filter_project_enabled(rows, project_id=project_id)
         rows.sort(key=lambda row: (*plugin_sort_key(row[1].slug, row[1].manifest_json), row[0].key))
         return [self._capability_out(capability, plugin) for capability, plugin in rows]
@@ -319,10 +321,12 @@ class PluginRepository:
         project_id: int | None = None,
     ) -> list[ProviderOut]:
         self.sync_builtin_plugins()
-        stmt = select(Provider, Plugin).join(Plugin, col(Provider.plugin_id) == col(Plugin.id))
+        stmt = select(Provider).join(Plugin, col(Provider.plugin_id) == col(Plugin.id))
         if plugin_slug is not None:
             stmt = stmt.where(col(Plugin.slug) == plugin_slug)
-        rows = list(self._s.exec(stmt.order_by(col(Provider.key).asc())).all())
+        providers = self._s.exec(stmt.order_by(col(Provider.key).asc())).all()
+        plugins = self._plugins_by_id({row.plugin_id for row in providers})
+        rows = [(row, plugins[row.plugin_id]) for row in providers if row.plugin_id in plugins]
         rows = self._filter_project_enabled(rows, project_id=project_id)
         rows.sort(key=lambda row: (*plugin_sort_key(row[1].slug, row[1].manifest_json), row[0].key))
         return [self._provider_out(provider, plugin) for provider, plugin in rows]
@@ -375,11 +379,7 @@ class PluginRepository:
         actions = self._s.exec(stmt.order_by(col(Action.key).asc())).all()
         # A joined catalog repeats the entire plugin manifest JSON for every
         # action. Read each parent once while retaining current database state.
-        plugin_ids = {action.plugin_id for action in actions}
-        plugins = {
-            plugin.id: plugin
-            for plugin in self._s.exec(select(Plugin).where(col(Plugin.id).in_(plugin_ids))).all()
-        }
+        plugins = self._plugins_by_id({action.plugin_id for action in actions})
         provider_ids = {action.provider_id for action in actions if action.provider_id is not None}
         providers = {
             provider.id: provider
@@ -500,6 +500,13 @@ class PluginRepository:
             raise NotFoundError(f"plugin {slug!r} not found")
         return row
 
+    def _plugins_by_id(self, plugin_ids: set[int]) -> dict[int, Plugin]:
+        """Decode each current parent once, rather than once per joined child."""
+        return {
+            _required_id(plugin.id): plugin
+            for plugin in self._s.exec(select(Plugin).where(col(Plugin.id).in_(plugin_ids))).all()
+        }
+
     def _enabled_map(self, project_id: int | None) -> dict[int, bool | None]:
         if project_id is None:
             return {}
@@ -556,18 +563,29 @@ class PluginRepository:
         *,
         compact: bool = False,
     ) -> PluginOut:
-        out = PluginOut.model_validate(row)
-        if compact:
-            # The global app shell only needs ordering and contributed nav.
-            # Avoid serializing action, provider, workflow, and resource
-            # manifests on every project navigation.
-            out.manifest_json = {
+        # Select the compact payload before output validation, rather than
+        # constructing the entire manifest only to discard it afterward.
+        manifest: dict[str, Any] = (
+            {
                 key: row.manifest_json[key]
                 for key in ("display_order", "ui")
                 if key in row.manifest_json
             }
-        out.enabled_for_project = enabled_for_project
-        return out
+            if compact
+            else row.manifest_json
+        )
+        return PluginOut(
+            id=_required_id(row.id),
+            slug=row.slug,
+            name=row.name,
+            version=row.version,
+            description=row.description,
+            source=row.source,
+            manifest_json=manifest,
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+            enabled_for_project=enabled_for_project,
+        )
 
     def _project_plugin_out(self, row: ProjectPlugin, plugin: Plugin) -> ProjectPluginOut:
         assert row.id is not None and row.plugin_id is not None

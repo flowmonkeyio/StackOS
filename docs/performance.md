@@ -73,6 +73,8 @@ requests instead.
   visibility and live availability projection without constructing full
   schema-rich action outputs. Compatible catalog refreshes retain navigation;
   plugin metadata publishes independently of slower action/integration reads.
+  Capability, provider and action listings decode each current plugin parent
+  once, rather than repeating its full manifest for every joined child row.
 
 Response filtering must reduce database work as well as payload size. Tracker
 list reads bulk-hydrate task, parent, dependency, reference, and link state;
