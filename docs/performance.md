@@ -95,6 +95,10 @@ read. An error or a one-second admission deadline releases useful reads while
 freshness remains unconfirmed; reconnect/visibility changes still revalidate.
 No response cache survives the last subscriber. Graph and one full primary
 detail can be reused only within the mounted project and accepted revision.
+Content saves and latest-content retries use the same UI-demand index queue.
+While a full detail read is pending, its owner retains accepted metric patches
+for that task and applies them before publishing the primary content; patches
+are released when the read settles or the project scope exits.
 
 Home connected tools use the existing `summary_only=true` account read.
 Project headings reuse canonical project metadata rather than polling the

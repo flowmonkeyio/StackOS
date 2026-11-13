@@ -123,6 +123,12 @@ let boardMetricKeys: string[] = []
 let metricRefresh: number | null = null
 let receivedUsageBaseline = false
 let metricGeneration = 0
+type PendingDetailMetrics = {
+  taskKey: string
+  tasks: Map<string, { rev: number; item: TrackerTask }>
+  tickets: Map<string, { rev: number; item: TrackerTicket }>
+}
+const pendingDetailMetrics = new Set<PendingDetailMetrics>()
 function setBoardMetricDemand(keys: string[]): void {
   if (viewMode.value !== 'board' || JSON.stringify(keys) === JSON.stringify(boardMetricKeys)) return
   boardMetricKeys = keys
@@ -154,6 +160,25 @@ function patchDetailMetrics(next: TrackerSnapshot): void {
   }
   patchUsageSnapshot(detailSnapshot.value, updates)
   patchUsageSnapshot(retainedDetail, updates)
+  for (const pending of pendingDetailMetrics) {
+    for (const item of updates.tasks) if (item.key === pending.taskKey) pending.tasks.set(item.key, { rev: next.tracker.rev, item })
+    for (const item of updates.tickets) if (item.task_key === pending.taskKey) pending.tickets.set(item.key, { rev: next.tracker.rev, item })
+  }
+}
+async function withCurrentDetailMetrics(taskKey: string, read: () => Promise<TrackerSnapshot>): Promise<TrackerSnapshot> {
+  // Lightweight stream frames invalidate demand without carrying metrics.
+  // Retain only patches accepted while this primary read is pending, so its
+  // full content cannot roll current usage (including explicit nulls) backward.
+  const pending: PendingDetailMetrics = { taskKey, tasks: new Map(), tickets: new Map() }
+  pendingDetailMetrics.add(pending)
+  try {
+    const next = await read()
+    patchUsageSnapshot(next, {
+      tasks: [...pending.tasks.values()].filter(update => update.rev >= next.tracker.rev).map(update => update.item),
+      tickets: [...pending.tickets.values()].filter(update => update.rev >= next.tracker.rev).map(update => update.item),
+    })
+    return next
+  } finally { pendingDetailMetrics.delete(pending) }
 }
 function refreshUsage(next?: UsageProjection): void {
   if (!currentScope() || !next) return
@@ -369,12 +394,12 @@ async function readDetail(taskKey: string, minRevision?: number): Promise<void> 
   }
   try {
     const requiredRevision = Math.max(snapshot.value?.tracker.rev ?? 0, minRevision ?? 0)
-    const next = currentFocusedDetail(retainedDetail, projectId.value, taskKey, requiredRevision) ?? currentFocusedDetail(
+    const next = await withCurrentDetailMetrics(taskKey, async () => currentFocusedDetail(retainedDetail, projectId.value, taskKey, requiredRevision) ?? currentFocusedDetail(
       graph.graphSnapshot.value, projectId.value, taskKey,
       requiredRevision,
     ) ?? await callOperation<TrackerSnapshot>('tracker.get', {
       project_id: projectId.value, task_key: taskKey, include_graph: false,
-    })
+    }))
     if (!currentScope() || sequence !== detailSequence || detailTaskKey.value !== taskKey) return
     if (minRevision !== undefined && next.tracker.rev < minRevision) throw new Error('Task details are older than the change. Use Refresh to retry.')
     patchUsageAfter(next, projectId.value, usageVersion)
@@ -398,27 +423,28 @@ async function readDetail(taskKey: string, minRevision?: number): Promise<void> 
 
 async function refreshTaskContent(taskKey: string): Promise<TrackerTask> {
   const usageVersion = usageCheckpoint()
-  const [index, focused] = await Promise.all([
-    callOperation<TrackerSnapshot>('tracker.get', {
-      project_id: projectId.value, task_index_only: true, include_graph: false,
-    }),
-    callOperation<TrackerSnapshot>('tracker.get', {
-      project_id: projectId.value, task_key: taskKey, include_graph: false,
-    }),
-  ])
-  patchUsageAfter(index, projectId.value, usageVersion)
+  const focused = await withCurrentDetailMetrics(taskKey, async () => {
+    const [loaded, detail] = await Promise.all([
+      load({ quiet: true, restartStream: false, metricsOnly: true }),
+      callOperation<TrackerSnapshot>('tracker.get', {
+        project_id: projectId.value, task_key: taskKey, include_graph: false,
+      }),
+    ])
+    if (!loaded) throw new Error('Could not refresh the board.')
+    return detail
+  })
   patchUsageAfter(focused, projectId.value, usageVersion)
   const task = focused.tasks.find((item) => item.key === taskKey)
   if (!task) throw new Error('This task is no longer available in this project.')
   if (currentScope() && detailTaskKey.value === taskKey) {
-    loadSequence += 1
     detailSequence += 1
     loading.value = false
     detailLoading.value = false
     error.value = null
     detailError.value = null
-    snapshot.value = mergeFocusedTrackerSnapshot(index, focused)
+    if (snapshot.value) snapshot.value = mergeFocusedTrackerSnapshot(snapshot.value, focused)
     detailSnapshot.value = focused
+    retainedDetail = focused
     taskDialog.value?.syncTask?.(task)
   }
   return task
@@ -539,6 +565,8 @@ useProjectScopedLoader({
   projectId, load: () => load(),
   onScopeExit: () => {
     alive = false
+    for (const pending of pendingDetailMetrics) { pending.tasks.clear(); pending.tickets.clear() }
+    pendingDetailMetrics.clear()
     if (metricRefresh !== null) window.clearTimeout(metricRefresh)
     loadController?.abort()
     trailingLoad?.resolve(false)
