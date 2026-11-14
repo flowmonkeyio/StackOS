@@ -25,6 +25,12 @@ describe('truthful live motion', () => {
     expect(wrapper.find('.usage-live-indicator--motion').exists()).toBe(false)
     feed.value = { status: 'live', receivedAt: Date.now() }; await nextTick()
     expect(wrapper.get('.usage-live-indicator--motion').text()).toBe('Live')
+    const badge = wrapper.get('.usage-live-indicator').element
+    const dot = wrapper.get('.ui-badge__dot').element
+    feed.value = { status: 'live', receivedAt: Date.now() + 1000 }; await nextTick()
+    expect(wrapper.get('.usage-live-indicator').element).toBe(badge)
+    expect(wrapper.get('.ui-badge__dot').element).toBe(dot)
+    expect(wrapper.find('.usage-live-indicator--motion').exists()).toBe(true)
     intersect([{ target: wrapper.element, isIntersecting: false }]); await nextTick()
     expect(wrapper.find('.usage-live-indicator--motion').exists()).toBe(false)
     intersect([{ target: wrapper.element, isIntersecting: true }]); await nextTick()

@@ -939,7 +939,7 @@ summaries. Do not subtract a partial cache sum from all Input.
 
 Supply `start_date` and `end_date` together as inclusive local calendar dates,
 ordered and at most 366 days, with an IANA `timezone` (default `UTC`). Invalid
-filters reject before the query. UI owns the last-seven-calendar-days default
+filters reject before the query. UI owns the last-30-calendar-days default
 and browser timezone selection. Daily attribution uses only offset-aware
 `launch.started_at`, converted to the requested timezone; completion time and
 receipt order are not substitutes. Each date appears once, including empty
@@ -1122,29 +1122,29 @@ they omit private receipt content. Generated API and maintained tracker types
 expose the same `agent_stats` field. The optional/null schema default supports
 objects without an attached projection; it does not establish measured zero.
 
-Project Home and the main Overview share an **Agent usage** section backed by
-these operations. Available Input / Cache / Output appear alongside launch
-attempts, daily stacked bars and a complete Agent / Model / Agent+model table.
+Project Home and the main Overview share a **Usage** section backed by
+these operations. Daily tokens stacks Input / Cache / Output segments in one bar
+per date in All mode,
+with individual metric inspection and an Agent / Model / Agent+model breakdown.
 Displayed Input is the existing paired `remaining_input`, Cache is `cache_read`,
-and Output is `output`. Raw API `input` remains inclusive. Summary, table and chart use the same
-selected date range, defaulting to today plus the previous six local calendar
-days in the visibly identified browser IANA timezone. Exactly two chart views,
-**Tokens** and **Agents**, share this scope. Tokens stacks Input, Cache and
-Output; Input uses the repository's paired Input-minus-Cache projection,
+and Output is `output`. Raw API `input` remains inclusive. Summary, breakdown
+and chart use the same selected date range, defaulting to today plus the
+previous 29 local calendar days in the visibly identified browser IANA timezone.
+All retains the reported period total independently of its split datasets.
+Input uses the repository's paired Input-minus-Cache projection,
 never an aggregate subtraction that invents a remainder for missing cache.
-The shared UI mapping also owns summary values, numeric table data, exact hover
-and accessible values, and daily rows. Input availability and coverage follow
+The shared UI mapping also owns summary values and exact hover/keyboard values.
+Input availability and coverage follow
 paired cache measurements. For receipts 100/80/5 and 50/unknown/3, the known
 display is Input 20, Cache 80, Output 8; those 108 tokens are not the full raw
 total of 158. Complete 11,545,485/11,232,768/46,397 counters display Input 312,717,
 Cache 11,232,768, Output 46,397, preserving total 11,591,882. A measured zero
 remains zero; no second subtraction or historical counter mutation occurs.
-Agents splits the same reported Input + Output by agent. Incomplete composition
-uses available-measurement context rather than claiming a complete total. Both
-views retain the same plot, axis gutter, bounded legend and selection-caption
-dimensions. Long legend names are elided with their unchanged identity available
-on focus/hover; exact per-series text stays accessible without a visible raw-value
-transcript. Exact hover/keyboard values follow the
+The breakdown retains reported totals by the selected grouping. Incomplete
+composition stays explicit in exact chart details. Tiny positive components
+receive a two-pixel painted mark only in All mode, without changing values or
+giving zero/missing usage a mark. Home omits Token details and Daily values
+expansions. Exact hover/keyboard values follow the
 [shared Home component contract](ui-component-inventory.md#view-decomposition-pattern).
 Overview retains its existing Active/Archived/All project visibility. Agent
 groups retain project identity; Model grouping combines the selected projects.
@@ -2418,15 +2418,16 @@ counter decreases are `reset`. Optional field gaps are not bridged. A final save
 does not move an existing native observation to receipt-save time.
 
 Bars show source checkpoint increments, not per-token consumption times.
-Baselines and batches use fixed neutral ticks with accessible amounts and
-available interval bounds, never proportional bar heights or even spreading
-across missing minutes. Legacy counter-only frames preserve the first baseline
-and mark differences spanning more than a minute as batched observations.
+Baselines, batches and resets retain accessible amounts and available interval
+bounds, without observation overlays or fabricated usage bars. Legacy
+counter-only frames preserve the first baseline and retain differences spanning
+more than a minute as batched observations, never spread across missing minutes.
 `DEFAULT_USAGE_BAR_COUNT` sets the shared
 default of 20 intervals; `UsageTrace.barCount` supports 5–60. Bars stay at most
 2 CSS pixels wide as the chart uses the available metric-column width.
-Every chart keeps the same baseline. The first observation supplies a neutral
-baseline tick, never an invented increment from zero. Missing values, absent
+Every chart keeps the same baseline and one metric color: Input blue, Cache lime,
+Output green. The first observation never supplies an invented increment from
+zero. Missing values, absent
 observations and negative corrections leave gaps; observed unchanged values
 remain measured zero. Each metric uses its own zero-based scale. Exact totals,
 coverage and chart interval values remain accessible. Active charts advance

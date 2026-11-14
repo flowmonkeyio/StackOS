@@ -161,26 +161,28 @@ async function remove(): Promise<void> {
           >{{ row.next_run_at ? formatAbsoluteDateTime(row.next_run_at) : '—' }}</span>
         </template>
         <template #cell:last_run_status="{ row }">
-          <div
-            class="truncate"
-            :title="row.setup_issue ?? undefined"
-          >
-            <StatusBadge
-              v-if="row.setup_issue || row.last_run_status"
-              kind="job"
-              :status="row.setup_issue ? 'needs_setup' : row.last_run_status!"
-              :label="row.setup_issue ? 'Needs setup' : undefined"
-            />
+          <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <div
+              class="min-w-0 max-w-full truncate"
+              :title="row.setup_issue ?? undefined"
+            >
+              <StatusBadge
+                v-if="row.setup_issue || row.last_run_status"
+                kind="job"
+                :status="row.setup_issue ? 'needs_setup' : row.last_run_status!"
+                :label="row.setup_issue ? 'Needs setup' : undefined"
+              />
+              <span
+                v-else
+                class="text-fg-muted"
+              >—</span>
+            </div>
             <span
-              v-else
-              class="text-fg-muted"
-            >—</span>
+              v-if="row.last_run_at"
+              class="min-w-0 truncate text-xs text-fg-muted"
+              :title="formatAbsoluteDateTime(row.last_run_at)"
+            >{{ formatRelativeDateTime(row.last_run_at) }}</span>
           </div>
-          <span
-            v-if="row.last_run_at"
-            class="block truncate text-xs text-fg-muted"
-            :title="formatAbsoluteDateTime(row.last_run_at)"
-          >{{ formatRelativeDateTime(row.last_run_at) }}</span>
         </template>
         <template #cell:enabled="{ row }">
           <div class="flex items-center justify-between gap-2">

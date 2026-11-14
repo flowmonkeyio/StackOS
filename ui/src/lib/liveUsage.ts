@@ -43,8 +43,8 @@ export function usageTraces(prepared: PreparedUsageSamples, endAt?: number, barC
 
 // The producer pairs each invocation before combining lifetime counters. First
 // retained totals and gaps cannot become bars when another invocation joins.
-// Source checkpoint increments use their source minute; batches get a neutral
-// marker with their amount/bounds, never a height or an invented distribution.
+// Source checkpoint increments use their source minute; other observations
+// retain their amount/bounds as data, never a height or an invented distribution.
 export function usageTrace(samples: SchemaUsageSampleOut[], metric: LiveMetric, endAt?: number, barCount = DEFAULT_USAGE_BAR_COUNT): UsageTraceGeometry {
   return preparedUsageTrace(prepareUsageSamples(samples), metric, endAt, barCount)
 }
@@ -126,7 +126,7 @@ export function preparedUsageTrace({ ordered, latestAt }: PreparedUsageSamples, 
 
 export function usageTraceDescription(geometry: UsageTraceGeometry, metric: LiveMetric): string {
   const label = metric === 'cache_read' ? 'Cache' : metric === 'input' ? 'Input' : 'Output'
-  const introduction = `${label}: source checkpoint increments in ${geometry.buckets.length} one-minute intervals. Each chart uses its own zero-based scale. Neutral ticks mark baselines or batched observations, not consumption spikes.`
+  const introduction = `${label}: source checkpoint increments in ${geometry.buckets.length} one-minute intervals. Each chart uses its own zero-based scale. Only measured changes are drawn as bars.`
   if (geometry.state === 'empty' && geometry.buckets.every(bucket => !bucket.observations.length)) return `${introduction} No measured changes in this window.`
   const baseline = geometry.state === 'point' ? ' First reading establishes a baseline; no increase inferred.' : ''
   const time = (at: number) => new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })

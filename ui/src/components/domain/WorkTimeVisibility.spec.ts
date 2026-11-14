@@ -52,12 +52,12 @@ describe('canonical duration visibility and demand', () => {
     feed.value = { status: 'live', receivedAt: Date.now() }; await nextTick()
     expect(format).not.toHaveBeenCalled()
     await wrapper.setProps({ metricDemandEnabled: false }) // admit the retained card through its existing demand control
-    expect(wrapper.get('.active-execution-line__elapsed').attributes('aria-label')).toBe('Work time: 17m · Partial coverage')
+    expect(wrapper.get('.active-execution-line__elapsed').attributes('aria-label')).toBe('Work time: 17m')
     format.mockClear()
     vi.setSystemTime(new Date('2026-11-08T01:26:00Z'))
     feed.value = { status: 'live', receivedAt: Date.now() }; await nextTick()
     expect(format).toHaveBeenCalledTimes(1)
-    expect(wrapper.get('.active-execution-line__elapsed').text()).toBe('18mPartial')
+    expect(wrapper.get('.active-execution-line__elapsed').text()).toBe('18m')
   })
 
   it('suspends undemanded Graph duration and reveals the latest final receipt without changing the footer', async () => {

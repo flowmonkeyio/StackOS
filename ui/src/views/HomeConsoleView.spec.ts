@@ -45,7 +45,7 @@ async function mountProject() {
   await router.isReady()
   const pinia = createPinia()
   const wrapper = mount({ template: '<RouterView :key="$route.params.id" />' }, {
-    global: { plugins: [router, pinia], stubs: { AgentActivityChart: true, teleport: true } },
+    global: { plugins: [router, pinia], stubs: { AgentActivityChart: true, DeliveryTrendChart: true, teleport: true } },
   })
   await flushPromises()
   return { wrapper, router, projects: useProjectsStore(pinia) }

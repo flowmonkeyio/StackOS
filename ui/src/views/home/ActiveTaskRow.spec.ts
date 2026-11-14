@@ -21,13 +21,13 @@ describe('continuous Home task rows', () => {
     const feed = ref<UsageFeedState>({ status: 'live', receivedAt: Date.now() })
     const wrapper = mount(ActiveTaskRow, { props: { task, global }, global: { plugins: [router], provide: { [usageFeedKey as symbol]: feed } } })
     try {
-      expect(wrapper.get('[aria-label="Work time: 15m · Partial coverage"]').text()).toBe('15mPartial')
+      expect(wrapper.get('[aria-label="Work time: 15m"]').text()).toBe('15m')
       // The shared usage canvas owner batches its initial paint in one frame.
       await vi.advanceTimersByTimeAsync(20)
       expect(vi.getTimerCount()).toBe(0)
       feed.value = { status: 'reconnecting', receivedAt: Date.now() }
       await wrapper.vm.$nextTick()
-      expect(wrapper.get('.active-execution-line__elapsed').text()).toBe('14mPartial')
+      expect(wrapper.get('.active-execution-line__elapsed').text()).toBe('14m')
       await wrapper.setProps({ task: { ...task, active_execution: null, work_duration: { ...work_duration, total_seconds: 960, coverage: WorkDurationOutCoverage.complete, live: [] } } })
       vi.setSystemTime(new Date('2026-11-12T19:22:00Z'))
       feed.value = { status: 'live', receivedAt: Date.now() }

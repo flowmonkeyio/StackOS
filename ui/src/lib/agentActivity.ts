@@ -116,7 +116,7 @@ export function activitySeries(days: AgentStatsDay[], view: ActivityView, global
 }
 
 export function localActivityFilters(now = new Date()): AgentStatsFilters {
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6)
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29)
   const localDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
   return { start_date: localDate(start), end_date: localDate(now), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, group_by: 'model' as ActivityGroup }
 }

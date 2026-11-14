@@ -19,6 +19,8 @@ describe('Shared Home usage', () => {
     }
     expect(wrapper.getComponent({ name: 'AgentActivityChart' }).props('days')).toEqual(fixture.daily)
     expect(wrapper.text()).not.toMatch(/Top tasks|stop reason|Where input goes/)
+    expect(wrapper.text()).not.toContain('Token details')
+    expect(wrapper.find('details').exists()).toBe(false)
     wrapper.unmount()
   })
   it.each(['agent', 'model', 'agent_model'] as const)('shows exact distinct %s identities and totals without a second calculation owner', group => {

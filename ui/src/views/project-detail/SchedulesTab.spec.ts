@@ -99,7 +99,7 @@ describe('Automations and Runs', () => {
     stream.onUsage?.({ tasks: [{ key: 'workflow-1', agent_stats: metrics, active_execution: null, work_duration: { coverage: WorkDurationOutCoverage.partial, total_seconds: 1200, recorded_intervals: 2, unavailable_intervals: 1, observed_at: null, endpoint_at: null } }], tickets: [] })
     await w.get('#cs-tab-runs').trigger('click')
     expect(w.findAllComponents(AgentUsageSummary)[0].props('metrics')).toEqual(metrics)
-    expect(w.get('[aria-label="Work time: 20m · Partial coverage"]').text()).toBe('20mPartial')
+    expect(w.get('[aria-label="Work time: 20m"]').text()).toBe('20m')
     expect(openTrackerStatusStream).toHaveBeenCalledTimes(1)
     expect(globalThis.fetch).toHaveBeenCalledTimes(2)
     const close = vi.mocked(openTrackerStatusStream).mock.results[0].value.close
@@ -116,6 +116,22 @@ describe('Automations and Runs', () => {
     await flushPromises()
     expect(w.text()).toContain('Workflow needs setup')
     expect(w.get('table [role="switch"]').attributes('aria-checked')).toBe('true')
+  })
+  it('keeps missing, setup, failure and success results readable with exact result times', async () => {
+    const last_run_at = '2026-11-10T06:00:00Z'
+    mockFetch([
+      { ...job, id: 1 },
+      { ...job, id: 2, setup_issue: 'Workflow needs setup', last_run_at },
+      { ...job, id: 3, last_run_status: 'failed', last_run_at },
+      { ...job, id: 4, last_run_status: 'success', last_run_at },
+    ])
+    const w = await mountTab()
+    const cells = w.findAll('tbody tr').map(row => row.findAll('td')[3]!)
+    expect(cells.map(cell => cell.text())).toEqual(['—', expect.stringContaining('Needs setup'), expect.stringContaining('Failed'), expect.stringContaining('Success')])
+    for (const cell of cells.slice(1)) {
+      expect(cell.get('.text-xs[title]').attributes('title')).toMatch(/11\/9\/2026|11\/10\/2026/)
+      expect(cell.get('.text-xs[title]').text()).toMatch(/ago/)
+    }
   })
 
   it('preserves live usage arriving while the initial history response is pending', async () => {

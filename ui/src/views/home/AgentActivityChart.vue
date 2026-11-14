@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, ref, useId } from 'vue'
 import { useUsageCanvas, type UsageCanvasFrame } from '@/composables/useUsageCanvas'
 import { useUsageFeed } from '@/composables/useUsageFeed'
-import { BarController, BarElement, CategoryScale, Chart, LinearScale, type ChartOptions } from 'chart.js'
+import { BarController, BarElement, CategoryScale, Chart, LinearScale, type ChartOptions, type Plugin } from 'chart.js'
 import { UiButton, UiButtonGroup } from '@/components/ui'
 import { exactUsage, fieldCoverage, formatTokens, formatUsage, usageFields, usageValue, type AgentStatsDay, type AgentStatsMetrics, type UsageField } from '@/lib/agentActivity'
 import { activityDayLabel } from '@/lib/deliveryTrends'
@@ -19,9 +19,42 @@ let signature = ''
 const feed = useUsageFeed()
 const visible = useUsageCanvas(canvas, paint, plot, () => feed?.value.status === 'live')
 const fields = [{ key: 'total', label: 'All', token: 'accent-primary' }, ...usageFields] as const
-const values = computed<(number | null)[]>(previous => visible.value ? props.days.map(day => usageValue(day, field.value)) : previous ?? [])
+const series = computed<{ key: UsageField; label: string; token: string; values: (number | null)[] }[]>(previous => visible.value
+  ? (field.value === 'total' ? usageFields : fields.filter(item => item.key === field.value)).map(item => ({ ...item, values: props.days.map(day => usageValue(day, item.key)) }))
+  : previous ?? [])
 const focused = computed(() => selected.value == null ? null : props.days[selected.value] ?? null)
 const selectedField = computed(() => fields.find(item => item.key === field.value) ?? fields[0])
+// Minimum positive segment sizes are display geometry only. Keep one contiguous
+// stack, reserving each tiny segment's space so neighbors cannot cover it.
+const positiveMarks: Plugin<'bar'> = {
+  id: 'positive-token-marks',
+  afterDatasetsUpdate(chart) {
+    if (field.value !== 'total') return
+    const scale = chart.scales.y!
+    const baseline = scale.getPixelForValue(0)
+    props.days.forEach((_, index) => {
+      const segments = chart.data.datasets.flatMap((dataset, datasetIndex) => {
+        const value = dataset.data[index]
+        const bar = chart.getDatasetMeta(datasetIndex).data[index] as BarElement | undefined
+        return typeof value === 'number' && value > 0 && bar
+          ? [{ bar, height: Math.max(2, Math.abs(baseline - scale.getPixelForValue(value))) }] : []
+      })
+      const total = segments.reduce((sum, segment) => sum + segment.height, 0)
+      const overflow = total - (baseline - chart.chartArea.top)
+      // A full-height stack borrows only the extra minimum-size pixels from
+      // its largest segment, keeping all positives inside the same plot.
+      if (overflow > 0 && segments.length) {
+        const largest = segments.reduce((a, b) => a.height > b.height ? a : b)
+        largest.height = Math.max(2, largest.height - overflow)
+      }
+      let base = baseline
+      for (const segment of segments) {
+        Object.assign(segment.bar, { base, y: base - segment.height, height: segment.height })
+        base -= segment.height
+      }
+    })
+  },
+}
 function focusDay(index: number): void { selected.value = props.days.length ? index : null }
 function leavePlot(): void {
   if (document.activeElement !== canvas.value) selected.value = null
@@ -43,27 +76,28 @@ function paint(): UsageCanvasFrame | void {
   const style = getComputedStyle(canvas.value)
   const width = plot.value.clientWidth
   const height = plot.value.clientHeight
-  const next = JSON.stringify([values.value, props.days.map(day => day.date), field.value, width, height, window.devicePixelRatio, document.documentElement.dataset.theme])
+  const next = JSON.stringify([series.value, props.days.map(day => day.date), field.value, width, height, window.devicePixelRatio, document.documentElement.dataset.theme])
   if (chart && signature === next) return
   signature = next
   const token = (name: string) => style.getPropertyValue(`--color-${name}`).trim()
   const data = {
     labels: props.days.map(day => activityDayLabel(day.date)),
-    datasets: [{ label: selectedField.value.label, data: values.value, backgroundColor: token(selectedField.value.token), borderSkipped: false as const,
-      borderRadius: 3, maxBarThickness: 8, categoryPercentage: 0.8, barPercentage: 0.8 }],
+    datasets: series.value.map(item => ({ label: item.label, data: item.values, backgroundColor: token(item.token), borderSkipped: false as const,
+      stack: field.value === 'total' ? 'tokens' : undefined,
+      borderRadius: 3, maxBarThickness: 8, categoryPercentage: 0.8, barPercentage: 0.8 })),
   }
   const options: ChartOptions<'bar'> = {
     responsive: false, maintainAspectRatio: false, animation: false, events: [], devicePixelRatio: window.devicePixelRatio || 1,
     layout: { padding: { right: 4 } },
     scales: {
-      x: { grid: { display: false }, ticks: { color: token('fg-muted'), font: { family: style.fontFamily, size: 10 }, maxTicksLimit: 5, maxRotation: 0 }, border: { color: token('border-default') } },
-      y: { beginAtZero: true, suggestedMax: 1, afterFit: axis => { axis.width = 45 }, grid: { color: token('border-subtle') }, border: { display: false }, ticks: { color: token('fg-muted'), maxTicksLimit: 4, font: { size: 10 }, callback: tick => formatTokens(Number(tick)).replace(/\.00([MB])$/, '$1') } },
+      x: { stacked: field.value === 'total', grid: { display: false }, ticks: { color: token('fg-muted'), font: { family: style.fontFamily, size: 10 }, maxTicksLimit: 5, maxRotation: 0 }, border: { color: token('border-default') } },
+      y: { stacked: field.value === 'total', beginAtZero: true, suggestedMax: 1, afterFit: axis => { axis.width = 45 }, grid: { color: token('border-subtle') }, border: { display: false }, ticks: { color: token('fg-muted'), maxTicksLimit: 4, font: { size: 10 }, callback: tick => formatTokens(Number(tick)).replace(/\.00([MB])$/, '$1') } },
     },
     plugins: { legend: { display: false }, tooltip: { enabled: false } },
   }
   if (chart) { chart.data = data; chart.options = options; chart.resize(width, height); chart.update('none') }
-  else { canvas.value.width = width; canvas.value.height = height; chart = new Chart(canvas.value, { type: 'bar', data, options }) }
-  return { scope: JSON.stringify([props.days.map(day => day.date), field.value, props.timezone, width, height]), geometry: JSON.stringify(values.value) }
+  else { canvas.value.width = width; canvas.value.height = height; chart = new Chart(canvas.value, { type: 'bar', data, options, plugins: [positiveMarks] }) }
+  return { scope: JSON.stringify([props.days.map(day => day.date), field.value, props.timezone, width, height]), geometry: JSON.stringify(series.value.map(item => item.values)) }
 }
 onBeforeUnmount(() => { chart?.destroy(); chart = null })
 </script>
@@ -113,7 +147,7 @@ onBeforeUnmount(() => { chart?.destroy(); chart = null })
         role="img"
         tabindex="0"
         :aria-describedby="detailId"
-        :aria-label="`${selectedField.label} tokens per day. Use Left and Right arrow keys, Home or End to inspect exact daily values.`"
+        :aria-label="`${selectedField.label} tokens per day. ${field === 'total' ? 'Small positive components have a minimum visible mark, not a proportional height. ' : ''}Use Left and Right arrow keys, Home or End to inspect exact daily values.`"
         @focus="focusDay(0)"
         @blur="selected = null"
         @keydown="moveDay"
@@ -155,44 +189,6 @@ onBeforeUnmount(() => { chart?.destroy(); chart = null })
         class="sr-only"
       >Hover a bar or focus the chart and use arrow keys for exact values.</span>
     </div>
-    <details class="activity-chart__daily-table">
-      <summary class="focus-ring">
-        Daily values · {{ timezone }}
-      </summary>
-      <div class="activity-chart__daily-scroll">
-        <table aria-label="Exact daily usage">
-          <thead>
-            <tr>
-              <th scope="col">
-                Date
-              </th><th
-                v-for="item in fields"
-                :key="item.key"
-                scope="col"
-              >
-                {{ item.key === 'total' ? 'Total' : item.label }}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="day in days"
-              :key="day.date"
-            >
-              <th scope="row">
-                {{ day.date }}
-              </th><td
-                v-for="item in fields"
-                :key="item.key"
-                :title="exactUsage(day, item.key)"
-              >
-                {{ formatUsage(usageValue(day, item.key), false) }}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </details>
   </figure>
 </template>
 
@@ -207,10 +203,4 @@ onBeforeUnmount(() => { chart?.destroy(); chart = null })
 .activity-chart__tooltip li { display: grid; grid-template-columns: 8px minmax(0, 1fr) max-content; align-items: center; gap: 6px; padding: 2px 0; font-variant-numeric: tabular-nums; }
 .activity-chart__tooltip footer { border-top: 1px solid var(--color-border-default); padding-top: 4px; text-align: right; }
 .activity-chart__swatch { display: inline-block; width: 7px; height: 7px; border-radius: 2px; flex: none; }
-.activity-chart__daily-table { margin-top: 8px; color: var(--color-fg-muted); font-size: 10px; line-height: 18px; }
-.activity-chart__daily-table summary { cursor: pointer; }
-.activity-chart__daily-scroll { max-height: 240px; overflow: auto; }
-table { width: 100%; font-variant-numeric: tabular-nums; }
-th, td { text-align: right; padding: 6px 4px; border-bottom: 1px solid var(--color-border-subtle); white-space: nowrap; }
-th:first-child { text-align: left; }
 </style>

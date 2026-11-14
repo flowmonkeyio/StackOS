@@ -107,7 +107,7 @@ describe('Shared recorded token formatting', () => {
     days.push(unknown)
     expect(activitySeries(days, 'agents')[0]!.values).toEqual([100, null])
     const filters = localActivityFilters(new Date(2026, 0, 2))
-    expect(filters).toMatchObject({ start_date: '2025-12-27', end_date: '2026-01-02', group_by: 'model' })
+    expect(filters).toMatchObject({ start_date: '2025-12-04', end_date: '2026-01-02', group_by: 'model' })
     expect(filters.timezone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone)
   })
   it('keeps plain review counts and readable agent names without erasing exact versions', () => {
@@ -118,6 +118,10 @@ describe('Shared recorded token formatting', () => {
     expect(reviewFacts(metrics)).toBe('')
     expect(agentLabel('sdlc_delivery_reviewer')).toBe('sdlc_delivery_reviewer')
     expect(agentLabel('Customer_Provided NAME')).toBe('Customer_Provided NAME')
+  })
+  it.each([[2026, 0, 2, '2025-12-04'], [2026, 2, 1, '2026-01-31'], [2024, 2, 1, '2024-02-01']])('defaults to 30 inclusive local dates across calendar boundaries (%s/%s/%s)', (year, month, day, expected) => {
+    const now = new Date(Number(year), Number(month), Number(day), 23, 59)
+    expect(localActivityFilters(now).start_date).toBe(expected)
   })
   it('preserves measured zero, independent missing fields, empty and absent projection states', () => {
     const metrics = agentStatsFixture().totals

@@ -167,8 +167,9 @@ Work time (`0m`, `<1m`, `14m`, `2h 22m`, `1d 4h`) with an accessible Work time
 label, independently of identity, automation or tokens. The canonical
 `work_duration` projection unions recorded managed invocation intervals across
 delivery, review and repair; task totals union all ticket intervals, counting
-overlap once. Queued, stopped and reopened gaps add nothing. Partial coverage
-shows `Partial` visibly; unavailable history shows `N/A`, never a guessed zero.
+overlap once. Queued, stopped and reopened gaps add nothing. Recorded duration
+has no coverage qualifier; coverage remains in the data. Unavailable history
+shows `N/A`, never a guessed zero.
 Only the exact owned live identity in that projection can extend its total after
 `observed_at`, once, using the shared Work heartbeat without per-card timers.
 Stopped, closed and disconnected observations freeze at the supported total;
