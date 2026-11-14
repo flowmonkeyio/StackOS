@@ -17,6 +17,61 @@ from tests.integration.test_repositories.test_project_setup import verified_resu
 from tests.integration.test_repositories.test_task_delivery import QueuedScheduler
 
 
+@pytest.mark.parametrize("configured_host", [None, "hermes"])
+def test_console_previews_inherited_host_without_replacing_saved_choices(
+    api, settings, tmp_path, monkeypatch, configured_host
+):
+    from stackos.project_setup_execution import resolve_preferences
+    from stackos.repositories.tracker import TrackerRepository
+
+    probes = []
+
+    def inspect(host):
+        probes.append(host)
+        return SimpleNamespace(available=True)
+
+    monkeypatch.setattr(service, "inspect_host", inspect)
+    with Session(api.app.state.engine) as session:
+        project = (
+            WorkspaceRepository(session)
+            .start_session(runtime="codex", cwd=str(tmp_path))
+            .project_id
+        )
+        if configured_host:
+            TrackerRepository(session).configure_delivery(
+                project_id=project, delivery={"host_key": configured_host}
+            )
+    ui = {"Authorization": f"Bearer {derive_ui_token(settings.token_path.read_text().strip())}"}
+
+    def call(name, **arguments):
+        return api.post(
+            f"/api/v1/operations/{name}/call",
+            json={"arguments": {"project_id": project, **arguments}},
+            headers=ui,
+        )
+
+    saved = (
+        {"model": "custom/model", "provider": "configured", "profile": "project-profile"}
+        if configured_host
+        else {"model": "gpt-6-luna", "model_reasoning_effort": "high", "provider": "configured"}
+    )
+    configured = call("tracker.configureDelivery", main_agent=saved)
+    assert configured.status_code == 200, configured.text
+    probes.clear()
+    raw = call("projectSetup.get", response_mode="raw")
+    assert raw.status_code == 200, raw.text
+    assert raw.json()["launch_preferences"] == saved and not probes
+    preview = call("projectSetup.get", resolve_launch_preferences=True, response_mode="raw")
+    assert preview.status_code == 200, preview.text
+    expected = {"host_key": configured_host or "codex", **saved}
+    assert preview.json()["launch_preferences"] == expected
+    with Session(api.app.state.engine) as session:
+        assert resolve_preferences(session, project) == expected
+        assert (
+            TrackerRepository(session).delivery_defaults(project_id=project)["main_agent"] == saved
+        )
+
+
 def test_console_selection_reaches_native_launch_and_frozen_exact_resume(
     api, settings, tmp_path, monkeypatch
 ):

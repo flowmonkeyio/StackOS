@@ -39,6 +39,12 @@ class ProjectSetupGetInput(MCPInput):
     model_config = ConfigDict(extra="forbid")
     project_id: int = Field(strict=True, ge=1)
     workflow_key: str | None = Field(default=None, min_length=1, max_length=200)
+    resolve_launch_preferences: bool = Field(
+        default=False,
+        strict=True,
+        description="Console-only preview of effective native launch choices; "
+        "ordinary reads retain saved preferences without inspecting hosts.",
+    )
     response_mode: Literal["compact", "raw", "standard", "verbose"] = "compact"
 
 
@@ -154,17 +160,21 @@ def _require_setup_session(
         )
 
 
-def _require_console(ctx):
+def _require_console(ctx, *, require_executor=True):
+    scopes = {"daemon-admin", "ui-console-operation"}
+    if not require_executor:
+        scopes.add("ui-read-operation")
     if (
         ctx.extras.get("surface") != "rest"
         or ctx.extras.get("client_surface", "rest") != "rest"
         or ctx.run is not None
     ) or not (
-        ctx.extras.get("trusted_local_admin") is True
-        or ctx.extras.get("auth_scope") in {"daemon-admin", "ui-console-operation"}
+        ctx.extras.get("trusted_local_admin") is True or ctx.extras.get("auth_scope") in scopes
     ):
         raise ToolNotGrantedError("setup requires authenticated local-console authority")
-    if not ctx.extras.get("scheduler") or not ctx.extras.get("session_factory"):
+    if require_executor and (
+        not ctx.extras.get("scheduler") or not ctx.extras.get("session_factory")
+    ):
         raise ToolNotGrantedError("setup requires the running daemon executor")
 
 
@@ -406,7 +416,18 @@ def validate_setup_replay(
 async def project_setup_get(
     inp: ProjectSetupGetInput, ctx: MCPContext, _emit: ProgressEmitter
 ) -> ProjectSetupOut:
-    return ProjectSetupRepository(ctx.session).get(inp.project_id, workflow_key=inp.workflow_key)
+    if inp.resolve_launch_preferences:
+        _require_console(ctx, require_executor=False)
+    state = ProjectSetupRepository(ctx.session).get(inp.project_id, workflow_key=inp.workflow_key)
+    if inp.resolve_launch_preferences:
+        from starlette.concurrency import run_in_threadpool
+
+        from stackos.project_setup_execution import resolve_preferences
+
+        state.launch_preferences = await run_in_threadpool(
+            resolve_preferences, ctx.session, inp.project_id, validate_selection=False
+        )
+    return state
 
 
 async def project_setup_set_reminders(
@@ -612,6 +633,8 @@ def operation_specs() -> list[OperationSpec]:
                 "Compact keeps counts, receipt revisions, diagnostics and raw detail refs.",
                 "Raw includes source snapshots, checks, adaptations and latest partial results.",
                 "Unknown provenance is not proof that local setup is missing.",
+                "Console-only resolve_launch_preferences previews effective launch choices "
+                "through the launch resolver; normal reads do not inspect native hosts.",
             ),
             examples=(
                 OperationExample(title="Inspect project setup", arguments={"project_id": 1}),

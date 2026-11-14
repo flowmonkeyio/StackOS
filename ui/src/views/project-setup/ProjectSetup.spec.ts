@@ -21,7 +21,8 @@ beforeEach(() => {
   vi.mocked(apiFetch).mockResolvedValue({ items: [], accounts: [] })
   vi.mocked(callOperation).mockReset()
   vi.mocked(callOperation).mockImplementation(async (name, args) => {
-    if (name === 'projectSetup.get') return state
+    if (name === 'projectSetup.get') return args.resolve_launch_preferences
+      ? { ...state, launch_preferences: { host_key: 'codex', ...state.launch_preferences } } : state
     if (name === 'hostMcp.status') return setupHosts
     if (name === 'projectSetup.setReminders') {
       state = { ...state, ...(args.dismiss_setup ? { setup_reminder_dismissed_at: '2026-11-12T00:00:00Z' } : {}), ...(args.dismiss_updates ? { update_reminder_dismissed_at: '2026-11-12T00:00:00Z' } : {}) }

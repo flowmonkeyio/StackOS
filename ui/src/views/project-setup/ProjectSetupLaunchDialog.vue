@@ -4,7 +4,7 @@ import type { SchemaMainAgentPreferences, SchemaProjectSetupOut, SchemaSetupAtte
 import { UiButton, UiCallout, UiDialog, UiFormField, UiInput, UiSelect } from '@/components/ui'
 import type { DesktopMcpHostStatus } from '@/lib/desktop'
 import { callOperation } from '@/lib/operations'
-import { setupErrorMessage } from './useProjectSetup'
+import { readProjectSetup, setupErrorMessage } from './useProjectSetup'
 
 const props = defineProps<{
   state: SchemaProjectSetupOut
@@ -91,8 +91,21 @@ async function loadHosts(): Promise<void> {
     const result = await callOperation<{ items: DesktopMcpHostStatus[] }>('hostMcp.status', {})
     if (disposed) return
     hosts.value = result.items
-    // A saved choice is never silently replaced, including when unavailable.
-    if (!hostKey.value) changeHost(supported.value.find(item => item.available)?.host_key ?? '')
+    // Initial host inheritance belongs to the launch resolver, not the user
+    // change handler (which intentionally clears incompatible selections).
+    if (!hostKey.value) {
+      const preview = await readProjectSetup(props.state.project_id, true)
+      if (disposed) return
+      const effective = preview.launch_preferences ?? {}
+      const effectiveHost = typeof effective.host_key === 'string' ? effective.host_key : ''
+      if (Object.keys(saved).length) {
+        hostKey.value = effectiveHost
+        model.value = typeof effective.model === 'string' ? effective.model : ''
+        reasoning.value = typeof effective.model_reasoning_effort === 'string' ? effective.model_reasoning_effort : ''
+        provider.value = typeof effective.provider === 'string' ? effective.provider : ''
+        profile.value = typeof effective.profile === 'string' ? effective.profile : ''
+      } else changeHost(effectiveHost)
+    }
     // Keep explicit custom entry active when its value is cleared or happens
     // to equal a fixed choice; only selecting a listed option leaves this mode.
     if (catalog.value?.custom_models && model.value && !catalog.value.models.includes(model.value)) customModel.value = true

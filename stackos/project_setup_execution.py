@@ -62,7 +62,9 @@ Partial edits may exist after interruption/cancellation. No rollback is implied.
 """
 
 
-def resolve_preferences(session, project_id, preferences=None, *, inherit_saved=True):
+def resolve_preferences(
+    session, project_id, preferences=None, *, inherit_saved=True, validate_selection=True
+):
     from stackos.repositories.tracker import TrackerRepository
 
     defaults = TrackerRepository(session).delivery_defaults(project_id=project_id)
@@ -92,6 +94,10 @@ def resolve_preferences(session, project_id, preferences=None, *, inherit_saved=
     if host_key is None:
         raise ValidationError("Install a supported native agent host before starting setup")
     selected["host_key"] = host_key
+    # Console preview shares selection/inheritance with launch, while retaining
+    # invalid or unavailable saved choices so the operator can repair them.
+    if not validate_selection:
+        return selected
     error = service.agent_selection_error(sandbox="workspace-write", **selected)
     if error:
         raise ValidationError(error)

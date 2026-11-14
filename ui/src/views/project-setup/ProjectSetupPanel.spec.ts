@@ -9,7 +9,7 @@ import { ApiError, apiFetch } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
 import ProjectSetupView from './ProjectSetupView.vue'
 import { useProjectSetup } from './useProjectSetup'
-import { attemptFixture, setupFixture } from './setupFixtures'
+import { attemptFixture, setupFixture, setupHosts } from './setupFixtures'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
 vi.mock('@/lib/client', async original => ({ ...await original<object>(), apiFetch: vi.fn() }))
@@ -25,8 +25,10 @@ beforeEach(() => {
   state = setupFixture({ current_attempt: asking() })
   vi.mocked(apiFetch).mockResolvedValue({ items: [] })
   vi.mocked(callOperation).mockReset()
-  vi.mocked(callOperation).mockImplementation(async name => {
-    if (name === 'projectSetup.get') return state
+  vi.mocked(callOperation).mockImplementation(async (name, args) => {
+    if (name === 'projectSetup.get') return args.resolve_launch_preferences
+      ? { ...state, launch_preferences: { host_key: 'codex', ...state.launch_preferences } } : state
+    if (name === 'hostMcp.status') return setupHosts
     if (name === 'projectSetup.answer' || name === 'projectSetup.continue') {
       state = { ...state, current_attempt: attemptFixture({ managed, request_id: 11, revision: 8, predecessor_request_id: 10, thread_id: 'native-exact' }) }
       return { data: { attempt: state.current_attempt, attached: false }, project_id: 1 }

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { callOperation } from '@/lib/operations'
+import { ProjectSetupOutStatus } from '@/api'
 import type { DesktopAgentExecutionCapabilities, DesktopMcpHostStatus } from '@/lib/desktop'
 import Dialog from './ProjectSetupLaunchDialog.vue'
 import { setupFixture } from './setupFixtures'
@@ -35,7 +36,9 @@ const hosts: DesktopMcpHostStatus[] = [{
 }]
 
 async function dialog(key: string, preferences: Record<string, string> = {}) {
-  vi.mocked(callOperation).mockResolvedValue({ items: [hosts.find(host => host.host_key === key)!, ...hosts.filter(host => host.host_key !== key)] })
+  vi.mocked(callOperation).mockImplementation(async name => name === 'hostMcp.status'
+    ? { items: [hosts.find(host => host.host_key === key)!, ...hosts.filter(host => host.host_key !== key)] }
+    : setupFixture({ launch_preferences: { host_key: key, ...preferences } }))
   const start = vi.fn().mockResolvedValue(null)
   wrapper = mount(Dialog, { props: { state: setupFixture({ launch_preferences: preferences }), pending: false, error: null, start },
     attachTo: document.body, global: { stubs: { teleport: true, RouterLink: true } } })
@@ -122,8 +125,10 @@ it.each(['native', 'grok'])('keeps the native default when %s has no recommendat
 
 it('uses model-specific reasoning from the host response and clears it on model and host changes', async () => {
   const fixed = hosts.find(host => host.host_key === 'fixed')!
-  vi.mocked(callOperation).mockResolvedValue({ items: [{ ...fixed, agent_execution: { ...fixed.agent_execution!,
-    reasoning_efforts: { 'recommended-model': ['low', 'high'], 'other-model': ['low'] }, models: ['recommended-model', 'other-model'] } }, ...hosts.filter(host => host !== fixed)] })
+  vi.mocked(callOperation).mockImplementation(async name => name === 'hostMcp.status'
+    ? { items: [{ ...fixed, agent_execution: { ...fixed.agent_execution!,
+      reasoning_efforts: { 'recommended-model': ['low', 'high'], 'other-model': ['low'] }, models: ['recommended-model', 'other-model'] } }, ...hosts.filter(host => host !== fixed)] }
+    : setupFixture({ launch_preferences: { host_key: 'fixed' } }))
   const start = vi.fn().mockResolvedValue(null)
   wrapper = mount(Dialog, { props: { state: setupFixture(), pending: false, error: null, start },
     attachTo: document.body, global: { stubs: { teleport: true, RouterLink: true } } })
@@ -168,4 +173,39 @@ it('clears an optional saved profile only on this launch through advanced option
   await field('Agent profile').get('input').setValue('')
   await button('Start setup').trigger('click')
   expect(start).toHaveBeenCalledWith(expect.objectContaining({ provider: 'configured', profile: null }))
+})
+
+it.each([ProjectSetupOutStatus.setup_needed, ProjectSetupOutStatus.updates_available])('preserves effective saved preferences with an inherited host for %s', async status => {
+  const saved = { model: 'custom/model', provider: 'configured', profile: 'project-profile' }
+  const effective = { host_key: 'hermes', ...saved }
+  // The resolver selects Hermes even though another available host appears first.
+  vi.mocked(callOperation).mockImplementation(async name => name === 'hostMcp.status'
+    ? { items: [hosts.find(host => host.host_key === 'fixed')!, ...hosts.filter(host => host.host_key !== 'fixed')] }
+    : setupFixture({ launch_preferences: effective }))
+  const start = vi.fn().mockResolvedValue(null)
+  wrapper = mount(Dialog, { props: { state: setupFixture({ status, launch_preferences: saved }), pending: false, error: null, start },
+    attachTo: document.body, global: { stubs: { teleport: true, RouterLink: true } } })
+  await flushPromises()
+  expect(wrapper.text()).toContain('Hermes · Model: custom/model')
+  await button(status === 'updates_available' ? 'Update workflows' : 'Start setup').trigger('click')
+  expect(start).toHaveBeenLastCalledWith({ ...effective, model_reasoning_effort: null })
+  field('Agent app').findComponent({ name: 'UiSelect' }).vm.$emit('update:modelValue', 'grok')
+  await flushPromises()
+  await button(status === 'updates_available' ? 'Update workflows' : 'Start setup').trigger('click')
+  expect(start).toHaveBeenLastCalledWith({ host_key: 'grok', model: null, model_reasoning_effort: null, provider: null, profile: null })
+})
+
+it('preserves saved reasoning when the resolver supplies the omitted host', async () => {
+  const saved = { model: 'recommended-model', model_reasoning_effort: 'high' }
+  const fixed = hosts.find(host => host.host_key === 'fixed')!
+  vi.mocked(callOperation).mockImplementation(async name => name === 'hostMcp.status'
+    ? { items: [{ ...fixed, agent_execution: { ...fixed.agent_execution!, reasoning_efforts: { 'recommended-model': ['high'] } } }] }
+    : setupFixture({ launch_preferences: { host_key: 'fixed', ...saved } }))
+  const start = vi.fn().mockResolvedValue(null)
+  wrapper = mount(Dialog, { props: { state: setupFixture({ launch_preferences: saved }), pending: false, error: null, start },
+    attachTo: document.body, global: { stubs: { teleport: true, RouterLink: true } } })
+  await flushPromises()
+  expect(wrapper.text()).toContain('Reasoning: high')
+  await button('Start setup').trigger('click')
+  expect(start).toHaveBeenLastCalledWith({ host_key: 'fixed', ...saved, provider: null, profile: null })
 })

@@ -302,6 +302,11 @@ only `delivery.main_agent`, preserving specialist roles, unrelated settings and
 already admitted snapshots. `projectSetup.get.launch_preferences` reads saved choices;
 `hostMcp.status.agent_execution` supplies supported and recommended models from the
 existing host catalog. Neither catalog nor recommendation proves account model access.
+When the console needs an inherited host for the launch dialog, it requests
+`projectSetup.get` with `resolve_launch_preferences: true`. This local-console-only
+read returns effective choices in `launch_preferences` through the same resolver
+as launch, retaining explicit saved fields and invalid choices for editing.
+Ordinary reads still return saved preferences without inspecting native hosts.
 With no saved or explicit model/effort, native defaults are retained without
 guessing their effective values; recommendation metadata is advisory. Launch
 overrides do not save project defaults. The `main_agent` configure form replaces

@@ -10,6 +10,12 @@ export function setupErrorMessage(cause: unknown, fallback: string): string {
   return cause instanceof ApiError ? cause.detail : formatApiError(cause, fallback)
 }
 
+export function readProjectSetup(projectId: number, resolveLaunchPreferences = false): Promise<SchemaProjectSetupOut> {
+  return callOperation<SchemaProjectSetupOut>('projectSetup.get', {
+    project_id: projectId, ...(resolveLaunchPreferences ? { resolve_launch_preferences: true } : {}),
+  })
+}
+
 export function useProjectSetup(projectId: Ref<number>) {
   const state = ref<SchemaProjectSetupOut | null>(null)
   const readError = ref<string | null>(null)
@@ -24,7 +30,7 @@ export function useProjectSetup(projectId: Ref<number>) {
     const current = revision
     const id = projectId.value
     try {
-      const result = await callOperation<SchemaProjectSetupOut>('projectSetup.get', { project_id: id })
+      const result = await readProjectSetup(id)
       if (disposed || current !== revision || id !== projectId.value) return
       state.value = result
       readError.value = null

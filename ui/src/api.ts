@@ -7065,6 +7065,12 @@ export interface components {
             /** Project Id */
             project_id: number;
             /**
+             * Resolve Launch Preferences
+             * @description Console-only preview of effective native launch choices; ordinary reads retain saved preferences without inspecting hosts.
+             * @default false
+             */
+            resolve_launch_preferences: boolean;
+            /**
              * Response Mode
              * @default compact
              * @enum {string}
