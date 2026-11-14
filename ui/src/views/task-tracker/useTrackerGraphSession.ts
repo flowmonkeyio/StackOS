@@ -61,7 +61,7 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
   let acceptedEpoch = -1
   let lastReadInvalidated = false
   let retired = false
-  let graphFailure: string | null = null
+  const graphFailure = ref<string | null>(null)
   onBeforeUnmount(() => { retired = true; requestSeq++ })
   function invalidateMetrics(): void { metricEpoch++ }
   function metricsAreCurrent(): boolean { return acceptedEpoch === metricEpoch && acceptedDemand === JSON.stringify(metricKeys) }
@@ -343,16 +343,16 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
       }
       patchUsageAfter(nextGraph, projectId.value, usageVersion)
       graphSnapshot.value = nextGraph
-      if (graphFailure !== null && routeError.value === graphFailure) routeError.value = null
-      graphFailure = null
+      if (graphFailure.value !== null && routeError.value === graphFailure.value) routeError.value = null
+      graphFailure.value = null
       acceptedDemand = JSON.stringify(requestedDemand)
       acceptedEpoch = requestedEpoch
       if (loadOptions.refocus) requestRefocus()
       return nextGraph
     } catch (cause) {
       if (currentRequest === requestSeq) {
-        graphFailure = cause instanceof Error ? cause.message : 'failed to load task graph'
-        routeError.value = graphFailure
+        graphFailure.value = cause instanceof Error ? cause.message : 'failed to load task graph'
+        routeError.value = graphFailure.value
       }
       return null
     } finally {
@@ -448,6 +448,7 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
     selectedNodeFocusId,
     detailPanelOpen,
     liveError,
+    metricError: graphFailure,
     feedState,
     tickets,
     statusRows,

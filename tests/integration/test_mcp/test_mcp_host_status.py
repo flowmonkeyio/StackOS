@@ -1,5 +1,6 @@
 """The console can read safe host status; scoped agents cannot inspect other hosts."""
 
+import json
 from dataclasses import asdict, replace
 from threading import get_ident
 
@@ -68,6 +69,7 @@ def test_host_status_has_one_read_only_local_admin_contract() -> None:
     capability_fields = schema["$defs"]["HostMcpAgentExecutionOut"]["properties"]
     assert {
         "models",
+        "reasoning_efforts",
         "custom_models",
         "provider_selection",
         "profile_selection",
@@ -102,9 +104,7 @@ def test_console_reads_only_normalized_host_status(mcp_client: MCPClient, inspec
     )
     expected.pop("auth_status_command")
     expected.update(credential_status="not_checked", model_access="not_checked")
-    assert capability == {
-        key: list(value) if isinstance(value, tuple) else value for key, value in expected.items()
-    }
+    assert capability == json.loads(json.dumps(expected))
     assert not {"auth_status_command", "config_path", "credential"} & capability.keys()
     for secret in (
         "synthetic-secret",

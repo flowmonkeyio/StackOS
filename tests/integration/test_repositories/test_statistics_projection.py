@@ -2,19 +2,84 @@
 
 import json
 from copy import deepcopy
-from datetime import date
+from datetime import date, datetime
 
 import pytest
 from sqlalchemy import event, update
 from sqlmodel import Session, select
 
 from stackos.db.models import Project, TrackerReceiptProjection, TrackerTicket
-from stackos.repositories.tracker import TrackerRepository
+from stackos.repositories.tracker import TrackerRepository, delivery_stats
 from stackos.repositories.tracker import agent_stats as stats
 from stackos.repositories.tracker import receipt_projection as index
 from stackos.repositories.tracker.agent_stats import query_agent_stats
 from tests.helpers.agent_statistics import seed_statistics_workload
 from tests.integration.test_repositories.test_agent_statistics import _receipt, _store
+
+
+def test_home_read_token_tracks_live_counters_and_scope_without_exposing_them(
+    session, project_id, monkeypatch
+):
+    calls = [{"project_id": project_id, "invocation_id": "owned-call", "live_usage": {"total": 10}}]
+    monkeypatch.setattr(
+        stats.host_service,
+        "usage_executions",
+        lambda pid: calls if pid in (None, project_id) else [],
+    )
+    before = stats.usage_read_token(session, project_id)
+    assert before == stats.usage_read_token(session, project_id)
+    assert before != stats.usage_read_token(session, None)
+    calls[0]["live_usage"]["total"] = 11
+    assert stats.usage_read_token(session, project_id) != before
+    assert len(before) == 64 and "owned-call" not in before
+
+
+def test_full_year_retains_daily_groups_exact_totals_and_bounded_reads(
+    session, project_id, monkeypatch
+):
+    seed_statistics_workload(session, project_id, tasks=4, receipts=365)
+
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2027, 1, 1, tzinfo=tz)
+
+    monkeypatch.setattr(delivery_stats, "datetime", FixedDatetime)
+    statements = []
+
+    def capture(_conn, _cursor, statement, *_args):
+        statements.append(statement)
+
+    engine = session.get_bind()
+    event.listen(engine, "before_cursor_execute", capture)
+    try:
+        result = TrackerRepository(session).agent_stats(
+            project_id=project_id,
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 12, 31),
+        )
+    finally:
+        event.remove(engine, "before_cursor_execute", capture)
+    # Existing seven reads plus event-owner validation/position and one compact
+    # project/revision vector; none scales with day/card count.
+    assert len(statements) == 10
+    assert all(statement.lstrip().upper().startswith("SELECT") for statement in statements)
+    assert not any("completion_evidence_json" in statement for statement in statements)
+    assert len(result.daily) == len(result.delivery_trends.daily) == 365
+    assert result.totals.launch_attempts == 365
+    assert result.totals.reported_usage.total == 4015
+    assert result.totals.reported_usage.remaining_input == 2190
+    assert result.totals.reported_usage.cache_read == 1460
+    assert result.totals.reported_usage.output == 365
+    assert result.totals.coverage.usage_measured_attempts == 365
+    assert result.totals.coverage.usage_unavailable_attempts == 0
+    assert sum(row.reported_usage.total for row in result.rows) == 4015
+    assert result.delivery_trends.totals.work_time.total_seconds == 3650
+    for day in result.daily:
+        assert day.reported_usage.total == 11
+        assert day.coverage.usage_measured_attempts == 1
+        for groups in (day.by_agent, day.by_model, day.by_agent_model):
+            assert sum(row.reported_usage.total for row in groups) == 11
 
 
 @pytest.mark.parametrize("writer", ["orm", "sqlite", "rebuild"])

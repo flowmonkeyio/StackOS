@@ -31,9 +31,11 @@ export function formatDeliveryValue(value: number | null, key: DeliveryMetric, e
 
 export function deliveryCoverage(metrics: SchemaDeliveryTrendMetricsOut, key: DeliveryMetric): string {
   const coverage = metrics[key].coverage
+  // Partial is retained in the projection, without a qualifier or warning UI.
+  if (coverage.status === 'partial') return ''
   const issues = coverage.issues?.map(issue => issue === 'retained_revision_history_only' ? 'Earlier history is unavailable' : issue.replaceAll('_', ' ')) ?? []
   const detail = `Across retained history: ${coverage.recorded.toLocaleString('en-US')} supported; ${coverage.unavailable.toLocaleString('en-US')} unavailable${issues.length ? `. ${issues.join('; ')}` : ''}`
-  return `${coverage.status === 'partial' ? 'Partial coverage' : coverage.status === 'unavailable' ? 'Unavailable history' : coverage.status === 'empty' ? 'No recorded events' : 'Recorded coverage'}. ${detail}`
+  return `${coverage.status === 'unavailable' ? 'Unavailable history' : coverage.status === 'empty' ? 'No recorded events' : 'Recorded coverage'}. ${detail}`
 }
 
 export function activityDayLabel(date: string): string {

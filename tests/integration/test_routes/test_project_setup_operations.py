@@ -1,5 +1,8 @@
 """Browser-safe reminder administration through the canonical REST adapter."""
 
+import json
+import subprocess
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -12,6 +15,237 @@ from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.workspaces import WorkspaceRepository
 from tests.integration.test_repositories.test_project_setup import verified_result
 from tests.integration.test_repositories.test_task_delivery import QueuedScheduler
+
+
+@pytest.mark.parametrize("configured_host", [None, "hermes"])
+def test_console_previews_inherited_host_without_replacing_saved_choices(
+    api, settings, tmp_path, monkeypatch, configured_host
+):
+    from stackos.project_setup_execution import resolve_preferences
+    from stackos.repositories.tracker import TrackerRepository
+
+    probes = []
+
+    def inspect(host):
+        probes.append(host)
+        return SimpleNamespace(available=True)
+
+    monkeypatch.setattr(service, "inspect_host", inspect)
+    with Session(api.app.state.engine) as session:
+        project = (
+            WorkspaceRepository(session)
+            .start_session(runtime="codex", cwd=str(tmp_path))
+            .project_id
+        )
+        if configured_host:
+            TrackerRepository(session).configure_delivery(
+                project_id=project, delivery={"host_key": configured_host}
+            )
+    ui = {"Authorization": f"Bearer {derive_ui_token(settings.token_path.read_text().strip())}"}
+
+    def call(name, **arguments):
+        return api.post(
+            f"/api/v1/operations/{name}/call",
+            json={"arguments": {"project_id": project, **arguments}},
+            headers=ui,
+        )
+
+    saved = (
+        {"model": "custom/model", "provider": "configured", "profile": "project-profile"}
+        if configured_host
+        else {"model": "gpt-6-luna", "model_reasoning_effort": "high", "provider": "configured"}
+    )
+    configured = call("tracker.configureDelivery", main_agent=saved)
+    assert configured.status_code == 200, configured.text
+    probes.clear()
+    raw = call("projectSetup.get", response_mode="raw")
+    assert raw.status_code == 200, raw.text
+    assert raw.json()["launch_preferences"] == saved and not probes
+    preview = call("projectSetup.get", resolve_launch_preferences=True, response_mode="raw")
+    assert preview.status_code == 200, preview.text
+    expected = {"host_key": configured_host or "codex", **saved}
+    assert preview.json()["launch_preferences"] == expected
+    with Session(api.app.state.engine) as session:
+        assert resolve_preferences(session, project) == expected
+        assert (
+            TrackerRepository(session).delivery_defaults(project_id=project)["main_agent"] == saved
+        )
+
+
+def test_console_selection_reaches_native_launch_and_frozen_exact_resume(
+    api, settings, tmp_path, monkeypatch
+):
+    from stackos.db.models import AgentRequest
+    from stackos.host_mcp import progress
+    from stackos.host_mcp.adapters import codex
+
+    with Session(api.app.state.engine) as session:
+        project = (
+            WorkspaceRepository(session)
+            .start_session(runtime="codex", cwd=str(tmp_path))
+            .project_id
+        )
+    scheduler = QueuedScheduler()
+    api.app.state.operation_services["scheduler"] = scheduler
+    monkeypatch.setattr(service, "inspect_host", lambda _: SimpleNamespace(available=True))
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fixture/codex")
+    commands = []
+
+    def native(command, *, on_session, **kwargs):
+        commands.append(command)
+        on_session("frozen-setup-thread")
+        Path(command[command.index("-o") + 1]).write_text(
+            json.dumps(
+                {
+                    "report_json": json.dumps(
+                        {
+                            "status": "partial",
+                            "progress": {
+                                "message": "Fixture checked",
+                                "evidence_ref": "fixture:native-command",
+                            },
+                        }
+                    )
+                }
+            )
+        )
+        return subprocess.CompletedProcess(
+            command, 0, '{"type":"thread.started","thread_id":"frozen-setup-thread"}', ""
+        )
+
+    monkeypatch.setattr(progress, "run_codex_process", native)
+    ui = {"Authorization": f"Bearer {derive_ui_token(settings.token_path.read_text().strip())}"}
+
+    def call(name, **arguments):
+        return api.post(
+            f"/api/v1/operations/{name}/call",
+            json={"arguments": {"project_id": project, **arguments}},
+            headers=ui,
+        )
+
+    assert (
+        call(
+            "tracker.configureDelivery",
+            main_agent={
+                "host_key": "codex",
+                "model": "gpt-6.1-sol",
+                "model_reasoning_effort": "low",
+            },
+        ).status_code
+        == 200
+    )
+    rejected = call(
+        "projectSetup.start",
+        entry_kind="managed_ui",
+        preferences={"model_reasoning_effort": "none"},
+    )
+    assert rejected.status_code == 422, rejected.text
+    assert "reasoning effort" in rejected.text and not commands and not scheduler.jobs
+    first = call(
+        "projectSetup.start",
+        entry_kind="managed_ui",
+        preferences={"model_reasoning_effort": "high"},
+        response_mode="raw",
+    )
+    assert first.status_code == 200, first.text
+    attempt = first.json()["data"]["attempt"]
+    assert attempt["managed"]["settings"]["model_reasoning_effort"] == "high"
+    scheduler.run()
+    assert len(commands) == 1
+    assert (
+        call(
+            "tracker.configureDelivery",
+            main_agent={
+                "host_key": "codex",
+                "model": "gpt-6-luna",
+                "model_reasoning_effort": "low",
+            },
+        ).status_code
+        == 200
+    )
+    state = call("projectSetup.get", response_mode="raw").json()
+    current = state["current_attempt"]
+    assert current["status"] == "partial" and current["thread_id"] == "frozen-setup-thread"
+    assert state["launch_preferences"]["model_reasoning_effort"] == "low"
+    continued = call(
+        "projectSetup.continue",
+        request_id=current["request_id"],
+        expected_revision=current["revision"],
+        response_mode="raw",
+    )
+    assert continued.status_code == 200, continued.text
+    scheduler.run()
+    assert len(commands) == 2
+    for command in commands:
+        assert command[command.index("--model") + 1] == "gpt-6.1-sol"
+        assert 'model_reasoning_effort="high"' in command
+        assert "--approve-for-me" in command
+    assert "resume" not in commands[0]
+    assert commands[1][commands[1].index("resume") + 1] == "frozen-setup-thread"
+    with Session(api.app.state.engine) as session:
+        for request_id in (
+            current["request_id"],
+            continued.json()["data"]["attempt"]["request_id"],
+        ):
+            snapshot = session.get(AgentRequest, request_id).metadata_json["native_execution"][
+                "snapshot"
+            ]
+            assert snapshot["model_reasoning_effort"] == "high"
+            assert snapshot["native_settings"]["model_reasoning_effort"] == "high"
+
+
+def test_console_explicit_null_clears_launch_only_and_configure_clears_saved_defaults(
+    api, settings, tmp_path, monkeypatch
+):
+    with Session(api.app.state.engine) as session:
+        project = (
+            WorkspaceRepository(session)
+            .start_session(runtime="codex", cwd=str(tmp_path))
+            .project_id
+        )
+    scheduler = QueuedScheduler()
+    api.app.state.operation_services["scheduler"] = scheduler
+    monkeypatch.setattr(service, "inspect_host", lambda _: SimpleNamespace(available=True))
+    ui = {"Authorization": f"Bearer {derive_ui_token(settings.token_path.read_text().strip())}"}
+
+    def call(name, **arguments):
+        return api.post(
+            f"/api/v1/operations/{name}/call",
+            json={"arguments": {"project_id": project, **arguments}},
+            headers=ui,
+        )
+
+    saved = {
+        "host_key": "codex",
+        "model": "gpt-6.1-sol",
+        "model_reasoning_effort": "high",
+        "provider": "native-provider",
+    }
+    assert call("tracker.configureDelivery", main_agent=saved).status_code == 200
+    opened = call(
+        "projectSetup.start",
+        entry_kind="managed_ui",
+        preferences={"model": None, "model_reasoning_effort": None, "provider": None},
+        response_mode="raw",
+    )
+    assert opened.status_code == 200, opened.text
+    selected = opened.json()["data"]["attempt"]["managed"]["settings"]
+    assert selected["host_key"] == "codex" and not set(selected) & {
+        "model",
+        "model_reasoning_effort",
+        "provider",
+    }
+    assert call("projectSetup.get", response_mode="raw").json()["launch_preferences"] == saved
+    assert (
+        call(
+            "tracker.configureDelivery",
+            main_agent={"host_key": "codex", "model": None, "model_reasoning_effort": None},
+        ).status_code
+        == 200
+    )
+    assert call("projectSetup.get", response_mode="raw").json()["launch_preferences"] == {
+        "host_key": "codex"
+    }
 
 
 def test_console_existing_agent_cancel_requires_ack_revision_and_fences_replay(

@@ -1,10 +1,45 @@
 import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 
 import UiFormField from './UiFormField.vue'
 import UiSelect from './UiSelect.vue'
+import UiDialog from './UiDialog.vue'
 
 describe('UiSelect', () => {
+  it('portals its menu and gives Escape and logical Tab ownership back to its dialog', async () => {
+    const wrapper = mount({
+      components: { UiDialog, UiSelect },
+      data: () => ({ shown: true }),
+      template: `<UiDialog v-model="shown" title="Settings"><UiSelect searchable :options="['A', 'B']" /><button id="after-select">After</button></UiDialog>`,
+    }, { attachTo: document.body })
+    await flushPromises()
+    const trigger = document.querySelector<HTMLButtonElement>('.ui-select__button')!
+    trigger.focus()
+    trigger.click()
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"]')!.contains(document.querySelector('[role="listbox"]'))).toBe(false)
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('Search options')
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(document.querySelector('[role="listbox"]')).toBeNull()
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+    expect(document.activeElement).toBe(trigger)
+    for (const shiftKey of [false, true]) {
+      trigger.click()
+      await flushPromises()
+      const event = new KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true })
+      document.activeElement!.dispatchEvent(event)
+      await flushPromises()
+      expect(document.querySelector('[role="listbox"]')).toBeNull()
+      expect(document.activeElement).toBe(trigger)
+      expect(event.defaultPrevented).toBe(false)
+    }
+    trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    wrapper.unmount()
+  })
+
   it('renders the selected label and emits update/change when an option is selected', async () => {
     const wrapper = mount(UiSelect, {
       props: {
@@ -14,6 +49,7 @@ describe('UiSelect', () => {
           { value: 'write', label: 'Write' },
         ],
       },
+      global: { stubs: { teleport: true } },
       attachTo: document.body,
     })
 
@@ -24,6 +60,36 @@ describe('UiSelect', () => {
 
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['write'])
     expect(wrapper.emitted('change')?.[0]).toEqual(['write'])
+    wrapper.unmount()
+  })
+
+  it('retires an open menu when disabled and preserves the underlying scroll lock', async () => {
+    const wrapper = mount({
+      components: { UiDialog, UiSelect },
+      data: () => ({ pending: false }),
+      template: `<UiDialog :model-value="true" title="Pending" no-escape static-backdrop><UiSelect :disabled="pending" :options="['A', 'B']" /></UiDialog>`,
+    }, { attachTo: document.body })
+    await flushPromises()
+    document.querySelector<HTMLButtonElement>('.ui-select__button')!.click()
+    await flushPromises()
+    await wrapper.setData({ pending: true })
+    await flushPromises()
+    expect(document.querySelector('[role="listbox"]')).toBeNull()
+    expect(document.body.style.overflow).toBe('hidden')
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+    wrapper.unmount()
+    expect(document.body.style.overflow).not.toBe('hidden')
+  })
+
+  it('closes on outside pointer without stealing its destination, and standalone menus do not lock the page', async () => {
+    const wrapper = mount(UiSelect, { props: { options: ['A', 'B'] }, attachTo: document.body })
+    await wrapper.get('button').trigger('click')
+    expect(document.body.style.overflow).not.toBe('hidden')
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    await flushPromises()
+    expect(document.querySelector('[role="listbox"]')).toBeNull()
     wrapper.unmount()
   })
 
@@ -48,6 +114,7 @@ describe('UiSelect', () => {
           },
         ],
       },
+      global: { stubs: { teleport: true } },
       attachTo: document.body,
     })
 
@@ -74,6 +141,7 @@ describe('UiSelect', () => {
         selected: '<template #selected="{ option }"><strong class="selected-custom">{{ option.label }} selected</strong></template>',
         option: '<template #option="{ option }"><span class="option-custom">Icon · {{ option.label }}</span></template>',
       },
+      global: { stubs: { teleport: true } },
       attachTo: document.body,
     })
 
@@ -98,6 +166,7 @@ describe('UiSelect', () => {
           },
         ],
       },
+      global: { stubs: { teleport: true } },
       attachTo: document.body,
     })
 
@@ -127,6 +196,7 @@ describe('UiSelect', () => {
           { value: 'c', label: 'C' },
         ],
       },
+      global: { stubs: { teleport: true } },
       attachTo: document.body,
     })
     const button = wrapper.get('[role="combobox"]')
@@ -159,15 +229,16 @@ describe('UiSelect', () => {
       },
       attachTo: document.body,
     })
+    const menu = new DOMWrapper(document.body)
     const button = wrapper.get('[role="combobox"]')
 
     await button.trigger('click')
-    const searchInput = wrapper.get<HTMLInputElement>('input[aria-label="Search options"]')
+    const searchInput = menu.get<HTMLInputElement>('input[aria-label="Search options"]')
     expect(searchInput.attributes('placeholder')).toBe('Search services')
     expect(searchInput.attributes('role')).toBe('combobox')
     expect(searchInput.attributes('aria-controls')).toBeTruthy()
     expect(searchInput.attributes('aria-activedescendant')).toBeTruthy()
-    expect(wrapper.findAll('[role="option"]').every((option) => option.attributes('tabindex') === '-1')).toBe(true)
+    expect(menu.findAll('[role="option"]').every((option) => option.attributes('tabindex') === '-1')).toBe(true)
 
     await searchInput.trigger('keydown', { key: 'ArrowDown' })
     expect(searchInput.attributes('aria-activedescendant')).toContain('option-1')
@@ -176,21 +247,21 @@ describe('UiSelect', () => {
     expect(button.attributes('aria-expanded')).toBe('false')
 
     await button.trigger('click')
-    const reopenedSearchInput = wrapper.get<HTMLInputElement>('input[aria-label="Search options"]')
+    const reopenedSearchInput = menu.get<HTMLInputElement>('input[aria-label="Search options"]')
 
     await reopenedSearchInput.setValue('affiliation')
-    expect(wrapper.findAll('[role="option"]').map((option) => option.text())).toEqual([
+    expect(menu.findAll('[role="option"]').map((option) => option.text())).toEqual([
       'Trackbooth',
     ])
-    expect(wrapper.text()).toContain('Affiliation')
+    expect(menu.text()).toContain('Affiliation')
 
     await reopenedSearchInput.trigger('keydown', { key: 'Enter' })
     expect(wrapper.emitted('update:modelValue')?.[0]).toEqual(['trackbooth'])
 
     await button.trigger('click')
-    await wrapper.get<HTMLInputElement>('input[aria-label="Search options"]').setValue('missing')
-    expect(wrapper.findAll('[role="option"]')).toHaveLength(0)
-    expect(wrapper.text()).toContain('No services found')
+    await menu.get<HTMLInputElement>('input[aria-label="Search options"]').setValue('missing')
+    expect(menu.findAll('[role="option"]')).toHaveLength(0)
+    expect(menu.text()).toContain('No services found')
     wrapper.unmount()
   })
 

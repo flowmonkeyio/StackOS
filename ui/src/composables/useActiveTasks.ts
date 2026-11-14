@@ -1,19 +1,29 @@
-import { computed, onBeforeUnmount, onMounted, provide, ref } from 'vue'
+import { computed, getCurrentInstance, onBeforeUnmount, onMounted, provide, ref, type App } from 'vue'
 import type { SchemaActiveTaskOut, SchemaActiveTasksOut } from '@/api'
 import { callOperation } from '@/lib/operations'
 import { formatApiError } from '@/lib/client'
-import { awaitUsageBaseline, markUsageSnapshot, subscribeUsageUpdates, usageSnapshotCheckpoint, type UsageFeedState } from '@/lib/usageUpdates'
+import { markUsageSnapshot, subscribeUsageUpdates, usageSnapshotCheckpoint, usageSnapshotMatches, type UsageFeedState } from '@/lib/usageUpdates'
 import { createUsageReadOwner } from '@/lib/usageReads'
 import { usageFeedKey } from '@/composables/useUsageFeed'
 import { useProjectsStore } from '@/stores/projects'
 
+// Retain only the last global and project Home per app. No transport or
+// freshness survives navigation; every mount revalidates its exact scope.
+const retained = new WeakMap<App, Map<'global' | 'project', { projectId: number | null; rows: SchemaActiveTaskOut[]; asOf: string }>>()
+
 /** One mounted Home scope, one shared transport, paged bulk reads only. */
 export function useActiveTasks(projectId: number | null) {
   const projects = useProjectsStore()
-  const rows = ref<SchemaActiveTaskOut[]>([])
+  const app = getCurrentInstance()!.appContext.app
+  const snapshots = retained.get(app) ?? new Map()
+  retained.set(app, snapshots)
+  const slot = projectId === null ? 'global' : 'project'
+  const previous = snapshots.get(slot)
+  const cached = previous?.projectId === projectId ? previous : null
+  const rows = ref<SchemaActiveTaskOut[]>(cached?.rows ?? [])
   const loading = ref(true)
   const error = ref<string | null>(null)
-  const asOf = ref<string | null>(null)
+  const asOf = ref<string | null>(cached?.asOf ?? null)
   const transport = ref<UsageFeedState>({ status: 'connecting', receivedAt: null })
   const snapshotCurrent = ref(false)
   const feed = computed<UsageFeedState>(() => ({
@@ -32,6 +42,7 @@ export function useActiveTasks(projectId: number | null) {
   let version = 0
   const reads = createUsageReadOwner()
   let unsubscribe: (() => void) | null = null
+  let acceptedSnapshot: { checkpoint: ReturnType<typeof usageSnapshotCheckpoint>; token?: string | null } | null = null
 
   async function drain(current: () => boolean): Promise<void> {
     loading.value = true
@@ -42,6 +53,7 @@ export function useActiveTasks(projectId: number | null) {
         try {
           const next: SchemaActiveTaskOut[] = []
           let cursor: number | null = null
+          let readToken: string | null | undefined
           let page: SchemaActiveTasksOut
           do {
             page = await callOperation<SchemaActiveTasksOut>(
@@ -52,6 +64,8 @@ export function useActiveTasks(projectId: number | null) {
             )
             if (retired) return
             if (request !== version) break
+            if (cursor === null) readToken = page.read_token
+            else if (readToken !== page.read_token) readToken = null
             if (page.scope !== (projectId === null ? 'global' : 'project') || page.project_id !== projectId
               || page.items.some(row => projectId !== null && row.project_id !== projectId))
               throw new Error('Active task response scope did not match the requested Home.')
@@ -62,12 +76,21 @@ export function useActiveTasks(projectId: number | null) {
             cursor = after
           } while (cursor !== null)
           if (request !== version) continue
-          if (!current()) return
+          if (current() && !usageSnapshotMatches(projectId, checkpoint, readToken)) void refresh(true)
+          const accepted = current()
+          // A first complete scoped response is useful even when the stream
+          // crossed it. Display it without granting freshness or retaining it
+          // for return; the ordered trailing read still owns acceptance.
+          if (!accepted && asOf.value !== null) return
           projects.reconcileProjectMetadata(next.map(row => row.project))
           rows.value = next
           asOf.value = page!.as_of
           error.value = null
-          snapshotCurrent.value = markUsageSnapshot(projectId, checkpoint)
+          snapshotCurrent.value = accepted && markUsageSnapshot(projectId, checkpoint, readToken)
+          if (accepted) {
+            acceptedSnapshot = { checkpoint, token: readToken }
+            snapshots.set(slot, { projectId, rows: next, asOf: page!.as_of })
+          }
         } catch (cause) {
           if (retired) return
           if (request !== version) continue
@@ -84,13 +107,16 @@ export function useActiveTasks(projectId: number | null) {
   function refresh(invalidate = false): Promise<void> {
     if (retired) return Promise.resolve()
     loading.value = true
-    return reads.read(String(projectId), drain, { invalidate, ready: () => awaitUsageBaseline(projectId) })
+    return reads.read(String(projectId), drain, { invalidate })
   }
 
   onMounted(() => {
     unsubscribe = subscribeUsageUpdates(projectId, {
       coalesceStatusWithUsage: true,
-      usage: () => { void refresh(true) },
+      usage: (_updates, initial) => {
+        if (initial && acceptedSnapshot && !error.value && markUsageSnapshot(projectId, acceptedSnapshot.checkpoint, acceptedSnapshot.token)) snapshotCurrent.value = true
+        else void refresh(!initial)
+      },
       status: () => { void refresh(true) },
       resume: () => { void refresh(true) },
       connection: state => {

@@ -8,6 +8,19 @@ function render(summary = agentStatsFixture(), extra = {}) {
   return mount(AgentActivitySection, { props: { summary, loading: false, error: null, filters: localActivityFilters(), ...extra }, global: { stubs: { AgentActivityChart: true, DeliveryTrendChart: true } } })
 }
 describe('Shared Home usage', () => {
+  it('silently updates retained data without replacing the chart or moving focus', async () => {
+    const wrapper = render()
+    const chart = wrapper.getComponent({ name: 'AgentActivityChart' }).element
+    const grouping = wrapper.findAll('button').find(item => item.text() === 'Model')!
+    await grouping.trigger('focus')
+    for (let i = 0; i < 3; i++) {
+      await wrapper.setProps({ loading: true })
+      expect(wrapper.text()).not.toMatch(/Refreshing|Loading/)
+      expect(wrapper.getComponent({ name: 'AgentActivityChart' }).element).toBe(chart)
+      await wrapper.setProps({ loading: false, summary: agentStatsFixture() })
+    }
+    wrapper.unmount()
+  })
   it('passes one accepted aggregate unchanged to all six widgets and token chart', () => {
     const fixture = agentStatsFixture()
     const wrapper = render(fixture)
@@ -19,6 +32,8 @@ describe('Shared Home usage', () => {
     }
     expect(wrapper.getComponent({ name: 'AgentActivityChart' }).props('days')).toEqual(fixture.daily)
     expect(wrapper.text()).not.toMatch(/Top tasks|stop reason|Where input goes/)
+    expect(wrapper.text()).not.toContain('Token details')
+    expect(wrapper.find('details').exists()).toBe(false)
     wrapper.unmount()
   })
   it.each(['agent', 'model', 'agent_model'] as const)('shows exact distinct %s identities and totals without a second calculation owner', group => {
@@ -47,7 +62,7 @@ describe('Shared Home usage', () => {
     await wrapper.setProps({ filters: { ...localActivityFilters(), group_by: 'agent' as ActivityGroup }, loading: true })
     expect(wrapper.get('[aria-label="Usage by model"]').text()).toContain('recorded-sol')
     expect(wrapper.text()).toContain('Updating grouping')
-    expect(wrapper.text()).toContain('Refreshing')
+    expect(wrapper.text()).not.toContain('Refreshing')
     wrapper.unmount()
   })
   it('retains all six slots in empty/partial states and keeps stale errors and undated exclusions explicit', async () => {

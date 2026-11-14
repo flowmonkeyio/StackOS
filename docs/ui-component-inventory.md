@@ -131,9 +131,9 @@ reload counts through the same local-admin read, with no project override.
 | `ProjectPageHeader` | project-aware title, breadcrumbs, utility action slot, and route chrome |
 | `ProviderMark` | canonical provider logo/initial mark backed by `provider-presentation.json`; shared by Connections and Plugins |
 | `AgentUsageSummary` | Shared fixed Input / Cache / Output renderer; accepts `metrics: AgentStatsMetrics \| null`, `compact?: boolean` and `active?: boolean`. Default mode keeps the analytics headline scale. Compact mode reserves three equal columns with fixed label, number and mini-canvas slots; values never wrap or toggle charts. Numbers retain task/ticket lifetime totals; bars show recent reported increments from that scope. Active charts use the existing shared feed clock, completed charts retain their last window. Missing measurements use N/A; measured zero stays 0. Exact focus/hover values remain available when a compact number is elided. Input uses paired `remaining_input`, Cache uses `cache_read`, Output uses `output`; raw input stays inclusive. No receipt parsing, subtotal calculation or polling. Work callers enforce automatic parent-task eligibility. |
-| `UsageTrace` | Shared canvas bar renderer. `lib/liveUsage.ts` maps the producer's per-invocation `intervals` to one-minute source-checkpoint buckets. Shared default is 20 bars; `barCount` accepts 5–60, `endAt` supplies the active clock or defaults to the last observation. First retained cumulative totals are neutral baseline ticks; gaps over one minute and final-only changes are neutral batched-observation ticks, with accessible amounts/bounds and unknown consumption timing. They never inflate bar height or distribute tokens across missing minutes. Counter resets and missing fields stay gaps. Each metric has a separate zero-based scale; bars remain at most 2 CSS pixels wide. Chart values are accessible by title/ARIA. Resize, theme and pixel-density changes redraw; unmount releases observers/listeners. No SVG, animation, per-card timer or visibility decision based on sample count. |
-| `ActiveExecutionLine` / `WorkTime` | Shared actual current / explicitly Last execution identity using canonical `agentIdentity.ts` host marks and readable recorded roles. `WorkTime` formats the canonical `work_duration` interval union for the execution line and Scheduled Runs, independent of lifecycle dates, automation and tokens. Partial coverage shows `Partial`; unavailable history shows `N/A`, and recorded zero shows `0m`. Only an exact matching owned live identity extends the total once after `observed_at` on the existing Work heartbeat; stopped, closed or disconnected observations freeze without per-card timers. Last retains full recorded provenance in its accessible title. Focusable instances disclose the full role/model or fallback owner in a hover/focus tooltip without expanding their layout slot. `owner` is ordinary assignment when no occurrence exists. Card footers reserve 56px and center the 32px mark and text; the blocker badge sits outside the bottom edge. Task and shared ticket details use the same Work time presentation without duplicate Started facts or separate current-call token totals. |
-| `UsageLiveIndicator` | Small recording dot and Live label for actual active executions with a healthy shared feed; Connecting/Reconnecting stays neutral. Consumes the Work page's existing subscription through `useUsageFeed`, opens no connection and owns no timer. Hidden for last execution or ordinary assignment. |
+| `UsageTrace` | Shared canvas bar renderer. `lib/liveUsage.ts` maps the producer's per-invocation `intervals` to one-minute source-checkpoint buckets. Shared default is 20 bars; `barCount` accepts 5–60, `endAt` supplies the active clock or defaults to the last observation. Only measured usage draws bars, in one metric color: Input blue, Cache lime, Output green. Baseline/batch/reset observations retain accessible amounts/bounds and unknown consumption timing without overlays or invented distribution. Counter resets and missing fields stay gaps. Each metric has a separate zero-based scale; measured bars remain 1px tall at minimum and at most 2px wide. Chart values are accessible by title/ARIA. Resize, theme and pixel-density changes redraw; unmount releases observers/listeners. No SVG, animation, per-card timer or visibility decision based on sample count. |
+| `ActiveExecutionLine` / `WorkTime` | Shared actual current / explicitly Last execution identity using canonical `agentIdentity.ts` host marks and readable recorded roles. `WorkTime` formats the canonical `work_duration` interval union for the execution line and Scheduled Runs, independent of lifecycle dates, automation and tokens. Recorded duration has no coverage qualifier; metadata stays in the projection. Unavailable history shows `N/A`, and recorded zero shows `0m`. Only an exact matching owned live identity extends the total once after `observed_at` on the existing Work heartbeat; stopped, closed or disconnected observations freeze without per-card timers. Last retains full recorded provenance in its accessible title. Focusable instances disclose the full role/model or fallback owner in a hover/focus tooltip without expanding their layout slot. `owner` is ordinary assignment when no occurrence exists. Card footers reserve 56px and center the 32px mark and text; the blocker badge sits outside the bottom edge. Task and shared ticket details use the same Work time presentation without duplicate Started facts or separate current-call token totals. |
+| `UsageLiveIndicator` | Fixed centered recording dot and Live label for actual active executions with a healthy shared feed; Connecting/Reconnecting stays neutral. A 2.6s ease-in-out gradient glow animates opacity around the solid core only while visible; reduced motion stays static. Healthy feed updates retain the same element and animation. Consumes the existing subscription through `useUsageFeed`, opens no connection and owns no timer. Hidden for last execution or ordinary assignment. |
 
 `AgentUsageSummary` also accepts `inline` with `compact` for the contextual task
 header: labels stay above fixed number/canvas columns in the same shared renderer.
@@ -206,8 +206,8 @@ Both Home pages mount `views/home/ActiveTaskList.vue`, whose single
 `work_duration`) and feed to
 `ActiveTaskRow.vue`. Continuous rows use shared lifetime usage, execution,
 priority and Work time renderers, fixed list-wide zones and container breakpoints.
-Work time and its visible Partial indication share one line so the existing
-execution/Live slots retain their geometry.
+Work time uses the recorded formatted duration without a coverage qualifier;
+the existing execution/Live slots retain their geometry.
 Manual rows reserve the same geometry without automated usage; current/Last
 identity and Live retain the canonical feed semantics. Each row links directly
 to the selected task graph. Global rows include canonical project names;
@@ -271,21 +271,28 @@ first-review acceptance, changes requested, stops and recorded work time from
 the single `delivery_trends` projection. Period figures use its totals, never
 averaged daily rates. No-review and unsupported buckets remain gaps; known
 retained incidents remain visible alongside their coverage warning. Work time
-uses the repository's summed distinct-task seconds, with exact seconds and
-coverage available on inspection. There is no Top tasks or stop-reason ranking.
+uses the repository's summed distinct-task seconds, with exact seconds
+available on inspection. Partial coverage stays in data without a
+qualifier or replacement warning. First-review counts retain their accepted /
+reviewed denominator. There is no Top tasks or stop-reason ranking.
 `useAgentStats.ts` owns one dated,
 grouped project/global statistics request, with scope and stale-response
 protection. Regrouping retains the same dated chart and totals while the request
 loads; the retained rows and chart keep their returned grouping labels until replaced.
-Date, project and visibility changes clear the prior scope. Defaults are today plus the previous six local calendar days and
+Date, project and visibility changes clear the prior scope. Defaults are today plus the previous 29 local calendar days and
 the browser's visibly identified IANA timezone. Global Active/Archived/All
 selection remains with the existing page owner.
 
 `AgentActivityChart.vue` uses slim rounded Chart.js bars with selectable
-All / Input / Cache / Output period totals. All uses the reported total;
+All / Input / Cache / Output period totals. All shows one stacked bar per date,
+with contiguous distinct Input / Cache / Output segments; its period total
+remains the reported total. Positive components have a two-pixel minimum
+rendered height without changing dataset values or covering adjacent segments;
+zero and missing values never receive a segment. Individual metrics
+use their actual scale without that minimum.
 Input uses paired `remaining_input`, never inclusive Input minus aggregate
 Cache. Unknown cache splits remain explicit in the exact-value tooltip rather
-than being invented or removed from All. Missing values remain N/A and measured
+than being invented. Missing values remain N/A and measured
 zero remains zero. The token chart and six trend charts share the existing
 `useUsageCanvas` visibility/size/theme/paint owner, with Chart.js animation and
 responsive scheduling disabled. Comparable, changed live data receives one
@@ -293,8 +300,8 @@ responsive scheduling disabled. Comparable, changed live data receives one
 changes and pointer/focus inspection do not restart motion. Work is bounded by
 displayed daily buckets, not receipt histories. Pointer/focus selection does not rebuild geometry.
 Hover and keyboard focus (Left/Right, Home/End, Escape) expose exact values in
-the same visible tooltip. A bounded daily-values disclosure retains all token
-fields. The adjacent breakdown uses distinct categorical markers and bars,
+the same visible tooltip. Home has no Daily values or Token details expansion.
+The adjacent breakdown uses distinct categorical markers and bars,
 retaining exact recorded names/models and full accessible labels. The six-column
 widget row and two-column analysis geometry remain aligned at 1280/1440px.
 Local service, aligned Active task rows and compact Connected tools retain

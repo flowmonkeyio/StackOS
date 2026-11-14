@@ -35,6 +35,8 @@ export interface UiDialogProps {
   scrollBody?: boolean;
   /** Stable viewport-bounded frame for reading and editing detail content. */
   layout?: 'default' | 'detail';
+  /** Optional bounded height for a detail flow; ordinary dialogs keep their size. */
+  detailHeight?: string;
 }
 
 const props = withDefaults(defineProps<UiDialogProps>(), {
@@ -43,6 +45,7 @@ const props = withDefaults(defineProps<UiDialogProps>(), {
   describedBy: undefined,
   size: 'md',
   layout: 'default',
+  detailHeight: undefined,
 });
 
 const emit = defineEmits<{
@@ -204,6 +207,7 @@ defineExpose({ body: bodyRef, focusTitle });
             aria-modal="true"
             :aria-labelledby="titleId"
             :aria-describedby="describedBy ?? descriptionId"
+            :style="layout === 'detail' && detailHeight ? { '--ui-dialog-detail-height': detailHeight } : undefined"
             :class="[
               'ui-dialog z-modal w-full rounded-xl border border-default bg-bg-surface shadow-xl flex flex-col max-h-[calc(100vh-2rem)]',
               sizeClass,
@@ -277,8 +281,8 @@ defineExpose({ body: bodyRef, focusTitle });
 
 <style scoped>
 .ui-dialog--detail {
-  height: min(880px, calc(100dvh - 48px));
-  max-height: min(880px, calc(100dvh - 48px));
+  height: min(var(--ui-dialog-detail-height, 880px), calc(100dvh - 48px));
+  max-height: min(var(--ui-dialog-detail-height, 880px), calc(100dvh - 48px));
   min-width: 0;
   overflow: hidden;
 }

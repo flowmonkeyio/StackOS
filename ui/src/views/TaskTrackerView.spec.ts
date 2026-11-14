@@ -8,6 +8,10 @@ import TaskTrackerView from './TaskTrackerView.vue'
 import { ApiError } from '@/lib/client'
 import { defaultBoardFilters, saveBoardFilters } from './task-tracker/boardFilters'
 import dagre from '@dagrejs/dagre'
+import { defineComponent, inject } from 'vue'
+import { usageFeedKey } from '@/composables/useUsageFeed'
+
+const FeedProbe = defineComponent({ setup() { return { feed: inject(usageFeedKey) } }, template: '<span data-feed>{{ feed?.status }}</span>' })
 
 const mocks = vi.hoisted(() => ({ callOperation: vi.fn(), close: vi.fn(), stream: vi.fn() }))
 vi.mock('@/lib/operations', () => ({ callOperation: mocks.callOperation }))
@@ -77,8 +81,8 @@ async function render(url = '/projects/7/tasks', realDialogs = false, realContro
     global: { plugins: [router, createPinia()], stubs: {
       ProjectPageHeader: { template: '<header><slot name="actions" /></header>' },
       TaskTrackerCommandPanel: realControls ? false : { name: 'TaskTrackerCommandPanel', props: ['viewMode','activeTaskKey','taskOptions','search','filtersActive','boardFilters','taskAgentStats','taskAutomated','taskDelivery','abortTarget'], template: '<nav />' },
-      TrackerBoardPanel: realBoard ? false : { name: 'TrackerBoardPanel', props: ['rows','hideEmptyColumns','editPending','editPendingColumns','editError'], template: '<section data-test="board"><button v-for="row in rows" :key="row.key" @click="$emit(\'openTask\', row.key)">{{ row.task.title }}</button></section>' },
-      TrackerGraphPanel: { name: 'TrackerGraphPanel', props: ['loading','activeTaskTitle','selectedTicket','selectionVisible','selectionLabel','flow'], template: '<section data-test="graph" />' },
+      TrackerBoardPanel: realBoard ? false : { name: 'TrackerBoardPanel', components: { FeedProbe }, props: ['rows','hideEmptyColumns','editPending','editPendingColumns','editError'], template: '<section data-test="board"><FeedProbe /><button v-for="row in rows" :key="row.key" @click="$emit(\'openTask\', row.key)">{{ row.task.title }}</button></section>' },
+      TrackerGraphPanel: { name: 'TrackerGraphPanel', components: { FeedProbe }, props: ['loading','activeTaskTitle','selectedTicket','selectionVisible','selectionLabel','flow'], template: '<section data-test="graph"><FeedProbe /></section>' },
       TrackerWarningSummary: true,
       TrackerTaskDetailDialog: realDialogs ? false : { name: 'TrackerTaskDetailDialog', props: ['modelValue','task','tickets','loading','error','contexts','ticket','ticketKey','results','activity','refreshContent'], template: '<aside />' },
       TrackerTicketDetailPanel: realDialogs ? false : { name: 'TrackerTicketDetailPanel', props: ['modelValue','ticket','parentTask','loading','error','presentation'], template: '<aside />' },
@@ -91,6 +95,68 @@ async function render(url = '/projects/7/tasks', realDialogs = false, realContro
 const popup = () => new DOMWrapper(document.body)
 
 describe('Work board navigation', () => {
+  it.each(['board', 'graph'])('keeps a real %s read failure stale until its replacement succeeds', async view => {
+    const { wrapper } = await render(`/projects/7/tasks${view === 'graph' ? '?view=graph&task=task-a' : ''}`)
+    try {
+      const stream = mocks.stream.mock.lastCall![0]
+      const frame = { projection: 'ui', scope_complete: true, scope: 'project', project_id: 7,
+        projects: [{ project_id: 7, rev: 1, metric_demand: { task_keys: [], ticket_keys: [] } }], tasks: [], tickets: [], replace: true }
+      stream.onFrame(Date.now()); stream.onUsage(frame); await flushPromises()
+      const normal = mocks.callOperation.getMockImplementation()!
+      const owns = (name: string, args: Record<string, unknown>) => name === 'tracker.get' && (view === 'board' ? args.task_index_only : args.include_graph)
+      mocks.callOperation.mockImplementation((name, args) => owns(name, args) ? Promise.reject(new Error('Metric read failed')) : normal(name, args))
+      stream.onUsage(frame); await new Promise(resolve => setTimeout(resolve, 45)); await flushPromises()
+      expect(wrapper.findAll('[data-feed]').map(probe => probe.text())).toContain('reconnecting')
+      const pending: (() => void)[] = []
+      mocks.callOperation.mockImplementation(async (name, args) => {
+        if (owns(name, args)) await new Promise<void>(resolve => pending.push(resolve))
+        return normal(name, args)
+      })
+      stream.onFrame(Date.now()); stream.onUsage(frame)
+      await new Promise(resolve => setTimeout(resolve, 45)); await flushPromises()
+      expect(pending.length).toBeGreaterThan(0)
+      expect(wrapper.findAll('[data-feed]').map(probe => probe.text())).toContain('reconnecting')
+      pending.forEach(resolve => resolve()); await flushPromises()
+      expect(wrapper.findAll('[data-feed]').map(probe => probe.text())).toContain('live')
+    } finally { wrapper.unmount() }
+  })
+  it.each(['board', 'graph'])('keeps healthy %s feed Live during delayed metric demand and usage refresh', async view => {
+    const { wrapper, board } = await render(`/projects/7/tasks${view === 'graph' ? '?view=graph&task=task-a' : ''}`)
+    try {
+      const stream = mocks.stream.mock.lastCall![0]
+      const frame = { projection: 'ui', scope_complete: true, scope: 'project', project_id: 7,
+        projects: [{ project_id: 7, rev: 1, metric_demand: { task_keys: [], ticket_keys: [] } }], tasks: [], tickets: [], replace: true }
+      stream.onFrame(Date.now()); stream.onUsage(frame)
+      await flushPromises()
+      const state = () => wrapper.findAll('[data-feed]').map(probe => probe.text())
+      expect(state()).toContain('live')
+      const normal = mocks.callOperation.getMockImplementation()!
+      let delayed = true
+      const pending: (() => void)[] = []
+      mocks.callOperation.mockImplementation(async (name, args) => {
+        if (name === 'tracker.get' && delayed) await new Promise<void>(resolve => pending.push(resolve))
+        return normal(name, args)
+      })
+      if (view === 'board') board().vm.$emit('metricDemand', ['task-a'])
+      else wrapper.findComponent({ name: 'TrackerGraphPanel' }).vm.$emit('metricDemand', ['ticket-a'])
+      for (let i = 0; i < 6; i++) {
+        stream.onFrame(Date.now()); stream.onUsage(frame)
+        await flushPromises()
+        expect(state()).not.toContain('reconnecting')
+      }
+      await new Promise(resolve => setTimeout(resolve, 40))
+      expect(pending.length).toBeGreaterThan(0)
+      expect(state()).toContain('live')
+      delayed = false; pending.forEach(resolve => resolve()); await flushPromises()
+      expect(state()).not.toContain('reconnecting')
+      stream.onDisconnect(); await flushPromises()
+      expect(state()).toContain('reconnecting')
+      stream.onFrame(Date.now()); await flushPromises()
+      expect(state()).toContain('reconnecting')
+      stream.onUsage(frame); await flushPromises()
+      expect(state()).toContain('live')
+    } finally { wrapper.unmount() }
+  })
   it.each(['graph-usage-first', 'graph-event-first', 'board-usage-first', 'board-event-first'])('review probe: accepts a newer UI revision in %s without reporting a stale successful read', async mode => {
     const { wrapper, controls } = await render(mode.startsWith('graph') ? '/projects/7/tasks?view=graph&task=task-a' : '/projects/7/tasks')
     try {

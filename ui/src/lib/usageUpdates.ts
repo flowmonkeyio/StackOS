@@ -4,6 +4,7 @@ import type { SchemaAgentStatsMetricsOut, SchemaWorkDurationOut } from '@/api'
 
 type UsageItem = { key: string; agent_stats?: SchemaAgentStatsMetricsOut | null; active_execution?: ActiveExecution | null; work_duration?: SchemaWorkDurationOut | null }
 export interface UsageProjection {
+  read_token?: string | null
   tasks: UsageItem[]; tickets: UsageItem[]; replace?: boolean
   projection?: 'ui'; scope_complete?: boolean; scope?: 'project' | 'global'; project_id?: number | null
   covered_event_id?: number | null
@@ -27,35 +28,20 @@ export interface UsageFeedState {
   status: 'connecting' | 'live' | 'reconnecting' | 'paused'
   receivedAt: number | null
 }
-type Listener = { usage: (updates?: UsageProjection) => void; status?: (event: ProjectTimelineEvent) => void; error?: (cause: unknown) => void; resume?: () => void; connection?: (state: UsageFeedState) => void; coalesceStatusWithUsage?: boolean }
+type Listener = { usage: (updates?: UsageProjection, initial?: boolean) => void; status?: (event: ProjectTimelineEvent) => void; error?: (cause: unknown) => void; resume?: () => void; connection?: (state: UsageFeedState) => void; coalesceStatusWithUsage?: boolean }
 type LatestUsage = { version: number; item: UsageItem }
 type Channel = {
   listeners: Set<Listener>; stream: TrackerStatusStream | null; projectId: number | null
   latest: { tasks: Map<string, LatestUsage>; tickets: Map<string, LatestUsage> }
   connection: UsageFeedState; snapshotReady: boolean; freshnessTimer: number | null; generation: number; snapshotVersion: number; frameReady: boolean
-  baseline: boolean; waiters: Set<() => void>
   usageRevisions: Map<number, number>
   coveredEventId: number | null
+  initialBaseline?: { version: number; token: string }
 }
 const channels = new Map<number | null, Channel>()
 let revision = 0
 // The server sends a heartbeat every 15 seconds even when tokens do not change.
 const FEED_STALE_MS = 45_000
-
-// Establish the initial/reconnect boundary before a Home bulk read. A failed or
-// silent stream releases the read, but cannot establish Live freshness.
-export function awaitUsageBaseline(projectId: number | null): Promise<void> {
-  const channel = channels.get(projectId)
-  if (!channel || channel.baseline || document.hidden) return Promise.resolve()
-  return new Promise(resolve => {
-    const done = () => { window.clearTimeout(timer); channel.waiters.delete(done); resolve() }
-    const timer = window.setTimeout(done, 1000)
-    channel.waiters.add(done)
-  })
-}
-function releaseBaseline(channel: Channel): void {
-  channel.waiters.forEach(done => done())
-}
 
 export function usageCheckpoint(): number { return revision }
 
@@ -67,11 +53,18 @@ export function usageSnapshotCheckpoint(projectId: number | null) {
   return channel ? { channel, generation: channel.generation, version: channel.snapshotVersion } : null
 }
 
-export function markUsageSnapshot(projectId: number | null, checkpoint: ReturnType<typeof usageSnapshotCheckpoint>): boolean {
+export function usageSnapshotMatches(projectId: number | null, checkpoint: ReturnType<typeof usageSnapshotCheckpoint>, readToken?: string | null): boolean {
+  const channel = channels.get(projectId)
+  return !!channel && !!checkpoint && channel === checkpoint.channel && channel.generation === checkpoint.generation
+    && (channel.snapshotVersion === checkpoint.version || (!!readToken
+      && channel.initialBaseline?.version === channel.snapshotVersion
+      && checkpoint.version + 1 === channel.snapshotVersion && channel.initialBaseline.token === readToken))
+}
+
+export function markUsageSnapshot(projectId: number | null, checkpoint: ReturnType<typeof usageSnapshotCheckpoint>, readToken?: string | null): boolean {
   const channel = channels.get(projectId)
   if (!channel || !checkpoint || document.hidden || !channel.stream || !channel.frameReady
-    || channel !== checkpoint.channel || channel.generation !== checkpoint.generation
-    || channel.snapshotVersion !== checkpoint.version) return false
+    || !usageSnapshotMatches(projectId, checkpoint, readToken)) return false
   channel.snapshotReady = true
   const receivedAt = channel.connection.receivedAt
   if (receivedAt !== null && Date.now() - receivedAt < FEED_STALE_MS) publishConnection(channel, 'live')
@@ -99,6 +92,8 @@ function open(channel: Channel): void {
   const current = () => channel.generation === generation && channels.get(channel.projectId) === channel && !document.hidden
   channel.snapshotReady = false
   channel.frameReady = false
+  channel.initialBaseline = undefined
+  let firstUsage = true
   publishConnection(channel, channel.connection.receivedAt === null && channel.connection.status !== 'reconnecting' ? 'connecting' : 'reconnecting')
   if (!current()) return
   armFreshness(channel)
@@ -108,9 +103,12 @@ function open(channel: Channel): void {
     uiDemand: { projects: {} },
     onUsage: (updates) => {
       if (!current()) return
-      channel.baseline = true
-      releaseBaseline(channel)
       channel.snapshotVersion += 1
+      const initial = firstUsage && updates?.projection === 'ui' && updates.scope_complete === true
+        && updates.project_id === channel.projectId && updates.scope === (channel.projectId === null ? 'global' : 'project')
+        && updates.replace === true && typeof updates.read_token === 'string' && updates.read_token.length > 0
+      firstUsage = false
+      if (initial) channel.initialBaseline = { version: channel.snapshotVersion, token: updates!.read_token! }
       channel.usageRevisions.clear()
       channel.coveredEventId = null
       if (updates?.projection === 'ui' && updates.scope_complete && updates.project_id === channel.projectId) {
@@ -134,7 +132,7 @@ function open(channel: Channel): void {
           }
         }
       }
-      channel.listeners.forEach((listener) => listener.usage(updates))
+      channel.listeners.forEach((listener) => listener.usage(updates, initial))
       if (!current()) return
       if (updates?.replace) {
         channel.snapshotReady = true
@@ -153,8 +151,6 @@ function open(channel: Channel): void {
       channel.snapshotVersion += 1
       channel.usageRevisions.clear()
       channel.coveredEventId = null
-      channel.baseline = true
-      releaseBaseline(channel)
       channel.snapshotReady = false
       channel.frameReady = false
       publishConnection(channel, 'reconnecting')
@@ -180,8 +176,6 @@ function open(channel: Channel): void {
       channel.coveredEventId = null
       channel.snapshotReady = false
       channel.frameReady = false
-      channel.baseline = true
-      releaseBaseline(channel)
       publishConnection(channel, 'reconnecting')
       channel.listeners.forEach((listener) => listener.error?.(cause))
     },
@@ -194,10 +188,8 @@ function publishConnection(channel: Channel, status: UsageFeedState['status'], r
 }
 
 function close(channel: Channel): void {
-  channel.baseline = false
   channel.usageRevisions.clear()
   channel.coveredEventId = null
-  releaseBaseline(channel)
   channel.generation += 1
   if (channel.freshnessTimer !== null) window.clearTimeout(channel.freshnessTimer)
   channel.freshnessTimer = null
@@ -263,7 +255,6 @@ export function subscribeUsageUpdates(projectId: number | null, listener: Listen
       projectId, listeners: new Set(), stream: null, latest: { tasks: new Map(), tickets: new Map() },
       connection: { status: document.hidden ? 'paused' : 'connecting', receivedAt: null },
       snapshotReady: false, freshnessTimer: null, generation: 0, snapshotVersion: 0, frameReady: false,
-      baseline: false, waiters: new Set(),
       usageRevisions: new Map(),
       coveredEventId: null,
     }

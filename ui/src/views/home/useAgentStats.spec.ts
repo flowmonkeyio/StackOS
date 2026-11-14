@@ -5,12 +5,13 @@ import UsageLiveIndicator from '@/components/domain/UsageLiveIndicator.vue'
 import { callOperation } from '@/lib/operations'
 import { useAgentStats } from './useAgentStats'
 import { localActivityFilters } from '@/lib/agentActivity'
-import { agentStatsFixture } from './agentStatsFixtures'
+import { agentStatsFixture as fixture } from './agentStatsFixtures'
 import { subscribeUsageUpdates } from '@/lib/usageUpdates'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
-vi.mock('@/lib/usageUpdates', () => ({ subscribeUsageUpdates: vi.fn(() => vi.fn()), awaitUsageBaseline: vi.fn(async () => {}), subscribeUsageVisibility: vi.fn(() => vi.fn()) }))
+vi.mock('@/lib/usageUpdates', () => ({ subscribeUsageUpdates: vi.fn(() => vi.fn()), usageSnapshotCheckpoint: vi.fn(() => ({})), usageSnapshotMatches: vi.fn(() => true), markUsageSnapshot: vi.fn(() => true), subscribeUsageVisibility: vi.fn(() => vi.fn()) }))
 const wrappers: ReturnType<typeof mount>[] = []
+const agentStatsFixture = (overrides: Parameters<typeof fixture>[0] = {}) => fixture({ project_id: null, ...overrides })
 beforeEach(() => { vi.mocked(callOperation).mockReset(); vi.mocked(subscribeUsageUpdates).mockClear() })
 afterEach(() => wrappers.splice(0).forEach(wrapper => wrapper.unmount()))
 function setup(projectId?: Ref<number>) {
@@ -20,15 +21,41 @@ function setup(projectId?: Ref<number>) {
 }
 
 describe('Agent activity query', () => {
+  it('drops a queued prior selection without clearing the current invalid-date error', async () => {
+    let finish!: (value: unknown) => void
+    vi.mocked(callOperation).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const stats = setup()
+    const initial = stats.load()
+    await flushPromises()
+    vi.mocked(subscribeUsageUpdates).mock.lastCall![1].usage()
+    await stats.setFilters({ end_date: 'invalid' })
+    expect(stats.error.value).toContain('ordered date range')
+    finish(agentStatsFixture()); await initial
+    expect(stats.error.value).toContain('ordered date range')
+    expect(callOperation).toHaveBeenCalledOnce()
+  })
+  it.each([false, true])('keeps explicit 7/90/custom dates through refresh (project=%s)', async project => {
+    vi.mocked(callOperation).mockResolvedValue(agentStatsFixture({ project_id: project ? 1 : null }))
+    const stats = setup(project ? ref(1) : undefined)
+    const end = '2026-01-02'
+    for (const start of ['2025-12-27', '2025-10-05', '2025-12-10']) {
+      await stats.setFilters({ start_date: start, end_date: end })
+      await stats.load(true)
+      expect(stats.filters.value).toMatchObject({ start_date: start, end_date: end })
+      expect(callOperation).toHaveBeenLastCalledWith(project ? 'tracker.agentStats' : 'tracker.agentStatsAll', expect.objectContaining({ start_date: start, end_date: end }))
+    }
+  })
   it('provides freshness from its existing subscription and ignores retired-scope connection callbacks', async () => {
     const id = ref(1)
     let stats!: ReturnType<typeof useAgentStats>
     const wrapper = mount(defineComponent({ setup() { stats = useAgentStats(id); return () => h(UsageLiveIndicator, { active: true }) } }))
     wrappers.push(wrapper)
     const first = vi.mocked(subscribeUsageUpdates).mock.calls[0]![1]
+    vi.mocked(callOperation).mockResolvedValue(agentStatsFixture({ project_id: 1 }))
+    await stats.load()
     first.connection?.({ status: 'live', receivedAt: Date.now() }); await nextTick()
     expect(wrapper.text()).toBe('Live')
-    vi.mocked(callOperation).mockResolvedValue(agentStatsFixture())
+    vi.mocked(callOperation).mockResolvedValue(agentStatsFixture({ project_id: 2 }))
     id.value = 2; await stats.load(); await nextTick()
     expect(wrapper.text()).toBe('Connecting')
     first.connection?.({ status: 'live', receivedAt: Date.now() }); await nextTick()
@@ -39,7 +66,7 @@ describe('Agent activity query', () => {
     expect(subscribeUsageUpdates).toHaveBeenCalledTimes(2) // one per explicit scope
   })
   it('replaces the project subscription on explicit scope loads and releases it on route unmount', async () => {
-    vi.mocked(callOperation).mockResolvedValue(agentStatsFixture())
+    vi.mocked(callOperation).mockImplementation(async (_name, args) => agentStatsFixture({ project_id: args.project_id as number ?? null }) as never)
     const id = ref(1)
     const stats = setup(id)
     const first = vi.mocked(subscribeUsageUpdates).mock.calls[0]![1]
@@ -102,7 +129,7 @@ describe('Agent activity query', () => {
 
   it('discards late responses and hides old project values immediately without a watcher', async () => {
     let resolveOld!: (value: unknown) => void
-    vi.mocked(callOperation).mockResolvedValueOnce(agentStatsFixture())
+    vi.mocked(callOperation).mockResolvedValueOnce(agentStatsFixture({ project_id: 1 }))
     const id = ref(1)
     const stats = setup(id)
     await stats.load()

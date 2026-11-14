@@ -53,11 +53,12 @@ describe('ActiveExecutionLine', () => {
     const feed = ref<UsageFeedState>({ status: 'live', receivedAt: Date.now() })
     const item = { status: 'in-progress' as const, started_at: null, completed_at: null, work_duration: { ...workDuration, coverage: WorkDurationOutCoverage.partial } }
     const wrapper = mount(ActiveExecutionLine, { props: { item, execution }, global: { provide: { [usageFeedKey as symbol]: feed } } })
-    expect(wrapper.get('.active-execution-line__elapsed').text()).toBe('15mPartial')
-    expect(wrapper.get('.active-execution-line__elapsed').attributes('title')).toBe('Work time: 15m · Partial coverage')
+    expect(wrapper.get('.active-execution-line__elapsed').text()).toBe('15m')
+    expect(wrapper.get('.active-execution-line__elapsed').attributes('title')).toBe('Work time: 15m')
+    expect(wrapper.html()).not.toContain('Partial')
     feed.value = { status: 'reconnecting', receivedAt: Date.now() }
     await wrapper.vm.$nextTick()
-    expect(wrapper.get('.active-execution-line__elapsed').text()).toBe('14mPartial')
+    expect(wrapper.get('.active-execution-line__elapsed').text()).toBe('14m')
     expect(vi.getTimerCount()).toBe(0)
     await wrapper.setProps({ item: { ...item, work_duration: { ...workDuration, coverage: WorkDurationOutCoverage.unavailable, total_seconds: null } } })
     expect(wrapper.get('.active-execution-line__elapsed').attributes('aria-label')).toBe('Work time: N/A · Unavailable')

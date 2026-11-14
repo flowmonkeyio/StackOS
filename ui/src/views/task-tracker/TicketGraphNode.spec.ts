@@ -12,7 +12,7 @@ describe('TicketGraphNode', () => {
     const lifecycle = { status: 'complete' as const, started_at: '2026-11-01T01:00:00', completed_at: '2026-11-08T03:22:00', work_duration: { coverage: WorkDurationOutCoverage.partial, total_seconds: 8520, observed_at: null, endpoint_at: null, recorded_intervals: 3, unavailable_intervals: 1 } }
     const data = nodeData({ lifecycle, owner: null })
     const wrapper = mount(TicketGraphNode, { props: { data }, global: { stubs: { Handle: true } } })
-    expect(wrapper.get('[aria-label="Work time: 2h 22m · Partial coverage"]').text()).toBe('2h 22mPartial')
+    expect(wrapper.get('[aria-label="Work time: 2h 22m"]').text()).toBe('2h 22m')
     expect(wrapper.find('.agent-usage-summary').exists()).toBe(false)
     await wrapper.setProps({ data: { ...data, lifecycle: { ...lifecycle, work_duration: null } } })
     expect(wrapper.get('.active-execution-line__elapsed').text()).toBe('N/A')

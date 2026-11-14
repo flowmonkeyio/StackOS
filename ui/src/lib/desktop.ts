@@ -41,6 +41,8 @@ export interface DesktopAgentExecutionCapabilities {
   review_sandbox: 'read-only' | 'workspace-write' | 'normal' | null
   models: string[]
   recommended_model?: string | null
+  /** Verified effort choices per explicit model; absent models use native defaults. */
+  reasoning_efforts?: Record<string, string[]>
   custom_models: boolean
   provider_selection: boolean
   profile_selection: boolean

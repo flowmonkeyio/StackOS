@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 
@@ -7,7 +7,17 @@ import PluginsView from './PluginsView.vue'
 
 const ORIGINAL_FETCH = globalThis.fetch
 
+async function chooseSort(wrapper: ReturnType<typeof mount>, label: string) {
+  const sort = wrapper.get('button[aria-label="Sort catalog"]')
+  await sort.trigger('click')
+  const listbox = new DOMWrapper(document.body).get(`[role="listbox"][id="${sort.attributes('aria-controls')}"]`)
+  const option = listbox.findAll('[role="option"]').find(option => option.text() === label)
+  expect(option, `Sort option ${label}`).toBeDefined()
+  await option!.trigger('click')
+}
+
 describe('PluginsView directory', () => {
+  enableAutoUnmount(afterEach)
   beforeEach(() => setActivePinia(createPinia()))
 
   afterEach(() => {
@@ -144,8 +154,7 @@ describe('PluginsView directory', () => {
     const pluginsTab = wrapper.findAll('button[role="tab"]').find((button) => button.text() === 'Plugins')
     await pluginsTab?.trigger('click')
     expect(wrapper.findAll('h3').map((heading) => heading.text())).toEqual(['Other tools', 'Utilities'])
-    await wrapper.get('button[aria-label="Sort catalog"]').trigger('click')
-    await wrapper.findAll('[role="option"]').find((option) => option.text() === 'Most actions')?.trigger('click')
+    await chooseSort(wrapper, 'Most actions')
     expect(wrapper.findAll('h3').map((heading) => heading.text())).toEqual(['Utilities', 'Other tools'])
     await wrapper.findAll('button').find((button) => button.text() === 'Refresh')?.trigger('click')
     await vi.waitFor(() => expect(wrapper.text()).toContain('Utilities'))
@@ -212,8 +221,7 @@ describe('PluginsView directory', () => {
     await flushPromises()
     const search = wrapper.get<HTMLInputElement>('input[placeholder="Search plugins or services"]')
     await search.setValue('Utilities')
-    await wrapper.get('button[aria-label="Sort catalog"]').trigger('click')
-    await wrapper.findAll('[role="option"]').find(option => option.text() === 'Most actions')!.trigger('click')
+    await chooseSort(wrapper, 'Most actions')
     await wrapper.get('section[aria-label="Utilities"] button').trigger('click')
     expect(search.element.value).toBe('')
     expect(wrapper.text()).toContain('Crawler')
@@ -225,8 +233,7 @@ describe('PluginsView directory', () => {
     expect(wrapper.text()).toContain('Auditor')
     expect(back()).toBeDefined()
     await search.setValue('no service')
-    await wrapper.get('button[aria-label="Sort catalog"]').trigger('click')
-    await wrapper.findAll('[role="option"]').find(option => option.text() === 'Name')!.trigger('click')
+    await chooseSort(wrapper, 'Name')
     const calls = vi.mocked(fetch).mock.calls.length
     await back().trigger('click')
     expect(router.currentRoute.value.path).toBe('/projects/1/plugins')

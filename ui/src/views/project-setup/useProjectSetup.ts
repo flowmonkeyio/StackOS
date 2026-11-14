@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, ref, type Ref } from 'vue'
+import { computed, getCurrentInstance, onBeforeUnmount, ref, type App, type Ref } from 'vue'
 import type { SchemaMainAgentPreferences, SchemaProjectSetupAnswerInput, SchemaProjectSetupCancelInput, SchemaProjectSetupContinueInput, SchemaProjectSetupOut, SchemaSetupAttempt, SchemaWriteEnvelopeProjectSetupOut, SchemaWriteEnvelopeSetupAttempt, SchemaWriteEnvelopeSetupStartOut } from '@/api'
 import { usePolling } from '@/composables/usePolling'
 import { ApiError, formatApiError } from '@/lib/client'
@@ -10,7 +10,29 @@ export function setupErrorMessage(cause: unknown, fallback: string): string {
   return cause instanceof ApiError ? cause.detail : formatApiError(cause, fallback)
 }
 
-export function useProjectSetup(projectId: Ref<number>) {
+export function readProjectSetup(projectId: number, resolveLaunchPreferences = false): Promise<SchemaProjectSetupOut> {
+  return callOperation<SchemaProjectSetupOut>('projectSetup.get', {
+    project_id: projectId, ...(resolveLaunchPreferences ? { resolve_launch_preferences: true } : {}),
+  })
+}
+
+type SetupReminder = 'setup' | 'updates' | null
+const retainedReminders = new WeakMap<App, { projectId: number; reminder: SetupReminder; updateCount: number }>()
+
+function projectReminder(value: SchemaProjectSetupOut): SetupReminder {
+  if (!value.eligible || value.folder_status !== 'available'
+    || (value.current_attempt && value.current_attempt.status !== 'success')) return null
+  if (value.status === 'setup_needed' && !value.setup_reminder_dismissed_at) return 'setup'
+  if (value.status === 'updates_available' && !value.update_reminder_dismissed_at) return 'updates'
+  return null
+}
+
+export function useProjectSetup(projectId: Ref<number>, options: { retainReminder?: boolean } = {}) {
+  const app = getCurrentInstance()?.appContext.app
+  const previous = app && options.retainReminder ? retainedReminders.get(app) : null
+  const initialReminder = computed(() => previous?.projectId === projectId.value ? previous : null)
+  // Home retains only public reminder geometry/copy. Setup state, attempts and
+  // launch readiness still require the current authoritative read.
   const state = ref<SchemaProjectSetupOut | null>(null)
   const readError = ref<string | null>(null)
   const actionError = ref<string | null>(null)
@@ -24,7 +46,7 @@ export function useProjectSetup(projectId: Ref<number>) {
     const current = revision
     const id = projectId.value
     try {
-      const result = await callOperation<SchemaProjectSetupOut>('projectSetup.get', { project_id: id })
+      const result = await readProjectSetup(id)
       if (disposed || current !== revision || id !== projectId.value) return
       state.value = result
       readError.value = null
@@ -33,7 +55,12 @@ export function useProjectSetup(projectId: Ref<number>) {
     }
   }
   const { refresh, running } = usePolling(load)
-  onBeforeUnmount(() => { disposed = true; revision++ })
+  onBeforeUnmount(() => {
+    if (app && state.value) retainedReminders.set(app, {
+      projectId: state.value.project_id, reminder: projectReminder(state.value), updateCount: state.value.update_count,
+    })
+    disposed = true; revision++
+  })
 
   async function dismiss(kind: 'setup' | 'updates'): Promise<void> {
     if (writing.value) return
@@ -152,15 +179,12 @@ export function useProjectSetup(projectId: Ref<number>) {
   })
   const reminder = computed(() => {
     const value = state.value
-    if (!value?.eligible || value.folder_status !== 'available'
-      || (attempt.value && attempt.value.status !== 'success')) return null
-    if (value.status === 'setup_needed' && !value.setup_reminder_dismissed_at) return 'setup'
-    if (value.status === 'updates_available' && !value.update_reminder_dismissed_at) return 'updates'
-    return null
+    return value ? projectReminder(value) : initialReminder.value?.reminder ?? null
   })
+  const reminderUpdateCount = computed(() => state.value?.update_count ?? initialReminder.value?.updateCount ?? 0)
   const opensLaunch = computed(() => state.value?.folder_status === 'available'
     && (!attempt.value || attempt.value.status === 'success')
     && ['setup_needed', 'updates_available'].includes(state.value.status))
 
-  return { state, attempt, neverStarted, error, writing, running, refresh, dismiss, start, answer, continueSetup, cancel, actionLabel, reminder, opensLaunch }
+  return { state, attempt, neverStarted, error, writing, running, refresh, dismiss, start, answer, continueSetup, cancel, actionLabel, reminder, reminderUpdateCount, opensLaunch }
 }

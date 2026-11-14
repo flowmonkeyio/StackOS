@@ -343,7 +343,8 @@ def test_short_range_decodes_only_overlapping_receipts_in_one_shared_read(
     assert report.totals.reported_usage.total == 77
     assert report.delivery_trends.totals.work_time.total_seconds == 70
     assert len(decoded) == 7
-    assert len(statements) == 7  # Includes the repository's legitimate project lookup.
+    # Seven projection queries plus the three constant Home fence reads.
+    assert len(statements) == 10
     assert all(statement.lstrip().upper().startswith("SELECT") for statement in statements)
     assert not any("completion_evidence_json" in statement for statement in statements)
 

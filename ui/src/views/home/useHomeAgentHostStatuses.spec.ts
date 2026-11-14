@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { callOperation } from '@/lib/operations'
 import { desktop, type DesktopMcpHostStatus } from '@/lib/desktop'
 import { useHomeAgentHostStatuses } from './useHomeAgentHostStatuses'
+import { defineComponent, h, onMounted, ref } from 'vue'
+import { flushPromises, mount } from '@vue/test-utils'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
 vi.mock('@/lib/desktop', () => ({ desktop: { hostStatuses: vi.fn() } }))
@@ -31,6 +33,25 @@ const catalogHost: DesktopMcpHostStatus = {
 }
 
 describe('home host status transport', () => {
+  it('never replaces retained current connections with a retired reader result', async () => {
+    const visible = ref(true)
+    let state!: ReturnType<typeof useHomeAgentHostStatuses>
+    let finish!: (value: unknown) => void
+    vi.mocked(callOperation).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+      .mockResolvedValue({ ok: true, items: [{ ...catalogHost, message: 'Current connection' }] })
+    const Reader = defineComponent({ setup() { state = useHomeAgentHostStatuses(false); onMounted(state.loadHostStatuses); return () => null } })
+    const wrapper = mount(defineComponent({ setup: () => () => visible.value ? h(Reader) : null }))
+    try {
+      visible.value = false; await flushPromises()
+      visible.value = true; await flushPromises()
+      finish({ ok: true, items: [{ ...catalogHost, message: 'Retired connection' }] }); await flushPromises()
+      visible.value = false; await flushPromises()
+      vi.mocked(callOperation).mockImplementation(() => new Promise(() => {}))
+      visible.value = true; await flushPromises()
+      expect(state.hostStatuses.value.items[0]?.message).toBe('Current connection')
+      expect(state.hostStatusSummary.value).not.toContain('Refreshing')
+    } finally { wrapper.unmount() }
+  })
   it('uses real browser operation data and retains last checked rows when refresh fails', async () => {
     const hosts = [catalogHost]
     vi.mocked(callOperation).mockResolvedValue({ ok: true, items: hosts })

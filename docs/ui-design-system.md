@@ -110,6 +110,22 @@ enabled controls, preserving nested overlay ownership and final opener return.
 
 Use `layout="detail"` for stable reading/editing dialogs. This opt-in preset has height `min(880px, 100dvh - 48px)`, fixed header/footer regions and one flexible, vertically scrolling body with `min-height: 0`. Width still follows `size` (`lg` is 672px) and the viewport clamp. Long headings wrap to two lines with their full text available as the title; the body wraps long content and prevents horizontal overflow. The default content-sized dialog remains unchanged. A detail flow keeps one shell mounted while switching its internal content; the flow owns identity, retained reading/draft state and intentional focus, never the primitive.
 
+`detailHeight` optionally sets the detail frame's preferred height while keeping
+the same viewport clamp. Project setup uses 720px through catalog loading,
+errors, host and optional-field changes, and pending submission.
+
+**UiSelect.** Menus portal to `body`, flip above the trigger when needed, and
+scroll within the available viewport space. Opening or navigating options never
+scrolls the containing form. The shared overlay stack owns menu layering;
+Escape closes the menu first, and Tab/Shift+Tab continue from its logical trigger
+in the parent dialog. Search, grouped/disabled options, slots and right metadata
+retain the same contract. Standalone menus do not lock page scrolling.
+
+`UiPopover` also joins this stack without locking page scroll. Its portaled
+select descendants share logical pointer ownership, so interacting with search
+or options stays inside the parent; menu-first Escape and final trigger focus
+follow the same opening order.
+
 **UiSidePanel.** Right edge, 480px default, 720px for editors. Same H/B/F structure as dialog.
 
 Dialogs and side panels share `overlayStack.ts`: opening order owns layering and keyboard handling, only the top overlay handles Escape/Tab, and the body remains locked until the final overlay closes. Closing restores the opener; removing a lower overlay preserves the surviving overlay's final return target. Do not add local stacking wrappers around these primitives.
@@ -151,8 +167,9 @@ Work time (`0m`, `<1m`, `14m`, `2h 22m`, `1d 4h`) with an accessible Work time
 label, independently of identity, automation or tokens. The canonical
 `work_duration` projection unions recorded managed invocation intervals across
 delivery, review and repair; task totals union all ticket intervals, counting
-overlap once. Queued, stopped and reopened gaps add nothing. Partial coverage
-shows `Partial` visibly; unavailable history shows `N/A`, never a guessed zero.
+overlap once. Queued, stopped and reopened gaps add nothing. Recorded duration
+has no coverage qualifier; coverage remains in the data. Unavailable history
+shows `N/A`, never a guessed zero.
 Only the exact owned live identity in that projection can extend its total after
 `observed_at`, once, using the shared Work heartbeat without per-card timers.
 Stopped, closed and disconnected observations freeze at the supported total;

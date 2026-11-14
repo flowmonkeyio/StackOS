@@ -118,7 +118,7 @@ _AGENT_STATS_RESPONSE_POLICY = OperationResponsePolicy(
     allowed_modes=("compact", "raw"),
     ack_safe=False,
     compact_notes=(
-        "Keep scope, dates, timezone, group_by, as_of, totals, every row/day/series, "
+        "Keep scope, dates, timezone, group_by, as_of, read_token, totals, every row/day/series, "
         "undated facts, delivery_trends totals/daily and all per-field/classification coverage.",
     ),
 )
@@ -148,7 +148,8 @@ def operation_specs() -> list[OperationSpec]:
                     allowed_modes=("compact", "raw"),
                     ack_safe=False,
                     compact_notes=(
-                        "Keep scope, project/task identities, all facts, as_of and next_cursor.",
+                        "Keep scope, project/task identities, all facts, as_of, read_token "
+                        "and next_cursor.",
                     ),
                 ),
                 purpose=(

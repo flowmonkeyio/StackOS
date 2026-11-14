@@ -17,6 +17,7 @@ export function useProjectOverview(projectId: Ref<number>) {
   let scope: number | null = null
   let retired = false
   let metadataRead: { id: number; promise: Promise<Project> } | null = null
+  let connectionsRead: { id: number; promise: Promise<SchemaAuthStatusOut> } | null = null
   onBeforeUnmount(() => {
     retired = true
     generation += 1
@@ -30,6 +31,16 @@ export function useProjectOverview(projectId: Ref<number>) {
     metadataRead = request
     request.promise = request.promise.finally(() => {
       if (metadataRead === request) metadataRead = null
+    })
+    return request.promise
+  }
+
+  function readConnections(id: number): Promise<SchemaAuthStatusOut> {
+    if (connectionsRead?.id === id) return connectionsRead.promise
+    const request = { id, promise: apiFetch<SchemaAuthStatusOut>(`/api/v1/projects/${id}/connections/accounts?summary_only=true`) }
+    connectionsRead = request
+    request.promise = request.promise.finally(() => {
+      if (connectionsRead === request) connectionsRead = null
     })
     return request.promise
   }
@@ -49,13 +60,13 @@ export function useProjectOverview(projectId: Ref<number>) {
     async function read<T>(key: string, promise: Promise<T>, commit: (data: T) => void) {
       try {
         const data = await promise
-        if (request !== generation || id !== projectId.value) return
+        if (retired || request !== generation || id !== projectId.value) return
         commit(data)
         const next = { ...errors.value }
         delete next[key]
         errors.value = next
       } catch (err) {
-        if (request === generation && id === projectId.value) {
+        if (!retired && request === generation && id === projectId.value) {
           if (key === 'connections' && err instanceof ApiError && [401, 403, 404].includes(err.status)) {
             accounts.value = []
             connectionsLoaded.value = false
@@ -70,7 +81,7 @@ export function useProjectOverview(projectId: Ref<number>) {
     await Promise.all([
       read(
         'connections',
-        apiFetch<SchemaAuthStatusOut>(`/api/v1/projects/${id}/connections/accounts?summary_only=true`),
+        readConnections(id),
         (data) => {
           accounts.value = data.accounts
           connectionsLoaded.value = true

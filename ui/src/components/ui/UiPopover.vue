@@ -4,6 +4,7 @@
 -->
 <script setup lang="ts">
 import { computed, ref, onMounted, onBeforeUnmount, onUpdated } from 'vue';
+import { closeOverlay, isTopOverlay, openOverlay, overlayContains, type OverlayEntry } from './overlayStack';
 
 export interface UiPopoverProps {
   modelValue?: boolean;
@@ -39,11 +40,14 @@ const open = computed(() => (props.modelValue === undefined ? internalOpen.value
 const root = ref<HTMLElement | null>(null);
 const panel = ref<HTMLElement | null>(null);
 const position = ref({ left: '0px', top: '0px' });
-let wasOpen = false;
+const layer = ref<number>();
+let overlayEntry: OverlayEntry | null = null;
 const trigger = () => props.anchor?.isConnected ? props.anchor
   : props.returnFocus?.isConnected ? props.returnFocus
     : props.anchor ?? root.value?.querySelector<HTMLElement>('[data-popover-trigger]');
-function focusTrigger() { (props.returnFocus?.isConnected ? props.returnFocus : trigger())?.focus({ preventScroll: true }); }
+function syncReturnFocus() {
+  if (overlayEntry) overlayEntry.returnFocus = (props.returnFocus?.isConnected ? props.returnFocus : trigger()) ?? null;
+}
 function place() {
   const reference = trigger();
   if (!open.value || !reference || !panel.value) return;
@@ -75,12 +79,14 @@ function toggle() { setOpen(!open.value); }
 
 function onDocClick(ev: MouseEvent) {
   if (!open.value || !props.closeOnClickOutside) return;
-  if (root.value && !root.value.contains(ev.target as Node) && !trigger()?.contains(ev.target as Node)) setOpen(false);
+  const target = ev.target as Node;
+  if (root.value && !root.value.contains(target) && !trigger()?.contains(target) && !overlayContains(overlayEntry, target)) setOpen(false);
 }
 function onKey(ev: KeyboardEvent) {
-  if (open.value && props.closeOnEsc && ev.key === 'Escape') {
+  if (open.value && isTopOverlay(overlayEntry) && props.closeOnEsc && ev.key === 'Escape') {
     setOpen(false);
     ev.preventDefault();
+    ev.stopImmediatePropagation();
   }
 }
 
@@ -91,6 +97,7 @@ onMounted(() => {
   document.addEventListener('scroll', place, true);
 });
 onBeforeUnmount(() => {
+  onPanelClosed();
   document.removeEventListener('mousedown', onDocClick);
   document.removeEventListener('keydown', onKey);
   window.removeEventListener('resize', place);
@@ -98,13 +105,19 @@ onBeforeUnmount(() => {
 });
 
 function onPanelMounted() {
-  wasOpen = true;
+  overlayEntry = openOverlay(() => panel.value, false, trigger() ?? null);
+  syncReturnFocus();
+  layer.value = overlayEntry.layer + 1;
   place();
   panel.value?.focus();
 }
+function onPanelClosed() {
+  syncReturnFocus();
+  closeOverlay(overlayEntry);
+  overlayEntry = null;
+}
 onUpdated(() => {
-  if (wasOpen && !open.value) focusTrigger();
-  wasOpen = open.value;
+  syncReturnFocus();
   place();
 });
 </script>
@@ -135,8 +148,9 @@ onUpdated(() => {
         :class="[
           'ui-popover__panel fixed z-popover rounded-lg border border-default bg-bg-surface shadow-md p-1 focus-ring',
         ]"
-        :style="{ ...position, width: typeof width === 'number' ? width + 'px' : width, maxWidth: 'calc(100vw - 16px)' }"
+        :style="{ ...position, zIndex: layer, width: typeof width === 'number' ? width + 'px' : width, maxWidth: 'calc(100vw - 16px)' }"
         @vue:mounted="onPanelMounted"
+        @vue:before-unmount="onPanelClosed"
       >
         <slot :set-open="setOpen" />
       </div>

@@ -25,6 +25,7 @@ class MainAgentPreferences(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     host_key: str | None = Field(default=None, min_length=1)
     model: str | None = Field(default=None, min_length=1)
+    model_reasoning_effort: str | None = Field(default=None, min_length=1)
     provider: str | None = Field(default=None, min_length=1)
     profile: str | None = Field(default=None, min_length=1)
 
@@ -61,17 +62,22 @@ Partial edits may exist after interruption/cancellation. No rollback is implied.
 """
 
 
-def resolve_preferences(session, project_id, preferences=None, *, inherit_saved=True):
+def resolve_preferences(
+    session, project_id, preferences=None, *, inherit_saved=True, validate_selection=True
+):
     from stackos.repositories.tracker import TrackerRepository
 
     defaults = TrackerRepository(session).delivery_defaults(project_id=project_id)
     saved = MainAgentPreferences.model_validate(
         (defaults.get("main_agent") or {}) if inherit_saved else {}
     ).model_dump(exclude_none=True)
-    explicit = MainAgentPreferences.model_validate(preferences or {}).model_dump(exclude_none=True)
+    # Omission inherits; explicit null clears a saved selection for this launch.
+    explicit = MainAgentPreferences.model_validate(preferences or {}).model_dump(exclude_unset=True)
     if explicit.get("host_key") and explicit["host_key"] != saved.get("host_key"):
         saved = {}
-    selected = {**saved, **explicit}
+    if "model" in explicit and explicit["model"] != saved.get("model"):
+        saved.pop("model_reasoning_effort", None)
+    selected = {key: value for key, value in {**saved, **explicit}.items() if value is not None}
     host_key = selected.get("host_key") or defaults.get("host_key")
     if host_key is None:
         # Catalog order is the existing preference order; never substitute an explicit choice.
@@ -88,6 +94,10 @@ def resolve_preferences(session, project_id, preferences=None, *, inherit_saved=
     if host_key is None:
         raise ValidationError("Install a supported native agent host before starting setup")
     selected["host_key"] = host_key
+    # Console preview shares selection/inheritance with launch, while retaining
+    # invalid or unavailable saved choices so the operator can repair them.
+    if not validate_selection:
+        return selected
     error = service.agent_selection_error(sandbox="workspace-write", **selected)
     if error:
         raise ValidationError(error)

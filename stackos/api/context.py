@@ -38,7 +38,7 @@ from stackos.context import (
 from stackos.context.repository.utils import MAX_CONTEXT_LIMIT
 from stackos.host_mcp.service import usage_executions
 from stackos.repositories.base import Page
-from stackos.repositories.tracker.agent_stats import usage_refresh
+from stackos.repositories.tracker.agent_stats import usage_read_token, usage_refresh
 from stackos.repositories.tracker.schema import TrackerMetricDemand, TrackerUsageDemand
 
 router = APIRouter(prefix="/api/v1/projects/{project_id}", tags=["project-memory"])
@@ -298,6 +298,7 @@ def _timeline_stream(
         # Construct, use and close each Session in its worker. Only detached
         # event models and a serialized transient snapshot cross the await.
         with Session(engine) as session:
+            read_token = usage_read_token(session, project_id) if demand is not None else None
             repository = ContextRepository(session)
             latest = repository.event_position(project_id=project_id)
             watermark = latest[0] if latest is not None else 0
@@ -355,6 +356,11 @@ def _timeline_stream(
                     )
                     scopes = _ui_usage_updates(session, projects, current_demand)
                     updates = {
+                        # A changing source during this poll cannot acknowledge
+                        # a concurrent Home read. Null keeps normal invalidation.
+                        "read_token": read_token
+                        if read_token == usage_read_token(session, project_id)
+                        else None,
                         "projection": "ui",
                         "scope_complete": True,
                         "metric_scope": "demand",

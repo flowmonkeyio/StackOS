@@ -538,6 +538,7 @@ def run_agent(
     *,
     sandbox: AgentSandbox = "workspace-write",
     model: str | None = None,
+    model_reasoning_effort: str | None = None,
     provider: str | None = None,
     profile: str | None = None,
     resume_thread_id: str | None = None,
@@ -578,6 +579,7 @@ def run_agent(
         host_key,
         sandbox=sandbox,
         model=model,
+        model_reasoning_effort=model_reasoning_effort,
         provider=provider,
         profile=profile,
     )
@@ -601,6 +603,20 @@ def run_agent(
         else None
     )
     progress_kwargs: dict[str, Any] = {}
+    if model_reasoning_effort is not None:
+        if host_key == "codex":
+            if (native_settings or {}).get(
+                "model_reasoning_effort", model_reasoning_effort
+            ) != model_reasoning_effort:
+                return AgentRunResult(
+                    None, error="Conflicting explicit native reasoning selections."
+                )
+            native_settings = {
+                **(native_settings or {}),
+                "model_reasoning_effort": model_reasoning_effort,
+            }
+        else:
+            progress_kwargs["model_reasoning_effort"] = model_reasoning_effort
     if native_settings is not None:
         progress_kwargs["native_settings"] = native_settings
     if mcp_config_ref is not None:
@@ -632,6 +648,7 @@ def run_agent(
                             "output_schema": output_schema,
                             "sandbox": sandbox,
                             "model": model,
+                            "model_reasoning_effort": model_reasoning_effort,
                             "provider": provider,
                             "profile": profile,
                             "resume_thread_id": resume_thread_id,
@@ -745,6 +762,7 @@ def agent_selection_error(
     *,
     sandbox: AgentSandbox,
     model: str | None = None,
+    model_reasoning_effort: str | None = None,
     provider: str | None = None,
     profile: str | None = None,
 ) -> str | None:
@@ -770,6 +788,14 @@ def agent_selection_error(
         and not (capability.custom_models or provider is not None)
     ):
         return f"Model {model!r} is not in the current {host_key} native model catalog."
+    if model_reasoning_effort is not None:
+        efforts = capability.reasoning_efforts.get(model or "", ())
+        if model_reasoning_effort not in efforts:
+            choices = ", ".join(efforts) or "native default only"
+            return (
+                f"Host {host_key!r}, model {model or 'native default'!r} does not support "
+                f"reasoning effort {model_reasoning_effort!r}. Supported: {choices}."
+            )
     return None
 
 
@@ -963,6 +989,24 @@ def _single(
 
 
 def _definitions() -> tuple[HostMcpDefinition, ...]:
+    codex_reasoning: dict[str, tuple[str, ...]] = {
+        model: ("low", "medium", "high", "xhigh", "max")
+        for model in ("gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna")
+    }
+    for model in ("gpt-6.1-terra", "gpt-6-luna"):
+        codex_reasoning[model] = ("none", *codex_reasoning[model])
+    claude_reasoning: dict[str, tuple[str, ...]] = {
+        model: ("low", "medium", "high", "xhigh", "max")
+        for model in (
+            "claude-opus-5-5",
+            "claude-sonnet-5-5",
+            "claude-haiku-5-5",
+            "claude-fable-5-1",
+        )
+    }
+    grok_reasoning: dict[str, tuple[str, ...]] = {
+        model: ("low", "medium", "high", "xhigh") for model in ("grok-4.6", "grok-4.5")
+    }
     return (
         HostMcpDefinition(
             codex,
@@ -973,7 +1017,9 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 AgentCapabilities(
                     sandboxes=("workspace-write", "read-only"),
                     review_sandbox="workspace-write",
-                    models=("gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-luna"),
+                    models=tuple(codex_reasoning),
+                    reasoning_efforts=codex_reasoning,
+                    checked_on="2026-11-13",
                     recommended_model="gpt-6.1-sol",
                     provider_selection=True,
                     auth_status_command=("codex", "login", "status"),
@@ -996,12 +1042,9 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 AgentCapabilities(
                     sandboxes=("workspace-write", "read-only"),
                     review_sandbox="workspace-write",
-                    models=(
-                        "claude-opus-5-5",
-                        "claude-sonnet-5-5",
-                        "claude-haiku-5-5",
-                        "claude-fable-5-1",
-                    ),
+                    models=tuple(claude_reasoning),
+                    reasoning_efforts=claude_reasoning,
+                    checked_on="2026-11-13",
                     auth_status_command=("claude", "auth", "status"),
                     notes=(
                         "Review uses normal auto permissions with shell available; "
@@ -1011,6 +1054,7 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                         "https://code.claude.com/docs/en/cli-reference",
                         "https://code.claude.com/docs/en/headless",
                         "https://platform.claude.com/docs/en/models/overview",
+                        "https://code.claude.com/docs/en/model-config#adjust-effort-level",
                     ),
                 ),
             ),
@@ -1108,11 +1152,13 @@ def _definitions() -> tuple[HostMcpDefinition, ...]:
                 AgentCapabilities(
                     sandboxes=("workspace-write", "read-only"),
                     review_sandbox="workspace-write",
-                    models=("grok-build",),
+                    models=tuple(grok_reasoning),
+                    reasoning_efforts=grok_reasoning,
+                    checked_on="2026-11-13",
                     custom_models=True,
                     notes=(
-                        "Native sandbox. Use grok models for installed CLI selections, "
-                        "including configured aliases; grok-build is not the grok-4.7 API ID. "
+                        "Native sandbox. Verified built-in CLI models; custom aliases retain "
+                        "native reasoning. Use grok models for installed CLI selections. "
                         "Auth presence is unverified."
                     ),
                     sources=(

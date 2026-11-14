@@ -32,10 +32,12 @@ it('retains Home credentials for transient failure, clears denied data, and fenc
     const older = new Promise<Response>(yes => { resolve = yes })
     globalThis.fetch = vi.fn(() => older) as typeof fetch
     const pending = state.load()
+    const joined = state.load()
+    expect(vi.mocked(fetch)).toHaveBeenCalledOnce()
+    resolve(json(accepted))
+    await Promise.all([pending, joined])
     globalThis.fetch = vi.fn(async () => json({ detail: 'Permission revoked' }, 403)) as typeof fetch
     await state.load()
-    resolve(json(accepted))
-    await pending
     expect(state.accounts.value).toEqual([])
     expect(state.connectionsLoaded.value).toBe(false)
     expect(state.errors.value.connections).toContain('Permission revoked')

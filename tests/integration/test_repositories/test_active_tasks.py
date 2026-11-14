@@ -179,7 +179,8 @@ def test_active_projection_batches_metrics_and_rollups(session, project_id):
         event.remove(engine, "before_cursor_execute", record)
     # One membership query plus existing bulk rollup/dependency/usage owners;
     # this must not scale into task graphs or a read per row/project.
-    assert len(statements) <= 6, statements
+    # Two extra scalar event/revision reads acknowledge a quiet initial stream.
+    assert len(statements) <= 8, statements
     assert sum("tracker_receipt_projections.receipt_json" in sql for sql in statements) == 1
     assert not any("tracker_tickets.completion_evidence_json" in sql for sql in statements)
     assert not any("tracker_ticket_reference" in sql for sql in statements)

@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from functools import cached_property, lru_cache
+from hashlib import sha256
 from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -38,6 +39,50 @@ from stackos.repositories.tracker.schema import (
     WorkDurationOut,
 )
 from stackos.repositories.tracker.utils import DEFAULT_TRACKER_KEY
+
+
+def usage_read_token(session: Session, project_id: int | None) -> str | None:
+    """Equality fence for Home reads and the stream's initial baseline only.
+
+    Keep the existing durable event position (including non-reused project
+    identity) and bounded native counter/identity owner; never retain either.
+    Take this before the report's reads. A matching stable stream baseline can
+    acknowledge that read without another full aggregation.
+    """
+    from stackos.context import ContextRepository
+    from stackos.repositories.base import NotFoundError
+
+    live = host_service.usage_executions(project_id)
+    try:
+        position = ContextRepository(session).event_position(project_id=project_id)
+    except NotFoundError:
+        # The pure aggregate also serves deleted-source reconciliation. Its
+        # existing empty result is useful, but cannot acknowledge a live scope.
+        return None
+    scopes = session.execute(
+        select(
+            col(Project.id),
+            col(Project.updated_at),
+            col(Project.is_active),
+            col(Project.cleanup_json),
+            col(TaskTracker.rev),
+        )
+        .outerjoin(
+            TaskTracker,
+            (col(TaskTracker.project_id) == col(Project.id))
+            & (col(TaskTracker.key) == DEFAULT_TRACKER_KEY),
+        )
+        .where(col(Project.id) == project_id if project_id is not None else true())
+        .order_by(col(Project.id))
+    ).all()
+    return sha256(
+        json.dumps(
+            [project_id, position, [tuple(row) for row in scopes], live],
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        ).encode()
+    ).hexdigest()
 
 
 def invocation_receipts(evidence: Any, *, require_launch: bool = True) -> list[dict[str, Any]]:
@@ -1101,6 +1146,7 @@ def query_agent_stats(
     end_date: date | None = None,
     timezone: str = "UTC",
 ) -> TrackerAgentStatsOut:
+    read_token = usage_read_token(session, project_id)
     zone = stats_timezone(start_date, end_date, timezone)
     if group_by not in ("agent", "model", "agent_model"):
         raise ValueError("group_by must be agent, model or agent_model")
@@ -1208,6 +1254,7 @@ def query_agent_stats(
         timing=timing,
     )
     return TrackerAgentStatsOut(
+        read_token=read_token,
         project_id=project_id,
         is_active=is_active,
         as_of=datetime.now(UTC),

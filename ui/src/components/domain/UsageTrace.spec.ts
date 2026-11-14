@@ -35,17 +35,18 @@ describe('reported activity mini-canvas', () => {
     await wrapper.setProps({ samples: [sample(0)] })
     await frame()
     expect(context.lineTo).toHaveBeenLastCalledWith(31, 14.5)
-    const [firstX, firstY, firstWidth, firstHeight] = context.fillRect.mock.lastCall!
-    expect(firstX).toBeGreaterThan(29.5)
-    expect(firstY).toBe(11.5)
-    expect(firstWidth).toBeLessThanOrEqual(2)
-    expect(firstHeight).toBe(3)
+    expect(context.fillRect).not.toHaveBeenCalled()
     expect(wrapper.attributes('aria-label')).toContain('First reading establishes a baseline')
     context.fillRect.mockClear()
     await wrapper.setProps({ samples: [sample(0), sample(2)] })
     await frame()
     expect(context.lineTo).toHaveBeenLastCalledWith(31, 14.5)
-    expect(context.fillRect).toHaveBeenCalledWith(firstX, 2.5, firstWidth, 12)
+    expect(context.fillRect).toHaveBeenCalledOnce()
+    const [firstX, firstY, firstWidth, firstHeight] = context.fillRect.mock.lastCall!
+    expect(firstX).toBeGreaterThan(29.5)
+    expect(firstY).toBe(2.5)
+    expect(firstWidth).toBeLessThanOrEqual(2)
+    expect(firstHeight).toBe(12)
     expect(wrapper.attributes('role')).toBe('img')
     expect(wrapper.attributes('aria-label')).toContain('4 tokens')
     expect(wrapper.attributes('title')).toBe(wrapper.attributes('aria-label'))
@@ -113,7 +114,7 @@ describe('reported activity mini-canvas', () => {
     color.mockReturnValue(style('rgb(4, 5, 6)'))
     document.documentElement.setAttribute('data-theme', 'dark')
     await flushPromises(); await frame()
-    expect(context.fillStyle).toBe('rgb(100, 100, 100)') // neutral baseline marker
+    expect(context.fillStyle).toBe('rgb(4, 5, 6)')
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(70)
     resize(); await frame()
     expect((wrapper.element as HTMLCanvasElement).width).toBe(140)
@@ -137,15 +138,30 @@ describe('reported activity mini-canvas', () => {
     expect(context.clearRect).toHaveBeenCalledTimes(count)
   })
 
-  it('renders a late batch as a fixed neutral tick without scaling it as a spike', async () => {
+  it('keeps a late batch available as exact text without drawing usage or an observation tick', async () => {
     const context = drawing()
     const wrapper = mount(UsageTrace, { props: { metric: 'input', samples: [{
       ...sample(2), intervals: [{ kind: UsageIntervalOutKind.batched, start_at: '2026-11-08T00:00:00Z', input: 1000000, remaining_input: 1000000, output: null, total: null, cache_read: null, cache_write: null, reasoning: null }],
     }] } })
     await frame()
     expect(wrapper.attributes('data-state')).toBe('batched')
-    expect(context.fillRect.mock.calls.every(call => call[3] === 3)).toBe(true)
+    expect(context.fillRect).not.toHaveBeenCalled()
     expect(wrapper.attributes('aria-label')).toContain('1,000,000 tokens; consumption time unavailable')
+    expect(wrapper.attributes('aria-label')).not.toContain('Neutral ticks')
     wrapper.unmount()
+  })
+  it.each(['input', 'cache_read', 'output'] as const)('draws only tiny/high measured %s bars despite co-located baseline/batch/reset observations', async metric => {
+    const context = drawing()
+    const observations = ['baseline', 'batched', 'reset'].map(kind => ({ kind, at: 0, startAt: null, value: 1000000 }))
+    const geometry = { state: 'bars' as const, maximum: 1000, endAt: 180000, startAt: 0, baselineAt: 0, buckets: [
+      { at: 0, value: 1, observations }, { at: 60000, value: 1000, observations },
+      { at: 120000, value: 0, observations }, { at: 180000, value: null, observations },
+    ] }
+    const before = structuredClone(geometry)
+    const wrapper = mount(UsageTrace, { props: { metric, samples: [], preparedGeometry: geometry } })
+    await frame()
+    expect(context.fillRect.mock.calls.map(call => call[3])).toEqual([1, 12])
+    expect(wrapper.attributes('aria-label')).toContain('1,000,000 tokens; consumption time unavailable')
+    expect(geometry).toEqual(before)
   })
 })

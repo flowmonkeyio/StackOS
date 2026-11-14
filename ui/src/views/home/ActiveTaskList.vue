@@ -20,7 +20,7 @@ defineExpose({ refresh })
           role="status"
           class="text-xs text-fg-muted"
         >
-          {{ error ? 'Refresh failed' : feed.status === 'reconnecting' ? 'Updates reconnecting' : feed.status === 'connecting' ? 'Connecting to updates…' : loading ? 'Refreshing…' : '' }}
+          {{ error ? 'Refresh failed' : feed.status === 'reconnecting' ? 'Updates reconnecting' : feed.status === 'connecting' ? 'Connecting to updates…' : '' }}
         </span>
         <span
           v-if="asOf"

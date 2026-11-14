@@ -291,14 +291,39 @@ question/progress/result refs; sibling native execution metadata stays untouched
 
 Managed console entry needs only the selected project and setup/update mode;
 `workflow_keys` can be omitted so the coordinator chooses from the operator goal.
-Optional typed `preferences` contain only `host_key`, `model`, `provider`, `profile`.
+Optional typed `preferences` contain only `host_key`, `model`,
+`model_reasoning_effort`, `provider`, `profile`. Omitted fields inherit saved
+main-agent choices on the same host; explicit null clears that field for this
+launch. Changing host discards inherited host-specific choices. Changing model
+discards inherited reasoning unless reasoning is also explicitly supplied.
 Save these choices through local-admin `tracker.configureDelivery({"project_id":1,
 "main_agent":{"host_key":"codex","model":"gpt-6.1-sol"}})`. That form merges
 only `delivery.main_agent`, preserving specialist roles, unrelated settings and
 already admitted snapshots. `projectSetup.get.launch_preferences` reads saved choices;
 `hostMcp.status.agent_execution` supplies supported and recommended models from the
 existing host catalog. Neither catalog nor recommendation proves account model access.
-An omitted model keeps the native host default; recommendation metadata is advisory.
+When the console needs an inherited host for the launch dialog, it requests
+`projectSetup.get` with `resolve_launch_preferences: true`. This local-console-only
+read returns effective choices in `launch_preferences` through the same resolver
+as launch, retaining explicit saved fields and invalid choices for editing.
+Ordinary reads still return saved preferences without inspecting native hosts.
+With no saved or explicit model/effort, native defaults are retained without
+guessing their effective values; recommendation metadata is advisory. Launch
+overrides do not save project defaults. The `main_agent` configure form replaces
+only that preference object, so omitted/null fields there really clear saved
+choices. Native provider/profile names select host configuration, never credentials.
+
+`agent_execution.reasoning_efforts` maps explicit model IDs to verified native
+effort choices. Missing model entries (including native-default and custom
+models) permit only native reasoning. The launch dialog consumes that same
+catalog, shows model and reasoning in its summary, and puts optional native
+provider/profile selectors in Advanced options; required provider/model remain
+visible. Unsupported pairs reject before native execution. Codex uses its
+validated `model_reasoning_effort` config override; Claude uses `--effort`; Grok
+uses `--reasoning-effort`. Gemini and Hermes currently retain native reasoning
+because this runner has no verified per-invocation override for them. Claude
+rejects a conflicting inherited `CLAUDE_CODE_EFFORT_LEVEL`, whose native priority
+would otherwise override the selection. Normal permissions and auth stay native.
 
 One managed attempt creates one request-native coordinator, consuming the same
 authoring-guide reference and project setup method as existing-session entry.
@@ -357,7 +382,7 @@ agent MCP and CLI.
 Console-only `projectSetup.continue` takes the same project/request/revision fields
 without question/answer fields. It continues partial, failed, interrupted or explicitly
 cancelled work in the exact recorded native session with frozen host/model/provider/
-profile and folder. A pending question requires `answer` instead. Each invocation
+profile, reasoning and folder. A pending question requires `answer` instead. Each invocation
 has its own immutable request execution and usage receipt under the stable attempt;
 the predecessor retains its answered question and successor ref. Missing native
 identity, unsupported selection or resume failure is actionable failure, never a
