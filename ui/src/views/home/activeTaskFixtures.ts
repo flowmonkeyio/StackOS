@@ -17,6 +17,6 @@ export function activeTaskFixture(overrides: Partial<SchemaActiveTaskOut> = {}):
 }
 
 export function activeTasksFixture(projectId: number | null = null, items = [activeTaskFixture()]): SchemaActiveTasksOut {
-  return { items, scope: projectId === null ? ActiveTasksOutScope.global : ActiveTasksOutScope.project,
+  return { read_token: null, items, scope: projectId === null ? ActiveTasksOutScope.global : ActiveTasksOutScope.project,
     project_id: projectId, next_cursor: null, as_of: '2026-11-11T19:00:00Z' }
 }

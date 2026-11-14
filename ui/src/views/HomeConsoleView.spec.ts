@@ -39,6 +39,7 @@ async function mountProject() {
       { path: '/projects/:id', component: HomeConsoleView },
       { path: '/projects/:id/tasks', component: { template: '<div>Task graph</div>' } },
       { path: '/projects/:id/connections', component: { template: '<div>Connections</div>' } },
+      { path: '/other', component: { template: '<div>Other page</div>' } },
     ],
   })
   await router.push('/projects/1')
@@ -52,6 +53,53 @@ async function mountProject() {
 }
 
 describe('project Home active work', () => {
+  it('reserves the cold setup reminder region while useful content loads independently', async () => {
+    const read = vi.mocked(callOperation).getMockImplementation()!
+    let finish!: (value: unknown) => void
+    vi.mocked(callOperation).mockImplementation((name, args) => name === 'projectSetup.get'
+      ? new Promise(resolve => { finish = resolve }) : read(name, args))
+    const { wrapper } = await mountProject()
+    try {
+      const slot = wrapper.get('.home-setup-slot').element
+      const actions = wrapper.get('.home-header-actions').element
+      const setupAction = wrapper.get('.home-setup-action').element
+      expect(wrapper.find('.active-task-row__link').exists()).toBe(true)
+      expect(wrapper.find('[aria-label="Project setup reminder"]').exists()).toBe(false)
+      expect(wrapper.find('.home-setup-slot [aria-busy="true"]').exists()).toBe(true)
+      finish({ project_id: 1, eligible: true, status: 'updates_available', folder_status: 'available', update_count: 3, current_attempt: null })
+      await flushPromises()
+      expect(wrapper.get('.home-setup-slot').element).toBe(slot)
+      expect(wrapper.get('.home-header-actions').element).toBe(actions)
+      expect(wrapper.get('.home-setup-action').element).toBe(setupAction)
+      expect(wrapper.get('[aria-label="Project setup reminder"]').text()).toContain('3 workflows')
+    } finally { wrapper.unmount() }
+  })
+  it.each(['updates_available', 'current'])('retains the %s setup reminder above accepted return data while its read is pending', async status => {
+    const read = vi.mocked(callOperation).getMockImplementation()!
+    // A current preparation receipt still needs activation. It retains the
+    // same reminder on return without retaining launch/ready authority.
+    const state = { project_id: 1, eligible: true, status, folder_status: 'available', update_count: 3, current_attempt: null }
+    vi.mocked(callOperation).mockImplementation(async (name, args) => name === 'projectSetup.get' ? state as never : read(name, args))
+    const { wrapper, router } = await mountProject()
+    try {
+      const reminderText = wrapper.get('[aria-label="Project setup reminder"]').text()
+      expect(reminderText).toContain(status === 'updates_available' ? '3 workflows' : 'Set up project')
+      await router.push('/other'); await flushPromises()
+      let finish!: (value: unknown) => void
+      vi.mocked(callOperation).mockImplementation((name, args) => name === 'projectSetup.get'
+        ? new Promise(resolve => { finish = resolve }) : read(name, args))
+      await router.push('/projects/1'); await flushPromises()
+      const reminder = wrapper.get('[aria-label="Project setup reminder"]').element
+      expect(wrapper.find('.active-task-row__link').exists()).toBe(true)
+      expect(wrapper.get('[aria-label="Project setup reminder"]').text()).toBe(reminderText)
+      finish(state); await flushPromises()
+      expect(wrapper.get('[aria-label="Project setup reminder"]').element).toBe(reminder)
+      await router.push('/projects/2'); await flushPromises()
+      expect(wrapper.find('[aria-label="Project setup reminder"]').exists()).toBe(false)
+      finish({ ...state, project_id: 2, eligible: false }); await flushPromises()
+      expect(vi.mocked(callOperation).mock.calls.every(([name]) => !name.match(/projectSetup\.(start|answer|continue|cancel|setReminders)/))).toBe(true)
+    } finally { wrapper.unmount() }
+  })
   it('uses the same daemon capacity when switching projects without writing', async () => {
     const { wrapper, router } = await mountProject()
     try {
@@ -105,11 +153,18 @@ describe('project Home active work', () => {
       const count = (operation: string) => vi.mocked(callOperation).mock.calls.filter(([name]) => name === operation).length
       const usage = count('tracker.agentStats'), active = count('tracker.activeTasks')
       const connections = vi.mocked(apiFetch).mock.calls.filter(([url]) => url.includes('/connections/accounts')).length
+      let finish!: (value: unknown) => void
+      const read = vi.mocked(apiFetch).getMockImplementation()!
+      vi.mocked(apiFetch).mockImplementation(url => url.includes('/connections/accounts')
+        ? new Promise(resolve => { finish = resolve }) : read(url))
       await vi.advanceTimersByTimeAsync(30_000)
+      expect(wrapper.get('.ui-page-header').findAll('button').find(button => button.text() === 'Refresh')!.attributes('aria-busy')).toBeUndefined()
+      expect(wrapper.find('[aria-label="Connected tools"] [role="img"][aria-label="Test failed"]').exists()).toBe(true)
       expect(count('tracker.agentStats')).toBe(usage)
       expect(count('tracker.activeTasks')).toBe(active)
       expect(count('project.portfolio')).toBe(0)
       expect(vi.mocked(apiFetch).mock.calls.filter(([url]) => url.includes('/connections/accounts')).length).toBeGreaterThan(connections)
+      finish({ accounts: [] }); await flushPromises()
     } finally { wrapper.unmount(); vi.useRealTimers() }
   })
 

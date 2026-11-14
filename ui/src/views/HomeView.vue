@@ -65,7 +65,7 @@ function confirmRepair(): void {
           variant="secondary"
           size="sm"
           icon-left="refresh"
-          :loading="refreshing || catalog.homeAccountsLoading || agentsLoading"
+          :loading="refreshing"
           @click="refresh"
         >
           Refresh

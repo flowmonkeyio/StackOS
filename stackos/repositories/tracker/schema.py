@@ -374,6 +374,7 @@ class ActiveTaskOut(BaseModel):
 
 
 class ActiveTasksOut(BaseModel):
+    read_token: str | None = None
     scope: Literal["project", "global"]
     project_id: int | None
     as_of: datetime
@@ -711,6 +712,7 @@ class DeliveryTrendsOut(BaseModel):
 
 
 class TrackerAgentStatsOut(BaseModel):
+    read_token: str | None = None
     project_id: int | None
     is_active: bool | None
     as_of: datetime

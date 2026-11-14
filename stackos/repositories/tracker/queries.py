@@ -116,9 +116,11 @@ class TrackerQueryMixin:
     ) -> ActiveTasksOut:
         """Bounded Home membership with the same batched facts as the task index."""
         from stackos.repositories.projects import ProjectRepository
+        from stackos.repositories.tracker.agent_stats import usage_read_token
 
         if project_id is not None:
             ProjectRepository(self._s).require_available(project_id)
+        read_token = usage_read_token(self._s, project_id)
         rows = list(
             self._s.exec(
                 select(TrackerTask, Project)
@@ -154,6 +156,7 @@ class TrackerQueryMixin:
             for task, (_row, project) in zip(facts, rows, strict=True)
         ]
         return ActiveTasksOut(
+            read_token=read_token,
             scope="project" if project_id is not None else "global",
             project_id=project_id,
             as_of=_utcnow(),

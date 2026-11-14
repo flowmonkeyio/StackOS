@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { DOMWrapper, mount, flushPromises } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import LibraryView from './LibraryView.vue'
@@ -218,13 +218,17 @@ describe('Library', () => {
       return page([])
     })
     const { wrapper } = await open('/projects/1/library?item=resource_record:1')
-    await wrapper.get('[aria-label="Plugin"]').trigger('click')
-    await wrapper.findAll('[role="option"]').find(x => x.text() === 'Engineering')!.trigger('click')
+    const plugin = wrapper.get('[aria-label="Plugin"]')
+    await plugin.trigger('click')
+    const pluginListbox = new DOMWrapper(document.body).get(`[role="listbox"][id="${plugin.attributes('aria-controls')}"]`)
+    await pluginListbox.findAll('[role="option"]').find(x => x.text() === 'Engineering')!.trigger('click')
     await flushPromises()
     expect(wrapper.findAll('tbody tr')).toHaveLength(2)
     expect(wrapper.find('[aria-label="Selected saved content"]').exists()).toBe(true)
-    await wrapper.get('[aria-label="Type"]').trigger('click')
-    const option = wrapper.findAll('[role="option"]').find(x => x.text() === 'Engineering decision')!
+    const type = wrapper.get('[aria-label="Type"]')
+    await type.trigger('click')
+    const typeListbox = new DOMWrapper(document.body).get(`[role="listbox"][id="${type.attributes('aria-controls')}"]`)
+    const option = typeListbox.findAll('[role="option"]').find(x => x.text() === 'Engineering decision')!
     await option.trigger('click')
     await flushPromises()
     expect(wrapper.findAll('tbody tr')).toHaveLength(1)

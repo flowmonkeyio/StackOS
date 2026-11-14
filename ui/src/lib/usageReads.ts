@@ -2,7 +2,7 @@
 export function createUsageReadOwner() {
   const pending = new Map<string, { dirty: number; started: boolean; promise: Promise<unknown> }>()
   let retired = false
-  function read<T>(key: string, load: (current: () => boolean) => Promise<T>, options: { invalidate?: boolean; ready?: () => Promise<void> } = {}): Promise<T> {
+  function read<T>(key: string, load: (current: () => boolean) => Promise<T>, options: { invalidate?: boolean } = {}): Promise<T> {
     const existing = pending.get(key)
     if (existing) {
       // Changes observed before the read begins are already covered by it.
@@ -12,7 +12,9 @@ export function createUsageReadOwner() {
     const entry = { dirty: 0, started: false, promise: null as unknown as Promise<T> }
     pending.set(key, entry)
     entry.promise = (async () => {
-      await options.ready?.()
+      // Join synchronous mount/baseline callers without holding useful HTTP
+      // reads behind a stream handshake. The consumer owns snapshot freshness.
+      await Promise.resolve()
       entry.started = true
       let value!: T
       let version: number

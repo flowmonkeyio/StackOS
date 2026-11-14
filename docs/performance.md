@@ -117,10 +117,36 @@ stop with a retryable error, preserving the accepted mutation and useful content
 Home's analytics and active-task readers share pending admission through
 `usageReads`: scope/filter/group changes have independent identities, manual
 callers join pending work, and real in-flight invalidations require one fresh
-follow-up per burst. The initial stream replacement precedes the first bulk
-read. An error or a one-second admission deadline releases useful reads while
-freshness remains unconfirmed; reconnect/visibility changes still revalidate.
-No response cache survives the last subscriber. Graph and one full primary
+follow-up per burst. Useful HTTP reads start alongside the stream, without a
+handshake deadline. A read completed before the first stream frame can display
+its scoped data but cannot establish Live. A first response crossed by updates
+can also display without replacing accepted content or populating return storage.
+An asynchronous first baseline joins the pending work when its opaque
+`read_token` matches the bulk response. The existing event position,
+project/tracker revisions and bounded live-counter owner supply this equality
+fence; it is neither an authorization token nor an ordered cursor. The stream
+emits a token only when those sources stay unchanged through its snapshot.
+Changed/missing tokens, later updates and disconnect/visibility boundaries
+still require the ordered trailing read. No handshake deadline delays useful
+content, and an unconfirmed response cannot grant Live.
+The Home readers retain only their last global and project response per app;
+scope/date identity gates immediate return content, while every mount starts a
+new subscription and revalidation. Freshness is never retained. Existing rows
+and chart instances stay mounted during automatic refresh, and only a manual
+Refresh action animates the page's Refresh button. Local service/host reads
+retain their accepted display on return; the initial host placeholders use the
+same six-slot desktop grid as the status response.
+The existing setup reader also retains Home's last same-project reminder and
+update count, so return content is not displaced while setup revalidates.
+It does not retain setup state, attempts or launch readiness.
+Project Home also reserves the reminder region on a cold mount, using an initial
+skeleton. The region keeps its space when no reminder applies, so a slow setup
+read cannot insert or remove space above already-visible tasks and Usage.
+Home's header/reminder layout queries its actual content width after App sidebar
+and padding. The header reserves its action track and uses stable grid positions;
+compact content stacks the identity above the actions. Wrapped reminder copy and
+buttons have matching cold-load space at those same content-width boundaries.
+Graph and one full primary
 detail can be reused only within the mounted project and accepted revision.
 Content saves and latest-content retries use the same UI-demand index queue.
 While a full detail read is pending, its owner retains accepted metric patches

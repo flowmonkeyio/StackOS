@@ -13,6 +13,24 @@ beforeEach(() => {
 })
 afterEach(() => vi.useRealTimers())
 describe('one shared usage transport', () => {
+  it('acknowledges only an equal initial read fence, preserving later invalidation and disconnect fences', () => {
+    const stop = subscribeUsageUpdates(1, { usage: vi.fn() })
+    try {
+      const stream = vi.mocked(openTrackerStatusStream).mock.lastCall![0]
+      const pending = usageSnapshotCheckpoint(1)
+      const baseline = { projection: 'ui', scope_complete: true, scope: 'project', project_id: 1,
+        tasks: [], tickets: [], replace: true, read_token: 'current-source' } as const
+      expect(markUsageSnapshot(1, pending, baseline.read_token)).toBe(false)
+      stream.onFrame?.(Date.now()); stream.onUsage?.({ ...baseline, tasks: [], tickets: [] })
+      expect(markUsageSnapshot(1, pending, 'older-source')).toBe(false)
+      expect(markUsageSnapshot(1, pending, baseline.read_token)).toBe(true)
+      stream.onUsage?.({ ...baseline, tasks: [], tickets: [] })
+      expect(markUsageSnapshot(1, pending, baseline.read_token)).toBe(false)
+      const current = usageSnapshotCheckpoint(1)
+      stream.onDisconnect?.()
+      expect(markUsageSnapshot(1, current, baseline.read_token)).toBe(false)
+    } finally { stop() }
+  })
   it('coalesces status companions already covered by a UI revision without hiding a newer change', () => {
     const usage = vi.fn(), status = vi.fn(), graphStatus = vi.fn()
     const stop = subscribeUsageUpdates(1, { usage, status, coalesceStatusWithUsage: true })

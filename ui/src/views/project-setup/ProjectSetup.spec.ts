@@ -152,6 +152,7 @@ describe('Home project setup', () => {
       current_attempt: attemptFixture({ status: SetupAttemptStatus.success, requested_scope: 'infrastructure_only' as NonNullable<typeof state.current_attempt>['requested_scope'] }),
     })
     await home()
+    expect(wrapper!.find('[aria-label="Project setup reminder"]').exists()).toBe(true)
     await button('Set up project').trigger('click'); await flushPromises()
     expect(wrapper!.find('[role="dialog"]').exists()).toBe(true)
     expect(wrapper!.text()).toContain('verify they are ready to use')

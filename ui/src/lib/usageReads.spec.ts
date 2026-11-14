@@ -9,17 +9,16 @@ function deferred<T>() {
 }
 describe('mounted usage read admission', () => {
   it('joins initial/manual/baseline work and follows a real in-flight burst once', async () => {
-    const owner = createUsageReadOwner(), baseline = deferred<void>(), old = deferred<number>()
+    const owner = createUsageReadOwner(), old = deferred<number>()
     const accepted: number[] = []
     const load = vi.fn(async (current: () => boolean) => {
       const value = load.mock.calls.length === 1 ? await old.promise : 2
       if (current()) accepted.push(value)
       return value
     })
-    const initial = owner.read('project:1/filter:a', load, { ready: () => baseline.promise })
+    const initial = owner.read('project:1/filter:a', load)
     expect(owner.read('project:1/filter:a', load)).toBe(initial)
     owner.read('project:1/filter:a', load, { invalidate: true })
-    baseline.resolve()
     await Promise.resolve()
     expect(load).toHaveBeenCalledOnce()
     for (let i = 0; i < 20; i++) owner.read('project:1/filter:a', load, { invalidate: true })

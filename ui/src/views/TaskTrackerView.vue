@@ -85,9 +85,8 @@ const graph = useTrackerGraphSession({
   reload: async (options) => { if (!await load(options)) throw new Error(error.value ?? 'Could not refresh work.') },
   refreshUsage,
 })
-const metricsCurrent = ref(false)
 provide(usageFeedKey, computed(() => ({ ...graph.feedState.value,
-  status: graph.feedState.value.status === 'live' && (!metricsCurrent.value || error.value || graph.liveError.value)
+  status: graph.feedState.value.status === 'live' && (!snapshot.value || error.value || graph.liveError.value || graph.metricError.value)
     ? 'reconnecting' as const : graph.feedState.value.status,
 })))
 const {
@@ -143,11 +142,11 @@ const pendingDetailMetrics = new Set<PendingDetailMetrics>()
 function setBoardMetricDemand(keys: string[]): void {
   if (viewMode.value !== 'board' || JSON.stringify(keys) === JSON.stringify(boardMetricKeys)) return
   boardMetricKeys = keys
-  if (viewMode.value === 'board') { metricGeneration++; metricsCurrent.value = false; scheduleMetricRefresh() }
+  if (viewMode.value === 'board') { metricGeneration++; scheduleMetricRefresh() }
 }
 function setGraphMetricDemand(keys: string[]): void {
   graph.setMetricDemand(keys)
-  if (viewMode.value === 'graph') { metricsCurrent.value = false; scheduleMetricRefresh() }
+  if (viewMode.value === 'graph') scheduleMetricRefresh()
 }
 function scheduleMetricRefresh(): void {
   if (metricRefresh !== null || !currentScope()) return
@@ -196,7 +195,6 @@ function refreshUsage(next?: UsageProjection): void {
   if (next.projection === 'ui') {
     const scope = next.projects?.find(scope => scope.project_id === projectId.value)
     if (!scope || next.scope_complete !== true || next.project_id !== projectId.value || next.scope !== 'project') {
-      metricsCurrent.value = false
       error.value = 'Live work scope is unavailable. Use Refresh to retry.'
       return
     }
@@ -204,11 +202,9 @@ function refreshUsage(next?: UsageProjection): void {
     receivedUsageBaseline = true
     if (!initial) {
       metricGeneration++
-      metricsCurrent.value = false
       graph.invalidateMetrics()
     }
     if (scope.rev > (snapshot.value?.tracker.rev ?? -1)) {
-      metricsCurrent.value = false
       void load({ quiet: true, restartStream: false, minRevision: scope.rev })
     }
     if (!initial) {
@@ -309,7 +305,6 @@ async function loadOnce(request: LoadRequest): Promise<boolean> {
   loadController = controller
   const timeout = setTimeout(() => controller.abort(new DOMException('Refresh timed out', 'TimeoutError')), 15000)
   if (!options.quiet || !snapshot.value) loading.value = true
-  error.value = null
   try {
     const next = await callOperation<TrackerSnapshot>('tracker.get', {
       project_id: projectId.value, task_index_only: true, include_graph: false,
@@ -329,8 +324,8 @@ async function loadOnce(request: LoadRequest): Promise<boolean> {
     if (options.minRevision !== undefined && next.tracker.rev < options.minRevision) return true
     patchUsageAfter(next, projectId.value, usageVersion)
     snapshot.value = next
+    error.value = null
     patchDetailMetrics(next)
-    if (viewMode.value === 'board') metricsCurrent.value = true
     boardEdits.reconcile()
     if (viewMode.value === 'graph') mapTaskKey.value = resolveMapTaskKey()
     else if (!queryText(route.query.task)) mapTaskKey.value = validRememberedMapTask()
@@ -376,7 +371,6 @@ async function loadMap(refocus?: boolean, minRevision?: number, force = false): 
   if (focused && snapshot.value) {
     patchDetailMetrics(focused)
     snapshot.value = mergeFocusedTrackerSnapshot(snapshot.value, focused)
-    metricsCurrent.value = graph.metricsAreCurrent()
   }
 }
 
@@ -556,7 +550,6 @@ const removeRouteListener = router.afterEach(async (to, from, failure) => {
     mapTaskKey.value = resolveMapTaskKey()
   }
   if (mapTaskKey.value !== previousMapTaskKey) graph.clearFocus()
-  if (mapChanged) metricsCurrent.value = false
   if (to.query.detail && to.query.detail !== from.query.detail) graphDetailPanelOpen.value = false
   if (mapChanged && !mapNeedsCanonicalRoute()) graph.restartStatusStream()
   if (viewMode.value === 'graph' && mapChanged) {

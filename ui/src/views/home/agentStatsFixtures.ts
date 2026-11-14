@@ -32,7 +32,7 @@ export function agentStatsFixture(overrides: Partial<AgentStats> = {}): AgentSta
   empty.reported_usage = { unit: 'tokens', input: 0, output: 0, total: 0, cache_read: 0, cache_write: 0, reasoning: 0, remaining_input: 0, input_with_unknown_cache: 0 }
   empty.coverage = { usage_status: Usage.empty, usage_measured_attempts: 0, usage_unavailable_attempts: 0, classification_status: Classification.empty, classification_known_attempts: 0, classification_unknown_attempts: 0, fields: Object.fromEntries(['input', 'output', 'total', 'cache_read', 'cache_write', 'reasoning'].map(key => [key, { status: Field.empty, measured_attempts: 0, unavailable_attempts: 0 }])) }
   return {
-    project_id: 1, is_active: null, as_of: '2026-11-06T20:00:00Z', totals: metrics,
+    read_token: null, project_id: 1, is_active: null, as_of: '2026-11-06T20:00:00Z', totals: metrics,
     rows: [row], group_by: Group.model, start_date: '2026-11-01', end_date: '2026-11-07', timezone: 'America/Los_Angeles',
     daily: [{ ...structuredClone(metrics), date: '2026-11-06', by_agent: [{ ...structuredClone(row), group_key: 'fixture-agent' }], by_model: [structuredClone(row)], by_agent_model: [{ ...structuredClone(row), group_key: 'fixture-agent-model' }] }], undated: empty,
     delivery_trends: emptyDeliveryTrendsFixture(),

@@ -26,7 +26,7 @@ defineProps<{
       compact ? 'pb-1' : 'pb-2',
     ]"
   >
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-start">
+    <div class="ui-page-header__layout flex flex-col gap-3 sm:flex-row sm:items-start">
       <div class="min-w-0 flex-1">
         <nav
           v-if="showBreadcrumbs !== false && $slots.breadcrumbs"
@@ -62,7 +62,7 @@ defineProps<{
       </div>
       <div
         v-if="$slots.actions"
-        class="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end sm:pt-0.5"
+        class="ui-page-header__actions flex shrink-0 flex-wrap items-center gap-2 sm:justify-end sm:pt-0.5"
       >
         <slot name="actions" />
       </div>
