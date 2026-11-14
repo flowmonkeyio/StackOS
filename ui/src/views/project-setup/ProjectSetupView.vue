@@ -9,23 +9,22 @@ import { UiButton, UiCard, UiCheckbox, UiDialog, UiPageShell } from '@/component
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { resolveStatus } from '@/design/status'
 import { useProjectSetup } from './useProjectSetup'
+import { setupActivationGaps, setupWorkflowReady, setupWorkflowStatus } from './viewModel'
 import SetupQuestionForm from './SetupQuestionForm.vue'
 import ProjectSetupLaunchDialog from './ProjectSetupLaunchDialog.vue'
 
 const { projectId } = useProjectRouteScope()
 const setup = useProjectSetup(projectId)
-const { state, attempt, neverStarted, error, writing, running, refresh } = setup
+const { state, attempt, ready, preparationOnly, attemptStatus, neverStarted, error, writing, running, refresh } = setup
 const recoveryStates = ['partial', 'failed', 'interrupted', 'cancelled']
-const ready = computed(() => state.value?.status === 'current'
-  && !!state.value.workflows?.length
-  && state.value.workflows.every(item => item.status === 'current' && (!item.latest_status || item.latest_status === 'success'))
-  && (!attempt.value || attempt.value.status === 'success'))
 const heading = computed(() => {
   if (state.value?.folder_status === 'unavailable') return 'Project folder unavailable'
   if (ready.value) return 'Your project is ready'
+  if (attempt.value?.status === 'success' && preparationOnly.value) return 'Project preparation is complete'
+  if (attemptStatus.value === 'verifying') return 'Your agent is verifying workflow readiness'
   const headings: Record<string, string> = {
     queued: 'Setup is queued', running: 'Your agent is preparing the project', needs_input: 'Your agent needs your input',
-    success: 'Setup results recorded', partial: 'Setup is partly complete', failed: 'Setup could not finish',
+    success: 'Workflow readiness needs attention', partial: 'Setup is partly complete', failed: 'Setup could not finish',
     interrupted: 'Setup was interrupted', cancelled: 'Setup was cancelled',
   }
   return headings[attempt.value?.status ?? ''] ?? 'Project setup'
@@ -93,10 +92,9 @@ const rows = computed(() => {
   return [...workflows.values()].map(item => {
     const template = source(item, false)
     const applied = source(item, true)
-    const reported = item.latest_status && item.latest_status !== 'success' ? item.latest_status : null
-    const status = reported ?? item.status
+    const status = setupWorkflowStatus(item)
     const title = record(template.content).name ?? record(applied.content).name
-    const details = [...strings(item.latest_result?.changes), ...strings(item.latest_result?.diagnostics)]
+    const details = [...strings(item.latest_result?.changes), ...strings(item.latest_result?.diagnostics), ...setupActivationGaps(item)]
     if (item.diagnostic) details.push(item.diagnostic)
     if (item.partial_changes) details.push('Files may have changed. The last verified setup is retained; it does not mean files were rolled back.')
     return {
@@ -114,7 +112,7 @@ const columns: DataTableColumn<WorkflowRow>[] = [
   { key: 'summary', label: 'Configured result', cellClass: 'max-w-0' },
   { key: 'status', label: 'Status', widthClass: 'w-40', cellClass: 'whitespace-nowrap' },
 ]
-const verifiedCount = computed(() => (state.value?.workflows ?? []).filter(item => item.status === 'current' && (!item.latest_status || item.latest_status === 'success')).length)
+const verifiedCount = computed(() => (state.value?.workflows ?? []).filter(setupWorkflowReady).length)
 const questionKey = computed(() => `${attempt.value?.attempt_ref}:${attempt.value?.request_id}:${pendingQuestion.value?.question_id}:${pendingQuestion.value?.revision}`)
 </script>
 
@@ -168,7 +166,7 @@ const questionKey = computed(() => `${attempt.value?.attempt_ref}:${attempt.valu
           <StatusBadge
             v-if="attempt"
             domain="projectSetup"
-            :status="attempt.status"
+            :status="attemptStatus"
           />
         </div>
         <p
@@ -190,10 +188,16 @@ const questionKey = computed(() => `${attempt.value?.attempt_ref}:${attempt.valu
           Your agent will use the project's configured workflows automatically.
         </p>
         <p
+          v-else-if="attempt?.status === 'success' && preparationOnly"
+          class="text-fg-muted"
+        >
+          Preparation was requested. Workflow activation has not been verified. Return to Home to finish setup when needed.
+        </p>
+        <p
           v-else-if="attempt?.status === 'success'"
           class="text-fg-muted"
         >
-          The completed setup results are retained. Some workflow guidance still needs attention; review the results below.
+          Completed results are retained. Review the remaining verification gaps below, then return to Home to continue setup.
         </p>
         <p
           v-if="attempt?.status === 'queued'"
@@ -257,7 +261,7 @@ const questionKey = computed(() => `${attempt.value?.attempt_ref}:${attempt.valu
         class="space-y-2"
       >
         <p class="text-sm text-fg-muted">
-          {{ verifiedCount }} of {{ rows.length }} workflows current
+          {{ verifiedCount }} of {{ rows.length }} workflows ready
         </p>
         <DataTable
           :items="rows"
@@ -311,7 +315,7 @@ const questionKey = computed(() => `${attempt.value?.attempt_ref}:${attempt.valu
           </template>
         </DataTable>
         <p class="text-xs text-fg-muted">
-          Setup versions are recorded after each workflow is checked. Setup configures guidance; it does not perform your project work.
+          Setup prepares workflow guidance and verifies readiness. Your project work starts separately.
         </p>
       </section>
 

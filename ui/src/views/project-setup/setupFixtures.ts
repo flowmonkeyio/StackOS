@@ -15,7 +15,7 @@ export function setupFixture(patch: Partial<SchemaProjectSetupOut> = {}): Schema
 export function attemptFixture(patch: Partial<SchemaSetupAttempt> = {}): SchemaSetupAttempt {
   return {
     schema_version: 1, project_id: 1, attempt_ref: 'setup-attempt:1:10',
-    root_request_id: 10, request_id: 10, revision: 1, mode: 'setup', entry_kind: 'managed_ui',
+    root_request_id: 10, request_id: 10, revision: 1, mode: 'setup', requested_scope: 'ready_to_use', entry_kind: 'managed_ui',
     session_id: null, runtime: 'codex', workflow_keys: [], observed_receipt_revisions: {},
     status: 'queued', predecessor_request_id: null, successor_request_id: null, thread_id: null,
     managed: null, question: null, progress: null, recovery_condition: null, outcomes: {},

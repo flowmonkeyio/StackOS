@@ -115,7 +115,7 @@ describe('Home project setup', () => {
     const start = button('Start setup')
     await Promise.all([start.trigger('click'), start.trigger('click')]); await flushPromises()
     expect(vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'projectSetup.start')).toHaveLength(1)
-    expect(callOperation).toHaveBeenCalledWith('projectSetup.start', { project_id: 1, entry_kind: 'managed_ui', mode: 'setup', preferences: { host_key: 'codex', model: 'catalog-model', model_reasoning_effort: null, provider: null, profile: null } })
+    expect(callOperation).toHaveBeenCalledWith('projectSetup.start', { project_id: 1, entry_kind: 'managed_ui', mode: 'setup', requested_scope: 'ready_to_use', preferences: { host_key: 'codex', model: 'catalog-model', model_reasoning_effort: null, provider: null, profile: null } })
     expect(router.currentRoute.value.path).toBe('/projects/1/setup')
     expect(wrapper!.text()).toContain('Setup is queued')
     await router.push('/projects/1'); await flushPromises()
@@ -146,6 +146,18 @@ describe('Home project setup', () => {
     await flushPromises()
     await button('Start setup').trigger('click'); await flushPromises()
     expect(callOperation).toHaveBeenCalledWith('projectSetup.start', expect.objectContaining({ preferences: expect.objectContaining({ model: null, model_reasoning_effort: null }) }))
+  })
+  it('uses the ordinary setup action to finish prepared-only receipts without a separate activation control', async () => {
+    state = setupFixture({ status: ProjectSetupOutStatus.current,
+      current_attempt: attemptFixture({ status: SetupAttemptStatus.success, requested_scope: 'infrastructure_only' as NonNullable<typeof state.current_attempt>['requested_scope'] }),
+    })
+    await home()
+    await button('Set up project').trigger('click'); await flushPromises()
+    expect(wrapper!.find('[role="dialog"]').exists()).toBe(true)
+    expect(wrapper!.text()).toContain('verify they are ready to use')
+    await button('Start setup').trigger('click'); await flushPromises()
+    expect(callOperation).toHaveBeenCalledWith('projectSetup.start', expect.objectContaining({ requested_scope: 'ready_to_use' }))
+    expect(vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'projectSetup.start')).toHaveLength(1)
   })
 
   it('disables an open launch when its bound folder becomes unavailable', async () => {
