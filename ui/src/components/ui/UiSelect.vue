@@ -222,8 +222,7 @@ function setOpen(next: boolean): void {
   if (next === open.value) return
   open.value = next
   if (next) {
-    overlayEntry = openOverlay(() => menuRef.value, false)
-    overlayEntry.returnFocus = buttonRef.value
+    overlayEntry = openOverlay(() => menuRef.value, false, buttonRef.value)
     searchQuery.value = ''
     setActiveFromSelection()
     void nextTick(() => {

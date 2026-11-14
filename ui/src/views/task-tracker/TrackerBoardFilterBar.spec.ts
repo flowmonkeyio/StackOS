@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { DOMWrapper, enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import TrackerBoardFilterBar from './TrackerBoardFilterBar.vue'
 import { defaultBoardFilters } from './boardFilters'
@@ -9,6 +9,7 @@ import { UiButton, UiPopover } from '@/components/ui'
 let available = 480
 let resize: () => void
 const disconnect = vi.fn()
+enableAutoUnmount(afterEach)
 beforeEach(() => {
   available = 480
   vi.stubGlobal('ResizeObserver', class {
@@ -54,11 +55,16 @@ describe('Board filter controls', () => {
   it('opens and applies Completed choices through the real shared select', async () => {
     const wrapper = render()
     await nextTick()
-    await wrapper.get('[aria-label="Edit Completed: Past week"]').trigger('click')
+    const opener = wrapper.get('[aria-label="Edit Completed: Past week"]')
+    await opener.trigger('click')
     await wrapper.get('[role="combobox"]').trigger('click')
-    await wrapper.findAll('[role="option"]').find(option => option.text() === 'None')!.trigger('click')
+    const menu = new DOMWrapper(document.body)
+    await menu.findAll('[role="option"]').find(option => option.text() === 'None')!.trigger('click')
+    await flushPromises()
     expect(wrapper.emitted('update:display')).toEqual([[{ completed: 'none' }]])
     expect(wrapper.find('[aria-label="Edit board filter"]').exists()).toBe(false)
+    expect(menu.find('[role="listbox"]').exists()).toBe(false)
+    expect(document.activeElement).toBe(opener.element)
     wrapper.unmount()
   })
   it('anchors every applied clause and Completed to its own chip', async () => {

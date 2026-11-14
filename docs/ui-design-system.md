@@ -121,6 +121,11 @@ Escape closes the menu first, and Tab/Shift+Tab continue from its logical trigge
 in the parent dialog. Search, grouped/disabled options, slots and right metadata
 retain the same contract. Standalone menus do not lock page scrolling.
 
+`UiPopover` also joins this stack without locking page scroll. Its portaled
+select descendants share logical pointer ownership, so interacting with search
+or options stays inside the parent; menu-first Escape and final trigger focus
+follow the same opening order.
+
 **UiSidePanel.** Right edge, 480px default, 720px for editors. Same H/B/F structure as dialog.
 
 Dialogs and side panels share `overlayStack.ts`: opening order owns layering and keyboard handling, only the top overlay handles Escape/Tab, and the body remains locked until the final overlay closes. Closing restores the opener; removing a lower overlay preserves the surviving overlay's final return target. Do not add local stacking wrappers around these primitives.
