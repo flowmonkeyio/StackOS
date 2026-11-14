@@ -424,6 +424,7 @@ class SetupReportReceipt(SetupEvidenceModel):
     result_refs: list[str]
     checked_at: datetime
     adoption_proposal: SetupAdoptionProposal | None = None
+    report_digest: str | None = Field(default=None, pattern="^[0-9a-f]{64}$")
 
 
 class SetupManagedExecution(SetupEvidenceModel):
@@ -441,6 +442,7 @@ class SetupManagedExecution(SetupEvidenceModel):
     phase: Literal["preparation", "verification", "completion"] = "preparation"
     adopted_delivery_digest: str | None = Field(default=None, pattern="^[0-9a-f]{64}$")
     verification_request_id: int | None = None
+    preflight_failed: bool = False
 
 
 class SetupAttempt(SetupEvidenceModel):
@@ -1039,9 +1041,11 @@ class ProjectSetupRepository:
         report: SetupReport,
         _managed: bool = False,
         _session_report: bool = False,
+        _native_final: bool = False,
     ) -> SetupAttempt:
         try:
             report = SetupReport.model_validate(report.model_dump(mode="json"))
+            report_digest = _digest(report.model_dump(mode="json"))
             ProjectRepository(self._s).require_available(project_id, reserve=True)
             requests = AgentRequestRepository(self._s)
             row = requests._fetch(project_id=project_id, request_id=request_id)
@@ -1056,10 +1060,34 @@ class ProjectSetupRepository:
                     "report does not own the current setup attempt",
                     data={"project_id": project_id, "request_id": request_id},
                 )
+            final_replay = bool(
+                _native_final
+                and _managed
+                and not _session_report
+                and current.reports
+                and current.reports[-1].report_digest == report_digest
+            )
             if (
-                current.status not in {"running", "needs_input"}
-                or current.revision != expected_revision
+                _native_final
+                and current.status == "needs_input"
+                and report.status not in {"needs_input", "failed", "interrupted", "cancelled"}
             ):
+                raise ConflictError(
+                    "Native final outcome cannot discard an unanswered setup question"
+                )
+            reconcile_final = (
+                _native_final
+                and _managed
+                and not _session_report
+                and (
+                    current.status == "partial"
+                    or report.status in {"failed", "interrupted", "cancelled"}
+                    or final_replay
+                )
+            )
+            if (
+                current.status not in {"running", "needs_input"} and not reconcile_final
+            ) or current.revision != expected_revision:
                 raise ConflictError(
                     "setup attempt revision or status changed",
                     data={
@@ -1095,6 +1123,10 @@ class ProjectSetupRepository:
                     # at exit. The private claim, active request and first bound
                     # reporting session already establish this writer's ownership.
                     current.thread_id = live.get("thread_id") or current.thread_id
+                if final_replay:
+                    # The exact report was already applied by this invocation.
+                    # Revalidate final success below without writing receipts twice.
+                    report.workflow_results = []
                 if not current.workflow_keys:
                     current.workflow_keys = (
                         report.workflow_keys
@@ -1228,6 +1260,9 @@ class ProjectSetupRepository:
                                 },
                             )
                         self._validate_activation(project_id, proof, current_sources=sources)
+            if final_replay:
+                self._s.commit()
+                return current
             current.revision += 1
             current.status = report.status
             current.progress = report.progress
@@ -1246,6 +1281,7 @@ class ProjectSetupRepository:
                     result_refs=[item.result.result_ref for item in report.workflow_results],
                     checked_at=datetime.now(UTC),
                     adoption_proposal=report.adoption_proposal,
+                    report_digest=report_digest,
                 )
             )
             if len(current.model_dump_json().encode()) > 2_000_000:

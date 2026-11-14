@@ -69,7 +69,7 @@ describe('Home project setup', () => {
     expect(writes()).toHaveLength(0)
   })
   it.each(['cancelled', 'failed'] as const)('opens actionable pre-launch %s recovery without a new agent picker', async status => {
-    state.current_attempt = attemptFixture({ status: SetupAttemptStatus[status], managed: { settings: { host_key: 'codex', model: 'original-model' }, binding_id: 1, admission_id: 'fixture', job_ref: 'fixture', callback_started: false, slot_reserved: false, cancel_requested: status === 'cancelled', resume_thread_id: null, diagnostic: null, phase: SetupManagedExecutionPhase.preparation, adoption_authorized: false, adopted_delivery_digest: null, verification_request_id: null } })
+    state.current_attempt = attemptFixture({ status: SetupAttemptStatus[status], managed: { settings: { host_key: 'codex', model: 'original-model' }, binding_id: 1, admission_id: 'fixture', job_ref: 'fixture', callback_started: false, slot_reserved: false, cancel_requested: status === 'cancelled', resume_thread_id: null, diagnostic: null, phase: SetupManagedExecutionPhase.preparation, adoption_authorized: false, adopted_delivery_digest: null, verification_request_id: null, preflight_failed: false } })
     state.launch_preferences = { host_key: 'codex', model: 'newer-saved-model' }
     const router = await home()
     await button('View setup').trigger('click'); await flushPromises()

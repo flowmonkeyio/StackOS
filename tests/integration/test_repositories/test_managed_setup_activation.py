@@ -7,6 +7,7 @@ Injected native runners are not actual host or installed activation evidence.
 # Imported pytest fixtures are intentionally shadowed by fixture arguments.
 # ruff: noqa: F811
 
+import asyncio
 import json
 from copy import deepcopy
 from dataclasses import replace
@@ -20,6 +21,8 @@ from stackos.db.models import AgentRequest, RunPlan, TrackerTask
 from stackos.host_mcp import service
 from stackos.host_mcp.project_agents import ProjectAgentService
 from stackos.host_mcp.result import AgentRunResult
+from stackos.mcp.context import MCPContext
+from stackos.operations.project_setup_state import ProjectSetupReportInput, project_setup_report
 from stackos.repositories.base import ConflictError
 from stackos.repositories.project_setup import (
     ProjectSetupRepository,
@@ -28,6 +31,7 @@ from stackos.repositories.project_setup import (
     _digest,
 )
 from stackos.repositories.tracker import TrackerRepository
+from stackos.repositories.workspaces import WorkspaceRepository
 from tests.integration.test_repositories.test_managed_setup import (
     launch,
     managed,  # noqa: F401
@@ -71,9 +75,13 @@ def proposal_for(managed, session, *, host="codex"):
     )
 
 
-def install_runner(managed, monkeypatch, proposal, *, mutate=None, verification="passed"):
+def install_runner(
+    managed, monkeypatch, proposal, *, mutate=None, verification="passed", setup_host=None
+):
     _execution, project, _, factory = managed
-    definition = service._definition_by_key(proposal["roles"]["delivery_agent"]["host_key"])
+    definition = service._definition_by_key(
+        setup_host or proposal["roles"]["delivery_agent"]["host_key"]
+    )
     calls = []
 
     def runner(root, instructions, prompt, schema, *, on_session=None, resume_thread_id=None, **kw):
@@ -91,9 +99,8 @@ def install_runner(managed, monkeypatch, proposal, *, mutate=None, verification=
                 if native:
                     assert native["finished_at"]
                 else:
-                    assert not predecessor.metadata_json["project_setup"]["managed"][
-                        "callback_started"
-                    ]
+                    prior = predecessor.metadata_json["project_setup"]["managed"]
+                    assert not prior["callback_started"] or prior["preflight_failed"]
                     assert (
                         predecessor.metadata_json["project_setup"]["managed"]["resume_thread_id"]
                         == resume_thread_id
@@ -170,6 +177,139 @@ def install_runner(managed, monkeypatch, proposal, *, mutate=None, verification=
         service, "_definition_by_key", lambda key: replace(definition, run_agent=runner)
     )
     return calls
+
+
+@pytest.mark.parametrize("phase", ["preparation", "verification"])
+@pytest.mark.parametrize("final_outcome", ["failed", "identical", "conflicting_question"])
+def test_native_final_outcome_reconciles_persisted_partial_report(
+    managed, session, monkeypatch, phase, final_outcome
+):
+    _, project, scheduler, factory = managed
+    tracker = TrackerRepository(session)
+    proposal = proposal_for(managed, session)
+    install_runner(managed, monkeypatch, proposal)
+    definition = service._definition_by_key("codex")
+    opened = WorkspaceRepository(session).start_session(
+        runtime="codex", cwd=proposal["project_dir"], client_session_id="partial-native"
+    )
+    observed = []
+
+    def runner(root, instructions, prompt, schema, **kwargs):
+        result = definition.run_agent(root, instructions, prompt, schema, **kwargs)
+        context = json.loads(prompt)
+        if context["phase"] != phase:
+            return result
+        partial = SetupReport.model_validate_json(result.result["report_json"])
+        if final_outcome == "conflicting_question":
+            partial = SetupReport.model_validate(
+                {
+                    **partial.model_dump(mode="json"),
+                    "status": "needs_input",
+                    "question": {
+                        "question_id": "preference",
+                        "revision": 1,
+                        "prompt": "Which preference?",
+                        "workflow_keys": [KEY],
+                        "response_channel": "managed_ui",
+                    },
+                }
+            )
+        with factory() as check:
+            arguments = dict(
+                project_id=project,
+                request_id=context["request_id"],
+                session_id=opened.data.id,
+                client_session_id="partial-native",
+                claim_token=context["claim_token"],
+                expected_revision=context["expected_revision"],
+                report=partial,
+            )
+            ctx = MCPContext(session=check, request_id="partial-report", extras={"surface": "mcp"})
+            before = TrackerRepository(check).delivery_defaults(project_id=project)
+            with pytest.raises(ConflictError):
+                asyncio.run(
+                    project_setup_report(
+                        ProjectSetupReportInput(**{**arguments, "claim_token": "foreign"}),
+                        ctx,
+                        None,
+                    )
+                )
+            assert TrackerRepository(check).delivery_defaults(project_id=project) == before
+            envelope = asyncio.run(
+                project_setup_report(ProjectSetupReportInput(**arguments), ctx, None)
+            )
+            assert envelope.project_id == project and envelope.data.status == partial.status
+            observed.append(
+                (context["request_id"], envelope.data.revision, len(envelope.data.reports))
+            )
+        if final_outcome != "failed":
+            return result
+        failed = SetupReport(
+            status="failed",
+            progress=dict(message="Final native failure", evidence_ref="fixture/final-failure"),
+        )
+        return AgentRunResult(
+            0, thread_id="bounded-setup-native", result={"report_json": failed.model_dump_json()}
+        )
+
+    monkeypatch.setattr(
+        service, "_definition_by_key", lambda key: replace(definition, run_agent=runner)
+    )
+    launch(managed, host_key="codex")
+    scheduler.run()
+    if phase == "verification":
+        scheduler.run()
+    session.expire_all()
+    request_id, reported_revision, reports_count = observed[0]
+    stored = session.get(AgentRequest, request_id).metadata_json["project_setup"]
+    assert stored["outcomes"][KEY]["status"] == "success"
+    if final_outcome == "conflicting_question":
+        assert stored["status"] == "failed" and not scheduler.jobs
+        assert "question" in stored["managed"]["diagnostic"]
+        assert stored["question"]["answer_state"] == "pending"
+        assert stored["revision"] == reported_revision
+        if phase == "preparation":
+            assert tracker.delivery_defaults(project_id=project) == {}
+    elif final_outcome == "failed":
+        assert stored["status"] == "failed" and not scheduler.jobs
+        assert [item["status"] for item in stored["reports"]][-2:] == ["partial", "failed"]
+        assert stored["revision"] == reported_revision + 1
+        if phase == "preparation":
+            assert tracker.delivery_defaults(project_id=project) == {}
+    else:
+        # Identical native output revalidates existing proof, without re-applying
+        # workflow results, duplicating report history or advancing its revision.
+        assert len(stored["reports"]) == reports_count
+        assert stored["revision"] == reported_revision + 1  # successor linkage only
+        assert len(scheduler.jobs) == 1
+
+
+def test_adopted_delivery_hosts_are_independent_of_setup_host(managed, session, monkeypatch):
+    _, project, scheduler, _ = managed
+    tracker = TrackerRepository(session)
+    proposal = proposal_for(managed, session)
+    saved = {
+        "main_agent": {"host_key": "claude-code"},
+        "agents": {
+            role: {"host_key": None, "source_ref": choice["source_ref"]}
+            for role, choice in proposal["roles"].items()
+        },
+    }
+    tracker.configure_delivery(project_id=project, delivery=saved)
+    resolved = task_delivery.resolve_delivery_settings(
+        session, project_id=project, project_dir=proposal["project_dir"]
+    )
+    assert all(choice["host_key"] == "codex" for choice in resolved["agents"].values())
+    proposal = proposal_for(managed, session)
+    calls = install_runner(managed, monkeypatch, proposal, setup_host="claude-code")
+    launch(managed, host_key="claude-code")
+    for _ in range(3):
+        scheduler.run()
+    session.expire_all()
+    assert ProjectSetupRepository(session).get(project).current_attempt.status == "success"
+    assert tracker.delivery_defaults(project_id=project) == saved
+    assert calls[1]["adoption_readback"] == resolved
+    assert not session.exec(select(RunPlan)).all() and not session.exec(select(TrackerTask)).all()
 
 
 @pytest.mark.parametrize("customized", [False, True])
@@ -301,18 +441,25 @@ def test_changed_or_cancelled_preparation_cannot_adopt(managed, session, monkeyp
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("change", ["defaults", "source"])
-def test_changed_adopted_basis_stops_before_native_verification(
-    managed, session, monkeypatch, change
+@pytest.mark.parametrize(
+    "phase,change",
+    [("verification", "defaults"), ("verification", "source"), ("completion", "source")],
+)
+def test_changed_adopted_basis_recovers_only_after_restoration(
+    managed, session, monkeypatch, phase, change
 ):
-    _, project, scheduler, _ = managed
+    execution, project, scheduler, factory = managed
     proposal = proposal_for(managed, session)
     calls = install_runner(managed, monkeypatch, proposal)
     launch(managed, host_key="codex")
     scheduler.run()
+    if phase == "completion":
+        scheduler.run()
+    adopted = TrackerRepository(session).delivery_defaults(project_id=project)
+    path = Path(proposal["project_dir"]) / ".codex/agents/builder.toml"
+    original_source = path.read_text()
     if change == "source":
-        path = Path(proposal["project_dir"]) / ".codex/agents/builder.toml"
-        path.write_text(path.read_text() + "# changed\n")
+        path.write_text(original_source + "# changed\n")
     else:
         TrackerRepository(session).configure_delivery(
             project_id=project, delivery={"host_key": None}
@@ -321,7 +468,30 @@ def test_changed_adopted_basis_stops_before_native_verification(
     session.expire_all()
     state = ProjectSetupRepository(session).get(project).current_attempt
     assert state.status == "failed" and "changed" in state.managed.diagnostic
-    assert len(calls) == 1 and not scheduler.jobs
+    assert state.managed.preflight_failed and not scheduler.jobs
+    assert len(calls) == (1 if phase == "verification" else 2)
+    completed_verification = state.managed.verification_request_id
+    assert "native_execution" not in session.get(AgentRequest, state.request_id).metadata_json
+    if change == "source":
+        path.write_text(original_source)
+    else:
+        TrackerRepository(session).configure_delivery(project_id=project, delivery=adopted)
+    resumed = execution.continue_managed(
+        project,
+        state.request_id,
+        expected_revision=state.revision,
+        session_factory=factory,
+        scheduler=scheduler,
+    )
+    assert resumed.attempt.managed.resume_thread_id == "bounded-setup-native"
+    assert resumed.attempt.managed.verification_request_id == completed_verification
+    for _ in range(2 if phase == "verification" else 1):
+        scheduler.run()
+    session.expire_all()
+    assert ProjectSetupRepository(session).get(project).current_attempt.status == "success"
+    assert [call["phase"] for call in calls] == ["preparation", "verification", "completion"]
+    assert TrackerRepository(session).delivery_defaults(project_id=project) == adopted
+    assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 0
 
 
 @pytest.mark.parametrize("outcome", ["failed", "blocked"])

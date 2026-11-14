@@ -8481,6 +8481,11 @@ export interface components {
              */
             phase: SetupManagedExecutionPhase;
             /**
+             * Preflight Failed
+             * @default false
+             */
+            preflight_failed: boolean;
+            /**
              * Resume Thread Id
              * @default null
              */
@@ -8541,6 +8546,11 @@ export interface components {
             checked_at: string;
             progress: components["schemas"]["SetupProgress"];
             question: components["schemas"]["SetupQuestion"] | null;
+            /**
+             * Report Digest
+             * @default null
+             */
+            report_digest: string | null;
             /** Result Refs */
             result_refs: string[];
             /** Revision */

@@ -317,7 +317,7 @@ def continue_managed(
         if (
             not native
             and current.status in {"cancelled", "failed"}
-            and not current.managed.callback_started
+            and (not current.managed.callback_started or current.managed.preflight_failed)
             and current.managed.resume_thread_id
         ):
             child = current
@@ -340,7 +340,7 @@ def continue_managed(
                 native = (parent_row.metadata_json or {}).get("native_execution") or {}
                 if native:
                     break
-                if parent.managed.callback_started:
+                if parent.managed.callback_started and not parent.managed.preflight_failed:
                     raise ConflictError("prior native retirement is unknown", data=repair)
                 child = parent
         identity = native.get("execution") or {}
@@ -606,7 +606,6 @@ def _adopt_managed(session, project_id, request_id, claim_token):
     from stackos.repositories.project_setup import ProjectSetupRepository, VerifiedSetup, _digest
     from stackos.repositories.projects import ProjectRepository
     from stackos.repositories.tracker import TrackerRepository
-    from stackos.repositories.tracker.setup import _delivery_role_defaults
 
     ProjectRepository(session).require_available(project_id, reserve=True)
     project = ProjectRepository(session).get(project_id)
@@ -650,13 +649,8 @@ def _adopt_managed(session, project_id, request_id, claim_token):
             if repo._identity(sources) != repo._identity(proof.sources):
                 raise ConflictError("Preparation sources changed before adoption")
     tracker = TrackerRepository(session)
-    defaults = tracker.delivery_defaults(project_id=project_id)
     sources, inline = {}, {}
     for role, selection in proposal.roles.items():
-        before = _delivery_role_defaults(defaults, role)
-        intended_host = before.get("host_key") or defaults.get("host_key") or current.runtime
-        if selection.host_key != intended_host:
-            raise ConflictError("Adoption cannot change the intended native host")
         if selection.source_ref:
             sources[role] = {
                 "source_ref": selection.source_ref.model_dump(),
@@ -674,7 +668,12 @@ def _adopt_managed(session, project_id, request_id, claim_token):
         sources=sources,
         inline_roles=inline,
     )
-    tracker.adopt_delivery_sources(**arguments, preview=True)
+    preview = tracker.adopt_delivery_sources(**arguments, preview=True)
+    if any(
+        preview["adoption"]["agents"][role]["host_key"] != selection.host_key
+        for role, selection in proposal.roles.items()
+    ):
+        raise ConflictError("Adoption cannot change the intended native host")
     tracker.adopt_delivery_sources(**arguments, preview=False, _commit=False)
     current.managed.phase = "verification"
     current.managed.adopted_delivery_digest = _digest(
@@ -696,6 +695,7 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
     from stackos.task_delivery import _request_delivery_drain
 
     continue_verification = False
+    native_entered = False
 
     def allowed():
         with session_factory() as session:
@@ -791,6 +791,7 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
                         },
                         "result": native["result"],
                     }
+        native_entered = True
         result = service.run_agent(
             **attempt.managed.settings,
             instructions=INSTRUCTIONS,
@@ -828,16 +829,16 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
                 raise ValidationError(
                     "Native setup exited without a final outcome or concrete question"
                 )
-            if current.status in {"running", "needs_input"}:
-                ProjectSetupRepository(session).report(
-                    project_id,
-                    request_id=request_id,
-                    session_id=current.session_id,
-                    claim_token=claim_token,
-                    expected_revision=current.revision,
-                    report=report,
-                    _managed=True,
-                )
+            ProjectSetupRepository(session).report(
+                project_id,
+                request_id=request_id,
+                session_id=current.session_id,
+                claim_token=claim_token,
+                expected_revision=current.revision,
+                report=report,
+                _managed=True,
+                _native_final=True,
+            )
             _, current = _load(session, project_id, request_id)
             if (
                 current.status == "partial"
@@ -862,6 +863,7 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
     except Exception as exc:
         with managed_launch_lock, session_factory() as session:
             row, current = _load(session, project_id, request_id)
+            current.managed.preflight_failed = not native_entered
             current.managed.diagnostic = redact_secret_text(str(exc))[:2000]
             current.status = (
                 "interrupted"

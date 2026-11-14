@@ -307,6 +307,11 @@ automatically to completion. Current matching evidence may complete directly.
 There is no separate verification workflow/task or linked-run waiting lifecycle.
 Cancellation fences only current setup ownership; recovery retains evidence and
 revalidates changed sources/defaults before consumption or final success.
+Confirmed failures before entering the native executor retain an explicit
+preflight marker, allowing exact-session recovery after the basis is restored;
+unknown native retirement still blocks recovery. Native final reports reconcile
+earlier progress, retaining failures. Exact report digests allow identical final
+replay without duplicate receipt writes while rechecking final success.
 
 The agent chooses workflows under the shared guide and inspects unknown legacy
 adaptations before deciding what to change. `start` serializes admission with the
