@@ -139,8 +139,10 @@ explicitly authorized instruction-only saved-default adoption may occur during a
 Queued/running snapshots stay frozen. Explicit rehandoff after complete/stopped
 execution resolves current defaults while preserving prior ticket receipts,
 native sessions and consumed repair allowance. Completed tasks and frozen
-run/template snapshots stay unchanged. Installed activation is separately
-authorized and main-owned after task closure. Adoption does not authorize
+run/template snapshots stay unchanged. Installed application/runtime replacement is separately
+authorized and main-owned, coordinated with the active runtime owner. Workflow/default
+activation explicitly included in the current outcome must finish there rather than
+being deferred until closure. Adoption does not authorize
 restarting the daemon orchestrating the active task; source checks do not prove
 saved adoption, native consumption or installed activation.
 

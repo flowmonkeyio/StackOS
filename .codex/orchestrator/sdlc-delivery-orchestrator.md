@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.20
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.21
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Workflow: `engineering.tracked-delivery` v0.8.4 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -508,9 +508,25 @@ unsupported frozen/live jobs; manual reviewed adoption remains separate.
 
 ## Explicit Current-Project Source Adoption
 
+When the operator requests automatic delivery activation, keep adaptation and
+activation in the current outcome. Inspect `tracker.get` raw defaults and exact
+project role sources; reconcile main-managed local instructions with automatic
+lifecycle ownership before reviewed `tracker.configureDelivery` preview/write/readback.
+The infrastructure-only setup invocation creates no execution state; its authorized
+delivery owner then runs a bounded disposable tracked-delivery task through actual
+native delivery, independent review and workflow closeout using the intended host
+and saved bindings. Inspect the admitted snapshot and actual consumed source
+identities, not only files or hashes; record saved readback, native attempts, review
+and closeout refs in existing evidence and update the setup receipt truthfully.
+A task override cannot prove missing project defaults. Required activation cannot
+become an optional followup or be accepted as `activation_pending`; blocked proof
+leaves the outcome unfinished. Preserve frozen live sessions and other owners'
+work. No all-role launch matrix, new runner or mandatory business feature is needed.
+
 Preserve provider/profile, names, hosts, model fallback choices and absent/null
 fields exactly. Read back saved defaults and prove the subsequent disposable
-handoff. No synchronizer, watcher or cross-project rollout is authorized.
+handoff. No synchronizer, watcher or implicit cross-project rollout is authorized.
+An explicitly scoped rollout still adopts each project independently.
 
 Fresh Codex admission selects exact project source_ref bindings in agents by role; resolve source instructions/model/effort/supported restrictions once, with omitted values inheriting task then project then host settings. Source fields never increase authority. Non-Codex inline contracts remain supported. Explicit task agent_assignments win over frozen step assignments, then uniquely applicable selected declared roles; ambiguity requires selection. Ordinary tickets retain a distinct reviewer. Queued/running and resumed native snapshots stay frozen; future admissions read current sources. Use tracker.configureDelivery adopt_sources preview/write with expected digests for explicit current-project adoption, preserving unrelated settings and history; retain references instead of editable copied Codex instructions after readback.
 
@@ -529,10 +545,12 @@ completed/stopped execution resolves current defaults/overrides while preserving
 prior ticket receipts, native sessions and consumed repair allowance. Completed
 tasks and frozen run/template snapshots stay unchanged. Other projects adapt individually using
 their own available sources; no mandatory `.codex` folder, synchronizer, watcher
-or cross-project rollout. Installed activation is separately authorized and
-main-owned after task closure, with lifecycle smoke and subsequent installed
-instruction-consumption evidence. Adoption does not authorize a restart of the
-daemon orchestrating the active task. Source validation does not claim saved
+or implicit cross-project rollout. Installed application/runtime replacement
+remains separately authorized and main-owned, coordinated with the active runtime
+owner and verified with lifecycle smoke and installed instruction-consumption
+evidence. Workflow/default activation explicitly included in the current outcome
+must finish there rather than being deferred until closure. Adoption alone does
+not authorize a restart of the daemon orchestrating the active task. Source validation does not claim saved
 adoption, isolated native consumption or installed activation complete.
 
 ## Recovery And Closeout

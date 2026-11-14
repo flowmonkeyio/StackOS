@@ -73,6 +73,22 @@ def project_setup_method() -> ProjectSetupMethod:
             "unrelated files and frozen queued/running execution snapshots. Re-read current "
             "occurrence amendments on resume: later authorized scope can supersede an older "
             "preparation hold, without rewriting reusable sources or historical snapshots.\n\n"
+            "Distinguish infrastructure-only setup from an operator request to adapt and activate "
+            "a workflow. For requested activation, resolve the intended execution mode from "
+            "current operator intent and inspect its actual saved defaults, role bindings and "
+            "local authority rules through their existing owners. Reconcile incompatible "
+            "main-managed and automatic instructions; configured files or structural validation "
+            "alone do not establish operational readiness. Complete the infrastructure phase "
+            "without creating execution state. The authorized delivery owner then performs the "
+            "selected workflow's bounded explicit execution smoke, including applicable "
+            "independent review and closeout, using the intended host and saved bindings. "
+            "An infrastructure-only invocation returns those remaining obligations to its owner; "
+            "it does not acquire execution authority. Keep requested activation in the current "
+            "delivery's acceptance scope, not an optional followup or an unexplained pending "
+            "receipt. Record actual saved readback, newly consumed guidance and execution "
+            "evidence separately from prepared files. Missing activation proof leaves that "
+            "requested outcome unfinished; no all-role launch matrix or unrelated business "
+            "execution is required.\n\n"
             "Check syntax, registration, required-role and reference coverage, and bounded actual "
             "host behavior. Prove loading/reload before claiming active; hashes or phrase checks "
             "alone do not prove it. Exercise ordinary matching/new goals, a harmless question, "
@@ -865,6 +881,10 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
         ],
         setup_completion_contract=[
             "Selected intent mode and why it applies.",
+            "Operator-requested completion boundary: infrastructure only or separately authorized "
+            "activation, intended execution mode, existing owner of any execution smoke, and "
+            "actual evidence or unresolved required activation obligations. An infrastructure "
+            "receipt alone cannot complete a requested operational outcome.",
             "Workspace/project binding and deterministic future binding path.",
             "Workflow key, source, version, and effective extension state; say absent/not_required "
             "instead of creating an empty extension.",

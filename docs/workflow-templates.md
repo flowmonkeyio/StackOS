@@ -570,6 +570,17 @@ return the guide's complete setup proof, including deferred inputs and exact
 preset mappings. Do not create a run plan, workflow tracker work or business
 output as setup proof.
 
+When the operator requests adaptation **and activation**, infrastructure setup is
+one phase of that outcome. Inspect the selected execution mode's saved defaults,
+role bindings and local authority rules at their existing owners. After setup
+returns, the authorized delivery owner completes the workflow's bounded explicit
+execution smoke, including applicable independent review and closeout. The managed
+infrastructure invocation still creates no execution state. Keep activation as
+required work in the current delivery, with actual default readback, newly consumed
+guidance and execution evidence; prepared files or an `activation_pending` receipt
+do not complete that outcome. No all-role launch matrix is required. An ordinary
+infrastructure-only request may still finish with truthful deferred activation.
+
 ### Applied setup evidence
 
 `ProjectSetupRepository` owns one current receipt per project/workflow key.

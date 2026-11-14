@@ -128,8 +128,10 @@ Only explicit success advances. Defaults use local-admin REST-only
 `tracker.configureDelivery`. Reviewed instruction adoption is explicit per
 project. After independent source/local approval, explicitly authorized
 instruction-only saved-default adoption may occur during a running task;
-queued/running snapshots stay frozen. Installed activation is separately
-authorized and main-owned after task closure. Source changes never refresh active
+queued/running snapshots stay frozen. Installed application/runtime replacement is separately
+authorized and main-owned, coordinated with the active runtime owner. Workflow/default
+activation explicitly included in the current outcome must finish there rather than
+being deferred until closure. Source changes never refresh active
 or historical snapshots. Explicit
 rehandoff after a completed/stopped job resolves current defaults and preserves
 ticket sessions, receipts and repair allowance. Jobs do not resume after daemon restart. The shared
