@@ -29,7 +29,7 @@ function resetEditorOptions(fields: AgentFields | null) {
     void loadHostStatuses()
   }
 }
-const { items, diagnostics, loading, loaded, ready, reading, saving, error, message, selected, requestedSource, draft, dirty, refresh, edit, add, close, save } = useProjectAgents(toRef(props, 'projectId'), projectDir, resetEditorOptions, folderReady)
+const { items, diagnostics, loading, loaded, ready, reading, saving, error, errorContext, message, selected, requestedSource, draft, dirty, refresh, edit, add, close, save } = useProjectAgents(toRef(props, 'projectId'), projectDir, resetEditorOptions, folderReady)
 reloadAgents = () => { void refresh() }
 const visible = computed(() => items.value.filter(item => `${item.source_ref.native_name} ${item.fields?.description ?? ''} ${item.source_ref.source_path}`.toLowerCase().includes(search.value.toLowerCase())))
 const title = (name: string) => name.replace(/[_-]/g, ' ').replace(/^./, value => value.toUpperCase()).replace(/\bseo\b/gi, 'SEO')
@@ -303,12 +303,12 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(accepte
           label="Reading full project instructions…"
         />
         <UiCallout
-          v-if="error && ready && requestedSource && (!selected || agentIdentity(requestedSource) !== agentIdentity(selected.source_ref))"
+          v-if="error && ready && errorContext?.operation === 'read' && errorContext.source"
           tone="danger"
           title="Agent could not be opened"
           role="alert"
         >
-          {{ title(requestedSource.native_name) }}: {{ error }} {{ selected ? `Last loaded agent: ${title(selected.source_ref.native_name)}.` : '' }}
+          {{ title(errorContext.source.native_name) }}: {{ error }} {{ selected ? `Last loaded agent: ${title(selected.source_ref.native_name)}.` : '' }}
         </UiCallout>
         <div class="mb-4 border-b border-subtle pb-4">
           <div class="flex items-start justify-between gap-3">
@@ -483,12 +483,14 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(accepte
               {{ optionsError }}
             </UiCallout>
             <UiCallout
-              v-if="error && ready && (!requestedSource || (selected && agentIdentity(requestedSource) === agentIdentity(selected.source_ref)))"
+              v-if="error && ready && errorContext?.operation !== 'read'"
               tone="danger"
-              title="Agent source requires attention"
+              :title="errorContext?.operation === 'save' ? 'Agent could not be saved' : 'Agent source requires attention'"
               role="alert"
             >
-              {{ error }}
+              <template v-if="errorContext?.source">
+                {{ title(errorContext.source.native_name) }}:
+              </template>{{ error }}
             </UiCallout>
             <div class="flex flex-wrap items-center gap-3 border-t border-subtle pt-4">
               <UiButton

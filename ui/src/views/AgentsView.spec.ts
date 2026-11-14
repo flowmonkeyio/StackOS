@@ -76,6 +76,28 @@ describe('Agents list and native editor', () => {
     await w.get('[aria-label="Close agent editor"]').trigger('click'); await flushPromises()
     expect(callOperation).not.toHaveBeenCalledWith('projectAgent.update', expect.anything())
   })
+  it.each(['failure', 'stale'] as const)('attributes a rejected retained-source save after a %s switch to the save source', async outcome => {
+    const second = { ...row, source_ref: { ...row.source_ref, native_name: 'delivery', source_path: '.codex/agents/delivery.toml' }, fields: { ...row.fields, name: 'delivery' } }
+    const w = setup([row, second]); await flushPromises(); await w.get('.agent-row').trigger('click'); await flushPromises()
+    if (outcome === 'failure') vi.mocked(callOperation).mockRejectedValueOnce(new Error('Delivery read failed'))
+    else vi.mocked(callOperation).mockResolvedValueOnce(row)
+    await w.findAll('.agent-row')[1]!.trigger('click'); await flushPromises()
+    expect(w.get('[role="alert"]').text()).toContain('Agent could not be opened')
+    expect(w.get('[role="alert"]').text()).toContain('Delivery:')
+    await w.get('textarea').setValue('Unsaved retained description')
+    vi.mocked(callOperation).mockRejectedValueOnce(new ApiError('Source changed', 409, { detail: 'Source changed', data: { code: 'stale_source', repair: 'Refresh the definition and reconcile the draft before saving.' } }))
+    await w.get('form').trigger('submit'); await flushPromises()
+    const alert = w.get('[role="alert"]').text()
+    expect(alert).toContain('Agent could not be saved')
+    expect(alert).toContain('SEO keyword research:')
+    expect(alert).toContain('stale_source')
+    expect(alert).not.toContain('Delivery:')
+    expect(alert).not.toContain('could not be opened')
+    expect(w.get('textarea').element.value).toBe('Unsaved retained description')
+    expect(w.get('h2').text()).toBe('SEO keyword research')
+    expect(w.get('.agents-layout').element.children).toHaveLength(2)
+    expect(callOperation).toHaveBeenCalledWith('projectAgent.update', expect.objectContaining({ source_ref: row.source_ref, expected_digest: row.digest, patch: { description: 'Unsaved retained description' } }))
+  })
   it('retains the last identity inside the busy slot and ignores a read completed after close', async () => {
     const second = { ...row, source_ref: { ...row.source_ref, native_name: 'delivery', source_path: '.codex/agents/delivery.toml' }, fields: { ...row.fields, name: 'delivery' } }
     const w = setup([row, second]); await flushPromises()
