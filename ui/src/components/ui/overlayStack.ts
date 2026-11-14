@@ -4,14 +4,15 @@ export interface OverlayEntry {
   layer: number
   returnFocus: HTMLElement | null
   element: () => HTMLElement | null
+  lockScroll: boolean
 }
 
 const stack: OverlayEntry[] = []
 let previousBodyOverflow = ''
 
 /** Dialogs and drawers share opening order, keyboard ownership and one scroll lock. */
-export function openOverlay(element: OverlayEntry['element']): OverlayEntry {
-  if (!stack.length) {
+export function openOverlay(element: OverlayEntry['element'], lockScroll = true): OverlayEntry {
+  if (lockScroll && !stack.some(entry => entry.lockScroll)) {
     previousBodyOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
   }
@@ -19,6 +20,7 @@ export function openOverlay(element: OverlayEntry['element']): OverlayEntry {
     layer: (stack.at(-1)?.layer ?? zIndex.overlay) + 2,
     returnFocus: document.activeElement instanceof HTMLElement ? document.activeElement : null,
     element,
+    lockScroll,
   }
   stack.push(entry)
   return entry
@@ -38,6 +40,6 @@ export function closeOverlay(entry: OverlayEntry | null): void {
     if (later.returnFocus && entry.element()?.contains(later.returnFocus)) later.returnFocus = entry.returnFocus
   }
   stack.splice(index, 1)
-  if (!stack.length) document.body.style.overflow = previousBodyOverflow
+  if (entry.lockScroll && !stack.some(item => item.lockScroll)) document.body.style.overflow = previousBodyOverflow
   if (wasTop && entry.returnFocus?.isConnected) entry.returnFocus.focus({ preventScroll: true })
 }

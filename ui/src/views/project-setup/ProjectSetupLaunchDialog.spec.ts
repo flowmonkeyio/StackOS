@@ -209,3 +209,21 @@ it('preserves saved reasoning when the resolver supplies the omitted host', asyn
   await button('Start setup').trigger('click')
   expect(start).toHaveBeenLastCalledWith({ host_key: 'fixed', ...saved, provider: null, profile: null })
 })
+
+it('shows resolved workflow names, truthful legacy and unavailable states, and retains Version details', async () => {
+  await dialog('native')
+  const state = setupFixture()
+  const workflow = state.workflows![0]!
+  await wrapper!.setProps({ state: { ...state, workflows: [
+    { ...workflow, workflow_key: 'legacy.example', status: 'unknown', successful: null,
+      available_sources: [{ kind: 'template', key: 'legacy.example', version: '1', content: { name: 'Readable workflow' } }] },
+    { ...workflow, workflow_key: 'missing.example', status: 'source_unavailable', diagnostic: 'Restore the disabled plugin, then check again.', available_sources: [] },
+    { ...workflow, workflow_key: 'old.example', status: 'unknown', available_sources: [],
+      successful: { verification: { sources: {} } } },
+  ] } })
+  expect(wrapper!.text()).toContain('Readable workflow')
+  expect(wrapper!.text()).toContain('Not verified')
+  expect(wrapper!.text()).toContain('Source unavailable')
+  expect(wrapper!.text()).toContain('Restore the disabled plugin, then check again.')
+  expect(wrapper!.get('summary').text()).toBe('Version details')
+})

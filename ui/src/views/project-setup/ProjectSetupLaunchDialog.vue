@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, useId } from 'vue'
-import type { SchemaMainAgentPreferences, SchemaProjectSetupOut, SchemaSetupAttempt } from '@/api'
+import type { SchemaMainAgentPreferences, SchemaProjectSetupOut, SchemaSetupAttempt, SchemaSetupWorkflowOut } from '@/api'
 import { UiButton, UiCallout, UiDialog, UiFormField, UiInput, UiSelect } from '@/components/ui'
+import StatusBadge from '@/components/StatusBadge.vue'
+import { resolveStatus } from '@/design/status'
 import type { DesktopMcpHostStatus } from '@/lib/desktop'
 import { callOperation } from '@/lib/operations'
 import { readProjectSetup, setupErrorMessage } from './useProjectSetup'
@@ -72,6 +74,17 @@ function appliedVersions(successful: Record<string, unknown> | null): string {
   if (!verification || typeof verification !== 'object' || !('sources' in verification) || !Array.isArray(verification.sources)) return 'Not verified'
   return verification.sources.map((source: { key?: string; version?: string | null }) => `${source.key ?? 'Guidance'}: ${source.version ?? 'Unversioned'}`).join(' · ')
 }
+function workflowName(workflow: SchemaSetupWorkflowOut): string {
+  const previous = workflow.successful?.verification as { sources?: { kind?: string; content?: { name?: string } }[] } | undefined
+  const previousSources = Array.isArray(previous?.sources) ? previous.sources : []
+  const source = workflow.available_sources?.find(source => source.kind === 'template')
+    ?? previousSources.find(source => source?.kind === 'template')
+  return typeof source?.content?.name === 'string' ? source.content.name : workflow.workflow_key
+}
+function workflowStatus(workflow: SchemaSetupWorkflowOut): string {
+  return workflow.status === 'source_unavailable' ? workflow.status
+    : workflow.latest_status && workflow.latest_status !== 'success' ? workflow.latest_status : workflow.status
+}
 function changeHost(value: string | number | null): void {
   const next = String(value ?? '')
   if (next === hostKey.value) return
@@ -127,7 +140,8 @@ async function submit(): Promise<void> {
     :model-value="true"
     :title="state.status === 'updates_available' ? 'Update project workflows' : 'Set up this project'"
     size="lg"
-    scroll-body
+    layout="detail"
+    detail-height="720px"
     :static-backdrop="pending"
     :no-escape="pending"
     :hide-close="pending"
@@ -152,8 +166,20 @@ async function submit(): Promise<void> {
           :key="workflow.workflow_key"
           class="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs"
         >
-          <span class="min-w-0 break-words">{{ workflow.workflow_key }}</span>
-          <span class="text-fg-muted">{{ workflow.status === 'update_available' ? 'Update available' : workflow.status === 'current' ? 'Current' : workflow.status === 'activation_pending' ? 'Reload pending' : 'Needs checking' }}</span>
+          <span
+            class="min-w-0 flex-1 break-words"
+            :title="workflow.workflow_key"
+          >{{ workflowName(workflow) }}</span>
+          <StatusBadge
+            domain="projectSetup"
+            :status="workflowStatus(workflow)"
+          />
+          <p
+            v-if="workflow.status === 'source_unavailable' || workflow.latest_status === 'failed'"
+            class="basis-full break-words text-fg-muted"
+          >
+            {{ workflow.diagnostic || resolveStatus('projectSetup', workflowStatus(workflow)).description }}
+          </p>
         </div>
       </div>
       <details
@@ -169,7 +195,7 @@ async function submit(): Promise<void> {
             :key="workflow.workflow_key"
           >
             <dt class="font-medium text-fg-default">
-              {{ workflow.workflow_key }}
+              {{ workflowName(workflow) }}
             </dt>
             <dd>Applied: {{ appliedVersions(workflow.successful) }}</dd>
             <dd>Available: {{ workflow.available_sources?.map(source => `${source.key}: ${source.version ?? 'Unversioned'}`).join(' · ') || 'Unavailable' }}</dd>
