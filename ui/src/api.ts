@@ -2630,6 +2630,11 @@ export interface components {
             /** Name */
             name: string;
             /**
+             * Sandbox Mode
+             * @default null
+             */
+            sandbox_mode: string | null;
+            /**
              * Skills
              * @default null
              */
@@ -2708,6 +2713,11 @@ export interface components {
              * @default null
              */
             name: string | null;
+            /**
+             * Sandbox Mode
+             * @default null
+             */
+            sandbox_mode: string | null;
             /**
              * Skills
              * @default null

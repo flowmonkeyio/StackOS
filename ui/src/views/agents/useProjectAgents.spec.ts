@@ -134,6 +134,7 @@ describe('native project agents', () => {
   it('patches only changed native restriction leaves and explicitly removes cleared leaves', async () => {
     const row = definition()
     row.fields!.features = { shell_tool: false, apps: false }
+    row.fields!.sandbox_mode = 'read-only'
     const { agents } = setup(); await flushPromises()
     vi.mocked(callOperation).mockResolvedValueOnce(row)
     await agents.edit(row)
@@ -141,6 +142,7 @@ describe('native project agents', () => {
     vi.mocked(callOperation).mockResolvedValueOnce({ project_id: 1, data: { ...row, fields: { ...row.fields, features: { shell_tool: false } } } })
     await agents.save()
     expect(callOperation).toHaveBeenCalledWith('projectAgent.update', expect.objectContaining({ patch: { features: { apps: null } } }))
+    expect(agents.draft.value!.sandbox_mode).toBe('read-only')
   })
   it.each(['features', 'skills'] as const)('accepts native null readback after removing the final %s restriction and uses the new digest', async key => {
     const row = definition()

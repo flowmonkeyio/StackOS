@@ -47,6 +47,38 @@ def start(session, project_id, root, scheduler, **kwargs):
     )
 
 
+@pytest.mark.parametrize("sandbox", ["read-only", "workspace-write", "danger-full-access"])
+def test_registered_sibling_role_is_resolved_without_moving_or_rewriting(
+    session, project_id, tmp_path, sandbox
+):
+    ref = source(session, project_id, tmp_path, "writer", settings=f'sandbox_mode="{sandbox}"\n')
+    original = tmp_path / ref["source_path"]
+    target = tmp_path / ".agents/subagents/writer.toml"
+    target.parent.mkdir(parents=True)
+    original.rename(target)
+    ref["source_path"] = ".agents/subagents/writer.toml"
+    config = tmp_path / ".codex/config.toml"
+    config.write_text('[agents.writer]\nconfig_file="../.agents/subagents/writer.toml"\n')
+    before = {path: path.read_bytes() for path in (target, config)}
+    arguments = dict(
+        project_id=project_id,
+        project_dir=str(tmp_path),
+        role_keys={"delivery_agent"},
+        delivery_agent={"source_ref": ref},
+    )
+    if sandbox == "danger-full-access":
+        with pytest.raises(ValidationError, match="unsupported_setting"):
+            task_delivery.resolve_delivery_settings(session, **arguments)
+    else:
+        resolved = task_delivery.resolve_delivery_settings(session, **arguments)["agents"][
+            "delivery_agent"
+        ]
+        assert resolved["source_ref"] == ref
+        assert resolved["native_settings"] == {"sandbox_mode": sandbox}
+    assert {path: path.read_bytes() for path in before} == before
+    assert not original.exists()
+
+
 @pytest.mark.parametrize("argument_form", ["legacy", "map"])
 @pytest.mark.parametrize("choice", ["inherit", "set", "clear"])
 def test_inline_reasoning_inherits_sets_and_clears_with_capability_validation(
@@ -955,16 +987,21 @@ def test_ambiguous_source_identity_never_substitutes_a_definition(session, proje
         )
 
 
+@pytest.mark.parametrize("sandbox", [None, "read-only", "workspace-write"])
 def test_source_edit_refreshes_admission_but_resumes_frozen_session(
-    session, project_id, tmp_path, monkeypatch
+    session, project_id, tmp_path, monkeypatch, sandbox
 ):
+    original_settings = {"model_reasoning_effort": "high"}
+    if sandbox:
+        original_settings["sandbox_mode"] = sandbox
     writer = source(
         session,
         project_id,
         tmp_path,
         "writer",
         instructions="Original",
-        settings='model_reasoning_effort="high"\n',
+        settings='model_reasoning_effort="high"\n'
+        + (f'sandbox_mode="{sandbox}"\n' if sandbox else ""),
     )
     reviewer = source(session, project_id, tmp_path, "reviewer", instructions="Independent")
     repo = TrackerRepository(session)
@@ -989,11 +1026,13 @@ def test_source_edit_refreshes_admission_but_resumes_frozen_session(
     roles = {"delivery_agent": {"source_ref": writer}, "review_agent": {"source_ref": reviewer}}
     calls = []
     packets = []
+    sandboxes = []
 
     def launch(_host, _dir, instructions, prompt, _schema, **kwargs):
         packet = json.loads(prompt)
         packets.append(packet)
         phase = packet["phase"]
+        sandboxes.append(kwargs["sandbox"])
         calls.append(
             (
                 phase,
@@ -1016,6 +1055,9 @@ def test_source_edit_refreshes_admission_but_resumes_frozen_session(
     first = repo.brief(project_id=project_id, ticket_key="work").ticket.completion_evidence_json[
         "automatic_delivery"
     ]
+    expected_sandbox = sandbox or "workspace-write"
+    assert first["delivery"]["launch"]["sandbox"] == expected_sandbox
+    assert first["sessions"]["delivery"]["agent_snapshot"]["native_settings"] == original_settings
     source(
         session,
         project_id,
@@ -1052,15 +1094,21 @@ def test_source_edit_refreshes_admission_but_resumes_frozen_session(
     assert current["native_settings"] == {"model_reasoning_effort": "low"}
     scheduler.run()
     assert calls == [
-        ("delivery", "Original", None, {"model_reasoning_effort": "high"}),
-        ("delivery", "Original", "thread-delivery", {"model_reasoning_effort": "high"}),
+        ("delivery", "Original", None, original_settings),
+        ("delivery", "Original", "thread-delivery", original_settings),
         ("review", "Independent", None, {}),
+    ]
+    assert sandboxes == [
+        expected_sandbox,
+        expected_sandbox,
+        task_delivery.agent_review_sandbox("codex"),
     ]
     session.expire_all()
     final = repo.brief(project_id=project_id, ticket_key="work").ticket.completion_evidence_json[
         "automatic_delivery"
     ]
     assert final["sessions"]["delivery"] == first["sessions"]["delivery"]
+    assert final["delivery"]["launch"]["sandbox"] == expected_sandbox
     assert final["repair_count"] == first["repair_count"] == 0
     fresh, resumed, review = [packet["occurrence"] for packet in packets]
     assert fresh["attempt"] == 1 and resumed["attempt"] == review["attempt"] == 2

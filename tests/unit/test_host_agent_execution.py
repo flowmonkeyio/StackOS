@@ -213,6 +213,8 @@ def test_native_definition_settings_reach_supported_codex_config(tmp_path, monke
     "settings",
     [
         {"approval_policy": "never"},
+        {"sandbox_mode": "danger-full-access"},
+        {"sandbox_mode": None},
         {"features": {"apps": True}},
         {"skills": {"config": [{"path": "skill", "enabled": True}]}},
         {"model_reasoning_effort": None},
@@ -226,6 +228,51 @@ def test_native_options_never_grant_authority(tmp_path, monkeypatch, settings):
     )
     assert not run_agent("codex", tmp_path, "source", "prompt", SCHEMA, native_settings=settings).ok
     assert not run_agent("claude-code", tmp_path, "source", "prompt", SCHEMA, native_settings={}).ok
+
+
+@pytest.mark.parametrize("resume", [None, "frozen-thread"])
+@pytest.mark.parametrize("caller", ["read-only", "workspace-write"])
+@pytest.mark.parametrize("source", ["read-only", "workspace-write"])
+def test_source_sandbox_narrows_actual_native_command(
+    tmp_path, monkeypatch, resume, caller, source
+):
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/native/codex")
+    commands = []
+
+    def execute(command, **kwargs):
+        commands.append(command)
+        Path(command[command.index("-o") + 1]).write_text('{"summary":"checked"}')
+        return subprocess.CompletedProcess(
+            command, 0, '{"type":"thread.started","thread_id":"frozen-thread"}', ""
+        )
+
+    monkeypatch.setattr(codex.subprocess, "run", execute)
+    settings = {"sandbox_mode": source}
+    result = run_agent(
+        "codex",
+        tmp_path,
+        "source",
+        "bounded",
+        SCHEMA,
+        sandbox=caller,
+        native_settings=settings,
+        resume_thread_id=resume,
+    )
+    assert result.ok, result.error
+    assert len(commands) == 1
+    command = commands[0]
+    effective = "read-only" if "read-only" in (caller, source) else "workspace-write"
+    if effective == "read-only":
+        assert command[command.index("--sandbox") + 1] == "read-only"
+        assert "--approve-for-me" not in command
+        assert 'approval_policy="never"' in command
+    else:
+        assert "--approve-for-me" in command and "--sandbox" not in command
+    config = [tomllib.loads(command[i + 1]) for i, arg in enumerate(command) if arg == "-c"]
+    assert not any("sandbox_mode" in value for value in config)
+    assert settings == {"sandbox_mode": source}
+    if resume:
+        assert command[-3:] == ["resume", resume, "-"]
 
 
 @pytest.mark.parametrize("resume", [None, "exact-thread"])

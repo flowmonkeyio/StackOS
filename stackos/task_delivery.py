@@ -1875,6 +1875,10 @@ def run_delivery(
                 sandbox: AgentSandbox = (
                     "workspace-write" if phase == "delivery" else agent_review_sandbox(host_key)
                 )
+                if host_key == "codex":
+                    from stackos.host_mcp.adapters.codex import native_agent_sandbox
+
+                    sandbox = native_agent_sandbox(sandbox, agent.get("native_settings") or {})
                 selection = {
                     key: agent[key]
                     for key in ("model", "model_reasoning_effort", "provider", "profile")

@@ -88,6 +88,7 @@ def run_agent(
             else []
         )
         overrides += native_agent_overrides(native_settings or {})
+        sandbox = native_agent_sandbox(sandbox, native_settings or {})
     except ValueError as error:
         return AgentRunResult(None, error=str(error))
     with TemporaryDirectory(prefix="stackos-agent-") as temporary:
@@ -295,6 +296,11 @@ def run_agent(
         return validated
 
 
+def native_agent_sandbox(sandbox: AgentSandbox, settings: dict[str, Any]) -> AgentSandbox:
+    """A validated source pin can narrow the caller's sandbox, never broaden it."""
+    return "read-only" if settings.get("sandbox_mode") == "read-only" else sandbox
+
+
 def native_agent_overrides(settings: dict[str, Any]) -> list[str]:
     """Map only the supported definition options; authority stays with the host."""
     import tomlkit
@@ -315,6 +321,7 @@ def native_agent_overrides(settings: dict[str, Any]) -> list[str]:
             "model_reasoning_effort",
             "model_reasoning_summary",
             "model_verbosity",
+            "sandbox_mode",
             "features",
             "skills",
         }
@@ -347,7 +354,10 @@ def native_agent_overrides(settings: dict[str, Any]) -> list[str]:
     for key, value in settings.items():
         if value is None:
             raise ValueError("Native project settings cannot contain explicit null")
-        append(key, value)
+        # Sandbox is applied through the effective command mode, not an earlier
+        # -c override that --approve-for-me could overwrite with workspace-write.
+        if key != "sandbox_mode":
+            append(key, value)
     return overrides
 
 

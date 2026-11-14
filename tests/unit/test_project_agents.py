@@ -43,6 +43,72 @@ def test_standalone_registered_dedup_and_legacy_metadata(tmp_path):
     assert service.get(old.source_ref).fields.developer_instructions == "Legacy full instructions"
 
 
+@pytest.mark.parametrize("sandbox", ["read-only", "workspace-write"])
+def test_config_relative_sibling_source_preserves_registration_and_sandbox(tmp_path, sandbox):
+    definition(tmp_path)
+    path = tmp_path / ".agents/subagents/delivery.toml"
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        '# project source\ndeveloper_instructions="Deliver"\n'
+        f'sandbox_mode="{sandbox}" # preserve pin\n'
+    )
+    config = tmp_path / ".codex/config.toml"
+    config.write_text(
+        '[agents.delivery]\nconfig_file="../.agents/subagents/delivery.toml"\n'
+        'description="Delivery"\n'
+    )
+    registration = config.read_bytes()
+    original = path.read_bytes()
+    service = ProjectAgentService(tmp_path)
+    listing = service.list()
+    assert listing.diagnostics == [] and len(listing.items) == 2
+    row = next(row for row in listing.items if row.source_ref.native_name == "delivery")
+    assert row.source_ref.source_path == ".agents/subagents/delivery.toml"
+    assert row.registration_keys == ["delivery"] and row.unsupported_fields == []
+    assert row.native_settings == {"sandbox_mode": sandbox}
+    assert service.get(row.source_ref) == row
+    saved = service.update(row.source_ref, row.digest, {"developer_instructions": "Deliver well"})
+    assert path.read_bytes() == original.replace(b'"Deliver"', b'"Deliver well"')
+    assert saved.native_settings == {"sandbox_mode": sandbox}
+    assert config.read_bytes() == registration
+    inherited = service.update(saved.source_ref, saved.digest, {"sandbox_mode": None})
+    assert "sandbox_mode" in inherited.inherited_fields
+    assert inherited.native_settings == {} and "sandbox_mode" not in path.read_text()
+    assert config.read_bytes() == registration
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        "../../personal.toml",
+        "../outside/secret.toml",
+        "../outside/../.codex/agents/research.toml",
+        "../linked.toml",
+        "../missing/../.codex/agents/research.toml",
+    ],
+)
+def test_config_relative_source_never_hides_escape_or_unsafe_components(tmp_path, target):
+    root = tmp_path / "project"
+    definition(root)
+    outside = tmp_path / "personal"
+    outside.mkdir()
+    secret = outside / "secret.toml"
+    secret.write_text('developer_instructions="PRIVATE"\n')
+    (root / "outside").symlink_to(outside, target_is_directory=True)
+    (root / "linked.toml").symlink_to(secret)
+    (root / ".codex/config.toml").write_text(
+        f'[agents.unsafe]\nconfig_file="{target}"\ndescription="Unsafe"\n'
+    )
+    service = ProjectAgentService(root)
+    listing = service.list()
+    healthy = next(row for row in listing.items if row.source_ref.native_name == "research")
+    assert service.get(healthy.source_ref).digest
+    assert listing.diagnostics or any(row.diagnostics for row in listing.items)
+    assert not any(row.fields and row.fields.name == "unsafe" for row in listing.items)
+    assert "PRIVATE" not in str(listing.model_dump())
+    assert secret.read_text() == 'developer_instructions="PRIVATE"\n'
+
+
 @pytest.mark.parametrize("legacy", [False, True])
 def test_same_file_registration_alias_deduplicates_before_parsing_and_updates(tmp_path, legacy):
     path = definition(tmp_path)
