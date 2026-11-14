@@ -93,7 +93,7 @@ async def project_setup_start(
             scheduler=ctx.extras["scheduler"],
             mode=inp.mode,
             workflow_keys=inp.workflow_keys,
-            preferences=inp.preferences.model_dump(exclude_none=True) if inp.preferences else None,
+            preferences=inp.preferences.model_dump(exclude_unset=True) if inp.preferences else None,
         )
         return WriteEnvelope(project_id=inp.project_id, data=result)
     if inp.preferences is not None:

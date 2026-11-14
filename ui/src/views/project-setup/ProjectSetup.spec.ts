@@ -114,7 +114,7 @@ describe('Home project setup', () => {
     const start = button('Start setup')
     await Promise.all([start.trigger('click'), start.trigger('click')]); await flushPromises()
     expect(vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'projectSetup.start')).toHaveLength(1)
-    expect(callOperation).toHaveBeenCalledWith('projectSetup.start', { project_id: 1, entry_kind: 'managed_ui', mode: 'setup', preferences: { host_key: 'codex', model: 'catalog-model', provider: null, profile: null } })
+    expect(callOperation).toHaveBeenCalledWith('projectSetup.start', { project_id: 1, entry_kind: 'managed_ui', mode: 'setup', preferences: { host_key: 'codex', model: 'catalog-model', model_reasoning_effort: null, provider: null, profile: null } })
     expect(router.currentRoute.value.path).toBe('/projects/1/setup')
     expect(wrapper!.text()).toContain('Setup is queued')
     await router.push('/projects/1'); await flushPromises()
@@ -125,22 +125,26 @@ describe('Home project setup', () => {
   it('reuses saved update choices and known workflows with optional change', async () => {
     state = setupFixture({ status: ProjectSetupOutStatus.updates_available, update_count: 2, launch_preferences: { host_key: 'codex', model: 'second-model' } })
     await home(); await button('Review updates').trigger('click'); await flushPromises()
-    expect(wrapper!.text()).toContain('Codex · second-model')
+    expect(wrapper!.text()).toContain('Codex · Model: second-model · Reasoning: Agent default')
     expect(wrapper!.find('[role="combobox"]').exists()).toBe(false)
     expect(button('Change')).toBeDefined()
     await button('Update workflows').trigger('click'); await flushPromises()
     expect(callOperation).toHaveBeenCalledWith('projectSetup.start', expect.objectContaining({ mode: 'update', preferences: expect.objectContaining({ model: 'second-model' }) }))
   })
 
-  it('does not offer a default model that the saved-host API would silently inherit', async () => {
+  it('offers a default model and sends an explicit clear for the saved host', async () => {
     state = setupFixture({ launch_preferences: { host_key: 'codex', model: 'second-model', provider: 'saved-provider' } })
     await home(); await button('Set up project').trigger('click'); await flushPromises()
     await button('Change').trigger('click'); await flushPromises()
     const modelSelect = wrapper!.findAllComponents({ name: 'UiSelect' })[1]!
-    expect(modelSelect.props('options').some((item: { value: string }) => item.value === '')).toBe(false)
+    expect(modelSelect.props('options').some((item: { value: string }) => item.value === '')).toBe(true)
     wrapper!.findAllComponents({ name: 'UiSelect' })[0]!.vm.$emit('update:modelValue', 'codex')
     await flushPromises()
     expect(modelSelect.props('modelValue')).toBe('second-model')
+    modelSelect.vm.$emit('update:modelValue', '')
+    await flushPromises()
+    await button('Start setup').trigger('click'); await flushPromises()
+    expect(callOperation).toHaveBeenCalledWith('projectSetup.start', expect.objectContaining({ preferences: expect.objectContaining({ model: null, model_reasoning_effort: null }) }))
   })
 
   it('disables an open launch when its bound folder becomes unavailable', async () => {
@@ -157,7 +161,7 @@ describe('Home project setup', () => {
   it('keeps an unavailable saved host and explains the prerequisite without launching', async () => {
     state = setupFixture({ launch_preferences: { host_key: 'missing-host', model: 'saved-model' } })
     await home(); await button('Set up project').trigger('click'); await flushPromises()
-    expect(wrapper!.text()).toContain('missing-host · saved-model')
+    expect(wrapper!.text()).toContain('missing-host · Model: saved-model')
     expect(wrapper!.text()).toContain('selected agent app is unavailable')
     expect(button('Start setup').attributes('disabled')).toBeDefined()
     expect(wrapper!.get('a[href="/projects/1/agents"]').text()).toBe('Open agent setup')

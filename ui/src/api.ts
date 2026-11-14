@@ -5688,6 +5688,11 @@ export interface components {
              */
             model: string | null;
             /**
+             * Model Reasoning Effort
+             * @default null
+             */
+            model_reasoning_effort: string | null;
+            /**
              * Profile
              * @default null
              */

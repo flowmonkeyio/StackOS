@@ -25,6 +25,7 @@ class MainAgentPreferences(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
     host_key: str | None = Field(default=None, min_length=1)
     model: str | None = Field(default=None, min_length=1)
+    model_reasoning_effort: str | None = Field(default=None, min_length=1)
     provider: str | None = Field(default=None, min_length=1)
     profile: str | None = Field(default=None, min_length=1)
 
@@ -68,10 +69,13 @@ def resolve_preferences(session, project_id, preferences=None, *, inherit_saved=
     saved = MainAgentPreferences.model_validate(
         (defaults.get("main_agent") or {}) if inherit_saved else {}
     ).model_dump(exclude_none=True)
-    explicit = MainAgentPreferences.model_validate(preferences or {}).model_dump(exclude_none=True)
+    # Omission inherits; explicit null clears a saved selection for this launch.
+    explicit = MainAgentPreferences.model_validate(preferences or {}).model_dump(exclude_unset=True)
     if explicit.get("host_key") and explicit["host_key"] != saved.get("host_key"):
         saved = {}
-    selected = {**saved, **explicit}
+    if "model" in explicit and explicit["model"] != saved.get("model"):
+        saved.pop("model_reasoning_effort", None)
+    selected = {key: value for key, value in {**saved, **explicit}.items() if value is not None}
     host_key = selected.get("host_key") or defaults.get("host_key")
     if host_key is None:
         # Catalog order is the existing preference order; never substitute an explicit choice.

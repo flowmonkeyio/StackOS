@@ -36,6 +36,7 @@ def run_agent(
     *,
     sandbox: AgentSandbox = "workspace-write",
     model: str | None = None,
+    model_reasoning_effort: str | None = None,
     provider: str | None = None,
     profile: str | None = None,
     resume_thread_id: str | None = None,
@@ -44,6 +45,14 @@ def run_agent(
     cli = claude_mcp.resolve_claude_bin()
     if cli is None:
         return AgentRunResult(None, error="No Claude Code CLI was found by host discovery.")
+    if model_reasoning_effort is not None:
+        inherited = subprocess_env_for_cli(cli).get("CLAUDE_CODE_EFFORT_LEVEL")
+        if inherited is not None and inherited != model_reasoning_effort:
+            return AgentRunResult(
+                None,
+                error="CLAUDE_CODE_EFFORT_LEVEL overrides the selected reasoning effort; "
+                "remove it from the host environment or select the same level.",
+            )
     command = [
         cli,
         "-p",
@@ -60,6 +69,8 @@ def run_agent(
         command += ["--tools", "Read,Glob,Grep", "--disallowedTools", "mcp__*"]
     if model is not None:
         command += ["--model", model]
+    if model_reasoning_effort is not None:
+        command += ["--effort", model_reasoning_effort]
     if resume_thread_id is not None:
         command += ["--resume", resume_thread_id]
     return execute_json_agent(

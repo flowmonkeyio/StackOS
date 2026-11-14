@@ -58,6 +58,7 @@ def run_agent(
     *,
     sandbox: AgentSandbox = "workspace-write",
     model: str | None = None,
+    model_reasoning_effort: str | None = None,
     provider: str | None = None,
     profile: str | None = None,
     resume_thread_id: str | None = None,
@@ -84,6 +85,8 @@ def run_agent(
     ]
     if model is not None:
         command += ["--model", model]
+    if model_reasoning_effort is not None:
+        command += ["--reasoning-effort", model_reasoning_effort]
     if resume_thread_id is not None:
         command += ["--resume", resume_thread_id]
     return execute_json_agent(

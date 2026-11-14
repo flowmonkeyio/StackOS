@@ -58,10 +58,11 @@ it('accepts an initial custom model from an empty catalog and requires its provi
   await field('Model').get('input').setValue('provider/model-alias')
   expect(button('Start setup').attributes('disabled')).toBeDefined()
   await field('Provider').get('input').setValue('configured-provider')
+  await button('Advanced options').trigger('click')
   await field('Agent profile').get('input').setValue('project-profile')
   expect(button('Start setup').attributes('disabled')).toBeUndefined()
   await button('Start setup').trigger('click')
-  expect(start).toHaveBeenCalledWith({ host_key: 'hermes', model: 'provider/model-alias', provider: 'configured-provider', profile: 'project-profile' })
+  expect(start).toHaveBeenCalledWith({ host_key: 'hermes', model: 'provider/model-alias', model_reasoning_effort: null, provider: 'configured-provider', profile: 'project-profile' })
 })
 
 it('offers custom entry alongside fixed choices and never silently defaults an empty custom value', async () => {
@@ -74,7 +75,7 @@ it('offers custom entry alongside fixed choices and never silently defaults an e
   expect(field('Model').get('input').attributes('disabled')).toBeDefined()
   await wrapper!.setProps({ pending: false })
   await button('Start setup').trigger('click')
-  expect(start).toHaveBeenCalledWith({ host_key: 'grok', model: 'my-installed-alias', provider: null, profile: null })
+  expect(start).toHaveBeenCalledWith({ host_key: 'grok', model: 'my-installed-alias', model_reasoning_effort: null, provider: null, profile: null })
   const select = field('Model').findComponent({ name: 'UiSelect' })
   select.vm.$emit('update:modelValue', 'grok-build')
   await flushPromises()
@@ -94,7 +95,7 @@ it.each(['hermes', 'grok'])('retains a saved %s custom model and allows an expli
   expect(button('Start setup').attributes('disabled')).toBeDefined()
   await field('Model').get('input').setValue('replacement/custom-model')
   await button('Start setup').trigger('click')
-  expect(start).toHaveBeenCalledWith({ host_key: key, model: 'replacement/custom-model', provider: key === 'hermes' ? 'saved-provider' : null, profile: key === 'hermes' ? 'saved-profile' : null })
+  expect(start).toHaveBeenCalledWith({ host_key: key, model: 'replacement/custom-model', model_reasoning_effort: null, provider: key === 'hermes' ? 'saved-provider' : null, profile: key === 'hermes' ? 'saved-profile' : null })
 })
 
 it('uses only the selected host capability and preserves fixed recommendations', async () => {
@@ -116,5 +117,55 @@ it.each(['native', 'grok'])('keeps the native default when %s has no recommendat
   expect(select.props('options')).toContainEqual({ value: '', label: 'Agent default' })
   expect(wrapper!.text()).not.toContain('(Recommended)')
   await button('Start setup').trigger('click')
-  expect(start).toHaveBeenCalledWith({ host_key: key, model: null, provider: null, profile: null })
+  expect(start).toHaveBeenCalledWith({ host_key: key, model: null, model_reasoning_effort: null, provider: null, profile: null })
+})
+
+it('uses model-specific reasoning from the host response and clears it on model and host changes', async () => {
+  const fixed = hosts.find(host => host.host_key === 'fixed')!
+  vi.mocked(callOperation).mockResolvedValue({ items: [{ ...fixed, agent_execution: { ...fixed.agent_execution!,
+    reasoning_efforts: { 'recommended-model': ['low', 'high'], 'other-model': ['low'] }, models: ['recommended-model', 'other-model'] } }, ...hosts.filter(host => host !== fixed)] })
+  const start = vi.fn().mockResolvedValue(null)
+  wrapper = mount(Dialog, { props: { state: setupFixture(), pending: false, error: null, start },
+    attachTo: document.body, global: { stubs: { teleport: true, RouterLink: true } } })
+  await flushPromises()
+  const reasoningSelect = field('Reasoning').findComponent({ name: 'UiSelect' })
+  expect(reasoningSelect.props('options').map((option: { value: string }) => option.value)).toEqual(['', 'low', 'high'])
+  reasoningSelect.vm.$emit('update:modelValue', 'high')
+  await flushPromises()
+  expect(wrapper.text()).toContain('Reasoning: high')
+  await button('Start setup').trigger('click')
+  expect(start).toHaveBeenLastCalledWith(expect.objectContaining({ model: 'recommended-model', model_reasoning_effort: 'high' }))
+  field('Model').findComponent({ name: 'UiSelect' }).vm.$emit('update:modelValue', 'recommended-model')
+  await flushPromises()
+  expect(reasoningSelect.props('modelValue')).toBe('high')
+  field('Model').findComponent({ name: 'UiSelect' }).vm.$emit('update:modelValue', 'other-model')
+  await flushPromises()
+  expect(reasoningSelect.props('modelValue')).toBe('')
+  expect(reasoningSelect.props('options').map((option: { value: string }) => option.value)).toEqual(['', 'low'])
+  field('Agent app').findComponent({ name: 'UiSelect' }).vm.$emit('update:modelValue', 'hermes')
+  await flushPromises()
+  expect(field('Reasoning').findComponent({ name: 'UiSelect' }).props('options')).toEqual([{ value: '', label: 'Agent default' }])
+  expect((field('Provider').get('input').element as HTMLInputElement).value).toBe('')
+})
+
+it('retains an unsupported saved effort for repair and permits a real clear to default', async () => {
+  const start = await dialog('native', { host_key: 'native', model: 'native-model', model_reasoning_effort: 'old-effort' })
+  expect(button('Start setup').attributes('disabled')).toBeDefined()
+  await button('Change').trigger('click')
+  expect(wrapper!.text()).toContain('Reasoning old-effort is unavailable')
+  field('Reasoning').findComponent({ name: 'UiSelect' }).vm.$emit('update:modelValue', '')
+  await flushPromises()
+  await button('Start setup').trigger('click')
+  expect(start).toHaveBeenCalledWith(expect.objectContaining({ model: 'native-model', model_reasoning_effort: null }))
+})
+
+it('clears an optional saved profile only on this launch through advanced options', async () => {
+  const start = await dialog('hermes', { host_key: 'hermes', model: 'custom/model', provider: 'configured', profile: 'saved-profile' })
+  await button('Change').trigger('click')
+  expect(field('Provider')).toBeDefined()
+  expect(wrapper!.text()).not.toContain('Agent profile')
+  await button('Advanced options').trigger('click')
+  await field('Agent profile').get('input').setValue('')
+  await button('Start setup').trigger('click')
+  expect(start).toHaveBeenCalledWith(expect.objectContaining({ provider: 'configured', profile: null }))
 })
