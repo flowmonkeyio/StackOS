@@ -172,11 +172,17 @@ explicitly. Fresh Codex admission requires an exact project `source_ref`; legacy
 inline Codex choices return `adoption_required`. Other hosts retain intentional
 inline contracts. `agents` maps arbitrary safe role keys to selected definitions
 and execution fallback choices. Task overrides merge field by field within each role;
-an explicit null clears an optional role selection (model/provider/profile/host),
+an explicit null clears an optional role selection
+(model/model_reasoning_effort/provider/profile/host),
 while a resolved name or instructions cannot be missing, null or empty.
 Source-native model/effort and supported reduction-only feature/skill settings win.
 Omitted values inherit task choices, project choices, then the native host. Source
-fields cannot replace provider/profile, permissions, sandbox or MCP routes;
+model/effort therefore wins even over an explicit null in a task fallback. To
+remove a source override, explicitly edit that source; null in a source patch
+removes the field, while omission preserves it. No missing effort is filled with
+a guessed host default. Capability-supported effort reaches both delivery and
+independent review command arguments and their retained native session snapshots.
+Source fields cannot replace provider/profile, permissions, sandbox or MCP routes;
 unsupported settings reject with repair context. The existing native launcher uses
 supported `--model`/`-c` options, never an invented `--agent` option. Harness and role
 choices, source ref/digest, instructions and native settings are frozen under the
@@ -199,7 +205,7 @@ work that has not launched yet. Current defaults cannot replace that selection;
 changed host, agent settings or assignments reject. Existing workspace, MCP-route,
 host-preflight and native-session identity guards still apply. This exception does
 not admit a new inline Codex task or refresh its prior receipts or repair count.
-Each role may override `host_key`, `model`, `provider`, and (for Hermes)
+Each role may override `host_key`, `model`, `model_reasoning_effort`, `provider`, and (for Hermes)
 `profile`. The merged role host overrides the task host, then the project host,
 then `codex`. Clearing a role host uses that task/project host chain.
 Omitting the model preserves native host settings. Explicit selections reach
@@ -341,10 +347,18 @@ until the existing native owner establishes retirement; an elapsed timeout is
 insufficient. Completed receipt/report history survives cancellation.
 
 `TaskTracker.config_json.delivery.main_agent` stores typed project launch choices
-(`host_key`, `model`, `provider`, `profile`) independently of specialist contracts.
+(`host_key`, `model`, `model_reasoning_effort`, `provider`, `profile`)
+independently of specialist contracts.
 Authenticated local-admin REST `tracker.configureDelivery` accepts `main_agent`
 alone to merge those choices without replacing other defaults. This affects future
-managed admissions; queued/running request snapshots remain frozen. Model choices
+managed setup and scheduled main-agent admissions; queued/running request snapshots
+and setup continuations remain frozen. Setup and automation reuse
+`project_setup_execution.resolve_preferences`: omitted launch fields inherit saved
+main choices, explicit null clears a choice for that launch, and an explicit host
+change does not carry another host's saved model/effort/provider/profile. Scheduled
+host and validated MCP-route constraints remain authoritative. Each fresh schedule
+occurrence reads current preferences; an already admitted occurrence keeps its
+snapshot and is not replayed. This introduces no retry/resume lifecycle. Model choices
 and the optional recommendation come from the host capability catalog. An explicit
 unavailable host or invalid choice rejects without substitution.
 

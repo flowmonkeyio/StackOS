@@ -246,6 +246,76 @@ def test_answer_once_preserves_native_receipt_and_exact_settings(managed, sessio
     assert latest.answers[0].question_id == "goal"
 
 
+def test_saved_main_settings_reach_native_setup_and_frozen_continuation(
+    managed, session, monkeypatch
+):
+    """Keep the real admission/executor/adapter; replace only the process boundary."""
+    from stackos.host_mcp.adapters import claude_code
+
+    execution, project, scheduler, _ = managed
+    saved = {
+        "host_key": "claude-code",
+        "model": "claude-sonnet-5-5",
+        "model_reasoning_effort": "high",
+    }
+    tracker = TrackerRepository(session)
+    tracker.configure_main_agent(project_id=project, preferences=saved)
+    commands = []
+
+    def execute(command, directory, prompt, schema, host_name, parse, **options):
+        commands.append(command)
+        context = json.loads(prompt)
+        assert context["project_id"] == project
+        assert str(directory) == context["project_dir"]
+        assert options["process_control"] is not None
+        report = {
+            "status": "needs_input" if len(commands) == 1 else "partial",
+            "progress": {"message": "Checked fixture", "evidence_ref": "fixture:native-setup"},
+        }
+        if len(commands) == 1:
+            report["question"] = {
+                "question_id": "goal",
+                "revision": 1,
+                "prompt": "What is the goal?",
+                "workflow_keys": [],
+                "response_channel": "managed_ui",
+            }
+        else:
+            assert context["answers"][0]["answer"] == "Maintain this project"
+        return AgentRunResult(
+            0,
+            thread_id="native-setup-selection",
+            result={"report_json": json.dumps(report)},
+        )
+
+    monkeypatch.setattr(claude_code.claude_mcp, "resolve_claude_bin", lambda: "/fixture/claude")
+    monkeypatch.setattr(claude_code, "subprocess_env_for_cli", lambda _: {})
+    monkeypatch.setattr(claude_code, "execute_json_agent", execute)
+    first = launch(managed)
+    assert {key: first.attempt.managed.settings[key] for key in saved} == saved
+    tracker.configure_main_agent(
+        project_id=project, preferences={**saved, "model_reasoning_effort": "low"}
+    )
+    scheduler.run()
+    session.expire_all()
+    original = session.get(AgentRequest, first.attempt.request_id)
+    native = copy.deepcopy(original.metadata_json["native_execution"])
+    pending = ProjectSetupRepository(session).get(project).current_attempt
+    second = answer(managed, pending)
+    assert second.attempt.managed.settings == first.attempt.managed.settings
+    scheduler.run()
+    session.expire_all()
+    assert session.get(AgentRequest, original.id).metadata_json["native_execution"] == native
+    assert ProjectSetupRepository(session).get(project).current_attempt.status == "partial"
+    assert execution.resolve_preferences(session, project)["model_reasoning_effort"] == "low"
+    assert len(commands) == 2
+    for command in commands:
+        assert command[command.index("--model") + 1] == saved["model"]
+        assert command[command.index("--effort") + 1] == "high"
+    assert "--resume" not in commands[0]
+    assert commands[1][commands[1].index("--resume") + 1] == "native-setup-selection"
+
+
 @pytest.mark.parametrize("case", ["stale", "foreign", "live", "identity", "existing"])
 def test_invalid_answer_never_consumes_or_launches(managed, session, monkeypatch, case):
     question_runner(monkeypatch)

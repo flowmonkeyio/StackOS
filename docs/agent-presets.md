@@ -163,10 +163,17 @@ bounded to 1,000 sources, with explicit failure above that limit. Refresh reads
 current files without a watcher or a last-used-folder fallback.
 
 The Agents editor shows Codex project-file context and the exact source path.
-Its model picker uses the shared `hostMcp.status` loader and the source host's
-`agent_execution.models` catalog. Inherited, saved values outside the catalog,
+Its model and reasoning pickers share the Setup/Update launch form's presentation
+helpers and `hostMcp.status` loader. The host's `agent_execution.models` and
+reasoning capabilities own supported choices. Inherited, saved values outside the catalog,
 and custom native names remain selectable. Catalog loading or retry never
 replaces the source draft, and a listed model does not establish account access.
+An unknown inherited effort stays inherited; the UI does not guess the host's
+effective value. A deliberate incompatible model change clears the affected
+effort visibly; compatible choices survive. Native Codex sources may retain
+supported effort with an inherited model. The editor keeps one region for
+pending, loaded and error states, including while switching sources; late or
+mismatched reads cannot change the accepted draft or the identity of a save error.
 The normal page omits the project-folder path; missing or mismatched setup
 still provides an actionable error. Agents resolves the selected project's
 primary folder through `project.get`, including on Refresh and Retry. It shows
@@ -674,7 +681,10 @@ Preserve every other setting, including absent/null fields; retain source
 references instead of editable instruction copies. For other hosts, explicitly
 authorized instruction-only saved-default adoption may occur during a running
 task after that review, using the same local-admin owner.
-Installed activation is separately authorized and main-owned after task closure.
+Installed application/runtime replacement is separately authorized and main-owned,
+coordinated with the active runtime owner. Workflow/default activation explicitly
+included in the current outcome must finish there rather than being deferred until
+closure. Adoption alone does not authorize restarting the active daemon.
 Source edits alone update neither saved instructions nor active
 or historical task snapshots. Queued/running executions retain their snapshot;
 an explicit rehandoff after completed/stopped execution resolves current defaults

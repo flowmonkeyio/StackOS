@@ -333,7 +333,10 @@ def test_instruction_adoption_preserves_running_snapshots_and_activation_owner(
     assert "queued/running" in text and "frozen" in text
     assert "complete/stopped" in text or "completed/stopped" in text
     assert "receipts" in text and "sessions" in text and "repair allowance" in text
-    assert "main-owned after task closure" in text
+    assert "separately authorized and main-owned" in text
+    assert "coordinated with the active runtime owner" in text
+    assert "activation explicitly included in the current outcome must finish there" in text
+    assert "being deferred until closure" in text
     assert "old-job completion" not in text
 
 

@@ -207,21 +207,27 @@ model choices and review modes come from that registry; connection readiness
 does not prove execution or model access. Save project agent defaults in
 `TaskTracker.config_json.delivery` through the local-admin, REST-only
 `tracker.configureDelivery` operation. Task overrides merge by role and freeze
-at handoff; no `.codex` folder or additional agent installation is required.
+at handoff. Fresh Codex roles require exact project-native source references;
+other hosts retain supported inline contracts. Saving defaults installs no agent.
 Gemini and Hermes reviewers use normal native permissions with review-only
 instructions; receipts do not claim enforced read-only isolation. Supported
 native review controls remain in use on other hosts. See the task handoff
 contract for setup examples.
 
-In the project console, open **Configure → Agent defaults** to edit the delivery
-and review names, full instructions, harness, model, and supported native
-provider/profile selectors. The editor reads the shared `hostMcp.status`
-execution catalog; native defaults and custom models follow its capability
-flags. Saved selections remain visible when absent from the current catalog.
+In the project console, **Setup → Agents** lists and edits actual Codex project
+files and explicitly adopts selected role references into delivery defaults.
+The existing Setup/Update launch dialog edits main-agent model, reasoning and
+supported provider/profile choices. Both forms use the shared `hostMcp.status`
+execution catalog; inherited and custom choices follow its capability flags.
+Saved selections remain visible when absent from the current catalog, and
+loading or retrying that catalog does not change the draft.
 Connection or installation status does not establish authentication, subscription,
-or model access. Save writes through `tracker.configureDelivery` and reloads
-the saved tracker revision. It affects future handoffs only and starts no work.
-The **Catalog → Agent Presets** page remains the generic read-only preset catalog.
+or model access. Source saves use digest-checked `projectAgent.update`; default
+adoption and main preferences use local-admin REST `tracker.configureDelivery`
+and saved readback. Main preferences also apply to fresh scheduled occurrences.
+Queued/running work, setup continuations and resumed native sessions retain
+their admitted settings. Editing or adopting choices starts no work.
+Generic agent presets remain a separate read-only catalog.
 
 The host connection model has one brain:
 

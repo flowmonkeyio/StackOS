@@ -107,7 +107,14 @@ Fresh Codex admission selects exact project agent source refs. The bounded sourc
 service resolves identity, instructions and supported native settings once;
 missing, ambiguous or unadopted sources reject before queueing. Other hosts retain
 inline contracts. Source model/effort wins over task and project fallback choices;
-absent values inherit the host. Native settings cannot expand execution authority.
+remaining absent values inherit the host without guessing its effective effort.
+An explicit null clears a fallback, not a value owned by the source. Main-agent
+setup and scheduled launches separately resolve `delivery.main_agent` through
+the existing main-preference owner. Both paths use the shared host capabilities
+for validation and native arguments. Admitted task/request settings and resumed
+native sessions stay frozen after defaults or source edits. See the
+[selection contract](task-tracker.md#automated-task-delivery).
+Native settings cannot expand execution authority.
 StackOS passes the frozen contract to the harness and follows the
 generic dependency traversal. Source changes and repairs create separate scoped
 commits for independent exact-commit review; observation work may cite unchanged

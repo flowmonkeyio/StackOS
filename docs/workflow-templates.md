@@ -400,6 +400,11 @@ For optional automatic task execution, step `extensions.agent_assignment` select
 one existing `delivery_agent` or `review_agent`. A task-level `agent_assignments`
 map may explicitly override it at handoff; unassigned mirrors use delivery_agent.
 This is frozen role selection, with models/instructions in project/task settings.
+Native source settings take precedence over task and project fallbacks; omission
+retains inheritance and explicit null clears only the fallback. Setup/Update and
+scheduled main-agent launches use the separate saved `delivery.main_agent`
+preferences and shared host capabilities. Neither template updates nor picker
+catalog refreshes rewrite saved selections or admitted native snapshots.
 It does not introduce phase roles or runtime branches on workflow/step names.
 The generic runner traverses dependencies, then asks the selected agent to execute
 the remaining frozen mirror contract once after accepted descendants. Only the

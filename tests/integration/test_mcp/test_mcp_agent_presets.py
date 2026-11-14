@@ -308,9 +308,9 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     )
     expected_versions = {
         "stackos.sdlc.requirements-flow-definer": "0.6.6",
-        "stackos.sdlc.planning": "0.7.19",
-        "stackos.sdlc.delivery": "0.7.18",
-        "stackos.sdlc.delivery-reviewer": "0.6.17",
+        "stackos.sdlc.planning": "0.7.20",
+        "stackos.sdlc.delivery": "0.7.19",
+        "stackos.sdlc.delivery-reviewer": "0.6.18",
     }
     assert set(actual) == set(expected) == set(expected_versions)
     for key, item in actual.items():
@@ -410,11 +410,11 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
         delivery["must_do"], full_delivery["must_do"][:25], strict=True
     ):
         assert full_rule.startswith(brief_rule.removesuffix("..."))
-    assert "new descendant commit" in " ".join(delivery["must_do"])
+    assert "new descendant commit" in " ".join(full_delivery["must_do"])
     compact_skill_binding = compact["required_skill_presets"][0]
     compact_skill = compact_skill_binding["preset"]
     full_skill = raw["required_skill_presets"][0]["preset"]
-    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.20"
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.22"
     full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
     # Skill lists are bounded navigation; raw retains the full contract.
     assert len(compact_skill["must_do"]) == 25
@@ -451,21 +451,24 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
         "Adopt Codex source references explicitly",
         "tracker.configureDelivery adopt_sources preview/write with expected digests",
         "instruction-only saved-default adoption",
+        "Preserve model and reasoning inheritance without guessing a host default",
+        "separate saved delivery.main_agent preferences",
         "Source edits affect future Codex admissions, never active/historical snapshots "
         "or resumed sessions",
     ):
         assert requirement in " ".join(full_instructions), requirement
-    assert "three automatic repair passes per ticket" in " ".join(compact_skill["must_do"])
-    assert "repair_count" in " ".join(compact_skill["must_do"])
-    assert "rejection after the third repair" in " ".join(compact_skill["must_do"])
-    # Preserve the safe action in the real bounded packet; raw remains authoritative.
+    # Later rules are deliberately outside the compact 25-rule navigation slice.
+    # The raw read above must preserve the complete execution/repair contract.
+    assert "three automatic repair passes per ticket" in " ".join(full_instructions)
+    assert "repair_count" in " ".join(full_instructions)
+    assert "rejection after the third repair" in " ".join(full_instructions)
     for instruction in (
         "exact final mutation payload",
         "temporary safeguard, owner and resume condition",
         "repair_count=3",
         "no fourth ordinary repair",
     ):
-        assert instruction in " ".join(compact_skill["must_do"])
+        assert instruction in " ".join(full_instructions)
     assert "Give concise ticket start/end" in " ".join(full_instructions)
     assert "followup_resolutions" in " ".join(full_instructions)
     assert "No comparable opportunity means unproven" in " ".join(full_instructions)
