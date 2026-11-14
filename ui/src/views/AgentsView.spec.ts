@@ -11,7 +11,7 @@ vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
 let wrapper: VueWrapper | undefined
 const row = { project_id: 1, project_dir: '/fixture/project', source_ref: { host_key: 'codex', native_name: 'seo_keyword_research', source_path: '.codex/agents/seo-keyword-research.toml' }, digest: 'a'.repeat(64), registration_digest: null, fields: { ...blankAgent(), name: 'seo_keyword_research', description: 'Find opportunities', developer_instructions: 'Full native instructions' }, capabilities: { edit: true }, inherited_fields: ['model'], unsupported_fields: ['future_native'] }
 const catalog = { ok: true, items: [
-  { host_key: 'codex', agent_execution: { models: ['catalog-model', 'second-model', 'catalog-model'] } },
+  { host_key: 'codex', agent_execution: { models: ['catalog-model', 'second-model', 'catalog-model'], reasoning_efforts: { 'catalog-model': ['low', 'high', 'max'], 'second-model': ['low', 'high'] } } },
   { host_key: 'claude', agent_execution: { models: ['other-host-model'] } },
 ] }
 function setup(items = [row]) {
@@ -26,13 +26,100 @@ function setup(items = [row]) {
 }
 afterEach(() => { wrapper?.unmount(); vi.resetAllMocks() })
 describe('Agents list and native editor', () => {
+  it('reserves one editor slot for the first deferred read and keeps it through completion', async () => {
+    const w = setup(); await flushPromises()
+    let resolve!: (value: unknown) => void
+    vi.mocked(callOperation).mockReturnValueOnce(new Promise(done => { resolve = done }))
+    await w.get('.agent-row').trigger('click')
+    const region = w.get('.agent-editor').element
+    expect(w.get('.agents-layout').classes()).toContain('agents-layout--editing')
+    expect(w.get('.agents-layout').element.children).toHaveLength(2)
+    expect(w.get('.agent-editor').attributes('aria-busy')).toBe('true')
+    expect(w.get('.agent-editor').text()).toContain('Reading full project instructions')
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+    resolve(row); await flushPromises()
+    expect(w.get('.agent-editor').element).toBe(region)
+    expect(w.get('.agents-layout').element.children).toHaveLength(2)
+    expect(w.get('.agent-editor').attributes('aria-busy')).toBe('false')
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true })
+    focus.mockRestore()
+    expect(callOperation).not.toHaveBeenCalledWith('projectAgent.update', expect.anything())
+  })
+  it.each(['failure', 'stale'] as const)('keeps the last source and save target honest after a deferred %s read', async outcome => {
+    const second = { ...row, source_ref: { ...row.source_ref, native_name: 'delivery', source_path: '.codex/agents/delivery.toml' }, fields: { ...row.fields, name: 'delivery' } }
+    const w = setup([row, second]); await flushPromises(); await w.get('.agent-row').trigger('click'); await flushPromises()
+    let resolve!: (value: unknown) => void
+    let reject!: (cause: unknown) => void
+    vi.mocked(callOperation).mockReturnValueOnce(new Promise((done, fail) => { resolve = done; reject = fail }))
+    await w.findAll('.agent-row')[1]!.trigger('click')
+    const region = w.get('.agent-editor').element
+    if (outcome === 'failure') reject(new Error('Read unavailable')); else resolve(row)
+    await flushPromises()
+    expect(w.get('.agent-editor').element).toBe(region)
+    expect(w.get('.agents-layout').element.children).toHaveLength(2)
+    expect(w.get('h2').text()).toBe('SEO keyword research')
+    expect(w.text()).toContain('Last loaded agent: SEO keyword research')
+    await w.get('textarea').setValue('Edit last loaded source')
+    vi.mocked(callOperation).mockResolvedValueOnce({ project_id: 1, data: { ...row, fields: { ...row.fields, description: 'Edit last loaded source' } } })
+    await w.get('form').trigger('submit'); await flushPromises()
+    expect(callOperation).toHaveBeenCalledWith('projectAgent.update', expect.objectContaining({ source_ref: row.source_ref, patch: { description: 'Edit last loaded source' } }))
+  })
+  it.each(['high', 'retired-effort'])('retains saved effort %s through catalog completion, refresh and close without a write', async effort => {
+    const saved = { ...row, fields: { ...row.fields, model: null, model_reasoning_effort: effort } }
+    const w = setup([saved]); await flushPromises(); await w.get('.agent-row').trigger('click'); await flushPromises()
+    const effortSelect = () => w.findAllComponents(UiFormField).find(item => item.props('label') === 'Reasoning effort')!.getComponent(UiSelect)
+    expect(effortSelect().props('modelValue')).toBe(effort)
+    expect(effortSelect().props('options')).toContainEqual({ value: effort, label: `${effort} (not verified for this model)` })
+    await w.findAll('button').find(button => button.text() === 'Refresh')!.trigger('click'); await flushPromises()
+    expect(effortSelect().props('modelValue')).toBe(effort)
+    expect(w.text()).toContain('No changes')
+    await w.get('[aria-label="Close agent editor"]').trigger('click'); await flushPromises()
+    expect(callOperation).not.toHaveBeenCalledWith('projectAgent.update', expect.anything())
+  })
+  it('retains the last identity inside the busy slot and ignores a read completed after close', async () => {
+    const second = { ...row, source_ref: { ...row.source_ref, native_name: 'delivery', source_path: '.codex/agents/delivery.toml' }, fields: { ...row.fields, name: 'delivery' } }
+    const w = setup([row, second]); await flushPromises()
+    await w.get('.agent-row').trigger('click'); await flushPromises()
+    const region = w.get('.agent-editor').element
+    let resolve!: (value: unknown) => void
+    vi.mocked(callOperation).mockReturnValueOnce(new Promise(done => { resolve = done }))
+    await w.findAll('.agent-row')[1]!.trigger('click')
+    expect(w.get('.agents-layout').element.children).toHaveLength(2)
+    expect(w.get('.agent-editor').element).toBe(region)
+    expect(w.get('.agent-editor').text()).toContain('Opening Delivery')
+    expect(w.get('h2').text()).toBe('SEO keyword research')
+    expect(w.get('fieldset').attributes('disabled')).toBeDefined()
+    await w.get('[aria-label="Close agent editor"]').trigger('click')
+    const focus = vi.spyOn(HTMLElement.prototype, 'focus')
+    resolve(second); await flushPromises()
+    expect(w.find('.agent-editor').exists()).toBe(false)
+    expect(focus).not.toHaveBeenCalled()
+    focus.mockRestore()
+    expect(callOperation).not.toHaveBeenCalledWith('projectAgent.update', expect.anything())
+  })
+  it('uses capability efforts and retains compatible or unchanged choices on deliberate model changes', async () => {
+    const saved = { ...row, fields: { ...row.fields, model: 'catalog-model', model_reasoning_effort: 'high' } }
+    const w = setup([saved]); await flushPromises(); await w.get('.agent-row').trigger('click'); await flushPromises()
+    const field = (label: string) => w.findAllComponents(UiFormField).find(item => item.props('label') === label)!.getComponent(UiSelect)
+    expect(field('Reasoning effort').props('options').map(option => typeof option === 'object' ? option.value : option)).toEqual(['', 'low', 'high', 'max'])
+    field('Model').vm.$emit('update:modelValue', 'second-model'); await flushPromises()
+    expect(field('Reasoning effort').props('modelValue')).toBe('high')
+    field('Reasoning effort').vm.$emit('update:modelValue', 'low'); await flushPromises()
+    field('Model').vm.$emit('update:modelValue', 'second-model'); await flushPromises()
+    expect(field('Reasoning effort').props('modelValue')).toBe('low')
+    field('Reasoning effort').vm.$emit('update:modelValue', 'max'); await flushPromises()
+    field('Model').vm.$emit('update:modelValue', 'catalog-model'); await flushPromises()
+    expect(field('Reasoning effort').props('modelValue')).toBe('max')
+    field('Model').vm.$emit('update:modelValue', 'second-model'); await flushPromises()
+    expect(field('Reasoning effort').props('modelValue')).toBe('')
+  })
   it('shows a failed editor read and recovers without replacing the accepted list', async () => {
     const w = setup(); await flushPromises()
     const list = w.get('.agent-list').element
     vi.mocked(callOperation).mockRejectedValueOnce(new ApiError('Read unavailable', 503, { detail: 'Read unavailable' }))
     await w.get('.agent-row').trigger('click'); await flushPromises()
     expect(w.get('.agent-list').element).toBe(list)
-    expect(w.find('[aria-label="Agent editor"]').exists()).toBe(false)
+    expect(w.get('[aria-label="Agent editor"]').text()).toContain('Read unavailable')
     expect(w.findAll('[role="alert"]').some(node => node.text().includes('Read unavailable'))).toBe(true)
     await w.get('.agent-row').trigger('click'); await flushPromises()
     expect(w.find('[aria-label="Agent editor"]').exists()).toBe(true)
@@ -337,7 +424,8 @@ describe('Agents list and native editor', () => {
     expect(w.text()).toContain(saved.source_ref.source_path)
   })
   it('keeps custom model and instruction edits through catalog loading, failure and retry', async () => {
-    const w = setup(); await flushPromises()
+    const saved = { ...row, fields: { ...row.fields, model_reasoning_effort: 'retained-effort' } }
+    const w = setup([saved]); await flushPromises()
     const original = vi.mocked(callOperation).getMockImplementation()!
     let reject!: (cause: unknown) => void
     vi.mocked(callOperation).mockImplementation((operation, args, options) => operation === 'hostMcp.status'
@@ -356,6 +444,7 @@ describe('Agents list and native editor', () => {
     await w.findAll('button').find(button => button.text() === 'Retry models')!.trigger('click'); await flushPromises()
     expect(field('Custom model').get<HTMLInputElement>('input').element.value).toBe('unsaved-model')
     expect(field('Instructions').get<HTMLTextAreaElement>('textarea').element.value).toBe('Unsaved full instructions')
+    expect(field('Reasoning effort').getComponent(UiSelect).props('modelValue')).toBe('retained-effort')
     expect(w.text()).toContain('Unsaved changes')
     expect(field('Model').getComponent(UiSelect).props('options')).toContainEqual({ value: 'catalog-model', label: 'catalog-model' })
     expect(w.text()).not.toContain('Catalog offline')

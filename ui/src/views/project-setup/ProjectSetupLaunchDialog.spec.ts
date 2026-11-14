@@ -147,6 +147,13 @@ it('uses model-specific reasoning from the host response and clears it on model 
   await flushPromises()
   expect(reasoningSelect.props('modelValue')).toBe('')
   expect(reasoningSelect.props('options').map((option: { value: string }) => option.value)).toEqual(['', 'low'])
+  reasoningSelect.vm.$emit('update:modelValue', 'low'); await flushPromises()
+  field('Model').findComponent({ name: 'UiSelect' }).vm.$emit('update:modelValue', 'recommended-model')
+  await flushPromises()
+  expect(reasoningSelect.props('modelValue')).toBe('low')
+  field('Model').findComponent({ name: 'UiSelect' }).vm.$emit('update:modelValue', 'other-model')
+  await flushPromises()
+  expect(reasoningSelect.props('modelValue')).toBe('low')
   field('Agent app').findComponent({ name: 'UiSelect' }).vm.$emit('update:modelValue', 'hermes')
   await flushPromises()
   expect(field('Reasoning').findComponent({ name: 'UiSelect' }).props('options')).toEqual([{ value: '', label: 'Agent default' }])
@@ -158,10 +165,25 @@ it('retains an unsupported saved effort for repair and permits a real clear to d
   expect(button('Start setup').attributes('disabled')).toBeDefined()
   await button('Change').trigger('click')
   expect(wrapper!.text()).toContain('Reasoning old-effort is unavailable')
+  expect(field('Reasoning').findComponent({ name: 'UiSelect' }).props('options')).toContainEqual({ value: 'old-effort', label: 'old-effort (not verified for this model)' })
   field('Reasoning').findComponent({ name: 'UiSelect' }).vm.$emit('update:modelValue', '')
   await flushPromises()
   await button('Start setup').trigger('click')
   expect(start).toHaveBeenCalledWith(expect.objectContaining({ model: 'native-model', model_reasoning_effort: null }))
+})
+
+it('keeps a compatible effort across a deliberate harness change', async () => {
+  const fixed = hosts.find(host => host.host_key === 'fixed')!
+  const compatible = { ...fixed, host_key: 'compatible', agent_execution: { ...fixed.agent_execution!, reasoning_efforts: { 'recommended-model': ['high'] } } }
+  vi.mocked(callOperation).mockResolvedValue({ items: [compatible, { ...compatible, host_key: 'fixed' }] })
+  const start = vi.fn().mockResolvedValue(null)
+  wrapper = mount(Dialog, { props: { state: setupFixture({ launch_preferences: { host_key: 'fixed', model: 'recommended-model', model_reasoning_effort: 'high' } }), pending: false, error: null, start }, global: { stubs: { teleport: true, RouterLink: true } } })
+  await flushPromises(); await button('Change').trigger('click')
+  field('Agent app').findComponent({ name: 'UiSelect' }).vm.$emit('update:modelValue', 'compatible')
+  await flushPromises()
+  expect(field('Reasoning').findComponent({ name: 'UiSelect' }).props('modelValue')).toBe('high')
+  await button('Start setup').trigger('click')
+  expect(start).toHaveBeenCalledWith(expect.objectContaining({ host_key: 'compatible', model: 'recommended-model', model_reasoning_effort: 'high' }))
 })
 
 it('clears an optional saved profile only on this launch through advanced options', async () => {

@@ -40,6 +40,7 @@ export function useProjectAgents(projectId: Ref<number>, projectDir: Ref<string>
   const error = ref('')
   const message = ref('')
   const selected = ref<AgentDefinition | null>(null)
+  const requestedSource = ref<AgentSourceRef | null>(null)
   const draft = ref<AgentFields | null>(null)
   const original = ref<AgentFields | null>(null)
   const loaded = ref(false)
@@ -64,7 +65,7 @@ export function useProjectAgents(projectId: Ref<number>, projectDir: Ref<string>
     return false
   }
 
-  function close() { ++readGeneration; reading.value = false; selected.value = null; replaceDraft(null); original.value = null; message.value = ''; error.value = '' }
+  function close() { ++readGeneration; reading.value = false; requestedSource.value = null; selected.value = null; replaceDraft(null); original.value = null; message.value = ''; error.value = '' }
   function rejectAuthority(cause: unknown) {
     // The projectAgent producer reports a lost folder/binding as a coded 422.
     // Other source validation/conflict errors still belong to the retained draft.
@@ -104,6 +105,7 @@ export function useProjectAgents(projectId: Ref<number>, projectDir: Ref<string>
     const input = scope()
     const request = ++readGeneration
     const currentScope = generation
+    requestedSource.value = row.source_ref
     reading.value = true; error.value = ''; message.value = ''
     try {
       const result = await callOperation<AgentDefinition>('projectAgent.get', { ...input, source_ref: row.source_ref })
@@ -111,6 +113,7 @@ export function useProjectAgents(projectId: Ref<number>, projectDir: Ref<string>
       if (result.project_id !== projectId.value || result.project_dir !== projectDir.value || agentIdentity(result.source_ref) !== agentIdentity(row.source_ref)) throw new Error('Agent readback identity changed. Refresh the list.')
       if (!result.fields) throw new Error('This definition is unavailable. Repair the project file and refresh.')
       selected.value = result; replaceDraft(copy(result.fields)); original.value = copy(result.fields)
+      return true
     } catch (cause) { if (ownsScope(input) && request === readGeneration && currentScope === generation) { rejectAuthority(cause); error.value = agentError(cause) } }
     finally { if (request === readGeneration) reading.value = false }
   }
@@ -148,5 +151,5 @@ export function useProjectAgents(projectId: Ref<number>, projectDir: Ref<string>
   void refresh()
   onBeforeUpdate(() => { if (resetScope()) void refresh() })
   onBeforeUnmount(() => { disposed = true; ++generation; ++readGeneration })
-  return { items, diagnostics, loading, loaded, ready, reading, saving, error, message, selected, draft, dirty, refresh, edit, add, close, save }
+  return { items, diagnostics, loading, loaded, ready, reading, saving, error, message, selected, requestedSource, draft, dirty, refresh, edit, add, close, save }
 }
