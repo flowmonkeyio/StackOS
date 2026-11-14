@@ -80,7 +80,10 @@ def project_setup_method() -> ProjectSetupMethod:
             "recovery/authority behavior. Use isolated fixtures, not a mandatory whole business "
             "run. Report each workflow independently through the existing projectSetup report "
             "contract with actual changes, proof, readiness and remaining gaps. Preserve earlier "
-            "success and partial edits when another workflow needs input or fails."
+            "success and partial edits when another workflow needs input or fails. In reports, "
+            "send each inspected source's exact kind/key/origin/ref/version/digest and omit its "
+            "content body. The receipt owner resolves matching current sources and retains full "
+            "snapshots; source reading, obligation coverage and actual proof are still required."
         ),
         mode_prompts={
             "setup": (

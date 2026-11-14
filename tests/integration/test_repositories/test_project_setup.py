@@ -189,6 +189,79 @@ def test_source_inspection_is_read_only_and_does_not_release_writer_reservation(
     assert commits == [True]
 
 
+def test_source_reference_report_preserves_full_receipt_without_mutating_input(setup_project):
+    project, _, repo = setup_project
+    full = verified_result(repo, project)
+    payload = full.model_dump(mode="json")
+    for source in payload["verification"]["sources"]:
+        source.pop("content")
+    compact = SetupResult.model_validate(payload)
+    before = compact.model_dump(mode="json")
+    saved = repo.record_result(
+        project, "engineering.tracked-delivery", expected_revision=0, result=compact
+    )
+    assert saved.status == "current"
+    assert compact.model_dump(mode="json") == before
+    assert saved.successful["verification"] == full.verification.model_dump(mode="json")
+    assert all(source["content"] for source in saved.successful["verification"]["sources"])
+    assert len(json.dumps(payload)) < len(full.model_dump_json()) / 5
+
+
+@pytest.mark.parametrize("field", ["kind", "key", "origin", "ref", "version", "digest"])
+def test_compact_source_identity_mismatch_never_advances_receipt(setup_project, field):
+    project, _, repo = setup_project
+    key = "engineering.tracked-delivery"
+    full = verified_result(repo, project)
+    accepted = repo.record_result(project, key, expected_revision=0, result=full)
+    payload = full.model_dump(mode="json")
+    for source in payload["verification"]["sources"]:
+        source.pop("content")
+    source = payload["verification"]["sources"][0]
+    if field == "ref":
+        for obligation in payload["verification"]["obligations"]:
+            if obligation["source_ref"] == source["ref"]:
+                obligation["source_ref"] = "template:foreign:workflow"
+    source[field] = (
+        "override"
+        if field == "kind"
+        else ("template:foreign:workflow" if field == "ref" else "changed")
+    )
+    result = SetupResult.model_validate(payload)
+    with pytest.raises(ConflictError, match="sources changed"):
+        repo.record_result(project, key, expected_revision=1, result=result)
+    current = repo.get(project).workflows[0]
+    assert current.revision == 1 and current.successful == accepted.successful
+
+
+@pytest.mark.parametrize("change", ["duplicate", "missing", "extra", "supplied_content"])
+def test_compact_report_does_not_relax_source_coverage_or_content_checks(setup_project, change):
+    project, _, repo = setup_project
+    key = "engineering.tracked-delivery"
+    full = verified_result(repo, project)
+    payload = full.model_dump(mode="json")
+    proof = payload["verification"]
+    for source in proof["sources"]:
+        source.pop("content")
+    if change == "duplicate":
+        proof["sources"].append(copy.deepcopy(proof["sources"][0]))
+    elif change == "missing":
+        missing = proof["sources"].pop()
+        proof["obligations"] = [
+            item for item in proof["obligations"] if item["source_ref"] != missing["ref"]
+        ]
+    elif change == "extra":
+        extra = {**proof["sources"][0], "ref": "template:extra:workflow"}
+        proof["sources"].append(extra)
+        proof["obligations"].append({**proof["obligations"][0], "source_ref": extra["ref"]})
+    else:
+        proof["sources"][0]["content"] = {"changed": "not the inspected source"}
+    with pytest.raises((ConflictError, ModelValidationError)):
+        repo.record_result(
+            project, key, expected_revision=0, result=SetupResult.model_validate(payload)
+        )
+    assert repo.get(project).configured_count == 0
+
+
 @pytest.mark.parametrize("changed_kind", ["template", "main_agent", "specialist"])
 def test_source_bumps_do_not_advance_applied_and_previous_content_survives(
     setup_project, changed_kind

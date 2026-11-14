@@ -167,8 +167,9 @@ def test_global_startup_keeps_explicit_selection_and_directoryless_status(mcp_cl
         assert data["project_setup"] is None
 
 
+@pytest.mark.parametrize("compact_sources", [False, True])
 def test_checked_workflow_results_through_mcp_keep_success_and_no_business_execution(
-    mcp_client, mcp_app, tmp_path
+    mcp_client, mcp_app, tmp_path, compact_sources
 ):
     mcp_client.call_tool_structured("workspace.bootstrap", {"cwd": str(tmp_path)})
     proxy, client = _scoped_bridge(mcp_client, cwd=str(tmp_path))
@@ -218,6 +219,16 @@ def test_checked_workflow_results_through_mcp_keep_success_and_no_business_execu
             ],
         },
     }
+    if compact_sources:
+        for source in args["report"]["workflow_results"][0]["result"]["verification"]["sources"]:
+            source.pop("content")
+        denied = _toolbox_call(
+            proxy, client, "projectSetup.report", {**args, "claim_token": "foreign"}
+        )
+        assert denied["result"].get("isError"), denied
+        state = _operation_data(_structured(_toolbox_call(proxy, client, "projectSetup.get", {})))
+        assert state["current_attempt"]["revision"] == 1
+        assert state["configured_count"] == 0
     reported = _toolbox_call(proxy, client, "projectSetup.report", args)
     assert not reported["result"].get("isError"), reported
     result = _operation_data(_structured(reported))
@@ -233,6 +244,9 @@ def test_checked_workflow_results_through_mcp_keep_success_and_no_business_execu
     assert success["successful"]["verification"]["readiness"]["structurally_ready"]
     assert success["successful"]["verification"]["readiness"]["execution_ready"] is False
     assert success["successful"]["verification"]["readiness"]["deferred_inputs"] == ["goal"]
+    assert success["successful"]["verification"]["sources"] == [
+        source.model_dump(mode="json") for source in proof.verification.sources
+    ]
     with Session(mcp_app.state.engine) as session:
         assert [
             len(session.exec(select(model)).all()) for model in (RunPlan, TrackerTask)

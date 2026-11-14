@@ -55,9 +55,13 @@ class SetupSource(SetupEvidenceModel):
     ref: str
     version: str | None = None
     digest: str
-    # Receipt-owned bounded evidence keeps the previous base resolvable even
-    # after an ephemeral package/repo source disappears. Live overrides stay put.
-    content: dict[str, Any]
+    # Reports can reference the exact inspected source without echoing its body.
+    # The receipt owner restores omitted content from current sources and stores
+    # full snapshots so previous bases survive package/repo source removal.
+    content: dict[str, Any] | None = Field(
+        default=None,
+        description="May be omitted in reports; the owner resolves the exact current source.",
+    )
 
 
 class SetupRoleMapping(SetupEvidenceModel):
@@ -121,7 +125,7 @@ class VerifiedSetup(SetupEvidenceModel):
         if len(refs) != len(self.sources):
             raise ValueError("source refs must be unique")
         for source in self.sources:
-            if source.digest != _digest(source.content):
+            if source.content is not None and source.digest != _digest(source.content):
                 raise ValueError("source evidence digest does not match content")
         if set(self.checks) != {"syntax", "registration", "references", "behavior"}:
             raise ValueError("all host and behavior checks are required")
@@ -617,9 +621,10 @@ class ProjectSetupRepository:
                     "revision": row.revision if row else 0,
                 },
             )
-        if result.status == "success":
-            proof = result.verification
-            assert proof is not None
+        proof = result.verification
+        if proof is not None and (
+            result.status == "success" or any(source.content is None for source in proof.sources)
+        ):
             current = self.inspect_sources(
                 project_id, workflow_key, selected_optional_presets=proof.selected_optional_presets
             )
@@ -628,7 +633,19 @@ class ProjectSetupRepository:
                     "setup sources changed; inspect and revalidate before reporting",
                     data={"project_id": project_id, "workflow_key": workflow_key},
                 )
-            self._validate_roles(current, proof)
+            by_ref = {source.ref: source for source in current}
+            for source in proof.sources:
+                if source.content is None:
+                    source.content = by_ref[source.ref].model_copy(deep=True).content
+            if any(source.content is None for source in proof.sources):
+                raise ValidationError("resolved setup sources must include content")
+            # Recheck content integrity and size after hydration. result is a
+            # private validated copy, so the caller/idempotency input stays intact.
+            result = SetupResult.model_validate(result.model_dump(mode="json"))
+            proof = result.verification
+            assert proof is not None
+            if result.status == "success":
+                self._validate_roles(current, proof)
         now = datetime.now(UTC)
         if row is None:
             row = ProjectSetupReceipt(project_id=project_id, workflow_key=workflow_key)
@@ -1093,12 +1110,16 @@ class ProjectSetupRepository:
         return summary
 
     @staticmethod
-    def _identity(sources: list[SetupSource]) -> list[tuple[str, str, str | None]]:
-        return sorted((item.ref, item.digest, item.version) for item in sources)
+    def _identity(sources: list[SetupSource]) -> list[tuple[str, str, str, str, str, str | None]]:
+        return sorted(
+            (item.ref, item.kind, item.key, item.origin, item.digest, item.version)
+            for item in sources
+        )
 
     @staticmethod
     def _validate_roles(sources: list[SetupSource], proof: VerifiedSetup) -> None:
         template = next(item for item in sources if item.kind == "template")
+        assert template.content is not None
         for field, key, kind in (
             ("agent_requirements", "agent_preset_ref", "specialist"),
             ("skill_preset_requirements", "skill_preset_ref", "main_agent"),

@@ -588,6 +588,15 @@ evidence, so the prior applied base remains available after a source disappears;
 live overrides remain under their existing owners. There is no second source
 version registry or empty extension for bookkeeping.
 
+Report each source's exact inspected `kind`, `key`, `origin`, `ref`, `version`
+and `digest`; omit its `content` body to avoid echoing large workflow and role
+documents through the agent tool call. The receipt owner compares the complete
+source set against current authoritative sources, restores omitted bodies and
+revalidates the full result before storing it. Supplied bodies still require a
+matching digest. Unknown, duplicate or changed sources reject without advancing
+the receipt. Stored snapshots stay complete; this does not waive source reading,
+obligation coverage, host proof or ownership and revision checks.
+
 An update compares previous applied snapshots, current local choices and new
 effective template/main-agent/specialist sources. Verified legacy setup can be
 adopted without forced rewrites; unknown historical versions remain unknown.

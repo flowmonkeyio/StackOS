@@ -483,7 +483,9 @@ def operation_specs() -> list[OperationSpec]:
                 ),
                 (
                     "projectSetup.report",
-                    "Report checked workflow results from the owning setup session.",
+                    "Report checked workflow results from the owning setup session. "
+                    "Source content may be omitted with exact inspected identities/digests; "
+                    "the receipt owner verifies current sources and stores their full snapshots.",
                     ProjectSetupReportInput,
                     WriteEnvelope[SetupAttempt],
                     project_setup_report,
