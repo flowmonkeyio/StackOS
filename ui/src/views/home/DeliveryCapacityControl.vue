@@ -28,7 +28,7 @@ function valid(row: SchemaProjectDeliveryCapacityOut): boolean {
     && value >= capacity.value.supported_min && value <= capacity.value.supported_max
 }
 const belowRunning = computed(() => !readError.value && rows.value.some(row =>
-  (valid(row) ? Number(drafts.value[row.project_id]) : row.configured_limit) < row.running_count))
+  row.configured_limit < row.running_count))
 function count(value: number): string {
   return !readError.value && Number.isInteger(value) && value >= 0 ? String(value) : '—'
 }

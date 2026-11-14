@@ -133,6 +133,39 @@ describe('DeliveryCapacityControl', () => {
     expect(vi.mocked(callOperation).mock.calls.every(([name]) => name === 'tracker.deliveryCapacity')).toBe(true)
   })
 
+  it('keeps the confirmed saved over-limit explanation after a failed raise', async () => {
+    await setup(1)
+    vi.mocked(callOperation).mockResolvedValue(state(project(1, 2)))
+    await refresh(); await open()
+    expect(wrapper.text()).toContain('Running tasks continue.')
+    await input().setValue(7)
+    vi.mocked(callOperation).mockRejectedValueOnce(new Error('Storage unavailable'))
+    await save()
+    expect(wrapper.get('[role="alert"]').text()).toContain('Storage unavailable')
+    expect((input().element as HTMLInputElement).value).toBe('7')
+    expect(input().attributes('title')).toContain('Saved: 2.')
+    expect(wrapper.get('[data-count="running"]').text()).toBe('4')
+    expect(wrapper.text()).toContain('Running tasks continue. New tasks wait until running work falls below the saved limit.')
+  })
+
+  it('uses confirmed saved capacity for an unsaved lower limit and its successful readback', async () => {
+    await setup(1)
+    vi.mocked(callOperation).mockResolvedValue(state(project(1, 7)))
+    await refresh(); await open()
+    expect(wrapper.text()).not.toContain('Running tasks continue.')
+    await input().setValue(2)
+    expect(input().attributes('title')).toContain('Saved: 7.')
+    expect(wrapper.text()).not.toContain('Running tasks continue.')
+    expect(vi.mocked(callOperation).mock.calls.every(([name]) => name === 'tracker.deliveryCapacity')).toBe(true)
+    vi.mocked(callOperation).mockResolvedValueOnce({ data: state(project(1, 2)) })
+    await save()
+    vi.mocked(callOperation).mockResolvedValue(state(project(1, 2)))
+    await open()
+    expect((input().element as HTMLInputElement).value).toBe('2')
+    expect(wrapper.get('[data-count="running"]').text()).toBe('4')
+    expect(wrapper.text()).toContain('Running tasks continue.')
+  })
+
   it('keeps saves single-flight and fences reads started before a save', async () => {
     await setup(); await open()
     let finishRead!: (value: SchemaDeliveryCapacityOut) => void
