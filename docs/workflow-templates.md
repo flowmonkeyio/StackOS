@@ -570,16 +570,37 @@ return the guide's complete setup proof, including deferred inputs and exact
 preset mappings. Do not create a run plan, workflow tracker work or business
 output as setup proof.
 
-When the operator requests adaptation **and activation**, infrastructure setup is
-one phase of that outcome. Inspect the selected execution mode's saved defaults,
-role bindings and local authority rules at their existing owners. After setup
-returns, the authorized delivery owner completes the workflow's bounded explicit
-execution smoke, including applicable independent review and closeout. The managed
-infrastructure invocation still creates no execution state. Keep activation as
-required work in the current delivery, with actual default readback, newly consumed
-guidance and execution evidence; prepared files or an `activation_pending` receipt
-do not complete that outcome. No all-role launch matrix is required. An ordinary
-infrastructure-only request may still finish with truthful deferred activation.
+Ordinary Setup and Update request `ready_to_use`, including adaptation, canonical
+configuration and verified activation. Only explicit `infrastructure_only` stops
+at preparation; that invocation creates no execution state and gains no execution
+authority. Missing local-admin capability remains an actionable gap for the
+authorized owner, never a silent scope downgrade. Resolve the safe activation
+method from the effective workflow/presets. Engineering's method lives in the
+`setup_activation_method` policy of `engineering.tracked-delivery` and its presets.
+Inspect saved defaults, exact role bindings and local lifecycle rules at their
+existing owners; use canonical reviewed adoption/readback. Task overrides cannot
+prove missing project defaults. Preserve compatible customization, supported host
+preferences and frozen queued/running sessions.
+
+First reuse actual completed delivery, independent review and closeout evidence
+only for claims covered at the current project/source/default/native/environment
+basis. Record covered and missing claims, then execute only missing or invalidated
+small harmless native/configuration/behavior checks within the existing owning
+setup/task. Use existing setup/native continuation when fresh loading is needed.
+Do not automatically create a separate full verification task/workflow, tracker
+parent or review workflow merely to establish readiness, or nested queue/wait/drain
+machinery solely for proof. Existing product/adaptation tasks retain independent
+review; standalone setup follows its effective method and genuine current evidence.
+Aborted, incomplete, simulated or another project's evidence cannot become completed
+activation. Distinguish prepared files, saved readback, actual native consumption,
+reused evidence and newly executed checks in the existing receipt. Missing required
+proof leaves `ready_to_use` unfinished; `activation_pending` is not success.
+
+For other domains use their own safe method conditionally. Technical setup never
+authorizes unrelated finance transactions, publication, communications or trading.
+An unavailable safe method/capability remains explicit; genuine per-run business
+inputs may remain deferred separately from operational setup. No all-role launch
+matrix or replacement runner is needed.
 
 ### Applied setup evidence
 

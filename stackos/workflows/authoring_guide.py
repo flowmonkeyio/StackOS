@@ -41,7 +41,7 @@ class ProjectSetupMethod(BaseModel):
 def project_setup_method() -> ProjectSetupMethod:
     return ProjectSetupMethod(
         shared_prompt=(
-            "Prepare this project's workflow infrastructure using workflow_setup_protocol, "
+            "Complete this project's selected workflow setup using workflow_setup_protocol, "
             "agent_materialization_policy and setup_completion_contract below. Both existing-agent "
             "and managed entrypoints use this same method with the selected mode instruction. "
             "First inspect the repository's purpose, instruction entrypoints, current host files, "
@@ -73,22 +73,37 @@ def project_setup_method() -> ProjectSetupMethod:
             "unrelated files and frozen queued/running execution snapshots. Re-read current "
             "occurrence amendments on resume: later authorized scope can supersede an older "
             "preparation hold, without rewriting reusable sources or historical snapshots.\n\n"
-            "Distinguish infrastructure-only setup from an operator request to adapt and activate "
-            "a workflow. For requested activation, resolve the intended execution mode from "
-            "current operator intent and inspect its actual saved defaults, role bindings and "
-            "local authority rules through their existing owners. Reconcile incompatible "
-            "main-managed and automatic instructions; configured files or structural validation "
-            "alone do not establish operational readiness. Complete the infrastructure phase "
-            "without creating execution state. The authorized delivery owner then performs the "
-            "selected workflow's bounded explicit execution smoke, including applicable "
-            "independent review and closeout, using the intended host and saved bindings. "
-            "An infrastructure-only invocation returns those remaining obligations to its owner; "
-            "it does not acquire execution authority. Keep requested activation in the current "
-            "delivery's acceptance scope, not an optional followup or an unexplained pending "
-            "receipt. Record actual saved readback, newly consumed guidance and execution "
-            "evidence separately from prepared files. Missing activation proof leaves that "
-            "requested outcome unfinished; no all-role launch matrix or unrelated business "
-            "execution is required.\n\n"
+            "Ordinary Setup and Update request ready_to_use: adaptation, canonical configuration "
+            "and verified activation. Only explicit infrastructure_only stops after preparation; "
+            "never silently downgrade requested activation. Resolve the smallest sufficient safe "
+            "activation method from the selected effective workflow and presets, not a core "
+            "domain rule. Inspect actual saved defaults, role bindings and local lifecycle rules "
+            "at their existing owners. Reconcile incompatible manual/automatic instructions and "
+            "use canonical reviewed adoption/readback within current permissions, preserving "
+            "compatible customization and supported host/model/provider preferences. Task "
+            "overrides cannot prove missing project defaults. Missing local-admin capability "
+            "stays an actionable required gap for the authorized owner; a worker cannot grant it. "
+            "An infrastructure-only invocation creates no execution state and returns remaining "
+            "activation obligations without acquiring execution authority.\n\n"
+            "Keep verification inside the existing owning setup/task. First reuse actual completed "
+            "delivery, independent review and closeout evidence only for claims covered at the "
+            "current project, source, saved-default, native-session and environment basis. Record "
+            "covered and missing claims explicitly; perform only missing or invalidated small "
+            "harmless native/configuration/behavior checks through the authorized existing owner. "
+            "Use existing setup/native continuation when fresh loading after adoption is required. "
+            "Do not automatically create a separate full verification task/workflow, tracker "
+            "parent or review workflow merely to establish readiness, or add nested "
+            "queue/wait/drain machinery solely for proof. Preserve independent review where "
+            "applicable; routine standalone setup follows its effective method and genuine current "
+            "evidence. Aborted, incomplete, simulated or another project's evidence cannot become "
+            "completed activation. Keep prepared files, canonical saved readback, actual native "
+            "consumption, reused evidence and newly executed checks distinct in the existing "
+            "receipt. Missing required proof leaves ready_to_use unfinished, never success with "
+            "activation_pending or a required followup. For non-engineering workflows choose their "
+            "own safe readiness method conditionally; never execute unrelated finance "
+            "transactions, publication, communications or trading to prove setup. An unavailable "
+            "safe method or "
+            "capability remains explicit; defer genuine per-run business inputs separately.\n\n"
             "Check syntax, registration, required-role and reference coverage, and bounded actual "
             "host behavior. Prove loading/reload before claiming active; hashes or phrase checks "
             "alone do not prove it. Exercise ordinary matching/new goals, a harmless question, "
@@ -107,7 +122,9 @@ def project_setup_method() -> ProjectSetupMethod:
                 "project intent; ask about the missing goal only if the repository and request "
                 "do not establish it. Adopt verified existing setup where compatible. Materialize "
                 "only missing or demonstrated incomplete guidance within the authorized host "
-                "surface, then validate and report. Stop at infrastructure readiness."
+                "surface, then validate and report against requested_scope. Stop at infrastructure "
+                "readiness only for explicit infrastructure_only; otherwise complete required "
+                "activation through the authorized existing owners."
             ),
             "update": (
                 "Inspect before writing. Compare three inputs per workflow: previous successfully "
@@ -116,12 +133,17 @@ def project_setup_method() -> ProjectSetupMethod:
                 "intent separately. Preserve compatible overrides and all applicable current "
                 "obligations. Unknown previous provenance stays unknown; inspect/adopt against "
                 "current sources. Ask a concrete question for a true incompatibility and finish "
-                "independent workflows. Revalidate affected guidance and report checked changes; "
+                "independent workflows. Revalidate affected guidance and only missing or "
+                "invalidated activation proof under requested_scope; report checked changes; "
                 "do not advance an unsuccessful workflow's applied sources."
             ),
         },
         inputs={
             "mode": "Exactly setup or update; select the matching mode_prompt, not another method.",
+            "requested_scope": (
+                "ready_to_use for ordinary Setup/Update, or explicit infrastructure_only. "
+                "Scope does not expand surface permissions or authorize business execution."
+            ),
             "project_scope": (
                 "Observed project ID, selected folder and binding/session refs; "
                 "no invented anchors."
@@ -881,9 +903,12 @@ def workflow_authoring_guide() -> WorkflowAuthoringGuideOut:
         ],
         setup_completion_contract=[
             "Selected intent mode and why it applies.",
-            "Operator-requested completion boundary: infrastructure only or separately authorized "
-            "activation, intended execution mode, existing owner of any execution smoke, and "
-            "actual evidence or unresolved required activation obligations. An infrastructure "
+            "Operator-requested completion boundary: ordinary ready_to_use or explicit "
+            "infrastructure_only, selected workflow method, intended execution mode and authorized "
+            "existing owner. Record covered/missing claims, evidence reused with current "
+            "project/source/default/native/environment basis, newly executed bounded checks and "
+            "unresolved required activation obligations. No separate full verification task or "
+            "workflow is required merely for setup proof. An infrastructure "
             "receipt alone cannot complete a requested operational outcome.",
             "Workspace/project binding and deterministic future binding path.",
             "Workflow key, source, version, and effective extension state; say absent/not_required "

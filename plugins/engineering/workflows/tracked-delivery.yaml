@@ -216,6 +216,31 @@ resource_contracts:
     resource: engineering-evidence
     purpose: Store verification and signoff evidence when the run creates reusable evidence records.
 policies:
+  - key: setup_activation_method
+    kind: setup
+    description: >-
+      Ordinary ready_to_use Setup/Update includes adaptation, canonical saved-default
+      adoption/readback and actual native consumption; only explicit infrastructure_only
+      stops at preparation and creates no execution state. Inspect exact role sources
+      and reconcile local manual/automatic lifecycle rules through their existing owners.
+      Task overrides cannot prove missing project defaults. Preserve compatible local
+      customization, supported host/model/provider preferences and frozen live snapshots.
+      First reuse actual completed native delivery, distinct independent review and
+      workflow closeout evidence for claims covered at the current project, source,
+      saved-default, native-session and environment basis. Record covered and missing
+      claims explicitly. Execute only missing or invalidated small harmless native,
+      configuration or behavior checks within the existing owning setup/task, using
+      existing setup/native continuation if fresh post-adoption loading is needed.
+      Do not automatically create a separate full verification task/workflow, tracker
+      parent or review workflow merely to establish readiness, or nested queue/wait/drain
+      machinery solely for proof. Existing product/adaptation tasks retain their
+      independent review; standalone Setup/Update follows this method and genuine current
+      evidence. Aborted, incomplete, simulated or foreign-project evidence is not completed
+      activation. Record source preparation, saved readback, actual consumed source/snapshot
+      identities, reused evidence and newly executed checks separately in the existing
+      setup receipt. Missing authority or required proof leaves ready_to_use unfinished;
+      activation_pending is not success. No all-role launch matrix, replacement runner,
+      unrelated business work or installed-activation claim follows from source edits.
   - key: agent_decides_strategy
     kind: boundary
     description: The workflow defines SDLC contracts; agents still decide implementation strategy from project context.

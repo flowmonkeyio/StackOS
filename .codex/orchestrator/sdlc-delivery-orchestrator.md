@@ -508,33 +508,44 @@ unsupported frozen/live jobs; manual reviewed adoption remains separate.
 
 ## Explicit Current-Project Source Adoption
 
-When the operator requests automatic delivery activation, keep adaptation and
-activation in the current outcome. Inspect `tracker.get` raw defaults and exact
-project role sources; reconcile main-managed local instructions with automatic
-lifecycle ownership before reviewed `tracker.configureDelivery` preview/write/readback.
-The infrastructure-only setup invocation creates no execution state; its authorized
-delivery owner then runs a bounded disposable tracked-delivery task through actual
-native delivery, independent review and workflow closeout using the intended host
-and saved bindings. Inspect the admitted snapshot and actual consumed source
-identities, not only files or hashes; record saved readback, native attempts, review
-and closeout refs in existing evidence and update the setup receipt truthfully.
-A task override cannot prove missing project defaults. Required activation cannot
-become an optional followup or be accepted as `activation_pending`; blocked proof
-leaves the outcome unfinished. Preserve frozen live sessions and other owners'
-work. No all-role launch matrix, new runner or mandatory business feature is needed.
+For ordinary `ready_to_use` Setup/Update or explicit automatic-delivery activation,
+apply the effective `engineering.tracked-delivery` `setup_activation_method` policy.
+Only explicit `infrastructure_only` stops at preparation and creates no execution
+state. Inspect `tracker.get` raw defaults and exact project role sources; reconcile
+local manual/automatic lifecycle rules before canonical authorized
+`tracker.configureDelivery` preview/write/readback. A worker report cannot supply
+missing local-admin authority. Preserve compatible customization, intended supported
+host/model and provider/profile choices, names and absent/null fields, plus frozen sessions.
 
-Preserve provider/profile, names, hosts, model fallback choices and absent/null
-fields exactly. Read back saved defaults and prove the subsequent disposable
-handoff. No synchronizer, watcher or implicit cross-project rollout is authorized.
-An explicitly scoped rollout still adopts each project independently.
+First reuse actual completed native delivery, distinct independent review and
+workflow closeout evidence only for claims covered at the current
+project/source/default/native/environment basis. Record covered and missing claims;
+execute only missing or invalidated small harmless native/configuration/behavior
+checks within the existing owning setup/task. Use existing setup/native continuation
+if fresh post-adoption loading is required. Do not automatically create a separate
+full verification task/workflow, tracker parent or review workflow merely for
+readiness, or nested queue/wait/drain machinery solely for proof. Existing
+product/adaptation tasks retain independent review; standalone Setup/Update follows
+its method and genuine current evidence. Aborted, incomplete, simulated or
+foreign-project evidence cannot become completed activation.
+
+Inspect actual consumed source/snapshot identities, not just files/hashes. Distinguish
+prepared files, canonical saved readback, actual native consumption, reused evidence
+and newly executed checks in the existing setup receipt. Task overrides cannot prove
+missing defaults. Missing authority or required proof leaves `ready_to_use` unfinished,
+never `activation_pending` success or a required followup. No all-role launch matrix,
+replacement runner or unrelated business execution is authorized. No synchronizer,
+watcher or implicit cross-project rollout is authorized; a scoped rollout still
+adopts each project independently.
 
 Fresh Codex admission selects exact project source_ref bindings in agents by role; resolve source instructions/model/effort/supported restrictions once, with omitted values inheriting task then project then host settings. Source fields never increase authority. Non-Codex inline contracts remain supported. Explicit task agent_assignments win over frozen step assignments, then uniquely applicable selected declared roles; ambiguity requires selection. Ordinary tickets retain a distinct reviewer. Queued/running and resumed native snapshots stay frozen; future admissions read current sources. Use tracker.configureDelivery adopt_sources preview/write with expected digests for explicit current-project adoption, preserving unrelated settings and history; retain references instead of editable copied Codex instructions after readback.
 
 For this project select .codex/agents/sdlc-delivery.toml and
 .codex/agents/sdlc-delivery-reviewer.toml deliberately, retaining exact refs and
 source digests from projectAgent.get. Review preview differences before writing.
-Prove a subsequent disposable task snapshot and actual prompt, preserving
-independent review, scoped feedback and native restrictions.
+Verify actual consumed source/snapshot and prompt evidence using the current
+covered basis and only missing bounded checks, preserving independent review, scoped
+feedback and native restrictions.
 
 Codex source edits affect future admissions, never active/historical task
 snapshots or resumed native sessions. Other-host inline defaults remain explicit. After independent source/local approval, explicitly authorized

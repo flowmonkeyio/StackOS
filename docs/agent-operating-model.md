@@ -555,6 +555,23 @@ coverage to exact targets and checks through `projectSetup.report`; material los
 prevents that workflow's success while independent work can finish. Prove actual
 loading separately from saved-source syntax and installed state.
 
+Ordinary Setup/Update completes `ready_to_use`; only explicit
+`infrastructure_only` stops after preparation without execution state. Follow the
+effective workflow's safe activation method through existing authorized owners.
+Reuse current covered completed delivery/review/closeout evidence before running
+only missing or invalidated harmless bounded native/configuration/behavior checks
+inside the owning setup/task. Record the project/source/default/native/environment
+basis and covered/missing claims. Do not automatically create a separate full
+verification task/workflow, tracker parent or review workflow solely for readiness.
+Existing parent independent review remains intact; standalone setup uses its method
+and genuine evidence. Aborted/incomplete/simulated/foreign-project evidence is not
+completed activation. Canonical saved defaults/readback and actual native consumption
+remain distinct required claims; task overrides and prepared files prove neither.
+Missing authority, safe method or required proof leaves the requested outcome
+unfinished. Setup cannot authorize unrelated finance, publication, communications
+or trading; defer per-run business inputs separately. See the
+[setup lifecycle](workflow-templates.md#agent-workflow-setup-lifecycle).
+
 Project and workspace are separate concepts. A project is the durable StackOS
 container for tasks, tickets, workflows, credentials refs, resources, run
 plans, communications, and audit. A workspace is the daemon-owned binding from
