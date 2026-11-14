@@ -14,6 +14,116 @@ from stackos.host_mcp.adapters import claude_code, codex, gemini_cli, grok, herm
 from stackos.host_mcp.result import validate_agent_result
 
 
+@pytest.mark.parametrize("resume", [None, "exact-thread"])
+@pytest.mark.parametrize(
+    "host,model,effort,flag",
+    [
+        ("codex", "gpt-6.1-sol", "max", "-c"),
+        ("claude-code", "claude-haiku-5-5", "xhigh", "--effort"),
+        ("grok", "grok-4.6", "high", "--reasoning-effort"),
+    ],
+)
+def test_setup_reasoning_reaches_native_command(
+    tmp_path, monkeypatch, resume, host, model, effort, flag
+):
+    monkeypatch.delenv("CLAUDE_CODE_EFFORT_LEVEL", raising=False)
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/native/codex")
+    monkeypatch.setattr(claude_code.claude_mcp, "resolve_claude_bin", lambda: "/native/claude")
+    monkeypatch.setattr(grok, "resolve_grok_bin", lambda _: "/native/grok")
+    calls = []
+
+    def execute(command, **kwargs):
+        calls.append(command)
+        if command[-1] == "--version":
+            return subprocess.CompletedProcess(command, 0, "2.1.300", "")
+        if host == "codex":
+            Path(command[command.index("-o") + 1]).write_text('{"summary":"checked"}')
+            output = '{"type":"thread.started","thread_id":"exact-thread"}'
+        elif host == "claude-code":
+            output = json.dumps(
+                {"session_id": "exact-thread", "structured_output": {"summary": "checked"}}
+            )
+        else:
+            output = json.dumps(
+                {
+                    "sessionId": "exact-thread",
+                    "stopReason": "end_turn",
+                    "text": '{"summary":"checked"}',
+                }
+            )
+        return subprocess.CompletedProcess(command, 0, output, "")
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    result = run_agent(
+        host,
+        tmp_path,
+        "source",
+        "prompt",
+        SCHEMA,
+        model=model,
+        model_reasoning_effort=effort,
+        resume_thread_id=resume,
+    )
+    assert result.ok, result.error
+    command = calls[0]
+    assert command[command.index("--model") + 1] == model
+    if host == "codex":
+        assert f'model_reasoning_effort="{effort}"' in command
+        assert "--approve-for-me" in command
+        assert ("resume" in command) == (resume is not None)
+    else:
+        assert command[command.index(flag) + 1] == effort
+        assert command[command.index("--permission-mode") + 1] == "auto"
+        assert ("--resume" in command) == (resume is not None)
+    if resume:
+        assert resume in command
+
+
+@pytest.mark.parametrize(
+    "host,model,effort",
+    [
+        ("codex", "gpt-6.1-sol", "none"),
+        ("codex", None, "high"),
+        ("claude-code", "claude-opus-5-5", "ultra"),
+        ("gemini-cli", "gemini-2.5-pro", "high"),
+        ("hermes", "custom", "high"),
+        ("grok", "custom-alias", "high"),
+    ],
+)
+def test_unsupported_reasoning_rejects_before_native_execution(
+    tmp_path, monkeypatch, host, model, effort
+):
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: pytest.fail("unexpected native launch"))
+    result = run_agent(
+        host,
+        tmp_path,
+        "source",
+        "prompt",
+        SCHEMA,
+        model=model,
+        provider="configured" if host == "hermes" else None,
+        model_reasoning_effort=effort,
+    )
+    assert not result.ok and result.exit_code is None
+    assert "reasoning effort" in result.error and "Supported:" in result.error
+
+
+def test_claude_environment_cannot_silently_override_explicit_effort(tmp_path, monkeypatch):
+    monkeypatch.setattr(claude_code.claude_mcp, "resolve_claude_bin", lambda: "/native/claude")
+    monkeypatch.setenv("CLAUDE_CODE_EFFORT_LEVEL", "low")
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: pytest.fail("unexpected native launch"))
+    result = run_agent(
+        "claude-code",
+        tmp_path,
+        "source",
+        "prompt",
+        SCHEMA,
+        model="claude-opus-5-5",
+        model_reasoning_effort="high",
+    )
+    assert not result.ok and "CLAUDE_CODE_EFFORT_LEVEL" in result.error
+
+
 @pytest.mark.parametrize("resume", [None, "frozen-thread"])
 def test_native_definition_settings_reach_supported_codex_config(tmp_path, monkeypatch, resume):
     monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/native/codex")
@@ -1316,7 +1426,18 @@ def test_discovery_and_execution_use_same_capability_catalog():
         capability = info["agent_execution"]
         assert info["connection_state"] == "connected"
         assert capability["credential_status"] == capability["model_access"] == "not_checked"
-        assert capability["checked_on"] == "2026-11-05"
+        assert capability["checked_on"] == (
+            "2026-11-13" if key in {"codex", "claude-code", "grok"} else "2026-11-05"
+        )
+        assert set(capability["reasoning_efforts"]) <= set(capability["models"])
+        for model, efforts in capability["reasoning_efforts"].items():
+            for effort in efforts:
+                assert (
+                    service.agent_selection_error(
+                        key, sandbox="workspace-write", model=model, model_reasoning_effort=effort
+                    )
+                    is None
+                )
         assert capability["sources"]
         if definition.run_agent is not None:
             mode = service.agent_review_sandbox(key)

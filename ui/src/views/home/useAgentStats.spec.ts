@@ -20,6 +20,17 @@ function setup(projectId?: Ref<number>) {
 }
 
 describe('Agent activity query', () => {
+  it.each([false, true])('keeps explicit 7/90/custom dates through refresh (project=%s)', async project => {
+    vi.mocked(callOperation).mockResolvedValue(agentStatsFixture())
+    const stats = setup(project ? ref(1) : undefined)
+    const end = '2026-01-02'
+    for (const start of ['2025-12-27', '2025-10-05', '2025-12-10']) {
+      await stats.setFilters({ start_date: start, end_date: end })
+      await stats.load(true)
+      expect(stats.filters.value).toMatchObject({ start_date: start, end_date: end })
+      expect(callOperation).toHaveBeenLastCalledWith(project ? 'tracker.agentStats' : 'tracker.agentStatsAll', expect.objectContaining({ start_date: start, end_date: end }))
+    }
+  })
   it('provides freshness from its existing subscription and ignores retired-scope connection callbacks', async () => {
     const id = ref(1)
     let stats!: ReturnType<typeof useAgentStats>

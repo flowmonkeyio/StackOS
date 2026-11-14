@@ -41,7 +41,7 @@ OPTIONAL_SETTINGS = tuple(
     if k not in {"name", "description", "developer_instructions"}
 )
 _ENUMS = {
-    "model_reasoning_effort": {"none", "minimal", "low", "medium", "high", "xhigh"},
+    "model_reasoning_effort": {"none", "minimal", "low", "medium", "high", "xhigh", "max"},
     "model_reasoning_summary": {"auto", "concise", "detailed", "none"},
     "model_verbosity": {"low", "medium", "high"},
 }

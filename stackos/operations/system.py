@@ -36,6 +36,10 @@ class HostMcpAgentExecutionOut(BaseModel):
     review_sandbox: AgentSandbox | None
     models: list[str]
     recommended_model: str | None = None
+    reasoning_efforts: dict[str, list[str]] = Field(
+        description="Verified native reasoning choices by explicit model; "
+        "absent models use native defaults."
+    )
     custom_models: bool
     provider_selection: bool
     profile_selection: bool
@@ -119,7 +123,8 @@ def operation_specs():
                 "or model access, or expose registration/auth commands and config contents."
             ),
             returns=(
-                "agent_execution contains declared model, custom-model, provider/profile and "
+                "agent_execution contains declared model, per-model reasoning_efforts, "
+                "custom-model, provider/profile and "
                 "sandbox choices, with catalog notes and provenance. Empty sandboxes mean "
                 "headless execution is unsupported. requires_provider_model controls whether "
                 "native defaults are allowed; provider_selection also permits provider model IDs.",

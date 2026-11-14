@@ -178,20 +178,6 @@ function setDate(field: 'start_date' | 'end_date', value: string | number | null
           >
             No recorded usage in this date range.
           </p>
-          <details class="agent-activity__details">
-            <summary class="focus-ring">
-              Token details
-            </summary>
-            <p
-              v-for="field in (['input', 'cache_read', 'output', 'cache_write', 'reasoning'] as const)"
-              :key="field"
-            >
-              {{ exactUsage(summary.totals, field) }}
-            </p>
-            <p v-if="summary.totals.coverage.usage_unavailable_attempts">
-              Usage missing for {{ summary.totals.coverage.usage_unavailable_attempts }} attempts.
-            </p>
-          </details>
         </aside>
       </div>
       <p class="text-2xs leading-5 text-fg-subtle">
@@ -228,7 +214,5 @@ function setDate(field: 'start_date' | 'end_date', value: string | number | null
 .agent-activity__row-value { flex: none; white-space: nowrap; font-size: 12px; font-variant-numeric: tabular-nums; }
 .agent-activity__track { display: block; height: 5px; margin-top: 10px; border-radius: var(--radius-full); background: var(--color-border-default); }
 .agent-activity__track > span { display: block; height: 100%; border-radius: inherit; }
-.agent-activity__details { margin-top: 12px; font-size: 11px; line-height: 18px; color: var(--color-fg-muted); }
-.agent-activity__details summary { cursor: pointer; }
 @media (max-width: 1100px) { .agent-activity__header { flex-wrap: wrap; } }
 </style>

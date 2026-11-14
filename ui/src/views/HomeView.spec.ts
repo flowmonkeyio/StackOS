@@ -231,7 +231,7 @@ async function mountHome() {
     {
       global: {
         plugins: [router, createPinia()],
-        stubs: { teleport: true, TicketStatusChart: true, AgentActivityChart: true },
+        stubs: { teleport: true, TicketStatusChart: true, AgentActivityChart: true, DeliveryTrendChart: true },
       },
     },
   )

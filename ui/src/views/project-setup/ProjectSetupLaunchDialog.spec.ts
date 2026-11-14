@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { callOperation } from '@/lib/operations'
+import { ProjectSetupOutStatus } from '@/api'
 import type { DesktopAgentExecutionCapabilities, DesktopMcpHostStatus } from '@/lib/desktop'
 import Dialog from './ProjectSetupLaunchDialog.vue'
 import { setupFixture } from './setupFixtures'
@@ -35,7 +36,9 @@ const hosts: DesktopMcpHostStatus[] = [{
 }]
 
 async function dialog(key: string, preferences: Record<string, string> = {}) {
-  vi.mocked(callOperation).mockResolvedValue({ items: [hosts.find(host => host.host_key === key)!, ...hosts.filter(host => host.host_key !== key)] })
+  vi.mocked(callOperation).mockImplementation(async name => name === 'hostMcp.status'
+    ? { items: [hosts.find(host => host.host_key === key)!, ...hosts.filter(host => host.host_key !== key)] }
+    : setupFixture({ launch_preferences: { host_key: key, ...preferences } }))
   const start = vi.fn().mockResolvedValue(null)
   wrapper = mount(Dialog, { props: { state: setupFixture({ launch_preferences: preferences }), pending: false, error: null, start },
     attachTo: document.body, global: { stubs: { teleport: true, RouterLink: true } } })
@@ -58,10 +61,11 @@ it('accepts an initial custom model from an empty catalog and requires its provi
   await field('Model').get('input').setValue('provider/model-alias')
   expect(button('Start setup').attributes('disabled')).toBeDefined()
   await field('Provider').get('input').setValue('configured-provider')
+  await button('Advanced options').trigger('click')
   await field('Agent profile').get('input').setValue('project-profile')
   expect(button('Start setup').attributes('disabled')).toBeUndefined()
   await button('Start setup').trigger('click')
-  expect(start).toHaveBeenCalledWith({ host_key: 'hermes', model: 'provider/model-alias', provider: 'configured-provider', profile: 'project-profile' })
+  expect(start).toHaveBeenCalledWith({ host_key: 'hermes', model: 'provider/model-alias', model_reasoning_effort: null, provider: 'configured-provider', profile: 'project-profile' })
 })
 
 it('offers custom entry alongside fixed choices and never silently defaults an empty custom value', async () => {
@@ -74,7 +78,7 @@ it('offers custom entry alongside fixed choices and never silently defaults an e
   expect(field('Model').get('input').attributes('disabled')).toBeDefined()
   await wrapper!.setProps({ pending: false })
   await button('Start setup').trigger('click')
-  expect(start).toHaveBeenCalledWith({ host_key: 'grok', model: 'my-installed-alias', provider: null, profile: null })
+  expect(start).toHaveBeenCalledWith({ host_key: 'grok', model: 'my-installed-alias', model_reasoning_effort: null, provider: null, profile: null })
   const select = field('Model').findComponent({ name: 'UiSelect' })
   select.vm.$emit('update:modelValue', 'grok-build')
   await flushPromises()
@@ -94,7 +98,7 @@ it.each(['hermes', 'grok'])('retains a saved %s custom model and allows an expli
   expect(button('Start setup').attributes('disabled')).toBeDefined()
   await field('Model').get('input').setValue('replacement/custom-model')
   await button('Start setup').trigger('click')
-  expect(start).toHaveBeenCalledWith({ host_key: key, model: 'replacement/custom-model', provider: key === 'hermes' ? 'saved-provider' : null, profile: key === 'hermes' ? 'saved-profile' : null })
+  expect(start).toHaveBeenCalledWith({ host_key: key, model: 'replacement/custom-model', model_reasoning_effort: null, provider: key === 'hermes' ? 'saved-provider' : null, profile: key === 'hermes' ? 'saved-profile' : null })
 })
 
 it('uses only the selected host capability and preserves fixed recommendations', async () => {
@@ -116,5 +120,110 @@ it.each(['native', 'grok'])('keeps the native default when %s has no recommendat
   expect(select.props('options')).toContainEqual({ value: '', label: 'Agent default' })
   expect(wrapper!.text()).not.toContain('(Recommended)')
   await button('Start setup').trigger('click')
-  expect(start).toHaveBeenCalledWith({ host_key: key, model: null, provider: null, profile: null })
+  expect(start).toHaveBeenCalledWith({ host_key: key, model: null, model_reasoning_effort: null, provider: null, profile: null })
+})
+
+it('uses model-specific reasoning from the host response and clears it on model and host changes', async () => {
+  const fixed = hosts.find(host => host.host_key === 'fixed')!
+  vi.mocked(callOperation).mockImplementation(async name => name === 'hostMcp.status'
+    ? { items: [{ ...fixed, agent_execution: { ...fixed.agent_execution!,
+      reasoning_efforts: { 'recommended-model': ['low', 'high'], 'other-model': ['low'] }, models: ['recommended-model', 'other-model'] } }, ...hosts.filter(host => host !== fixed)] }
+    : setupFixture({ launch_preferences: { host_key: 'fixed' } }))
+  const start = vi.fn().mockResolvedValue(null)
+  wrapper = mount(Dialog, { props: { state: setupFixture(), pending: false, error: null, start },
+    attachTo: document.body, global: { stubs: { teleport: true, RouterLink: true } } })
+  await flushPromises()
+  const reasoningSelect = field('Reasoning').findComponent({ name: 'UiSelect' })
+  expect(reasoningSelect.props('options').map((option: { value: string }) => option.value)).toEqual(['', 'low', 'high'])
+  reasoningSelect.vm.$emit('update:modelValue', 'high')
+  await flushPromises()
+  expect(wrapper.text()).toContain('Reasoning: high')
+  await button('Start setup').trigger('click')
+  expect(start).toHaveBeenLastCalledWith(expect.objectContaining({ model: 'recommended-model', model_reasoning_effort: 'high' }))
+  field('Model').findComponent({ name: 'UiSelect' }).vm.$emit('update:modelValue', 'recommended-model')
+  await flushPromises()
+  expect(reasoningSelect.props('modelValue')).toBe('high')
+  field('Model').findComponent({ name: 'UiSelect' }).vm.$emit('update:modelValue', 'other-model')
+  await flushPromises()
+  expect(reasoningSelect.props('modelValue')).toBe('')
+  expect(reasoningSelect.props('options').map((option: { value: string }) => option.value)).toEqual(['', 'low'])
+  field('Agent app').findComponent({ name: 'UiSelect' }).vm.$emit('update:modelValue', 'hermes')
+  await flushPromises()
+  expect(field('Reasoning').findComponent({ name: 'UiSelect' }).props('options')).toEqual([{ value: '', label: 'Agent default' }])
+  expect((field('Provider').get('input').element as HTMLInputElement).value).toBe('')
+})
+
+it('retains an unsupported saved effort for repair and permits a real clear to default', async () => {
+  const start = await dialog('native', { host_key: 'native', model: 'native-model', model_reasoning_effort: 'old-effort' })
+  expect(button('Start setup').attributes('disabled')).toBeDefined()
+  await button('Change').trigger('click')
+  expect(wrapper!.text()).toContain('Reasoning old-effort is unavailable')
+  field('Reasoning').findComponent({ name: 'UiSelect' }).vm.$emit('update:modelValue', '')
+  await flushPromises()
+  await button('Start setup').trigger('click')
+  expect(start).toHaveBeenCalledWith(expect.objectContaining({ model: 'native-model', model_reasoning_effort: null }))
+})
+
+it('clears an optional saved profile only on this launch through advanced options', async () => {
+  const start = await dialog('hermes', { host_key: 'hermes', model: 'custom/model', provider: 'configured', profile: 'saved-profile' })
+  await button('Change').trigger('click')
+  expect(field('Provider')).toBeDefined()
+  expect(wrapper!.text()).not.toContain('Agent profile')
+  await button('Advanced options').trigger('click')
+  await field('Agent profile').get('input').setValue('')
+  await button('Start setup').trigger('click')
+  expect(start).toHaveBeenCalledWith(expect.objectContaining({ provider: 'configured', profile: null }))
+})
+
+it.each([ProjectSetupOutStatus.setup_needed, ProjectSetupOutStatus.updates_available])('preserves effective saved preferences with an inherited host for %s', async status => {
+  const saved = { model: 'custom/model', provider: 'configured', profile: 'project-profile' }
+  const effective = { host_key: 'hermes', ...saved }
+  // The resolver selects Hermes even though another available host appears first.
+  vi.mocked(callOperation).mockImplementation(async name => name === 'hostMcp.status'
+    ? { items: [hosts.find(host => host.host_key === 'fixed')!, ...hosts.filter(host => host.host_key !== 'fixed')] }
+    : setupFixture({ launch_preferences: effective }))
+  const start = vi.fn().mockResolvedValue(null)
+  wrapper = mount(Dialog, { props: { state: setupFixture({ status, launch_preferences: saved }), pending: false, error: null, start },
+    attachTo: document.body, global: { stubs: { teleport: true, RouterLink: true } } })
+  await flushPromises()
+  expect(wrapper.text()).toContain('Hermes · Model: custom/model')
+  await button(status === 'updates_available' ? 'Update workflows' : 'Start setup').trigger('click')
+  expect(start).toHaveBeenLastCalledWith({ ...effective, model_reasoning_effort: null })
+  field('Agent app').findComponent({ name: 'UiSelect' }).vm.$emit('update:modelValue', 'grok')
+  await flushPromises()
+  await button(status === 'updates_available' ? 'Update workflows' : 'Start setup').trigger('click')
+  expect(start).toHaveBeenLastCalledWith({ host_key: 'grok', model: null, model_reasoning_effort: null, provider: null, profile: null })
+})
+
+it('preserves saved reasoning when the resolver supplies the omitted host', async () => {
+  const saved = { model: 'recommended-model', model_reasoning_effort: 'high' }
+  const fixed = hosts.find(host => host.host_key === 'fixed')!
+  vi.mocked(callOperation).mockImplementation(async name => name === 'hostMcp.status'
+    ? { items: [{ ...fixed, agent_execution: { ...fixed.agent_execution!, reasoning_efforts: { 'recommended-model': ['high'] } } }] }
+    : setupFixture({ launch_preferences: { host_key: 'fixed', ...saved } }))
+  const start = vi.fn().mockResolvedValue(null)
+  wrapper = mount(Dialog, { props: { state: setupFixture({ launch_preferences: saved }), pending: false, error: null, start },
+    attachTo: document.body, global: { stubs: { teleport: true, RouterLink: true } } })
+  await flushPromises()
+  expect(wrapper.text()).toContain('Reasoning: high')
+  await button('Start setup').trigger('click')
+  expect(start).toHaveBeenLastCalledWith({ host_key: 'fixed', ...saved, provider: null, profile: null })
+})
+
+it('shows resolved workflow names, truthful legacy and unavailable states, and retains Version details', async () => {
+  await dialog('native')
+  const state = setupFixture()
+  const workflow = state.workflows![0]!
+  await wrapper!.setProps({ state: { ...state, workflows: [
+    { ...workflow, workflow_key: 'legacy.example', status: 'unknown', successful: null,
+      available_sources: [{ kind: 'template', key: 'legacy.example', version: '1', content: { name: 'Readable workflow' } }] },
+    { ...workflow, workflow_key: 'missing.example', status: 'source_unavailable', diagnostic: 'Restore the disabled plugin, then check again.', available_sources: [] },
+    { ...workflow, workflow_key: 'old.example', status: 'unknown', available_sources: [],
+      successful: { verification: { sources: {} } } },
+  ] } })
+  expect(wrapper!.text()).toContain('Readable workflow')
+  expect(wrapper!.text()).toContain('Not verified')
+  expect(wrapper!.text()).toContain('Source unavailable')
+  expect(wrapper!.text()).toContain('Restore the disabled plugin, then check again.')
+  expect(wrapper!.get('summary').text()).toBe('Version details')
 })

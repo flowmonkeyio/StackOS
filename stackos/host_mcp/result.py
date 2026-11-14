@@ -181,6 +181,9 @@ class AgentCapabilities:
     review_sandbox: AgentSandbox | None = None
     models: tuple[str, ...] = ()
     recommended_model: str | None = None
+    # Only verified model/effort pairs. Unknown/custom/native-default models
+    # retain native reasoning rather than guessing their capabilities.
+    reasoning_efforts: dict[str, tuple[str, ...]] = field(default_factory=dict)
     custom_models: bool = False
     provider_selection: bool = False
     profile_selection: bool = False

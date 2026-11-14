@@ -5688,6 +5688,11 @@ export interface components {
              */
             model: string | null;
             /**
+             * Model Reasoning Effort
+             * @default null
+             */
+            model_reasoning_effort: string | null;
+            /**
              * Profile
              * @default null
              */
@@ -7059,6 +7064,12 @@ export interface components {
             idempotency_key: string | null;
             /** Project Id */
             project_id: number;
+            /**
+             * Resolve Launch Preferences
+             * @description Console-only preview of effective native launch choices; ordinary reads retain saved preferences without inspecting hosts.
+             * @default false
+             */
+            resolve_launch_preferences: boolean;
             /**
              * Response Mode
              * @default compact

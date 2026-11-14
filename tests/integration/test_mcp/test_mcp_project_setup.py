@@ -6,6 +6,7 @@ import pytest
 from sqlmodel import Session, select
 
 from stackos.db.models import RunPlan, TrackerTask
+from stackos.host_mcp import service
 from stackos.repositories.project_setup import ProjectSetupRepository
 from stackos.workflows.authoring_guide import PROJECT_SETUP_NOTICES
 from tests.integration.test_repositories.test_project_setup import verified_result
@@ -22,7 +23,7 @@ from .test_mcp_bridge_agent_path import (
 )
 
 
-def test_setup_read_injected_project_and_foreign_rejection(mcp_client, tmp_path):
+def test_setup_read_injected_project_and_foreign_rejection(mcp_client, tmp_path, monkeypatch):
     other = _create_project(mcp_client, "other-setup")
     own = mcp_client.call_tool_structured(
         "workspace.bootstrap", {"cwd": str(tmp_path), "project_name": "Setup bound"}
@@ -37,6 +38,12 @@ def test_setup_read_injected_project_and_foreign_rejection(mcp_client, tmp_path)
     assert data["eligible"] is True
     assert data["status"] == "setup_needed"
     assert data["notice"] == PROJECT_SETUP_NOTICES["setup_needed"]
+    probes = []
+    monkeypatch.setattr(service, "inspect_host", lambda host: probes.append(host))
+    preview = _toolbox_call(proxy, client, "projectSetup.get", {"resolve_launch_preferences": True})
+    assert preview["result"].get("isError"), preview
+    assert "local-console authority" in str(preview), preview
+    assert probes == []
     rejected = _toolbox_call(proxy, client, "projectSetup.get", {"project_id": other})
     assert _is_bridge_scope_error(rejected), rejected
     denied = _toolbox_call(proxy, client, "projectSetup.setReminders", {"dismiss_setup": True})
@@ -49,6 +56,7 @@ def test_setup_read_injected_project_and_foreign_rejection(mcp_client, tmp_path)
         "projectSetup.get", {"project_id": other, "response_mode": "raw"}
     )
     assert foreign["setup_reminder_dismissed_at"] is None
+    assert probes == []
 
 
 def test_existing_session_setup_owner_report_and_startup_projection(mcp_client, tmp_path):

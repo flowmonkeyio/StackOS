@@ -90,12 +90,7 @@ onBeforeUnmount(() => { chart?.destroy(); chart = null })
         :title="deliveryCoverage(totals, metric.key)"
       >
         <template v-if="metric.key === 'first_review_acceptance' && review.reviewed">
-          {{ review.accepted }} of {{ review.reviewed }} tickets<template v-if="coverage === 'partial'">
-            · Partial
-          </template>
-        </template>
-        <template v-else-if="coverage === 'partial'">
-          Partial coverage
+          {{ review.accepted }} of {{ review.reviewed }} tickets
         </template>
         <template v-else-if="coverage === 'unavailable'">
           History unavailable

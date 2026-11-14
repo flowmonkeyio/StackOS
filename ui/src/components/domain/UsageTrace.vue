@@ -54,14 +54,9 @@ function draw(): UsageCanvasFrame | void {
       context.fillRect(left + (index + 0.5) * slotWidth - barWidth / 2, baseline - barHeight, barWidth, barHeight)
     })
   }
-  context.fillStyle = muted
-  buckets.forEach((bucket, index) => {
-    if (!bucket.observations.length) return
-    context.fillRect(left + (index + 0.5) * slotWidth - barWidth / 2, baseline - 3, barWidth, 3)
-  })
-  return { scope: JSON.stringify([props.metric, buckets.length, width, height]), geometry: JSON.stringify(buckets.map(bucket => [
-    maximum > 0 && bucket.value != null ? Math.max(0, bucket.value / maximum) : 0, !!bucket.observations.length,
-  ])) }
+  return { scope: JSON.stringify([props.metric, buckets.length, width, height]), geometry: JSON.stringify(buckets.map(bucket =>
+    maximum > 0 && bucket.value != null ? Math.max(0, bucket.value / maximum) : 0,
+  )) }
 }
 
 </script>

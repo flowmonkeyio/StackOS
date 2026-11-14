@@ -508,6 +508,43 @@ def test_omitted_model_keeps_native_default_and_recommendation_is_advisory(manag
     assert catalog.recommended_model in catalog.models
 
 
+def test_launch_inheritance_clears_and_host_switch_use_existing_preference_owner(managed, session):
+    execution, project, _, _ = managed
+    repo = TrackerRepository(session)
+    saved = {
+        "host_key": "codex",
+        "model": "gpt-6.1-sol",
+        "model_reasoning_effort": "high",
+        "provider": "configured",
+    }
+    repo.configure_main_agent(project_id=project, preferences=saved)
+    assert execution.resolve_preferences(session, project) == saved
+    assert execution.resolve_preferences(
+        session, project, {"model": None, "model_reasoning_effort": None, "provider": None}
+    ) == {"host_key": "codex"}
+    assert execution.resolve_preferences(session, project, {"model": "gpt-6-luna"}) == {
+        "host_key": "codex",
+        "model": "gpt-6-luna",
+        "provider": "configured",
+    }
+    assert execution.resolve_preferences(session, project, {"host_key": "claude-code"}) == {
+        "host_key": "claude-code"
+    }
+    assert repo.delivery_defaults(project_id=project)["main_agent"] == saved
+    repo.configure_main_agent(
+        project_id=project,
+        preferences={"host_key": "codex", "model": None, "model_reasoning_effort": None},
+    )
+    assert execution.resolve_preferences(session, project) == {"host_key": "codex"}
+
+
+def test_invalid_reasoning_creates_no_managed_request(managed, session):
+    with pytest.raises(ValidationError, match="reasoning effort"):
+        launch(managed, host_key="codex", model="gpt-6.1-sol", model_reasoning_effort="none")
+    assert not session.exec(select(AgentRequest)).all()
+    assert not managed[2].jobs
+
+
 @pytest.mark.parametrize("setup_first", [True, False])
 def test_setup_and_delivery_compete_in_both_orders(
     managed, session, tmp_path, monkeypatch, setup_first
