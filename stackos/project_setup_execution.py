@@ -602,10 +602,12 @@ def schedule_setup(*, project_id, state, session_factory, scheduler):
 
 def _adopt_managed(session, project_id, request_id, claim_token):
     """Consume a bounded proposal under the original authenticated setup ownership."""
+    from stackos.operations.tracker.schemas import TaskDeliveryAgentOverride
     from stackos.repositories.agent_requests import AgentRequestRepository
     from stackos.repositories.project_setup import ProjectSetupRepository, VerifiedSetup, _digest
     from stackos.repositories.projects import ProjectRepository
     from stackos.repositories.tracker import TrackerRepository
+    from stackos.repositories.tracker.setup import _delivery_host, _delivery_role_defaults
 
     ProjectRepository(session).require_available(project_id, reserve=True)
     project = ProjectRepository(session).get(project_id)
@@ -649,8 +651,17 @@ def _adopt_managed(session, project_id, request_id, claim_token):
             if repo._identity(sources) != repo._identity(proof.sources):
                 raise ConflictError("Preparation sources changed before adoption")
     tracker = TrackerRepository(session)
+    defaults = tracker.delivery_defaults(project_id=project_id)
     sources, inline = {}, {}
     for role, selection in proposal.roles.items():
+        before = _delivery_role_defaults(defaults, role)
+        if before or defaults.get("host_key") is not None:
+            # Inspect the saved basis before proposal overrides. New roles in
+            # blank defaults may choose a host; configured roles retain their
+            # canonical inheritance, independently of the setup agent runtime.
+            saved_host = TaskDeliveryAgentOverride(host_key=before.get("host_key")).host_key
+            if _delivery_host(defaults, role_host=saved_host) != selection.host_key:
+                raise ConflictError("Adoption cannot change the intended native host")
         if selection.source_ref:
             sources[role] = {
                 "source_ref": selection.source_ref.model_dump(),

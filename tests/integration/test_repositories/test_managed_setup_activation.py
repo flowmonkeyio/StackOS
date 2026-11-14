@@ -312,6 +312,47 @@ def test_adopted_delivery_hosts_are_independent_of_setup_host(managed, session, 
     assert not session.exec(select(RunPlan)).all() and not session.exec(select(TrackerTask)).all()
 
 
+@pytest.mark.parametrize("role_host", ["omitted", "null"])
+def test_proposal_cannot_replace_saved_inherited_delivery_host(
+    managed, session, monkeypatch, role_host
+):
+    _, project, scheduler, _ = managed
+    tracker = TrackerRepository(session)
+    saved = {
+        "host_key": "claude-code",
+        "main_agent": {"host_key": "claude-code"},
+        "agents": {
+            "delivery_agent": {"name": "builder", "instructions": "Existing delivery"},
+            "review_agent": {"name": "reviewer", "instructions": "Existing review"},
+        },
+    }
+    if role_host == "null":
+        for choice in saved["agents"].values():
+            choice["host_key"] = None
+    tracker.configure_delivery(project_id=project, delivery=saved)
+    proposal = proposal_for(managed, session, host="gemini")
+    before = task_delivery.resolve_delivery_settings(
+        session, project_id=project, project_dir=proposal["project_dir"]
+    )
+    assert {choice["host_key"] for choice in before["agents"].values()} == {"claude-code"}
+    calls = install_runner(managed, monkeypatch, proposal, setup_host="claude-code")
+    launch(managed, host_key="claude-code")
+    scheduler.run()
+    session.expire_all()
+    current = ProjectSetupRepository(session).get(project).current_attempt
+    after = tracker.delivery_defaults(project_id=project)
+    assert after == saved
+    assert (
+        task_delivery.resolve_delivery_settings(
+            session, project_id=project, project_dir=proposal["project_dir"]
+        )
+        == before
+    )
+    assert current.status == "failed" and not scheduler.jobs
+    assert len(calls) == 1 and current.managed.phase == "preparation"
+    assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 0
+
+
 @pytest.mark.parametrize("customized", [False, True])
 def test_managed_adopts_then_verifies_once_without_workflow_or_task(
     managed, session, monkeypatch, customized
@@ -401,10 +442,15 @@ def test_supported_inline_host_preserves_preferences_without_codex_fallback(
     session.expire_all()
     saved = tracker.delivery_defaults(project_id=project)
     assert saved["agents"]["delivery_agent"] == dict(
-        host_key="claude-code", name="local", instructions="Check setup", model=None, provider=None
+        name="local", instructions="Check setup", model=None, provider=None
     )
+    assert all("host_key" not in choice for choice in saved["agents"].values())
     assert all("source_ref" not in choice for choice in saved["agents"].values())
     assert all(call["adoption_readback"]["host_key"] == "claude-code" for call in calls[1:])
+    assert all(
+        choice["host_key"] == "claude-code"
+        for choice in calls[1]["adoption_readback"]["agents"].values()
+    )
     assert ProjectSetupRepository(session).get(project).current_attempt.status == "success"
 
 

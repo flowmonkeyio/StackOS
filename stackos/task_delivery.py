@@ -50,7 +50,7 @@ from stackos.repositories.tracker.schema import (
     TrackerCorrectionIntent,
     TrackerDeliveryScopeExclusion,
 )
-from stackos.repositories.tracker.setup import _delivery_role_defaults
+from stackos.repositories.tracker.setup import _delivery_host, _delivery_role_defaults
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
 
 LAUNCH_AUTHORITY_BOUNDARY = (
@@ -1004,9 +1004,7 @@ def resolve_delivery_settings(
     )
     if not isinstance(defaults, dict):
         raise ValidationError("Task delivery defaults must be an object")
-    host_key = host_key or defaults.get("host_key") or "codex"
-    if not isinstance(host_key, str):
-        raise ValidationError("Task delivery host_key must be a string")
+    host_key = _delivery_host(defaults, host_key=host_key)
     mapped = agents is not None or defaults.get("agents") is not None
     default_roles = (
         defaults.get("agents") or {}
@@ -1050,7 +1048,9 @@ def resolve_delivery_settings(
             choice = TaskDeliveryAgentOverride.model_validate(values).model_dump(exclude_none=True)
         except SchemaValidationError as schema_error:
             raise ValidationError(f"Resolved {role} is invalid: {schema_error}") from schema_error
-        choice["host_key"] = choice.get("host_key") or host_key
+        choice["host_key"] = _delivery_host(
+            defaults, role_host=choice.get("host_key"), host_key=host_key
+        )
         if choice["host_key"] == "codex" and _retained_agents is None:
             if not choice.get("source_ref"):
                 raise ValidationError(

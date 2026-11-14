@@ -40,6 +40,16 @@ def _delivery_role_defaults(defaults: dict[str, Any], role: str) -> dict[str, An
     return {**(legacy or {}), **(selected or {})}
 
 
+def _delivery_host(
+    defaults: dict[str, Any], *, role_host: str | None = None, host_key: str | None = None
+) -> str:
+    """Resolve the shared role -> task -> project -> native-default host inheritance."""
+    selected = role_host or host_key or defaults.get("host_key") or "codex"
+    if not isinstance(selected, str):
+        raise ValidationError("Task delivery host_key must be a string")
+    return selected
+
+
 class TrackerSetupMixin:
     """Tracker setup and default catalogue helpers."""
 
@@ -116,6 +126,10 @@ class TrackerSetupMixin:
             if selection.get("host_key") == "codex" or selection.get("source_ref"):
                 raise ValidationError("Inline adoption requires a supported non-Codex host")
             after = {**selection, **before, "instructions": selection["instructions"]}
+            if "host_key" not in before and current.get("host_key") == selection.get("host_key"):
+                # A matching inline update must retain project-host inheritance,
+                # rather than freezing an omitted role preference to today's host.
+                after.pop("host_key", None)
             after.pop("source_ref", None)
             TaskDeliveryDefaults.model_validate({"agents": {role: after}})
             differences[role] = {

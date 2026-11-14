@@ -293,6 +293,10 @@ uses canonical adoption preview/write/readback. The defaults write and adopted
 digest receipt commit together. Compatible role preferences, explicit nulls and
 unrelated settings remain intact; queued/running task snapshots are untouched.
 This does not expose `tracker.configureDelivery` over MCP or CLI.
+Configured delivery hosts are checked against saved role/project inheritance
+before proposal overrides, independently of the setup agent's host. Matching
+inline updates retain omitted role hosts so future project-host changes still
+inherit; a conflicting proposal cannot silently replace that preference.
 
 When bounded verification is still missing, the existing managed continuation
 links a successor with a new claim after predecessor retirement and capacity
