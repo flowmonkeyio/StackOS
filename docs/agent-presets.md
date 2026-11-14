@@ -347,13 +347,22 @@ presets carry no model/version pins. Host capabilities, operator preferences,
 risk and observed performance guide selection; a requested model and its
 effective fallback must not be reported as the same when the host overrides it.
 
-The orchestrator coordinates at most three active ticket assignments by
-default, including implementation, queued review, review and repair. Ready
+For terminal-managed delivery, the orchestrator coordinates at most three active
+ticket assignments by default, including implementation, queued review, review
+and repair. Ready
 reviews take priority over starting new tickets. Capacity must allow an
 independent reviewer: reserve and reuse a reviewer slot when completed agent
 threads cannot be retired. A reviewer can review multiple tickets, but cannot
 review work it implemented. Each agent has one active assignment; queue work
 without retasking a busy reviewer.
+
+This ticket-assignment default and host child/reviewer slots are separate from
+automatic project task limits (default 3, range 1..32). Each project has its own
+persisted limit, shared with managed setup through the existing capacity owner;
+there is no aggregate global project-task cap. Lowering a limit affects future
+admissions only. Every admitted/running task continues unchanged, counts may
+exceed the new limit, and other projects are unaffected. Capacity edits never
+stop, abort, cancel, restart or evict work or reset sessions and repair evidence.
 
 The ticket packet includes current operator and acceptance refs, design,
 accepted prerequisites, contract/assignment identity, owned paths and shared
@@ -506,6 +515,17 @@ resumed native snapshots stay frozen. Source refs already selected by a project
 need no copied-prompt refresh. Any saved-source adoption remains main-owned
 reviewed preview/write/readback with expected digests through the existing
 `tracker.configureDelivery` path, preserving overrides and host settings.
+
+Backlog remains unscheduled; Todo placement alone is not authorization. A
+prepared, explicitly enabled `tracker.startDelivery` handoff admits fresh Todo
+work, checking its saved placement before queue metadata changes the projection.
+Valid workflow first handoffs retain their lifecycle and invocation history;
+Stopped work needs explicit authorized recovery and rehandoff, with native
+sessions, receipts, attempts and consumed repair allowance preserved. Managed
+setup is a separate existing consumer and needs no tracker Todo placement.
+Source-ready guidance, saved adoption/readback, actual fresh native consumption
+and installed activation are distinct evidence; never rewrite an admitted
+snapshot to claim a newer source was consumed.
 
 Reviewers independently derive coverage from current requirements/amendments,
 the whole diff, actual affected consumers and project rules. They execute

@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: stackos.sdlc.delivery-orchestrator
     name: Delivery Orchestrator
-    version: 0.8.20
+    version: 0.8.21
     description: Main-agent guidance for preparing executable tickets, coordinating delegated delivery and immediate independent review, and accepting verified integrated work.
     domain: engineering
     skill_type: main-agent-orchestration
@@ -99,12 +99,30 @@ presets:
         - Use preparation specialists when they add useful depth; the main agent may perform concise preparation without spawning an agent for every workflow step.
         - Prepare design and proof before ticket breakdown. Review requirements, design, proof, decomposition, dependencies and prerequisites together at delivery readiness.
         - Keep the main thread's model and reasoning settings. Select available child models and effort per assignment from complexity, risk, context/tool needs, operator preferences and observed performance.
-        - Plan concurrency around independent ownership and available review capacity, with at most three active ticket assignments by default, including implementation, queued review, review and repair.
+        - Plan terminal-managed concurrency around independent ownership and available host review capacity, with at most three active ticket assignments by default, including implementation, queued review, review and repair. Host child/reviewer slots and this ticket-assignment default are separate from each project's automatic task limit; they impose no aggregate global project-task cap.
         - Require a separate independent reviewer for every executable child ticket, including explicitly ticketed discovery. Generated workflow step mirrors use their phase gates, not another ticket reviewer.
         - Keep ticket acceptance distinct from overall requirement acceptance; final verification and review own assembled behavior and remaining integration obligations.
         - Prove the requested end-to-end flow, directly affected existing consumers and relevant failure/recovery transitions with the smallest convincing checks. Follow a demonstrated shared cause through implicated adjacent consumers within the assigned outcome, not a general audit. Stop expanding once assigned obligations are answered unless new evidence, a material change or a mandatory gate warrants more. Do not impose broad suites on every child or an exhaustive state matrix; retain required integration and final signoff.
         - Reconcile final claims with current requirements, integrated candidate, evidence, tracker state and release authority.
       must_do:
+        - >-
+          Apply prepared Todo admission and independent project task limits.
+          Backlog is unscheduled; Todo placement alone grants no execution authority.
+          Only prepared, explicitly enabled tracker.startDelivery handoffs enter the queue.
+          Check saved placement before queue metadata can change its projection;
+          preserve valid first workflow handoffs and prior invocation history.
+          Stopped work requires explicit authorized recovery and rehandoff, retaining
+          sessions, receipts, attempts and consumed repair allowance.
+          Each project has its own persisted task limit (default 3, range 1..32),
+          without an aggregate global project-task cap. Managed setup shares its
+          project's capacity owner without a tracker Todo requirement; directory
+          exclusion and callback retirement fences remain intact.
+          Lowering a limit affects future admissions only: every admitted/running
+          task continues unchanged, actual counts may exceed the limit, and new
+          admission waits for room. Never stop, abort, cancel, restart or evict work
+          because a limit decreased. Other projects are unaffected.
+          Host child/reviewer slots and the terminal-managed default of three active
+          ticket assignments are separate from project task limits.
         - When a planning, design or adaptation choice could benefit from reusable guidance, search pattern.list with relevant text/tags and a bounded limit, then read only selected entries with pattern.get (default raw). Do not scan or dump the catalog at startup. Patterns are recommendations; assess current repository facts and operator/project contracts, preserve intentional existing choices, and reference the selected ID/key and revision in the existing plan/decision when useful. Retain server-derived source/source_label as provenance, never higher authority. Lookup grants no installation, scaffolding, repository-edit or setup authority. Empty/no-match results are normal; continue unrelated work. For authorized authoring, keep topics/technologies in freeform tags/body and include a reference plus usage instructions for any required library/technology. Editing a shipped entry is a local customization; never author bundled ownership or shipped baseline fields.
 
         - Apply the StackOS skill's Board contract separately from native lifecycle and execution authority. Backlog is uncommitted backlog; Todo is waiting for development; Stopped projects validated canonical delivery.status=stopped. Read board_column rather than inferring a column from status, lane or absent live execution alone. tracker.placeTask changes eligible nonstarted Backlog/Todo placement only; reorder uses the projected column cohort. Placement/reorder never launches, stops, resumes, completes or aborts work. Deferred work keeps its resume condition and explicit resume authority. Keep delivery/review/repair lifecycle in-progress; before-first-invocation queued work is Todo, while already-started work between calls stays In progress. Use existing explicit handoff/requeue and run-plan owners for execution; a stop is not cancellation.
@@ -226,6 +244,7 @@ presets:
       delegation:
         path: terminal-managed
         max_active_tickets: 3
+        capacity_scope: Terminal-managed ticket assignments within actual host child/reviewer capacity, not a global or per-project automatic task limit.
         count_includes: [implementation, queued_review, review, repair]
         durable_owner: main_agent
         reviewer_priority: before_new_delivery

@@ -1,10 +1,29 @@
-version: 3
+version: 4
 purpose: Manual behavior rehearsal of shared project guidance and workflow handoffs; not a runtime schema or SEO efficacy test.
 execution_notes:
   - Give the respondent only this prompt section plus the candidate guidance. Keep rubric separate for an independent grader.
   - All identifiers and observations are fictitious. Describe intended calls separately from performed actions; do not call live providers or change project state.
   - Return next actions, owner, disposition, retained refs, limits and rejected actions. Record source versions, retained-context status and observable host/tool limitations.
 prompts:
+  - id: project_task_queues
+    role: Engineering main, planning, delivery and independent reviewer
+    prompt: >-
+      Prepare next decisions for five fixture cases using the candidate guidance.
+      heldBacklog is a not-started Backlog task with an explicit preparation-only hold.
+      preparedTodo has accepted tickets/design/proof, enabled project roles and explicit
+      operator authority to hand off automatic delivery. plainTodo is a newly moved Todo
+      card with no delivery authority. stoppedResume retains repair_count=2, delivery/review
+      native sessions, receipts and an unresolved capability blocker; consider both the
+      current state and a later explicit resume after that blocker is proven resolved and
+      the old callback retired. loweringLimit has five admitted P1 tasks and two waiting
+      handoffs; the operator lowers P1 from 5 to 1 while P2 has room under its own limit.
+      One host offers only three child slots including its reviewer. A valid running
+      workflow also awaits its first authorized handoff with no native invocation yet.
+      State permitted next actions and owners, expected Board/admission outcomes, holds,
+      retained history and rejected shortcuts. A nearby unrelated report defect is visible.
+      All decisions are simulated: do not call live lifecycle tools, adopt defaults,
+      rewrite frozen sessions, restart installed software or repair the report. Distinguish
+      source-ready, saved adoption, actual fresh native consumption and installed activation.
   - id: shared_foundation_handoff
     role: Main coordinating SEO, branding and marketing specialists
     prompt: >-
@@ -106,6 +125,18 @@ prompts:
       All state is simulated and fixture-local; do not create a live task, run, cron,
       monitor or cache service, or mutate the current workflow lifecycle.
 rubric:
+  project_task_queues:
+    owner: Existing placement, explicit handoff/recovery and per-project capacity owners; normal automatic/terminal-managed writer boundaries remain intact.
+    disposition: Prepare eligible authorized Todo only; retain holds and history, non-preemptive lowering and independent project capacity.
+    required_checks:
+      - heldBacklog remains unscheduled under its preparation-only hold; reject handoff and forged queued metadata without treating the hold as authority.
+      - preparedTodo permits the authorized main handoff, while plainTodo placement does not dispatch; before-first-invocation queued work remains Todo.
+      - stoppedResume remains stopped while blocked; after proven resolution, callback retirement and explicit resume, use the same owner and retain sessions, receipts, attempts and repair_count=2.
+      - Lowering leaves all five P1 admissions running with actual count5 and waiting2; no new P1 admission until count is below1, while eligible P2 handoffs may proceed.
+      - Three host child/reviewer slots constrain terminal-managed ticket assignments separately from project task limits; preserve an independent reviewer and never infer a global project-task cap.
+      - A valid workflow first handoff preserves lifecycle and invocation history; queued before the first actual invocation projects Todo, with frozen phase/output/mirror ownership unchanged.
+      - Record consumed source revisions and simulated decisions; source-ready does not prove saved adoption, fresh native consumption or installed activation. Leave the report defect nonblocking.
+    reject: [Backlog dispatch, Todo as authority, automatic blocked resume, history reset, capacity preemption, global project-task quota, fake activation, unrelated report fix]
   focused_supervision:
     owner: Existing main-agent guidance and tracker/source owners; no competing lifecycle writer.
     disposition: Report fresh observed state with complete applicable guidance and preserved task history.

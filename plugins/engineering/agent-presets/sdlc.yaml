@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.requirements-flow-definer
     name: Requirements Flow Definer
-    version: 0.6.6
+    version: 0.6.7
     description: Defines traceable project-specific requirements, user/data/system/business flows, and acceptance criteria before design.
     domain: engineering
     role: requirements-flow-definer
@@ -83,6 +83,23 @@ presets:
         fully, recover truncation with targeted raw/bounded reads, and avoid repeated
         unchanged all-role dumps. Preserve frozen native instructions/settings;
         reconcile affected changed guidance without claiming activation.
+        Apply prepared Todo admission and independent project task limits.
+        Backlog is unscheduled; Todo placement alone grants no execution authority.
+        Only prepared, explicitly enabled tracker.startDelivery handoffs enter the queue.
+        Check saved placement before queue metadata can change its projection;
+        preserve valid first workflow handoffs and prior invocation history.
+        Stopped work requires explicit authorized recovery and rehandoff, retaining
+        sessions, receipts, attempts and consumed repair allowance.
+        Each project has its own persisted task limit (default 3, range 1..32),
+        without an aggregate global project-task cap. Managed setup shares its
+        project's capacity owner without a tracker Todo requirement; directory
+        exclusion and callback retirement fences remain intact.
+        Lowering a limit affects future admissions only: every admitted/running
+        task continues unchanged, actual counts may exceed the limit, and new
+        admission waits for room. Never stop, abort, cancel, restart or evict work
+        because a limit decreased. Other projects are unaffected.
+        Host child/reviewer slots and the terminal-managed default of three active
+        ticket assignments are separate from project task limits.
         For terminal-managed engineering.tracked-delivery, the main agent is the
         sole writer of durable run/tracker state; specialists return packets.
         After explicit tracker.startDelivery handoff, StackOS mechanically records
@@ -158,7 +175,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.codebase-explorer
     name: Codebase Explorer
-    version: 0.6.6
+    version: 0.6.7
     description: Maps actual execution paths, owners, consumers, coupling, and proof surfaces for a bounded assignment.
     domain: engineering
     role: codebase-explorer
@@ -194,7 +211,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.planning
     name: Planning Agent
-    version: 0.7.19
+    version: 0.7.20
     description: Turns requirements, selected design, and proof plan into independently executable ticket packets and a coherent dependency graph.
     domain: engineering
     role: planning
@@ -267,7 +284,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.architecture
     name: Architecture Agent
-    version: 0.6.7
+    version: 0.6.8
     description: Defines the project-native candidate design, ownership boundaries, interfaces, risks, and proof obligations before ticket breakdown.
     domain: engineering
     role: architecture
@@ -308,7 +325,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.test-designer
     name: Test Designer
-    version: 0.6.10
+    version: 0.6.11
     description: Maps requirements and design risks to ticket-local and integration proof, expected outcomes, ownership and applicable project guidance.
     domain: engineering
     role: test-designer
@@ -356,7 +373,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.delivery
     name: Delivery Agent
-    version: 0.7.18
+    version: 0.7.19
     description: Implements one assigned ticket, performs its self-checks and bounded repairs, and returns candidate-ready evidence for immediate independent review.
     domain: engineering
     role: delivery
@@ -454,7 +471,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.delivery-reviewer
     name: Review Agent
-    version: 0.6.17
+    version: 0.6.18
     description: Independently reviews assigned readiness, ticket, integration, or audit scope against canonical requirements and actual evidence, returning findings for main-agent adjudication.
     domain: engineering
     role: delivery-reviewer

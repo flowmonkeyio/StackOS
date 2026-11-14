@@ -461,6 +461,23 @@ primitive.
   and the stale-run reaper preserves normal long-running workflow work. Do not add
   periodic `run.heartbeat` calls unless a workflow explicitly asks for audit
   liveness evidence.
+- Project queues: Apply prepared Todo admission and independent project task limits.
+  Backlog is unscheduled; Todo placement alone grants no execution authority.
+  Only prepared, explicitly enabled tracker.startDelivery handoffs enter the queue.
+  Check saved placement before queue metadata can change its projection;
+  preserve valid first workflow handoffs and prior invocation history.
+  Stopped work requires explicit authorized recovery and rehandoff, retaining
+  sessions, receipts, attempts and consumed repair allowance.
+  Each project has its own persisted task limit (default 3, range 1..32),
+  without an aggregate global project-task cap. Managed setup shares its
+  project's capacity owner without a tracker Todo requirement; directory
+  exclusion and callback retirement fences remain intact.
+  Lowering a limit affects future admissions only: every admitted/running
+  task continues unchanged, actual counts may exceed the limit, and new
+  admission waits for room. Never stop, abort, cancel, restart or evict work
+  because a limit decreased. Other projects are unaffected.
+  Host child/reviewer slots and the terminal-managed default of three active
+  ticket assignments are separate from project task limits.
 - Hand off a prepared task automatically when explicitly authorized: use
   `tracker.startDelivery` with task/project scope and, for workflow work, the
   running entry step and plan. Generic defaults live in
