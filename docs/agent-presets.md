@@ -690,7 +690,11 @@ Preserve every other setting, including absent/null fields; retain source
 references instead of editable instruction copies. For other hosts, explicitly
 authorized instruction-only saved-default adoption may occur during a running
 task after that review, using the same local-admin owner.
-Installed activation is separately authorized and main-owned after task closure.
+Installed application/runtime replacement is separately authorized and main-owned,
+coordinated with the active runtime owner. Workflow/default activation explicitly
+included in the current outcome must finish there rather than being deferred until
+closure. Adoption alone does not authorize restarting the daemon orchestrating the
+active task.
 Source edits alone update neither saved instructions nor active
 or historical task snapshots. Queued/running executions retain their snapshot;
 an explicit rehandoff after completed/stopped execution resolves current defaults
