@@ -61,12 +61,16 @@ describe('project Home active work', () => {
     const { wrapper } = await mountProject()
     try {
       const slot = wrapper.get('.home-setup-slot').element
+      const actions = wrapper.get('.home-header-actions').element
+      const setupAction = wrapper.get('.home-setup-action').element
       expect(wrapper.find('.active-task-row__link').exists()).toBe(true)
       expect(wrapper.find('[aria-label="Project setup reminder"]').exists()).toBe(false)
       expect(wrapper.find('.home-setup-slot [aria-busy="true"]').exists()).toBe(true)
       finish({ project_id: 1, eligible: true, status: 'updates_available', folder_status: 'available', update_count: 3, current_attempt: null })
       await flushPromises()
       expect(wrapper.get('.home-setup-slot').element).toBe(slot)
+      expect(wrapper.get('.home-header-actions').element).toBe(actions)
+      expect(wrapper.get('.home-setup-action').element).toBe(setupAction)
       expect(wrapper.get('[aria-label="Project setup reminder"]').text()).toContain('3 workflows')
     } finally { wrapper.unmount() }
   })

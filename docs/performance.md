@@ -142,6 +142,10 @@ It does not retain setup state, attempts or launch readiness.
 Project Home also reserves the reminder region on a cold mount, using an initial
 skeleton. The region keeps its space when no reminder applies, so a slow setup
 read cannot insert or remove space above already-visible tasks and Usage.
+Home's header/reminder layout queries its actual content width after App sidebar
+and padding. The header reserves its action track and uses stable grid positions;
+compact content stacks the identity above the actions. Wrapped reminder copy and
+buttons have matching cold-load space at those same content-width boundaries.
 Graph and one full primary
 detail can be reused only within the mounted project and accepted revision.
 Content saves and latest-content retries use the same UI-demand index queue.
