@@ -73,6 +73,7 @@ async function refreshAll(): Promise<void> {
         <DeliveryCapacityControl
           :key="projectId"
           ref="capacityControl"
+          :project-id="projectId"
         />
         <UiButton
           variant="secondary"

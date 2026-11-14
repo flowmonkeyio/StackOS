@@ -53,7 +53,7 @@ function scoped(snapshot: TrackerSnapshot, projectId: number): TrackerSnapshot {
     tickets: snapshot.tickets.map(ticket => ({ ...ticket, project_id: projectId })) }
 }
 
-async function render(url = '/projects/7/tasks', realDialogs = false, realControls = false, realBoard = false) {
+async function render(url = '/projects/7/tasks', realDialogs = false, realControls = false, realBoard = false, realCapacity = false) {
   const router = createRouter({ history: createMemoryHistory(), routes: [
     { path: '/projects/:id/tasks', component: TaskTrackerView },
     { path: '/other', component: { template: '<div>Other page</div>' } },
@@ -64,6 +64,7 @@ async function render(url = '/projects/7/tasks', realDialogs = false, realContro
     attachTo: realDialogs || realBoard ? document.body : undefined,
     global: { plugins: [router, createPinia()], stubs: {
       ProjectPageHeader: { template: '<header><slot name="actions" /></header>' },
+      DeliveryCapacityControl: realCapacity ? false : { name: 'DeliveryCapacityControl', props: ['projectId'], template: '<div data-test="queue-control" />' },
       TaskTrackerCommandPanel: realControls ? false : { name: 'TaskTrackerCommandPanel', props: ['viewMode','activeTaskKey','taskOptions','search','filtersActive','boardFilters','taskAgentStats','taskAutomated','taskDelivery','abortTarget'], template: '<nav />' },
       TrackerBoardPanel: realBoard ? false : { name: 'TrackerBoardPanel', props: ['rows','hideEmptyColumns','editPending','editPendingColumns','editError'], template: '<section data-test="board"><button v-for="row in rows" :key="row.key" @click="$emit(\'openTask\', row.key)">{{ row.task.title }}</button></section>' },
       TrackerGraphPanel: { name: 'TrackerGraphPanel', props: ['loading','activeTaskTitle','selectedTicket','selectionVisible','selectionLabel','flow'], template: '<section data-test="graph" />' },
@@ -79,6 +80,37 @@ async function render(url = '/projects/7/tasks', realDialogs = false, realContro
 const popup = () => new DOMWrapper(document.body)
 
 describe('Work board navigation', () => {
+  it('scopes queue controls and isolates open, refresh and save from Board and Graph hydration', async () => {
+    const normal = mocks.callOperation.getMockImplementation()!
+    const capacity = (id: number, limit = 3) => ({ scope: 'project', supported_min: 1, supported_max: 32,
+      projects: [{ project_id: id, project_name: `Project ${id}`, project_slug: `project-${id}`, configured_limit: limit, running_count: 4, queued_count: 2 }] })
+    mocks.callOperation.mockImplementation(async (name, args, options) => name === 'tracker.deliveryCapacity'
+      ? capacity(Number(args.project_id)) : name === 'tracker.setDeliveryCapacity' ? { data: capacity(7, 2) } : normal(name, args, options))
+    const { wrapper, router } = await render('/projects/7/tasks', false, false, false, true)
+    try {
+      const before = mocks.callOperation.mock.calls.length
+      await wrapper.get('[data-popover-trigger]').trigger('click'); await flushPromises()
+      expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+      expect(wrapper.get('tbody tr').text()).toContain('Project 7')
+      await wrapper.get('input[type="number"]').setValue(2)
+      await wrapper.get('form').trigger('submit'); await flushPromises()
+      const control = wrapper.findComponent({ name: 'DeliveryCapacityControl' })
+      await (control.vm as unknown as { refresh: () => Promise<void> }).refresh()
+      expect(mocks.callOperation.mock.calls.slice(before)).toEqual([
+        ['tracker.deliveryCapacity', { project_id: 7 }],
+        ['tracker.setDeliveryCapacity', { updates: [{ project_id: 7, max_concurrent_tasks: 2 }] }],
+        ['tracker.deliveryCapacity', { project_id: 7 }],
+      ])
+      await wrapper.get('[data-popover-trigger]').trigger('click'); await flushPromises()
+      await wrapper.get('input[type="number"]').setValue(12)
+      await router.push('/projects/8/tasks'); await flushPromises()
+      expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+      await wrapper.get('[data-popover-trigger]').trigger('click'); await flushPromises()
+      expect(wrapper.get('tbody tr').text()).toContain('Project 8')
+      expect(wrapper.get('tbody tr').text()).not.toContain('Project 7')
+      expect((wrapper.get('input[type="number"]').element as HTMLInputElement).value).toBe('3')
+    } finally { wrapper.unmount() }
+  })
   it.each(['graph-usage-first', 'graph-event-first', 'board-usage-first', 'board-event-first'])('review probe: accepts a newer UI revision in %s without reporting a stale successful read', async mode => {
     const { wrapper, controls } = await render(mode.startsWith('graph') ? '/projects/7/tasks?view=graph&task=task-a' : '/projects/7/tasks')
     try {

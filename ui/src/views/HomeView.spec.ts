@@ -23,6 +23,42 @@ describe('HomeView', () => {
     vi.restoreAllMocks()
   })
 
+  it('opens all project queues and saves through the real operation client without reloading other widgets', async () => {
+    let limits = [3, 3]
+    const capacity = () => ({ scope: 'project', supported_min: 1, supported_max: 32,
+      projects: limits.map((limit, index) => ({ project_id: index + 1, project_name: `Project ${index + 1}`,
+        project_slug: `project-${index + 1}`, configured_limit: limit, running_count: 1, queued_count: 2 })) })
+    globalThis.fetch = vi.fn(async (url, init) => {
+      if (String(url).includes('tracker.setDeliveryCapacity')) {
+        const { arguments: args } = JSON.parse(String(init?.body))
+        expect(args.updates).toEqual([{ project_id: 1, max_concurrent_tasks: 6 }, { project_id: 2, max_concurrent_tasks: 5 }])
+        limits = [6, 5]
+        return json({ data: capacity(), project_id: null, run_id: null })
+      }
+      return String(url).includes('tracker.deliveryCapacity') ? json(capacity()) : defaultFetch(String(url))
+    }) as typeof fetch
+    const wrapper = await mountHome()
+    try {
+      const before = vi.mocked(globalThis.fetch).mock.calls.length
+      await wrapper.get('[data-popover-trigger]').trigger('click'); await flushPromises()
+      expect(wrapper.findAll('tbody tr')).toHaveLength(2)
+      const inputs = wrapper.findAll('input[type="number"]')
+      await inputs[0]!.setValue(6); await inputs[1]!.setValue(5)
+      await wrapper.get('form').trigger('submit'); await flushPromises()
+      await wrapper.get('[data-popover-trigger]').trigger('click'); await flushPromises()
+      expect(wrapper.findAll('input[type="number"]').map(input => (input.element as HTMLInputElement).value)).toEqual(['6', '5'])
+      const calls = vi.mocked(globalThis.fetch).mock.calls.slice(before)
+      expect(calls.map(([url]) => String(url))).toEqual([
+        '/api/v1/operations/tracker.deliveryCapacity/call', '/api/v1/operations/tracker.setDeliveryCapacity/call',
+        '/api/v1/operations/tracker.deliveryCapacity/call',
+      ])
+      const read = JSON.parse(String(calls[0]![1]?.body)).arguments
+      expect(read).toEqual({ response_mode: 'raw' })
+      expect(wrapper.find('[aria-label="Agent activity"]').exists()).toBe(true)
+      expect(wrapper.find('[aria-label="Connected tools"]').exists()).toBe(true)
+    } finally { wrapper.unmount() }
+  })
+
   it('shows real host reads and disabled native lifecycle controls in a plain browser', async () => {
     globalThis.fetch = vi.fn(async (input) => defaultFetch(String(input))) as typeof fetch
 
@@ -231,7 +267,7 @@ async function mountHome() {
     {
       global: {
         plugins: [router, createPinia()],
-        stubs: { teleport: true, TicketStatusChart: true, AgentActivityChart: true },
+        stubs: { teleport: true, TicketStatusChart: true, AgentActivityChart: true, DeliveryTrendChart: true },
       },
     },
   )
@@ -240,7 +276,7 @@ async function mountHome() {
 }
 
 function defaultFetch(url: string): Response {
-  if (url.includes('tracker.deliveryCapacity')) return json({ scope: 'local-user-daemon', configured_limit: 3, running_count: 1, queued_count: 0, supported_min: 1, supported_max: 32 })
+  if (url.includes('tracker.deliveryCapacity')) return json({ scope: 'project', projects: [1, 2].map(id => ({ project_id: id, project_name: `Project ${id}`, project_slug: `project-${id}`, configured_limit: 3, running_count: 1, queued_count: 0 })), supported_min: 1, supported_max: 32 })
   if (url === '/api/v1/operations/tracker.agentStatsAll/call') return json(agentStatsFixture({ project_id: null, is_active: true }))
   if (url.includes('tracker.activeTasksAll')) return json(activeTasksFixture())
   if (url === '/api/v1/auth/accounts?summary_only=true') return json({ accounts: [], providers: [], summary_only: true })
