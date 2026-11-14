@@ -99,6 +99,17 @@ const {
   selectionVisible: graphSelectionVisible, selectionStats: graphSelectionStats,
   detailPanelOpen: graphDetailPanelOpen,
 } = graph
+const graphInspectorVisible = computed(() => viewMode.value === 'graph' && graphDetailPanelOpen.value && !detailTaskKey.value && !detailTicketKey.value)
+const graphDetailTask = computed(() => detailSnapshot.value?.tasks.find(task => task.key === graphSelectedTicket.value?.task_key) ?? null)
+const graphDetailTicket = computed(() => detailSnapshot.value?.tickets.find(ticket => ticket.key === graphSelectedTicket.value?.key && ticket.task_key === graphSelectedTicket.value?.task_key) ?? null)
+function currentDetailTaskKey(): string {
+  return detailTaskKey.value || (graphInspectorVisible.value ? graphSelectedTicket.value?.task_key ?? '' : '')
+}
+function openGraphDetail(): void {
+  graph.openSelectedDetail()
+  const taskKey = currentDetailTaskKey()
+  if (taskKey) void loadDetail(taskKey)
+}
 const graphPending = computed(() => graphLoading.value && !graphDataAvailable.value)
 const contexts = useTrackerExecutionContexts({ projectId })
 let contextExpanded = false
@@ -326,7 +337,7 @@ async function loadOnce(request: LoadRequest): Promise<boolean> {
     // Start the stream while this accepted request still owns the current scope.
     // Awaited map/detail work must never restart a stream after scope disposal.
     if (options.restartStream !== false && !mapNeedsCanonicalRoute()) graph.restartStatusStream()
-    const detailKey = detailTaskKey.value
+    const detailKey = currentDetailTaskKey()
     // Focused readers own their loading/error state. A slow inspector must
     // not hold the project refresh queue or a completed Board edit open.
     if (!options.metricsOnly) void refreshInspection(sequence, detailKey, options.refocus, options.taskKeys, options.minRevision)
@@ -345,7 +356,7 @@ async function refreshInspection(sequence: number, detailKey: string, refocus?: 
   try {
     if (viewMode.value === 'graph' && (!taskKeys?.length || taskKeys.includes(mapTaskKey.value))) await loadMap(refocus, minRevision)
     if (!currentScope() || sequence !== loadSequence) return
-    if (detailKey && detailTaskKey.value === detailKey && (!taskKeys?.length || taskKeys.includes(detailKey))) await loadDetail(detailKey, minRevision)
+    if (detailKey && currentDetailTaskKey() === detailKey && (!taskKeys?.length || taskKeys.includes(detailKey))) await loadDetail(detailKey, minRevision)
   } catch (cause) {
     if (currentScope() && sequence === loadSequence) error.value = cause instanceof Error ? cause.message : 'Could not refresh task details.'
   }
@@ -377,7 +388,7 @@ async function loadDetail(taskKey: string, minRevision?: number): Promise<void> 
     if (covered()) return
     while (detailRead?.taskKey === taskKey) {
       await detailRead.promise
-      if (!currentScope() || detailTaskKey.value !== taskKey || covered()) return
+      if (!currentScope() || currentDetailTaskKey() !== taskKey || covered()) return
     }
   }
   const read = { taskKey, promise: readDetail(taskKey, minRevision) }
@@ -386,7 +397,7 @@ async function loadDetail(taskKey: string, minRevision?: number): Promise<void> 
 }
 
 async function readDetail(taskKey: string, minRevision?: number): Promise<void> {
-  if (!currentScope() || detailTaskKey.value !== taskKey) return
+  if (!currentScope() || currentDetailTaskKey() !== taskKey) return
   const sequence = ++detailSequence
   const usageVersion = usageCheckpoint()
   detailLoading.value = true
@@ -406,20 +417,24 @@ async function readDetail(taskKey: string, minRevision?: number): Promise<void> 
     ) ?? await callOperation<TrackerSnapshot>('tracker.get', {
       project_id: projectId.value, task_key: taskKey, include_graph: false,
     }))
-    if (!currentScope() || sequence !== detailSequence || detailTaskKey.value !== taskKey) return
+    if (!currentScope() || sequence !== detailSequence || currentDetailTaskKey() !== taskKey) return
     if (minRevision !== undefined && next.tracker.rev < minRevision) throw new Error('Task details are older than the change. Use Refresh to retry.')
     patchUsageAfter(next, projectId.value, usageVersion)
     const task = next.tasks.find((item) => item.key === taskKey)
     if (!task) throw new Error('This task is no longer available in this project.')
+    if (!currentFocusedDetail(next, projectId.value, taskKey, 0)) throw new Error('The response did not contain full details for this task.')
+    if (graphInspectorVisible.value && !next.tickets.some(ticket => ticket.key === graphSelectedTicket.value?.key && ticket.task_key === taskKey)) throw new Error('This ticket is no longer available in this task.')
     detailSnapshot.value = next
     retainedDetail = next
-    taskDialog.value?.syncTask?.(task)
     if (snapshot.value) snapshot.value = mergeFocusedTrackerSnapshot(snapshot.value, next)
-    void contexts.load(task, contextExpanded)
-    void results.refresh()
-    void activity.refresh()
+    if (detailTaskKey.value === taskKey) {
+      taskDialog.value?.syncTask?.(task)
+      void contexts.load(task, contextExpanded)
+      void results.refresh()
+      void activity.refresh()
+    }
   } catch (cause) {
-    if (currentScope() && sequence === detailSequence) {
+    if (currentScope() && sequence === detailSequence && currentDetailTaskKey() === taskKey) {
       detailError.value = cause instanceof Error ? cause.message : 'Could not load task details.'
     }
   } finally {
@@ -742,7 +757,7 @@ useProjectScopedLoader({
           @edge-click="graph.onEdgeClick"
           @pane-click="graph.onCanvasClick"
           @graph-canvas-click="graph.onCanvasClick"
-          @open-selected-detail="graph.openSelectedDetail"
+          @open-selected-detail="openGraphDetail"
           @clear-graph-focus="graph.clearFocus"
           @viewport-change-end="graph.onViewportChange"
           @viewport-ready="graph.onViewportReady"
@@ -786,12 +801,15 @@ useProjectScopedLoader({
       @inspect-result="inspectResult"
     />
     <TrackerTicketDetailPanel
-      :model-value="viewMode === 'graph' && graphDetailPanelOpen && !detailTaskKey && !detailTicketKey"
-      :ticket="graphSelectedTicket"
-      :parent-task="tasks.find(task => task.key === graphSelectedTicket?.task_key)"
+      :model-value="graphInspectorVisible"
+      :ticket="graphDetailTicket"
+      :parent-task="graphDetailTask"
+      :loading="detailLoading"
+      :error="detailError"
       :title="graphSelectedTicket?.title ?? 'Ticket details'"
       :description="graphSelectedTicket?.key"
       @update:model-value="graphDetailPanelOpen = $event"
+      @retry="openGraphDetail"
     />
   </UiPageShell>
 </template>

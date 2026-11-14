@@ -12,7 +12,7 @@ import type {
   TrackerStatus,
 } from '@/lib/task-tracker/types'
 
-import type { GraphBlockFilter, TaskProgressRow } from './viewTypes'
+import type { GraphBlockFilter, TaskProgressRow, TrackerGraphTicketSelection } from './viewTypes'
 import { useTrackerGraphViewport } from './useTrackerGraphViewport'
 import { useTrackerLiveUpdates } from './useTrackerLiveUpdates'
 import { patchUsageSnapshot, patchUsageAfter, usageCheckpoint } from '@/lib/usageUpdates'
@@ -150,7 +150,7 @@ export function useTrackerGraphSession(options: UseTrackerGraphSessionOptions) {
       focusedGraph.value,
     )
   })
-  const selectedTicket = computed(() =>
+  const selectedTicket = computed<TrackerGraphTicketSelection | null>(() =>
     selected.value?.kind === 'ticket'
       ? (tickets.value.find((ticket) => ticket.key === selected.value?.key) ?? null)
       : null,

@@ -20,7 +20,7 @@ const taskB = trackerTask({ id: 2, key: 'task-b', title: 'Beta task', status: 'c
 const ticketA = trackerTicket()
 const ticketB = trackerTicket({ id: 12, key: 'ticket-b', title: 'Beta ticket', task_id: 2, task_key: 'task-b', status: 'complete' })
 
-function dataMock(tasks = [taskA, taskB], tickets = [ticketA, ticketB], graphNodes = false) {
+function dataMock(tasks = [taskA, taskB], tickets = [ticketA, ticketB], graphNodes = false, revision = 1) {
   mocks.callOperation.mockImplementation(async (operation: string, args: Record<string, unknown>) => {
     if (operation === 'tracker.taskActivity' || operation === 'tracker.taskResults') return {
       project_id: args.project_id, task_key: args.task_key, items: [], next_cursor: null, warnings: [], coverage: 'Recorded sources',
@@ -29,11 +29,12 @@ function dataMock(tasks = [taskA, taskB], tickets = [ticketA, ticketB], graphNod
     if (operation !== 'tracker.get') throw new Error(`Unexpected operation ${operation}`)
     if (args.task_key) {
       const result = trackerSnapshot(tasks.filter(task => task.key === args.task_key), tickets.filter(ticket => ticket.task_key === args.task_key), args.include_graph === true)
+      result.tracker.rev = revision
       if (result.graph && graphNodes) result.graph.nodes = result.tickets.map(ticket => ({
         id: `ticket:${ticket.key}`, type: 'ticket', parent_id: null, label: ticket.title,
         status: ticket.status, lane_key: ticket.lane_key, priority_key: ticket.priority_key, data: {},
       }))
-      return scoped(result, Number(args.project_id))
+      return projected(scoped(result, Number(args.project_id)), args.projection)
     }
     const index = tasks.map(task => {
       const children = tickets.filter(ticket => ticket.task_key === task.key)
@@ -44,8 +45,19 @@ function dataMock(tasks = [taskA, taskB], tickets = [ticketA, ticketB], graphNod
         assignees: [], search_text: children.map(ticket => ticket.title).join(' '),
       }}
     })
-    return scoped(trackerSnapshot(index, []), Number(args.project_id))
+    const result = trackerSnapshot(index, [])
+    result.tracker.rev = revision
+    return projected(scoped(result, Number(args.project_id)), args.projection)
   })
+}
+function projected(snapshot: TrackerSnapshot, projection: unknown): TrackerSnapshot {
+  if (projection !== 'ui') return snapshot
+  // Match lightweight reads: full content and evidence are absent, not empty.
+  const summarize = (item: TrackerTask | TrackerTicket) => Object.fromEntries(Object.entries(item).filter(([key]) => ![
+    'definition_of_done_json', 'constraints_json', 'expected_outcomes_json', 'expected_changes_json',
+    'allowed_paths_json', 'completion_evidence_json', 'context_json',
+  ].includes(key)))
+  return { ...snapshot, projection: 'ui', tasks: snapshot.tasks.map(summarize), tickets: snapshot.tickets.map(summarize) } as TrackerSnapshot
 }
 function scoped(snapshot: TrackerSnapshot, projectId: number): TrackerSnapshot {
   return { ...snapshot, tracker: { ...snapshot.tracker, project_id: projectId },
@@ -69,7 +81,7 @@ async function render(url = '/projects/7/tasks', realDialogs = false, realContro
       TrackerGraphPanel: { name: 'TrackerGraphPanel', props: ['loading','activeTaskTitle','selectedTicket','selectionVisible','selectionLabel','flow'], template: '<section data-test="graph" />' },
       TrackerWarningSummary: true,
       TrackerTaskDetailDialog: realDialogs ? false : { name: 'TrackerTaskDetailDialog', props: ['modelValue','task','tickets','loading','error','contexts','ticket','ticketKey','results','activity','refreshContent'], template: '<aside />' },
-      TrackerTicketDetailPanel: realDialogs ? false : { name: 'TrackerTicketDetailPanel', props: ['modelValue','ticket','parentTask','error','presentation'], template: '<aside />' },
+      TrackerTicketDetailPanel: realDialogs ? false : { name: 'TrackerTicketDetailPanel', props: ['modelValue','ticket','parentTask','loading','error','presentation'], template: '<aside />' },
     }},
   })
   await flushPromises()
@@ -201,7 +213,7 @@ describe('Work board navigation', () => {
     await flushPromises()
     expect(router.currentRoute.value.query.detail).toBe('task-a')
     expect(dialog().props('task').context_json).toEqual(taskA.context_json)
-    expect(mocks.callOperation.mock.calls.filter(([name, args]) => name === 'tracker.get' && args.task_key === 'task-a')).toHaveLength(1)
+    expect(mocks.callOperation.mock.calls.filter(([name, args]) => name === 'tracker.get' && args.task_key === 'task-a' && args.projection !== 'ui')).toHaveLength(1)
     wrapper.unmount()
   })
   it.each(['save-first', 'SSE-first', 'in-flight-covered', 'in-flight-stale'])('reconciles a batch revision once across %s and later independent events', async order => {
@@ -751,10 +763,11 @@ describe('Work board navigation', () => {
     const { wrapper, board, dialog } = await render('/projects/7/tasks?view=graph&task=task-a')
     const graph = () => wrapper.findComponent({ name: 'TrackerGraphPanel' })
     graph().vm.$emit('node-click', { event: { stopPropagation: vi.fn() }, node: graph().props('flow').nodes[0] })
+    graph().vm.$emit('openSelectedDetail')
     await flushPromises()
     for (const [index, agent, model] of [[1, 'Implementer', 'gpt-6.1-sol'], [2, 'Reviewer', 'gpt-6-astra'], [3, 'Implementer', 'gpt-6.1-sol'], [4, null, null]] as const) {
       const execution = agent ? { live_usage: null, invocation_id: `call-${index}`, agent, model, host_key: 'codex', started_at: `2026-11-08T01:0${index}:00Z`, ticket_key: ticketA.key } : null
-      dataMock([{ ...taskA, active_execution: execution }], [{ ...ticketA, status: 'in-progress', active_execution: execution }], true)
+      dataMock([{ ...taskA, active_execution: execution }], [{ ...ticketA, status: 'in-progress', active_execution: execution }], true, index + 1)
       mocks.stream.mock.calls.at(-1)![0].onEvent({ id: 10000 + index, event_type: 'tracker.execution.changed', metadata_json: { task_key: taskA.key, ticket_key: ticketA.key } })
       await flushPromises()
       expect(board().props('rows')[0].task.active_execution).toEqual(execution)
@@ -777,14 +790,16 @@ describe('Work board navigation', () => {
     expect(graph().props('flow').nodes[0].data).toMatchObject({ active: false, deliveryStopped: true })
     expect(board().props('rows').find((row: { key: string }) => row.key === taskA.key).task.status).toBe(taskA.status)
     graph().vm.$emit('node-click', { event: { stopPropagation: vi.fn() }, node: graph().props('flow').nodes[0] })
+    graph().vm.$emit('openSelectedDetail')
     await flushPromises()
     expect(wrapper.findComponent({ name: 'TrackerTicketDetailPanel' }).props('parentTask').metadata_json.delivery.status).toBe('stopped')
     const resumed = { ...automatic, metadata_json: { delivery: { ...delivery, status: 'running' } } }
-    dataMock([resumed, taskB], [ticketA, ticketB], true)
+    dataMock([resumed, taskB], [ticketA, ticketB], true, 2)
     mocks.stream.mock.calls.at(-1)![0].onEvent({ id: 9902, event_type: 'tracker.task.updated', metadata_json: { task_key: 'task-a' } })
     await flushPromises()
     expect(controls().props('taskDelivery')).toEqual({ status: 'running', ticketKey: ticketA.key, reason: null })
     expect(graph().props('flow').nodes[0].data.deliveryStopped).toBe(false)
+    expect(wrapper.findComponent({ name: 'TrackerTicketDetailPanel' }).props('parentTask').metadata_json.delivery.status).toBe('running')
     controls().vm.$emit('taskSelect', 'task-b')
     await flushPromises()
     expect(controls().props('taskDelivery')).toBeNull()
@@ -807,6 +822,7 @@ describe('Work board navigation', () => {
     expect(graph().props('flow').nodes[0].data.agentStats.reported_usage.total).toBe(7)
     expect(graph().props('flow').nodes[0].data.taskAutomated).toBe(true)
     graph().vm.$emit('node-click', { event: { stopPropagation: vi.fn() }, node: graph().props('flow').nodes[0] })
+    graph().vm.$emit('openSelectedDetail')
     await flushPromises()
     expect(wrapper.findComponent({ name: 'TrackerTicketDetailPanel' }).props('parentTask')).toMatchObject(automaticTask)
     graph().vm.$emit('toggle-status', 'complete')
@@ -1292,12 +1308,18 @@ describe('Work board navigation', () => {
     expect(router.currentRoute.value.query).toEqual({ view: 'graph', task: 'task-a' })
     expect(map.props('selectionVisible')).toBe(true)
     expect(map.props('selectedTicket')?.key).toBe('ticket-a')
+    expect(map.props('selectedTicket')).not.toHaveProperty('definition_of_done_json')
+    const fullReads = () => mocks.callOperation.mock.calls.filter(([name, args]) => name === 'tracker.get' && args.task_key && args.projection !== 'ui')
+    expect(fullReads()).toHaveLength(0)
     expect(dialog().props('modelValue')).toBe(false)
     map.vm.$emit('openSelectedDetail')
     await flushPromises()
     const inspector = () => wrapper.findComponent({ name: 'TrackerTicketDetailPanel' })
     expect(inspector().props('modelValue')).toBe(true)
     expect(inspector().findComponent({ name: 'InspectableDetailDrawer' }).exists()).toBe(true)
+    expect(inspector().props('ticket').definition_of_done_json).toEqual(ticketA.definition_of_done_json)
+    expect(fullReads()).toHaveLength(1)
+    expect(mocks.callOperation.mock.calls.some(([name]) => name === 'tracker.taskActivity' || name === 'tracker.taskResults')).toBe(false)
     expect(document.body.textContent).toContain('Ticket')
     expect(router.currentRoute.value.query.ticket).toBeUndefined()
     selectNode()
@@ -1334,6 +1356,69 @@ describe('Work board navigation', () => {
     expect(inspector().props('modelValue')).toBe(false)
     expect(router.currentRoute.value.query.task).toBe('task-a')
     wrapper.unmount()
+  })
+
+  it('loads graph ticket details on demand and retries a failed full read inside the inspector', async () => {
+    const fullTicket = trackerTicket({ definition_of_done_json: ['Verify the project adaptation'], expected_changes_json: ['Retain local workflow guidance'] })
+    dataMock([taskA, taskB], [fullTicket, ticketB])
+    const { wrapper } = await render('/projects/7/tasks?view=graph&task=task-a', true)
+    try {
+      const normal = mocks.callOperation.getMockImplementation()!
+      let rejectRead!: (error: Error) => void
+      mocks.callOperation.mockImplementation((name, args) => name === 'tracker.get' && args.task_key && args.projection !== 'ui'
+        ? new Promise((_resolve, reject) => { rejectRead = reject }) : normal(name, args))
+      const map = wrapper.findComponent({ name: 'TrackerGraphPanel' })
+      const inspector = wrapper.findComponent({ name: 'TrackerTicketDetailPanel' })
+      map.vm.$emit('nodeClick', { event: new MouseEvent('click'), node: { id: 'ticket:ticket-a', data: { itemKind: 'ticket', itemKey: 'ticket-a' } } })
+      map.vm.$emit('openSelectedDetail')
+      await flushPromises()
+      expect(inspector.props('modelValue')).toBe(true)
+      expect(inspector.props('ticket')).toBeNull()
+      expect(popup().text()).toContain('Loading ticket details')
+      rejectRead(new Error('Ticket details temporarily unavailable'))
+      await flushPromises()
+      expect(popup().text()).toContain('Ticket details temporarily unavailable')
+      expect(popup().text()).not.toContain('Loading ticket details')
+      mocks.callOperation.mockImplementation(normal)
+      await popup().findAll('button').find(button => button.text() === 'Retry')!.trigger('click')
+      await flushPromises()
+      expect(inspector.props('ticket')).toMatchObject(fullTicket)
+      expect(popup().text()).toContain('Verify the project adaptation')
+      expect(popup().text()).toContain('Retain local workflow guidance')
+      expect(popup().text()).not.toContain('Ticket details temporarily unavailable')
+    } finally { wrapper.unmount() }
+  })
+
+  it.each(['resolve', 'reject'])('ignores a stale graph detail %s after selecting another task', async outcome => {
+    const { wrapper, router } = await render('/projects/7/tasks?view=graph&task=task-a', true)
+    try {
+      const normal = mocks.callOperation.getMockImplementation()!
+      let resolveRead!: (value: TrackerSnapshot) => void
+      let rejectRead!: (error: Error) => void
+      mocks.callOperation.mockImplementation((name, args) => name === 'tracker.get' && args.task_key === 'task-a' && args.projection !== 'ui'
+        ? new Promise((resolve, reject) => { resolveRead = resolve; rejectRead = reject }) : normal(name, args))
+      const selectAndOpen = (key: string) => {
+        const map = wrapper.findComponent({ name: 'TrackerGraphPanel' })
+        map.vm.$emit('nodeClick', { event: new MouseEvent('click'), node: { id: `ticket:${key}`, data: { itemKind: 'ticket', itemKey: key } } })
+        map.vm.$emit('openSelectedDetail')
+      }
+      selectAndOpen('ticket-a')
+      await flushPromises()
+      await router.push('/projects/7/tasks?view=graph&task=task-b')
+      await flushPromises()
+      selectAndOpen('ticket-b')
+      await flushPromises()
+      const inspector = wrapper.findComponent({ name: 'TrackerTicketDetailPanel' })
+      expect(inspector.props('ticket')?.key).toBe('ticket-b')
+      if (outcome === 'resolve') resolveRead(trackerSnapshot([taskA], [ticketA]))
+      else rejectRead(new Error('Stale task error'))
+      await flushPromises()
+      expect(inspector.props('ticket')?.key).toBe('ticket-b')
+      expect(inspector.props('parentTask')?.key).toBe('task-b')
+      expect(inspector.props('error')).toBeNull()
+      expect(inspector.props('loading')).toBe(false)
+      expect(popup().text()).not.toContain('Stale task error')
+    } finally { wrapper.unmount() }
   })
 
   it('keeps one persistent frame and restores task reading position, disclosures and row focus', async () => {

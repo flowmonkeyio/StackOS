@@ -14,10 +14,10 @@ import {
   TRACKER_TICKET_NODE_WIDTH,
   type TrackerFlowModel,
 } from '@/lib/task-tracker/graphModel'
-import type { TrackerStatus, TrackerTicket } from '@/lib/task-tracker/types'
+import type { TrackerStatus } from '@/lib/task-tracker/types'
 
 import TicketGraphNode from './TicketGraphNode.vue'
-import type { GraphBlockFilter } from './viewTypes'
+import type { GraphBlockFilter, TrackerGraphTicketSelection } from './viewTypes'
 import { useVisibleMetricDemand } from './useVisibleMetricDemand'
 
 import '@vue-flow/core/dist/style.css'
@@ -50,7 +50,7 @@ const props = defineProps<{
   filtersActive: boolean
   selectionVisible: boolean
   selectionLabel: string
-  selectedTicket: TrackerTicket | null
+  selectedTicket: TrackerGraphTicketSelection | null
   selectedEdgeLabel: string | null
   selectionStats: string[]
 }>()
