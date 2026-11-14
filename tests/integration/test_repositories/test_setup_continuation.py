@@ -288,7 +288,7 @@ def test_saved_main_settings_reach_native_setup_and_frozen_continuation(
         return AgentRunResult(
             0,
             thread_id="native-setup-selection",
-            result={"report_json": json.dumps(report)},
+            result={"report_json": json.dumps(report), "verification_status": None},
         )
 
     monkeypatch.setattr(claude_code.claude_mcp, "resolve_claude_bin", lambda: "/fixture/claude")
@@ -304,6 +304,8 @@ def test_saved_main_settings_reach_native_setup_and_frozen_continuation(
     original = session.get(AgentRequest, first.attempt.request_id)
     native = copy.deepcopy(original.metadata_json["native_execution"])
     pending = ProjectSetupRepository(session).get(project).current_attempt
+    assert pending.status == "needs_input", pending.managed.diagnostic
+    assert pending.question is not None and pending.question.answer_state == "pending"
     second = answer(managed, pending)
     assert second.attempt.managed.settings == first.attempt.managed.settings
     scheduler.run()

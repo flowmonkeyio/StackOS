@@ -76,7 +76,7 @@ def test_tracked_delivery_keeps_one_key_and_eleven_steps() -> None:
 
     assert validation.valid is True, validation.errors
     assert workflow["key"] == "engineering.tracked-delivery"
-    assert workflow["version"] == "0.8.5"
+    assert workflow["version"] == "0.8.6"
     assert [step["id"] for step in workflow["steps"]] == [
         "scope-work",
         "define-requirements",

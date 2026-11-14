@@ -511,7 +511,9 @@ def test_proposal_cannot_replace_saved_inherited_delivery_host(
     )
     assert current.status == "failed" and not scheduler.jobs
     assert len(calls) == 1 and current.managed.phase == "preparation"
-    assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 0
+    capacity = task_delivery.delivery_capacity(session, scheduler, project)["projects"]
+    assert len(capacity) == 1 and capacity[0]["project_id"] == project
+    assert capacity[0]["running_count"] == 0
 
 
 @pytest.mark.parametrize("customized", [False, True])
@@ -573,7 +575,9 @@ def test_managed_adopts_then_verifies_once_without_workflow_or_task(
     assert [call["phase"] for call in calls] == ["preparation", "verification", "completion"]
     assert len({call["claim_token"] for call in calls}) == 3
     assert not scheduler.jobs
-    assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 0
+    capacity = task_delivery.delivery_capacity(session, scheduler, project)["projects"]
+    assert len(capacity) == 1 and capacity[0]["project_id"] == project
+    assert capacity[0]["running_count"] == 0
     assert not session.exec(select(RunPlan)).all()
     assert len(session.exec(select(TrackerTask)).all()) == 1
     assert session.get(TrackerTask, frozen.id).metadata_json == frozen_before
@@ -698,7 +702,9 @@ def test_changed_adopted_basis_recovers_only_after_restoration(
     assert ProjectSetupRepository(session).get(project).current_attempt.status == "success"
     assert [call["phase"] for call in calls] == ["preparation", "verification", "completion"]
     assert TrackerRepository(session).delivery_defaults(project_id=project) == adopted
-    assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 0
+    capacity = task_delivery.delivery_capacity(session, scheduler, project)["projects"]
+    assert len(capacity) == 1 and capacity[0]["project_id"] == project
+    assert capacity[0]["running_count"] == 0
 
 
 @pytest.mark.parametrize("outcome", [None, "failed", "blocked"])

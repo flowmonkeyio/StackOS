@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: stackos.sdlc.delivery-orchestrator
     name: Delivery Orchestrator
-    version: 0.8.22
+    version: 0.8.23
     description: Main-agent guidance for preparing executable tickets, coordinating delegated delivery and immediate independent review, and accepting verified integrated work.
     domain: engineering
     skill_type: main-agent-orchestration
