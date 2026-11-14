@@ -17,8 +17,8 @@ import ProjectSetupLaunchDialog from './project-setup/ProjectSetupLaunchDialog.v
 
 const { projectId } = useProjectRouteScope()
 const router = useRouter()
-const setup = useProjectSetup(projectId)
-const { state: setupState, error: setupError, writing: setupWriting, actionLabel, reminder } = setup
+const setup = useProjectSetup(projectId, { retainReminder: true })
+const { state: setupState, error: setupError, writing: setupWriting, actionLabel, reminder, reminderUpdateCount } = setup
 const launchOpen = ref(false)
 function openSetup(): void {
   if (setup.opensLaunch.value && !setupError.value) launchOpen.value = true
@@ -95,7 +95,7 @@ async function refreshAll(): Promise<void> {
             {{ reminder === 'setup' ? 'Set up this project' : 'Workflow updates available' }}
           </h2>
           <p class="mt-1 text-fg-muted">
-            {{ reminder === 'setup' ? 'Let your agent prepare the workflows you need.' : `${setupState?.update_count} workflows have new setup guidance.` }}
+            {{ reminder === 'setup' ? 'Let your agent prepare the workflows you need.' : `${reminderUpdateCount} workflows have new setup guidance.` }}
           </p>
         </div>
         <div class="flex flex-wrap items-center gap-2">

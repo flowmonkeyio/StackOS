@@ -52,6 +52,29 @@ async function mountProject() {
 }
 
 describe('project Home active work', () => {
+  it('retains the same setup reminder above accepted return data while its read is pending', async () => {
+    const read = vi.mocked(callOperation).getMockImplementation()!
+    const state = { project_id: 1, eligible: true, status: 'updates_available', folder_status: 'available', update_count: 3, current_attempt: null }
+    vi.mocked(callOperation).mockImplementation(async (name, args) => name === 'projectSetup.get' ? state as never : read(name, args))
+    const { wrapper, router } = await mountProject()
+    try {
+      expect(wrapper.get('[aria-label="Project setup reminder"]').text()).toContain('3 workflows')
+      await router.push('/projects/1/tasks'); await flushPromises()
+      let finish!: (value: unknown) => void
+      vi.mocked(callOperation).mockImplementation((name, args) => name === 'projectSetup.get'
+        ? new Promise(resolve => { finish = resolve }) : read(name, args))
+      await router.push('/projects/1'); await flushPromises()
+      const reminder = wrapper.get('[aria-label="Project setup reminder"]').element
+      expect(wrapper.find('.active-task-row__link').exists()).toBe(true)
+      expect(wrapper.text()).toContain('3 workflows')
+      finish(state); await flushPromises()
+      expect(wrapper.get('[aria-label="Project setup reminder"]').element).toBe(reminder)
+      await router.push('/projects/2'); await flushPromises()
+      expect(wrapper.find('[aria-label="Project setup reminder"]').exists()).toBe(false)
+      finish({ ...state, project_id: 2, eligible: false }); await flushPromises()
+      expect(vi.mocked(callOperation).mock.calls.every(([name]) => !name.match(/projectSetup\.(start|answer|continue|cancel|setReminders)/))).toBe(true)
+    } finally { wrapper.unmount() }
+  })
   it('uses the same daemon capacity when switching projects without writing', async () => {
     const { wrapper, router } = await mountProject()
     try {

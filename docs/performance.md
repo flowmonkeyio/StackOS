@@ -130,7 +130,11 @@ new subscription and revalidation. Freshness is never retained. Existing rows
 and chart instances stay mounted during automatic refresh, and only a manual
 Refresh action animates the page's Refresh button. Local service/host reads
 retain their accepted display on return; the initial host placeholders use the
-same six-slot desktop grid as the status response. Graph and one full primary
+same six-slot desktop grid as the status response.
+The existing setup reader also retains Home's last same-project reminder and
+update count, so return content is not displaced while setup revalidates.
+It does not retain setup state, attempts or launch readiness.
+Graph and one full primary
 detail can be reused only within the mounted project and accepted revision.
 Content saves and latest-content retries use the same UI-demand index queue.
 While a full detail read is pending, its owner retains accepted metric patches
