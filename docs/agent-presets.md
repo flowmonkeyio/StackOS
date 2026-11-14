@@ -154,11 +154,14 @@ general filesystem access or permission to read personal/global agent files.
 
 Discovery reads only `.codex/agents/*.toml` and existing
 `.codex/config.toml` `agents.<key>.config_file` references. The latter resolve
-relative to `.codex`, within the chosen tree. Same-source registrations
+relative to `.codex`, within the chosen tree. References such as
+`../.agents/subagents/delivery.toml` retain their existing registration and
+expose a normalized workspace-relative source identity. Same-source registrations
 deduplicate; duplicate native names, malformed files and unsafe references
 produce individual diagnostics. Legacy registered files may obtain missing
 name/description metadata from their registration. Symlinks, hard links,
-traversal, nonregular sources and sources over 1 MiB are rejected. Discovery is
+root escapes, nonregular sources and sources over 1 MiB are rejected. Resolving
+`..` never hides a symlink or missing directory component. Discovery is
 bounded to 1,000 sources, with explicit failure above that limit. Refresh reads
 current files without a watcher or a last-used-folder fallback.
 
@@ -191,11 +194,15 @@ and optional native settings. It exclusively creates
 registration. Update accepts `source_ref`, `expected_digest` and a `patch`.
 Omitted fields survive; null optional fields inherit. Nested setting patches
 preserve untouched siblings and comments. Supported settings include model,
-reasoning effort/summary, verbosity, and reduction-only native feature/skill
-restrictions. Unsupported or authority-expanding patches reject. Writes retain
-full instructions, unknown keys, comments and file permissions, recheck source
-and registration identity before replacement, and verify exact saved-byte
-readback. Writes are raw-only; neither compact nor ack can hide a failed save.
+reasoning effort/summary, verbosity, `sandbox_mode` (`read-only` or
+`workspace-write`), and reduction-only native feature/skill restrictions. A
+source sandbox pin may narrow the caller's mode; it never broadens a read-only
+request. The native command and launch receipt use that effective mode, including
+resumes of frozen source settings. Unsupported or authority-expanding patches
+reject. Writes retain full instructions, unknown keys, comments and file
+permissions, recheck source and registration identity before replacement, and
+verify exact saved-byte readback. Writes are raw-only; neither compact nor ack
+can hide a failed save.
 Retries recheck authority, workspace and current bytes in the handler. Exclusive
 create collisions and stale updates reject safely, without replaying prompt
 content from generic database idempotency storage. A write failure reports

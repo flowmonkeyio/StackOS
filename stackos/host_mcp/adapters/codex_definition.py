@@ -18,6 +18,7 @@ class AgentFields(BaseModel):
     model_reasoning_effort: StrictStr | None = None
     model_reasoning_summary: StrictStr | None = None
     model_verbosity: StrictStr | None = None
+    sandbox_mode: StrictStr | None = None
     features: dict[str, Any] | None = None
     skills: dict[str, Any] | None = None
 
@@ -31,6 +32,7 @@ class AgentPatch(BaseModel):
     model_reasoning_effort: StrictStr | None = None
     model_reasoning_summary: StrictStr | None = None
     model_verbosity: StrictStr | None = None
+    sandbox_mode: StrictStr | None = None
     features: dict[str, Any] | None = None
     skills: dict[str, Any] | None = None
 
@@ -44,6 +46,7 @@ _ENUMS = {
     "model_reasoning_effort": {"none", "minimal", "low", "medium", "high", "xhigh", "max"},
     "model_reasoning_summary": {"auto", "concise", "detailed", "none"},
     "model_verbosity": {"low", "medium", "high"},
+    "sandbox_mode": {"read-only", "workspace-write"},
 }
 _FEATURES = {"shell_tool", "apps", "plugins", "memories", "request_permissions_tool"}
 

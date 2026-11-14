@@ -585,6 +585,8 @@ def run_agent(
     )
     if error:
         return AgentRunResult(None, error=error)
+    if host_key == "codex":
+        sandbox = codex.native_agent_sandbox(sandbox, native_settings or {})
     definition = _definition_by_key(host_key)
     if definition is None or definition.run_agent is None:
         return AgentRunResult(None, error=f"Host {host_key!r} does not support agent execution.")

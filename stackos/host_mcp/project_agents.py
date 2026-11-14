@@ -173,6 +173,28 @@ class ProjectAgentService:
             if _identity(os.fstat(current))[:2] != _identity(os.fstat(descriptor))[:2]:
                 raise ProjectAgentError("stale_source")
 
+    def _registration_source(self, target: str) -> str:
+        """Normalize native config-relative paths without leaving the pinned root."""
+        if len(target) > MAX_SOURCE_PATH_LENGTH:
+            raise ProjectAgentError("invalid_definition", reason="source_path_too_long")
+        if not target or "\x00" in target or "\\" in target or PurePosixPath(target).is_absolute():
+            raise ProjectAgentError("outside_root")
+        parts = [".codex"]
+        for part in target.split("/"):
+            if part in {"", "."}:
+                continue
+            if part == "..":
+                if not parts:
+                    raise ProjectAgentError("outside_root")
+                # A native path traverses this directory before its parent. Do
+                # not normalize away a symlink (or missing/non-directory path).
+                with self._directory("/".join(parts)):
+                    pass
+                parts.pop()
+            else:
+                parts.append(part)
+        return _relative("/".join(parts))
+
     def _registrations(
         self,
     ) -> tuple[dict[str, list[dict[str, Any]]], str | None, list[dict[str, Any]]]:
@@ -195,15 +217,12 @@ class ProjectAgentService:
                 try:
                     if not isinstance(entry.get("config_file"), str):
                         raise ProjectAgentError("invalid_definition")
-                    target = entry["config_file"]
-                    if target.startswith("./"):
-                        target = target[2:]
-                    source = _relative(f".codex/{target}")
+                    source = self._registration_source(entry["config_file"])
                     refs.setdefault(source, []).append(
                         {"key": key, "description": entry.get("description")}
                     )
-                except ProjectAgentError as exc:
-                    diagnostics.append({**exc.data, "registration_key": key})
+                except (OSError, ProjectAgentError) as exc:
+                    diagnostics.append({**_diagnostic(exc), "registration_key": key})
         except FileNotFoundError:
             pass
         except (OSError, UnicodeError, TOMLKitError, ValueError, ProjectAgentError) as exc:

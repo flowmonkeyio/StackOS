@@ -10,7 +10,7 @@ export type AgentSummary = Omit<AgentDefinition, 'fields'> & { fields: Omit<Agen
 export type AgentSourceRef = components['schemas']['AgentSourceRef']
 type AgentPatch = components['schemas']['AgentPatch']
 export const agentIdentity = (source: AgentSourceRef) => JSON.stringify(source)
-export const blankAgent = (): AgentFields => ({ name: '', description: '', developer_instructions: '', model: null, model_reasoning_effort: null, model_reasoning_summary: null, model_verbosity: null, features: null, skills: null })
+export const blankAgent = (): AgentFields => ({ name: '', description: '', developer_instructions: '', model: null, model_reasoning_effort: null, model_reasoning_summary: null, model_verbosity: null, sandbox_mode: null, features: null, skills: null })
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T
 const canonical = (value: unknown): string => {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`
