@@ -1123,10 +1123,7 @@ def resolve_delivery_settings(
             else:
                 agent.pop("model", None)
         else:
-            if (
-                choice.get("source_ref") is not None
-                or choice.get("model_reasoning_effort") is not None
-            ):
+            if choice.get("source_ref") is not None:
                 raise ValidationError("Native project settings are unsupported by this host")
             try:
                 agent = TaskDeliveryAgent.model_validate(choice).model_dump(exclude_none=True)
@@ -1139,6 +1136,7 @@ def resolve_delivery_settings(
             agent["host_key"],
             sandbox=sandbox,
             model=agent.get("model"),
+            model_reasoning_effort=agent.get("model_reasoning_effort"),
             provider=agent.get("provider"),
             profile=agent.get("profile"),
         )
@@ -1938,6 +1936,14 @@ def run_delivery(
                     if agent.get("source_ref") != frozen.get("source_ref"):
                         raise ValidationError("Ticket source selection changed; cannot resume")
                     agent = frozen
+                # New inline-host sessions need the same immutable contract as
+                # source-backed sessions when project defaults change on rehandoff.
+                # Preserve the identity shape of already admitted legacy sessions.
+                session_snapshot = (
+                    {"agent_snapshot": agent}
+                    if native_session is None or native_session.get("agent_snapshot")
+                    else {}
+                )
                 host_key = agent.get("host_key") or state["host_key"]
                 sandbox: AgentSandbox = (
                     "workspace-write" if phase == "delivery" else agent_review_sandbox(host_key)
@@ -1948,7 +1954,7 @@ def run_delivery(
                     sandbox = native_agent_sandbox(sandbox, agent.get("native_settings") or {})
                 selection = {
                     key: agent[key]
-                    for key in ("model", "provider", "profile")
+                    for key in ("model", "model_reasoning_effort", "provider", "profile")
                     if agent.get(key) is not None
                 }
                 identity = {
@@ -2231,7 +2237,7 @@ def run_delivery(
                         sessions[phase] = {
                             **identity,
                             "thread_id": thread_id,
-                            **({"agent_snapshot": agent} if agent.get("source_ref") else {}),
+                            **session_snapshot,
                         }
                         outputs = json.loads(value["outputs"])
                         if not isinstance(outputs, dict):
@@ -2319,7 +2325,7 @@ def run_delivery(
                     sessions[phase] = {
                         **identity,
                         "thread_id": result.thread_id,
-                        **({"agent_snapshot": agent} if agent.get("source_ref") else {}),
+                        **session_snapshot,
                     }
 
                 if (

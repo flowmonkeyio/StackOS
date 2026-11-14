@@ -84,7 +84,13 @@ again, and report success only after all current required workflow claims are co
 
 
 def resolve_preferences(
-    session, project_id, preferences=None, *, inherit_saved=True, validate_selection=True
+    session,
+    project_id,
+    preferences=None,
+    *,
+    inherit_saved=True,
+    validate_selection=True,
+    fallback_host_key=None,
 ):
     from stackos.repositories.tracker import TrackerRepository
 
@@ -94,12 +100,13 @@ def resolve_preferences(
     ).model_dump(exclude_none=True)
     # Omission inherits; explicit null clears a saved selection for this launch.
     explicit = MainAgentPreferences.model_validate(preferences or {}).model_dump(exclude_unset=True)
-    if explicit.get("host_key") and explicit["host_key"] != saved.get("host_key"):
+    saved_host = saved.get("host_key") or defaults.get("host_key") or fallback_host_key
+    if explicit.get("host_key") and explicit["host_key"] != saved_host:
         saved = {}
     if "model" in explicit and explicit["model"] != saved.get("model"):
         saved.pop("model_reasoning_effort", None)
     selected = {key: value for key, value in {**saved, **explicit}.items() if value is not None}
-    host_key = selected.get("host_key") or defaults.get("host_key")
+    host_key = selected.get("host_key") or defaults.get("host_key") or fallback_host_key
     if host_key is None:
         # Catalog order is the existing preference order; never substitute an explicit choice.
         host_key = next(

@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.21
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.22
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Workflow: `engineering.tracked-delivery` v0.8.5 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -234,6 +234,16 @@ from `TaskTracker.config_json.delivery` defaults and task overrides
 by role into one task snapshot. Defaults use local-admin REST-only `tracker.configureDelivery`;
 no ticket settings or source fallback. Fresh Codex uses exact project sources. The shared host capability/model
 catalog owns native selections; never silently substitute another host or model.
+Preserve model and reasoning inheritance without guessing a host default.
+Source-backed roles resolve source -> task -> project -> host; setup/update and
+scheduled main agents separately resolve saved `delivery.main_agent` choices.
+Omission inherits; explicit null clears its fallback owner, never an explicit
+source value. Use existing host execution capabilities for supported choices and
+validation. Inspect saved readback and actual native arguments. Catalog refresh
+must not rewrite drafts or saved values. Source/default edits affect fresh
+admissions; queued/running work and resumed native sessions retain admitted
+settings. Prove this without adding a settings owner, forcing effort or editing
+the user's host configuration.
 Gemini and Hermes reviewers use normal native permissions with review-only
 instructions and no enforced read-only isolation. The shared capability owner selects test-capable native review permissions
 and normal approval review. Reviewers may create ordinary test outputs but must

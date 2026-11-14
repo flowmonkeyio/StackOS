@@ -414,7 +414,7 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     compact_skill_binding = compact["required_skill_presets"][0]
     compact_skill = compact_skill_binding["preset"]
     full_skill = raw["required_skill_presets"][0]["preset"]
-    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.21"
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.22"
     full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
     # Skill lists are bounded navigation; raw retains the full contract.
     assert len(compact_skill["must_do"]) == 25
@@ -451,14 +451,17 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
         "Adopt Codex source references explicitly",
         "tracker.configureDelivery adopt_sources preview/write with expected digests",
         "instruction-only saved-default adoption",
+        "Preserve model and reasoning inheritance without guessing a host default",
+        "separate saved delivery.main_agent preferences",
         "Source edits affect future Codex admissions, never active/historical snapshots "
         "or resumed sessions",
     ):
         assert requirement in " ".join(full_instructions), requirement
+    # Later rules are deliberately outside the compact 25-rule navigation slice.
+    # The raw read above must preserve the complete execution/repair contract.
     assert "three automatic repair passes per ticket" in " ".join(full_instructions)
     assert "repair_count" in " ".join(full_instructions)
     assert "rejection after the third repair" in " ".join(full_instructions)
-    # Full resolution must retain safe actions beyond the bounded navigation list.
     for instruction in (
         "exact final mutation payload",
         "temporary safeguard, owner and resume condition",

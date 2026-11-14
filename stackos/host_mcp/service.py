@@ -565,8 +565,6 @@ def run_agent(
         return AgentRunResult(None, error="Request execution requires its exact repository owner.")
     if mcp_config_ref is not None and host_key != "codex":
         return AgentRunResult(None, error="Task MCP configuration is unsupported by this host.")
-    if native_settings is not None and host_key != "codex":
-        return AgentRunResult(None, error="Native project settings are unsupported by this host.")
     if resume_thread_id is not None and (
         not isinstance(resume_thread_id, str)
         or not resume_thread_id.strip()
@@ -582,6 +580,7 @@ def run_agent(
         model_reasoning_effort=model_reasoning_effort,
         provider=provider,
         profile=profile,
+        native_settings=native_settings,
     )
     if error:
         return AgentRunResult(None, error=error)
@@ -607,12 +606,6 @@ def run_agent(
     progress_kwargs: dict[str, Any] = {}
     if model_reasoning_effort is not None:
         if host_key == "codex":
-            if (native_settings or {}).get(
-                "model_reasoning_effort", model_reasoning_effort
-            ) != model_reasoning_effort:
-                return AgentRunResult(
-                    None, error="Conflicting explicit native reasoning selections."
-                )
             native_settings = {
                 **(native_settings or {}),
                 "model_reasoning_effort": model_reasoning_effort,
@@ -767,14 +760,34 @@ def agent_selection_error(
     model_reasoning_effort: str | None = None,
     provider: str | None = None,
     profile: str | None = None,
+    native_settings: dict[str, Any] | None = None,
 ) -> str | None:
-    """Validate declared native choices without claiming installation or model access."""
+    """Validate explicit choices and existing source syntax without resolving defaults.
+
+    Explicit reasoning selections require a verified model/effort pair. Codex
+    source settings retain their native syntax contract, including effort with
+    an inherited model; the capability catalog cannot establish that model.
+    Neither path changes saved settings or establishes model access.
+    """
     definition = _definition_by_key(host_key)
     if definition is None or definition.run_agent is None:
         return f"Host {host_key!r} does not support headless agent execution."
     capability = definition.policy.agent_execution
     if sandbox not in capability.sandboxes:
         return f"Host {host_key!r} does not support {sandbox} execution. {capability.notes}"
+    if native_settings is not None:
+        if host_key != "codex":
+            return "Native project settings are unsupported by this host."
+        try:
+            codex.native_agent_overrides(native_settings)
+        except ValueError as native_error:
+            return str(native_error)
+        if (
+            model_reasoning_effort is not None
+            and native_settings.get("model_reasoning_effort", model_reasoning_effort)
+            != model_reasoning_effort
+        ):
+            return "Conflicting explicit native reasoning selections."
     for key, value in {"model": model, "provider": provider, "profile": profile}.items():
         if value is not None and (not value.strip() or value.startswith("-")):
             return f"{key} must be a nonempty native selection, not a CLI option."

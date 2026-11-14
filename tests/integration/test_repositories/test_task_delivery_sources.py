@@ -6,6 +6,7 @@ import pytest
 from sqlmodel import Session
 
 from stackos import task_delivery
+from stackos.host_mcp.adapters import claude_code, grok
 from stackos.host_mcp.project_agents import ProjectAgentService
 from stackos.host_mcp.result import AgentRunResult
 from stackos.repositories.base import ValidationError
@@ -76,6 +77,145 @@ def test_registered_sibling_role_is_resolved_without_moving_or_rewriting(
         assert resolved["native_settings"] == {"sandbox_mode": sandbox}
     assert {path: path.read_bytes() for path in before} == before
     assert not original.exists()
+
+
+@pytest.mark.parametrize("argument_form", ["legacy", "map"])
+@pytest.mark.parametrize("choice", ["inherit", "set", "clear"])
+def test_inline_reasoning_inherits_sets_and_clears_with_capability_validation(
+    session, project_id, tmp_path, argument_form, choice
+):
+    repo = TrackerRepository(session)
+    saved = {
+        "host_key": "claude-code",
+        "delivery_agent": {
+            "name": "writer",
+            "instructions": "Write",
+            "model": "claude-sonnet-5-5",
+            "model_reasoning_effort": "high",
+        },
+    }
+    repo.configure_delivery(project_id=project_id, delivery=saved)
+    override = (
+        {}
+        if choice == "inherit"
+        else {"model_reasoning_effort": "low" if choice == "set" else None}
+    )
+    arguments = (
+        {"delivery_agent": override}
+        if argument_form == "legacy"
+        else {"agents": {"delivery_agent": override}}
+    )
+    resolved = task_delivery.resolve_delivery_settings(
+        session,
+        project_id=project_id,
+        project_dir=str(tmp_path),
+        role_keys={"delivery_agent"},
+        **arguments,
+    )["agents"]["delivery_agent"]
+    assert (
+        resolved.get("model_reasoning_effort")
+        == {"inherit": "high", "set": "low", "clear": None}[choice]
+    )
+    assert repo.delivery_defaults(project_id=project_id) == saved
+    with pytest.raises(ValidationError, match="reasoning effort"):
+        task_delivery.resolve_delivery_settings(
+            session,
+            project_id=project_id,
+            project_dir=str(tmp_path),
+            role_keys={"delivery_agent"},
+            delivery_agent={"model_reasoning_effort": "unsupported"},
+        )
+
+
+@pytest.mark.parametrize("argument_form", ["legacy", "map"])
+def test_inline_roles_forward_reasoning_and_resume_frozen_native_selection(
+    session, project_id, tmp_path, monkeypatch, argument_form
+):
+    repo = TrackerRepository(session)
+    roles = {
+        "delivery_agent": {
+            "name": "writer",
+            "instructions": "Write",
+            "host_key": "claude-code",
+            "model": "claude-sonnet-5-5",
+            "model_reasoning_effort": "high",
+        },
+        "review_agent": {
+            "name": "reviewer",
+            "instructions": "Review",
+            "host_key": "grok",
+            "model": "grok-4.6",
+            "model_reasoning_effort": "low",
+        },
+    }
+    repo.configure_delivery(project_id=project_id, delivery={"agents": roles})
+    repo.create_task(project_id=project_id, key="reasoning", title="Reasoning")
+    repo.create_ticket(project_id=project_id, task_key="reasoning", key="work", title="Work")
+    git(tmp_path, "init")
+    commit(tmp_path, "Baseline")
+    calls = []
+
+    def execute(command, directory, prompt, schema, host, parse, **options):
+        phase = "delivery" if host == "Claude Code" else "review"
+        flag = "--effort" if phase == "delivery" else "--reasoning-effort"
+        assert options["process_control"] is not None
+        assert command[command.index("--model") + 1] == roles[f"{phase}_agent"]["model"]
+        calls.append(
+            (
+                phase,
+                command[command.index(flag) + 1],
+                command[command.index("--resume") + 1] if "--resume" in command else None,
+            )
+        )
+        return AgentRunResult(
+            0,
+            thread_id=f"native-{phase}",
+            result=generic_result("blocked" if len(calls) == 2 else "success"),
+        )
+
+    # Real admission, capabilities, native service, registry and adapter argv;
+    # replace only discovery/environment and the final process execution helper.
+    monkeypatch.setattr(claude_code.claude_mcp, "resolve_claude_bin", lambda: "/fixture/claude")
+    monkeypatch.setattr(claude_code, "subprocess_env_for_cli", lambda _: {})
+    monkeypatch.setattr(grok, "resolve_grok_bin", lambda _: "/fixture/grok")
+    monkeypatch.setattr(claude_code, "execute_json_agent", execute)
+    monkeypatch.setattr(grok, "execute_json_agent", execute)
+    selections = {
+        role: {"model_reasoning_effort": effort}
+        for role, effort in (("delivery_agent", "medium"), ("review_agent", "high"))
+    }
+    arguments = selections if argument_form == "legacy" else {"agents": selections}
+    scheduler = QueuedScheduler()
+    start(session, project_id, tmp_path, scheduler, task_key="reasoning", **arguments)
+    changed = {role: {**agent, "model_reasoning_effort": "low"} for role, agent in roles.items()}
+    repo.configure_delivery(project_id=project_id, delivery={"agents": changed})
+    scheduler.run()
+    session.expire_all()
+    first = repo.brief(project_id=project_id, ticket_key="work").ticket.completion_evidence_json[
+        "automatic_delivery"
+    ]["sessions"]
+    assert first["delivery"]["model_reasoning_effort"] == "medium"
+    assert first["review"]["model_reasoning_effort"] == "high"
+    for status in ("in-progress", "not-started"):
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="work",
+            patch_json={"status": status, "blocker_reason": None},
+        )
+    start(session, project_id, tmp_path, scheduler, task_key="reasoning")
+    scheduler.run()
+    session.expire_all()
+    final = repo.brief(project_id=project_id, ticket_key="work").ticket.completion_evidence_json[
+        "automatic_delivery"
+    ]
+    assert calls == [
+        ("delivery", "medium", None),
+        ("review", "high", None),
+        ("delivery", "medium", "native-delivery"),
+        ("review", "high", "native-review"),
+    ]
+    assert final["sessions"] == first
+    assert final["repair_count"] == 0
 
 
 def test_fresh_codex_inline_requires_explicit_adoption(session, project_id, tmp_path):

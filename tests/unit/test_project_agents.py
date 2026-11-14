@@ -2,6 +2,9 @@
 
 import hashlib
 import os
+import subprocess
+import tomllib
+from pathlib import Path
 
 import pytest
 
@@ -196,6 +199,58 @@ def test_preserving_update_conflict_and_optional_inheritance(tmp_path):
     assert path.read_bytes() == current
     saved = service.update(saved.source_ref, saved.digest, {"model": None})
     assert "model" in saved.inherited_fields and "model =" not in path.read_text()
+
+
+@pytest.mark.parametrize("resume", [None, "retained-source-thread"])
+def test_inherited_model_source_reasoning_reaches_native_without_rewriting(
+    tmp_path, monkeypatch, resume
+):
+    from stackos.host_mcp import run_agent, service
+    from stackos.host_mcp.adapters import codex
+
+    path = definition(tmp_path, extra='model_reasoning_effort = "minimal"\n')
+    before = path.read_bytes()
+    source_service = ProjectAgentService(tmp_path)
+    source = source_service.get(source_service.list().items[0].source_ref)
+    assert "model" in source.inherited_fields
+    assert source.native_settings == {"model_reasoning_effort": "minimal"}
+    settings = source.native_settings.copy()
+    assert (
+        service.agent_selection_error("codex", sandbox="workspace-write", native_settings=settings)
+        is None
+    )
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fixture/codex")
+    calls = []
+
+    def execute(command, **kwargs):
+        calls.append(command)
+        assert "--model" not in command
+        config = [tomllib.loads(command[i + 1]) for i, arg in enumerate(command) if arg == "-c"]
+        assert {"model_reasoning_effort": "minimal"} in config
+        assert {"developer_instructions": source.fields.developer_instructions} in config
+        assert "--approve-for-me" in command and "--sandbox" not in command
+        if resume:
+            assert command[-3:] == ["resume", resume, "-"]
+        Path(command[command.index("-o") + 1]).write_text('{"summary":"checked"}')
+        return subprocess.CompletedProcess(
+            command, 0, '{"type":"thread.started","thread_id":"retained-source-thread"}', ""
+        )
+
+    monkeypatch.setattr(subprocess, "run", execute)
+    result = run_agent(
+        "codex",
+        tmp_path,
+        source.fields.developer_instructions,
+        "bounded fixture",
+        {"type": "object", "required": ["summary"], "properties": {"summary": {"type": "string"}}},
+        native_settings=settings,
+        resume_thread_id=resume,
+    )
+    assert result.ok, result.error
+    assert len(calls) == 1
+    assert settings == source.native_settings == {"model_reasoning_effort": "minimal"}
+    assert path.read_bytes() == before
+    assert source_service.get(source.source_ref).digest == source.digest
 
 
 def test_duplicate_native_names_are_visible_and_not_selectable(tmp_path):

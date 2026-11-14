@@ -124,6 +124,47 @@ def test_claude_environment_cannot_silently_override_explicit_effort(tmp_path, m
     assert not result.ok and "CLAUDE_CODE_EFFORT_LEVEL" in result.error
 
 
+@pytest.mark.parametrize(
+    "host,selection,reason",
+    [
+        ("codex", {"native_settings": {"approval_policy": "never"}}, "reduction-only"),
+        ("claude-code", {"native_settings": {}}, "unsupported by this host"),
+        (
+            "codex",
+            {
+                "model": "gpt-6.1-sol",
+                "model_reasoning_effort": "high",
+                "native_settings": {"model_reasoning_effort": "low"},
+            },
+            "Conflicting explicit native reasoning",
+        ),
+    ],
+)
+def test_shared_selection_validation_matches_native_rejection(
+    tmp_path, monkeypatch, host, selection, reason
+):
+    monkeypatch.setattr(subprocess, "run", lambda *a, **k: pytest.fail("unexpected native launch"))
+    error = service.agent_selection_error(host, sandbox="workspace-write", **selection)
+    assert error is not None and reason in error
+    result = run_agent(host, tmp_path, "source", "prompt", SCHEMA, **selection)
+    assert result.error == error and result.exit_code is None
+
+
+def test_native_source_validation_preserves_inherited_model_and_settings():
+    settings = {"model_reasoning_effort": "minimal", "features": {"apps": False}}
+    before = json.loads(json.dumps(settings))
+    assert (
+        service.agent_selection_error("codex", sandbox="workspace-write", native_settings=settings)
+        is None
+    )
+    # New explicit selections require a verified model/effort pair. Existing
+    # source settings use native syntax even when the effective model is unknown.
+    assert "native default only" in service.agent_selection_error(
+        "codex", sandbox="workspace-write", model_reasoning_effort="minimal"
+    )
+    assert settings == before
+
+
 @pytest.mark.parametrize("resume", [None, "frozen-thread"])
 def test_native_definition_settings_reach_supported_codex_config(tmp_path, monkeypatch, resume):
     monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/native/codex")
@@ -629,6 +670,7 @@ def test_native_command_and_structured_result(
         calls.append(command)
         assert kwargs["cwd"] == project
         assert "--resume" not in command
+        assert "--effort" not in command and "--reasoning-effort" not in command
         assert command[command.index("--model") + 1] == model
         assert "Project instructions" in " ".join(command) + kwargs.get("input", "")
         assert "Ticket packet" in " ".join(command) + kwargs.get("input", "")

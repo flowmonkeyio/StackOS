@@ -507,10 +507,15 @@ The main agent resolves concrete workflow inputs, method and roles; schedule
 setup does not validate business input completion or require role mappings.
 
 The actual launch folder always comes from project setup. Optional
-`execution_json.host_key` wins over the project's delivery `host_key`, then
-the canonical native default (Codex). Model, provider and profile remain native
-host/project settings; delivery/reviewer instructions, source refs and model
-pins are never inherited. An explicit Codex `mcp_config_ref` uses the shared
+`execution_json.host_key` constrains the shared main-agent preference resolver
+used by setup. New occurrences inherit saved `delivery.main_agent` model,
+reasoning, provider and profile choices supported by the selected host. Host
+selection falls through the saved main-agent host, project delivery host, then
+Codex. An explicit different schedule host clears incompatible inherited launch
+choices. Delivery/reviewer instructions, source refs and model pins are never
+inherited. Admitted occurrences retain their native selection after preference
+changes; a later occurrence resolves current preferences. An explicit Codex
+`mcp_config_ref` uses the shared
 validated task-local route contract. The retained optional
 `execution_json.project_dir` only fences a saved legacy folder: if it differs
 from project setup, enabling fails until the operator confirms the configured

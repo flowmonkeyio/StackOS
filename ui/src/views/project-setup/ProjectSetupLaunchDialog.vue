@@ -5,7 +5,9 @@ import { UiButton, UiCallout, UiDialog, UiFormField, UiInput, UiSelect } from '@
 import StatusBadge from '@/components/StatusBadge.vue'
 import { resolveStatus } from '@/design/status'
 import type { DesktopMcpHostStatus } from '@/lib/desktop'
-import { callOperation } from '@/lib/operations'
+import { isDesktopShell } from '@/lib/desktop'
+import { useHomeAgentHostStatuses } from '@/views/home/useHomeAgentHostStatuses'
+import { reasoningChoices as capabilityReasoningChoices, reasoningOptions as capabilityReasoningOptions, reconcileReasoning } from '@/components/domain/agentSelection'
 import { readProjectSetup, setupErrorMessage } from './useProjectSetup'
 import { setupActivationGaps, setupWorkflowStatus } from './viewModel'
 
@@ -16,7 +18,8 @@ const props = defineProps<{
   start: (preferences: SchemaMainAgentPreferences) => Promise<SchemaSetupAttempt | null>
 }>()
 const emit = defineEmits<{ close: []; started: [] }>()
-const hosts = ref<DesktopMcpHostStatus[]>([])
+const { hostStatuses, loadHostStatuses } = useHomeAgentHostStatuses(isDesktopShell())
+const hosts = computed<DesktopMcpHostStatus[]>(() => hostStatuses.value.items)
 const loading = ref(true)
 const catalogError = ref<string | null>(null)
 const saved = props.state.launch_preferences ?? {}
@@ -40,11 +43,8 @@ const usesCustomModel = computed(() => !!catalog.value?.custom_models && (
   || (!!model.value && !catalog.value.models.includes(model.value))
 ))
 const selectedModel = computed(() => usesCustomModel.value ? CUSTOM_MODEL : model.value)
-const reasoningChoices = computed(() => catalog.value?.reasoning_efforts?.[model.value] ?? [])
-const reasoningOptions = computed(() => [
-  { value: '', label: 'Agent default' },
-  ...reasoningChoices.value.map(value => ({ value, label: value })),
-])
+const reasoningChoices = computed(() => capabilityReasoningChoices(catalog.value, model.value))
+const reasoningOptions = computed(() => capabilityReasoningOptions(catalog.value, model.value, reasoning.value, 'Agent default'))
 const selectionError = computed(() => reasoning.value && !reasoningChoices.value.includes(reasoning.value)
   ? `Reasoning ${reasoning.value} is unavailable for this model. Choose a supported level or Agent default.` : null)
 const ready = computed(() => props.state.folder_status === 'available' && host.value?.available && !selectionError.value
@@ -63,12 +63,12 @@ function changeModel(value: string | number | null): void {
   customModel.value = value === CUSTOM_MODEL
   if (!customModel.value) model.value = String(value ?? '')
   else model.value = ''
-  reasoning.value = ''
+  reasoning.value = reconcileReasoning(catalog.value, model.value, reasoning.value) ?? ''
 }
 function changeCustomModel(value: string | number | null): void {
   if (String(value ?? '') === model.value) return
   model.value = String(value ?? '')
-  reasoning.value = ''
+  reasoning.value = reconcileReasoning(catalog.value, model.value, reasoning.value) ?? ''
 }
 function appliedVersions(successful: Record<string, unknown> | null): string {
   const verification = successful?.verification
@@ -91,16 +91,18 @@ function changeHost(value: string | number | null): void {
     && !host.value.agent_execution.models.includes(model.value)
   provider.value = ''
   profile.value = ''
-  reasoning.value = ''
+  // A deliberate harness change retains a compatible explicit effort.
+  // Hosts with no reasoning capability cannot accept an old host's override.
+  reasoning.value = capabilityReasoningChoices(catalog.value, model.value).includes(reasoning.value) ? reasoning.value : ''
   advanced.value = false
 }
 async function loadHosts(): Promise<void> {
   loading.value = true
   catalogError.value = null
   try {
-    const result = await callOperation<{ items: DesktopMcpHostStatus[] }>('hostMcp.status', {})
+    await loadHostStatuses()
     if (disposed) return
-    hosts.value = result.items
+    if (hostStatuses.value.kind === 'error') throw new Error(hostStatuses.value.message)
     // Initial host inheritance belongs to the launch resolver, not the user
     // change handler (which intentionally clears incompatible selections).
     if (!hostKey.value) {

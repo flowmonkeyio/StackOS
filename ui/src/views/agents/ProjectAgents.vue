@@ -2,6 +2,7 @@
 import { computed, inject, onBeforeUnmount, ref, toRef } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, routerKey } from 'vue-router'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
+import { reasoningOptions, reconcileReasoning } from '@/components/domain/agentSelection'
 import { resolveAgentHostLogo } from '@/lib/stackos/agentIdentity'
 import { isDesktopShell } from '@/lib/desktop'
 import { UiButton, UiCallout, UiConfirmDialog, UiFormField, UiIcon, UiIconButton, UiInput, UiLoadingState, UiSelect, UiTextarea } from '@/components/ui'
@@ -28,7 +29,7 @@ function resetEditorOptions(fields: AgentFields | null) {
     void loadHostStatuses()
   }
 }
-const { items, diagnostics, loading, loaded, ready, reading, saving, error, message, selected, draft, dirty, refresh, edit, add, close, save } = useProjectAgents(toRef(props, 'projectId'), projectDir, resetEditorOptions, folderReady)
+const { items, diagnostics, loading, loaded, ready, reading, saving, error, errorContext, message, selected, requestedSource, draft, dirty, refresh, edit, add, close, save } = useProjectAgents(toRef(props, 'projectId'), projectDir, resetEditorOptions, folderReady)
 reloadAgents = () => { void refresh() }
 const visible = computed(() => items.value.filter(item => `${item.source_ref.native_name} ${item.fields?.description ?? ''} ${item.source_ref.source_path}`.toLowerCase().includes(search.value.toLowerCase())))
 const title = (name: string) => name.replace(/[_-]/g, ' ').replace(/^./, value => value.toUpperCase()).replace(/\bseo\b/gi, 'SEO')
@@ -59,8 +60,15 @@ const catalogIssue = computed(() => hostStatuses.value.kind === 'error'
     ? 'This app version did not return a Codex model catalog.' : '')
 function selectModel(value: string | number | null) {
   customModel.value = value === '__custom__'
-  if (draft.value && !customModel.value) draft.value.model = String(value ?? '') || null
+  if (!customModel.value) changeModel(value)
 }
+function changeModel(value: string | number | null) {
+  const model = String(value ?? '') || null
+  if (!draft.value || model === draft.value.model) return
+  draft.value.model = model
+  draft.value.model_reasoning_effort = reconcileReasoning(modelCatalog.value, model, draft.value.model_reasoning_effort, true)
+}
+const effortOptions = computed(() => reasoningOptions(modelCatalog.value, draft.value?.model ?? null, draft.value?.model_reasoning_effort ?? null, 'Default (inherited)'))
 async function submit() {
   if (!draft.value) return
   optionsError.value = ''
@@ -87,15 +95,16 @@ if (inject(routerKey, null)) {
 }
 function guarded(action: () => void, kind: PendingAction['kind'] = 'discard') { if (saving.value) return; if (optionsDirty.value && !dirty.value) pending.value = { action, kind }; else protect(action, kind) }
 function guardedRefresh() { guarded(() => { void refreshFolder() }, 'refresh') }
-const settings: { key: 'model_reasoning_effort' | 'model_reasoning_summary' | 'model_verbosity'; label: string; values: string[] }[] = [
-  { key: 'model_reasoning_effort', label: 'Reasoning effort', values: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'] },
+const settings: { key: 'model_reasoning_summary' | 'model_verbosity'; label: string; values: string[] }[] = [
   { key: 'model_reasoning_summary', label: 'Reasoning summary', values: ['auto', 'concise', 'detailed', 'none'] },
   { key: 'model_verbosity', label: 'Verbosity', values: ['low', 'medium', 'high'] },
 ]
 function beforeUnload(event: BeforeUnloadEvent) { if (hasChanges.value) { event.preventDefault(); event.returnValue = '' } }
 window.addEventListener('beforeunload', beforeUnload)
 onBeforeUnmount(() => { cancelNavigation?.(); window.removeEventListener('beforeunload', beforeUnload) })
-function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => editor.value?.querySelector<HTMLInputElement>('input')?.focus()) }) }
+function select(row: AgentSummary) { guarded(() => { void edit(row).then(accepted => {
+  if (accepted && selected.value && agentIdentity(selected.value.source_ref) === agentIdentity(row.source_ref)) editor.value?.querySelector<HTMLInputElement>('input')?.focus({ preventScroll: true })
+}) }) }
 </script>
 
 <template>
@@ -194,7 +203,7 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
     </UiCallout>
     <div
       class="agents-layout"
-      :class="{ 'agents-layout--editing': draft }"
+      :class="{ 'agents-layout--editing': draft || requestedSource }"
     >
       <div class="min-w-0">
         <UiInput
@@ -265,24 +274,46 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
         <p class="mt-3 text-xs text-fg-muted">
           Project file editing supports Codex. Other agent apps keep their existing execution settings.
         </p>
-        <UiCallout v-if="error && ready && !draft" tone="danger" title="Agent source requires attention" role="alert" class="mt-3">
+        <UiCallout
+          v-if="error && ready && !draft && !requestedSource"
+          tone="danger"
+          title="Agent source requires attention"
+          role="alert"
+          class="mt-3"
+        >
           {{ error }}
         </UiCallout>
       </div>
-      <UiLoadingState
-        v-if="reading"
-        label="Reading full project instructions…"
-      />
       <aside
-        v-if="draft"
+        v-if="draft || requestedSource"
         ref="editor"
         class="agent-editor"
         aria-label="Agent editor"
+        :aria-busy="reading"
       >
+        <p
+          v-if="reading && requestedSource"
+          class="mb-2 text-xs text-fg-muted"
+          role="status"
+        >
+          Opening {{ title(requestedSource.native_name) }}. {{ selected ? `Last loaded agent: ${title(selected.source_ref.native_name)}.` : '' }}
+        </p>
+        <UiLoadingState
+          v-if="reading && !draft"
+          label="Reading full project instructions…"
+        />
+        <UiCallout
+          v-if="error && ready && errorContext?.operation === 'read' && errorContext.source"
+          tone="danger"
+          title="Agent could not be opened"
+          role="alert"
+        >
+          {{ title(errorContext.source.native_name) }}: {{ error }} {{ selected ? `Last loaded agent: ${title(selected.source_ref.native_name)}.` : '' }}
+        </UiCallout>
         <div class="mb-4 border-b border-subtle pb-4">
           <div class="flex items-start justify-between gap-3">
             <h2 class="min-w-0 break-words text-xl font-semibold text-fg-strong">
-              {{ selected ? title(selected.source_ref.native_name) : 'Add agent' }}
+              {{ selected ? title(selected.source_ref.native_name) : requestedSource ? title(requestedSource.native_name) : 'Add agent' }}
             </h2><UiIconButton
               aria-label="Close agent editor"
               :disabled="saving"
@@ -298,163 +329,186 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(() => e
             Codex project file
           </p>
           <p class="mt-1 break-all font-mono text-xs text-fg-muted">
-            {{ selected?.source_ref.source_path ?? (draft.name ? `.codex/agents/${draft.name}.toml` : '.codex/agents/') }}
+            {{ selected?.source_ref.source_path ?? requestedSource?.source_path ?? (draft?.name ? `.codex/agents/${draft.name}.toml` : '.codex/agents/') }}
           </p>
         </div>
         <form
-          class="space-y-4"
+          v-if="draft"
           @submit.prevent="submit"
         >
-          <UiFormField
-            label="Name"
-            required
-            :help="selected && draft.name !== selected.fields?.name ? 'Changing the native name keeps this file in place. Reassign saved assignments and automations before renaming a referenced agent.' : undefined"
+          <fieldset
+            class="min-w-0 space-y-4"
+            :disabled="reading || saving || !ready"
           >
-            <UiInput
-              v-model="draft.name"
-              :disabled="saving || selected?.capabilities?.edit === false"
+            <UiFormField
+              label="Name"
               required
-              pattern="[a-zA-Z0-9_][a-zA-Z0-9_\-]*"
-            />
-          </UiFormField>
-          <UiFormField
-            label="Description"
-            required
-          >
-            <UiTextarea
-              v-model="draft.description"
-              :rows="2"
-              required
-              :disabled="saving || selected?.capabilities?.edit === false"
-            />
-          </UiFormField>
-          <UiFormField label="Model">
-            <UiSelect
-              :model-value="customModel ? '__custom__' : draft.model ?? ''"
-              :options="modelOptions"
-              :disabled="saving || selected?.capabilities?.edit === false"
-              @update:model-value="selectModel"
-            />
-            <p
-              v-if="hostStatuses.kind === 'loading'"
-              class="mt-1 text-xs text-fg-muted"
-              role="status"
+              :help="selected && draft.name !== selected.fields?.name ? 'Changing the native name keeps this file in place. Reassign saved assignments and automations before renaming a referenced agent.' : undefined"
             >
-              Loading model catalog… You can keep editing.
-            </p>
-            <div
-              v-else-if="catalogIssue"
-              class="mt-2 space-y-2"
-              role="status"
-            >
-              <p class="text-xs text-warning-fg">
-                Model catalog unavailable. {{ catalogIssue }} Inherited, saved and custom values remain available.
-              </p>
-              <UiButton
-                size="sm"
-                @click="loadHostStatuses"
-              >
-                Retry models
-              </UiButton>
-            </div>
-          </UiFormField>
-          <UiFormField
-            v-if="customModel"
-            label="Custom model"
-            help="Exact native model name. Blank inherits execution settings."
-          >
-            <UiInput
-              :model-value="draft.model ?? ''"
-              :disabled="saving || selected?.capabilities?.edit === false"
-              @update:model-value="draft.model = String($event ?? '') || null"
-            />
-          </UiFormField>
-          <UiFormField
-            label="Instructions"
-            required
-            help="Full instructions from the project file."
-          >
-            <UiTextarea
-              v-model="draft.developer_instructions"
-              :rows="9"
+              <UiInput
+                v-model="draft.name"
+                :disabled="saving || selected?.capabilities?.edit === false"
+                required
+                pattern="[a-zA-Z0-9_][a-zA-Z0-9_\-]*"
+              />
+            </UiFormField>
+            <UiFormField
+              label="Description"
               required
-              :disabled="saving || selected?.capabilities?.edit === false"
-            />
-          </UiFormField>
-          <details class="border-y border-subtle py-3">
-            <summary class="focus-ring cursor-pointer rounded-sm text-sm font-semibold text-fg-default">
-              More options
-            </summary>
-            <div class="mt-4 space-y-4">
-              <UiFormField
-                v-for="setting in settings"
-                :key="setting.key"
-                :label="setting.label"
-              >
-                <UiSelect
-                  :model-value="draft[setting.key] ?? ''"
-                  :options="[{ value: '', label: 'Default (inherited)' }, ...setting.values.map(value => ({ value, label: value }))]"
-                  :disabled="saving || selected?.capabilities?.edit === false"
-                  @update:model-value="draft[setting.key] = String($event ?? '') || null"
-                />
-              </UiFormField>
-              <UiFormField
-                label="Feature restrictions"
-                help="Native JSON object or null to inherit. Only supported restrictions can be saved."
-              >
-                <UiTextarea
-                  v-model="features"
-                  :rows="3"
-                  :disabled="saving || selected?.capabilities?.edit === false"
-                />
-              </UiFormField>
-              <UiFormField
-                label="Skill restrictions"
-                help="Native JSON object or null to inherit. File settings cannot grant permissions or credentials."
-              >
-                <UiTextarea
-                  v-model="skills"
-                  :rows="3"
-                  :disabled="saving || selected?.capabilities?.edit === false"
-                />
-              </UiFormField>
+            >
+              <UiTextarea
+                v-model="draft.description"
+                :rows="2"
+                required
+                :disabled="saving || selected?.capabilities?.edit === false"
+              />
+            </UiFormField>
+            <UiFormField label="Model">
+              <UiSelect
+                :model-value="customModel ? '__custom__' : draft.model ?? ''"
+                :options="modelOptions"
+                :disabled="saving || selected?.capabilities?.edit === false"
+                @update:model-value="selectModel"
+              />
               <p
-                v-if="selected?.unsupported_fields?.length"
-                class="break-words text-xs text-warning-fg"
+                v-if="hostStatuses.kind === 'loading'"
+                class="mt-1 text-xs text-fg-muted"
+                role="status"
               >
-                Preserved native fields with unsupported execution settings: {{ selected.unsupported_fields.join(', ') }}. Their execution support is not implied.
+                Loading model catalog… You can keep editing.
               </p>
-              <p class="text-xs text-fg-muted">
-                Blank model and Default options inherit task, project, then agent app settings. Untouched native options and comments are preserved. Permissions, providers and MCP configuration remain execution context.
-              </p>
-            </div>
-          </details>
-          <UiCallout
-            v-if="optionsError"
-            tone="danger"
-            title="Check native options"
-          >
-            {{ optionsError }}
-          </UiCallout>
-          <UiCallout v-if="error && ready" tone="danger" title="Agent source requires attention" role="alert">
-            {{ error }}
-          </UiCallout>
-          <div class="flex flex-wrap items-center gap-3 border-t border-subtle pt-4">
-            <UiButton
-              type="submit"
-              variant="primary"
-              :loading="saving"
-              :disabled="!ready || !hasChanges || reading || selected?.capabilities?.edit === false"
+              <div
+                v-else-if="catalogIssue"
+                class="mt-2 space-y-2"
+                role="status"
+              >
+                <p class="text-xs text-warning-fg">
+                  Model catalog unavailable. {{ catalogIssue }} Inherited, saved and custom values remain available.
+                </p>
+                <UiButton
+                  size="sm"
+                  @click="loadHostStatuses"
+                >
+                  Retry models
+                </UiButton>
+              </div>
+            </UiFormField>
+            <UiFormField
+              v-if="customModel"
+              label="Custom model"
+              help="Exact native model name. Blank inherits execution settings."
             >
-              {{ selected ? 'Save changes' : 'Add agent' }}
-            </UiButton><span class="text-xs text-fg-muted">{{ hasChanges ? 'Unsaved changes' : 'No changes' }}</span><span class="text-xs text-fg-muted sm:ml-auto">Changes apply to future runs.</span>
-          </div>
-          <p
-            class="text-xs text-fg-muted"
-            role="status"
-          >
-            {{ message || 'Saving starts nothing.' }}
-          </p>
+              <UiInput
+                :model-value="draft.model ?? ''"
+                :disabled="saving || selected?.capabilities?.edit === false"
+                @update:model-value="changeModel"
+              />
+            </UiFormField>
+            <UiFormField
+              label="Instructions"
+              required
+              help="Full instructions from the project file."
+            >
+              <UiTextarea
+                v-model="draft.developer_instructions"
+                :rows="9"
+                required
+                :disabled="saving || selected?.capabilities?.edit === false"
+              />
+            </UiFormField>
+            <details class="border-y border-subtle py-3">
+              <summary class="focus-ring cursor-pointer rounded-sm text-sm font-semibold text-fg-default">
+                More options
+              </summary>
+              <div class="mt-4 space-y-4">
+                <UiFormField
+                  label="Reasoning effort"
+                  help="Choices come from this model's capabilities. An unverified retained value is preserved until you change it."
+                >
+                  <UiSelect
+                    :model-value="draft.model_reasoning_effort ?? ''"
+                    :options="effortOptions"
+                    :disabled="saving || selected?.capabilities?.edit === false"
+                    @update:model-value="draft.model_reasoning_effort = String($event ?? '') || null"
+                  />
+                </UiFormField>
+                <UiFormField
+                  v-for="setting in settings"
+                  :key="setting.key"
+                  :label="setting.label"
+                >
+                  <UiSelect
+                    :model-value="draft[setting.key] ?? ''"
+                    :options="[{ value: '', label: 'Default (inherited)' }, ...setting.values.map(value => ({ value, label: value }))]"
+                    :disabled="saving || selected?.capabilities?.edit === false"
+                    @update:model-value="draft[setting.key] = String($event ?? '') || null"
+                  />
+                </UiFormField>
+                <UiFormField
+                  label="Feature restrictions"
+                  help="Native JSON object or null to inherit. Only supported restrictions can be saved."
+                >
+                  <UiTextarea
+                    v-model="features"
+                    :rows="3"
+                    :disabled="saving || selected?.capabilities?.edit === false"
+                  />
+                </UiFormField>
+                <UiFormField
+                  label="Skill restrictions"
+                  help="Native JSON object or null to inherit. File settings cannot grant permissions or credentials."
+                >
+                  <UiTextarea
+                    v-model="skills"
+                    :rows="3"
+                    :disabled="saving || selected?.capabilities?.edit === false"
+                  />
+                </UiFormField>
+                <p
+                  v-if="selected?.unsupported_fields?.length"
+                  class="break-words text-xs text-warning-fg"
+                >
+                  Preserved native fields with unsupported execution settings: {{ selected.unsupported_fields.join(', ') }}. Their execution support is not implied.
+                </p>
+                <p class="text-xs text-fg-muted">
+                  Blank model and Default options inherit task, project, then agent app settings. Untouched native options and comments are preserved. Permissions, providers and MCP configuration remain execution context.
+                </p>
+              </div>
+            </details>
+            <UiCallout
+              v-if="optionsError"
+              tone="danger"
+              title="Check native options"
+            >
+              {{ optionsError }}
+            </UiCallout>
+            <UiCallout
+              v-if="error && ready && errorContext?.operation !== 'read'"
+              tone="danger"
+              :title="errorContext?.operation === 'save' ? 'Agent could not be saved' : 'Agent source requires attention'"
+              role="alert"
+            >
+              <template v-if="errorContext?.source">
+                {{ title(errorContext.source.native_name) }}:
+              </template>{{ error }}
+            </UiCallout>
+            <div class="flex flex-wrap items-center gap-3 border-t border-subtle pt-4">
+              <UiButton
+                type="submit"
+                variant="primary"
+                :loading="saving"
+                :disabled="!ready || !hasChanges || reading || selected?.capabilities?.edit === false"
+              >
+                {{ selected ? 'Save changes' : 'Add agent' }}
+              </UiButton><span class="text-xs text-fg-muted">{{ hasChanges ? 'Unsaved changes' : 'No changes' }}</span><span class="text-xs text-fg-muted sm:ml-auto">Changes apply to future runs.</span>
+            </div>
+            <p
+              class="text-xs text-fg-muted"
+              role="status"
+            >
+              {{ message || 'Saving starts nothing.' }}
+            </p>
+          </fieldset>
         </form>
       </aside>
     </div>
