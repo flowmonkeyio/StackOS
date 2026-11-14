@@ -8486,10 +8486,14 @@ export interface components {
         };
         /** SetupSource */
         SetupSource: {
-            /** Content */
+            /**
+             * Content
+             * @description May be omitted in reports; the owner resolves the exact current source.
+             * @default null
+             */
             content: {
                 [key: string]: unknown;
-            };
+            } | null;
             /** Digest */
             digest: string;
             /** Key */
