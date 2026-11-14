@@ -40,6 +40,16 @@ def _delivery_role_defaults(defaults: dict[str, Any], role: str) -> dict[str, An
     return {**(legacy or {}), **(selected or {})}
 
 
+def _delivery_host(
+    defaults: dict[str, Any], *, role_host: str | None = None, host_key: str | None = None
+) -> str:
+    """Resolve the shared role -> task -> project -> native-default host inheritance."""
+    selected = role_host or host_key or defaults.get("host_key") or "codex"
+    if not isinstance(selected, str):
+        raise ValidationError("Task delivery host_key must be a string")
+    return selected
+
+
 class TrackerSetupMixin:
     """Tracker setup and default catalogue helpers."""
 
@@ -59,7 +69,14 @@ class TrackerSetupMixin:
         )
 
     def adopt_delivery_sources(
-        self, *, project_id: int, project_dir: str, sources: dict[str, Any], preview: bool
+        self,
+        *,
+        project_id: int,
+        project_dir: str,
+        sources: dict[str, Any],
+        preview: bool,
+        inline_roles: dict[str, Any] | None = None,
+        _commit: bool = True,
     ) -> dict[str, Any]:
         """Explicit local setup only: compare before replacing selected editable owners."""
         from pathlib import Path
@@ -98,14 +115,38 @@ class TrackerSetupMixin:
             after.pop("instructions", None)
             roles[role] = after
             proposed.pop(role, None)
+        # Supported non-Codex hosts keep their native inline contracts. Use the
+        # same comparison, validation, writer and readback as source adoption.
+        from stackos.operations.tracker.schemas import TaskDeliveryDefaults
+
+        if sources.keys() & (inline_roles or {}).keys():
+            raise ValidationError("An adoption role needs one instruction owner")
+        for role, selection in (inline_roles or {}).items():
+            before = _delivery_role_defaults(current, role)
+            if selection.get("host_key") == "codex" or selection.get("source_ref"):
+                raise ValidationError("Inline adoption requires a supported non-Codex host")
+            after = {**selection, **before, "instructions": selection["instructions"]}
+            if "host_key" not in before and current.get("host_key") == selection.get("host_key"):
+                # A matching inline update must retain project-host inheritance,
+                # rather than freezing an omitted role preference to today's host.
+                after.pop("host_key", None)
+            after.pop("source_ref", None)
+            TaskDeliveryDefaults.model_validate({"agents": {role: after}})
+            differences[role] = {
+                key: {"saved": before.get(key), "source": value}
+                for key, value in after.items()
+                if before.get(key) != value
+            }
+            roles[role] = after
+            proposed.pop(role, None)
         proposed["agents"] = roles
         # Validate only migrated selections; unrelated hosts/settings are preserved verbatim.
         effective = resolve_delivery_settings(
             self._s,
             project_id=project_id,
             project_dir=project_dir,
-            agents={role: roles[role] for role in sources},
-            role_keys=set(sources),
+            agents={role: roles[role] for role in sources.keys() | (inline_roles or {}).keys()},
+            role_keys=set(sources) | set(inline_roles or {}),
         )
         adoption = {
             "preview": preview,
@@ -125,12 +166,14 @@ class TrackerSetupMixin:
             )
             if source.digest != selection["expected_digest"]:
                 raise ConflictError("Project agent stale_source")
-        result = self.configure_delivery(project_id=project_id, delivery=proposed)
+        result = self.configure_delivery(project_id=project_id, delivery=proposed, _commit=_commit)
         if self.delivery_defaults(project_id=project_id) != proposed:
             raise ValidationError("Delivery adoption readback failed")
         return {**result.model_dump(mode="json"), "adoption": adoption}
 
-    def configure_delivery(self, *, project_id: int, delivery: dict[str, Any]) -> TrackerSummaryOut:
+    def configure_delivery(
+        self, *, project_id: int, delivery: dict[str, Any], _commit: bool = True
+    ) -> TrackerSummaryOut:
         """Replace only delivery defaults; preserve unrelated tracker configuration."""
         tracker = self.ensure_tracker(project_id=project_id)
         before = deepcopy(tracker.config_json)
@@ -145,7 +188,7 @@ class TrackerSetupMixin:
             summary="Updated project task delivery defaults.",
             before_json={"config_json": before},
             after_json={"config_json": tracker.config_json},
-            commit=True,
+            commit=_commit,
         )
         return TrackerSummaryOut.model_validate(tracker)
 

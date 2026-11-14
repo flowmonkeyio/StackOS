@@ -114,6 +114,10 @@ export const projectState = defineStatuses({
 
 // Shared project setup attempt and per-workflow receipt presentation.
 export const projectSetupStatus = defineStatuses({
+  preparing: { label: 'Preparing', tone: 'info', dot: true, inFlight: true },
+  verifying: { label: 'Verifying', tone: 'info', dot: true, inFlight: true },
+  prepared: { label: 'Prepared', tone: 'neutral', description: 'Workflow guidance is prepared; activation has not been verified.' },
+  ready: { label: 'Ready', tone: 'success', description: 'Workflow setup and activation are verified.' },
   queued: { label: 'Queued', tone: 'neutral' },
   running: { label: 'Running', tone: 'info', dot: true, inFlight: true },
   needs_input: { label: 'Needs input', tone: 'warning', description: 'The last setup check requested input.' },
@@ -127,7 +131,8 @@ export const projectSetupStatus = defineStatuses({
   unknown: { label: 'Not verified', tone: 'neutral', description: 'Setup has not been verified yet.' },
   update_available: { label: 'Update available', tone: 'info', description: 'New workflow guidance is available.' },
   source_unavailable: { label: 'Source unavailable', tone: 'warning', description: 'Restore the workflow source before checking setup.' },
-  activation_pending: { label: 'Reload needed', tone: 'warning', description: 'Guidance is recorded; activation still needs checking.' },
+  activation_pending: { label: 'Verification pending', tone: 'warning', description: 'Preparation is recorded; workflow readiness still needs verification.' },
+  activation_blocked: { label: 'Verification blocked', tone: 'warning', description: 'Workflow readiness needs attention. Review the gap before continuing setup.' },
 });
 
 export const integrationHealth = defineStatuses({

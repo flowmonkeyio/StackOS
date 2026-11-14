@@ -245,7 +245,13 @@ def test_reserved_metadata_and_terminal_success_cannot_be_fabricated(attempt, se
 
 def test_two_verified_workflows_complete_and_late_report_cannot_change_them(attempt, session):
     project, session_id, repo = attempt
-    opened = start(attempt)
+    opened = repo.start(
+        project,
+        session_id=session_id,
+        mode="setup",
+        workflow_keys=["engineering.tracked-delivery", "agency.project-setup"],
+        requested_scope="infrastructure_only",
+    )
     results = []
     for key in opened.attempt.workflow_keys:
         result = verified_result(repo, project, key)

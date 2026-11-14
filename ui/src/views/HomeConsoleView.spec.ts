@@ -75,13 +75,16 @@ describe('project Home active work', () => {
       expect(wrapper.get('[aria-label="Project setup reminder"]').text()).toContain('3 workflows')
     } finally { wrapper.unmount() }
   })
-  it('retains the same setup reminder above accepted return data while its read is pending', async () => {
+  it.each(['updates_available', 'current'])('retains the %s setup reminder above accepted return data while its read is pending', async status => {
     const read = vi.mocked(callOperation).getMockImplementation()!
-    const state = { project_id: 1, eligible: true, status: 'updates_available', folder_status: 'available', update_count: 3, current_attempt: null }
+    // A current preparation receipt still needs activation. It retains the
+    // same reminder on return without retaining launch/ready authority.
+    const state = { project_id: 1, eligible: true, status, folder_status: 'available', update_count: 3, current_attempt: null }
     vi.mocked(callOperation).mockImplementation(async (name, args) => name === 'projectSetup.get' ? state as never : read(name, args))
     const { wrapper, router } = await mountProject()
     try {
-      expect(wrapper.get('[aria-label="Project setup reminder"]').text()).toContain('3 workflows')
+      const reminderText = wrapper.get('[aria-label="Project setup reminder"]').text()
+      expect(reminderText).toContain(status === 'updates_available' ? '3 workflows' : 'Set up project')
       await router.push('/other'); await flushPromises()
       let finish!: (value: unknown) => void
       vi.mocked(callOperation).mockImplementation((name, args) => name === 'projectSetup.get'
@@ -89,7 +92,7 @@ describe('project Home active work', () => {
       await router.push('/projects/1'); await flushPromises()
       const reminder = wrapper.get('[aria-label="Project setup reminder"]').element
       expect(wrapper.find('.active-task-row__link').exists()).toBe(true)
-      expect(wrapper.text()).toContain('3 workflows')
+      expect(wrapper.get('[aria-label="Project setup reminder"]').text()).toBe(reminderText)
       finish(state); await flushPromises()
       expect(wrapper.get('[aria-label="Project setup reminder"]').element).toBe(reminder)
       await router.push('/projects/2'); await flushPromises()

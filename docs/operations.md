@@ -244,6 +244,79 @@ project. For example, through `toolbox.call`:
 {"tool_name":"projectSetup.start","arguments":{"session_id":123,"mode":"setup","workflow_keys":["engineering.tracked-delivery"],"idempotency_key":"setup-this-session"}}
 ```
 
+New Setup and Update calls default `requested_scope` to `ready_to_use`. Select
+`infrastructure_only` explicitly to finish at preparation. Stored attempts and
+receipts without the field retain historical infrastructure semantics; reads do
+not upgrade them. Attachment preserves the existing owner's scope, and replay
+binds scope as part of the original intent. Neither scope grants additional
+operation, local-admin or business-action authority.
+
+`VerifiedSetup.activation_proof` records the selected `method_ref`, required
+claims, missing claims, status and bounded checks labelled `reused`, `executed`
+or `simulated`. Each check identifies project/binding, effective source-set,
+saved delivery-default and local-adaptation digests plus its environment ref.
+Digests use SHA256 of canonical JSON, as for source snapshots. `saved_defaults`
+and `native_consumption` are minimum coverage; workflow method may require more.
+Simulation cannot cover required claims. Deferred per-run inputs remain in the
+separate readiness tuple.
+
+Checks reference an exact existing native request/invocation or completed
+workflow/step and the canonical JSON digest of its result. The receipt owner
+rechecks project, observed outcome, source/default basis and completion; failed,
+cancelled, live, foreign or changed evidence cannot receive positive coverage.
+Native coverage requires canonical request resolution, a result validated against
+its frozen output schema and a successful logical outcome, including the wrapped
+managed setup report. Process exit alone is insufficient. Failed, blocked or
+missing outcomes can be retained as failed checks without covering activation.
+This validates reference integrity. The workflow's agent and independent review
+still judge what the underlying evidence actually covers, including loaded source
+and environment.
+A new workflow is not required. A ready-to-use attempt cannot report final
+success until every selected workflow has current verified activation coverage
+and observed loading. Missing coverage returns `complete_activation` with the
+workflow and missing claims. Preparation results and other completed workflows
+remain inspectable while required activation is pending or blocked.
+
+`report.adoption_proposal` contains only the observed project/root/binding,
+expected saved-delivery digest and bounded role selections with provenance.
+Codex selections use exact source refs/digests; supported other hosts retain
+their native inline contracts. The repository validates and retains the proposal
+without writing defaults. It cannot supply trusted-local-admin context or an
+arbitrary operation payload. Authorized adoption and readback remain with the
+existing managed/defaults owners. Compact workflow reads include requested scope,
+activation status and missing claims; raw receipts retain detailed proof.
+
+Authenticated managed `ready_to_use` admission retains narrow adoption authority
+on its setup request. After preparation retires, the managed owner rechecks its
+current claim, folder/binding, proposal sources and saved-default digest, then
+uses canonical adoption preview/write/readback. The defaults write and adopted
+digest receipt commit together. Compatible role preferences, explicit nulls and
+unrelated settings remain intact; queued/running task snapshots are untouched.
+This does not expose `tracker.configureDelivery` over MCP or CLI.
+Configured delivery hosts are checked against saved role/project inheritance
+before proposal overrides, independently of the setup agent's host. Matching
+inline updates retain omitted role hosts so future project-host changes still
+inherit; a conflicting proposal cannot silently replace that preference.
+
+When bounded verification is still missing, the existing managed continuation
+links a successor with a new claim after predecessor retirement and capacity
+release. Its prompt includes the canonical resolved role readback and current
+scope. A verification turn can return `verification_status: "passed"` alongside
+a partial setup report, recording successful bounded checks without asserting
+overall readiness. Only that authorized verification phase can produce this
+logical check outcome. One completion continuation receives the exact retired
+request/invocation/result digest and validates the final workflow receipts;
+it reuses the completed checks. Missing, failed or blocked checks never advance
+automatically to completion. Current matching evidence may complete directly.
+There is no separate verification workflow/task or linked-run waiting lifecycle.
+Cancellation fences only current setup ownership; recovery retains evidence and
+revalidates changed sources/defaults before consumption or final success.
+Confirmed failures before entering the native executor retain an explicit
+preflight marker, allowing exact-session recovery after the basis is restored;
+unknown native retirement still blocks recovery. Native final reports reconcile
+earlier progress, retaining failures. Exact report digests allow identical final
+replay without duplicate receipt writes while rechecking final success.
+
 The agent chooses workflows under the shared guide and inspects unknown legacy
 adaptations before deciding what to change. `start` serializes admission with the
 project owner and returns one typed `AgentRequest.metadata_json.project_setup`

@@ -47,7 +47,11 @@ async def tracker_configure_delivery(
     ctx: MCPContext,
     _emitter: ProgressEmitter,
 ) -> WriteEnvelope[dict[str, Any]]:
-    if ctx.extras.get("surface") != "rest" or ctx.extras.get("trusted_local_admin") is not True:
+    if (
+        ctx.extras.get("surface") != "rest"
+        or ctx.extras.get("client_surface", "rest") != "rest"
+        or ctx.extras.get("trusted_local_admin") is not True
+    ):
         raise ValidationError("Delivery defaults require authenticated local-admin setup")
     repo = TrackerRepository(ctx.session)
     if inp.main_agent is not None:

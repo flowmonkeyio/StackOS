@@ -3,6 +3,7 @@ import type { SchemaMainAgentPreferences, SchemaProjectSetupAnswerInput, SchemaP
 import { usePolling } from '@/composables/usePolling'
 import { ApiError, formatApiError } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
+import { setupWorkflowReady } from './viewModel'
 
 // Setup is a human decision surface. Keep machine routing hints and request
 // metadata in the API/audit rather than appending them to the visible copy.
@@ -19,10 +20,10 @@ export function readProjectSetup(projectId: number, resolveLaunchPreferences = f
 type SetupReminder = 'setup' | 'updates' | null
 const retainedReminders = new WeakMap<App, { projectId: number; reminder: SetupReminder; updateCount: number }>()
 
-function projectReminder(value: SchemaProjectSetupOut): SetupReminder {
+function projectReminder(value: SchemaProjectSetupOut, readyToUse: boolean): SetupReminder {
   if (!value.eligible || value.folder_status !== 'available'
     || (value.current_attempt && value.current_attempt.status !== 'success')) return null
-  if (value.status === 'setup_needed' && !value.setup_reminder_dismissed_at) return 'setup'
+  if ((value.status === 'setup_needed' || (value.status === 'current' && !readyToUse)) && !value.setup_reminder_dismissed_at) return 'setup'
   if (value.status === 'updates_available' && !value.update_reminder_dismissed_at) return 'updates'
   return null
 }
@@ -57,7 +58,7 @@ export function useProjectSetup(projectId: Ref<number>, options: { retainReminde
   const { refresh, running } = usePolling(load)
   onBeforeUnmount(() => {
     if (app && state.value) retainedReminders.set(app, {
-      projectId: state.value.project_id, reminder: projectReminder(state.value), updateCount: state.value.update_count,
+      projectId: state.value.project_id, reminder: projectReminder(state.value, ready.value), updateCount: state.value.update_count,
     })
     disposed = true; revision++
   })
@@ -86,7 +87,7 @@ export function useProjectSetup(projectId: Ref<number>, options: { retainReminde
     try {
       const result = await callOperation<SchemaWriteEnvelopeSetupStartOut>('projectSetup.start', {
         project_id: projectId.value, entry_kind: 'managed_ui',
-        mode: state.value.status === 'updates_available' ? 'update' : 'setup', preferences,
+        mode: state.value.status === 'updates_available' ? 'update' : 'setup', requested_scope: 'ready_to_use', preferences,
       })
       if (disposed) return null
       state.value = { ...state.value, current_attempt: result.data.attempt }
@@ -99,6 +100,18 @@ export function useProjectSetup(projectId: Ref<number>, options: { retainReminde
   }
 
   const attempt = computed(() => state.value?.current_attempt)
+  const ready = computed(() => state.value?.status === 'current' && !!state.value.workflows?.length
+    && state.value.workflows.every(setupWorkflowReady)
+    && (attempt.value?.workflow_keys ?? []).every(key => state.value!.workflows!.some(item => item.workflow_key === key && setupWorkflowReady(item)))
+    && (!attempt.value || (attempt.value.status === 'success' && attempt.value.requested_scope === 'ready_to_use')))
+  const preparationOnly = computed(() => !!attempt.value && attempt.value.requested_scope !== 'ready_to_use')
+  const attemptStatus = computed(() => {
+    const current = attempt.value
+    if (!current) return 'unknown'
+    if (current.status === 'running') return current.managed?.phase === 'verification' ? 'verifying' : 'preparing'
+    if (current.status === 'success') return ready.value ? 'ready' : preparationOnly.value ? 'prepared' : 'unfinished'
+    return current.status
+  })
   // The executor confirms absence of native evidence under its admission lock.
   // These persisted pre-launch facts only enable the explicit recovery control.
   const neverStarted = computed(() => {
@@ -175,16 +188,16 @@ export function useProjectSetup(projectId: Ref<number>, options: { retainReminde
     if (current?.entry_kind === 'existing_agent' && current.status === 'cancelled') return 'View setup'
     if (current && ['partial', 'failed', 'interrupted', 'cancelled'].includes(current.status)) return 'Continue setup'
     if (state.value?.status === 'updates_available') return 'Update workflows'
-    return state.value?.status === 'setup_needed' ? 'Set up project' : 'Manage setup'
+    return state.value?.status === 'setup_needed' || (state.value?.status === 'current' && !ready.value) ? 'Set up project' : 'Manage setup'
   })
   const reminder = computed(() => {
     const value = state.value
-    return value ? projectReminder(value) : initialReminder.value?.reminder ?? null
+    return value ? projectReminder(value, ready.value) : initialReminder.value?.reminder ?? null
   })
   const reminderUpdateCount = computed(() => state.value?.update_count ?? initialReminder.value?.updateCount ?? 0)
   const opensLaunch = computed(() => state.value?.folder_status === 'available'
     && (!attempt.value || attempt.value.status === 'success')
-    && ['setup_needed', 'updates_available'].includes(state.value.status))
+    && (['setup_needed', 'updates_available'].includes(state.value.status) || (state.value.status === 'current' && !ready.value)))
 
-  return { state, attempt, neverStarted, error, writing, running, refresh, dismiss, start, answer, continueSetup, cancel, actionLabel, reminder, reminderUpdateCount, opensLaunch }
+  return { state, attempt, ready, preparationOnly, attemptStatus, neverStarted, error, writing, running, refresh, dismiss, start, answer, continueSetup, cancel, actionLabel, reminder, reminderUpdateCount, opensLaunch }
 }

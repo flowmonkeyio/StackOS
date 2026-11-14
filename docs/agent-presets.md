@@ -232,6 +232,22 @@ justify adaptations and only source-permitted omissions. Material unresolved
 loss prevents completion. Host syntax/registration, references, actual behavior
 and loading/reload each require evidence; saved versions alone prove none of them.
 
+Ordinary Setup/Update requests `ready_to_use`; only explicit `infrastructure_only`
+stops at preparation without execution state. Use the effective workflow method;
+engineering's `setup_activation_method` policy and presets require canonical saved
+defaults/readback, compatible local lifecycle rules and actual native consumption.
+First reuse current covered completed delivery, distinct independent review and
+closeout evidence, then run only missing or invalidated small harmless checks in
+the owning setup/task. Record covered/missing claims and the current
+project/source/default/native/environment basis. A separate full verification
+task/workflow, tracker parent or review workflow must not be created merely for
+readiness. Existing parent independent review remains; standalone setup follows
+its method and genuine current evidence. Aborted, incomplete, simulated or foreign
+evidence cannot complete activation. Missing authority or required proof remains
+unfinished, never `activation_pending` success. Preserve supported host preferences,
+compatible customization and frozen sessions; task overrides cannot prove missing
+defaults. Other domains use their own safe methods without unrelated business actions.
+
 Engineering setup uses the same workflow path as other domains. Start with the
 workflow that matches the work, resolve its agents with
 `agentPreset.resolveForWorkflow`, then create/start a run plan when executing

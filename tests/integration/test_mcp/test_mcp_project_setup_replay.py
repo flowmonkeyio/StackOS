@@ -38,6 +38,7 @@ def setup_owner(mcp_client, tmp_path):
         "session_id": session_id,
         "workflow_keys": ["agency.project-setup"],
         "idempotency_key": "owner-start",
+        "requested_scope": "infrastructure_only",
     }
     response = _toolbox_call(proxy, client, "projectSetup.start", args)
     assert not response["result"].get("isError"), response
@@ -175,7 +176,12 @@ def test_changed_report_intent_cannot_reuse_a_successful_key(setup_owner):
 
 
 @pytest.mark.parametrize(
-    "change", [{"mode": "update"}, {"workflow_keys": ["engineering.tracked-delivery"]}]
+    "change",
+    [
+        {"mode": "update"},
+        {"workflow_keys": ["engineering.tracked-delivery"]},
+        {"requested_scope": "ready_to_use"},
+    ],
 )
 def test_changed_start_intent_cannot_recover_a_writer_token(setup_owner, change):
     proxy, client, args, opened = setup_owner

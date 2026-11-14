@@ -116,6 +116,12 @@ page only dismisses the UI; cancellation requires an explicit confirmation.
 The shared `DataTable` and `projectSetup` status domain show independent workflow
 results, secondary last-verified versions, expandable details and partial-change
 warnings. Partial or unactivated setup never claims whole-project readiness.
+Ordinary Setup/Update explicitly requests ready-to-use setup and proceeds through
+preparation and verification in that retained attempt. The shared feature view
+model projects per-workflow readiness and readable gaps from current API receipts;
+explicit infrastructure-only or historical receipts are labelled preparation.
+The ordinary Home setup action can finish that preparation without a separate
+activation control. Refresh retains displayed results and launch choices.
 
 Overview, project Home and Board mount the feature-owned
 `views/home/DeliveryCapacityControl`. Overview shows all project rows; Home and

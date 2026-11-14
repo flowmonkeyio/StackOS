@@ -5,7 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { defineComponent, ref } from 'vue'
 import { callOperation } from '@/lib/operations'
 import { ApiError, apiFetch } from '@/lib/client'
-import { ProjectSetupOutFolder_status, ProjectSetupOutStatus, SetupAttemptEntry_kind, SetupAttemptStatus, SetupQuestionAnswer_state, SetupQuestionResponse_channel } from '@/api'
+import { ProjectSetupOutFolder_status, ProjectSetupOutStatus, SetupAttemptEntry_kind, SetupAttemptStatus, SetupManagedExecutionPhase, SetupQuestionAnswer_state, SetupQuestionResponse_channel } from '@/api'
 import HomeConsoleView from '../HomeConsoleView.vue'
 import ProjectSetupView from './ProjectSetupView.vue'
 import ProjectSetupLaunchDialog from './ProjectSetupLaunchDialog.vue'
@@ -69,7 +69,7 @@ describe('Home project setup', () => {
     expect(writes()).toHaveLength(0)
   })
   it.each(['cancelled', 'failed'] as const)('opens actionable pre-launch %s recovery without a new agent picker', async status => {
-    state.current_attempt = attemptFixture({ status: SetupAttemptStatus[status], managed: { settings: { host_key: 'codex', model: 'original-model' }, binding_id: 1, admission_id: 'fixture', job_ref: 'fixture', callback_started: false, slot_reserved: false, cancel_requested: status === 'cancelled', resume_thread_id: null, diagnostic: null } })
+    state.current_attempt = attemptFixture({ status: SetupAttemptStatus[status], managed: { settings: { host_key: 'codex', model: 'original-model' }, binding_id: 1, admission_id: 'fixture', job_ref: 'fixture', callback_started: false, slot_reserved: false, cancel_requested: status === 'cancelled', resume_thread_id: null, diagnostic: null, phase: SetupManagedExecutionPhase.preparation, adoption_authorized: false, adopted_delivery_digest: null, verification_request_id: null, preflight_failed: false } })
     state.launch_preferences = { host_key: 'codex', model: 'newer-saved-model' }
     const router = await home()
     await button('View setup').trigger('click'); await flushPromises()
@@ -115,7 +115,7 @@ describe('Home project setup', () => {
     const start = button('Start setup')
     await Promise.all([start.trigger('click'), start.trigger('click')]); await flushPromises()
     expect(vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'projectSetup.start')).toHaveLength(1)
-    expect(callOperation).toHaveBeenCalledWith('projectSetup.start', { project_id: 1, entry_kind: 'managed_ui', mode: 'setup', preferences: { host_key: 'codex', model: 'catalog-model', model_reasoning_effort: null, provider: null, profile: null } })
+    expect(callOperation).toHaveBeenCalledWith('projectSetup.start', { project_id: 1, entry_kind: 'managed_ui', mode: 'setup', requested_scope: 'ready_to_use', preferences: { host_key: 'codex', model: 'catalog-model', model_reasoning_effort: null, provider: null, profile: null } })
     expect(router.currentRoute.value.path).toBe('/projects/1/setup')
     expect(wrapper!.text()).toContain('Setup is queued')
     await router.push('/projects/1'); await flushPromises()
@@ -146,6 +146,19 @@ describe('Home project setup', () => {
     await flushPromises()
     await button('Start setup').trigger('click'); await flushPromises()
     expect(callOperation).toHaveBeenCalledWith('projectSetup.start', expect.objectContaining({ preferences: expect.objectContaining({ model: null, model_reasoning_effort: null }) }))
+  })
+  it('uses the ordinary setup action to finish prepared-only receipts without a separate activation control', async () => {
+    state = setupFixture({ status: ProjectSetupOutStatus.current,
+      current_attempt: attemptFixture({ status: SetupAttemptStatus.success, requested_scope: 'infrastructure_only' as NonNullable<typeof state.current_attempt>['requested_scope'] }),
+    })
+    await home()
+    expect(wrapper!.find('[aria-label="Project setup reminder"]').exists()).toBe(true)
+    await button('Set up project').trigger('click'); await flushPromises()
+    expect(wrapper!.find('[role="dialog"]').exists()).toBe(true)
+    expect(wrapper!.text()).toContain('verify they are ready to use')
+    await button('Start setup').trigger('click'); await flushPromises()
+    expect(callOperation).toHaveBeenCalledWith('projectSetup.start', expect.objectContaining({ requested_scope: 'ready_to_use' }))
+    expect(vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'projectSetup.start')).toHaveLength(1)
   })
 
   it('disables an open launch when its bound folder becomes unavailable', async () => {

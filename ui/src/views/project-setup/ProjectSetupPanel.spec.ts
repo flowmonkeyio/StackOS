@@ -4,7 +4,7 @@ import { createPinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { defineComponent, ref } from 'vue'
 import type { SchemaSetupAttempt, SchemaSetupWorkflowOut } from '@/api'
-import { SetupAttemptStatus, SetupQuestionAnswer_state, SetupQuestionResponse_channel } from '@/api'
+import { SetupAttemptRequested_scope, SetupAttemptStatus, SetupManagedExecutionPhase, SetupQuestionAnswer_state, SetupQuestionResponse_channel } from '@/api'
 import { ApiError, apiFetch } from '@/lib/client'
 import { callOperation } from '@/lib/operations'
 import ProjectSetupView from './ProjectSetupView.vue'
@@ -15,11 +15,11 @@ vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
 vi.mock('@/lib/client', async original => ({ ...await original<object>(), apiFetch: vi.fn() }))
 let state = setupFixture()
 let wrapper: VueWrapper | undefined
-const managed = { settings: { model: 'selected-model' }, slot_reserved: false, cancel_requested: false, callback_started: true, binding_id: 1, admission_id: 'fixture', job_ref: 'fixture', diagnostic: null, resume_thread_id: null }
+const managed = { settings: { model: 'selected-model' }, slot_reserved: false, cancel_requested: false, callback_started: true, binding_id: 1, admission_id: 'fixture', job_ref: 'fixture', diagnostic: null, resume_thread_id: null, phase: SetupManagedExecutionPhase.preparation, adoption_authorized: false, adopted_delivery_digest: null, verification_request_id: null, preflight_failed: false }
 const question = { question_id: 'market', revision: 3, prompt: 'Which market should the project use?', workflow_keys: ['fixture.second'], answer_state: SetupQuestionAnswer_state.pending, response_channel: SetupQuestionResponse_channel.managed_ui }
 function asking() { return attemptFixture({ status: SetupAttemptStatus.needs_input, revision: 7, thread_id: 'native-exact', managed, question: { ...question, workflow_keys: [...question.workflow_keys] } }) }
 function workflow(key: string, patch: Partial<SchemaSetupWorkflowOut> = {}): SchemaSetupWorkflowOut {
-  return { workflow_key: key, status: 'current', receipt_id: 1, revision: 1, successful: { verification: { sources: [{ kind: 'template', version: 'v1' }] } }, latest_result: { changes: ['Compatible local instructions kept.'] }, latest_status: 'success', partial_changes: false, diagnostic: null, attempt_ref: null, result_ref: null, ...patch } as SchemaSetupWorkflowOut
+  return { workflow_key: key, status: 'current', requested_scope: 'ready_to_use', activation_status: 'verified', missing_activation_claims: [], receipt_id: 1, revision: 1, successful: { verification: { sources: [{ kind: 'template', version: 'v1' }] } }, latest_result: { changes: ['Compatible local instructions kept.'] }, latest_status: 'success', partial_changes: false, diagnostic: null, attempt_ref: null, result_ref: null, ...patch } as SchemaSetupWorkflowOut
 }
 beforeEach(() => {
   state = setupFixture({ current_attempt: asking() })
@@ -215,7 +215,7 @@ describe('setup detail questions and recovery', () => {
       workflows: [workflow('fixture.first', { latest_result: { changes: ['/private/fixture/guide.md'] } })],
     })
     await panel()
-    expect(wrapper!.get('table tbody tr:first-child td:nth-child(2) > p').text()).toBe('Workflow guidance is configured.')
+    expect(wrapper!.get('table tbody tr:first-child td:nth-child(2) > p').text()).toBe('Workflow setup and activation are verified.')
     expect(wrapper!.text()).not.toContain('Some files may have changed')
     expect(wrapper!.get('section[aria-labelledby="setup-state-heading"]').find('[role="status"]').exists()).toBe(false)
     expect(wrapper!.findAll('details').some(item => item.text().includes('Agent result') && item.text().includes('/private/fixture/guide.md'))).toBe(true)
@@ -227,6 +227,65 @@ describe('setup detail questions and recovery', () => {
     expect(wrapper!.text()).not.toContain('waiting for your answer')
     expect(wrapper!.find('textarea').exists()).toBe(false)
     expect(button('Start again')).toBeDefined()
+  })
+  it.each(['pending', 'blocked', 'unknown'] as const)('never labels %s activation ready and shows the missing coverage', async activation => {
+    state = setupFixture({ status: 'current' as typeof state.status,
+      current_attempt: attemptFixture({ status: SetupAttemptStatus.success }),
+      workflows: [workflow('fixture.first'), workflow('fixture.second', {
+        activation_status: activation as SchemaSetupWorkflowOut['activation_status'],
+        missing_activation_claims: ['native_consumption'], diagnostic: 'Agent loading still needs verification.',
+      })],
+    })
+    await panel()
+    expect(wrapper!.text()).not.toContain('Your project is ready')
+    expect(wrapper!.text()).toContain('1 of 2 workflows ready')
+    expect(wrapper!.text()).toContain('Agent loading still needs verification.')
+    expect(wrapper!.text()).toContain('Verify that the agent loaded the saved setup.')
+    expect(wrapper!.findAll('button').some(item => /activate/i.test(item.text()))).toBe(false)
+  })
+  it('labels explicit infrastructure-only completion as preparation', async () => {
+    state = setupFixture({ status: 'current' as typeof state.status,
+      current_attempt: attemptFixture({ status: SetupAttemptStatus.success, requested_scope: SetupAttemptRequested_scope.infrastructure_only }),
+      workflows: [workflow('fixture.first', { requested_scope: 'infrastructure_only' as SchemaSetupWorkflowOut['requested_scope'], activation_status: 'unknown' as SchemaSetupWorkflowOut['activation_status'] })],
+    })
+    await panel()
+    expect(wrapper!.text()).toContain('Project preparation is complete')
+    expect(wrapper!.text()).toContain('Prepared')
+    expect(wrapper!.text()).not.toContain('Your project is ready')
+  })
+  it('does not infer readiness from legacy receipts or a missing selected workflow', async () => {
+    const legacy = workflow('fixture.first')
+    // Historical API responses omitted scope and activation fields.
+    delete (legacy as Partial<SchemaSetupWorkflowOut>).requested_scope
+    delete (legacy as Partial<SchemaSetupWorkflowOut>).activation_status
+    state = setupFixture({ status: 'current' as typeof state.status,
+      current_attempt: attemptFixture({ status: SetupAttemptStatus.success }), workflows: [legacy],
+    })
+    await panel()
+    expect(wrapper!.text()).not.toContain('Your project is ready')
+    expect(wrapper!.text()).toContain('Prepared')
+    state = { ...state, workflows: [workflow('fixture.first')],
+      current_attempt: attemptFixture({ status: SetupAttemptStatus.success, workflow_keys: ['fixture.first', 'fixture.missing'] }),
+    }
+    await button('Refresh').trigger('click'); await flushPromises()
+    expect(wrapper!.text()).not.toContain('Your project is ready')
+    expect(wrapper!.text()).toContain('fixture.missing')
+  })
+  it('retains results through refresh and advances preparation to verification without a new action', async () => {
+    state.current_attempt = attemptFixture({ status: SetupAttemptStatus.running, managed, requested_scope: SetupAttemptRequested_scope.ready_to_use })
+    state.workflows = [workflow('fixture.first')]
+    await panel()
+    expect(wrapper!.text()).toContain('Your agent is preparing the project')
+    let finish!: (value: unknown) => void
+    vi.mocked(callOperation).mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    await button('Refresh').trigger('click')
+    expect(wrapper!.text()).toContain('Compatible local instructions kept.')
+    expect(wrapper!.text()).not.toContain('Loading project setup')
+    finish({ ...state, current_attempt: { ...state.current_attempt, revision: 2, managed: { ...managed, phase: 'verification' } } })
+    await flushPromises()
+    expect(wrapper!.text()).toContain('Your agent is verifying workflow readiness')
+    expect(button('Cancel setup')).toBeDefined()
+    expect(writes()).toHaveLength(0)
   })
   it('blocks competing actions and ignores a late continuation after disposal', async () => {
     let controller!: ReturnType<typeof useProjectSetup>

@@ -156,6 +156,20 @@ being deferred until closure. Adoption does not authorize
 restarting the daemon orchestrating the active task; source checks do not prove
 saved adoption, native consumption or installed activation.
 
+For ready-to-use Setup/Update, the effective workflow method first reuses actual
+completed delivery/review/closeout evidence only for covered claims at the current
+project/source/default/native/environment basis. Record covered/missing claims and
+run only missing or invalidated harmless bounded checks in the existing owning
+setup/task. Do not automatically create a separate full verification task/workflow,
+tracker parent or review workflow merely for readiness, or nested queue/wait/drain
+machinery solely for proof. Existing product/adaptation tasks retain independent
+review; standalone setup follows its effective method and genuine evidence.
+Aborted, incomplete, simulated or another project's evidence is not completed
+activation. Task overrides cannot hide missing project defaults. Explicit
+infrastructure-only preparation creates no execution state. Missing authority or
+required proof stays unfinished; source edits neither adopt defaults nor refresh
+active native sessions.
+
 The handoff is task-level; role objects and their fields can be omitted when
 project defaults supply them:
 

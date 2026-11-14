@@ -94,9 +94,13 @@ def test_console_selection_reaches_native_launch_and_frozen_exact_resume(
     def native(command, *, on_session, **kwargs):
         commands.append(command)
         on_session("frozen-setup-thread")
+        schema = json.loads(Path(command[command.index("--output-schema") + 1]).read_text())
+        assert set(schema["required"]) == set(schema["properties"])
+        assert schema["properties"]["verification_status"]["type"] == ["string", "null"]
         Path(command[command.index("-o") + 1]).write_text(
             json.dumps(
                 {
+                    "verification_status": None,
                     "report_json": json.dumps(
                         {
                             "status": "partial",
@@ -105,7 +109,7 @@ def test_console_selection_reaches_native_launch_and_frozen_exact_resume(
                                 "evidence_ref": "fixture:native-command",
                             },
                         }
-                    )
+                    ),
                 }
             )
         )
@@ -526,12 +530,17 @@ def test_console_managed_start_duplicate_cancel_and_preferences(
     assert first.status_code == 200, first.text
     data = first.json()["data"]
     assert data["claim_token"] is None
+    assert data["attempt"]["requested_scope"] == "ready_to_use"
     assert data["attempt"]["managed"]["settings"]["model"] == "gpt-6.1-sol"
     repeated = call("projectSetup.start", {**arguments, "response_mode": "compact"})
     assert repeated.status_code == 200, repeated.text
     assert repeated.json()["data"]["attempt"]["request_id"] == data["attempt"]["request_id"]
     changed = call("projectSetup.start", {**arguments, "mode": "update"})
     assert changed.status_code == 409, changed.text
+    changed_scope = call(
+        "projectSetup.start", {**arguments, "requested_scope": "infrastructure_only"}
+    )
+    assert changed_scope.status_code == 409, changed_scope.text
     assert len(scheduler.jobs) == 1
     foreign = call(
         "projectSetup.cancel",

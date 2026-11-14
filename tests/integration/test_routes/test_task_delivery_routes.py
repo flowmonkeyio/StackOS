@@ -124,6 +124,95 @@ def test_source_adoption_preview_and_write_use_registered_local_setup(
     assert readback["config_json"]["delivery"]["review_agent"] is None
 
 
+@pytest.mark.parametrize("variant", ["delivery", "main_agent", "source_preview", "source_write"])
+def test_configure_delivery_denies_actual_cli_transport(
+    api, project_id, tmp_path, settings, monkeypatch, variant
+):
+    from io import BytesIO
+    from urllib.error import HTTPError
+    from urllib.parse import urlsplit
+
+    from typer.testing import CliRunner
+
+    from stackos.cli import api_client, app
+    from tests.integration.test_routes.test_project_agent_operations import bind, call
+
+    scope = bind(api, project_id, tmp_path / "cli-adoption")
+    created = call(
+        api,
+        "create",
+        {
+            **scope,
+            "fields": {
+                "name": "builder",
+                "description": "Fixture",
+                "developer_instructions": "Native source",
+            },
+        },
+    )
+    assert created.status_code == 200, created.text
+    source = created.json()["data"]
+    endpoint = "/api/v1/operations/tracker.configureDelivery/call"
+    original = {"host_key": "codex"}
+    saved = api.post(endpoint, json={"arguments": {"project_id": project_id, "delivery": original}})
+    assert saved.status_code == 200, saved.text
+    if variant == "delivery":
+        payload = {"delivery": {"host_key": "claude-code"}}
+    elif variant == "main_agent":
+        payload = {"main_agent": {"host_key": "codex"}}
+    else:
+        payload = {
+            "project_dir": scope["project_dir"],
+            "adopt_sources": {
+                "delivery_agent": {
+                    "source_ref": source["source_ref"],
+                    "expected_digest": source["digest"],
+                }
+            },
+            "preview": variant == "source_preview",
+        }
+    responses = []
+
+    def isolated_urlopen(request, **kwargs):
+        # Keep the real CLI client, token handling, header construction and error
+        # parser. Substitute only HTTP transport with the isolated authenticated app.
+        assert request.get_header("X-stackos-client-surface") == "cli"
+        response = api.request(
+            request.method,
+            urlsplit(request.full_url).path,
+            json=json.loads(request.data),
+            headers=dict(request.header_items()),
+        )
+        responses.append(response)
+        if response.is_error:
+            raise HTTPError(
+                request.full_url, response.status_code, "denied", {}, BytesIO(response.content)
+            )
+        return BytesIO(response.content)
+
+    monkeypatch.setattr(api_client, "get_settings", lambda: settings)
+    monkeypatch.setattr("urllib.request.urlopen", isolated_urlopen)
+    result = CliRunner().invoke(
+        app,
+        ["ops", "call", "tracker.configureDelivery", "--project", str(project_id), "--input", "-"],
+        input=json.dumps(payload),
+    )
+    assert len(responses) == 1
+    assert result.exit_code == 1 and responses[0].status_code == 422, responses[0].text
+    assert "local-admin" in responses[0].json()["detail"]
+    current = api.post(
+        "/api/v1/operations/tracker.get/call",
+        json={
+            "arguments": {
+                "project_id": project_id,
+                "response_mode": "raw",
+            }
+        },
+    )
+    assert current.status_code == 200, current.text
+    assert current.json()["tracker"] == saved.json()["data"]
+
+
 @pytest.mark.parametrize("argument_form", ["legacy", "map"])
 @pytest.mark.parametrize("selected_role", ["delivery_agent", "review_agent"])
 @pytest.mark.parametrize("layout", ["legacy", "mapped", "partial"])

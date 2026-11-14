@@ -553,6 +553,9 @@ def _compact_payload(spec: OperationSpec, payload: dict[str, Any]) -> dict[str, 
                     "partial_changes",
                     "attempt_ref",
                     "result_ref",
+                    "requested_scope",
+                    "activation_status",
+                    "missing_activation_claims",
                 )
             }
             for item in workflows[:25]

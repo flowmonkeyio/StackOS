@@ -59,7 +59,7 @@ def owner(session, project_id, key="scheduled"):
     return repo, request, claim, execution
 
 
-def launch(monkeypatch, tmp_path, execution, runner, observer=None):
+def launch(monkeypatch, tmp_path, execution, runner, observer=None, *, output_schema=None):
     monkeypatch.setattr(service, "agent_selection_error", lambda *a, **kw: None)
     monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
     return service.run_agent(
@@ -67,7 +67,7 @@ def launch(monkeypatch, tmp_path, execution, runner, observer=None):
         tmp_path,
         "Load project guidance",
         "Benign goal",
-        {},
+        output_schema if output_schema is not None else {},
         execution_scope=service.AgentExecutionScope(
             execution.project_id, agent="main", request_id=execution.request_id
         ),
@@ -171,6 +171,40 @@ def test_request_identity_lease_usage_and_terminal_handoff(
     repo.complete(project_id=project_id, request_id=request.id, claim_token=claim.claim_token)
     with pytest.raises(ConflictError):
         repo.complete(project_id=project_id, request_id=request.id, claim_token=claim.claim_token)
+
+
+@pytest.mark.parametrize("outcome", ["success", "failed", "blocked"])
+def test_persisted_native_activation_uses_contract_and_request_outcome(
+    session, project_id, monkeypatch, tmp_path, outcome
+):
+    from stackos.jobs.workflow_schedules import MAIN_AGENT_RESULT_SCHEMA
+    from stackos.repositories.project_setup import ProjectSetupRepository
+
+    repo, request, claim, execution = owner(session, project_id)
+    payload = {"status": outcome, "summary": "Bounded check", "run_plan_id": None}
+
+    def runner(*args, on_session, **kwargs):
+        on_session("native-activation-outcome")
+        return AgentRunResult(0, thread_id="native-activation-outcome", result=payload)
+
+    transport = launch(
+        monkeypatch, tmp_path, execution, runner, output_schema=MAIN_AGENT_RESULT_SCHEMA
+    )
+    assert transport.ok
+    if outcome != "blocked":
+        repo.complete(
+            project_id=project_id,
+            request_id=request.id,
+            claim_token=claim.claim_token,
+            status=AgentRequestStatus.RESOLVED
+            if outcome == "success"
+            else AgentRequestStatus.FAILED,
+        )
+    row = session.get(AgentRequest, request.id, populate_existing=True)
+    native = row.metadata_json["native_execution"]
+    assert native["snapshot"]["output_schema"] == MAIN_AGENT_RESULT_SCHEMA
+    assert native["result"] == payload and native["exit_code"] == 0 and native["finished_at"]
+    assert ProjectSetupRepository._native_activation_passed(row, native) == (outcome == "success")
 
 
 @pytest.mark.parametrize(

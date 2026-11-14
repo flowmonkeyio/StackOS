@@ -7,6 +7,7 @@ import { resolveStatus } from '@/design/status'
 import type { DesktopMcpHostStatus } from '@/lib/desktop'
 import { callOperation } from '@/lib/operations'
 import { readProjectSetup, setupErrorMessage } from './useProjectSetup'
+import { setupActivationGaps, setupWorkflowStatus } from './viewModel'
 
 const props = defineProps<{
   state: SchemaProjectSetupOut
@@ -81,10 +82,6 @@ function workflowName(workflow: SchemaSetupWorkflowOut): string {
     ?? previousSources.find(source => source?.kind === 'template')
   return typeof source?.content?.name === 'string' ? source.content.name : workflow.workflow_key
 }
-function workflowStatus(workflow: SchemaSetupWorkflowOut): string {
-  return workflow.status === 'source_unavailable' ? workflow.status
-    : workflow.latest_status && workflow.latest_status !== 'success' ? workflow.latest_status : workflow.status
-}
 function changeHost(value: string | number | null): void {
   const next = String(value ?? '')
   if (next === hostKey.value) return
@@ -155,7 +152,7 @@ async function submit(): Promise<void> {
         The project folder is unavailable. Restore access, then return to Home and check again. Your setup history is retained.
       </UiCallout>
       <p class="text-fg-muted">
-        {{ state.status === 'updates_available' ? `${state.update_count} workflows have new setup guidance.` : 'Let your agent prepare the workflows you need.' }}
+        {{ state.status === 'updates_available' ? `${state.update_count} workflows have new setup guidance. Your agent will update and verify them.` : 'Your agent will prepare your workflows and verify they are ready to use.' }}
       </p>
       <div
         v-if="state.workflows?.length"
@@ -172,13 +169,18 @@ async function submit(): Promise<void> {
           >{{ workflowName(workflow) }}</span>
           <StatusBadge
             domain="projectSetup"
-            :status="workflowStatus(workflow)"
+            :status="setupWorkflowStatus(workflow)"
           />
           <p
-            v-if="workflow.status === 'source_unavailable' || workflow.latest_status === 'failed'"
+            v-if="workflow.diagnostic || setupActivationGaps(workflow).length || ['source_unavailable', 'failed', 'activation_pending', 'activation_blocked'].includes(setupWorkflowStatus(workflow))"
             class="basis-full break-words text-fg-muted"
           >
-            {{ workflow.diagnostic || resolveStatus('projectSetup', workflowStatus(workflow)).description }}
+            {{ workflow.diagnostic || resolveStatus('projectSetup', setupWorkflowStatus(workflow)).description }}
+            <span
+              v-for="gap in setupActivationGaps(workflow)"
+              :key="gap"
+              class="mt-1 block"
+            >{{ gap }}</span>
           </p>
         </div>
       </div>
