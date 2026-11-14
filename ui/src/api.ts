@@ -2548,6 +2548,11 @@ export interface components {
             /** Project Id */
             project_id: number | null;
             /**
+             * Read Token
+             * @default null
+             */
+            read_token: string | null;
+            /**
              * Scope
              * @enum {string}
              */
@@ -9123,6 +9128,11 @@ export interface components {
             is_active: boolean | null;
             /** Project Id */
             project_id: number | null;
+            /**
+             * Read Token
+             * @default null
+             */
+            read_token: string | null;
             /** Rows */
             rows: components["schemas"]["AgentStatsRowOut"][];
             /** Start Date */

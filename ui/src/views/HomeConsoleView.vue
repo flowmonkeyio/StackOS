@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ProjectPageHeader } from '@/components/domain'
-import { UiButton, UiCard, UiPageShell } from '@/components/ui'
+import { UiButton, UiCard, UiPageShell, UiSkeleton } from '@/components/ui'
 import { useProjectRouteScope } from '@/composables/useProjectRouteScope'
 import { usePolling } from '@/composables/usePolling'
 import { useProjectsStore } from '@/stores/projects'
@@ -85,52 +85,63 @@ async function refreshAll(): Promise<void> {
         </UiButton>
       </template>
     </ProjectPageHeader>
-    <UiCard
-      v-if="reminder"
-      aria-label="Project setup reminder"
-    >
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="min-w-0">
-          <h2 class="t-h3">
-            {{ reminder === 'setup' ? 'Set up this project' : 'Workflow updates available' }}
-          </h2>
-          <p class="mt-1 text-fg-muted">
-            {{ reminder === 'setup' ? 'Let your agent prepare the workflows you need.' : `${reminderUpdateCount} workflows have new setup guidance.` }}
-          </p>
-        </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <UiButton
-            variant="ghost"
-            size="sm"
-            :loading="setupWriting"
-            @click="setup.dismiss(reminder)"
-          >
-            Don't show again
-          </UiButton>
-          <UiButton
-            variant="primary"
-            size="sm"
-            :disabled="setupWriting"
-            @click="openSetup"
-          >
-            {{ reminder === 'setup' ? 'Set up project' : 'Review updates' }}
-          </UiButton>
-        </div>
-      </div>
-    </UiCard>
-    <div
-      v-if="setupError || setupState?.folder_status === 'unavailable'"
-      role="status"
-      class="flex flex-wrap items-center gap-2 text-xs text-fg-muted"
-    >
-      <span>{{ setupError || 'The project folder is unavailable. Setup history is retained. Restore access to the folder, then check again.' }}</span>
-      <UiButton
-        size="sm"
-        :loading="setup.running.value"
-        @click="setup.refresh"
+    <div class="home-setup-slot">
+      <UiCard
+        v-if="!setupState && !reminder && !setupError"
+        aria-label="Loading project setup"
+        aria-busy="true"
+        class="home-setup-placeholder"
       >
-        Check again
-      </UiButton>
+        <UiSkeleton :height="16" width="12rem" />
+        <UiSkeleton :height="12" width="16rem" class="mt-2 max-w-full" />
+      </UiCard>
+      <UiCard
+        v-if="reminder"
+        aria-label="Project setup reminder"
+      >
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="min-w-0">
+            <h2 class="t-h3">
+              {{ reminder === 'setup' ? 'Set up this project' : 'Workflow updates available' }}
+            </h2>
+            <p class="mt-1 text-fg-muted">
+              {{ reminder === 'setup' ? 'Let your agent prepare the workflows you need.' : `${reminderUpdateCount} workflows have new setup guidance.` }}
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <UiButton
+              variant="ghost"
+              size="sm"
+              :loading="setupWriting"
+              @click="setup.dismiss(reminder)"
+            >
+              Don't show again
+            </UiButton>
+            <UiButton
+              variant="primary"
+              size="sm"
+              :disabled="setupWriting"
+              @click="openSetup"
+            >
+              {{ reminder === 'setup' ? 'Set up project' : 'Review updates' }}
+            </UiButton>
+          </div>
+        </div>
+      </UiCard>
+      <div
+        v-if="setupError || setupState?.folder_status === 'unavailable'"
+        role="status"
+        class="flex flex-wrap items-center gap-2 text-xs text-fg-muted"
+      >
+        <span>{{ setupError || 'The project folder is unavailable. Setup history is retained. Restore access to the folder, then check again.' }}</span>
+        <UiButton
+          size="sm"
+          :loading="setup.running.value"
+          @click="setup.refresh"
+        >
+          Check again
+        </UiButton>
+      </div>
     </div>
     <ActiveTaskList
       :key="projectId"
@@ -162,3 +173,19 @@ async function refreshAll(): Promise<void> {
     />
   </UiPageShell>
 </template>
+
+<style scoped>
+/* Keep the existing reminder region above supervision stable even when its
+   first read is slow or there is no applicable reminder. */
+.home-setup-slot,
+.home-setup-placeholder {
+  box-sizing: border-box;
+  min-height: 5rem;
+}
+@media (max-width: 639px) {
+  .home-setup-slot,
+  .home-setup-placeholder {
+    min-height: 10rem;
+  }
+}
+</style>

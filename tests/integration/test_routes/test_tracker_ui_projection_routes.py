@@ -103,6 +103,69 @@ def parse_usage(text):
     )
 
 
+@pytest.mark.parametrize("project_scope", [False, True])
+@pytest.mark.parametrize("mode", ["raw", "compact"])
+@pytest.mark.asyncio
+async def test_home_bulk_and_initial_feed_share_a_scoped_read_fence(
+    api, project_id, project_scope, mode
+):
+    from stackos.api import context
+
+    seed(api, project_id)
+    scope = {"project_id": project_id} if project_scope else {}
+
+    def read(operation):
+        response = api.post(
+            f"/api/v1/operations/{operation}/call",
+            json={"arguments": {**scope, "response_mode": mode}},
+        )
+        assert response.status_code == 200, response.text
+        body = response.json()
+        return body.get("data", body)
+
+    suffix = "" if project_scope else "All"
+    active = read(f"tracker.activeTasks{suffix}")
+    stats = read(f"tracker.agentStats{suffix}")
+
+    async def connected():
+        return False
+
+    arguments = {
+        "request": SimpleNamespace(is_disconnected=connected),
+        "after": None,
+        "ui_demand": json.dumps({"projects": {}}),
+        "engine": api.app.state.engine,
+    }
+    response = (
+        await context.context_timeline_stream(
+            project_id=project_id,
+            task_key=None,
+            limit=50,
+            poll_ms=250,
+            heartbeat_ms=1000,
+            max_events=None,
+            replay=False,
+            **arguments,
+        )
+        if project_scope
+        else await context.global_context_timeline_stream(**arguments)
+    )
+    try:
+        frame = await asyncio.wait_for(anext(response.body_iterator), 3)
+        initial = parse_usage(frame)["updates"]
+    finally:
+        await response.body_iterator.aclose()
+    assert len(active["read_token"]) == 64
+    assert active["read_token"] == stats["read_token"] == initial["read_token"]
+    assert all("by_agent" in day for day in stats["daily"])
+    with Session(api.app.state.engine) as session:
+        TrackerRepository(session).update_task(
+            project_id=project_id, task_key="visible", patch_json={"title": "Changed"}
+        )
+        session.commit()
+    assert read(f"tracker.activeTasks{suffix}")["read_token"] != initial["read_token"]
+
+
 def test_deferred_summary_preserves_the_existing_board_subtitle_and_safe_feed(api, project_id):
 
     condition = "After operator review"

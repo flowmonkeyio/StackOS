@@ -132,6 +132,7 @@ it.each([null, 7])(
           project_id: null,
           is_active: true,
           as_of: '2026-11-06T20:00:00Z',
+          read_token: null,
           group_by: TrackerAgentStatsOutGroup_by.agent_model,
           start_date: null,
           end_date: null,

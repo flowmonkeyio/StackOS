@@ -121,9 +121,14 @@ follow-up per burst. Useful HTTP reads start alongside the stream, without a
 handshake deadline. A read completed before the first stream frame can display
 its scoped data but cannot establish Live. A first response crossed by updates
 can also display without replacing accepted content or populating return storage.
-A baseline or real update crossing
-an in-flight read requires an ordered trailing read; synchronous mount/baseline
-callers join the same initial work. Reconnect/visibility changes still revalidate.
+An asynchronous first baseline joins the pending work when its opaque
+`read_token` matches the bulk response. The existing event position,
+project/tracker revisions and bounded live-counter owner supply this equality
+fence; it is neither an authorization token nor an ordered cursor. The stream
+emits a token only when those sources stay unchanged through its snapshot.
+Changed/missing tokens, later updates and disconnect/visibility boundaries
+still require the ordered trailing read. No handshake deadline delays useful
+content, and an unconfirmed response cannot grant Live.
 The Home readers retain only their last global and project response per app;
 scope/date identity gates immediate return content, while every mount starts a
 new subscription and revalidation. Freshness is never retained. Existing rows
@@ -134,6 +139,9 @@ same six-slot desktop grid as the status response.
 The existing setup reader also retains Home's last same-project reminder and
 update count, so return content is not displaced while setup revalidates.
 It does not retain setup state, attempts or launch readiness.
+Project Home also reserves the reminder region on a cold mount, using an initial
+skeleton. The region keeps its space when no reminder applies, so a slow setup
+read cannot insert or remove space above already-visible tasks and Usage.
 Graph and one full primary
 detail can be reused only within the mounted project and accepted revision.
 Content saves and latest-content retries use the same UI-demand index queue.

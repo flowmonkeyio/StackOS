@@ -9,7 +9,7 @@ import { agentStatsFixture as fixture } from './agentStatsFixtures'
 import { subscribeUsageUpdates } from '@/lib/usageUpdates'
 
 vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
-vi.mock('@/lib/usageUpdates', () => ({ subscribeUsageUpdates: vi.fn(() => vi.fn()), usageSnapshotCheckpoint: vi.fn(() => ({})), markUsageSnapshot: vi.fn(() => true), subscribeUsageVisibility: vi.fn(() => vi.fn()) }))
+vi.mock('@/lib/usageUpdates', () => ({ subscribeUsageUpdates: vi.fn(() => vi.fn()), usageSnapshotCheckpoint: vi.fn(() => ({})), usageSnapshotMatches: vi.fn(() => true), markUsageSnapshot: vi.fn(() => true), subscribeUsageVisibility: vi.fn(() => vi.fn()) }))
 const wrappers: ReturnType<typeof mount>[] = []
 const agentStatsFixture = (overrides: Parameters<typeof fixture>[0] = {}) => fixture({ project_id: null, ...overrides })
 beforeEach(() => { vi.mocked(callOperation).mockReset(); vi.mocked(subscribeUsageUpdates).mockClear() })

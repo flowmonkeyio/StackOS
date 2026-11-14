@@ -4,6 +4,7 @@ import type { SchemaAgentStatsMetricsOut, SchemaWorkDurationOut } from '@/api'
 
 type UsageItem = { key: string; agent_stats?: SchemaAgentStatsMetricsOut | null; active_execution?: ActiveExecution | null; work_duration?: SchemaWorkDurationOut | null }
 export interface UsageProjection {
+  read_token?: string | null
   tasks: UsageItem[]; tickets: UsageItem[]; replace?: boolean
   projection?: 'ui'; scope_complete?: boolean; scope?: 'project' | 'global'; project_id?: number | null
   covered_event_id?: number | null
@@ -27,7 +28,7 @@ export interface UsageFeedState {
   status: 'connecting' | 'live' | 'reconnecting' | 'paused'
   receivedAt: number | null
 }
-type Listener = { usage: (updates?: UsageProjection) => void; status?: (event: ProjectTimelineEvent) => void; error?: (cause: unknown) => void; resume?: () => void; connection?: (state: UsageFeedState) => void; coalesceStatusWithUsage?: boolean }
+type Listener = { usage: (updates?: UsageProjection, initial?: boolean) => void; status?: (event: ProjectTimelineEvent) => void; error?: (cause: unknown) => void; resume?: () => void; connection?: (state: UsageFeedState) => void; coalesceStatusWithUsage?: boolean }
 type LatestUsage = { version: number; item: UsageItem }
 type Channel = {
   listeners: Set<Listener>; stream: TrackerStatusStream | null; projectId: number | null
@@ -35,6 +36,7 @@ type Channel = {
   connection: UsageFeedState; snapshotReady: boolean; freshnessTimer: number | null; generation: number; snapshotVersion: number; frameReady: boolean
   usageRevisions: Map<number, number>
   coveredEventId: number | null
+  initialBaseline?: { version: number; token: string }
 }
 const channels = new Map<number | null, Channel>()
 let revision = 0
@@ -51,11 +53,18 @@ export function usageSnapshotCheckpoint(projectId: number | null) {
   return channel ? { channel, generation: channel.generation, version: channel.snapshotVersion } : null
 }
 
-export function markUsageSnapshot(projectId: number | null, checkpoint: ReturnType<typeof usageSnapshotCheckpoint>): boolean {
+export function usageSnapshotMatches(projectId: number | null, checkpoint: ReturnType<typeof usageSnapshotCheckpoint>, readToken?: string | null): boolean {
+  const channel = channels.get(projectId)
+  return !!channel && !!checkpoint && channel === checkpoint.channel && channel.generation === checkpoint.generation
+    && (channel.snapshotVersion === checkpoint.version || (!!readToken
+      && channel.initialBaseline?.version === channel.snapshotVersion
+      && checkpoint.version + 1 === channel.snapshotVersion && channel.initialBaseline.token === readToken))
+}
+
+export function markUsageSnapshot(projectId: number | null, checkpoint: ReturnType<typeof usageSnapshotCheckpoint>, readToken?: string | null): boolean {
   const channel = channels.get(projectId)
   if (!channel || !checkpoint || document.hidden || !channel.stream || !channel.frameReady
-    || channel !== checkpoint.channel || channel.generation !== checkpoint.generation
-    || channel.snapshotVersion !== checkpoint.version) return false
+    || !usageSnapshotMatches(projectId, checkpoint, readToken)) return false
   channel.snapshotReady = true
   const receivedAt = channel.connection.receivedAt
   if (receivedAt !== null && Date.now() - receivedAt < FEED_STALE_MS) publishConnection(channel, 'live')
@@ -83,6 +92,8 @@ function open(channel: Channel): void {
   const current = () => channel.generation === generation && channels.get(channel.projectId) === channel && !document.hidden
   channel.snapshotReady = false
   channel.frameReady = false
+  channel.initialBaseline = undefined
+  let firstUsage = true
   publishConnection(channel, channel.connection.receivedAt === null && channel.connection.status !== 'reconnecting' ? 'connecting' : 'reconnecting')
   if (!current()) return
   armFreshness(channel)
@@ -93,6 +104,11 @@ function open(channel: Channel): void {
     onUsage: (updates) => {
       if (!current()) return
       channel.snapshotVersion += 1
+      const initial = firstUsage && updates?.projection === 'ui' && updates.scope_complete === true
+        && updates.project_id === channel.projectId && updates.scope === (channel.projectId === null ? 'global' : 'project')
+        && updates.replace === true && typeof updates.read_token === 'string' && updates.read_token.length > 0
+      firstUsage = false
+      if (initial) channel.initialBaseline = { version: channel.snapshotVersion, token: updates!.read_token! }
       channel.usageRevisions.clear()
       channel.coveredEventId = null
       if (updates?.projection === 'ui' && updates.scope_complete && updates.project_id === channel.projectId) {
@@ -116,7 +132,7 @@ function open(channel: Channel): void {
           }
         }
       }
-      channel.listeners.forEach((listener) => listener.usage(updates))
+      channel.listeners.forEach((listener) => listener.usage(updates, initial))
       if (!current()) return
       if (updates?.replace) {
         channel.snapshotReady = true

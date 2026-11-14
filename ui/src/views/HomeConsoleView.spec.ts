@@ -53,6 +53,23 @@ async function mountProject() {
 }
 
 describe('project Home active work', () => {
+  it('reserves the cold setup reminder region while useful content loads independently', async () => {
+    const read = vi.mocked(callOperation).getMockImplementation()!
+    let finish!: (value: unknown) => void
+    vi.mocked(callOperation).mockImplementation((name, args) => name === 'projectSetup.get'
+      ? new Promise(resolve => { finish = resolve }) : read(name, args))
+    const { wrapper } = await mountProject()
+    try {
+      const slot = wrapper.get('.home-setup-slot').element
+      expect(wrapper.find('.active-task-row__link').exists()).toBe(true)
+      expect(wrapper.find('[aria-label="Project setup reminder"]').exists()).toBe(false)
+      expect(wrapper.find('.home-setup-slot [aria-busy="true"]').exists()).toBe(true)
+      finish({ project_id: 1, eligible: true, status: 'updates_available', folder_status: 'available', update_count: 3, current_attempt: null })
+      await flushPromises()
+      expect(wrapper.get('.home-setup-slot').element).toBe(slot)
+      expect(wrapper.get('[aria-label="Project setup reminder"]').text()).toContain('3 workflows')
+    } finally { wrapper.unmount() }
+  })
   it('retains the same setup reminder above accepted return data while its read is pending', async () => {
     const read = vi.mocked(callOperation).getMockImplementation()!
     const state = { project_id: 1, eligible: true, status: 'updates_available', folder_status: 'available', update_count: 3, current_attempt: null }

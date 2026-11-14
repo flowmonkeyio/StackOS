@@ -17,6 +17,23 @@ from tests.helpers.agent_statistics import seed_statistics_workload
 from tests.integration.test_repositories.test_agent_statistics import _receipt, _store
 
 
+def test_home_read_token_tracks_live_counters_and_scope_without_exposing_them(
+    session, project_id, monkeypatch
+):
+    calls = [{"project_id": project_id, "invocation_id": "owned-call", "live_usage": {"total": 10}}]
+    monkeypatch.setattr(
+        stats.host_service,
+        "usage_executions",
+        lambda pid: calls if pid in (None, project_id) else [],
+    )
+    before = stats.usage_read_token(session, project_id)
+    assert before == stats.usage_read_token(session, project_id)
+    assert before != stats.usage_read_token(session, None)
+    calls[0]["live_usage"]["total"] = 11
+    assert stats.usage_read_token(session, project_id) != before
+    assert len(before) == 64 and "owned-call" not in before
+
+
 def test_full_year_retains_daily_groups_exact_totals_and_bounded_reads(
     session, project_id, monkeypatch
 ):
@@ -43,7 +60,9 @@ def test_full_year_retains_daily_groups_exact_totals_and_bounded_reads(
         )
     finally:
         event.remove(engine, "before_cursor_execute", capture)
-    assert len(statements) == 7  # One bounded projection, independent of day/card count.
+    # Existing seven reads plus event-owner validation/position and one compact
+    # project/revision vector; none scales with day/card count.
+    assert len(statements) == 10
     assert all(statement.lstrip().upper().startswith("SELECT") for statement in statements)
     assert not any("completion_evidence_json" in statement for statement in statements)
     assert len(result.daily) == len(result.delivery_trends.daily) == 365

@@ -13,6 +13,65 @@ vi.mock('@/lib/operations', () => ({ callOperation: vi.fn() }))
 vi.mock('@/lib/task-tracker/liveEvents', async original => ({ ...await original<object>(), openTrackerStatusStream: vi.fn(() => ({ close: vi.fn() })) }))
 afterEach(() => { vi.clearAllMocks() })
 describe('both Home read boundaries on the shared real feed owner', () => {
+  it.each([null, 1])('joins an asynchronous unchanged baseline with its one pending read (%s)', async project => {
+    const pending: (() => void)[] = []
+    vi.mocked(callOperation).mockImplementation(async name => {
+      await new Promise<void>(done => pending.push(done))
+      return Object.assign(name.includes('agentStats') ? agentStatsFixture({ project_id: project }) : activeTasksFixture(project, []), { read_token: 'quiet-scope' })
+    })
+    let active!: ReturnType<typeof useActiveTasks>, stats!: ReturnType<typeof useAgentStats>
+    const wrapper = mount(defineComponent({ setup() {
+      active = useActiveTasks(project)
+      stats = useAgentStats(project === null ? undefined : ref(project))
+      onMounted(() => { void stats.load() })
+      return () => null
+    } }), { global: { plugins: [createPinia()] } })
+    try {
+      await flushPromises() // The HTTP requests have already started, as in a browser.
+      expect(callOperation).toHaveBeenCalledTimes(2)
+      const stream = vi.mocked(openTrackerStatusStream).mock.lastCall![0]
+      stream.onFrame?.(Date.now())
+      stream.onUsage?.({ projection: 'ui', scope_complete: true, project_id: project, scope: project === null ? 'global' : 'project', projects: [], tasks: [], tickets: [], replace: true, read_token: 'quiet-scope' } as never)
+      void active.refresh(); void stats.load()
+      pending.splice(0).forEach(done => done())
+      await flushPromises()
+      expect(callOperation).toHaveBeenCalledTimes(2)
+      expect(active.feed.value.status).toBe('live')
+      expect(stats.summary.value).not.toBeNull()
+    } finally { wrapper.unmount() }
+  })
+  it.each([null, 1])('rechecks a changed initial baseline instead of blessing the older HTTP result (%s)', async project => {
+    const pending: (() => void)[] = []
+    let token = 'before-change'
+    vi.mocked(callOperation).mockImplementation(async name => {
+      const captured = token
+      await new Promise<void>(done => pending.push(done))
+      return Object.assign(name.includes('agentStats') ? agentStatsFixture({ project_id: project }) : activeTasksFixture(project, []), { read_token: captured })
+    })
+    let active!: ReturnType<typeof useActiveTasks>, stats!: ReturnType<typeof useAgentStats>
+    const wrapper = mount(defineComponent({ setup() {
+      active = useActiveTasks(project)
+      stats = useAgentStats(project === null ? undefined : ref(project))
+      onMounted(() => { void stats.load() })
+      return () => null
+    } }), { global: { plugins: [createPinia()] } })
+    try {
+      await flushPromises()
+      token = 'after-change'
+      const stream = vi.mocked(openTrackerStatusStream).mock.lastCall![0]
+      stream.onFrame?.(Date.now())
+      stream.onUsage?.({ tasks: [], tickets: [], replace: true, read_token: token })
+      pending.splice(0).forEach(done => done())
+      await flushPromises()
+      expect(callOperation).toHaveBeenCalledTimes(4)
+      expect(active.asOf.value).not.toBeNull()
+      expect(active.feed.value.status).not.toBe('live')
+      pending.splice(0).forEach(done => done())
+      await flushPromises()
+      expect(active.feed.value.status).toBe('live')
+      expect(callOperation).toHaveBeenCalledTimes(4)
+    } finally { wrapper.unmount() }
+  })
   it.each([null, 1])('shows useful HTTP data before a delayed handshake without claiming Live (%s)', async project => {
     vi.mocked(callOperation).mockImplementation(async name => name.includes('agentStats')
       ? agentStatsFixture({ project_id: project }) : activeTasksFixture(project, []))

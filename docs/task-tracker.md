@@ -1746,6 +1746,15 @@ after a successful current-project index response.
 
 ### Home active-task reads
 
+The Home bulk responses include an opaque nullable `read_token` equality fence,
+also present in the lightweight UI stream baseline when its sources remain
+stable through that poll. It covers the existing event position (including
+project identity), project/tracker revisions and bounded native live counters.
+Only the initial baseline may acknowledge an already-started matching read;
+later updates still invalidate it. It conveys no authority or cursor ordering.
+Absent or unequal tokens retain the ordered replacement path. Existing fields,
+daily groups, coverage and operation permissions are unchanged.
+
 `tracker.activeTasks(project_id)` and local-admin-only `tracker.activeTasksAll`
 return bounded pages of tasks whose lifecycle is exactly `in-progress`.
 Queued and stopped execution remain members; complete, aborted and backlog
