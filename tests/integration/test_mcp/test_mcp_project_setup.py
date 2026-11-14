@@ -221,6 +221,56 @@ def test_ready_scope_compact_coverage_and_activation_repair_are_truthful(
     assert opened["claim_token"] not in repair
     unchanged = _operation_data(_structured(_toolbox_call(proxy, client, "projectSetup.get", {})))
     assert unchanged == state
+    # A real report call must also reject failed logical proof after process exit 0.
+    from tests.integration.test_repositories.test_project_setup_activation import activation_result
+
+    with Session(mcp_app.state.engine) as session:
+        repo = ProjectSetupRepository(session)
+        checked, native = activation_result(
+            (opened["attempt"]["project_id"], startup["agent_session_id"], repo),
+            session,
+            workflow_key="agency.project-setup",
+        )
+        native.metadata_json = {
+            "native_execution": {
+                **native.metadata_json["native_execution"],
+                "result": {"status": "failed", "summary": "Check failed", "run_plan_id": None},
+            }
+        }
+        session.add(native)
+        session.commit()
+        from stackos.repositories.project_setup import _digest
+
+        checked.verification.activation_proof.checks[0].reference.outcome_digest = _digest(
+            native.metadata_json["native_execution"]["result"]
+        )
+    checked.attempt_ref = opened["attempt"]["attempt_ref"]
+    rejected = _toolbox_call(
+        proxy,
+        client,
+        "projectSetup.report",
+        {
+            **args,
+            "expected_revision": 2,
+            "report": {
+                "status": "success",
+                "progress": {"message": "Checked", "evidence_ref": "fixture/check"},
+                "workflow_results": [
+                    {
+                        "workflow_key": "agency.project-setup",
+                        "expected_revision": 1,
+                        "result": checked.model_dump(mode="json"),
+                    }
+                ],
+            },
+        },
+    )
+    assert rejected["result"].get("isError"), rejected
+    assert "revalidate_activation" in json.dumps(rejected)
+    assert opened["claim_token"] not in json.dumps(rejected)
+    assert (
+        _operation_data(_structured(_toolbox_call(proxy, client, "projectSetup.get", {}))) == state
+    )
 
 
 @pytest.mark.parametrize("selected", [False, True])

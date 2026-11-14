@@ -263,9 +263,14 @@ separate readiness tuple.
 Checks reference an exact existing native request/invocation or completed
 workflow/step and the canonical JSON digest of its result. The receipt owner
 rechecks project, observed outcome, source/default basis and completion; failed,
-cancelled, live, foreign or changed evidence rejects. This validates reference
-integrity. The workflow's agent and independent review still judge what the
-underlying evidence actually covers, including loaded source and environment.
+cancelled, live, foreign or changed evidence cannot receive positive coverage.
+Native coverage requires canonical request resolution, a result validated against
+its frozen output schema and a successful logical outcome, including the wrapped
+managed setup report. Process exit alone is insufficient. Failed, blocked or
+missing outcomes can be retained as failed checks without covering activation.
+This validates reference integrity. The workflow's agent and independent review
+still judge what the underlying evidence actually covers, including loaded source
+and environment.
 A new workflow is not required. A ready-to-use attempt cannot report final
 success until every selected workflow has current verified activation coverage
 and observed loading. Missing coverage returns `complete_activation` with the

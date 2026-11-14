@@ -13,6 +13,7 @@ import pytest
 from pydantic import ValidationError as ModelValidationError
 
 from stackos.db.models import AgentRequest, AgentRequestAttentionStatus, AgentRequestStatus
+from stackos.jobs.workflow_schedules import MAIN_AGENT_RESULT_SCHEMA
 from stackos.operations.project_setup_state import ProjectSetupStartInput
 from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.project_setup import (
@@ -50,10 +51,11 @@ def report_result(attempt, opened, *, status="success", result=None, revision=1)
     )
 
 
-def activation_result(attempt, session):
+def activation_result(attempt, session, *, workflow_key=KEY):
     project, _, repo = attempt
-    result = verified_result(repo, project)
+    result = verified_result(repo, project, workflow_key)
     basis = repo.activation_basis(project, result.verification, environment_ref="fixture/native")
+    native_result = {"status": "success", "summary": "Checked native setup", "run_plan_id": None}
     native = AgentRequest(
         project_id=project,
         request_key="fixture-completed-native",
@@ -62,10 +64,11 @@ def activation_result(attempt, session):
         attention_status=AgentRequestAttentionStatus.READ,
         metadata_json={
             "native_execution": {
-                "execution": {"invocation_id": "fixture-invocation"},
+                "snapshot": {"output_schema": copy.deepcopy(MAIN_AGENT_RESULT_SCHEMA)},
+                "execution": {"invocation_id": "fixture-invocation", "thread_id": "fixture-native"},
                 "finished_at": "2026-11-14T00:00:00Z",
                 "exit_code": 0,
-                "result": {"checked": True},
+                "result": native_result,
             }
         },
     )
@@ -84,7 +87,7 @@ def activation_result(attempt, session):
                     "kind": "native_request",
                     "request_id": native.id,
                     "invocation_id": "fixture-invocation",
-                    "outcome_digest": _digest({"checked": True}),
+                    "outcome_digest": _digest(native_result),
                 },
                 "evidence_ref": "fixture/observed-check",
             }
@@ -390,6 +393,148 @@ def test_failed_native_observation_is_retained_without_covering_activation(attem
         workflow.latest_result["verification"]["activation_proof"]["checks"][0]["status"]
         == "failed"
     )
+
+
+@pytest.mark.parametrize(
+    "outcome", ["failed", "blocked", "missing", "malformed", "unresolved", "schema"]
+)
+def test_process_success_cannot_replace_valid_native_outcome(attempt, session, outcome):
+    opened = open_setup(attempt)
+    result, native = activation_result(attempt, session)
+    metadata = copy.deepcopy(native.metadata_json)
+    execution = metadata["native_execution"]
+    if outcome in {"failed", "blocked"}:
+        execution["result"]["status"] = outcome
+    elif outcome == "missing":
+        execution["result"] = None
+    elif outcome == "malformed":
+        execution["result"] = {"status": "success"}
+    elif outcome == "unresolved":
+        native.status = AgentRequestStatus.CLAIMED
+    else:
+        execution["snapshot"].pop("output_schema")
+    # Even a resolved request cannot bless a contradictory or invalid result.
+    native.metadata_json = metadata
+    session.add(native)
+    session.commit()
+    result.verification.activation_proof.checks[0].reference.outcome_digest = _digest(
+        execution["result"]
+    )
+    with pytest.raises(ConflictError, match="native outcome"):
+        report_result(attempt, opened, result=result)
+    state = attempt[2].get(attempt[0])
+    assert state.current_attempt.revision == 1 and state.configured_count == 0
+
+
+@pytest.mark.parametrize("outcome", ["failed", "blocked", "missing"])
+def test_logical_failure_or_missing_result_is_retained_without_activation_credit(
+    attempt, session, outcome
+):
+    opened = open_setup(attempt)
+    result, native = activation_result(attempt, session)
+    metadata = copy.deepcopy(native.metadata_json)
+    raw = metadata["native_execution"]["result"]
+    if outcome == "missing":
+        raw = None
+    else:
+        raw["status"] = outcome
+    metadata["native_execution"]["result"] = raw
+    native.metadata_json = metadata
+    native.status = (
+        AgentRequestStatus.CLAIMED if outcome == "blocked" else AgentRequestStatus.FAILED
+    )
+    session.add(native)
+    session.commit()
+    result.status = "unfinished"
+    evidence = result.verification.activation_proof
+    evidence.status = "blocked"
+    evidence.diagnostic = f"Native outcome is {outcome}; complete the missing check."
+    evidence.checks[0].status = "failed"
+    evidence.checks[0].reference.outcome_digest = _digest(raw)
+    saved = report_result(attempt, opened, status="partial", result=result)
+    assert saved.outcomes[KEY].activation_status == "blocked"
+    assert set(saved.outcomes[KEY].missing_activation_claims) == {
+        "saved_defaults",
+        "native_consumption",
+        "behavior",
+    }
+    workflow = attempt[2].get(attempt[0]).workflows[0]
+    assert workflow.successful is None and workflow.diagnostic == evidence.diagnostic
+    assert workflow.latest_result["verification"]["activation_proof"]["checks"][0]["reference"][
+        "outcome_digest"
+    ] == _digest(raw)
+
+
+@pytest.mark.parametrize("changed", ["owner", "schema"])
+def test_retained_native_eligibility_is_rechecked_on_read_and_final_success(
+    attempt, session, changed
+):
+    opened = open_setup(attempt)
+    result, native = activation_result(attempt, session)
+    report_result(attempt, opened, result=result, status="running")
+    if changed == "owner":
+        native.status = AgentRequestStatus.CLAIMED
+    else:
+        metadata = copy.deepcopy(native.metadata_json)
+        metadata["native_execution"]["snapshot"].pop("output_schema")
+        native.metadata_json = metadata
+    session.add(native)
+    session.commit()
+    project, session_id, repo = attempt
+    workflow = repo.get(project).workflows[0]
+    assert workflow.activation_status == "pending" and workflow.status == "activation_pending"
+    assert workflow.successful is not None
+    with pytest.raises(ConflictError, match="native outcome"):
+        repo.report(
+            project,
+            session_id=session_id,
+            request_id=opened.attempt.request_id,
+            claim_token=opened.claim_token,
+            expected_revision=2,
+            report=SetupReport(
+                status="success", progress={"message": "Done", "evidence_ref": "fixture/end"}
+            ),
+        )
+    assert repo.get(project).current_attempt.revision == 2
+
+
+@pytest.mark.parametrize("outcome", ["success", "failed", "malformed"])
+def test_managed_native_reference_uses_wrapped_setup_report(attempt, session, outcome):
+    from stackos.project_setup_execution import RESULT_SCHEMA
+
+    opened = open_setup(attempt)
+    result, native = activation_result(attempt, session)
+    report = SetupReport(
+        status="failed" if outcome == "failed" else "success",
+        progress={"message": "Native setup outcome", "evidence_ref": "fixture/native-report"},
+    )
+    raw = {"report_json": "invalid JSON" if outcome == "malformed" else report.model_dump_json()}
+    metadata = copy.deepcopy(native.metadata_json)
+    metadata["native_execution"].update(snapshot={"output_schema": RESULT_SCHEMA}, result=raw)
+    metadata["project_setup"] = {
+        **opened.attempt.model_dump(mode="json"),
+        "request_id": native.id,
+        "root_request_id": native.id,
+        "attempt_ref": f"agent-request:{native.id}",
+        "entry_kind": "managed_ui",
+        "status": "success",
+        "managed": {
+            "settings": {"host_key": "codex"},
+            "binding_id": result.verification.activation_proof.checks[0].basis.binding_id,
+            "admission_id": "fixture/managed",
+            "job_ref": "fixture/native-job",
+        },
+    }
+    native.source_kind = "project_setup"
+    native.metadata_json = metadata
+    session.add(native)
+    session.commit()
+    result.verification.activation_proof.checks[0].reference.outcome_digest = _digest(raw)
+    if outcome == "success":
+        assert report_result(attempt, opened, result=result).status == "success"
+    else:
+        with pytest.raises(ConflictError, match="native outcome"):
+            report_result(attempt, opened, result=result)
 
 
 def test_absent_scope_in_persisted_attempt_and_receipt_is_historical(attempt, session):

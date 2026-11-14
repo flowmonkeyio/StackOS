@@ -1406,12 +1406,7 @@ class ProjectSetupRepository:
             if ref.kind == "native_request":
                 row = self._s.get(AgentRequest, ref.request_id, populate_existing=True)
                 native = (row.metadata_json or {}).get("native_execution", {}) if row else {}
-                passed = (
-                    native.get("exit_code") == 0
-                    and not native.get("error")
-                    and not native.get("cancelled")
-                    and not native.get("stop_error")
-                )
+                passed = row is not None and self._native_activation_passed(row, native)
                 if (
                     row is None
                     or row.project_id != project_id
@@ -1459,6 +1454,62 @@ class ProjectSetupRepository:
                     )
         # Coverage selection is the workflow method's judgment. These checks
         # validate identities/outcomes, not the semantics of a domain assertion.
+
+    @staticmethod
+    def _native_activation_passed(row: AgentRequest, native: dict[str, Any]) -> bool:
+        from jsonschema import SchemaError
+
+        from stackos.host_mcp.result import AgentRunResult, validate_agent_result
+
+        # Native retirement precedes the caller's interpretation and request
+        # completion. Neither process exit nor a result digest proves success.
+        result = AgentRunResult(
+            exit_code=native.get("exit_code"),
+            result=native.get("result"),
+            error=native.get("error"),
+        )
+        snapshot = native.get("snapshot")
+        schema = snapshot.get("output_schema") if isinstance(snapshot, dict) else None
+        if (
+            row.status != AgentRequestStatus.RESOLVED
+            or not result.ok
+            or not isinstance(result.result, dict)
+            or not result.result
+            or native.get("cancelled")
+            or native.get("stop_error")
+            or not isinstance(schema, dict)
+            or not schema
+        ):
+            return False
+        try:
+            if not validate_agent_result(result, schema, "activation evidence").ok:
+                return False
+        except SchemaError:
+            return False
+        if row.source_kind == SETUP_NAMESPACE:
+            # Managed setup owns its wrapped logical report and persisted outcome.
+            report_json = result.result.get("report_json")
+            if not isinstance(report_json, str):
+                return False
+            try:
+                attempt = SetupAttempt.model_validate(
+                    (row.metadata_json or {}).get(SETUP_NAMESPACE)
+                )
+                report = SetupReport.model_validate_json(report_json)
+            except ModelValidationError:
+                return False
+            return (
+                attempt.project_id == row.project_id
+                and attempt.request_id == row.id
+                and attempt.entry_kind == "managed_ui"
+                and attempt.managed is not None
+                and not attempt.managed.cancel_requested
+                and attempt.status == "success"
+                and report.status == "success"
+            )
+        # The other current native request caller returns its logical status
+        # directly. Unknown/missing outcomes cannot receive positive coverage.
+        return result.result.get("status") == "success"
 
     @staticmethod
     def _validate_roles(sources: list[SetupSource], proof: VerifiedSetup) -> None:
