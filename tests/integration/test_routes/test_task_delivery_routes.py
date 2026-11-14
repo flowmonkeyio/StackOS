@@ -15,6 +15,7 @@ from sqlmodel import Session
 from stackos import task_delivery
 from stackos.context import ContextRepository
 from stackos.host_mcp import service
+from stackos.host_mcp.adapters import claude_code
 from stackos.host_mcp.result import AgentRunResult
 from tests.integration.test_mcp.conftest import MCPClient
 from tests.integration.test_repositories.test_task_delivery import (
@@ -42,6 +43,82 @@ def test_project_defaults_setup_rejects_lossy_responses(api, project_id, respons
     )
     assert snapshot.status_code == 200, snapshot.text
     assert snapshot.json()["tracker"] == saved.json()["data"]
+
+
+@pytest.mark.parametrize("argument_form", ["legacy", "map"])
+@pytest.mark.parametrize("choice", ["inherit", "set", "clear"])
+def test_registered_saved_reasoning_reaches_distinct_native_role_commands(
+    api, project_id, tmp_path, monkeypatch, argument_form, choice
+):
+    def operation(name, **arguments):
+        response = api.post(
+            f"/api/v1/operations/{name}/call",
+            json={"arguments": {"project_id": project_id, **arguments}},
+        )
+        assert response.status_code == 200, response.text
+        return response.json().get("data", response.json())
+
+    saved = {
+        "host_key": "claude-code",
+        "agents": {
+            role: {
+                "name": name,
+                "instructions": name,
+                "model": "claude-sonnet-5-5",
+                "model_reasoning_effort": effort,
+            }
+            for role, name, effort in (
+                ("delivery_agent", "writer", "medium"),
+                ("review_agent", "reviewer", "low"),
+            )
+        },
+    }
+    operation("tracker.configureDelivery", delivery=saved)
+    operation("tracker.createTask", key="reasoning", title="Reasoning")
+    operation("tracker.createTicket", task_key="reasoning", key="work", title="Work")
+    git(tmp_path, "init")
+    commit(tmp_path, "Baseline")
+    finished = Event()
+    api.app.state.scheduler.add_listener(
+        lambda event: finished.set() if event.job_id.startswith("task-delivery:") else None,
+        EVENT_JOB_EXECUTED,
+    )
+    commands = []
+
+    def execute(command, directory, prompt, schema, host, parse, **options):
+        phase = json.loads(prompt)["phase"]
+        commands.append((phase, command))
+        assert directory == tmp_path and options["process_control"] is not None
+        return AgentRunResult(0, thread_id=f"native-{phase}", result=generic_result())
+
+    monkeypatch.setattr(claude_code.claude_mcp, "resolve_claude_bin", lambda: "/fixture/claude")
+    monkeypatch.setattr(claude_code, "subprocess_env_for_cli", lambda _: {})
+    monkeypatch.setattr(claude_code, "execute_json_agent", execute)
+    override = (
+        {}
+        if choice == "inherit"
+        else {"model_reasoning_effort": "high" if choice == "set" else None}
+    )
+    arguments = (
+        {"delivery_agent": override}
+        if argument_form == "legacy"
+        else {"agents": {"delivery_agent": override}}
+    )
+    operation("tracker.startDelivery", task_key="reasoning", project_dir=str(tmp_path), **arguments)
+    assert finished.wait(5), "Disposable native delivery did not retire"
+    state = operation("tracker.get", task_key="reasoning", response_mode="raw")
+    assert state["tasks"][0]["metadata_json"]["delivery"]["status"] == "complete", state
+    assert state["tracker"]["config_json"]["delivery"] == saved
+    expected = {"inherit": "medium", "set": "high", "clear": None}[choice]
+    assert [phase for phase, _ in commands] == ["delivery", "review"]
+    sessions = state["tickets"][0]["completion_evidence_json"]["automatic_delivery"]["sessions"]
+    for (phase, command), effort in zip(commands, (expected, "low"), strict=True):
+        assert command[command.index("--model") + 1] == "claude-sonnet-5-5"
+        assert sessions[phase].get("model_reasoning_effort") == effort
+        if effort is None:
+            assert "--effort" not in command
+        else:
+            assert command[command.index("--effort") + 1] == effort
 
 
 @pytest.mark.parametrize("cleared", [False, True])

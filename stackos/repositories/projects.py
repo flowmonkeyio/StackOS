@@ -930,8 +930,7 @@ class ScheduledJobRepository:
         self, project_id: int, config: dict[str, Any]
     ) -> dict[str, Any] | None:
         """Read-only main-thread preflight, without workflow input or role resolution."""
-        from stackos.host_mcp.service import agent_selection_error, inspect_host
-        from stackos.repositories.tracker import TrackerRepository
+        from stackos.project_setup_execution import resolve_preferences
         from stackos.workflows.run_plan_schema import ensure_run_plan_has_no_secrets
         from stackos.workflows.template_loader import WorkflowTemplateLoader
 
@@ -973,18 +972,16 @@ class ScheduledJobRepository:
                 "Saved automation folder differs from project setup. "
                 "Confirm the configured project folder before saving."
             )
-        defaults = TrackerRepository(self._s).delivery_defaults(project_id=project_id)
-        host_key = execution.get("host_key") or defaults.get("host_key") or "codex"
-        if not isinstance(host_key, str):
-            raise ValidationError("Schedule host_key must be a string")
-        error = agent_selection_error(host_key, sandbox="workspace-write")
-        if error:
-            raise ValidationError(error)
-        host = inspect_host(host_key)
-        # Registration repair concerns the host's global MCP entry, not native
-        # execution availability. Explicit task routing is validated separately.
-        if not host.available:
-            raise ValidationError(f"Native host needs setup: {host.message}")
+        # Use the same saved main-agent choices as setup. A schedule's explicit
+        # host remains authoritative; with no preference keep the legacy Codex
+        # fallback rather than setup's available-host discovery.
+        selection = resolve_preferences(
+            self._s,
+            project_id,
+            {"host_key": execution["host_key"]} if execution.get("host_key") else {},
+            fallback_host_key="codex",
+        )
+        host_key = selection["host_key"]
         reference = execution.get("mcp_config_ref")
         if reference is not None:
             if host_key != "codex":
@@ -996,7 +993,7 @@ class ScheduledJobRepository:
             except ValueError as exc:
                 raise ValidationError(str(exc)) from None
         return {
-            "host_key": host_key,
+            **selection,
             "project_dir": str(directory),
             **({"mcp_config_ref": reference} if reference is not None else {}),
         }

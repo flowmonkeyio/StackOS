@@ -20,6 +20,7 @@ from stackos.jobs.scheduler import build_scheduler
 from stackos.jobs.workflow_schedules import WorkflowScheduleRuntime
 from stackos.repositories.agent_requests import AgentRequestRepository
 from stackos.repositories.projects import ProjectRepository, ScheduledJobRepository
+from stackos.repositories.tracker import TrackerRepository
 from tests.helpers.sqlite_schema import capture_database_snapshot, restore_database_snapshot
 from tests.integration.test_repositories.test_schedule_main_thread import bind_folder
 from tests.integration.test_repositories.test_schedule_main_thread import (
@@ -57,8 +58,9 @@ def occurrence(engine, tmp_path, monkeypatch, native_ready):
     runtime.connect()
     calls = []
 
-    def runner(directory, instructions, prompt, schema, on_session, **options):
-        on_session(f"native-main-{len(calls) + 1}")
+    def runner(directory, instructions, prompt, schema, on_session=None, **options):
+        if on_session:
+            on_session(f"native-main-{len(calls) + 1}")
         calls.append((str(directory), instructions, json.loads(prompt), schema, options))
         return AgentRunResult(
             0,
@@ -81,6 +83,75 @@ async def fire(occurrence):
     registration = runtime.registrations[row_id]
     clock[0] = registration.due
     await runtime._fire(row_id=row_id, registration=registration)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("host", ["codex", "hermes"])
+async def test_saved_main_selection_is_frozen_per_occurrence_and_fresh_on_next_tick(
+    occurrence, monkeypatch, host
+):
+    row_id, project_id, runtime, _clock, engine, calls = occurrence
+    original = service.run_agent
+    saved = {
+        "host_key": host,
+        "provider": "configured",
+        **(
+            {"model": "gpt-6.1-sol", "model_reasoning_effort": "high"}
+            if host == "codex"
+            else {"model": "configured-model", "profile": "project-main"}
+        ),
+    }
+    changed = {
+        **saved,
+        **(
+            {"model": "gpt-6-astra", "model_reasoning_effort": "low"}
+            if host == "codex"
+            else {"model": "next-model", "profile": "next-profile"}
+        ),
+    }
+    with Session(engine) as session:
+        TrackerRepository(session).configure_main_agent(project_id=project_id, preferences=saved)
+
+    def after_admission(*args, **kwargs):
+        # Preference writes during native preparation cannot alter the admitted
+        # local settings or the service-owned launch snapshot.
+        with Session(engine) as session:
+            TrackerRepository(session).configure_main_agent(
+                project_id=project_id, preferences=changed
+            )
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(service, "run_agent", after_admission)
+    due = runtime.registrations[row_id].due
+    await fire(occurrence)
+    with Session(engine) as session:
+        first = session.exec(select(AgentRequest)).one()
+        snapshot = first.metadata_json["native_execution"]
+        assert snapshot["snapshot"]["model"] == saved["model"]
+        assert snapshot["snapshot"]["host_key"] == host
+        assert snapshot["snapshot"]["model_reasoning_effort"] == saved.get("model_reasoning_effort")
+        assert snapshot["snapshot"]["provider"] == "configured"
+        assert snapshot["snapshot"]["profile"] == saved.get("profile")
+        assert snapshot["snapshot"]["native_settings"] == (
+            {"model_reasoning_effort": "high"} if host == "codex" else None
+        )
+        # The existing occurrence-key fence refuses re-execution after defaults
+        # change. There is no schedule retry/resume lifecycle to introduce.
+        await runtime._launch(session.get(ScheduledJob, row_id), due, lambda: True)
+        session.expire_all()
+        assert session.get(AgentRequest, first.id).metadata_json["native_execution"] == snapshot
+        assert len(calls) == 1
+    await fire(occurrence)
+    assert calls[0][4]["model"] == saved["model"]
+    assert calls[1][4]["model"] == changed["model"]
+    assert calls[1][4]["provider"] == "configured"
+    if host == "codex":
+        assert calls[0][4]["native_settings"] == {"model_reasoning_effort": "high"}
+        assert calls[1][4]["native_settings"] == {"model_reasoning_effort": "low"}
+        assert "profile" not in calls[1][4]
+    else:
+        assert calls[0][4]["profile"] == "project-main"
+        assert calls[1][4]["profile"] == "next-profile"
 
 
 @pytest.mark.asyncio
