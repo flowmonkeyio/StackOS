@@ -28,17 +28,18 @@ from stackos.db.model_enums import (
 
 
 class TaskDeliveryCapacity(SQLModel, table=True):
-    """One local daemon preference, shared by all projects in this database."""
+    """A project's admission preference in the existing backed-up database."""
 
     __tablename__ = "task_delivery_capacity"
     __table_args__ = (
-        CheckConstraint("id = 1", name="ck_task_delivery_capacity_singleton"),
         CheckConstraint(
             "concurrent_tasks BETWEEN 1 AND 32", name="ck_task_delivery_capacity_limit"
         ),
     )
 
-    id: int = Field(default=1, primary_key=True)
+    project_id: int = Field(
+        sa_column=Column(ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True)
+    )
     concurrent_tasks: int = Field(default=3, nullable=False)
 
 

@@ -86,7 +86,7 @@ def test_existing_receipts_backfill_atomically(settings):
 def test_product_merge_rebuilds_cancelled_inputs_without_rewriting_sources(settings, prior_head):
     config = alembic_config(settings)
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["0048_product_receipts_merge"]
+    assert script.get_heads() == ["0049_project_task_capacity"]
     assert script.get_revision("0048_product_receipts_merge").down_revision == (
         "0046_receipt_trend_bounds",
         "0047_patterns_setup_merge",
@@ -117,7 +117,7 @@ def test_product_merge_rebuilds_cancelled_inputs_without_rewriting_sources(setti
     upgrade_to_head(settings)
     with engine.connect() as connection:
         assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").all() == [
-            ("0048_product_receipts_merge",)
+            ("0049_project_task_capacity",)
         ]
         assert connection.exec_driver_sql("PRAGMA foreign_key_check").all() == []
     if prior_head != "base":

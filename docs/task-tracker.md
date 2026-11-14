@@ -75,8 +75,18 @@ Runs, Board and Graph share the same confirmation and refresh their current
 transport-backed projections. A plain task has no inferred run-plan abort action.
 
 The planner chooses this optional path by calling `tracker.startDelivery` after
-preparing a task's self-contained tickets and dependencies. The existing
-terminal-managed path continues to use the normal tracker operations.
+preparing a task's self-contained tickets and dependencies. Backlog is
+unscheduled; Todo placement alone grants no execution authority. Only a prepared,
+explicitly enabled automatic handoff enters the queue. Fresh ordinary work must
+be Todo before the handoff writes queued metadata; neither that metadata nor a
+manually active `in-progress` task manufactures eligibility. A valid running
+workflow entry step permits its first handoff without resetting lifecycle or
+invocation history. Queued work before its first actual invocation projects to
+Todo, even if its workflow is already started; already-invoked work between calls
+stays In progress. Stopped work requires explicit authorized recovery and
+rehandoff, preserving sessions, receipts, attempts and consumed repair allowance.
+Deferred work keeps its named resume condition and explicit resume owner. The
+existing terminal-managed path continues to use the normal tracker operations.
 
 Project agent defaults live in `TaskTracker.config_json.delivery`. An operator
 saves them through local-admin `tracker.configureDelivery` setup at
@@ -309,8 +319,11 @@ remains an explicit reviewed current-project action; active snapshots stay froze
 The call returns task/job/status refs immediately. Each task has its own memory
 scheduler job (`task-delivery:<project_id>:<task_id>`). Distinct canonical working
 directories can execute concurrently, within this local daemon's persisted task
-capacity (default 3, supported range 1..32). Task jobs use the separate bounded
-`task-delivery` executor; backup and other `long` jobs do not consume task slots.
+capacity for each project (default 3, supported range 1..32). There is no aggregate
+global project-task cap. Task jobs use bounded per-project `task-delivery:<project_id>`
+executors; backup and other `long` jobs do not consume task slots. Host child/reviewer
+slots and the terminal-managed default of three active ticket assignments are
+separate from automatic project task limits.
 Tickets and delivery/review calls within
 one task remain serial until all task work completes or execution stops:
 
@@ -331,10 +344,11 @@ and filesystem aliases conflict. Separate Git worktrees sharing repository
 metadata remain distinct; Git is optional. No worktree creation or branch merge
 is performed by the runner.
 
-### Local task capacity
+### Project task capacity
 
-Managed project setup requests use this same local capacity preference, launch
-lock, memory executor and drain. Counts include their queued work and admitted
+Managed project setup requests use their project's same capacity preference,
+launch lock, memory executor and drain, without a tracker Todo requirement.
+Counts include their queued work and admitted
 callbacks through retirement. They do not create tracker tasks or business runs.
 Setup cancellation and unconfirmed prior-daemon invocations retain their slots
 until the existing native owner establishes retirement; an elapsed timeout is
@@ -348,31 +362,39 @@ managed admissions; queued/running request snapshots remain frozen. Model choice
 and the optional recommendation come from the host capability catalog. An explicit
 unavailable host or invalid choice rejects without substitution.
 
-`tracker.deliveryCapacity` reads the effective `configured_limit`, admitted
-`running_count`, waiting `queued_count`, supported bounds and
-`scope: "local-user-daemon"`. `tracker.setDeliveryCapacity` explicitly saves
-`{"concurrent_tasks": 6}` and returns that same readback in its write envelope.
-Both are local-admin REST/CLI operations; ordinary MCP and workflow/run-token
-authority cannot use them. There is no project selector or per-project override.
+`tracker.deliveryCapacity` reads `scope: "project"`, supported bounds and a
+`projects` array. Each row contains `project_id`, `project_name`, `project_slug`,
+effective `configured_limit`, admitted `running_count` and waiting `queued_count`.
+An optional `project_id` filters the read to the current project; omission reads
+all projects. `tracker.setDeliveryCapacity` atomically saves 1..100 unique project
+updates, for example `{"updates": [{"project_id": 1, "max_concurrent_tasks": 6}]}`,
+and returns the all-project readback in its write envelope. Each limit is an integer
+from 1 through 32. Both are local-admin REST/CLI operations; ordinary MCP and
+workflow/run-token authority cannot use them.
 For example: `stackos ops call tracker.setDeliveryCapacity --input capacity.json`.
 
-Global Overview and project Home expose this same setting through the header
-capacity control (for example, `2 of 3 running`). Open it to edit the limit with
-the input or stepper, then Save. The effective value updates from server
+Overview exposes all project rows through the shared **Task queues** control;
+project Home and Board show only their current project. Rows show Project,
+Running, Waiting and Run at once. Edit limits with the inputs or steppers, then
+Save changes. The effective values update from server
 readback; a failed/invalid save keeps the draft and error. Cancel, Escape or
 outside dismissal discards unsaved edits. A limit below the running count leaves
 current work running and delays new admission. Opening the control, refreshing,
 or changing projects only reads configuration.
 
-One singleton preference row in the existing data-directory database owns this
-limit across all projects. It survives ordinary restart/install/upgrade and is
-covered by the existing encrypted database backup/export; there is no separate
+One row per permanent project ID in the existing data-directory database owns
+each limit. Migration preserves the former saved value for existing projects;
+new projects default to 3. Reads do not create preference rows. Limits survive
+ordinary restart/install/upgrade and are covered by the existing encrypted
+database backup/export; there is no separate
 preference file or backup path. Different data directories remain independent.
 This is not account isolation for people sharing one daemon or a cross-device quota.
 
 A successful save commits before admission changes. A failed commit leaves the
-previous limit effective. Raising drains the existing queued task metadata;
-lowering keeps already admitted work and waits for slots before further admission.
+previous limits effective. Raising drains existing queued task metadata;
+lowering affects future admissions only. Every admitted/running task continues
+unchanged, even above the new limit; admission waits for room. Capacity edits
+never stop, abort, cancel, restart or evict work and do not affect other projects.
 `running_count` includes admitted callbacks starting or retiring, so it can exceed
 a newly lowered limit. Backup workers and tasks merely waiting for a slot are
 excluded. The existing launch lock serializes slot reservations across projects.

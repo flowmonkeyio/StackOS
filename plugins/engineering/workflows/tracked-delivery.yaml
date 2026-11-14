@@ -1,7 +1,7 @@
 schema_version: stackos.workflow-template.v1
 key: engineering.tracked-delivery
 name: Engineering Tracked Delivery
-version: 0.8.4
+version: 0.8.5
 description: Reusable SDLC workflow for requirements, project-native design and proof planning, executable ticket breakdown, delegated delivery with immediate independent review, integrated verification, and truthful release closeout.
 domain: engineering
 owner:
@@ -265,6 +265,23 @@ policies:
       already-started work between calls stays In progress. Native run-plan
       mirror ownership, explicit handoff/requeue and independent review remain
       authoritative; presentation labels grant no lifecycle writes.
+      Apply prepared Todo admission and independent project task limits.
+      Backlog is unscheduled; Todo placement alone grants no execution authority.
+      Only prepared, explicitly enabled tracker.startDelivery handoffs enter the queue.
+      Check saved placement before queue metadata can change its projection;
+      preserve valid first workflow handoffs and prior invocation history.
+      Stopped work requires explicit authorized recovery and rehandoff, retaining
+      sessions, receipts, attempts and consumed repair allowance.
+      Each project has its own persisted task limit (default 3, range 1..32),
+      without an aggregate global project-task cap. Managed setup shares its
+      project's capacity owner without a tracker Todo requirement; directory
+      exclusion and callback retirement fences remain intact.
+      Lowering a limit affects future admissions only: every admitted/running
+      task continues unchanged, actual counts may exceed the limit, and new
+      admission waits for room. Never stop, abort, cancel, restart or evict work
+      because a limit decreased. Other projects are unaffected.
+      Host child/reviewer slots and the terminal-managed default of three active
+      ticket assignments are separate from project task limits.
   - key: main_agent_accountability
     kind: orchestration
     description: Main owns scope admission and final claims. Terminal-managed delivery keeps workflow/tracker writes and acceptance with main. Explicit tracker.startDelivery handoff delegates all remaining dependency-ready task work to StackOS, including integration and frozen workflow gates through assigned agents. Ordinary tickets require independent review; RunPlanRepository alone records mirror/plan/run lifecycle. Specialists return evidence and never complete their own tickets.

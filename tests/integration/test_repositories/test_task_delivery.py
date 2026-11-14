@@ -1451,10 +1451,17 @@ def native_source_fixtures(monkeypatch):
 class QueuedScheduler:
     def __init__(self) -> None:
         self.jobs: list[tuple[Any, dict[str, Any]]] = []
+        self._executors = {}
+        self._executors_lock = RLock()
+
+    def add_executor(self, executor, *, alias):
+        assert alias not in self._executors
+        self._executors[alias] = executor
 
     def add_job(self, function, **options) -> None:
         assert options["jobstore"] == "memory"
-        assert options["executor"] == "task-delivery"
+        assert options["executor"] == f"task-delivery:{options['kwargs']['project_id']}"
+        assert options["executor"] in self._executors
         self.jobs.append((function, options))
 
     def run(self) -> None:
@@ -1799,7 +1806,7 @@ def test_scheduling_failure_releases_only_its_directory(session, project_id, tmp
 
     prepared_task(session, project_id)
 
-    class UnavailableScheduler:
+    class UnavailableScheduler(QueuedScheduler):
         def add_job(self, *args, **kwargs):
             raise RuntimeError("Fixture scheduling failure")
 
@@ -4065,6 +4072,9 @@ def test_abort_during_scheduler_registration_preserves_only_current_handoff(
 
     class BarrierScheduler:
         count = 0
+        _executors = actual._executors
+        _executors_lock = actual._executors_lock
+        add_executor = actual.add_executor
 
         def add_job(self, function, **options):
             with lock:

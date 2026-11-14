@@ -99,7 +99,7 @@ presets:
         - Use preparation specialists when they add useful depth; the main agent may perform concise preparation without spawning an agent for every workflow step.
         - Prepare design and proof before ticket breakdown. Review requirements, design, proof, decomposition, dependencies and prerequisites together at delivery readiness.
         - Keep the main thread's model and reasoning settings. Select available child models and effort per assignment from complexity, risk, context/tool needs, operator preferences and observed performance.
-        - Plan concurrency around independent ownership and available review capacity, with at most three active ticket assignments by default, including implementation, queued review, review and repair.
+        - Plan terminal-managed concurrency around independent ownership and available host review capacity, with at most three active ticket assignments by default, including implementation, queued review, review and repair. Host child/reviewer slots and this ticket-assignment default are separate from each project's automatic task limit; they impose no aggregate global project-task cap.
         - Require a separate independent reviewer for every executable child ticket, including explicitly ticketed discovery. Generated workflow step mirrors use their phase gates, not another ticket reviewer.
         - Keep ticket acceptance distinct from overall requirement acceptance; final verification and review own assembled behavior and remaining integration obligations.
         - Prove the requested end-to-end flow, directly affected existing consumers and relevant failure/recovery transitions with the smallest convincing checks. Follow a demonstrated shared cause through implicated adjacent consumers within the assigned outcome, not a general audit. Stop expanding once assigned obligations are answered unless new evidence, a material change or a mandatory gate warrants more. Do not impose broad suites on every child or an exhaustive state matrix; retain required integration and final signoff.
@@ -132,6 +132,24 @@ presets:
         - Resolve host slot and model constraints before spawning. Reserve or reclaim capacity for an independent reviewer; reuse bounded delivery/reviewer slots when appropriate. Idle or interrupted agents do not necessarily release slots. Record requested/effective selection and supported fallback truthfully.
         - Dispatch ready reviews at the next scheduling opportunity before new delivery; queue them durably if the reviewer is busy. Never retask a busy reviewer or wait for a whole implementation batch.
         - Automatic delivery permits up to three automatic repair passes per ticket (initial delivery plus three repairs) after persisted scoped ordinary rejection, in the same native delivery session and same independent review session. Preserve repair_count across explicit requeue; never reset it. When repair_count is absent, historical repair_pass_used=true counts as one pass. Integration-origin correction after child approval may requeue at repair_count=3 without incrementing it; a subsequent ordinary rejection permits no fourth ordinary repair. Blocked required verification, failure of the assigned agent's own launch/access/model/resume, candidate mismatch or rejection after the third repair stops the task without fallback. Each source change/repair needs a separate scoped descendant commit and independent exact-commit review; return full outputs.commit_sha and validate clean unchanged HEAD. Observation may cite unchanged HEAD; non-Git work needs no fabricated commit. Use normal host approval for protected writes; stop denied writes without bypass.
+        - >-
+          Apply prepared Todo admission and independent project task limits.
+          Backlog is unscheduled; Todo placement alone grants no execution authority.
+          Only prepared, explicitly enabled tracker.startDelivery handoffs enter the queue.
+          Check saved placement before queue metadata can change its projection;
+          preserve valid first workflow handoffs and prior invocation history.
+          Stopped work requires explicit authorized recovery and rehandoff, retaining
+          sessions, receipts, attempts and consumed repair allowance.
+          Each project has its own persisted task limit (default 3, range 1..32),
+          without an aggregate global project-task cap. Managed setup shares its
+          project's capacity owner without a tracker Todo requirement; directory
+          exclusion and callback retirement fences remain intact.
+          Lowering a limit affects future admissions only: every admitted/running
+          task continues unchanged, actual counts may exceed the limit, and new
+          admission waits for room. Never stop, abort, cancel, restart or evict work
+          because a limit decreased. Other projects are unaffected.
+          Host child/reviewer slots and the terminal-managed default of three active
+          ticket assignments are separate from project task limits.
         - Fresh Codex admission selects exact project source_ref bindings in agents by role; resolve source instructions/model/effort/supported restrictions once, with omitted values inheriting task then project then host settings. Source fields never increase authority. Non-Codex inline contracts remain supported. Explicit task agent_assignments win over frozen step assignments, then uniquely applicable selected declared roles; ambiguity requires selection. Ordinary tickets retain a distinct reviewer. Queued/running and resumed native snapshots stay frozen; future admissions read current sources. Use tracker.configureDelivery adopt_sources preview/write with expected digests for explicit current-project adoption, preserving unrelated settings and history; retain references instead of editable copied Codex instructions after readback.
         - The shared host capability owner selects test-capable review execution mode and native approval review; Gemini and Hermes use normal native permissions with review-only instructions and no enforced read-only isolation. Report the actual mode and limitations.
         - For parallel engineering tasks, prepare clean distinct working trees at accepted bases with disjoint ownership and a named explicit branch-integration owner. Use task-only mcp_config_ref path/SHA256 for supported native routing; --cd or a profile alone cannot prove MCP targeting. Preserve executables and auth; use the project's canonical Serena wrapper with unique per-tree project/name/port/state where applicable, never a shim fork or global config edit. Bind each actual tree through its own StackOS bridge to the same approved project without bootstrap/rebind, and read back exact roots and distinct bindings. Prove fresh/resumed delivery and independent review tool targets; source configuration is not live proof. Keep integration and fixture teardown explicit and scoped; never auto-merge branches.
@@ -227,6 +245,7 @@ presets:
       delegation:
         path: terminal-managed
         max_active_tickets: 3
+        capacity_scope: Terminal-managed ticket assignments within actual host child/reviewer capacity, not a global or per-project automatic task limit.
         count_includes: [implementation, queued_review, review, repair]
         durable_owner: main_agent
         reviewer_priority: before_new_delivery

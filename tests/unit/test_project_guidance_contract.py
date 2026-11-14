@@ -191,6 +191,31 @@ def test_focused_reads_reach_main_and_each_receiving_role() -> None:
         assert guidance in local, path
 
 
+def test_project_queue_rules_reach_existing_generic_and_local_owners() -> None:
+    # Availability/parity only. The bounded queue rehearsal and real admission
+    # fixtures separately check decisions; matching text is not behavior proof.
+    skill = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
+    queue_rule = next(
+        rule
+        for rule in skill.operating_contract.must_do
+        if rule.startswith("Apply prepared Todo admission and independent project task limits")
+    )
+    local_main = (ROOT / ".codex/orchestrator/sdlc-delivery-orchestrator.md").read_text()
+    mechanics = (ROOT / "plugins/stackos/skills/stackos/SKILL.md").read_text()
+    assert queue_rule in " ".join(local_main.split())
+    assert queue_rule in " ".join(mechanics.split())
+    workflow = yaml.safe_load(
+        (ROOT / "plugins/engineering/workflows/tracked-delivery.yaml").read_text()
+    )
+    status_policy = next(p for p in workflow["policies"] if p["key"] == "status_semantics")
+    assert queue_rule in status_policy["description"]
+    for path in sorted((ROOT / ".codex/agents").glob("sdlc-*.toml")):
+        role = path.stem.removeprefix("sdlc-")
+        preset = AgentPresetLoader().describe_preset(key=f"stackos.sdlc.{role}").preset
+        assert queue_rule in " ".join(preset.project_adaptation.required_agent_action.split())
+        assert queue_rule in tomllib.loads(path.read_text())["developer_instructions"], path
+
+
 @pytest.mark.parametrize("owner", ["planning", "orchestrator"])
 def test_cross_task_inputs_reach_planning_and_dispatch_consumers(owner: str) -> None:
     if owner == "planning":

@@ -2,7 +2,7 @@
 
 Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.21
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
-Workflow: `engineering.tracked-delivery` v0.8.4 source contract
+Workflow: `engineering.tracked-delivery` v0.8.5 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
 
 This is the StackOS repository adaptation, not a subagent. The main agent owns
@@ -67,6 +67,8 @@ set delivery metadata to manufacture execution. Run-plan mirrors, independent
 review, repair allowance and automatic/terminal-managed writer boundaries remain
 unchanged. Source-only guidance changes do not refresh frozen native sessions;
 saved adoption and installed activation retain their separate main-owned proof.
+
+Apply prepared Todo admission and independent project task limits. Backlog is unscheduled; Todo placement alone grants no execution authority. Only prepared, explicitly enabled tracker.startDelivery handoffs enter the queue. Check saved placement before queue metadata can change its projection; preserve valid first workflow handoffs and prior invocation history. Stopped work requires explicit authorized recovery and rehandoff, retaining sessions, receipts, attempts and consumed repair allowance. Each project has its own persisted task limit (default 3, range 1..32), without an aggregate global project-task cap. Managed setup shares its project's capacity owner without a tracker Todo requirement; directory exclusion and callback retirement fences remain intact. Lowering a limit affects future admissions only: every admitted/running task continues unchanged, actual counts may exceed the limit, and new admission waits for room. Never stop, abort, cancel, restart or evict work because a limit decreased. Other projects are unaffected. Host child/reviewer slots and the terminal-managed default of three active ticket assignments are separate from project task limits.
 
 ## Project Boundaries And Calibration
 
@@ -281,8 +283,10 @@ The following dispatch and acceptance steps apply to terminal-managed delivery:
    status and acceptance evidence during tracked delegation. Assign explicit
    unassigned keys. `tracker.next` can include active work and `tracker.pick`
    is not an exclusive lease; specialists do not claim a competing work stream.
-2. Allow at most three active ticket lifecycles, counting implementation,
-   queued review, review and repair. Inspect real host capacity before spawning.
+2. By default, allow at most three active ticket lifecycles, counting implementation,
+   queued review, review and repair. This terminal-managed ticket default and host
+   child/reviewer slots are separate from automatic project task limits. Inspect
+   real host capacity before spawning.
    Reserve or reclaim an independent reviewer slot. If only three child slots
    are available and idle threads cannot retire, use two implementers and one
    reusable reviewer. Maximum concurrency is not required utilization.

@@ -544,16 +544,29 @@ strict snapshots, intent-bound idempotency and raw save receipts. See
 `tracker.deliveryCapacity` and `tracker.setDeliveryCapacity` use the same
 registry-owned local-admin console boundary as other explicit settings controls.
 They are REST/CLI-only, browser-safe operations with compact/raw readback and no
-ack mode. Neither accepts a project selector or workflow run-token authority.
-The write accepts only a strict integer `concurrent_tasks` from 1 through 32.
-Readback preserves `scope: "local-user-daemon"`, `configured_limit`,
-`running_count`, `queued_count`, `supported_min` and `supported_max`.
+ack mode. Neither accepts workflow run-token authority. Read with `{}` for all
+projects or `{"project_id": 7}` for one project. Both return `scope: "project"`,
+`projects`, `supported_min: 1` and `supported_max: 32`. Each project row preserves
+`project_id`, `project_name`, `project_slug`, `configured_limit`, `running_count`
+and `queued_count`. Running includes admitted task callbacks and managed setup
+reservations through retirement, even above a lowered limit. Waiting counts
+current-daemon queued work without a reservation, including managed setup.
 
-The existing database stores one atomic preference shared across the daemon's
-projects (default 3). A successful save affects future admission; lowering does
-not cancel running work. The bounded task executor is independent of backup
-`long` workers. See [local task capacity](./task-tracker.md#local-task-capacity)
-for count semantics, persistence, backup coverage and recovery boundaries.
+Save with `{"updates": [{"project_id": 7, "max_concurrent_tasks": 6}]}`. The array
+accepts 1..100 distinct positive project IDs and strict integer limits 1..32.
+Unknown projects or invalid input reject the entire request. Only changed rows
+are written, in one transaction; drain runs only after a successful changed-row
+commit. Failed commit leaves every prior limit effective and triggers no drain.
+Lowering affects future admission without stopping or cancelling admitted work.
+
+The existing capacity table owns each project's preference. Migration copies the
+saved legacy limit (or default 3) to every existing project, including inactive
+ones; new projects default to 3 without read-side writes. Permanent project
+deletion removes only its capacity row. Ordinary restart/install/upgrade and
+encrypted database backup retain the settings. No separate settings file,
+global quota, ordinary MCP mutation surface or workflow authority is added.
+Downgrade to the singleton schema is allowed only when all effective project
+limits agree; divergent limits reject before schema or preference changes.
 
 ## Local backup administration
 

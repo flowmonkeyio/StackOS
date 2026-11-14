@@ -336,7 +336,10 @@ def operation_specs() -> list[OperationSpec]:
                 ),
             ),
             purpose=(
-                "Select taskwide dependency-driven execution for a prepared task. "
+                "Select taskwide dependency-driven execution for prepared Todo work. "
+                "Placement alone grants no execution authority; Backlog stays unscheduled. "
+                "Valid running workflow handoffs and explicit retained-handoff recovery "
+                "preserve their execution history. "
                 "Resolve generic tracker delivery defaults with task overrides by role once. "
                 "Ordinary work retains independent review and up to three "
                 "same-session scoped repairs. "
@@ -347,7 +350,9 @@ def operation_specs() -> list[OperationSpec]:
                 "Prepare self-contained tickets and dependencies in an existing working directory. "
                 "The canonical directory is retained through rehandoff; queued/running task "
                 "writers cannot share it. Distinct directories may execute concurrently within "
-                "the existing host capacity, including worktrees sharing Git metadata. "
+                "each project's independent saved task limit, including worktrees sharing "
+                "Git metadata. "
+                "Lowering a limit only delays new admission; admitted work continues unchanged. "
                 "Git is optional; supplied candidate evidence requires clean matching HEAD. "
                 "Source-change and repair commit obligations come from project guidance.",
                 "Optional task-only mcp_config_ref supplies an absolute outside-Git TOML path "

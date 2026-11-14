@@ -75,6 +75,13 @@ requests instead.
   attempts stay outside managed admission. Missing or incompatible ownership
   scalars return bounded project/request repair context. This does
   not delete history, recreate claims or remove SQLite's JSON predicate work.
+- Capacity reads select project identity and limits once, group task reservation
+  counts by project in SQL, and read managed setup ownership scalars once for the
+  whole response. An optional project filter applies to all three queries.
+  Project count does not multiply setup-history reads, and full task metadata,
+  setup reports and native output are never selected for these counts. Opening
+  or refreshing capacity creates no preference rows and requires no Board,
+  Graph or metrics hydration.
 - The global project shell and Plugins directory request compact plugin
   navigation metadata. The directory reads the complete schema-free
   `action.list` inventory with `include_unavailable_integrations=true` and

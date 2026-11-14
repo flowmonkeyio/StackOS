@@ -3804,6 +3804,11 @@ export interface components {
              */
             idempotency_key: string | null;
             /**
+             * Project Id
+             * @default null
+             */
+            project_id: number | null;
+            /**
              * Response Mode
              * @default compact
              * @enum {string}
@@ -3817,18 +3822,14 @@ export interface components {
         };
         /** DeliveryCapacityOut */
         DeliveryCapacityOut: {
-            /** Configured Limit */
-            configured_limit: number;
-            /** Queued Count */
-            queued_count: number;
-            /** Running Count */
-            running_count: number;
+            /** Projects */
+            projects: components["schemas"]["ProjectDeliveryCapacityOut"][];
             /**
              * Scope
-             * @default local-user-daemon
+             * @default project
              * @constant
              */
-            scope: "local-user-daemon";
+            scope: "project";
             /**
              * Supported Max
              * @default 32
@@ -6655,6 +6656,13 @@ export interface components {
             run_token: string | null;
             source_ref: components["schemas"]["AgentSourceRef"];
         };
+        /** ProjectCapacityUpdate */
+        ProjectCapacityUpdate: {
+            /** Max Concurrent Tasks */
+            max_concurrent_tasks: number;
+            /** Project Id */
+            project_id: number;
+        };
         /** ProjectCleanupResult */
         ProjectCleanupResult: {
             /**
@@ -6761,6 +6769,21 @@ export interface components {
              * @enum {string}
              */
             scope: ProjectDeleteInputScope;
+        };
+        /** ProjectDeliveryCapacityOut */
+        ProjectDeliveryCapacityOut: {
+            /** Configured Limit */
+            configured_limit: number;
+            /** Project Id */
+            project_id: number;
+            /** Project Name */
+            project_name: string;
+            /** Project Slug */
+            project_slug: string;
+            /** Queued Count */
+            queued_count: number;
+            /** Running Count */
+            running_count: number;
         };
         /** ProjectEventOut */
         ProjectEventOut: {
@@ -8292,8 +8315,6 @@ export interface components {
         };
         /** SetDeliveryCapacityInput */
         SetDeliveryCapacityInput: {
-            /** Concurrent Tasks */
-            concurrent_tasks: number;
             /**
              * Expected Etag
              * @default null
@@ -8315,6 +8336,8 @@ export interface components {
              * @default null
              */
             run_token: string | null;
+            /** Updates */
+            updates: components["schemas"]["ProjectCapacityUpdate"][];
         };
         /** SetupAnswer */
         SetupAnswer: {
@@ -11608,10 +11631,12 @@ export type SchemaProjectAgentCreateInput = components['schemas']['ProjectAgentC
 export type SchemaProjectAgentGetInput = components['schemas']['ProjectAgentGetInput'];
 export type SchemaProjectAgentScope = components['schemas']['ProjectAgentScope'];
 export type SchemaProjectAgentUpdateInput = components['schemas']['ProjectAgentUpdateInput'];
+export type SchemaProjectCapacityUpdate = components['schemas']['ProjectCapacityUpdate'];
 export type SchemaProjectCleanupResult = components['schemas']['ProjectCleanupResult'];
 export type SchemaProjectCreateRequest = components['schemas']['ProjectCreateRequest'];
 export type SchemaProjectDeleteConfirmation = components['schemas']['ProjectDeleteConfirmation'];
 export type SchemaProjectDeleteInput = components['schemas']['ProjectDeleteInput'];
+export type SchemaProjectDeliveryCapacityOut = components['schemas']['ProjectDeliveryCapacityOut'];
 export type SchemaProjectEventOut = components['schemas']['ProjectEventOut'];
 export type SchemaProjectFileOwnershipInput = components['schemas']['ProjectFileOwnershipInput'];
 export type SchemaProjectFileOwnershipResult = components['schemas']['ProjectFileOwnershipResult'];

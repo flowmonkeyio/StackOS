@@ -25,7 +25,7 @@ from stackos.operations.tracker.capacity import SetDeliveryCapacityInput, set_ca
 from stackos.repositories.base import ConflictError, ValidationError
 from stackos.repositories.projects import ProjectRepository
 from stackos.repositories.tracker import TrackerRepository
-from stackos.task_capacity import configured_limit, save_limit
+from stackos.task_capacity import configured_limit, save_limits
 from tests.integration.test_repositories.test_task_delivery import (
     QueuedScheduler,
     delivery_engine,  # noqa: F401
@@ -39,7 +39,7 @@ from tests.integration.test_repositories.test_task_delivery import (
 
 def capacity(session, scheduler):
     session.expire_all()
-    return task_delivery.delivery_capacity(session, scheduler)
+    return task_delivery.delivery_capacity(session, scheduler)["projects"][0]
 
 
 @pytest.fixture
@@ -48,23 +48,29 @@ def capacity_session(delivery_engine):
         yield session
 
 
-def save(session, scheduler, value):
-    return asyncio.run(
-        set_capacity(
-            SetDeliveryCapacityInput(concurrent_tasks=value),
-            MCPContext(
-                session=session,
-                request_id="capacity-fixture",
-                extras={
-                    "surface": "rest",
-                    "trusted_local_admin": True,
-                    "scheduler": scheduler,
-                    "session_factory": lambda: Session(session.get_bind()),
-                },
-            ),
-            None,
+def save(session, scheduler, project_id, value):
+    return (
+        asyncio.run(
+            set_capacity(
+                SetDeliveryCapacityInput(
+                    updates=[{"project_id": project_id, "max_concurrent_tasks": value}]
+                ),
+                MCPContext(
+                    session=session,
+                    request_id="capacity-fixture",
+                    extras={
+                        "surface": "rest",
+                        "trusted_local_admin": True,
+                        "scheduler": scheduler,
+                        "session_factory": lambda: Session(session.get_bind()),
+                    },
+                ),
+                None,
+            )
         )
-    ).data.model_dump()
+        .data.projects[0]
+        .model_dump()
+    )
 
 
 def task_rows(session):
@@ -86,7 +92,7 @@ def test_capacity_raise_lower_drain_cross_project_and_preserve_evidence(
     scheduler = QueuedScheduler()
     receipts = []
     for index in range(7):
-        project = project_id if index % 2 == 0 else other
+        project = project_id
         key = f"work-{index}"
         root = tmp_path / key
         root.mkdir()
@@ -114,17 +120,17 @@ def test_capacity_raise_lower_drain_cross_project_and_preserve_evidence(
         receipts.append((project, key, submit(session, project, root, scheduler, task_key=key)))
     before = task_rows(session)
     assert capacity(session, scheduler) == {
-        "scope": "local-user-daemon",
+        "project_id": project_id,
+        "project_name": session.get(Project, project_id).name,
+        "project_slug": session.get(Project, project_id).slug,
         "configured_limit": 3,
         "running_count": 3,
         "queued_count": 4,
-        "supported_min": 1,
-        "supported_max": 32,
     }
     assert len(scheduler.jobs) == 3
-    assert save(session, scheduler, 5)["running_count"] == 5
+    assert save(session, scheduler, project_id, 5)["running_count"] == 5
     assert len(scheduler.jobs) == 5
-    assert save(session, scheduler, 1)["running_count"] == 5
+    assert save(session, scheduler, project_id, 1)["running_count"] == 5
     assert len(scheduler.jobs) == 5
     # Actual run_delivery finally releases slots; empty-work fixtures never call a host.
     for _ in range(4):
@@ -134,7 +140,8 @@ def test_capacity_raise_lower_drain_cross_project_and_preserve_evidence(
     scheduler.run()
     assert capacity(session, scheduler)["running_count"] == 1
     assert len(scheduler.jobs) == 1  # Next waiting task released through existing queue.
-    assert save(session, scheduler, 4)["running_count"] == 2
+    assert save(session, scheduler, project_id, 4)["running_count"] == 2
+    assert configured_limit(session, other) == 3
     for project, key, _ in receipts:
         ticket = TrackerRepository(session).brief(project_id=project, ticket_key=key).ticket
         # Capacity writes did not touch ticket sessions, candidate or repair allowance.
@@ -156,7 +163,7 @@ def test_concurrent_admission_is_bounded_across_projects(delivery_engine, projec
             .create(slug="other", name="Other", domain="other.test")
             .data.id
         )
-        save_limit(session, 4)
+        save_limits(session, {project_id: 4})
         for index in range(10):
             project = project_id if index % 2 else other
             repo = TrackerRepository(session)
@@ -182,19 +189,23 @@ def test_concurrent_admission_is_bounded_across_projects(delivery_engine, projec
         assert len(list(workers.map(start, range(10)))) == 10
     with Session(delivery_engine) as session:
         assert capacity(session, scheduler)["running_count"] == 4
-        assert capacity(session, scheduler)["queued_count"] == 6
-    assert len(scheduler.jobs) == 4
+        assert capacity(session, scheduler)["queued_count"] == 1
+        other_row = task_delivery.delivery_capacity(session, scheduler, other)["projects"][0]
+        assert (other_row["running_count"], other_row["queued_count"]) == (3, 2)
+    assert len(scheduler.jobs) == 7
 
 
-def test_limit_reload_separate_database_and_failed_commit(delivery_engine, session, monkeypatch):
+def test_limit_reload_separate_database_and_failed_commit(
+    delivery_engine, session, project_id, monkeypatch
+):
     from sqlalchemy.exc import OperationalError
 
     with Session(delivery_engine) as first:
-        assert configured_limit(first) == 3
-        save_limit(first, 9)
+        assert configured_limit(first, project_id) == 3
+        save_limits(first, {project_id: 9})
     delivery_engine.dispose()
     with Session(delivery_engine) as reloaded:
-        assert configured_limit(reloaded) == 9
+        assert configured_limit(reloaded, project_id) == 9
         original_commit = reloaded.commit
 
         def fail():
@@ -202,38 +213,36 @@ def test_limit_reload_separate_database_and_failed_commit(delivery_engine, sessi
 
         monkeypatch.setattr(reloaded, "commit", fail)
         with pytest.raises(OperationalError):
-            save_limit(reloaded, 12)
+            save_limits(reloaded, {project_id: 12})
         from stackos.repositories.base import ValidationError
 
-        with pytest.raises(ValidationError, match="previous limit remains effective"):
-            save(reloaded, QueuedScheduler(), 12)
+        with pytest.raises(ValidationError, match="previous limits remain effective"):
+            save(reloaded, QueuedScheduler(), project_id, 12)
         monkeypatch.setattr(reloaded, "commit", original_commit)
-        assert configured_limit(reloaded) == 9
-    assert configured_limit(session) == 3
+        assert configured_limit(reloaded, project_id) == 9
+    assert configured_limit(session, project_id) == 3
 
 
 @pytest.mark.parametrize("value", [0, 33, -1, True, 2.5, "6", None])
-def test_invalid_capacity_never_mutates(session, value):
+def test_invalid_capacity_never_mutates(session, project_id, value):
     with pytest.raises(ValueError):
-        SetDeliveryCapacityInput(concurrent_tasks=value)
+        SetDeliveryCapacityInput(
+            updates=[{"project_id": project_id, "max_concurrent_tasks": value}]
+        )
     with pytest.raises(Exception, match="integer"):
-        save_limit(session, value)
-    assert configured_limit(session) == 3
+        save_limits(session, {project_id: value})
+    assert configured_limit(session, project_id) == 3
 
 
 def test_cleanup_queue_and_missed_launch_release(session, project_id, tmp_path):
     scheduler = QueuedScheduler()
-    save_limit(session, 1)
+    save_limits(session, {project_id: 1})
     prepared_task(session, project_id)
     first = submit(session, project_id, tmp_path, scheduler)
-    other = (
-        ProjectRepository(session).create(slug="other", name="Other", domain="other.test").data.id
-    )
-    prepared_task(session, other)
     root = tmp_path / "other"
     root.mkdir()
-    submit(session, other, root, scheduler)
-    project = session.get(Project, other)
+    submit(session, project_id, root, scheduler, task_key="unrelated")
+    project = session.get(Project, project_id)
     project.cleanup_json = {"status": "incomplete"}
     session.add(project)
     session.commit()
@@ -247,7 +256,7 @@ def test_cleanup_queue_and_missed_launch_release(session, project_id, tmp_path):
     assert capacity(session, scheduler)["queued_count"] == 0
     assert len(scheduler.jobs) == 1  # Only the inert missed-job stub; no cleanup project launch.
     states = task_rows(session)
-    assert states[(other, "deliver")]["delivery"]["reason"] == "Project unavailable."
+    assert states[(project_id, "unrelated")]["delivery"]["reason"] == "Project unavailable."
 
 
 def test_saturated_backup_pool_does_not_consume_task_slots(
@@ -285,7 +294,7 @@ def test_saturated_backup_pool_does_not_consume_task_slots(
 
     monkeypatch.setattr(task_delivery, "run_delivery", controlled_task)
     with Session(delivery_engine) as session:
-        save_limit(session, 6)
+        save_limits(session, {project_id: 6})
         for index in range(7):
             TrackerRepository(session).create_task(
                 project_id=project_id, key=f"pool-{index}", title="Pool fixture"
@@ -346,7 +355,7 @@ def test_registration_error_after_callback_start_retains_slot(
     capacity_session, project_id, tmp_path
 ):
     session = capacity_session
-    save_limit(session, 1)
+    save_limits(session, {project_id: 1})
     prepared_task(session, project_id)
 
     class StartedThenError(QueuedScheduler):
@@ -388,7 +397,7 @@ def test_retiring_callback_does_not_drain_during_scheduler_shutdown(
     from apscheduler.schedulers.base import STATE_STOPPED
 
     session = capacity_session
-    save_limit(session, 1)
+    save_limits(session, {project_id: 1})
     prepared_task(session, project_id)
     scheduler = QueuedScheduler()
     submit(session, project_id, tmp_path, scheduler)
@@ -441,7 +450,7 @@ def test_abort_stops_owned_process_before_admitting_waiting_work(
     scheduler = ObservedScheduler()
     try:
         with Session(delivery_engine) as session:
-            save_limit(session, 1)
+            save_limits(session, {project_id: 1})
             plan_id = workflow_task(session, project_id)
             submit(
                 session,
@@ -506,7 +515,7 @@ def test_unconfirmed_stop_retains_slot_until_callback_retirement(
     scheduler = QueuedScheduler()
     try:
         with Session(delivery_engine) as session:
-            save_limit(session, 1)
+            save_limits(session, {project_id: 1})
             plan_id = workflow_task(session, project_id)
             task_key = f"workflow-{plan_id}"
             submit(
@@ -556,7 +565,7 @@ def test_unconfirmed_stop_retains_slot_until_callback_retirement(
 def test_rehandoff_retains_owned_reservation_and_exact_handoff_release(
     session, project_id, tmp_path, same_runtime
 ):
-    save_limit(session, 1)
+    save_limits(session, {project_id: 1})
     prepared_task(session, project_id)
     repo = TrackerRepository(session)
     evidence = {
@@ -620,7 +629,7 @@ def test_rehandoff_retains_owned_reservation_and_exact_handoff_release(
 
 
 def test_retiring_reservation_still_owns_its_working_directory(session, project_id, tmp_path):
-    save_limit(session, 2)
+    save_limits(session, {project_id: 2})
     prepared_task(session, project_id)
     repo = TrackerRepository(session)
 
@@ -641,3 +650,169 @@ def test_retiring_reservation_still_owns_its_working_directory(session, project_
         submit(session, project_id, tmp_path, scheduler, task_key="unrelated")
     assert scheduler.jobs == []
     assert capacity(session, scheduler)["running_count"] == 1
+
+
+@pytest.mark.parametrize("legacy_limit", [None, 3, 9])
+def test_project_capacity_migration_preserves_legacy_and_new_project_default(
+    tmp_path, legacy_limit
+):
+    import sqlite3
+
+    from alembic import command
+
+    from stackos.db.connection import make_engine
+    from stackos.db.migrate import alembic_config, upgrade_to_head
+
+    settings = Settings(data_dir=tmp_path / "data", state_dir=tmp_path / "state")
+    settings.ensure_dirs()
+    config = alembic_config(settings)
+    command.upgrade(config, "0048_product_receipts_merge")
+    with sqlite3.connect(settings.db_path) as connection:
+        for identity in (2, 7):
+            connection.execute(
+                "INSERT INTO projects (id,slug,name,domain,locale,is_active,created_at,updated_at) "
+                "VALUES (?,?,?,'fixture.test','en-US',?,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
+                (identity, f"p{identity}", f"Project {identity}", identity == 2),
+            )
+        if legacy_limit is not None:
+            connection.execute("INSERT INTO task_delivery_capacity VALUES (1, ?)", (legacy_limit,))
+    upgrade_to_head(settings)
+    expected = legacy_limit if legacy_limit is not None else 3
+    with sqlite3.connect(settings.db_path) as connection:
+        assert connection.execute(
+            "SELECT * FROM task_delivery_capacity ORDER BY project_id"
+        ).fetchall() == [(2, expected), (7, expected)]
+        assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
+    # Simulate completed schema with a lost revision stamp: saved edits survive replay.
+    engine = make_engine(settings.db_path)
+    with Session(engine) as first:
+        save_limits(first, {2: 5, 7: 1})
+    engine.dispose()
+    with pytest.raises(RuntimeError, match="without losing preferences"):
+        command.downgrade(config, "0048_product_receipts_merge")
+    command.stamp(config, "0041_ui804_consolidation")
+    upgrade_to_head(settings)
+    with Session(engine) as reloaded:
+        assert (configured_limit(reloaded, 2), configured_limit(reloaded, 7)) == (5, 1)
+        added = (
+            ProjectRepository(reloaded).create(slug="new", name="New", domain="new.test").data.id
+        )
+        assert configured_limit(reloaded, added) == 3
+        # Permanent project deletion cascades only its own capacity; a new ID
+        # never inherits a deleted project's preference.
+        reloaded.delete(reloaded.get(Project, 2))
+        reloaded.commit()
+        assert configured_limit(reloaded, 7) == 1
+        another = (
+            ProjectRepository(reloaded)
+            .create(slug="replacement", name="Replacement", domain="new.test")
+            .data.id
+        )
+        assert another != 2 and configured_limit(reloaded, another) == 3
+    with sqlite3.connect(settings.db_path) as connection:
+        assert connection.execute("SELECT * FROM task_delivery_capacity").fetchall() == [(7, 1)]
+    engine.dispose()
+
+
+def test_all_project_counts_are_consolidated_scalar_reads(
+    session, project_id, tmp_path, monkeypatch
+):
+    from sqlalchemy import event
+
+    from stackos.db.models import AgentRequest, TaskDeliveryCapacity
+    from stackos.repositories.project_setup import ProjectSetupRepository, SetupAttempt
+    from tests.integration.test_repositories.test_managed_setup import stored_setup
+
+    other = (
+        ProjectRepository(session).create(slug="other", name="Other", domain="other.test").data.id
+    )
+    scheduler = QueuedScheduler()
+    identity = task_delivery._admission_id(scheduler)
+    save_limits(session, {project_id: 1, other: 8})
+    for owner, states in (
+        (project_id, [("running", True), ("queued", False)]),
+        (other, [("stopped", True), ("queued", False)]),
+    ):
+        for index, (status, reserved) in enumerate(states):
+            TrackerRepository(session).create_task(
+                project_id=owner,
+                key=f"{owner}-{index}",
+                title="Fixture",
+                metadata_json={
+                    "delivery": {
+                        "admission_id": identity,
+                        "status": status,
+                        "slot_reserved": reserved,
+                    }
+                },
+            )
+        for index in range(20):
+            stored_setup(
+                session,
+                owner,
+                f"history-{owner}-{index}",
+                {
+                    "schema_version": 999,
+                    "entry_kind": "managed_ui",
+                    "status": "success",
+                    "managed": {"slot_reserved": False},
+                },
+            )
+        for status, reserved, admission in (
+            ("queued", False, identity),
+            ("cancelled", True, "prior-daemon"),
+            ("queued", False, "prior-daemon"),
+        ):
+            stored_setup(
+                session,
+                owner,
+                f"setup-{owner}-{status}-{admission}",
+                {
+                    "schema_version": 999,
+                    "entry_kind": "managed_ui",
+                    "status": status,
+                    "managed": {
+                        "slot_reserved": reserved,
+                        "admission_id": admission,
+                        "settings": {"project_dir": str(tmp_path / str(owner))},
+                    },
+                },
+            )
+    session.expire_all()
+    statements, hydrated, calls = [], [], []
+    managed_admissions = ProjectSetupRepository.managed_admissions
+
+    def admissions(repo, **filters):
+        calls.append(filters)
+        return managed_admissions(repo, **filters)
+
+    def queried(_conn, _cursor, statement, _parameters, _context, _many):
+        statements.append(statement)
+
+    def loaded(_session, instance):
+        if isinstance(instance, (AgentRequest, TrackerTask)):
+            hydrated.append(instance)
+
+    def full_payload_forbidden(*_args, **_kwargs):
+        pytest.fail("Capacity must not validate full setup history")
+
+    monkeypatch.setattr(ProjectSetupRepository, "managed_admissions", admissions)
+    monkeypatch.setattr(SetupAttempt, "model_validate", full_payload_forbidden)
+    event.listen(session.get_bind(), "before_cursor_execute", queried)
+    event.listen(session, "loaded_as_persistent", loaded)
+    try:
+        all_rows = task_delivery.delivery_capacity(session, scheduler)["projects"]
+        assert len(statements) == 3 and calls == [{"project_id": None}]
+        assert hydrated == []
+        for statement in statements:
+            assert statement.lstrip().startswith("SELECT")
+        assert all((row["running_count"], row["queued_count"]) == (2, 2) for row in all_rows)
+        assert [row["configured_limit"] for row in all_rows] == [1, 8]
+        for row in all_rows:
+            filtered = task_delivery.delivery_capacity(session, scheduler, row["project_id"])
+            assert filtered["projects"] == [row]
+        assert len(statements) == 9  # Three queries per read, independent of project count.
+    finally:
+        event.remove(session.get_bind(), "before_cursor_execute", queried)
+        event.remove(session, "loaded_as_persistent", loaded)
+    assert len(session.exec(select(TaskDeliveryCapacity)).all()) == 2

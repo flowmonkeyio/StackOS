@@ -2,6 +2,7 @@
 import { computed, provide, reactive, ref } from 'vue'
 import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter, type LocationQuery, type LocationQueryRaw } from 'vue-router'
 import ProjectPageHeader from '@/components/domain/ProjectPageHeader.vue'
+import DeliveryCapacityControl from './home/DeliveryCapacityControl.vue'
 import { UiButton, UiCallout, UiEmptyState, UiLoadingState, UiPageShell, UiSegmentedControl } from '@/components/ui'
 import { callOperation } from '@/lib/operations'
 import { patchUsageSnapshot, patchUsageAfter, usageCheckpoint } from '@/lib/usageUpdates'
@@ -613,6 +614,10 @@ useProjectScopedLoader({
       :breadcrumbs="[{ label: 'Work' }]"
     >
       <template #actions>
+        <DeliveryCapacityControl
+          :key="projectId"
+          :project-id="projectId"
+        />
         <UiButton
           variant="secondary"
           size="sm"

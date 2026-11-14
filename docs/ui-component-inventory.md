@@ -117,14 +117,19 @@ The shared `DataTable` and `projectSetup` status domain show independent workflo
 results, secondary last-verified versions, expandable details and partial-change
 warnings. Partial or unactivated setup never claims whole-project readiness.
 
-Both Home headers mount the feature-owned `views/home/DeliveryCapacityControl`.
-Its compact trigger shows server-reported admitted tasks against the persisted
-local-daemon limit, independent of the visible task list or selected project.
-The anchored `UiPopover` uses the shared form/input/buttons for a bounded integer
-draft and explicit Save. Dismiss discards the draft; failed saves retain it;
-success uses the operation's durable readback. Lowering below running work
-explains that current tasks continue. Visibility-aware polling and Home Refresh
-reload counts through the same local-admin read, with no project override.
+Overview, project Home and Board mount the feature-owned
+`views/home/DeliveryCapacityControl`. Overview shows all project rows; Home and
+Board pass the current `projectId` to show only that project's queue. The compact
+Task queues trigger opens an anchored `UiPopover` with Project, Running, Waiting
+and Run at once columns. Server-reported admitted/waiting counts and persisted
+per-project limits come from the shared local-admin capacity owner, independently
+of the visible task list. Shared form/input/buttons provide bounded integer
+drafts and explicit Save changes, committing changed rows atomically. Dismiss
+discards drafts; failed saves retain them; success uses durable operation readback.
+Lowering below running work preserves current tasks and shows the actual count
+above the new limit while future admissions wait. Other projects are unaffected.
+Visibility-aware polling and exposed refresh reload counts through the same
+scoped capacity read without loading the Board or Graph task data.
 
 | Component | Notes |
 |---|---|

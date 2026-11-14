@@ -27,7 +27,7 @@ def test_consolidation_preserves_either_delivered_history(tmp_path, prior_head):
     settings.ensure_dirs()
     config = alembic_config(settings)
     script = ScriptDirectory.from_config(config)
-    assert script.get_heads() == ["0048_product_receipts_merge"]
+    assert script.get_heads() == ["0049_project_task_capacity"]
     assert script.get_revision("0043_automations_homes_merge").down_revision == (
         "0042_schedule_main_thread",
         "0042_task_delivery_capacity",
@@ -99,7 +99,7 @@ def test_consolidation_preserves_either_delivered_history(tmp_path, prior_head):
     upgrade_to_head(settings)
     with sqlite3.connect(settings.db_path) as db:
         assert db.execute("SELECT version_num FROM alembic_version").fetchall() == [
-            ("0048_product_receipts_merge",)
+            ("0049_project_task_capacity",)
         ]
         assert {
             table: db.execute(f"SELECT {names} FROM {table} ORDER BY id").fetchall()
@@ -115,6 +115,6 @@ def test_consolidation_preserves_either_delivered_history(tmp_path, prior_head):
         assert (goal, enabled, status) == (expected_goal, 1, "success")
         assert json.loads(execution) == {"project_dir": str(root), "host_key": "codex"}
         assert db.execute("SELECT * FROM task_delivery_capacity").fetchall() == (
-            [(1, 7)] if prior_head == "0042_task_delivery_capacity" else []
+            [(1, 7)] if prior_head == "0042_task_delivery_capacity" else [(1, 3)]
         )
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []

@@ -18,8 +18,9 @@ beforeEach(() => {
   vi.mocked(callOperation).mockReset()
   vi.mocked(apiFetch).mockReset()
   vi.mocked(callOperation).mockImplementation(async (name, args) => {
-    if (name === 'tracker.deliveryCapacity') return { scope: 'local-user-daemon', configured_limit: 7, running_count: 2, queued_count: 1, supported_min: 1, supported_max: 32 } as never
     const id = Number(args.project_id)
+    if (name === 'tracker.deliveryCapacity') return { scope: 'project', projects: [{ project_id: id, project_name: `Project ${id}`, project_slug: `project-${id}`, configured_limit: id === 1 ? 7 : 4, running_count: 2, queued_count: 1 }], supported_min: 1, supported_max: 32 } as never
+    if (name === 'projectSetup.get') return { project_id: id, eligible: true, folder_status: 'available', status: 'setup_needed', update_count: 0, current_attempt: null } as never
     if (name === 'tracker.agentStats') return agentStatsFixture({ project_id: id }) as never
     if (name === 'tracker.activeTasks') return activeTasksFixture(id, [activeTaskFixture({ project_id: id, key: 'work / beta' })]) as never
     if (name === 'project.portfolio') return { items: [portfolioFixture({ id })], next_cursor: null } as never
@@ -97,19 +98,45 @@ describe('project Home active work', () => {
       expect(vi.mocked(callOperation).mock.calls.every(([name]) => !name.match(/projectSetup\.(start|answer|continue|cancel|setReminders)/))).toBe(true)
     } finally { wrapper.unmount() }
   })
-  it('uses the same daemon capacity when switching projects without writing', async () => {
+  it('saves only the current queue without refreshing Usage, work or setup', async () => {
+    const { wrapper } = await mountProject()
+    try {
+      const before = vi.mocked(callOperation).mock.calls.length
+      await wrapper.get('[data-popover-trigger]').trigger('click'); await flushPromises()
+      await wrapper.get('input[type="number"]').setValue(5)
+      vi.mocked(callOperation).mockResolvedValueOnce({ data: { scope: 'project', supported_min: 1, supported_max: 32,
+        projects: [{ project_id: 1, project_name: 'Project 1', project_slug: 'project-1', configured_limit: 5, running_count: 2, queued_count: 1 }] } })
+      await wrapper.get('form').trigger('submit'); await flushPromises()
+      expect(vi.mocked(callOperation).mock.calls.slice(before)).toEqual([
+        ['tracker.deliveryCapacity', { project_id: 1 }],
+        ['tracker.setDeliveryCapacity', { updates: [{ project_id: 1, max_concurrent_tasks: 5 }] }],
+      ])
+      expect(wrapper.find('[aria-label="Agent activity"]').exists()).toBe(true)
+      expect(wrapper.find('[aria-label="Connected tools"]').exists()).toBe(true)
+      expect(wrapper.find('[aria-label="Project setup reminder"]').exists()).toBe(true)
+    } finally { wrapper.unmount() }
+  })
+  it('scopes task queues to the selected project and discards drafts on navigation', async () => {
     const { wrapper, router } = await mountProject()
     try {
-      expect(wrapper.get('[data-popover-trigger]').text()).toBe('2 of 7 running')
+      expect(wrapper.get('[data-popover-trigger]').text()).toBe('Task queues')
       await wrapper.get('[data-popover-trigger]').trigger('click')
+      await flushPromises()
+      expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+      expect(wrapper.get('tbody tr').text()).toContain('Project 1')
       await wrapper.get('input[type="number"]').setValue(12)
       await router.push('/projects/2')
       await flushPromises()
       expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
-      expect(wrapper.get('[data-popover-trigger]').text()).toBe('2 of 7 running')
+      await wrapper.get('[data-popover-trigger]').trigger('click'); await flushPromises()
+      expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+      expect(wrapper.get('tbody tr').text()).toContain('Project 2')
+      expect(wrapper.get('tbody tr').text()).not.toContain('Project 1')
+      expect((wrapper.get('input[type="number"]').element as HTMLInputElement).value).toBe('4')
       const capacityCalls = vi.mocked(callOperation).mock.calls.filter(([name]) => name.includes('Capacity'))
       expect(capacityCalls.length).toBeGreaterThanOrEqual(2)
-      expect(capacityCalls.every(([name, args]) => name === 'tracker.deliveryCapacity' && Object.keys(args).length === 0)).toBe(true)
+      expect(capacityCalls.every(([name, args]) => name === 'tracker.deliveryCapacity' && [1, 2].includes(Number(args.project_id)))).toBe(true)
+      expect(capacityCalls.some(([, args]) => args.project_id === 2)).toBe(true)
     } finally { wrapper.unmount() }
   })
   it('uses the selected scope, retained Usage and connections in order, and opens its graph', async () => {

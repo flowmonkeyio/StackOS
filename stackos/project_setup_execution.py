@@ -456,7 +456,7 @@ def setup_directories(session):
     return [state.project_dir for state in ProjectSetupRepository(session).managed_admissions()]
 
 
-def reserve_setup(session, scheduler):
+def reserve_setup(session, scheduler, capacities):
     """Called only by the shared capacity owner while holding managed_launch_lock."""
     from stackos.repositories.project_setup import ProjectSetupRepository
     from stackos.task_delivery import _admission_id
@@ -464,6 +464,9 @@ def reserve_setup(session, scheduler):
     for state in ProjectSetupRepository(session).managed_admissions(
         admission_id=_admission_id(scheduler)
     ):
+        capacity = capacities[state.project_id]
+        if capacity["running_count"] >= capacity["configured_limit"]:
+            continue
         token = getattr(scheduler, "project_setup_claims", {}).get(state.request_id)
         if token is None:
             continue  # Restart never manufactures a new claim or resumes old work.
@@ -483,13 +486,15 @@ def reserve_setup(session, scheduler):
 
 
 def schedule_setup(*, project_id, state, session_factory, scheduler):
+    from stackos.jobs.scheduler import task_executor
+
     try:
         scheduler.add_job(
             run_setup,
             trigger="date",
             id=state["job_ref"],
             jobstore="memory",
-            executor="task-delivery",
+            executor=task_executor(scheduler, project_id),
             kwargs={
                 "project_id": project_id,
                 "request_id": state["request_id"],

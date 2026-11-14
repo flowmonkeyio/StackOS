@@ -304,10 +304,10 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     assert (
         raw_recommended["stackos.sdlc.test-designer"]["preset"]["summary"]["version"]
         == compact_recommended["stackos.sdlc.test-designer"]["preset"]["version"]
-        == "0.6.10"
+        == "0.6.11"
     )
     expected_versions = {
-        "stackos.sdlc.requirements-flow-definer": "0.6.6",
+        "stackos.sdlc.requirements-flow-definer": "0.6.7",
         "stackos.sdlc.planning": "0.7.20",
         "stackos.sdlc.delivery": "0.7.19",
         "stackos.sdlc.delivery-reviewer": "0.6.18",

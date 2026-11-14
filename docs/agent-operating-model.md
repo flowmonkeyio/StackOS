@@ -101,7 +101,21 @@ remains nonblocking followup. Lifecycle and action authority do not change.
 
 For an independently prepared task, the planner can instead call
 `tracker.startDelivery` after creating self-contained tickets and dependencies.
-It supplies the project directory and task choices, merged by role with
+Backlog is unscheduled. Todo alone grants no execution authority: preparation
+and an explicitly enabled automatic handoff are required. Validate fresh saved
+placement before queue metadata changes the projection; preserve valid workflow
+first handoffs and invocation history. Stopped work needs explicit authorized
+recovery and rehandoff with sessions, receipts, attempts and repair allowance
+intact. Each project has an independent persisted task limit (default 3,
+range 1..32), shared with its managed setup requests through the existing owner.
+Setup has no tracker Todo requirement. No aggregate global project-task cap is
+added. Lowering a limit affects future admissions only; admitted/running work
+continues unchanged even above the limit, with truthful counts and no automatic
+stop, abort, cancellation, restart or eviction. Other projects are unaffected.
+Host child/reviewer slots and the terminal-managed default of three active
+ticket assignments are separate constraints. Directory and callback retirement
+fences remain enforced.
+The planner supplies the project directory and task choices, merged by role with
 `TaskTracker.config_json.delivery` defaults into one effective task snapshot.
 Fresh Codex admission selects exact project agent source refs. The bounded source
 service resolves identity, instructions and supported native settings once;

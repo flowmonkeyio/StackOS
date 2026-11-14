@@ -152,10 +152,11 @@ describe('restricted UI write contract', () => {
     expect(callers.sort()).toEqual([...allowedOperations.keys()].sort())
   })
 
-  it('keeps capacity writes local to the daemon with only the selected limit', () => {
+  it('keeps capacity writes at the shared owner with only changed project limits', () => {
     const source = readFileSync(CAPACITY_CONTROL, 'utf8')
-    expect(source).toContain("'tracker.setDeliveryCapacity', { concurrent_tasks: value.value }")
-    expect(source).not.toMatch(/project_id|run_token|tracker\.configureDelivery/)
+    expect(source).toContain("'tracker.setDeliveryCapacity', { updates }")
+    expect(source).toContain('changed.value.map(row => ({ project_id: row.project_id, max_concurrent_tasks: Number(drafts.value[row.project_id]) }))')
+    expect(source).not.toMatch(/run_token|tracker\.(?:configureDelivery|stop|abort|startDelivery)/)
   })
 
   it('keeps global pattern maintenance at its shared operation owner', () => {
