@@ -436,6 +436,11 @@ class SetupManagedExecution(SetupEvidenceModel):
     cancel_requested: bool = False
     diagnostic: str | None = None
     resume_thread_id: str | None = None
+    # Set only by authenticated managed admission, never by a worker report.
+    adoption_authorized: bool = False
+    phase: Literal["preparation", "verification", "completion"] = "preparation"
+    adopted_delivery_digest: str | None = Field(default=None, pattern="^[0-9a-f]{64}$")
+    verification_request_id: int | None = None
 
 
 class SetupAttempt(SetupEvidenceModel):
@@ -1124,6 +1129,12 @@ class ProjectSetupRepository:
                 raise ConflictError("question was already answered; consume the recorded answer")
             outcomes = dict(current.outcomes)
             if report.adoption_proposal is not None:
+                if (
+                    current.managed is not None
+                    and current.managed.phase != "preparation"
+                    and report.adoption_proposal != current.adoption_proposal
+                ):
+                    raise ConflictError("Adopted role selection changed; start a new setup review")
                 self._validate_adoption_proposal(project_id, report.adoption_proposal)
                 current.adoption_proposal = report.adoption_proposal
             for item in report.workflow_results:
@@ -1491,6 +1502,8 @@ class ProjectSetupRepository:
             report_json = result.result.get("report_json")
             if not isinstance(report_json, str):
                 return False
+            if result.result.get("verification_status") in {"failed", "blocked"}:
+                return False
             try:
                 attempt = SetupAttempt.model_validate(
                     (row.metadata_json or {}).get(SETUP_NAMESPACE)
@@ -1498,7 +1511,7 @@ class ProjectSetupRepository:
                 report = SetupReport.model_validate_json(report_json)
             except ModelValidationError:
                 return False
-            return (
+            completed_setup = (
                 attempt.project_id == row.project_id
                 and attempt.request_id == row.id
                 and attempt.entry_kind == "managed_ui"
@@ -1507,6 +1520,24 @@ class ProjectSetupRepository:
                 and attempt.status == "success"
                 and report.status == "success"
             )
+            # A bounded verification turn has its own explicit logical outcome.
+            # It is not overall setup success: a subsequent current claim must
+            # still validate all workflow receipts against this retired result.
+            completed_check = (
+                attempt.project_id == row.project_id
+                and attempt.request_id == row.id
+                and attempt.entry_kind == "managed_ui"
+                and attempt.managed is not None
+                and attempt.managed.adoption_authorized
+                and not attempt.managed.cancel_requested
+                and attempt.managed.phase == "completion"
+                and attempt.managed.verification_request_id == row.id
+                and attempt.status == "partial"
+                and report.status == "partial"
+                and result.result.get("verification_status") == "passed"
+                and "verification_status" in schema.get("properties", {})
+            )
+            return completed_setup or completed_check
         # The other current native request caller returns its logical status
         # directly. Unknown/missing outcomes cannot receive positive coverage.
         return result.result.get("status") == "success"

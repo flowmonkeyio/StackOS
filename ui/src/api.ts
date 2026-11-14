@@ -8445,6 +8445,16 @@ export interface components {
         SetupManagedExecution: {
             /** Admission Id */
             admission_id: string;
+            /**
+             * Adopted Delivery Digest
+             * @default null
+             */
+            adopted_delivery_digest: string | null;
+            /**
+             * Adoption Authorized
+             * @default false
+             */
+            adoption_authorized: boolean;
             /** Binding Id */
             binding_id: number;
             /**
@@ -8465,6 +8475,12 @@ export interface components {
             /** Job Ref */
             job_ref: string;
             /**
+             * Phase
+             * @default preparation
+             * @enum {string}
+             */
+            phase: SetupManagedExecutionPhase;
+            /**
              * Resume Thread Id
              * @default null
              */
@@ -8478,6 +8494,11 @@ export interface components {
              * @default false
              */
             slot_reserved: boolean;
+            /**
+             * Verification Request Id
+             * @default null
+             */
+            verification_request_id: number | null;
         };
         /** SetupProgress */
         SetupProgress: {
@@ -15571,6 +15592,11 @@ export enum SetupAttemptStatus {
     failed = "failed",
     interrupted = "interrupted",
     cancelled = "cancelled"
+}
+export enum SetupManagedExecutionPhase {
+    preparation = "preparation",
+    verification = "verification",
+    completion = "completion"
 }
 export enum SetupQuestionAnswer_state {
     pending = "pending",

@@ -32,7 +32,10 @@ class MainAgentPreferences(BaseModel):
 
 RESULT_SCHEMA = {
     "type": "object",
-    "properties": {"report_json": {"type": "string"}},
+    "properties": {
+        "report_json": {"type": "string"},
+        "verification_status": {"type": "string", "enum": ["passed", "failed", "blocked"]},
+    },
     "required": ["report_json"],
     "additionalProperties": False,
 }
@@ -41,7 +44,9 @@ Read project instructions and resolve the supplied workflowTemplate.authoringGui
 Consume its complete project_setup_method and authored setup/update prompt. Both managed and
 existing-session setup use that same method. Inspect the project, choose applicable workflows
 from the operator goal, preserve compatible choices and all applicable source obligations.
-This is infrastructure setup: create no business run or tracker task. No rollout to other projects.
+Follow requested_scope: ready_to_use includes canonical adoption and bounded native verification;
+infrastructure_only ends at preparation. Create no business run or tracker task for setup proof.
+No rollout to other projects or unrelated business actions.
 Use projectSetup.get for current receipt revisions. You may report progress and completed workflow
 results through projectSetup.report using your workspace.startSession session_id, the supplied
 request_id, private claim_token and expected_revision. Keep the token inside this session.
@@ -59,6 +64,18 @@ For a linked continuation consume the supplied recorded answers; do not ask them
 Preserve retained successful outcomes. Work only on remaining workflows and revalidation of changed
 sources/evidence, checking current receipts and actual local files before claiming completion.
 Partial edits may exist after interruption/cancellation. No rollback is implied.
+For ready_to_use preparation, return a partial report with the bounded adoption_proposal when
+saved defaults need adoption or post-adoption native verification remains. The managed owner
+validates and adopts it after this invocation retires, then links the verification continuation.
+Never call configureDelivery or invent local-admin authority. In verification, read the supplied
+canonical adoption_readback, reuse current matching proof and perform only missing bounded checks
+selected by the workflow method. Record actual consumption separately from saved defaults.
+Success still requires complete checked activation evidence; pending proof stays partial/failed.
+Only in phase verification, return verification_status passed when the selected missing bounded
+native checks actually passed. Return a partial report retaining their observations; this is not
+overall setup success. The owner retires that request and supplies its exact completed result ref
+to one completion continuation. In completion reuse that evidence, do not execute the same checks
+again, and report success only after all current required workflow claims are covered.
 """
 
 
@@ -196,6 +213,7 @@ def start_managed(
             binding_id=state.binding_id,
             admission_id=_admission_id(scheduler),
             job_ref=f"project-setup:{project_id}:{secrets.token_hex(12)}",
+            adoption_authorized=requested_scope == "ready_to_use",
         )
         started = repo.start(
             project_id,
@@ -293,6 +311,38 @@ def continue_managed(
             )
         native = (row.metadata_json or {}).get("native_execution") or {}
         recorded = row.metadata_json["project_setup"]
+        # A queued continuation can be cancelled before its callback starts.
+        # It has no new native invocation to retire. Recover only the already
+        # retained exact session, proving retirement through its owned lineage.
+        if (
+            not native
+            and current.status in {"cancelled", "failed"}
+            and not current.managed.callback_started
+            and current.managed.resume_thread_id
+        ):
+            child = current
+            seen = {request_id}
+            while child.predecessor_request_id is not None:
+                parent_id = child.predecessor_request_id
+                if parent_id in seen:
+                    raise ConflictError("setup continuation lineage is cyclic", data=repair)
+                seen.add(parent_id)
+                parent_row, parent = _load(session, project_id, parent_id)
+                if (
+                    parent.successor_request_id != child.request_id
+                    or parent.root_request_id != current.root_request_id
+                    or parent.attempt_ref != current.attempt_ref
+                    or parent.runtime != current.runtime
+                    or parent.managed.slot_reserved
+                    or service.active_request_execution(project_id, parent_id)
+                ):
+                    raise ConflictError("setup continuation lineage changed", data=repair)
+                native = (parent_row.metadata_json or {}).get("native_execution") or {}
+                if native:
+                    break
+                if parent.managed.callback_started:
+                    raise ConflictError("prior native retirement is unknown", data=repair)
+                child = parent
         identity = native.get("execution") or {}
         thread = identity.get("thread_id")
         # run_setup persists callback_started/possible edits before entering the
@@ -369,7 +419,14 @@ def continue_managed(
         for key in current.workflow_keys:
             outcome = current.outcomes.get(key)
             receipt = repo._row(project_id, key)
-            if outcome is None or outcome.status != "success":
+            if (
+                outcome is None
+                or outcome.status != "success"
+                or (
+                    current.requested_scope == "ready_to_use"
+                    and outcome.activation_status != "verified"
+                )
+            ):
                 remaining.append(key)
             elif (
                 receipt is None
@@ -386,6 +443,11 @@ def continue_managed(
                     or repo._identity(observed.available_sources) != repo._identity(proof.sources)
                 ):
                     revalidate.append(key)
+                elif current.requested_scope == "ready_to_use" and proof.activation_proof:
+                    try:
+                        repo._validate_activation(project_id, proof)
+                    except (ConflictError, ValidationError):
+                        revalidate.append(key)
             current.observed_receipt_revisions[key] = receipt.revision if receipt else 0
         now = datetime.now(UTC).replace(tzinfo=None)
         token = secrets.token_urlsafe(32)
@@ -436,6 +498,10 @@ def continue_managed(
                     admission_id=_admission_id(scheduler),
                     job_ref=f"project-setup:{project_id}:{secrets.token_hex(12)}",
                     resume_thread_id=thread,
+                    adoption_authorized=current.managed.adoption_authorized,
+                    phase=current.managed.phase,
+                    adopted_delivery_digest=current.managed.adopted_delivery_digest,
+                    verification_request_id=current.managed.verification_request_id,
                 ),
             },
         )
@@ -446,7 +512,11 @@ def continue_managed(
                 "setup attempt exceeds 2 MB; retain detailed evidence by reference"
             )
         row.claim_token_hash = None
-        row.status = AgentRequestStatus.RESOLVED if asking else AgentRequestStatus.FAILED
+        row.status = (
+            AgentRequestStatus.RESOLVED
+            if asking or current.managed.verification_request_id == request_id
+            else AgentRequestStatus.FAILED
+        )
         row.completed_at = row.updated_at = now
         row.metadata_json = {**row.metadata_json, "project_setup": current.model_dump(mode="json")}
         successor.metadata_json = {"project_setup": next_attempt.model_dump(mode="json")}
@@ -530,6 +600,90 @@ def schedule_setup(*, project_id, state, session_factory, scheduler):
         raise
 
 
+def _adopt_managed(session, project_id, request_id, claim_token):
+    """Consume a bounded proposal under the original authenticated setup ownership."""
+    from stackos.repositories.agent_requests import AgentRequestRepository
+    from stackos.repositories.project_setup import ProjectSetupRepository, VerifiedSetup, _digest
+    from stackos.repositories.projects import ProjectRepository
+    from stackos.repositories.tracker import TrackerRepository
+    from stackos.repositories.tracker.setup import _delivery_role_defaults
+
+    ProjectRepository(session).require_available(project_id, reserve=True)
+    project = ProjectRepository(session).get(project_id)
+    row, current = _load(session, project_id, request_id)
+    AgentRequestRepository(session)._verify_claim(row, claim_token, _setup_owner=True)
+    repo = ProjectSetupRepository(session)
+    latest = repo._current_attempt(project_id)
+    native = (row.metadata_json or {}).get("native_execution") or {}
+    if (
+        latest is None
+        or latest.request_id != request_id
+        or current.entry_kind != "managed_ui"
+        or current.status != "partial"
+        or current.requested_scope != "ready_to_use"
+        or not current.managed.adoption_authorized
+        or current.managed.phase != "preparation"
+        or current.managed.cancel_requested
+        or not current.managed.slot_reserved
+        or not current.managed.callback_started
+        or not native.get("finished_at")
+        or native.get("stop_error")
+        or service.active_request_execution(project_id, request_id)
+        or project.primary_workspace_binding_id != current.managed.binding_id
+        or project.project_dir != current.managed.settings.get("project_dir")
+        or current.runtime != current.managed.settings.get("host_key")
+    ):
+        raise ConflictError("Managed adoption requires current authorized, retired preparation")
+    proposal = current.adoption_proposal
+    if proposal is None:
+        raise ValidationError("Managed adoption needs a current bounded proposal")
+    repo._validate_adoption_proposal(project_id, proposal)
+    for key, outcome in current.outcomes.items():
+        receipt = repo._row(project_id, key)
+        if receipt is None or receipt.revision != outcome.revision:
+            raise ConflictError("Preparation receipt changed before adoption")
+        if outcome.status == "success":
+            proof = VerifiedSetup.model_validate(receipt.successful_json["verification"])
+            sources = repo.inspect_sources(
+                project_id, key, selected_optional_presets=proof.selected_optional_presets
+            )
+            if repo._identity(sources) != repo._identity(proof.sources):
+                raise ConflictError("Preparation sources changed before adoption")
+    tracker = TrackerRepository(session)
+    defaults = tracker.delivery_defaults(project_id=project_id)
+    sources, inline = {}, {}
+    for role, selection in proposal.roles.items():
+        before = _delivery_role_defaults(defaults, role)
+        intended_host = before.get("host_key") or defaults.get("host_key") or current.runtime
+        if selection.host_key != intended_host:
+            raise ConflictError("Adoption cannot change the intended native host")
+        if selection.source_ref:
+            sources[role] = {
+                "source_ref": selection.source_ref.model_dump(),
+                "expected_digest": selection.expected_digest,
+            }
+        else:
+            inline[role] = {
+                "host_key": selection.host_key,
+                "name": selection.name,
+                "instructions": selection.instructions,
+            }
+    arguments = dict(
+        project_id=project_id,
+        project_dir=proposal.project_dir,
+        sources=sources,
+        inline_roles=inline,
+    )
+    tracker.adopt_delivery_sources(**arguments, preview=True)
+    tracker.adopt_delivery_sources(**arguments, preview=False, _commit=False)
+    current.managed.phase = "verification"
+    current.managed.adopted_delivery_digest = _digest(
+        tracker.delivery_defaults(project_id=project_id)
+    )
+    # Adoption and its receipt commit together. A retry cannot repeat the write.
+    _save(session, row, current)
+
+
 def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler):
     from stackos.host_mcp.result import validate_agent_result
     from stackos.repositories.agent_requests import AgentRequestExecution
@@ -540,6 +694,8 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
     )
     from stackos.repositories.projects import ProjectRepository
     from stackos.task_delivery import _request_delivery_drain
+
+    continue_verification = False
 
     def allowed():
         with session_factory() as session:
@@ -579,6 +735,8 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
             "attempt_ref": attempt.attempt_ref,
             "expected_revision": attempt.revision,
             "mode": attempt.mode,
+            "requested_scope": attempt.requested_scope,
+            "phase": attempt.managed.phase,
             "workflow_keys": attempt.workflow_keys,
             "guidance_ref": SETUP_GUIDANCE_REF,
             "project_dir": attempt.managed.settings["project_dir"],
@@ -593,6 +751,46 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
             "partial_changes_possible": attempt.partial_changes_possible,
             "recovery_condition": attempt.recovery_condition,
         }
+        if attempt.managed.phase != "preparation":
+            from stackos.repositories.project_setup import _digest
+            from stackos.repositories.tracker import TrackerRepository
+            from stackos.task_delivery import resolve_delivery_settings
+
+            with session_factory() as session:
+                defaults = TrackerRepository(session).delivery_defaults(project_id=project_id)
+                if _digest(defaults) != attempt.managed.adopted_delivery_digest:
+                    raise ConflictError(
+                        "Saved defaults changed; refresh setup adoption before verification"
+                    )
+                context["adoption_readback"] = resolve_delivery_settings(
+                    session,
+                    project_id=project_id,
+                    project_dir=attempt.managed.settings["project_dir"],
+                    role_keys=set(attempt.adoption_proposal.roles),
+                )
+                context["adopted_delivery_digest"] = attempt.managed.adopted_delivery_digest
+                for role, selection in attempt.adoption_proposal.roles.items():
+                    if selection.source_ref and (
+                        context["adoption_readback"]["agents"][role]["source_digest"]
+                        != selection.expected_digest
+                        or context["adoption_readback"]["agents"][role]["source_ref"]
+                        != selection.source_ref.model_dump()
+                    ):
+                        raise ConflictError("Adopted source changed before native verification")
+                if attempt.managed.verification_request_id is not None:
+                    verified, _ = _load(
+                        session, project_id, attempt.managed.verification_request_id
+                    )
+                    native = verified.metadata_json["native_execution"]
+                    context["completed_verification"] = {
+                        "reference": {
+                            "kind": "native_request",
+                            "request_id": verified.id,
+                            "invocation_id": native["execution"]["invocation_id"],
+                            "outcome_digest": _digest(native["result"]),
+                        },
+                        "result": native["result"],
+                    }
         result = service.run_agent(
             **attempt.managed.settings,
             instructions=INSTRUCTIONS,
@@ -621,6 +819,11 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
             if not result.ok:
                 raise ValidationError(result.error or "Native setup failed")
             report = SetupReport.model_validate_json(result.result["report_json"])
+            if report.status == "success" and result.result.get("verification_status") in {
+                "failed",
+                "blocked",
+            }:
+                raise ValidationError("Failed or blocked native verification cannot complete setup")
             if report.status == "running":
                 raise ValidationError(
                     "Native setup exited without a final outcome or concrete question"
@@ -635,6 +838,27 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
                     report=report,
                     _managed=True,
                 )
+            _, current = _load(session, project_id, request_id)
+            if (
+                current.status == "partial"
+                and current.requested_scope == "ready_to_use"
+                and current.managed.phase == "preparation"
+                and current.adoption_proposal is not None
+            ):
+                _adopt_managed(session, project_id, request_id, claim_token)
+                continue_verification = True
+            elif (
+                current.status == "partial"
+                and current.managed.phase == "verification"
+                and result.result.get("verification_status") == "passed"
+            ):
+                # The native result is already durably retired. Only its bounded
+                # check succeeded; final receipt validation needs a new claim.
+                row, current = _load(session, project_id, request_id)
+                current.managed.phase = "completion"
+                current.managed.verification_request_id = request_id
+                _save(session, row, current)
+                continue_verification = True
     except Exception as exc:
         with managed_launch_lock, session_factory() as session:
             row, current = _load(session, project_id, request_id)
@@ -661,6 +885,7 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
                     row.status = (
                         AgentRequestStatus.RESOLVED
                         if current.status == "success"
+                        or current.managed.verification_request_id == request_id
                         else AgentRequestStatus.FAILED
                     )
                     row.completed_at = datetime.now(UTC).replace(tzinfo=None)
@@ -673,6 +898,20 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
             if native:
                 current.thread_id = native.get("execution", {}).get("thread_id")
             _save(session, row, current)
+        if continue_verification and quiescent and not current.managed.cancel_requested:
+            try:
+                continue_managed(
+                    project_id,
+                    request_id,
+                    expected_revision=current.revision,
+                    session_factory=session_factory,
+                    scheduler=scheduler,
+                )
+            except Exception as exc:
+                with managed_launch_lock, session_factory() as session:
+                    row, current = _load(session, project_id, request_id)
+                    current.managed.diagnostic = redact_secret_text(str(exc))[:2000]
+                    _save(session, row, current)
         _request_delivery_drain(session_factory, scheduler)
 
 

@@ -286,6 +286,28 @@ arbitrary operation payload. Authorized adoption and readback remain with the
 existing managed/defaults owners. Compact workflow reads include requested scope,
 activation status and missing claims; raw receipts retain detailed proof.
 
+Authenticated managed `ready_to_use` admission retains narrow adoption authority
+on its setup request. After preparation retires, the managed owner rechecks its
+current claim, folder/binding, proposal sources and saved-default digest, then
+uses canonical adoption preview/write/readback. The defaults write and adopted
+digest receipt commit together. Compatible role preferences, explicit nulls and
+unrelated settings remain intact; queued/running task snapshots are untouched.
+This does not expose `tracker.configureDelivery` over MCP or CLI.
+
+When bounded verification is still missing, the existing managed continuation
+links a successor with a new claim after predecessor retirement and capacity
+release. Its prompt includes the canonical resolved role readback and current
+scope. A verification turn can return `verification_status: "passed"` alongside
+a partial setup report, recording successful bounded checks without asserting
+overall readiness. Only that authorized verification phase can produce this
+logical check outcome. One completion continuation receives the exact retired
+request/invocation/result digest and validates the final workflow receipts;
+it reuses the completed checks. Missing, failed or blocked checks never advance
+automatically to completion. Current matching evidence may complete directly.
+There is no separate verification workflow/task or linked-run waiting lifecycle.
+Cancellation fences only current setup ownership; recovery retains evidence and
+revalidates changed sources/defaults before consumption or final success.
+
 The agent chooses workflows under the shared guide and inspects unknown legacy
 adaptations before deciding what to change. `start` serializes admission with the
 project owner and returns one typed `AgentRequest.metadata_json.project_setup`

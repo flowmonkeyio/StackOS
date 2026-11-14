@@ -5,7 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { defineComponent, ref } from 'vue'
 import { callOperation } from '@/lib/operations'
 import { ApiError, apiFetch } from '@/lib/client'
-import { ProjectSetupOutFolder_status, ProjectSetupOutStatus, SetupAttemptEntry_kind, SetupAttemptStatus, SetupQuestionAnswer_state, SetupQuestionResponse_channel } from '@/api'
+import { ProjectSetupOutFolder_status, ProjectSetupOutStatus, SetupAttemptEntry_kind, SetupAttemptStatus, SetupManagedExecutionPhase, SetupQuestionAnswer_state, SetupQuestionResponse_channel } from '@/api'
 import HomeConsoleView from '../HomeConsoleView.vue'
 import ProjectSetupView from './ProjectSetupView.vue'
 import ProjectSetupLaunchDialog from './ProjectSetupLaunchDialog.vue'
@@ -69,7 +69,7 @@ describe('Home project setup', () => {
     expect(writes()).toHaveLength(0)
   })
   it.each(['cancelled', 'failed'] as const)('opens actionable pre-launch %s recovery without a new agent picker', async status => {
-    state.current_attempt = attemptFixture({ status: SetupAttemptStatus[status], managed: { settings: { host_key: 'codex', model: 'original-model' }, binding_id: 1, admission_id: 'fixture', job_ref: 'fixture', callback_started: false, slot_reserved: false, cancel_requested: status === 'cancelled', resume_thread_id: null, diagnostic: null } })
+    state.current_attempt = attemptFixture({ status: SetupAttemptStatus[status], managed: { settings: { host_key: 'codex', model: 'original-model' }, binding_id: 1, admission_id: 'fixture', job_ref: 'fixture', callback_started: false, slot_reserved: false, cancel_requested: status === 'cancelled', resume_thread_id: null, diagnostic: null, phase: SetupManagedExecutionPhase.preparation, adoption_authorized: false, adopted_delivery_digest: null, verification_request_id: null } })
     state.launch_preferences = { host_key: 'codex', model: 'newer-saved-model' }
     const router = await home()
     await button('View setup').trigger('click'); await flushPromises()
