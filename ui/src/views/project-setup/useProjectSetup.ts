@@ -56,8 +56,8 @@ export function useProjectSetup(projectId: Ref<number>, options: { retainReminde
   }
   const { refresh, running } = usePolling(load)
   onBeforeUnmount(() => {
-    if (app && state.value?.project_id === projectId.value) retainedReminders.set(app, {
-      projectId: projectId.value, reminder: projectReminder(state.value), updateCount: state.value.update_count,
+    if (app && state.value) retainedReminders.set(app, {
+      projectId: state.value.project_id, reminder: projectReminder(state.value), updateCount: state.value.update_count,
     })
     disposed = true; revision++
   })

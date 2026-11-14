@@ -39,6 +39,7 @@ async function mountProject() {
       { path: '/projects/:id', component: HomeConsoleView },
       { path: '/projects/:id/tasks', component: { template: '<div>Task graph</div>' } },
       { path: '/projects/:id/connections', component: { template: '<div>Connections</div>' } },
+      { path: '/other', component: { template: '<div>Other page</div>' } },
     ],
   })
   await router.push('/projects/1')
@@ -59,7 +60,7 @@ describe('project Home active work', () => {
     const { wrapper, router } = await mountProject()
     try {
       expect(wrapper.get('[aria-label="Project setup reminder"]').text()).toContain('3 workflows')
-      await router.push('/projects/1/tasks'); await flushPromises()
+      await router.push('/other'); await flushPromises()
       let finish!: (value: unknown) => void
       vi.mocked(callOperation).mockImplementation((name, args) => name === 'projectSetup.get'
         ? new Promise(resolve => { finish = resolve }) : read(name, args))
