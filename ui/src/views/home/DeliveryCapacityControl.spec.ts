@@ -121,6 +121,9 @@ describe('DeliveryCapacityControl', () => {
 
   it('steps labeled limits and shows actual over-limit work without stopping tasks', async () => {
     await setup(); await open()
+    for (const field of wrapper.findAll('input')) {
+      expect(wrapper.get(`label[for="${field.attributes('id')}"]`).text()).toBe(field.attributes('aria-label'))
+    }
     expect(wrapper.text()).toContain('Running tasks continue.')
     await wrapper.get('[aria-label="Decrease run at once for Project 1"]').trigger('click')
     expect((input().element as HTMLInputElement).value).toBe('2')

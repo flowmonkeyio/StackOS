@@ -262,7 +262,12 @@ async function save(): Promise<void> {
                       <UiIcon name="minus" />
                     </UiIconButton>
                     <div class="queue-limit-input">
+                      <label
+                        :for="`${saveErrorId}-${row.project_id}`"
+                        class="sr-only"
+                      >Run at once for {{ row.project_name }}</label>
                       <UiInput
+                        :id="`${saveErrorId}-${row.project_id}`"
                         :model-value="drafts[row.project_id]"
                         :aria-label="`Run at once for ${row.project_name}`"
                         :aria-describedby="saveError ? saveErrorId : undefined"
