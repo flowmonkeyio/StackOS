@@ -33,7 +33,6 @@ type Channel = {
   listeners: Set<Listener>; stream: TrackerStatusStream | null; projectId: number | null
   latest: { tasks: Map<string, LatestUsage>; tickets: Map<string, LatestUsage> }
   connection: UsageFeedState; snapshotReady: boolean; freshnessTimer: number | null; generation: number; snapshotVersion: number; frameReady: boolean
-  baseline: boolean; waiters: Set<() => void>
   usageRevisions: Map<number, number>
   coveredEventId: number | null
 }
@@ -41,21 +40,6 @@ const channels = new Map<number | null, Channel>()
 let revision = 0
 // The server sends a heartbeat every 15 seconds even when tokens do not change.
 const FEED_STALE_MS = 45_000
-
-// Establish the initial/reconnect boundary before a Home bulk read. A failed or
-// silent stream releases the read, but cannot establish Live freshness.
-export function awaitUsageBaseline(projectId: number | null): Promise<void> {
-  const channel = channels.get(projectId)
-  if (!channel || channel.baseline || document.hidden) return Promise.resolve()
-  return new Promise(resolve => {
-    const done = () => { window.clearTimeout(timer); channel.waiters.delete(done); resolve() }
-    const timer = window.setTimeout(done, 1000)
-    channel.waiters.add(done)
-  })
-}
-function releaseBaseline(channel: Channel): void {
-  channel.waiters.forEach(done => done())
-}
 
 export function usageCheckpoint(): number { return revision }
 
@@ -108,8 +92,6 @@ function open(channel: Channel): void {
     uiDemand: { projects: {} },
     onUsage: (updates) => {
       if (!current()) return
-      channel.baseline = true
-      releaseBaseline(channel)
       channel.snapshotVersion += 1
       channel.usageRevisions.clear()
       channel.coveredEventId = null
@@ -153,8 +135,6 @@ function open(channel: Channel): void {
       channel.snapshotVersion += 1
       channel.usageRevisions.clear()
       channel.coveredEventId = null
-      channel.baseline = true
-      releaseBaseline(channel)
       channel.snapshotReady = false
       channel.frameReady = false
       publishConnection(channel, 'reconnecting')
@@ -180,8 +160,6 @@ function open(channel: Channel): void {
       channel.coveredEventId = null
       channel.snapshotReady = false
       channel.frameReady = false
-      channel.baseline = true
-      releaseBaseline(channel)
       publishConnection(channel, 'reconnecting')
       channel.listeners.forEach((listener) => listener.error?.(cause))
     },
@@ -194,10 +172,8 @@ function publishConnection(channel: Channel, status: UsageFeedState['status'], r
 }
 
 function close(channel: Channel): void {
-  channel.baseline = false
   channel.usageRevisions.clear()
   channel.coveredEventId = null
-  releaseBaseline(channel)
   channel.generation += 1
   if (channel.freshnessTimer !== null) window.clearTimeout(channel.freshnessTimer)
   channel.freshnessTimer = null
@@ -263,7 +239,6 @@ export function subscribeUsageUpdates(projectId: number | null, listener: Listen
       projectId, listeners: new Set(), stream: null, latest: { tasks: new Map(), tickets: new Map() },
       connection: { status: document.hidden ? 'paused' : 'connecting', receivedAt: null },
       snapshotReady: false, freshnessTimer: null, generation: 0, snapshotVersion: 0, frameReady: false,
-      baseline: false, waiters: new Set(),
       usageRevisions: new Map(),
       coveredEventId: null,
     }

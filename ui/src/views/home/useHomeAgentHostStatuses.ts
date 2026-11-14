@@ -1,4 +1,4 @@
-import { computed, ref } from 'vue'
+import { computed, getCurrentInstance, onBeforeUnmount, ref, type App } from 'vue'
 
 import { desktop } from '@/lib/desktop'
 import { callOperation } from '@/lib/operations'
@@ -17,19 +17,23 @@ export type HostStatusState =
   | { kind: 'loaded'; items: DesktopMcpHostStatus[] }
   | { kind: 'error'; items: DesktopMcpHostStatus[]; message: string }
 
+const retained = new WeakMap<App, DesktopMcpHostStatus[]>()
+
 export function useHomeAgentHostStatuses(isShell: boolean) {
-  const hostStatuses = ref<HostStatusState>({ kind: 'loading', items: [] })
+  const app = getCurrentInstance()?.appContext.app
+  let disposed = false
+  if (app) onBeforeUnmount(() => { disposed = true })
+  const hostStatuses = ref<HostStatusState>({ kind: 'loading', items: (app && retained.get(app)) || [] })
 
   const hostStatusSummary = computed(() => {
     const items = hostStatuses.value.items
-    if (hostStatuses.value.kind === 'loading') {
-      return items.length ? 'Refreshing connections…' : 'Checking connections…'
-    }
+    if (hostStatuses.value.kind === 'loading' && !items.length) return 'Checking connections…'
     if (hostStatuses.value.kind === 'error') return 'Connection status unavailable'
     return agentHostSummary(items)
   })
 
   async function loadHostStatuses(): Promise<void> {
+    if (disposed) return
     hostStatuses.value = { kind: 'loading', items: hostStatuses.value.items }
     try {
       const result = isShell
@@ -37,6 +41,7 @@ export function useHomeAgentHostStatuses(isShell: boolean) {
         : await callOperation<DesktopHostStatusesResult>('hostMcp.status', {})
       applyHostStatuses(result)
     } catch (err) {
+      if (disposed) return
       hostStatuses.value = {
         kind: 'error',
         items: hostStatuses.value.items,
@@ -46,12 +51,14 @@ export function useHomeAgentHostStatuses(isShell: boolean) {
   }
 
   function applyHostStatuses(result: DesktopDoctorResult | DesktopHostStatusesResult | null): void {
+    if (disposed) return
     const hosts =
       'items' in (result ?? {})
         ? (result as DesktopHostStatusesResult).items
         : (result as DesktopDoctorResult | null)?.parsed?.info?.mcp_hosts
     if (Array.isArray(hosts)) {
       hostStatuses.value = { kind: 'loaded', items: hosts }
+      if (app) retained.set(app, hosts)
       return
     }
     hostStatuses.value = {

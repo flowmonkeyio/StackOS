@@ -40,7 +40,7 @@ const description = computed(() => currentProject.value?.domain || 'Current proj
 const agents = useAgentStats(projectId)
 onMounted(() => { void agents.load() })
 const { summary: agentSummary, loading: agentsLoading, error: agentsError, filters: agentFilters } = agents
-const { running } = usePolling(overview.load, { intervalMs: 30_000 })
+usePolling(overview.load, { intervalMs: 30_000 })
 const refreshing = ref(false)
 async function refreshAll(): Promise<void> {
   refreshing.value = true
@@ -78,7 +78,7 @@ async function refreshAll(): Promise<void> {
           variant="secondary"
           size="sm"
           icon-left="refresh"
-          :loading="refreshing || running"
+          :loading="refreshing"
           @click="refreshAll"
         >
           Refresh

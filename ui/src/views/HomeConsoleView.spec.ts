@@ -105,11 +105,18 @@ describe('project Home active work', () => {
       const count = (operation: string) => vi.mocked(callOperation).mock.calls.filter(([name]) => name === operation).length
       const usage = count('tracker.agentStats'), active = count('tracker.activeTasks')
       const connections = vi.mocked(apiFetch).mock.calls.filter(([url]) => url.includes('/connections/accounts')).length
+      let finish!: (value: unknown) => void
+      const read = vi.mocked(apiFetch).getMockImplementation()!
+      vi.mocked(apiFetch).mockImplementation(url => url.includes('/connections/accounts')
+        ? new Promise(resolve => { finish = resolve }) : read(url))
       await vi.advanceTimersByTimeAsync(30_000)
+      expect(wrapper.get('.ui-page-header').findAll('button').find(button => button.text() === 'Refresh')!.attributes('aria-busy')).toBeUndefined()
+      expect(wrapper.find('[aria-label="Connected tools"] [role="img"][aria-label="Test failed"]').exists()).toBe(true)
       expect(count('tracker.agentStats')).toBe(usage)
       expect(count('tracker.activeTasks')).toBe(active)
       expect(count('project.portfolio')).toBe(0)
       expect(vi.mocked(apiFetch).mock.calls.filter(([url]) => url.includes('/connections/accounts')).length).toBeGreaterThan(connections)
+      finish({ accounts: [] }); await flushPromises()
     } finally { wrapper.unmount(); vi.useRealTimers() }
   })
 

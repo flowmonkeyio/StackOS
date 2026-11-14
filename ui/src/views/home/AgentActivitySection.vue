@@ -181,9 +181,7 @@ function setDate(field: 'start_date' | 'end_date', value: string | number | null
         </aside>
       </div>
       <p class="text-2xs leading-5 text-fg-subtle">
-        Based on recorded automated delivery · {{ filters.timezone }} · Updated {{ formatAbsoluteDateTime(summary.as_of) }}<template v-if="loading">
-          · Refreshing…
-        </template>
+        Based on recorded automated delivery · {{ filters.timezone }} · Updated {{ formatAbsoluteDateTime(summary.as_of) }}
       </p>
       <p
         v-if="summary.undated.launch_attempts"

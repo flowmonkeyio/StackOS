@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { UiBadge, UiButton, UiCallout } from '@/components/ui'
+import { UiBadge, UiButton, UiCallout, UiSkeleton } from '@/components/ui'
 import type { DesktopMcpHostStatus } from '@/lib/desktop'
 
 import {
@@ -50,23 +50,20 @@ function presentation(host: DesktopMcpHostStatus) {
 
     <ul
       v-if="state.kind === 'loading' && state.items.length === 0"
-      class="m-0 list-none p-0"
+      class="m-0 grid grid-cols-1 list-none gap-2 p-0 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6"
+      aria-label="Checking AI tool connections"
+      aria-hidden="true"
     >
       <li
+        v-for="slot in 6"
+        :key="slot"
         class="min-w-0 rounded-md border border-subtle bg-bg-surface-alt px-3 py-2"
       >
-        <div class="flex min-w-0 flex-wrap items-center justify-between gap-x-2 gap-y-1">
-          <span class="text-sm font-medium text-fg-strong">AI tool</span>
-          <UiBadge
-            tone="neutral"
-            size="sm"
-          >
-            Checking
-          </UiBadge>
+        <div class="flex h-6 items-center gap-2">
+          <UiSkeleton shape="block" width="24px" height="24px" />
+          <UiSkeleton shape="line" width="5rem" />
         </div>
-        <p class="mt-1 text-2xs text-fg-muted">
-          Checking the StackOS connection…
-        </p>
+        <div class="mt-1 flex h-4 items-center"><UiSkeleton shape="line" width="90%" /></div>
       </li>
     </ul>
     <UiCallout

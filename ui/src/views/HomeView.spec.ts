@@ -10,6 +10,28 @@ import { agentStatsFixture } from './home/agentStatsFixtures'
 const ORIG_FETCH = globalThis.fetch
 
 describe('HomeView', () => {
+  it('keeps the page Refresh idle during a grouping read and joins it on explicit Refresh', async () => {
+    globalThis.fetch = vi.fn(async input => defaultFetch(String(input))) as typeof fetch
+    const wrapper = await mountHome()
+    try {
+      let finish!: (value: Response) => void
+      vi.mocked(fetch).mockImplementation(async input => String(input).includes('tracker.agentStatsAll')
+        ? new Promise<Response>(resolve => { finish = resolve }) : defaultFetch(String(input)))
+      const chart = wrapper.findComponent({ name: 'AgentActivityChart' }).element
+      await wrapper.findAll('button').find(button => button.text() === 'Agent')!.trigger('click')
+      await flushPromises()
+      const refresh = wrapper.get('.ui-page-header').findAll('button').find(button => button.text() === 'Refresh')!
+      expect(refresh.attributes('aria-busy')).toBeUndefined()
+      expect(wrapper.findComponent({ name: 'AgentActivityChart' }).element).toBe(chart)
+      const calls = vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('tracker.agentStatsAll')).length
+      await refresh.trigger('click'); await flushPromises()
+      expect(refresh.attributes('aria-busy')).toBe('true')
+      expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).includes('tracker.agentStatsAll'))).toHaveLength(calls)
+      finish(json(agentStatsFixture({ project_id: null, is_active: true, group_by: 'agent' as never })))
+      await flushPromises()
+      expect(refresh.attributes('aria-busy')).toBeUndefined()
+    } finally { wrapper.unmount() }
+  })
   beforeEach(() => {
     setActivePinia(createPinia())
     Reflect.deleteProperty(window, 'stackosDesktop')

@@ -117,10 +117,20 @@ stop with a retryable error, preserving the accepted mutation and useful content
 Home's analytics and active-task readers share pending admission through
 `usageReads`: scope/filter/group changes have independent identities, manual
 callers join pending work, and real in-flight invalidations require one fresh
-follow-up per burst. The initial stream replacement precedes the first bulk
-read. An error or a one-second admission deadline releases useful reads while
-freshness remains unconfirmed; reconnect/visibility changes still revalidate.
-No response cache survives the last subscriber. Graph and one full primary
+follow-up per burst. Useful HTTP reads start alongside the stream, without a
+handshake deadline. A read completed before the first stream frame can display
+its scoped data but cannot establish Live. A first response crossed by updates
+can also display without replacing accepted content or populating return storage.
+A baseline or real update crossing
+an in-flight read requires an ordered trailing read; synchronous mount/baseline
+callers join the same initial work. Reconnect/visibility changes still revalidate.
+The Home readers retain only their last global and project response per app;
+scope/date identity gates immediate return content, while every mount starts a
+new subscription and revalidation. Freshness is never retained. Existing rows
+and chart instances stay mounted during automatic refresh, and only a manual
+Refresh action animates the page's Refresh button. Local service/host reads
+retain their accepted display on return; the initial host placeholders use the
+same six-slot desktop grid as the status response. Graph and one full primary
 detail can be reused only within the mounted project and accepted revision.
 Content saves and latest-content retries use the same UI-demand index queue.
 While a full detail read is pending, its owner retains accepted metric patches
