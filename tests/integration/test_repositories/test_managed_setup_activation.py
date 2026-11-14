@@ -329,6 +329,122 @@ def test_native_final_outcome_reconciles_persisted_partial_report(
         assert len(scheduler.jobs) == 1
 
 
+@pytest.mark.parametrize(
+    "final_outcome",
+    ["shorter", "identical", "failed", "blocked", "nonzero", "changed_defaults", "changed_native"],
+)
+def test_native_final_confirmation_revalidates_accepted_success(
+    managed, session, monkeypatch, final_outcome
+):
+    _, project, scheduler, factory = managed
+    proposal = proposal_for(managed, session)
+    calls = install_runner(managed, monkeypatch, proposal)
+    definition = service._definition_by_key("codex")
+    opened = WorkspaceRepository(session).start_session(
+        runtime="codex", cwd=proposal["project_dir"], client_session_id="completion-native"
+    )
+    observed = []
+
+    def runner(root, instructions, prompt, schema, **kwargs):
+        result = definition.run_agent(root, instructions, prompt, schema, **kwargs)
+        context = json.loads(prompt)
+        if context["phase"] != "completion":
+            return result
+        full = SetupReport.model_validate_json(result.result["report_json"])
+        full.workflow_keys = [KEY]
+        with factory() as check:
+            envelope = asyncio.run(
+                project_setup_report(
+                    ProjectSetupReportInput(
+                        project_id=project,
+                        request_id=context["request_id"],
+                        session_id=opened.data.id,
+                        client_session_id="completion-native",
+                        claim_token=context["claim_token"],
+                        expected_revision=context["expected_revision"],
+                        report=full,
+                    ),
+                    MCPContext(session=check, request_id="full-success", extras={"surface": "mcp"}),
+                    None,
+                )
+            )
+            assert envelope.project_id == project and envelope.data.status == "success"
+            receipt = ProjectSetupRepository(check)._row(project, KEY)
+            observed.append(
+                (
+                    envelope.data.model_dump(mode="json"),
+                    receipt.revision,
+                    deepcopy(receipt.successful_json),
+                )
+            )
+            if final_outcome == "changed_defaults":
+                tracker = TrackerRepository(check)
+                tracker.configure_delivery(
+                    project_id=project,
+                    delivery={**tracker.delivery_defaults(project_id=project), "model": "changed"},
+                )
+            elif final_outcome == "changed_native":
+                native = check.get(
+                    AgentRequest, context["completed_verification"]["reference"]["request_id"]
+                )
+                metadata = deepcopy(native.metadata_json)
+                metadata["native_execution"]["result"]["verification_status"] = "blocked"
+                native.metadata_json = metadata
+                check.add(native)
+                check.commit()
+        final = (
+            full
+            if final_outcome == "identical"
+            else SetupReport(
+                status="failed" if final_outcome == "failed" else "success",
+                workflow_keys=[KEY],
+                progress=dict(
+                    message="Final confirmation", evidence_ref="fixture/final-confirmation"
+                ),
+            )
+        )
+        return AgentRunResult(
+            1 if final_outcome == "nonzero" else 0,
+            thread_id="bounded-setup-native",
+            result={
+                "report_json": final.model_dump_json(),
+                "verification_status": "blocked" if final_outcome == "blocked" else None,
+            },
+        )
+
+    monkeypatch.setattr(
+        service, "_definition_by_key", lambda key: replace(definition, run_agent=runner)
+    )
+    launch(managed, host_key="codex")
+    for _ in range(3):
+        scheduler.run()
+    session.expire_all()
+    assert [call["phase"] for call in calls] == ["preparation", "verification", "completion"]
+    assert not scheduler.jobs
+    accepted, receipt_revision, successful = observed[0]
+    row = session.get(AgentRequest, accepted["request_id"])
+    stored = row.metadata_json["project_setup"]
+    receipt = ProjectSetupRepository(session)._row(project, KEY)
+    # Final confirmation never writes another workflow receipt or native check.
+    assert receipt.revision == receipt_revision and receipt.successful_json == successful
+    assert stored["outcomes"] == accepted["outcomes"]
+    assert not stored["managed"]["slot_reserved"] and row.claim_token_hash is None
+    assert row.metadata_json["native_execution"]["finished_at"]
+    assert len(session.exec(select(AgentRequest)).all()) == 3
+    if final_outcome in {"shorter", "identical"}:
+        assert stored["status"] == "success", stored["managed"]["diagnostic"]
+        assert row.status == "resolved"
+        assert stored["revision"] == accepted["revision"]
+        assert stored["reports"] == accepted["reports"]
+        assert stored["progress"] == accepted["progress"]
+    else:
+        assert stored["status"] == "failed" and row.status == "failed"
+        if final_outcome == "changed_defaults":
+            assert "activation" in stored["managed"]["diagnostic"]
+        elif final_outcome == "changed_native":
+            assert "native" in stored["managed"]["diagnostic"]
+
+
 def test_adopted_delivery_hosts_are_independent_of_setup_host(managed, session, monkeypatch):
     _, project, scheduler, _ = managed
     tracker = TrackerRepository(session)

@@ -1067,6 +1067,14 @@ class ProjectSetupRepository:
                 and current.reports
                 and current.reports[-1].report_digest == report_digest
             )
+            final_confirmation = (
+                _native_final
+                and _managed
+                and not _session_report
+                and current.status == "success"
+                and report.status == "success"
+                and not report.workflow_results
+            )
             if (
                 _native_final
                 and current.status == "needs_input"
@@ -1083,6 +1091,7 @@ class ProjectSetupRepository:
                     current.status == "partial"
                     or report.status in {"failed", "interrupted", "cancelled"}
                     or final_replay
+                    or final_confirmation
                 )
             )
             if (
@@ -1260,7 +1269,10 @@ class ProjectSetupRepository:
                                 },
                             )
                         self._validate_activation(project_id, proof, current_sources=sources)
-            if final_replay:
+            if final_replay or final_confirmation:
+                # A native final confirmation may summarize the success already
+                # reported by this invocation. The retained proof was revalidated
+                # above; preserve its receipts and the accepted report unchanged.
                 self._s.commit()
                 return current
             current.revision += 1
