@@ -27,9 +27,12 @@ from stackos.db.models import (
     AgentSession,
     ProjectSetupReceipt,
     ProjectWorkflowTemplate,
+    RunPlan,
+    RunPlanStep,
     WorkflowTemplate,
     WorkflowTemplateExtension,
 )
+from stackos.host_mcp.project_agents import AgentSourceRef
 from stackos.repositories.agent_requests import AgentRequestRepository, _hash_token
 from stackos.repositories.base import ConflictError, RepositoryError, ValidationError
 from stackos.repositories.projects import ProjectRepository
@@ -105,6 +108,135 @@ class SetupLocalAdaptation(SetupEvidenceModel):
     provenance: str = Field(min_length=1)
 
 
+SetupScope = Literal["ready_to_use", "infrastructure_only"]
+
+
+class SetupRoleProposal(SetupEvidenceModel):
+    """A bounded selection for the existing defaults owner, never write authority."""
+
+    source_ref: AgentSourceRef | None = None
+    expected_digest: str = Field(pattern="^[0-9a-f]{64}$")
+    host_key: str = Field(min_length=1, max_length=100)
+    name: str = Field(min_length=1, max_length=160)
+    instructions: str | None = Field(default=None, min_length=1, max_length=100_000)
+    provenance_ref: str = Field(min_length=1, max_length=1000)
+
+    @model_validator(mode="after")
+    def instruction_owner(self) -> SetupRoleProposal:
+        if self.source_ref is not None:
+            if self.host_key != self.source_ref.host_key or self.instructions is not None:
+                raise ValueError("source refs own instructions and must match the selected host")
+        elif self.host_key == "codex" or self.instructions is None:
+            raise ValueError(
+                "Codex requires a source ref; other hosts require their inline contract"
+            )
+        elif _digest(self.instructions) != self.expected_digest:
+            raise ValueError("inline contract digest changed")
+        return self
+
+
+class SetupAdoptionProposal(SetupEvidenceModel):
+    project_id: int = Field(strict=True, ge=1)
+    binding_id: int = Field(strict=True, ge=1)
+    project_dir: str = Field(min_length=1, max_length=4096)
+    expected_delivery_digest: str = Field(pattern="^[0-9a-f]{64}$")
+    roles: dict[str, SetupRoleProposal] = Field(min_length=1, max_length=100)
+
+
+class SetupActivationBasis(SetupEvidenceModel):
+    """Separate current source, defaults, local adaptation and environment identities."""
+
+    project_id: int = Field(strict=True, ge=1)
+    binding_id: int = Field(strict=True, ge=1)
+    sources_digest: str = Field(
+        pattern="^[0-9a-f]{64}$",
+        description="SHA256 of canonical JSON sorted (ref, kind, key, origin, digest, version) "
+        "tuples from verification.sources.",
+    )
+    delivery_digest: str = Field(
+        pattern="^[0-9a-f]{64}$",
+        description="SHA256 of canonical JSON saved project delivery defaults, "
+        "excluding task overrides.",
+    )
+    adaptations_digest: str = Field(
+        pattern="^[0-9a-f]{64}$",
+        description="SHA256 of canonical JSON verification.local_adaptations in reported order.",
+    )
+    environment_ref: str = Field(min_length=1, max_length=1000)
+
+
+class SetupProofReference(SetupEvidenceModel):
+    """References are checked against their existing owner, not caller-supplied status."""
+
+    kind: Literal["native_request", "workflow_step"]
+    request_id: int | None = Field(default=None, strict=True, ge=1)
+    invocation_id: str | None = Field(default=None, min_length=1, max_length=200)
+    run_plan_id: int | None = Field(default=None, strict=True, ge=1)
+    step_id: str | None = Field(default=None, min_length=1, max_length=200)
+    outcome_digest: str = Field(
+        pattern="^[0-9a-f]{64}$",
+        description="SHA256 of canonical JSON native_execution.result or RunPlanStep.result_json.",
+    )
+
+    @model_validator(mode="after")
+    def exact_owner(self) -> SetupProofReference:
+        native = self.request_id is not None and self.invocation_id is not None
+        workflow = self.run_plan_id is not None and self.step_id is not None
+        if (
+            self.kind == "native_request"
+            and (not native or self.run_plan_id is not None or self.step_id is not None)
+        ) or (
+            self.kind == "workflow_step"
+            and (not workflow or self.request_id is not None or self.invocation_id is not None)
+        ):
+            raise ValueError("select one exact native invocation or workflow step")
+        return self
+
+
+class SetupActivationCheck(SetupEvidenceModel):
+    claims: list[str] = Field(min_length=1, max_length=100)
+    origin: Literal["reused", "executed", "simulated"]
+    status: Literal["passed", "failed"] = "passed"
+    basis: SetupActivationBasis
+    reference: SetupProofReference
+    evidence_ref: str = Field(min_length=1, max_length=1000)
+
+
+class SetupActivationEvidence(SetupEvidenceModel):
+    method_ref: str = Field(min_length=1, max_length=1000)
+    status: Literal["pending", "blocked", "verified"] = "pending"
+    required_claims: list[str] = Field(min_length=1, max_length=100)
+    checks: list[SetupActivationCheck] = Field(default_factory=list, max_length=100)
+    missing_claims: list[str] = Field(default_factory=list, max_length=100)
+    diagnostic: str | None = Field(default=None, max_length=2000)
+
+    def gaps(self) -> list[str]:
+        # Domain method may require more proof, but cannot drop these shared boundaries.
+        required = {"saved_defaults", "native_consumption", *self.required_claims}
+        covered = {
+            claim
+            for check in self.checks
+            if check.origin != "simulated" and check.status == "passed"
+            for claim in check.claims
+        }
+        return sorted((required - covered) | set(self.missing_claims))
+
+    @model_validator(mode="after")
+    def truthful_coverage(self) -> SetupActivationEvidence:
+        claims = self.required_claims + self.missing_claims
+        if any(not claim.strip() or len(claim) > 200 for claim in claims) or any(
+            not claim.strip() or len(claim) > 200 for check in self.checks for claim in check.claims
+        ):
+            raise ValueError("activation claims must be bounded nonblank names")
+        if len(set(self.required_claims)) != len(self.required_claims):
+            raise ValueError("required activation claims must be unique")
+        if self.status == "verified" and self.gaps():
+            raise ValueError("verified activation requires all required claims")
+        if self.status == "blocked" and not self.diagnostic:
+            raise ValueError("blocked activation needs an actionable diagnostic")
+        return self
+
+
 class VerifiedSetup(SetupEvidenceModel):
     sources: list[SetupSource] = Field(min_length=1, max_length=100)
     selected_optional_presets: list[str] = Field(default_factory=list, max_length=100)
@@ -116,11 +248,18 @@ class VerifiedSetup(SetupEvidenceModel):
     activation: Literal["verified_loaded", "reload_required", "unknown"]
     activation_evidence_ref: str = Field(min_length=1)
     readiness: SetupReadiness
+    activation_proof: SetupActivationEvidence | None = None
 
     @model_validator(mode="after")
     def evidence_complete(self) -> VerifiedSetup:
         if len(self.model_dump_json().encode()) > 2_000_000:
             raise ValueError("setup evidence exceeds 2 MB")
+        if (
+            self.activation_proof is not None
+            and self.activation_proof.status == "verified"
+            and self.activation != "verified_loaded"
+        ):
+            raise ValueError("verified activation coverage requires observed native loading")
         refs = {source.ref for source in self.sources}
         if len(refs) != len(self.sources):
             raise ValueError("source refs must be unique")
@@ -165,6 +304,8 @@ class SetupResult(SetupEvidenceModel):
     changes: list[str] = Field(default_factory=list, max_length=100)
     diagnostics: list[str] = Field(default_factory=list, max_length=100)
     verification: VerifiedSetup | None = None
+    # Missing in stored records means historical preparation, never inferred activation.
+    requested_scope: SetupScope = "infrastructure_only"
 
     @model_validator(mode="after")
     def success_needs_proof(self) -> SetupResult:
@@ -190,6 +331,9 @@ class SetupWorkflowOut(BaseModel):
     partial_changes: bool = False
     attempt_ref: str | None = None
     result_ref: str | None = None
+    requested_scope: SetupScope = "infrastructure_only"
+    activation_status: Literal["unknown", "pending", "blocked", "verified"] = "unknown"
+    missing_activation_claims: list[str] = Field(default_factory=list)
 
 
 SETUP_NAMESPACE = "project_setup"
@@ -236,6 +380,7 @@ class SetupReport(SetupEvidenceModel):
     workflow_keys: list[str] | None = Field(default=None, max_length=100)
     question: SetupQuestion | None = None
     recovery_condition: str | None = Field(default=None, max_length=2000)
+    adoption_proposal: SetupAdoptionProposal | None = None
 
     @model_validator(mode="after")
     def valid_question(self) -> SetupReport:
@@ -267,6 +412,8 @@ class SetupWorkflowOutcome(SetupEvidenceModel):
     revision: int
     status: Literal["success", "failed", "unfinished", "needs_input", "cancelled", "interrupted"]
     result_ref: str
+    activation_status: Literal["unknown", "pending", "blocked", "verified"] = "unknown"
+    missing_activation_claims: list[str] = Field(default_factory=list)
 
 
 class SetupReportReceipt(SetupEvidenceModel):
@@ -276,6 +423,7 @@ class SetupReportReceipt(SetupEvidenceModel):
     question: SetupQuestion | None
     result_refs: list[str]
     checked_at: datetime
+    adoption_proposal: SetupAdoptionProposal | None = None
 
 
 class SetupManagedExecution(SetupEvidenceModel):
@@ -302,6 +450,7 @@ class SetupAttempt(SetupEvidenceModel):
     successor_request_id: int | None = None
     revision: int = 1
     mode: Literal["setup", "update"]
+    requested_scope: SetupScope = "infrastructure_only"
     entry_kind: Literal["existing_agent", "managed_ui"]
     session_id: int | None
     runtime: str
@@ -328,6 +477,7 @@ class SetupAttempt(SetupEvidenceModel):
     remaining_workflow_keys: list[str] = Field(default_factory=list)
     revalidate_workflow_keys: list[str] = Field(default_factory=list)
     partial_changes_possible: bool = False
+    adoption_proposal: SetupAdoptionProposal | None = None
 
 
 class SetupStartOut(BaseModel):
@@ -622,12 +772,16 @@ class ProjectSetupRepository:
                 },
             )
         proof = result.verification
+        current_sources = None
         if proof is not None and (
-            result.status == "success" or any(source.content is None for source in proof.sources)
+            result.status == "success"
+            or proof.activation_proof is not None
+            or any(source.content is None for source in proof.sources)
         ):
             current = self.inspect_sources(
                 project_id, workflow_key, selected_optional_presets=proof.selected_optional_presets
             )
+            current_sources = current
             if self._identity(current) != self._identity(proof.sources):
                 raise ConflictError(
                     "setup sources changed; inspect and revalidate before reporting",
@@ -646,6 +800,8 @@ class ProjectSetupRepository:
             assert proof is not None
             if result.status == "success":
                 self._validate_roles(current, proof)
+        if proof is not None and proof.activation_proof is not None:
+            self._validate_activation(project_id, proof, current_sources=current_sources)
         now = datetime.now(UTC)
         if row is None:
             row = ProjectSetupReceipt(project_id=project_id, workflow_key=workflow_key)
@@ -721,6 +877,7 @@ class ProjectSetupRepository:
         mode: Literal["setup", "update"],
         workflow_keys: list[str],
         managed: SetupManagedExecution | None = None,
+        requested_scope: SetupScope = "ready_to_use",
     ) -> SetupStartOut:
         """Reserve the project before admission; attachment never issues writer authority."""
         try:
@@ -782,6 +939,7 @@ class ProjectSetupRepository:
                 root_request_id=row.id,
                 request_id=row.id,
                 mode=mode,
+                requested_scope=requested_scope,
                 entry_kind="managed_ui" if managed else "existing_agent",
                 session_id=session_id,
                 runtime=managed.settings["host_key"]
@@ -965,6 +1123,9 @@ class ProjectSetupRepository:
             ):
                 raise ConflictError("question was already answered; consume the recorded answer")
             outcomes = dict(current.outcomes)
+            if report.adoption_proposal is not None:
+                self._validate_adoption_proposal(project_id, report.adoption_proposal)
+                current.adoption_proposal = report.adoption_proposal
             for item in report.workflow_results:
                 if (
                     item.workflow_key not in current.workflow_keys
@@ -975,6 +1136,8 @@ class ProjectSetupRepository:
                     raise ConflictError(
                         "report receipt revision differs from the attempt observation"
                     )
+                # The owning request fixes intent. A report cannot silently downgrade it.
+                item.result.requested_scope = current.requested_scope
                 saved = self.record_result(
                     project_id,
                     item.workflow_key,
@@ -989,6 +1152,8 @@ class ProjectSetupRepository:
                     revision=saved.revision,
                     status=item.result.status,
                     result_ref=item.result.result_ref,
+                    activation_status=saved.activation_status,
+                    missing_activation_claims=saved.missing_activation_claims,
                 )
             if report.status == "success" and (
                 not current.workflow_keys
@@ -1029,6 +1194,29 @@ class ProjectSetupRepository:
                             "workflow sources changed; revalidate before completion",
                             data={"workflow_key": key},
                         )
+                    if current.requested_scope == "ready_to_use":
+                        activation = proof.activation_proof
+                        if (
+                            proof.activation != "verified_loaded"
+                            or activation is None
+                            or activation.status != "verified"
+                            or activation.gaps()
+                        ):
+                            raise ValidationError(
+                                "required workflow activation is incomplete",
+                                data={
+                                    "workflow_key": key,
+                                    "requested_scope": current.requested_scope,
+                                    "activation_status": activation.status
+                                    if activation
+                                    else "pending",
+                                    "missing_claims": activation.gaps()
+                                    if activation
+                                    else ["saved_defaults", "native_consumption"],
+                                    "next_action": "complete_activation",
+                                },
+                            )
+                        self._validate_activation(project_id, proof, current_sources=sources)
             current.revision += 1
             current.status = report.status
             current.progress = report.progress
@@ -1046,6 +1234,7 @@ class ProjectSetupRepository:
                     question=report.question,
                     result_refs=[item.result.result_ref for item in report.workflow_results],
                     checked_at=datetime.now(UTC),
+                    adoption_proposal=report.adoption_proposal,
                 )
             )
             if len(current.model_dump_json().encode()) > 2_000_000:
@@ -1100,6 +1289,7 @@ class ProjectSetupRepository:
                     "request_id",
                     "revision",
                     "mode",
+                    "requested_scope",
                     "entry_kind",
                     "status",
                 },
@@ -1115,6 +1305,160 @@ class ProjectSetupRepository:
             (item.ref, item.kind, item.key, item.origin, item.digest, item.version)
             for item in sources
         )
+
+    def activation_basis(
+        self, project_id: int, proof: VerifiedSetup, *, environment_ref: str
+    ) -> SetupActivationBasis:
+        """Read current identities without adopting settings or granting any authority."""
+        from stackos.repositories.tracker import TrackerRepository
+
+        project = ProjectRepository(self._s).require_available(project_id)
+        if project.primary_workspace_binding_id is None:
+            raise ValidationError("activation requires a bound project folder")
+        return SetupActivationBasis(
+            project_id=project_id,
+            binding_id=project.primary_workspace_binding_id,
+            sources_digest=_digest(self._identity(proof.sources)),
+            delivery_digest=_digest(
+                TrackerRepository(self._s).delivery_defaults(project_id=project_id)
+            ),
+            adaptations_digest=_digest(
+                [item.model_dump(mode="json") for item in proof.local_adaptations]
+            ),
+            environment_ref=environment_ref,
+        )
+
+    def _validate_adoption_proposal(self, project_id: int, proposal: SetupAdoptionProposal) -> None:
+        from pathlib import Path
+
+        from stackos.repositories.tracker import TrackerRepository
+        from stackos.task_delivery import _project_agent_source
+
+        project = ProjectRepository(self._s).get(project_id)
+        if (
+            proposal.project_id != project_id
+            or proposal.binding_id != project.primary_workspace_binding_id
+            or proposal.project_dir != project.project_dir
+            or proposal.expected_delivery_digest
+            != _digest(TrackerRepository(self._s).delivery_defaults(project_id=project_id))
+        ):
+            raise ConflictError(
+                "setup adoption proposal has a foreign or stale basis",
+                data={"project_id": project_id, "next_action": "refresh_adoption_proposal"},
+            )
+        for role, selection in proposal.roles.items():
+            if not role.strip() or len(role) > 160:
+                raise ValidationError("setup adoption role must be a bounded nonblank name")
+            if selection.source_ref is not None:
+                source = _project_agent_source(
+                    self._s,
+                    project_id,
+                    Path(proposal.project_dir),
+                    selection.source_ref.model_dump(),
+                )
+                if (
+                    source.digest != selection.expected_digest
+                    or source.fields is None
+                    or selection.name != source.source_ref.native_name
+                ):
+                    raise ConflictError(
+                        "setup adoption proposal source changed",
+                        data={
+                            "project_id": project_id,
+                            "role": role,
+                            "next_action": "refresh_adoption_proposal",
+                        },
+                    )
+        # Deliberately no configure/adopt call. Only the authorized managed owner
+        # may consume this proposal through the canonical defaults writer.
+
+    def _validate_activation(
+        self,
+        project_id: int,
+        proof: VerifiedSetup,
+        *,
+        current_sources: list[SetupSource] | None = None,
+    ) -> None:
+        activation = proof.activation_proof
+        assert activation is not None
+        if current_sources is None:
+            template = next((source for source in proof.sources if source.kind == "template"), None)
+            if template is None:
+                raise ValidationError("activation needs the effective workflow template source")
+            current_sources = self.inspect_sources(
+                project_id, template.key, selected_optional_presets=proof.selected_optional_presets
+            )
+        if self._identity(current_sources) != self._identity(proof.sources):
+            raise ConflictError(
+                "activation sources changed; revalidate current coverage",
+                data={"project_id": project_id, "next_action": "revalidate_activation"},
+            )
+        for check in activation.checks:
+            basis = self.activation_basis(
+                project_id, proof, environment_ref=check.basis.environment_ref
+            )
+            if basis != check.basis:
+                raise ConflictError(
+                    "activation evidence has a foreign or stale basis",
+                    data={"project_id": project_id, "next_action": "revalidate_activation"},
+                )
+            ref = check.reference
+            if ref.kind == "native_request":
+                row = self._s.get(AgentRequest, ref.request_id, populate_existing=True)
+                native = (row.metadata_json or {}).get("native_execution", {}) if row else {}
+                passed = (
+                    native.get("exit_code") == 0
+                    and not native.get("error")
+                    and not native.get("cancelled")
+                    and not native.get("stop_error")
+                )
+                if (
+                    row is None
+                    or row.project_id != project_id
+                    or not native.get("finished_at")
+                    or passed != (check.status == "passed")
+                    or native.get("execution", {}).get("invocation_id") != ref.invocation_id
+                    or _digest(native.get("result")) != ref.outcome_digest
+                ):
+                    raise ConflictError(
+                        "activation reference is not the completed native outcome",
+                        data={
+                            "project_id": project_id,
+                            "request_id": ref.request_id,
+                            "next_action": "revalidate_activation",
+                        },
+                    )
+            else:
+                plan = self._s.get(RunPlan, ref.run_plan_id, populate_existing=True)
+                step = self._s.exec(
+                    select(RunPlanStep)
+                    .where(
+                        RunPlanStep.run_plan_id == ref.run_plan_id,
+                        RunPlanStep.step_id == ref.step_id,
+                    )
+                    .execution_options(populate_existing=True)
+                ).first()
+                if (
+                    plan is None
+                    or plan.project_id != project_id
+                    or plan.status.value not in {"completed", "failed", "aborted"}
+                    or step is None
+                    or step.result_json is None
+                    or _digest(step.result_json) != ref.outcome_digest
+                    or (plan.status.value == "completed" and step.status.value == "success")
+                    != (check.status == "passed")
+                ):
+                    raise ConflictError(
+                        "activation reference is not the completed workflow outcome",
+                        data={
+                            "project_id": project_id,
+                            "run_plan_id": ref.run_plan_id,
+                            "step_id": ref.step_id,
+                            "next_action": "revalidate_activation",
+                        },
+                    )
+        # Coverage selection is the workflow method's judgment. These checks
+        # validate identities/outcomes, not the semantics of a domain assertion.
 
     @staticmethod
     def _validate_roles(sources: list[SetupSource], proof: VerifiedSetup) -> None:
@@ -1179,10 +1523,23 @@ class ProjectSetupRepository:
             out.partial_changes = latest.get("status") != "success" and bool(latest.get("changes"))
             out.attempt_ref = latest.get("attempt_ref")
             out.result_ref = latest.get("result_ref")
+            out.requested_scope = latest.get("requested_scope", "infrastructure_only")
+            latest_proof = (latest.get("verification") or {}).get("activation_proof")
+            if latest_proof:
+                activation = SetupActivationEvidence.model_validate(latest_proof)
+                out.activation_status = activation.status
+                out.missing_activation_claims = activation.gaps()
+                out.diagnostic = activation.diagnostic
+            elif out.requested_scope == "ready_to_use":
+                out.activation_status = "pending"
+                out.missing_activation_claims = ["saved_defaults", "native_consumption"]
         project = ProjectRepository(self._s).get(project_id)
         if project.primary_workspace_binding_id is not None and project.project_dir is None:
             out.status = "source_unavailable"
             out.diagnostic = project.project_folder_issue
+            if out.requested_scope == "ready_to_use":
+                out.activation_status = "pending"
+                out.missing_activation_claims = ["current_environment"]
             return out
         try:
             optional = (
@@ -1195,6 +1552,9 @@ class ProjectSetupRepository:
             )
         except (RepositoryError, ValueError, yaml.YAMLError, OSError) as exc:
             out.status = "source_unavailable"
+            if out.requested_scope == "ready_to_use":
+                out.activation_status = "pending"
+                out.missing_activation_claims = ["current_sources"]
             # YAML/schema/read exceptions can contain source text. Keep repair
             # guidance bounded and avoid copying local content into diagnostics.
             detail = str(exc)[:300] if isinstance(exc, RepositoryError) else type(exc).__name__
@@ -1218,8 +1578,29 @@ class ProjectSetupRepository:
                 if self._identity(applied.sources) == self._identity(out.available_sources)
                 else "update_available"
             )
+            if out.status == "update_available" and out.requested_scope == "ready_to_use":
+                out.activation_status = "pending"
+                out.missing_activation_claims = ["current_sources"]
             if out.status == "current" and applied.activation != "verified_loaded":
                 out.status = "activation_pending"
+            if out.status == "current" and out.requested_scope == "ready_to_use":
+                if (
+                    applied.activation_proof is None
+                    or applied.activation_proof.status != "verified"
+                ):
+                    out.status = "activation_pending"
+                else:
+                    try:
+                        self._validate_activation(
+                            project_id, applied, current_sources=out.available_sources
+                        )
+                    except (ConflictError, ValidationError):
+                        out.status = "activation_pending"
+                        out.activation_status = "pending"
+                        out.missing_activation_claims = ["current_activation_evidence"]
+                        out.diagnostic = (
+                            "Activation evidence changed; revalidate the missing coverage."
+                        )
         return out
 
     def get(self, project_id: int, *, workflow_key: str | None = None) -> ProjectSetupOut:

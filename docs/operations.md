@@ -244,6 +244,43 @@ project. For example, through `toolbox.call`:
 {"tool_name":"projectSetup.start","arguments":{"session_id":123,"mode":"setup","workflow_keys":["engineering.tracked-delivery"],"idempotency_key":"setup-this-session"}}
 ```
 
+New Setup and Update calls default `requested_scope` to `ready_to_use`. Select
+`infrastructure_only` explicitly to finish at preparation. Stored attempts and
+receipts without the field retain historical infrastructure semantics; reads do
+not upgrade them. Attachment preserves the existing owner's scope, and replay
+binds scope as part of the original intent. Neither scope grants additional
+operation, local-admin or business-action authority.
+
+`VerifiedSetup.activation_proof` records the selected `method_ref`, required
+claims, missing claims, status and bounded checks labelled `reused`, `executed`
+or `simulated`. Each check identifies project/binding, effective source-set,
+saved delivery-default and local-adaptation digests plus its environment ref.
+Digests use SHA256 of canonical JSON, as for source snapshots. `saved_defaults`
+and `native_consumption` are minimum coverage; workflow method may require more.
+Simulation cannot cover required claims. Deferred per-run inputs remain in the
+separate readiness tuple.
+
+Checks reference an exact existing native request/invocation or completed
+workflow/step and the canonical JSON digest of its result. The receipt owner
+rechecks project, observed outcome, source/default basis and completion; failed,
+cancelled, live, foreign or changed evidence rejects. This validates reference
+integrity. The workflow's agent and independent review still judge what the
+underlying evidence actually covers, including loaded source and environment.
+A new workflow is not required. A ready-to-use attempt cannot report final
+success until every selected workflow has current verified activation coverage
+and observed loading. Missing coverage returns `complete_activation` with the
+workflow and missing claims. Preparation results and other completed workflows
+remain inspectable while required activation is pending or blocked.
+
+`report.adoption_proposal` contains only the observed project/root/binding,
+expected saved-delivery digest and bounded role selections with provenance.
+Codex selections use exact source refs/digests; supported other hosts retain
+their native inline contracts. The repository validates and retains the proposal
+without writing defaults. It cannot supply trusted-local-admin context or an
+arbitrary operation payload. Authorized adoption and readback remain with the
+existing managed/defaults owners. Compact workflow reads include requested scope,
+activation status and missing claims; raw receipts retain detailed proof.
+
 The agent chooses workflows under the shared guide and inspects unknown legacy
 adaptations before deciding what to change. `start` serializes admission with the
 project owner and returns one typed `AgentRequest.metadata_json.project_setup`

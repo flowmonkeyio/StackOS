@@ -1,0 +1,490 @@
+"""Scope and activation integrity at the real setup receipt owner.
+
+Native outcomes below are deterministic repository fixtures, not activation proof
+for this checkout or any installed host.
+"""
+
+# Imported pytest fixtures are intentionally shadowed by fixture arguments.
+# ruff: noqa: F811
+
+import copy
+
+import pytest
+from pydantic import ValidationError as ModelValidationError
+
+from stackos.db.models import AgentRequest, AgentRequestAttentionStatus, AgentRequestStatus
+from stackos.operations.project_setup_state import ProjectSetupStartInput
+from stackos.repositories.base import ConflictError, ValidationError
+from stackos.repositories.project_setup import (
+    SetupActivationEvidence,
+    SetupAttempt,
+    SetupReport,
+    _digest,
+)
+from tests.integration.test_repositories.test_project_setup import verified_result
+from tests.integration.test_repositories.test_project_setup_attempts import attempt  # noqa: F401
+
+KEY = "engineering.tracked-delivery"
+
+
+def open_setup(attempt, **kwargs):
+    project, session_id, repo = attempt
+    return repo.start(project, session_id=session_id, mode="setup", workflow_keys=[KEY], **kwargs)
+
+
+def report_result(attempt, opened, *, status="success", result=None, revision=1):
+    project, session_id, repo = attempt
+    result = result or verified_result(repo, project)
+    result.attempt_ref = opened.attempt.attempt_ref
+    return repo.report(
+        project,
+        session_id=session_id,
+        request_id=opened.attempt.request_id,
+        claim_token=opened.claim_token,
+        expected_revision=revision,
+        report=SetupReport(
+            status=status,
+            progress={"message": "Checked setup", "evidence_ref": "fixture/check"},
+            workflow_results=[{"workflow_key": KEY, "expected_revision": 0, "result": result}],
+        ),
+    )
+
+
+def activation_result(attempt, session):
+    project, _, repo = attempt
+    result = verified_result(repo, project)
+    basis = repo.activation_basis(project, result.verification, environment_ref="fixture/native")
+    native = AgentRequest(
+        project_id=project,
+        request_key="fixture-completed-native",
+        title="Existing bounded native check",
+        status=AgentRequestStatus.RESOLVED,
+        attention_status=AgentRequestAttentionStatus.READ,
+        metadata_json={
+            "native_execution": {
+                "execution": {"invocation_id": "fixture-invocation"},
+                "finished_at": "2026-11-14T00:00:00Z",
+                "exit_code": 0,
+                "result": {"checked": True},
+            }
+        },
+    )
+    session.add(native)
+    session.commit()
+    result.verification.activation_proof = SetupActivationEvidence(
+        method_ref="fixture/selected-workflow-method",
+        status="verified",
+        required_claims=["saved_defaults", "native_consumption", "behavior"],
+        checks=[
+            {
+                "claims": ["saved_defaults", "native_consumption", "behavior"],
+                "origin": "reused",
+                "basis": basis,
+                "reference": {
+                    "kind": "native_request",
+                    "request_id": native.id,
+                    "invocation_id": "fixture-invocation",
+                    "outcome_digest": _digest({"checked": True}),
+                },
+                "evidence_ref": "fixture/observed-check",
+            }
+        ],
+    )
+    return result, native
+
+
+def test_new_call_default_and_absent_stored_scope_have_distinct_meaning(attempt):
+    assert ProjectSetupStartInput(project_id=attempt[0]).requested_scope == "ready_to_use"
+    opened = open_setup(attempt)
+    assert opened.attempt.requested_scope == "ready_to_use"
+    legacy = opened.attempt.model_dump(mode="json")
+    legacy.pop("requested_scope")
+    assert SetupAttempt.model_validate(legacy).requested_scope == "infrastructure_only"
+
+
+def test_ready_to_use_cannot_finish_with_preparation_only(attempt):
+    opened = open_setup(attempt)
+    report_result(attempt, opened, status="running")
+    project, session_id, repo = attempt
+    state = repo.get(project)
+    assert state.workflows[0].requested_scope == "ready_to_use"
+    assert state.workflows[0].activation_status == "pending"
+    assert state.current_attempt.outcomes[KEY].status == "success"
+    with pytest.raises(ValidationError, match="activation") as error:
+        repo.report(
+            project,
+            session_id=session_id,
+            request_id=opened.attempt.request_id,
+            claim_token=opened.claim_token,
+            expected_revision=2,
+            report=SetupReport(
+                status="success",
+                progress={"message": "Prepared", "evidence_ref": "fixture/prepared"},
+            ),
+        )
+    assert error.value.data["next_action"] == "complete_activation"
+    assert repo.get(project).current_attempt.revision == 2
+    assert repo.get(project).workflows[0].successful is not None
+
+
+def test_explicit_infrastructure_scope_retains_preparation_success(attempt):
+    opened = open_setup(attempt, requested_scope="infrastructure_only")
+    result = verified_result(attempt[2], attempt[0])
+    result.verification.activation = "unknown"
+    saved = report_result(attempt, opened, result=result)
+    assert saved.status == "success"
+    assert saved.requested_scope == "infrastructure_only"
+    assert attempt[2].get(attempt[0]).workflows[0].status == "activation_pending"
+
+
+def test_current_reused_native_evidence_can_complete_without_new_workflow(attempt, session):
+    from sqlmodel import select
+
+    from stackos.db.models import RunPlan, TrackerTask
+
+    opened = open_setup(attempt)
+    result, _ = activation_result(attempt, session)
+    saved = report_result(attempt, opened, result=result)
+    assert saved.status == "success"
+    assert saved.outcomes[KEY].activation_status == "verified"
+    workflow = attempt[2].get(attempt[0]).workflows[0]
+    assert workflow.status == "current" and workflow.activation_status == "verified"
+    assert (
+        workflow.successful["verification"]["activation_proof"]["checks"][0]["origin"] == "reused"
+    )
+    assert not session.exec(select(RunPlan)).all()
+    assert not session.exec(select(TrackerTask)).all()
+
+
+@pytest.mark.parametrize(
+    "failure", ["foreign", "outcome", "invocation", "failed", "cancelled", "live", "basis"]
+)
+def test_activation_reference_rejects_forged_stale_or_incomplete_outcome(attempt, session, failure):
+    opened = open_setup(attempt)
+    result, native = activation_result(attempt, session)
+    check = result.verification.activation_proof.checks[0]
+    if failure == "foreign":
+        check.basis.project_id += 1000
+    elif failure == "outcome":
+        check.reference.outcome_digest = "f" * 64
+    elif failure == "invocation":
+        check.reference.invocation_id = "different-invocation"
+    elif failure == "basis":
+        check.basis.delivery_digest = "b" * 64
+    else:
+        metadata = copy.deepcopy(native.metadata_json)
+        metadata["native_execution"].update(
+            {
+                "failed": {"exit_code": 1},
+                "cancelled": {"cancelled": True},
+                "live": {"finished_at": None},
+            }[failure]
+        )
+        native.metadata_json = metadata
+        session.add(native)
+        session.commit()
+    with pytest.raises((ConflictError, ValidationError), match="activation"):
+        report_result(attempt, opened, result=result)
+    assert attempt[2].get(attempt[0]).configured_count == 0
+    assert attempt[2].get(attempt[0]).current_attempt.revision == 1
+
+
+def test_simulated_coverage_cannot_be_verified(attempt, session):
+    result, _ = activation_result(attempt, session)
+    evidence = result.verification.activation_proof.model_dump(mode="json")
+    evidence["checks"][0]["origin"] = "simulated"
+    with pytest.raises(ModelValidationError, match="required claims"):
+        SetupActivationEvidence.model_validate(evidence)
+
+
+def test_blocked_workflow_preserves_other_completed_activation(attempt, session):
+    project, session_id, repo = attempt
+    opened = repo.start(
+        project, session_id=session_id, mode="update", workflow_keys=[KEY, "agency.project-setup"]
+    )
+    result, _ = activation_result(attempt, session)
+    report_result(attempt, opened, result=result, status="running")
+    before = repo.get(project, workflow_key=KEY).workflows[0].successful
+    saved = repo.report(
+        project,
+        session_id=session_id,
+        request_id=opened.attempt.request_id,
+        claim_token=opened.claim_token,
+        expected_revision=2,
+        report=SetupReport(
+            status="partial",
+            progress={
+                "message": "No safe verification method for the other workflow",
+                "evidence_ref": "fixture/blocked",
+            },
+            recovery_condition=(
+                "Provide an authorized technical check; do not execute a business action."
+            ),
+            workflow_results=[
+                {
+                    "workflow_key": "agency.project-setup",
+                    "expected_revision": 0,
+                    "result": {
+                        "attempt_ref": opened.attempt.attempt_ref,
+                        "result_ref": "fixture/unfinished",
+                        "status": "unfinished",
+                        "diagnostics": ["Safe activation capability unavailable"],
+                    },
+                }
+            ],
+        ),
+    )
+    assert saved.status == "partial" and saved.outcomes[KEY].activation_status == "verified"
+    assert repo.get(project, workflow_key=KEY).workflows[0].successful == before
+    assert saved.outcomes["agency.project-setup"].activation_status == "pending"
+
+
+def test_final_success_rechecks_retained_outcome_and_saved_defaults(attempt, session):
+    from stackos.repositories.tracker import TrackerRepository
+
+    opened = open_setup(attempt)
+    result, _ = activation_result(attempt, session)
+    report_result(attempt, opened, result=result, status="running")
+    project, session_id, repo = attempt
+    TrackerRepository(session).configure_delivery(
+        project_id=project, delivery={"host_key": "claude"}
+    )
+    assert repo.get(project).workflows[0].activation_status == "pending"
+    with pytest.raises(ConflictError, match="activation"):
+        repo.report(
+            project,
+            session_id=session_id,
+            request_id=opened.attempt.request_id,
+            claim_token=opened.claim_token,
+            expected_revision=2,
+            report=SetupReport(
+                status="success", progress={"message": "Done", "evidence_ref": "fixture/end"}
+            ),
+        )
+    assert repo.get(project).current_attempt.revision == 2
+
+
+@pytest.mark.parametrize("failure", [None, "phase", "outcome", "aborted", "foreign"])
+def test_completed_workflow_step_reference_uses_real_owner(attempt, session, tmp_path, failure):
+    from stackos.db.models import RunPlan, RunPlanStatus, RunPlanStep, RunPlanStepStatus
+    from stackos.repositories.project_setup import SetupProofReference
+    from stackos.repositories.workspaces import WorkspaceRepository
+
+    opened = open_setup(attempt)
+    result, _ = activation_result(attempt, session)
+    project = attempt[0]
+    if failure == "foreign":
+        folder = tmp_path / "foreign"
+        folder.mkdir()
+        project = WorkspaceRepository(session).bootstrap(cwd=str(folder)).project_id
+    plan = RunPlan(
+        project_id=project,
+        key="existing-proof",
+        title="Existing completed work",
+        status=RunPlanStatus.COMPLETED,
+    )
+    session.add(plan)
+    session.flush()
+    step = RunPlanStep(
+        run_plan_id=plan.id,
+        step_id="existing-check",
+        title="Check",
+        position=0,
+        status=RunPlanStepStatus.SUCCESS,
+        result_json={"behavior": "passed"},
+    )
+    if failure == "aborted":
+        plan.status = RunPlanStatus.ABORTED
+    session.add(step)
+    session.add(plan)
+    session.commit()
+    result.verification.activation_proof.checks[0].reference = SetupProofReference(
+        kind="workflow_step",
+        run_plan_id=plan.id,
+        step_id="forged-phase" if failure == "phase" else step.step_id,
+        outcome_digest="f" * 64 if failure == "outcome" else _digest(step.result_json),
+    )
+    if failure:
+        with pytest.raises(ConflictError, match="activation"):
+            report_result(attempt, opened, result=result)
+        assert attempt[2].get(attempt[0]).configured_count == 0
+    else:
+        assert report_result(attempt, opened, result=result).status == "success"
+
+
+def test_adoption_proposal_is_scoped_evidence_without_write_authority(attempt, session):
+    from stackos.repositories.project_setup import SetupAdoptionProposal
+    from stackos.repositories.projects import ProjectRepository
+    from stackos.repositories.tracker import TrackerRepository
+
+    project, session_id, repo = attempt
+    opened = open_setup(attempt)
+    current = ProjectRepository(session).get(project)
+    proposal = SetupAdoptionProposal(
+        project_id=project,
+        binding_id=current.primary_workspace_binding_id,
+        project_dir=current.project_dir,
+        expected_delivery_digest=_digest({}),
+        roles={
+            "delivery_agent": {
+                "host_key": "claude",
+                "name": "fixture-delivery",
+                "instructions": "fixture instructions",
+                "expected_digest": _digest("fixture instructions"),
+                "provenance_ref": "fixture/native-contract",
+            }
+        },
+    )
+    args = dict(
+        project_id=project,
+        session_id=session_id,
+        request_id=opened.attempt.request_id,
+        claim_token=opened.claim_token,
+        expected_revision=1,
+    )
+    report = SetupReport(
+        status="running",
+        progress={"message": "Proposed adoption", "evidence_ref": "fixture/proposal"},
+        adoption_proposal=proposal,
+    )
+    saved = repo.report(**args, report=report)
+    assert saved.adoption_proposal == proposal
+    assert saved.reports[0].adoption_proposal == proposal
+    assert TrackerRepository(session).delivery_defaults(project_id=project) == {}
+    forged = report.model_dump(mode="json")
+    forged["adoption_proposal"]["trusted_local_admin"] = True
+    with pytest.raises(ModelValidationError, match="Extra inputs"):
+        SetupReport.model_validate(forged)
+    for field, value in (("project_id", project + 1000), ("expected_delivery_digest", "f" * 64)):
+        stale = report.model_copy(deep=True)
+        setattr(stale.adoption_proposal, field, value)
+        with pytest.raises(ConflictError, match="proposal"):
+            repo.report(**{**args, "expected_revision": 2}, report=stale)
+    assert repo.get(project).current_attempt.revision == 2
+
+
+def test_failed_native_observation_is_retained_without_covering_activation(attempt, session):
+    opened = open_setup(attempt)
+    result, native = activation_result(attempt, session)
+    evidence = result.verification.activation_proof
+    evidence.status = "blocked"
+    evidence.diagnostic = "Native check failed; repair before retry."
+    evidence.checks[0].status = "failed"
+    native.metadata_json = {
+        "native_execution": {**native.metadata_json["native_execution"], "exit_code": 1}
+    }
+    session.add(native)
+    session.commit()
+    result.status = "unfinished"
+    saved = report_result(attempt, opened, status="partial", result=result)
+    assert saved.outcomes[KEY].activation_status == "blocked"
+    assert saved.outcomes[KEY].missing_activation_claims == [
+        "behavior",
+        "native_consumption",
+        "saved_defaults",
+    ]
+    workflow = attempt[2].get(attempt[0]).workflows[0]
+    assert workflow.successful is None
+    assert workflow.diagnostic == "Native check failed; repair before retry."
+    assert (
+        workflow.latest_result["verification"]["activation_proof"]["checks"][0]["status"]
+        == "failed"
+    )
+
+
+def test_absent_scope_in_persisted_attempt_and_receipt_is_historical(attempt, session):
+    project, _, repo = attempt
+    opened = open_setup(attempt, requested_scope="infrastructure_only")
+    report_result(attempt, opened)
+    row = session.get(AgentRequest, opened.attempt.request_id)
+    metadata = copy.deepcopy(row.metadata_json)
+    metadata["project_setup"].pop("requested_scope")
+    row.metadata_json = metadata
+    receipt = repo._row(project, KEY)
+    receipt.successful_json = {
+        k: v for k, v in receipt.successful_json.items() if k != "requested_scope"
+    }
+    receipt.latest_result_json = {
+        k: v for k, v in receipt.latest_result_json.items() if k != "requested_scope"
+    }
+    session.add(row)
+    session.add(receipt)
+    session.commit()
+    state = repo.get(project)
+    assert state.current_attempt.requested_scope == "infrastructure_only"
+    assert state.workflows[0].requested_scope == "infrastructure_only"
+    assert state.current_attempt.status == "success" and state.workflows[0].status == "current"
+    assert "requested_scope" not in session.get(AgentRequest, row.id).metadata_json["project_setup"]
+
+
+def test_codex_proposal_checks_actual_source_and_digest(attempt, session):
+    from pathlib import Path
+
+    from stackos.host_mcp.project_agents import ProjectAgentService
+    from stackos.repositories.project_setup import SetupAdoptionProposal
+    from stackos.repositories.projects import ProjectRepository
+    from stackos.repositories.tracker import TrackerRepository
+    from tests.integration.test_repositories.test_task_delivery_sources import source
+
+    project, session_id, repo = attempt
+    current = ProjectRepository(session).get(project)
+    root = Path(current.project_dir)
+    ref = source(session, project, root, "fixture-delivery")
+    definition = ProjectAgentService(root).get(ref)
+    opened = open_setup(attempt)
+    proposal = SetupAdoptionProposal(
+        project_id=project,
+        binding_id=current.primary_workspace_binding_id,
+        project_dir=str(root),
+        expected_delivery_digest=_digest({}),
+        roles={
+            "delivery_agent": {
+                "source_ref": ref,
+                "host_key": "codex",
+                "name": "fixture-delivery",
+                "expected_digest": definition.digest,
+                "provenance_ref": "fixture/source",
+            }
+        },
+    )
+    args = dict(
+        project_id=project,
+        session_id=session_id,
+        request_id=opened.attempt.request_id,
+        claim_token=opened.claim_token,
+        expected_revision=1,
+    )
+    report = SetupReport(
+        status="running",
+        progress={"message": "Codex proposal", "evidence_ref": "fixture/proposal"},
+        adoption_proposal=proposal,
+    )
+    assert repo.report(**args, report=report).adoption_proposal == proposal
+    assert TrackerRepository(session).delivery_defaults(project_id=project) == {}
+    path = root / ref["source_path"]
+    path.write_text(path.read_text() + "\n# changed\n")
+    with pytest.raises(ConflictError, match="source changed"):
+        repo.report(**{**args, "expected_revision": 2}, report=report)
+
+
+@pytest.mark.parametrize("foreign_workflow", [False, True])
+def test_unfinished_result_cannot_attach_coverage_to_wrong_sources(
+    attempt, session, foreign_workflow
+):
+    opened = open_setup(attempt)
+    result, _ = activation_result(attempt, session)
+    if foreign_workflow:
+        other = verified_result(attempt[2], attempt[0], "agency.project-setup")
+        other.verification.activation_proof = result.verification.activation_proof
+        result = other
+    result.status = "unfinished"
+    if not foreign_workflow:
+        source = result.verification.sources[0]
+        source.content["description"] = "Invented source basis"
+        source.digest = _digest(source.content)
+    result.verification.activation_proof.checks[0].basis.sources_digest = _digest(
+        attempt[2]._identity(result.verification.sources)
+    )
+    with pytest.raises(ConflictError, match="sources changed"):
+        report_result(attempt, opened, status="running", result=result)
+    assert attempt[2].get(attempt[0]).configured_count == 0

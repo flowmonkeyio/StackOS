@@ -29,6 +29,7 @@ from stackos.repositories.project_setup import (
     ProjectSetupRepository,
     SetupAttempt,
     SetupReport,
+    SetupScope,
     SetupStartOut,
 )
 
@@ -63,6 +64,11 @@ class ProjectSetupStartInput(MCPInput):
     client_session_id: str | None = Field(default=None, min_length=1, max_length=160)
     entry_kind: Literal["existing_agent", "managed_ui"] = "existing_agent"
     mode: Literal["setup", "update"] = "setup"
+    requested_scope: SetupScope = Field(
+        default="ready_to_use",
+        description="Ordinary setup/update completes activation. Select infrastructure_only "
+        "explicitly for preparation; scope grants no local-admin or business-action authority.",
+    )
     workflow_keys: list[str] = Field(default_factory=list, max_length=100)
     preferences: MainAgentPreferences | None = None
     response_mode: Literal["compact", "raw", "standard", "verbose"] = "compact"
@@ -98,6 +104,7 @@ async def project_setup_start(
             session_factory=ctx.extras["session_factory"],
             scheduler=ctx.extras["scheduler"],
             mode=inp.mode,
+            requested_scope=inp.requested_scope,
             workflow_keys=inp.workflow_keys,
             preferences=inp.preferences.model_dump(exclude_unset=True) if inp.preferences else None,
         )
@@ -113,6 +120,7 @@ async def project_setup_start(
             inp.project_id,
             session_id=inp.session_id,
             mode=inp.mode,
+            requested_scope=inp.requested_scope,
             workflow_keys=inp.workflow_keys,
         ),
     )
@@ -476,10 +484,13 @@ def operation_specs() -> list[OperationSpec]:
                     "Keep the initial claim token in the executing session; "
                     "attached observers receive no writer token.",
                     "Compact retains attempt/revision, workflow outcomes, "
-                    "question and repair context. "
+                    "requested scope, activation coverage, question and repair context. "
                     "Raw retains report history.",
                     "Setup creates no business run or tracker task. Only managed_ui console "
                     "entry launches a native coordinator through shared capacity.",
+                    "ready_to_use success requires current saved-default/native coverage. "
+                    "Incomplete activation returns workflow/missing-claim repair context. "
+                    "Adoption proposals are evidence only and never confer local-admin authority.",
                     "Retry the same session and normalized request with the same key; "
                     "only response_mode may change. Foreign/changed intent rejects before replay.",
                 ),
@@ -499,6 +510,7 @@ def operation_specs() -> list[OperationSpec]:
                             "session_id": 1,
                             "client_session_id": "<bridge-injected>",
                             "workflow_keys": ["engineering.tracked-delivery"],
+                            "requested_scope": "ready_to_use",
                         },
                     ),
                 ),

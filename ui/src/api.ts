@@ -7237,6 +7237,13 @@ export interface components {
             /** Project Id */
             project_id: number;
             /**
+             * Requested Scope
+             * @description Ordinary setup/update completes activation. Select infrastructure_only explicitly for preparation; scope grants no local-admin or business-action authority.
+             * @default ready_to_use
+             * @enum {string}
+             */
+            requested_scope: ProjectSetupStartInputRequested_scope;
+            /**
              * Response Mode
              * @default compact
              * @enum {string}
@@ -8301,6 +8308,21 @@ export interface components {
              */
             run_token: string | null;
         };
+        /** SetupAdoptionProposal */
+        SetupAdoptionProposal: {
+            /** Binding Id */
+            binding_id: number;
+            /** Expected Delivery Digest */
+            expected_delivery_digest: string;
+            /** Project Dir */
+            project_dir: string;
+            /** Project Id */
+            project_id: number;
+            /** Roles */
+            roles: {
+                [key: string]: components["schemas"]["SetupRoleProposal"];
+            };
+        };
         /** SetupAnswer */
         SetupAnswer: {
             /** Answer */
@@ -8322,6 +8344,8 @@ export interface components {
          * @description Versioned AgentRequest metadata; native execution evidence stays alongside it.
          */
         SetupAttempt: {
+            /** @default null */
+            adoption_proposal: components["schemas"]["SetupAdoptionProposal"] | null;
             /** Answers */
             answers?: components["schemas"]["SetupAnswer"][];
             /** Attempt Ref */
@@ -8373,6 +8397,12 @@ export interface components {
             reports?: components["schemas"]["SetupReportReceipt"][];
             /** Request Id */
             request_id: number;
+            /**
+             * Requested Scope
+             * @default infrastructure_only
+             * @enum {string}
+             */
+            requested_scope: SetupAttemptRequested_scope;
             /** Revalidate Workflow Keys */
             revalidate_workflow_keys?: string[];
             /**
@@ -8481,6 +8511,8 @@ export interface components {
         };
         /** SetupReportReceipt */
         SetupReportReceipt: {
+            /** @default null */
+            adoption_proposal: components["schemas"]["SetupAdoptionProposal"] | null;
             /**
              * Checked At
              * Format: date-time
@@ -8494,6 +8526,27 @@ export interface components {
             revision: number;
             /** Status */
             status: string;
+        };
+        /**
+         * SetupRoleProposal
+         * @description A bounded selection for the existing defaults owner, never write authority.
+         */
+        SetupRoleProposal: {
+            /** Expected Digest */
+            expected_digest: string;
+            /** Host Key */
+            host_key: string;
+            /**
+             * Instructions
+             * @default null
+             */
+            instructions: string | null;
+            /** Name */
+            name: string;
+            /** Provenance Ref */
+            provenance_ref: string;
+            /** @default null */
+            source_ref: components["schemas"]["AgentSourceRef"] | null;
         };
         /** SetupSource */
         SetupSource: {
@@ -8544,6 +8597,12 @@ export interface components {
         /** SetupWorkflowOut */
         SetupWorkflowOut: {
             /**
+             * Activation Status
+             * @default unknown
+             * @enum {string}
+             */
+            activation_status: SetupWorkflowOutActivation_status;
+            /**
              * Attempt Ref
              * @default null
              */
@@ -8567,6 +8626,8 @@ export interface components {
              * @default null
              */
             latest_status: string | null;
+            /** Missing Activation Claims */
+            missing_activation_claims?: string[];
             /**
              * Partial Changes
              * @default false
@@ -8577,6 +8638,12 @@ export interface components {
              * @default null
              */
             receipt_id: number | null;
+            /**
+             * Requested Scope
+             * @default infrastructure_only
+             * @enum {string}
+             */
+            requested_scope: SetupWorkflowOutRequested_scope;
             /**
              * Result Ref
              * @default null
@@ -8604,6 +8671,14 @@ export interface components {
         };
         /** SetupWorkflowOutcome */
         SetupWorkflowOutcome: {
+            /**
+             * Activation Status
+             * @default unknown
+             * @enum {string}
+             */
+            activation_status: SetupWorkflowOutcomeActivation_status;
+            /** Missing Activation Claims */
+            missing_activation_claims?: string[];
             /** Receipt Id */
             receipt_id: number;
             /** Result Ref */
@@ -11633,12 +11708,14 @@ export type SchemaScheduledJobOut = components['schemas']['ScheduledJobOut'];
 export type SchemaScheduledNativeExecutionOut = components['schemas']['ScheduledNativeExecutionOut'];
 export type SchemaScheduledRunOut = components['schemas']['ScheduledRunOut'];
 export type SchemaSetDeliveryCapacityInput = components['schemas']['SetDeliveryCapacityInput'];
+export type SchemaSetupAdoptionProposal = components['schemas']['SetupAdoptionProposal'];
 export type SchemaSetupAnswer = components['schemas']['SetupAnswer'];
 export type SchemaSetupAttempt = components['schemas']['SetupAttempt'];
 export type SchemaSetupManagedExecution = components['schemas']['SetupManagedExecution'];
 export type SchemaSetupProgress = components['schemas']['SetupProgress'];
 export type SchemaSetupQuestion = components['schemas']['SetupQuestion'];
 export type SchemaSetupReportReceipt = components['schemas']['SetupReportReceipt'];
+export type SchemaSetupRoleProposal = components['schemas']['SetupRoleProposal'];
 export type SchemaSetupSource = components['schemas']['SetupSource'];
 export type SchemaSetupStartOut = components['schemas']['SetupStartOut'];
 export type SchemaSetupWorkflowOut = components['schemas']['SetupWorkflowOut'];
@@ -15374,6 +15451,10 @@ export enum ProjectSetupStartInputMode {
     setup = "setup",
     update = "update"
 }
+export enum ProjectSetupStartInputRequested_scope {
+    ready_to_use = "ready_to_use",
+    infrastructure_only = "infrastructure_only"
+}
 export enum ProjectSetupStartInputResponse_mode {
     compact = "compact",
     raw = "raw",
@@ -15477,6 +15558,10 @@ export enum SetupAttemptMode {
     setup = "setup",
     update = "update"
 }
+export enum SetupAttemptRequested_scope {
+    ready_to_use = "ready_to_use",
+    infrastructure_only = "infrastructure_only"
+}
 export enum SetupAttemptStatus {
     queued = "queued",
     running = "running",
@@ -15501,12 +15586,28 @@ export enum SetupSourceKind {
     specialist = "specialist",
     override = "override"
 }
+export enum SetupWorkflowOutActivation_status {
+    unknown = "unknown",
+    pending = "pending",
+    blocked = "blocked",
+    verified = "verified"
+}
+export enum SetupWorkflowOutRequested_scope {
+    ready_to_use = "ready_to_use",
+    infrastructure_only = "infrastructure_only"
+}
 export enum SetupWorkflowOutStatus {
     unknown = "unknown",
     current = "current",
     update_available = "update_available",
     source_unavailable = "source_unavailable",
     activation_pending = "activation_pending"
+}
+export enum SetupWorkflowOutcomeActivation_status {
+    unknown = "unknown",
+    pending = "pending",
+    blocked = "blocked",
+    verified = "verified"
 }
 export enum SetupWorkflowOutcomeStatus {
     success = "success",

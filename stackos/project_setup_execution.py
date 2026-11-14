@@ -138,7 +138,16 @@ def _load(session, project_id, request_id):
     return row, attempt
 
 
-def start_managed(*, project_id, session_factory, scheduler, mode, workflow_keys, preferences=None):
+def start_managed(
+    *,
+    project_id,
+    session_factory,
+    scheduler,
+    mode,
+    workflow_keys,
+    preferences=None,
+    requested_scope="ready_to_use",
+):
     from stackos.repositories.project_setup import ProjectSetupRepository, SetupManagedExecution
     from stackos.repositories.projects import ProjectRepository
     from stackos.task_delivery import _admission_id, drain_delivery
@@ -189,7 +198,12 @@ def start_managed(*, project_id, session_factory, scheduler, mode, workflow_keys
             job_ref=f"project-setup:{project_id}:{secrets.token_hex(12)}",
         )
         started = repo.start(
-            project_id, session_id=None, mode=mode, workflow_keys=workflow_keys, managed=execution
+            project_id,
+            session_id=None,
+            mode=mode,
+            workflow_keys=workflow_keys,
+            managed=execution,
+            requested_scope=requested_scope,
         )
         claims = getattr(scheduler, "project_setup_claims", None)
         if claims is None:

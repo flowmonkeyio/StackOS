@@ -80,6 +80,7 @@ def test_existing_session_setup_owner_report_and_startup_projection(mcp_client, 
     assert _structured(opened_call)["operation"] == "projectSetup.start"
     opened = _operation_data(_structured(opened_call))
     assert opened["claim_token"] and not opened["attached"]
+    assert opened["attempt"]["requested_scope"] == "ready_to_use"
     replayed = _operation_data(
         _structured(
             _toolbox_call(
@@ -148,6 +149,78 @@ def test_existing_session_setup_owner_report_and_startup_projection(mcp_client, 
     assert later["project_setup"]["current_attempt"]["revision"] == 2
     assert "claim_token" not in json.dumps(later)
     assert "conversation_url" not in json.dumps(later)
+
+
+def test_ready_scope_compact_coverage_and_activation_repair_are_truthful(
+    mcp_client, mcp_app, tmp_path
+):
+    mcp_client.call_tool_structured("workspace.bootstrap", {"cwd": str(tmp_path)})
+    proxy, client = _scoped_bridge(mcp_client, cwd=str(tmp_path))
+    _initialize(proxy, client)
+    startup = _operation_data(_structured(_tool_call(proxy, client, "workspace.startSession")))
+    opened = _operation_data(
+        _structured(
+            _toolbox_call(
+                proxy,
+                client,
+                "projectSetup.start",
+                {
+                    "session_id": startup["agent_session_id"],
+                    "workflow_keys": ["agency.project-setup"],
+                },
+            )
+        )
+    )
+    with Session(mcp_app.state.engine) as session:
+        result = verified_result(
+            ProjectSetupRepository(session), opened["attempt"]["project_id"], "agency.project-setup"
+        )
+    result.attempt_ref = opened["attempt"]["attempt_ref"]
+    args = {
+        "session_id": startup["agent_session_id"],
+        "request_id": opened["attempt"]["request_id"],
+        "claim_token": opened["claim_token"],
+        "expected_revision": 1,
+        "report": {
+            "status": "running",
+            "progress": {"message": "Prepared", "evidence_ref": "fixture/prepared"},
+            "workflow_results": [
+                {
+                    "workflow_key": "agency.project-setup",
+                    "expected_revision": 0,
+                    "result": result.model_dump(mode="json"),
+                }
+            ],
+        },
+    }
+    progress = _toolbox_call(proxy, client, "projectSetup.report", args)
+    assert not progress["result"].get("isError"), progress
+    body = _operation_data(_structured(progress))
+    assert body["requested_scope"] == "ready_to_use"
+    assert body["outcomes"]["agency.project-setup"]["activation_status"] == "pending"
+    state = _operation_data(_structured(_toolbox_call(proxy, client, "projectSetup.get", {})))
+    workflow = state["workflows"][0]
+    assert workflow["activation_status"] == "pending"
+    assert workflow["missing_activation_claims"] == ["saved_defaults", "native_consumption"]
+    denied = _toolbox_call(
+        proxy,
+        client,
+        "projectSetup.report",
+        {
+            **args,
+            "expected_revision": 2,
+            "report": {
+                "status": "success",
+                "progress": {"message": "Done", "evidence_ref": "fixture/end"},
+            },
+        },
+    )
+    assert denied["result"].get("isError"), denied
+    repair = json.dumps(denied)
+    assert "complete_activation" in repair and "missing_claims" in repair
+    assert opened["claim_token"] not in repair
+    unchanged = _operation_data(_structured(_toolbox_call(proxy, client, "projectSetup.get", {})))
+    assert unchanged == state
 
 
 @pytest.mark.parametrize("selected", [False, True])
