@@ -435,6 +435,7 @@ def test_real_request_executor_persists_report_identity_and_releases(managed, se
             0,
             thread_id="managed-native-fixture",
             result={
+                "verification_status": None,
                 "report_json": json.dumps(
                     {
                         "status": "partial",
@@ -444,7 +445,7 @@ def test_real_request_executor_persists_report_identity_and_releases(managed, se
                         },
                         "recovery_condition": "Select the remaining project inputs",
                     }
-                )
+                ),
             },
         )
 
@@ -655,7 +656,11 @@ def test_live_cancel_retains_reports_fences_late_report_and_releases_after_callb
             )
             with pytest.raises(ConflictError, match="cancellation"):
                 asyncio.run(project_setup_report(ProjectSetupReportInput(**arguments), ctx, None))
-        return AgentRunResult(0, thread_id="live-native-session", result={"report_json": "{}"})
+        return AgentRunResult(
+            0,
+            thread_id="live-native-session",
+            result={"report_json": "{}", "verification_status": None},
+        )
 
     monkeypatch.setattr(
         service, "_definition_by_key", lambda _: replace(definition, run_agent=runner)
@@ -765,6 +770,7 @@ def test_managed_goal_question_does_not_select_example_workflows(managed, sessio
             0,
             thread_id="goal-question",
             result={
+                "verification_status": None,
                 "report_json": json.dumps(
                     {
                         "status": "needs_input",
@@ -780,7 +786,7 @@ def test_managed_goal_question_does_not_select_example_workflows(managed, sessio
                             "response_channel": "managed_ui",
                         },
                     }
-                )
+                ),
             },
         )
 
@@ -943,7 +949,9 @@ def test_supported_host_can_report_before_native_thread_identity_is_available(
         )
         observed.append(envelope.data.revision)
         return AgentRunResult(
-            0, thread_id="claude-final-thread", result={"report_json": json.dumps(report)}
+            0,
+            thread_id="claude-final-thread",
+            result={"report_json": json.dumps(report), "verification_status": None},
         )
 
     monkeypatch.setattr(

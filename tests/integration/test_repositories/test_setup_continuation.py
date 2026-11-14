@@ -61,7 +61,9 @@ def question_runner(monkeypatch, *, second_status="partial"):
                 }
         report["progress"] = {"message": "Checked fixture", "evidence_ref": "fixture:checked"}
         return AgentRunResult(
-            0, thread_id="continuation-native", result={"report_json": json.dumps(report)}
+            0,
+            thread_id="continuation-native",
+            result={"report_json": json.dumps(report), "verification_status": None},
         )
 
     monkeypatch.setattr(
@@ -145,12 +147,13 @@ def test_never_started_retry_preserves_history_receipts_and_frozen_selection(
             0,
             thread_id="first-native-after-retry",
             result={
+                "verification_status": None,
                 "report_json": json.dumps(
                     {
                         "status": "partial",
                         "progress": {"message": "Checked retry", "evidence_ref": "fixture:retry"},
                     }
-                )
+                ),
             },
         )
 
@@ -332,7 +335,9 @@ def test_recovery_preserves_success_and_partial_edits(
             report = {"status": "partial"}
         report["progress"] = {"message": "Checked partial state", "evidence_ref": "fixture:partial"}
         return AgentRunResult(
-            0, thread_id="partial-native", result={"report_json": json.dumps(report)}
+            0,
+            thread_id="partial-native",
+            result={"report_json": json.dumps(report), "verification_status": None},
         )
 
     monkeypatch.setattr(
@@ -452,7 +457,9 @@ def test_resume_failure_stops_without_fallback_or_reasking(managed, session, mon
 
     def fail(*args, on_session, **kwargs):
         on_session("wrong-session")
-        return AgentRunResult(0, thread_id="wrong-session", result={"report_json": "{}"})
+        return AgentRunResult(
+            0, thread_id="wrong-session", result={"report_json": "{}", "verification_status": None}
+        )
 
     monkeypatch.setattr(
         service, "_definition_by_key", lambda key: replace(definition, run_agent=fail)

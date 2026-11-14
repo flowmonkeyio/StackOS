@@ -9,6 +9,7 @@ Injected native runners are not actual host or installed activation evidence.
 
 import asyncio
 import json
+import subprocess
 from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
@@ -19,10 +20,12 @@ from sqlmodel import select
 from stackos import task_delivery
 from stackos.db.models import AgentRequest, RunPlan, TrackerTask
 from stackos.host_mcp import service
+from stackos.host_mcp.adapters import codex
 from stackos.host_mcp.project_agents import ProjectAgentService
 from stackos.host_mcp.result import AgentRunResult
 from stackos.mcp.context import MCPContext
 from stackos.operations.project_setup_state import ProjectSetupReportInput, project_setup_report
+from stackos.project_setup_execution import RESULT_SCHEMA
 from stackos.repositories.base import ConflictError
 from stackos.repositories.project_setup import (
     ProjectSetupRepository,
@@ -40,6 +43,46 @@ from tests.integration.test_repositories.test_managed_setup import (
 from tests.integration.test_repositories.test_project_setup import verified_result
 
 KEY = "engineering.tracked-delivery"
+
+
+@pytest.mark.parametrize("verification", [None, "passed", "failed", "blocked"])
+def test_native_setup_schema_file_is_closed_required_and_nullable(
+    tmp_path, monkeypatch, verification
+):
+    """Use the real adapter schema file and result decoder, replacing only execution."""
+    from jsonschema import ValidationError as JsonValidationError
+    from jsonschema import validate
+
+    report = SetupReport(
+        status="partial",
+        progress=dict(message="Bounded native observation", evidence_ref="fixture/observation"),
+    )
+    payload = {"report_json": report.model_dump_json(), "verification_status": verification}
+    emitted = []
+
+    def execute(command, **kwargs):
+        schema = json.loads(Path(command[command.index("--output-schema") + 1]).read_text())
+        emitted.append(schema)
+        assert schema == RESULT_SCHEMA
+        assert schema["additionalProperties"] is False
+        assert set(schema["required"]) == set(schema["properties"])
+        validate(payload, schema)
+        for invalid in (
+            {"report_json": payload["report_json"]},
+            {**payload, "verification_status": "unknown"},
+            {**payload, "extra": True},
+        ):
+            with pytest.raises(JsonValidationError):
+                validate(invalid, schema)
+        Path(command[command.index("-o") + 1]).write_text(json.dumps(payload))
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fixture/codex")
+    monkeypatch.setattr(codex.subprocess, "run", execute)
+    result = service.run_agent("codex", tmp_path, "Setup fixture", "Bounded", RESULT_SCHEMA)
+    assert result.ok, result.error
+    assert len(emitted) == 1 and result.result == payload
+    assert SetupReport.model_validate_json(result.result["report_json"]) == report
 
 
 def proposal_for(managed, session, *, host="codex"):
@@ -110,7 +153,7 @@ def install_runner(
             status="partial",
             progress=dict(message="Bounded setup fixture", evidence_ref="fixture/checked"),
         )
-        extra = {}
+        extra = {"verification_status": None}
         with factory() as check:
             repo = ProjectSetupRepository(check)
             if context["phase"] == "preparation":
@@ -249,7 +292,9 @@ def test_native_final_outcome_reconciles_persisted_partial_report(
             progress=dict(message="Final native failure", evidence_ref="fixture/final-failure"),
         )
         return AgentRunResult(
-            0, thread_id="bounded-setup-native", result={"report_json": failed.model_dump_json()}
+            0,
+            thread_id="bounded-setup-native",
+            result={"report_json": failed.model_dump_json(), "verification_status": None},
         )
 
     monkeypatch.setattr(
@@ -540,8 +585,8 @@ def test_changed_adopted_basis_recovers_only_after_restoration(
     assert task_delivery.delivery_capacity(session, scheduler)["running_count"] == 0
 
 
-@pytest.mark.parametrize("outcome", ["failed", "blocked"])
-def test_failed_bounded_check_stays_partial_and_is_not_repeated_automatically(
+@pytest.mark.parametrize("outcome", [None, "failed", "blocked"])
+def test_unverified_bounded_check_stays_partial_and_is_not_repeated_automatically(
     managed, session, monkeypatch, outcome
 ):
     _, project, scheduler, _ = managed
@@ -641,9 +686,10 @@ def test_managed_reuses_current_evidence_without_adoption_or_bounded_recheck(
             progress=dict(message="Reused current proof", evidence_ref="fixture/reuse"),
             workflow_results=[dict(workflow_key=KEY, expected_revision=0, result=result)],
         )
-        native_result = {"report_json": report.model_dump_json()}
-        if verification_status:
-            native_result["verification_status"] = verification_status
+        native_result = {
+            "report_json": report.model_dump_json(),
+            "verification_status": verification_status,
+        }
         return AgentRunResult(0, thread_id="reuse-current-native", result=native_result)
 
     monkeypatch.setattr(

@@ -34,9 +34,12 @@ RESULT_SCHEMA = {
     "type": "object",
     "properties": {
         "report_json": {"type": "string"},
-        "verification_status": {"type": "string", "enum": ["passed", "failed", "blocked"]},
+        "verification_status": {
+            "type": ["string", "null"],
+            "enum": ["passed", "failed", "blocked", None],
+        },
     },
-    "required": ["report_json"],
+    "required": ["report_json", "verification_status"],
     "additionalProperties": False,
 }
 INSTRUCTIONS = """You are the project's setup/update coordinator, within the supplied project scope.
@@ -71,7 +74,8 @@ Never call configureDelivery or invent local-admin authority. In verification, r
 canonical adoption_readback, reuse current matching proof and perform only missing bounded checks
 selected by the workflow method. Record actual consumption separately from saved defaults.
 Success still requires complete checked activation evidence; pending proof stays partial/failed.
-Only in phase verification, return verification_status passed when the selected missing bounded
+Return verification_status null outside phase verification. Only in phase verification,
+return verification_status passed when the selected missing bounded
 native checks actually passed. Return a partial report retaining their observations; this is not
 overall setup success. The owner retires that request and supplies its exact completed result ref
 to one completion continuation. In completion reuse that evidence, do not execute the same checks

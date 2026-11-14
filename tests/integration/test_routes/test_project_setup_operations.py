@@ -94,9 +94,13 @@ def test_console_selection_reaches_native_launch_and_frozen_exact_resume(
     def native(command, *, on_session, **kwargs):
         commands.append(command)
         on_session("frozen-setup-thread")
+        schema = json.loads(Path(command[command.index("--output-schema") + 1]).read_text())
+        assert set(schema["required"]) == set(schema["properties"])
+        assert schema["properties"]["verification_status"]["type"] == ["string", "null"]
         Path(command[command.index("-o") + 1]).write_text(
             json.dumps(
                 {
+                    "verification_status": None,
                     "report_json": json.dumps(
                         {
                             "status": "partial",
@@ -105,7 +109,7 @@ def test_console_selection_reaches_native_launch_and_frozen_exact_resume(
                                 "evidence_ref": "fixture:native-command",
                             },
                         }
-                    )
+                    ),
                 }
             )
         )

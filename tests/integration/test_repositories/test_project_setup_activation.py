@@ -499,7 +499,10 @@ def test_retained_native_eligibility_is_rechecked_on_read_and_final_success(
 
 
 @pytest.mark.parametrize("outcome", ["success", "failed", "malformed"])
-def test_managed_native_reference_uses_wrapped_setup_report(attempt, session, outcome):
+@pytest.mark.parametrize("historical_schema", [False, True])
+def test_managed_native_reference_uses_wrapped_setup_report(
+    attempt, session, outcome, historical_schema
+):
     from stackos.project_setup_execution import RESULT_SCHEMA
 
     opened = open_setup(attempt)
@@ -509,8 +512,19 @@ def test_managed_native_reference_uses_wrapped_setup_report(attempt, session, ou
         progress={"message": "Native setup outcome", "evidence_ref": "fixture/native-report"},
     )
     raw = {"report_json": "invalid JSON" if outcome == "malformed" else report.model_dump_json()}
+    schema = copy.deepcopy(RESULT_SCHEMA)
+    if historical_schema:
+        # A completed historical result retains its original optional field
+        # contract. Current transport requirements cannot invalidate that proof.
+        schema["required"] = ["report_json"]
+        schema["properties"]["verification_status"] = {
+            "type": "string",
+            "enum": ["passed", "failed", "blocked"],
+        }
+    else:
+        raw["verification_status"] = None
     metadata = copy.deepcopy(native.metadata_json)
-    metadata["native_execution"].update(snapshot={"output_schema": RESULT_SCHEMA}, result=raw)
+    metadata["native_execution"].update(snapshot={"output_schema": schema}, result=raw)
     metadata["project_setup"] = {
         **opened.attempt.model_dump(mode="json"),
         "request_id": native.id,
