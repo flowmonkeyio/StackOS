@@ -2520,11 +2520,15 @@ read late in one collector poll. Longer gaps and final-only changes are `batched
 counter decreases are `reset`. Optional field gaps are not bridged. A final save
 does not move an existing native observation to receipt-save time.
 
-Bars show source checkpoint increments, not per-token consumption times.
-Baselines, batches and resets retain accessible amounts and available interval
-bounds, without observation overlays or fabricated usage bars. Legacy
-counter-only frames preserve the first baseline and retain differences spanning
-more than a minute as batched observations, never spread across missing minutes.
+Bars show source checkpoint increments and interval averages for known sparse
+deltas, not per-token consumption times. A sparse delta contributes to each
+one-minute bucket in proportion to its overlap with the measured interval;
+clipped windows receive only their overlap, without an endpoint spike. Legacy
+counter-only frames preserve the first baseline and use the same projection for
+valid differences spanning more than a minute. Existing hover/accessible text
+identifies interval averages and retains exact observation amounts and bounds.
+Baselines, resets, conflicting timestamps and missing counters cannot supply
+activity. Unknown bounds remain observations without bars or overlays.
 `DEFAULT_USAGE_BAR_COUNT` sets the shared
 default of 20 intervals; `UsageTrace.barCount` supports 5–60. Bars stay at most
 2 CSS pixels wide as the chart uses the available metric-column width.

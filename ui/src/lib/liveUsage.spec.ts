@@ -13,6 +13,62 @@ const interval = (kind: UsageIntervalOutKind, input: number, start_at: string | 
 })
 const values = (samples: SchemaUsageSampleOut[], metric: 'input' | 'cache_read' | 'output' = 'input', endAt?: number) => usageTrace(samples, metric, endAt).buckets.map(bucket => bucket.value)
 
+describe('sparse interval averages', () => {
+  const batch = (from: number, to: number, delta: number): SchemaUsageSampleOut => ({
+    ...sample(to, 10_000 + delta),
+    intervals: [interval(UsageIntervalOutKind.batched, delta, new Date(start + from * 1000).toISOString())],
+  })
+  it.each([
+    [180, [100, 100, 100, null]],
+    [144, [125, 125, 50]],
+    [218, [300 * 60 / 218, 300 * 60 / 218, 300 * 60 / 218, 300 * 38 / 218]],
+  ] as [number, (number | null)[]][])('conserves 300 measured tokens over %i seconds without an endpoint spike', (seconds, expected) => {
+    const chart = usageTrace([batch(0, seconds, 300)], 'input')
+    expect(chart.state).toBe('bars')
+    expected.forEach((value, index) => {
+      const actual = chart.buckets.slice(-expected.length)[index]!.value
+      if (value == null) expect(actual).toBeNull()
+      else expect(actual).toBeCloseTo(value)
+    })
+    expect(chart.buckets.reduce((sum, bucket) => sum + (bucket.value ?? 0), 0)).toBeCloseTo(300)
+    expect(usageTraceDescription(chart, 'input')).toContain('interval average')
+  })
+  it('clips to window overlap without moving excluded tokens into the first visible bucket', () => {
+    // A five-minute window at minute six covers [120, 420); only [120, 360)
+    // of this six-minute, 600-token interval belongs to it: 400 tokens.
+    const chart = usageTrace([batch(0, 360, 600)], 'input', undefined, 5)
+    expect(chart.buckets.map(bucket => bucket.value)).toEqual([100, 100, 100, 100, null])
+    expect(chart.buckets.reduce((sum, bucket) => sum + (bucket.value ?? 0), 0)).toBe(400)
+    const partial = usageTrace([batch(15, 398, 383)], 'input', undefined, 5)
+    expect(partial.buckets.map(bucket => bucket.value)).toEqual([60, 60, 60, 60, 38])
+    expect(partial.buckets.reduce((sum, bucket) => sum + (bucket.value ?? 0), 0)).toBe(278)
+    expect(usageTrace([batch(0, 360, 600)], 'input', start + 180_000).maximum).toBe(0) // future endpoint
+  })
+  it('adds overlapping invocation intervals independently, including fractional small amounts and measured zero', () => {
+    const chart = usageTrace([batch(0, 180, 1), batch(60, 240, 3)], 'input')
+    expect(chart.buckets.slice(-5).map(bucket => bucket.value)).toEqual([1 / 3, 4 / 3, 4 / 3, 1, null])
+    expect(chart.buckets.reduce((sum, bucket) => sum + (bucket.value ?? 0), 0)).toBeCloseTo(4)
+    expect(usageTrace([batch(0, 180, 0)], 'input').buckets.slice(-4).map(bucket => bucket.value)).toEqual([0, 0, 0, null])
+  })
+  it('projects only finite nonnegative deltas with known ordered bounds', () => {
+    for (const start_at of [null, 'invalid', new Date(start + 180_000).toISOString(), new Date(start + 240_000).toISOString()]) {
+      const row = batch(0, 180, 300)
+      row.intervals![0]!.start_at = start_at
+      expect(usageTrace([row], 'input').maximum).toBe(0)
+    }
+    for (const delta of [NaN, Infinity, -1]) expect(usageTrace([batch(0, 180, delta)], 'input').maximum).toBe(0)
+  })
+  it('rejects an entire conflicting endpoint before projecting and recovers with a fresh baseline', () => {
+    const row = batch(0, 180, 300)
+    const conflict = batch(0, 180, 400)
+    expect(usageTrace([row, conflict], 'input').maximum).toBe(0)
+    expect(usageTrace([conflict, row], 'input').maximum).toBe(0)
+    expect(usageTrace([row, { ...row, intervals: conflict.intervals }], 'input').maximum).toBe(0)
+    expect(usageTrace([row, row], 'input')).toEqual(usageTrace([row], 'input'))
+    expect(values([row, conflict, sample(240, 500), sample(300, 510)]).slice(-3)).toEqual([null, null, 10])
+  })
+})
+
 describe('reported activity bars', () => {
   it('retains the active minute without dropping current observations or admitting future source samples', () => {
     const prepared = prepareUsageSamples([sample(0, 100), sample(2, 102), sample(40, 140)])
@@ -50,7 +106,10 @@ describe('reported activity bars', () => {
   it('uses paired Input and separate zero-based scales for each metric', () => {
     const samples = [sample(0, 100, 80, 5), sample(65, 250, 200, 9)]
     expect(sampleValue(samples[0]!, 'input')).toBe(20)
-    expect(usageTrace(samples, 'input').maximum).toBe(0)
+    expect(usageTrace(samples, 'input').maximum).toBeCloseTo(30 * 60 / 65)
+    for (const [metric, delta] of [['input', 30], ['cache_read', 120], ['output', 4]] as const) {
+      expect(usageTrace(samples, metric).buckets.reduce((sum, bucket) => sum + (bucket.value ?? 0), 0)).toBeCloseTo(delta)
+    }
     expect(usageTrace(samples, 'cache_read').buckets.at(-1)?.observations[0]?.value).toBe(120)
     expect(usageTrace(samples, 'output').buckets.at(-1)?.observations[0]?.value).toBe(4)
     const mixed = { ...sample(0, 150, 68, 15), remaining_input: 62 }
@@ -58,9 +117,9 @@ describe('reported activity bars', () => {
     expect(sampleValue(sample(0, 20, null, 2), 'input')).toBeNull()
   })
 
-  it('leaves unobserved minutes unknown and preserves an observed zero', () => {
+  it('averages known sparse changes and preserves an observed zero', () => {
     const samples = [sample(0, 100), sample(60, 100), sample(240, 160)]
-    expect(values(samples).slice(-4)).toEqual([0, null, null, null])
+    expect(values(samples).slice(-4)).toEqual([20, 20, 20, null])
     expect(usageTrace(samples, 'input').buckets.at(-1)?.observations[0]).toMatchObject({ kind: 'batched', value: 60, startAt: start + 60_000 })
     const unchanged = usageTrace(samples.slice(0, 2), 'input')
     expect(unchanged.state).toBe('bars')
@@ -123,7 +182,8 @@ describe('reported activity bars', () => {
       { ...sample(240, 9110), intervals: [interval(UsageIntervalOutKind.batched, 4000, new Date(start + 30000).toISOString())] },
     ]
     const chart = usageTrace(points, 'input')
-    expect(chart.maximum).toBe(4010) // a genuine measured spike stays visible
+    expect(chart.maximum).toBeCloseTo(4010 + 4000 * 30 / 210) // checkpoint plus the overlapping interval average
+    expect(chart.buckets.reduce((sum, bucket) => sum + (bucket.value ?? 0), 0)).toBeCloseTo(8010) // neither baseline contributes
     expect(chart.buckets.at(-1)?.value).toBeNull()
     expect(chart.buckets.at(-1)?.observations[0]?.value).toBe(4000)
     expect(usageTraceDescription(chart, 'input')).toContain('batched observation')
