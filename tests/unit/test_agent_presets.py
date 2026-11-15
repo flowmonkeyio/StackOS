@@ -16,6 +16,7 @@ from stackos.operations.agent_presets import (
     AgentPresetDescribeInput,
     agent_preset_describe,
 )
+from tests.helpers.preset_adoption import assert_preset_adoption
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -137,12 +138,6 @@ def _assert_sdlc_materializations(agent_dir: Path) -> None:
     assert set(requirements) == expected_refs
     loader = AgentPresetLoader()
     instructions = {}
-    # The operator requested shared-source changes only; local adaptation is pending.
-    pending_adoption = {
-        "stackos.sdlc.planning": ("0.7.23", "0.7.24"),
-        "stackos.sdlc.delivery": ("0.7.22", "0.7.23"),
-        "stackos.sdlc.delivery-reviewer": ("0.6.21", "0.6.22"),
-    }
 
     for agent_name, (config_file, preset_ref) in LOCAL_CODEX_AGENT_PRESETS.items():
         text = (agent_dir / Path(config_file).name).read_text(encoding="utf-8")
@@ -150,9 +145,7 @@ def _assert_sdlc_materializations(agent_dir: Path) -> None:
         source = loader.describe_preset(key=preset_ref).preset
         match = re.search(rf"Source preset: {re.escape(preset_ref)} v(\d+\.\d+\.\d+)", text)
         assert match
-        assert match[1] == source.version or (match[1], source.version) == pending_adoption.get(
-            preset_ref
-        )
+        assert_preset_adoption(preset_ref, match[1], source.version)
         assert f"Workflow: {workflow['key']} v{workflow['version']}" in text
         assert f"Workflow requirement: {requirements[preset_ref]}" in text
         assert "Keep aligned with plugins/engineering/agent-presets/sdlc.yaml." in text
@@ -920,11 +913,11 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     expected_versions = {
         "requirements-flow-definer": "0.6.7",
         "codebase-explorer": "0.6.7",
-        "planning": "0.7.24",
+        "planning": "0.7.25",
         "architecture": "0.6.8",
         "test-designer": "0.6.12",
-        "delivery": "0.7.23",
-        "delivery-reviewer": "0.6.22",
+        "delivery": "0.7.24",
+        "delivery-reviewer": "0.6.23",
     }
     presets = {
         key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset for key in expected_versions
@@ -941,6 +934,18 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
         assert preset.prompt_contract.handoff_outputs
         assert preset.prompt_contract.success_criteria
         assert preset.project_adaptation == presets["delivery"].project_adaptation
+
+    # Setup and recovery route to their owner; each ordinary role resolves the same aliases.
+    conditional_protocols = {
+        tuple(
+            rule
+            for rule in presets[role].prompt_contract.must_do
+            if "stackos.sdlc.delivery-orchestrator" in rule
+        )
+        for role in ("planning", "delivery", "delivery-reviewer")
+    }
+    assert len(conditional_protocols) == 1
+    assert len(conditional_protocols.pop()) == 2
 
     shared = presets["delivery"].project_adaptation.required_agent_action.lower()
     assert "sole writer of durable run/tracker state" in shared
@@ -1133,43 +1138,11 @@ def test_sdlc_source_and_local_verification_repair_contracts() -> None:
     assert "text objects, empty when none" in text
 
 
-def test_sdlc_source_and_local_bounded_safeguards() -> None:
-    # Assembly/meaning checks complement the separate native behavior rehearsal.
-    loader = AgentPresetLoader()
-    for role in ("planning", "test-designer", "delivery", "delivery-reviewer"):
-        preset = loader.describe_preset(key=f"stackos.sdlc.{role}").preset
-        local = tomllib.loads((REPO_ROOT / f".codex/agents/sdlc-{role}.toml").read_text())
-        for text in (" ".join(preset.prompt_contract.must_do), local["developer_instructions"]):
-            for obligation in (
-                "concrete policy/denial result ref",
-                "prepared patch or payload if available",
-                "safe resume condition and next owner/action",
-                "Never bypass the denial or repeat the denied action through another tool",
-                "continue unaffected checks",
-            ):
-                assert obligation in text, (role, obligation)
-            if role in ("delivery", "delivery-reviewer"):
-                assert "named resolution evidence once before returning" in text
-                assert "any unresolved denial as current" in text
-                assert "durable write alone does not prove native consumption" in text
-            if role in ("test-designer", "delivery"):
-                assert "before lengthy broad verification" in text
-                assert "actual emitted contract/result" in text
-                assert "mandatory final signoff after final edits" in text
-            if role in ("planning", "delivery"):
-                assert "before dependent work or lengthy proof" in text
-                assert "receiving tree/environment" in text
-                assert "accepted source or independently reviewed integration evidence" in text
-
-
 def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
     # Availability/assembly only; the assigned bounded use exercise owns behavior proof.
     loader = AgentPresetLoader()
     prefixes = {
-        "planning": (
-            "For each required cross-task input,",
-            "Establish uncertain required proof capabilities early,",
-        ),
+        "planning": ("For each required cross-task input,",),
         "delivery": (
             "An explicitly assigned automated planning/materialization contract",
             "After final edits,",
@@ -1180,7 +1153,6 @@ def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
             "Complete necessary omitted",
             "For browser work,",
             "Classify the cause before returning blocked.",
-            "Establish uncertain required proof capabilities early,",
         ),
         "delivery-reviewer": (
             "Own the assigned review outcome.",
@@ -1193,13 +1165,11 @@ def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
             "Order findings by severity",
             "For browser work,",
             "Classify the cause before returning blocked.",
-            "Establish uncertain required proof capabilities early,",
         ),
         "test-designer": (
             "Trace each material claim",
             "For asynchronous changes",
             "For browser work,",
-            "Establish uncertain required proof capabilities early,",
         ),
     }
     texts = {}
@@ -1210,6 +1180,19 @@ def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
             rule = next(item for item in preset.prompt_contract.must_do if item.startswith(prefix))
             assert rule in local["developer_instructions"], (role, prefix)
         texts[role] = " ".join(preset.prompt_contract.must_do)
+        for text in (texts[role], local["developer_instructions"]):
+            if role in ("delivery", "delivery-reviewer"):
+                assert "named resolution evidence once before returning" in text
+                assert "any unresolved denial as current" in text
+                assert "durable write alone does not prove native consumption" in text
+            if role in ("test-designer", "delivery"):
+                assert "before lengthy broad verification" in text
+                assert "actual emitted contract/result" in text
+                assert "mandatory final signoff after final edits" in text
+            if role in ("planning", "delivery"):
+                assert "before dependent work or lengthy proof" in text
+                assert "receiving tree/environment" in text
+                assert "accepted source or independently reviewed integration evidence" in text
         if role == "planning":
             continue
         # Incident-specific checks belong in this project, not the reusable preset.

@@ -11,6 +11,7 @@ import yaml
 
 from stackos.agents import AgentPresetLoader
 from stackos.skill_presets import SkillPresetLoader
+from tests.helpers.preset_adoption import assert_preset_adoption
 
 ROOT = Path(__file__).resolve().parents[2]
 GUIDANCE_REF = "canonical project guidance"
@@ -68,22 +69,13 @@ def test_all_main_presets_expose_the_same_guidance_route() -> None:
 
 
 def test_existing_local_adaptations_track_resolved_source_identity() -> None:
-    # The operator requested shared-source changes only; these exact adaptations are pending.
-    pending_adoption = {
-        "stackos.sdlc.planning": ("0.7.23", "0.7.24"),
-        "stackos.sdlc.delivery": ("0.7.22", "0.7.23"),
-        "stackos.sdlc.delivery-reviewer": ("0.6.21", "0.6.22"),
-        "stackos.sdlc.delivery-orchestrator": ("0.8.25", "0.8.26"),
-    }
     agents = AgentPresetLoader()
     for path in sorted((ROOT / ".codex/agents").glob("*.toml")):
         text = path.read_text(encoding="utf-8")
         match = re.search(r"Source preset: ([\w.-]+) v(\d+\.\d+\.\d+)", text)
         assert match, path
         source = agents.describe_preset(key=match[1]).preset
-        assert match[2] == source.version or (match[2], source.version) == pending_adoption.get(
-            source.key
-        ), path
+        assert_preset_adoption(source.key, match[2], source.version)
         local = tomllib.loads(text)
         assert "canonical-project-guidance-consumption" in local["developer_instructions"]
         if source.domain == "branding":
@@ -96,9 +88,7 @@ def test_existing_local_adaptations_track_resolved_source_identity() -> None:
         match = re.search(r"Source skill preset: `([\w.-]+)` v(\d+\.\d+\.\d+)", text)
         assert match, path
         source = skills.describe_preset(key=match[1]).preset
-        assert match[2] == source.version or (match[2], source.version) == pending_adoption.get(
-            source.key
-        ), path
+        assert_preset_adoption(source.key, match[2], source.version)
         assert "canonical-project-guidance-consumption" in text
 
 

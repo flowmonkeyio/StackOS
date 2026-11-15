@@ -17,6 +17,7 @@ from stackos.repositories.tracker.schema import TrackerDeliveryScopeExclusion
 from stackos.skill_presets import SkillPresetLoader, parse_skill_preset_bundle_yaml
 from stackos.skill_presets.schema import validate_skill_preset_obj
 from stackos.workflows.template_schema import WorkflowSkillPresetRequirementSpec
+from tests.helpers.preset_adoption import assert_preset_adoption
 
 
 def test_skill_preset_loader_lists_bundled_presets() -> None:
@@ -72,7 +73,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     contract = loaded.preset.operating_contract
     action = loaded.preset.project_adaptation.required_agent_action.lower()
 
-    assert loaded.preset.version == "0.8.26"
+    assert loaded.preset.version == "0.8.27"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "canonical owner" in action
@@ -197,10 +198,9 @@ def test_codex_sdlc_orchestrator_tracks_source_and_existing_project_references()
     root = Path(__file__).resolve().parents[2]
     text = (root / ".codex/orchestrator/sdlc-delivery-orchestrator.md").read_text()
     preset = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
-    # The operator requested shared-source changes only; local adaptation is pending.
-    assert f"Source skill preset: `{preset.key}` v{preset.version}" in text or (
-        preset.version == "0.8.26" and f"Source skill preset: `{preset.key}` v0.8.25" in text
-    )
+    match = re.search(rf"Source skill preset: `{re.escape(preset.key)}` v(\d+\.\d+\.\d+)", text)
+    assert match
+    assert_preset_adoption(preset.key, match[1], preset.version)
     workflow = yaml.safe_load(
         (root / "plugins/engineering/workflows/tracked-delivery.yaml").read_text()
     )
