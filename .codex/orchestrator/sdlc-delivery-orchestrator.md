@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.24
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.25
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Workflow: `engineering.tracked-delivery` v0.8.7 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -581,6 +581,8 @@ not authorize a restart of the daemon orchestrating the active task. Source vali
 adoption, isolated native consumption or installed activation complete.
 
 ## Recovery And Closeout
+
+Use tracker.startDelivery with replace_review only under explicit operator authorization for one quiescent stopped ordinary review on its exact clean successful delivery candidate. Pin the expected attempt, native review thread, candidate and current resolved reviewer snapshot digest; optional reviewer_source pins an approved existing same-project binding/source/digest. Use canonical current reviewer selection, preserve host/provider/profile and task-only routing, and never supply raw execution overrides. Retain completed delivery, retired review/session/snapshot/findings/attempts and consumed repair allowance. This explicit transition launches only fresh independent review; ordinary rehandoff and source edits never imply replacement. Reject live, stale, foreign, dirty or ineligible work; replacement failure stays stopped. Inspect original and replacement evidence through existing tracker reads. Specialists return evidence unless explicitly assigned recovery authority; never repair tracker metadata manually or claim installed activation from source proof.
 
 Ordinary scoped repairs stay in the active step. On a stop use concrete
 command/tool results and prerequisite state to distinguish a repairable owner

@@ -23,7 +23,171 @@ from tests.integration.test_repositories.test_task_delivery import (
     generic_result,
     git,
     native_source_fixtures,  # noqa: F401 -- applies real native admission fixtures to route scenarios
+    stopped_review_fixture,
 )
+
+
+@pytest.mark.parametrize("transport", ["rest", "mcp", "cli"])
+def test_review_replacement_registered_surfaces_and_authority(
+    api, project_id, tmp_path, settings, monkeypatch, transport
+):
+    from copy import deepcopy
+    from io import BytesIO
+    from urllib.error import HTTPError
+    from urllib.parse import urlsplit
+
+    from typer.testing import CliRunner
+
+    from stackos.cli import api_client, app
+    from stackos.repositories.tracker import TrackerRepository
+
+    tmp_path = tmp_path / "candidate"
+    tmp_path.mkdir()
+    git(tmp_path, "init")
+    git(tmp_path, "config", "user.name", "Delivery Test")
+    git(tmp_path, "config", "user.email", "delivery@example.test")
+    commit(tmp_path, "baseline")
+    with Session(api.app.state.engine) as session:
+        arguments, request, before, calls = stopped_review_fixture(
+            session, project_id, tmp_path, monkeypatch
+        )
+    endpoint = "/api/v1/operations/tracker.startDelivery/call"
+    payload = {
+        "project_id": project_id,
+        "task_key": "replace",
+        "project_dir": str(tmp_path),
+        "replace_review": request,
+    }
+    saved_scheduler = api.app.state.scheduler
+    finished = Event()
+    saved_scheduler.add_listener(lambda _event: finished.set(), EVENT_JOB_EXECUTED)
+    try:
+        # Browser-console and unauthenticated callers gain no recovery authority.
+        token = api.get("/api/v1/auth/ui-token").json()["token"]
+        denied = api.post(
+            endpoint, json={"arguments": payload}, headers={"Authorization": f"Bearer {token}"}
+        )
+        assert denied.status_code == 403, denied.text
+        unauthenticated = api.post(
+            endpoint, json={"arguments": payload}, headers={"Authorization": "Bearer invalid"}
+        )
+        assert unauthenticated.status_code == 401, unauthenticated.text
+        foreign = api.post(
+            "/api/v1/projects",
+            json={"slug": "foreign-recovery", "name": "Foreign", "domain": "test"},
+        )
+        assert foreign.status_code == 201, foreign.text
+        foreign_request = api.post(
+            endpoint, json={"arguments": {**payload, "project_id": foreign.json()["data"]["id"]}}
+        )
+        assert foreign_request.status_code == 404, foreign_request.text
+        with Session(api.app.state.engine) as session:
+            assert (
+                TrackerRepository(session)
+                .brief(project_id=project_id, ticket_key="work")
+                .ticket.completion_evidence_json
+                == before
+            )
+        stale = deepcopy(payload)
+        stale["replace_review"]["expected_attempt"] += 1
+        rejected = api.post(endpoint, json={"arguments": stale})
+        assert rejected.status_code == 422, rejected.text
+        assert "stale_target" in rejected.text
+        assert not arguments["scheduler"].jobs
+
+        def launch(_host, _directory, _instructions, prompt, _schema, **kwargs):
+            packet = json.loads(prompt)
+            calls.append((packet, kwargs))
+            assert packet["phase"] == "review"
+            return AgentRunResult(
+                0,
+                thread_id="new-review",
+                result=generic_result(
+                    outputs={"commit_sha": request["expected_candidate_commit_sha"]}
+                ),
+            )
+
+        monkeypatch.setattr(task_delivery, "run_agent", launch)
+
+        if transport == "rest":
+            response = api.post(
+                endpoint, json={"arguments": {**payload, "response_mode": "compact"}}
+            )
+            assert response.status_code == 200, response.text
+            result = response.json()
+        elif transport == "mcp":
+            client = MCPClient(api, api.headers["Authorization"].removeprefix("Bearer "))
+            result = client.call_tool_structured(
+                "tracker.startDelivery", {**payload, "response_mode": "compact"}
+            )
+        else:
+
+            def isolated_urlopen(request, **kwargs):
+                assert request.get_header("X-stackos-client-surface") == "cli"
+                response = api.request(
+                    request.method,
+                    urlsplit(request.full_url).path,
+                    json=json.loads(request.data),
+                    headers=dict(request.header_items()),
+                )
+                if response.is_error:
+                    raise HTTPError(
+                        request.full_url,
+                        response.status_code,
+                        "rejected",
+                        {},
+                        BytesIO(response.content),
+                    )
+                return BytesIO(response.content)
+
+            monkeypatch.setattr(api_client, "get_settings", lambda: settings)
+            monkeypatch.setattr("urllib.request.urlopen", isolated_urlopen)
+            cli = CliRunner().invoke(
+                app,
+                [
+                    "ops",
+                    "call",
+                    "tracker.startDelivery",
+                    "--project",
+                    str(project_id),
+                    "--input",
+                    "-",
+                    "--response-mode",
+                    "compact",
+                ],
+                input=json.dumps(payload),
+            )
+            assert cli.exit_code == 0, cli.output
+            result = json.loads(cli.output)
+        refs = result.get("data", result.get("refs", result))
+        assert (
+            refs["review_replacement"]["candidate_commit_sha"]
+            == request["expected_candidate_commit_sha"]
+        )
+        raw = api.post(endpoint, json={"arguments": {**payload, "response_mode": "raw"}})
+        assert raw.status_code == 200, raw.text
+        assert raw.json()["data"]["review_replacement"] == refs["review_replacement"]
+        assert finished.wait(5), "Registered replacement job did not finish"
+        inspected = api.post(
+            "/api/v1/operations/tracker.get/call",
+            json={
+                "arguments": {
+                    "project_id": project_id,
+                    "task_key": "replace",
+                    "response_mode": "raw",
+                }
+            },
+        )
+        assert inspected.status_code == 200, inspected.text
+        automatic = inspected.json()["tickets"][0]["completion_evidence_json"]["automatic_delivery"]
+        assert (
+            automatic["review_replacements"][0]["review"] == before["automatic_delivery"]["review"]
+        )
+        assert automatic["review"]["thread_id"] == "new-review"
+        assert automatic["repair_count"] == 3
+        assert len(calls) == 3
+    finally:
+        assert api.app.state.scheduler is saved_scheduler
 
 
 @pytest.mark.parametrize("response_mode", ["compact", "ack"])

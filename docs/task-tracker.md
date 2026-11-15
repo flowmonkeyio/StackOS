@@ -673,6 +673,67 @@ status are not substitutes. Older receipts can lack these facts.
 
 ### Diagnosing interrupted delivery
 
+#### Explicit review-only replacement
+
+After diagnosis and explicit operator authorization, call the existing
+`tracker.startDelivery` operation with `replace_review` to replace one
+quiescent stopped ordinary review. The operation retains normal tracker-write
+authority; the reason records the authorization context and grants no permissions.
+It does not enable browser-console writes. Ordinary rehandoff keeps its existing
+session behavior and never implicitly selects this recovery.
+
+```json
+{
+  "project_id": 1,
+  "task_key": "prepared-task",
+  "project_dir": "/path/to/clean-candidate",
+  "replace_review": {
+    "ticket_key": "implementation",
+    "expected_attempt": 1,
+    "expected_review_thread_id": "exact-stopped-native-thread",
+    "expected_candidate_commit_sha": "<40 lowercase hex>",
+    "expected_reviewer_snapshot_digest": "<64 lowercase hex>",
+    "reason": "Operator authorized replacement after the recorded capability diagnosis"
+  }
+}
+```
+
+The snapshot digest is SHA256 of the current canonical resolved `review_agent`
+object encoded by `json.dumps(snapshot, sort_keys=True)`. It pins current saved
+selection and source resolution, including inline-host settings; it does not
+invent a source file for inline hosts. Do not supply raw `agents`, `review_agent`,
+host/settings or assignment overrides alongside recovery. Current saved defaults
+select the reviewer. Optional
+`reviewer_source: {binding_id, source_ref, expected_digest}` selects an existing
+approved source from a directory already bound to the same project. Existing
+registration, no-follow, path and source-setting checks apply. This reads execution
+configuration only: the task directory and immutable task-only MCP route stay
+retained, and reviewer host/provider/profile and normal approvals are preserved.
+No bootstrap, rebind, default adoption or permission expansion occurs.
+
+The task must be stopped with no outstanding callback/capacity or native
+invocation owner. The ordinary child must have a successful candidate-ready
+delivery, accepted prerequisites and a known failed, blocked or interrupted
+review/session. Attempt, thread, resolved snapshot and delivered SHA must match.
+Accepted reviews, ordinary repair rejections, mirrors, unknown identities, live
+work and foreign or stale targets reject before mutation with structured repair
+context. Git HEAD must remain clean and equal to the exact delivered candidate.
+Editing tracked reviewer configuration changes that candidate; use separately
+admitted execution configuration or normally admit a new complete candidate.
+
+Admission archives the complete retired review/session/snapshot and reason in
+`completion_evidence_json.automatic_delivery.review_replacements`, retains the
+old attempt and successful delivery, and queues one explicit review-only
+transition. The replacement uses a distinct fresh native session, persisted as
+soon as announced. Delivery is not invoked again and consumed `repair_count`
+is unchanged, including at three. Replaying the same request returns the same
+recovery refs; changed intent against that retired target conflicts. Retired
+callbacks/results cannot overwrite or advance the new handoff. Replacement
+failure stays stopped with its evidence; a real repair rejection still obeys the
+retained repair limit. `tracker.get`/`tracker.brief` raw inspection shows both
+retired and current review truth; statistics count the retained delivery once.
+This source behavior does not establish installed or live recovery proof.
+
 Retain the ticket, attempt, native thread/invocation and request IDs that are
 actually available, the candidate, launch/exit times and their time zones, the
 initiating observation, and the next action's owner. Mark missing history

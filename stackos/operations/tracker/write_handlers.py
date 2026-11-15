@@ -112,6 +112,9 @@ async def tracker_start_delivery(
         run_plan_id=inp.run_plan_id,
         step_id=inp.step_id,
         agent_assignments=inp.agent_assignments,
+        replace_review=inp.replace_review.model_dump(exclude_none=True)
+        if inp.replace_review
+        else None,
         controller_run_id=ctx.run_id,
     )
     return WriteEnvelope(data=result, run_id=ctx.run_id, project_id=inp.project_id)

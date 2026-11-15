@@ -1498,6 +1498,568 @@ def prepared_task(session: Session, project_id: int) -> None:
     )
 
 
+def stopped_review_fixture(
+    session,
+    project_id,
+    root,
+    monkeypatch,
+    defaults=None,
+    repair_count=3,
+    workflow=False,
+    review_status="blocked",
+    delivery_role="delivery_agent",
+):
+    """Real admission/runner, disposable Git/SQLite, controlled native edge only."""
+    from hashlib import sha256
+
+    from stackos import task_delivery
+
+    repo = TrackerRepository(session)
+    scope, child = {}, {}
+    task_key = "replace"
+    if workflow:
+        plans = RunPlanRepository(session)
+        plan = plans.create(
+            project_id=project_id,
+            run_plan_json={
+                "schema_version": "stackos.run-plan.v1",
+                "key": "replacement-fixture",
+                "title": "Disposable replacement fixture",
+                "steps": [{"id": "verify", "title": "Verify"}],
+            },
+        ).data
+        started = plans.start(plan.id, project_id=project_id)
+        step = plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="verify").data
+        task_key = f"workflow-{plan.id}"
+        scope = {"run_plan_id": plan.id, "step_id": "verify"}
+        child = {
+            "run_plan_id": plan.id,
+            "run_plan_step_id": step.id,
+            "parent_ticket_key": f"{task_key}-verify",
+            "dependency_keys": [f"{task_key}-verify"],
+        }
+    else:
+        repo.create_task(project_id=project_id, key=task_key, title="Replace reviewer")
+    if delivery_role != "delivery_agent":
+        scope["agent_assignments"] = {"work": delivery_role}
+        defaults = {
+            "host_key": "claude-code",
+            "agents": {
+                delivery_role: {"name": "writer", "instructions": "Implement"},
+                "review_agent": {"name": "reviewer", "instructions": "Independently verify"},
+            },
+        }
+    repo.create_ticket(project_id=project_id, task_key=task_key, key="work", title="Work", **child)
+    repo.configure_delivery(
+        project_id=project_id,
+        delivery=defaults
+        or {
+            "host_key": "claude-code",
+            "delivery_agent": {"name": "writer", "instructions": "Implement"},
+            "review_agent": {"name": "reviewer", "instructions": "Independently verify"},
+        },
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="work",
+        patch_json={
+            "completion_evidence_json": {"automatic_delivery": {"repair_count": repair_count}}
+        },
+    )
+    calls = []
+
+    def launch(_host, directory, _instructions, prompt, _schema, **kwargs):
+        packet = json.loads(prompt)
+        calls.append((packet, kwargs))
+        if packet["phase"] == "delivery":
+            sha = commit(Path(directory), "implementation")
+            return AgentRunResult(
+                0, thread_id="writer-thread", result=generic_result(outputs={"commit_sha": sha})
+            )
+        if review_status == "native-error":
+            return AgentRunResult(1, thread_id="retired-reviewer", error="Original reviewer failed")
+        return AgentRunResult(
+            0,
+            thread_id="retired-reviewer",
+            result=generic_result(
+                "blocked",
+                {"commit_sha": packet["candidate"]["commit_sha"]},
+                "Required tool unavailable",
+            ),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    arguments = dict(
+        session=session,
+        session_factory=lambda: Session(session.get_bind()),
+        scheduler=scheduler,
+        project_id=project_id,
+        task_key=task_key,
+        project_dir=str(root),
+        **scope,
+    )
+    task_delivery.start_delivery(**arguments)
+    scheduler.run()
+    before = deepcopy(
+        repo.brief(project_id=project_id, ticket_key="work").ticket.completion_evidence_json
+    )
+    automatic = before["automatic_delivery"]
+    reviewer = task_delivery.resolve_delivery_settings(
+        session, project_id=project_id, project_dir=str(root), role_keys={"review_agent"}
+    )["agents"]["review_agent"]
+    request = {
+        "ticket_key": "work",
+        "expected_attempt": automatic["attempt"],
+        "expected_review_thread_id": "retired-reviewer",
+        "expected_candidate_commit_sha": automatic["candidate"]["commit_sha"],
+        "expected_reviewer_snapshot_digest": sha256(
+            json.dumps(reviewer, sort_keys=True).encode()
+        ).hexdigest(),
+        "reason": "Operator authorized fresh independent review after capability diagnosis",
+    }
+    return arguments, request, before, calls
+
+
+def test_review_replacement_replay_after_workflow_closeout(
+    session, project_id, tmp_path, monkeypatch
+):
+    from stackos import task_delivery
+
+    arguments, request, _before, calls = stopped_review_fixture(
+        session, project_id, tmp_path, monkeypatch, workflow=True
+    )
+
+    def launch(_host, _directory, _instructions, prompt, _schema, **kwargs):
+        packet = json.loads(prompt)
+        calls.append((packet, kwargs))
+        if packet["workflow_step"]:
+            return AgentRunResult(0, thread_id="workflow-verifier", result=generic_result())
+        assert packet["phase"] == "review"
+        return AgentRunResult(
+            0,
+            thread_id="replacement-reviewer",
+            result=generic_result(outputs={"commit_sha": request["expected_candidate_commit_sha"]}),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    receipt = task_delivery.start_delivery(**arguments, replace_review=request)
+    arguments["scheduler"].run()
+    session.expire_all()
+    plan = RunPlanRepository(session).get(arguments["run_plan_id"], project_id=project_id)
+    assert plan.status == "completed"
+    replay = task_delivery.start_delivery(**arguments, replace_review=request)
+    assert replay["review_replacement"] == receipt["review_replacement"]
+    assert not arguments["scheduler"].jobs
+    assert [packet["phase"] for packet, _ in calls] == ["delivery", "review", "review", "delivery"]
+
+
+@pytest.mark.parametrize(
+    "replacement_status,delivery_role",
+    [
+        ("success", "delivery_agent"),
+        ("blocked", "delivery_agent"),
+        ("repair", "delivery_agent"),
+        ("success", "builder_role"),
+    ],
+)
+def test_review_replacement_runs_only_review_and_preserves_history(
+    session, project_id, tmp_path, monkeypatch, replacement_status, delivery_role
+):
+    from hashlib import sha256
+
+    from stackos import task_delivery
+
+    arguments, request, before, calls = stopped_review_fixture(
+        session, project_id, tmp_path, monkeypatch, delivery_role=delivery_role
+    )
+    original = before["automatic_delivery"]
+    repo = TrackerRepository(session)
+    defaults = repo.delivery_defaults(project_id=project_id)
+    defaults.get("agents", defaults)["review_agent"]["instructions"] = (
+        "Current approved inline reviewer instructions"
+    )
+    repo.configure_delivery(project_id=project_id, delivery=defaults)
+    resolved = task_delivery.resolve_delivery_settings(
+        session, project_id=project_id, project_dir=str(tmp_path), role_keys={"review_agent"}
+    )["agents"]["review_agent"]
+    request["expected_reviewer_snapshot_digest"] = sha256(
+        json.dumps(resolved, sort_keys=True).encode()
+    ).hexdigest()
+
+    def launch(_host, _directory, _instructions, prompt, _schema, **kwargs):
+        packet = json.loads(prompt)
+        calls.append((packet, kwargs))
+        assert packet["phase"] == "review"
+        assert "Current approved inline reviewer instructions" in _instructions
+        assert "resume_thread_id" not in kwargs
+        assert (
+            packet["delivery_result"]["result"]["outputs"]
+            == original["delivery"]["result"]["outputs"]
+        )
+        assert packet["candidate"] == original["candidate"]
+        assert packet["occurrence"]["repair_count"] == 3
+        return AgentRunResult(
+            0,
+            thread_id="replacement-reviewer",
+            result=generic_result(
+                replacement_status, {"commit_sha": request["expected_candidate_commit_sha"]}
+            ),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    # Use the registered operation handler, including typed request validation.
+    inp = TrackerStartDeliveryInput.model_validate(
+        {key: arguments[key] for key in ("project_id", "task_key", "project_dir")}
+        | {"replace_review": request}
+    )
+    ctx = MCPContext(
+        request_id="replace",
+        session=session,
+        extras={key: arguments[key] for key in ("scheduler", "session_factory")},
+    )
+    first = asyncio.run(tracker_start_delivery(inp, ctx, None)).data
+    replay = asyncio.run(tracker_start_delivery(inp, ctx, None)).data
+    assert first["review_replacement"] == replay["review_replacement"]
+    assert len(arguments["scheduler"].jobs) == 1
+    arguments["scheduler"].run()
+    session.expire_all()
+    repo = TrackerRepository(session)
+    ticket = repo.brief(project_id=project_id, ticket_key="work").ticket
+    current = ticket.completion_evidence_json["automatic_delivery"]
+    assert [packet["phase"] for packet, _ in calls] == ["delivery", "review", "review"], (
+        repo.get(project_id=project_id, task_key="replace").tasks[0].metadata_json
+    )
+    assert current["delivery"] == original["delivery"]
+    assert current["candidate"] == original["candidate"]
+    assert current["repair_count"] == 3
+    assert current["sessions"]["delivery"] == original["sessions"]["delivery"]
+    assert current["sessions"].get("review", {}).get("thread_id") == "replacement-reviewer", (
+        ticket.outcome
+    )
+    retired = current["review_replacements"][0]
+    assert retired["review"] == original["review"]
+    assert retired["session"] == original["sessions"]["review"]
+    assert current["attempts"][-1]["review"] == original["review"]
+    assert current["review"]["validated_outcome"] == replacement_status
+    assert ticket.status == (
+        "complete"
+        if replacement_status == "success"
+        else "in-progress"
+        if replacement_status == "blocked"
+        else "failed"
+    )
+    state = repo.get(project_id=project_id, task_key="replace").tasks[0].metadata_json["delivery"]
+    assert state["status"] == ("complete" if replacement_status == "success" else "stopped")
+    assert state["agents"]["review_agent"] == original["sessions"]["review"]["agent_snapshot"]
+    from stackos.repositories.tracker.agent_stats import _receipt_items
+
+    assert len(_receipt_items(ticket.completion_evidence_json)) == 3
+    asyncio.run(tracker_start_delivery(inp, ctx, None))
+    assert not arguments["scheduler"].jobs
+
+
+@pytest.mark.parametrize(
+    "thread,valid",
+    [("replacement-error", False), ("retired-reviewer", False), ("retired-reviewer", True)],
+)
+def test_review_replacement_native_failure_stops_without_fallback(
+    session, project_id, tmp_path, monkeypatch, thread, valid
+):
+    from stackos import task_delivery
+
+    arguments, request, before, calls = stopped_review_fixture(
+        session, project_id, tmp_path, monkeypatch, review_status="native-error"
+    )
+    repo = TrackerRepository(session)
+    old_handoff = (
+        repo.get(project_id=project_id, task_key="replace")
+        .tasks[0]
+        .metadata_json["delivery"]["handoff_id"]
+    )
+
+    def launch(_host, _directory, _instructions, prompt, _schema, **kwargs):
+        calls.append((json.loads(prompt), kwargs))
+        if valid:
+            return AgentRunResult(
+                0,
+                thread_id=thread,
+                result=generic_result(
+                    outputs={"commit_sha": request["expected_candidate_commit_sha"]}
+                ),
+            )
+        return AgentRunResult(1, thread_id=thread, error="Native replacement failed")
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    task_delivery.start_delivery(**arguments, replace_review=request)
+    # A retired scheduler/terminal continuation cannot enter the replacement handoff.
+    task_delivery.run_delivery(
+        session_factory=arguments["session_factory"],
+        project_id=project_id,
+        task_key="replace",
+        handoff_id=old_handoff,
+    )
+    assert len(calls) == 2
+    arguments["scheduler"].run()
+    session.expire_all()
+    ticket = repo.brief(project_id=project_id, ticket_key="work").ticket
+    automatic = ticket.completion_evidence_json["automatic_delivery"]
+    assert len(calls) == 3
+    assert automatic["delivery"] == before["automatic_delivery"]["delivery"]
+    assert automatic["repair_count"] == 3
+    assert automatic["review"]["validated_outcome"] is None
+    if valid:
+        assert "fresh native session" in automatic["review"]["validation_error"]
+    else:
+        assert automatic["review"]["error"] == "Native replacement failed"
+    assert (
+        repo.get(project_id=project_id, task_key="replace")
+        .tasks[0]
+        .metadata_json["delivery"]["status"]
+        == "stopped"
+    )
+    assert not arguments["scheduler"].jobs
+    if thread == "retired-reviewer":
+        assert "review" not in automatic["sessions"]
+
+
+def test_review_replacement_real_rejection_uses_retained_repair_allowance(
+    session, project_id, tmp_path, monkeypatch
+):
+    from stackos import task_delivery
+
+    arguments, request, before, calls = stopped_review_fixture(
+        session, project_id, tmp_path, monkeypatch, repair_count=2
+    )
+    review_calls = 0
+
+    def launch(_host, directory, _instructions, prompt, _schema, **kwargs):
+        nonlocal review_calls
+        packet = json.loads(prompt)
+        calls.append((packet, kwargs))
+        if packet["phase"] == "delivery":
+            assert kwargs["resume_thread_id"] == "writer-thread"
+            assert packet["review_result"]["result"]["status"] == "repair"
+            assert packet["occurrence"]["repair_count"] == 3
+            sha = commit(Path(directory), "scoped-repair")
+            return AgentRunResult(
+                0, thread_id="writer-thread", result=generic_result(outputs={"commit_sha": sha})
+            )
+        review_calls += 1
+        assert kwargs.get("resume_thread_id") == (None if review_calls == 1 else "fresh-review")
+        return AgentRunResult(
+            0,
+            thread_id="fresh-review",
+            result=generic_result(
+                "repair" if review_calls == 1 else "success",
+                {"commit_sha": packet["candidate"]["commit_sha"]},
+            ),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    task_delivery.start_delivery(**arguments, replace_review=request)
+    arguments["scheduler"].run()
+    session.expire_all()
+    ticket = TrackerRepository(session).brief(project_id=project_id, ticket_key="work").ticket
+    current = ticket.completion_evidence_json["automatic_delivery"]
+    assert ticket.status == "complete", ticket.outcome
+    assert [packet["phase"] for packet, _ in calls] == [
+        "delivery",
+        "review",
+        "review",
+        "delivery",
+        "review",
+    ]
+    assert current["repair_count"] == 3
+    assert current["review_replacements"][0]["review"] == before["automatic_delivery"]["review"]
+    assert current["candidate"]["commit_sha"] != request["expected_candidate_commit_sha"]
+
+
+@pytest.mark.parametrize(
+    "fault",
+    [
+        "attempt",
+        "thread",
+        "snapshot",
+        "candidate",
+        "dirty",
+        "tracked_source",
+        "head",
+        "live",
+        "capacity",
+        "registry",
+        "accepted",
+        "ordinary_rejection",
+        "missing_session",
+        "missing_snapshot",
+        "not_delivered",
+        "prerequisite",
+        "foreign_ticket",
+        "different_request",
+    ],
+)
+def test_review_replacement_rejects_without_mutation(
+    session, project_id, tmp_path, monkeypatch, fault
+):
+    from stackos import task_delivery
+    from stackos.host_mcp import service
+
+    arguments, request, before, calls = stopped_review_fixture(
+        session, project_id, tmp_path, monkeypatch
+    )
+    repo = TrackerRepository(session)
+    evidence = before["automatic_delivery"]
+    if fault in {"attempt", "thread", "snapshot", "candidate"}:
+        field, value = {
+            "attempt": ("expected_attempt", 99),
+            "thread": ("expected_review_thread_id", "stale"),
+            "snapshot": ("expected_reviewer_snapshot_digest", "0" * 64),
+            "candidate": ("expected_candidate_commit_sha", "0" * 40),
+        }[fault]
+        request[field] = value
+    elif fault in {"dirty", "tracked_source", "head"}:
+        if fault == "tracked_source":
+            folder = tmp_path / ".codex" / "agents"
+            folder.mkdir(parents=True)
+            (folder / "reviewer.toml").write_text("changed tracked execution source")
+            git(tmp_path, "add", ".codex")
+        elif fault == "head":
+            commit(tmp_path, "different-head")
+        else:
+            (tmp_path / "dirty").write_text("dirty")
+    elif fault in {"live", "capacity"}:
+        task_delivery._update_delivery(
+            repo,
+            project_id,
+            "replace",
+            **({"status": "running"} if fault == "live" else {"slot_reserved": True}),
+        )
+    elif fault == "registry":
+        monkeypatch.setattr(
+            service,
+            "invocation_timings",
+            lambda: [{"project_id": project_id, "task_key": "replace", "finished_at": "retiring"}],
+        )
+    elif fault == "different_request":
+        task_delivery.start_delivery(**arguments, replace_review=request)
+        request["reason"] = "Different request for an already retired review"
+    else:
+        if fault in {"accepted", "ordinary_rejection"}:
+            evidence["review"]["validated_outcome"] = "success" if fault == "accepted" else "repair"
+        elif fault == "missing_session":
+            evidence["sessions"].pop("review")
+        elif fault == "missing_snapshot":
+            evidence["sessions"]["review"].pop("agent_snapshot")
+        elif fault == "not_delivered":
+            evidence["delivery"]["validated_outcome"] = "blocked"
+        elif fault == "prerequisite":
+            repo.create_ticket(
+                project_id=project_id, task_key="replace", key="prerequisite", title="Pending"
+            )
+            repo.update_ticket(
+                project_id=project_id,
+                ticket_key="work",
+                patch_json={"add_dependency_keys": ["prerequisite"]},
+            )
+        elif fault == "foreign_ticket":
+            repo.create_task(project_id=project_id, key="other-task", title="Other")
+            repo.create_ticket(
+                project_id=project_id, task_key="other-task", key="other-work", title="Other"
+            )
+            request["ticket_key"] = "other-work"
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="work",
+            patch_json={"completion_evidence_json": before},
+        )
+    snapshot = repo.get(project_id=project_id, task_key="replace").model_dump(mode="json")
+    jobs = len(arguments["scheduler"].jobs)
+    with pytest.raises(ValidationError):
+        task_delivery.start_delivery(**arguments, replace_review=request)
+    session.expire_all()
+    assert repo.get(project_id=project_id, task_key="replace").model_dump(mode="json") == snapshot
+    assert len(arguments["scheduler"].jobs) == jobs
+    assert len(calls) == 2
+
+
+def test_review_replacement_does_not_implicitly_apply_to_rehandoff(
+    session, project_id, tmp_path, monkeypatch
+):
+    from stackos import task_delivery
+
+    arguments, _request, _before, calls = stopped_review_fixture(
+        session, project_id, tmp_path, monkeypatch
+    )
+    # Ordinary explicit requeue still uses its original delivery/reviewer sessions.
+    repo = TrackerRepository(session)
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="work",
+        patch_json={"status": "not-started", "blocker_reason": None},
+    )
+    task_delivery.start_delivery(**arguments)
+    arguments["scheduler"].run()
+    assert calls[2][0]["phase"] == "delivery"
+    assert calls[2][1]["resume_thread_id"] == "writer-thread"
+    current = repo.brief(project_id=project_id, ticket_key="work").ticket.completion_evidence_json[
+        "automatic_delivery"
+    ]
+    assert "review_replacements" not in current
+
+
+def test_review_replacement_fences_retired_session_callbacks_and_preserves_metrics(
+    session, project_id, tmp_path, monkeypatch
+):
+    from stackos import task_delivery
+    from stackos.host_mcp import service
+    from stackos.repositories.tracker.agent_stats import _receipt_items
+
+    arguments, request, before, _calls = stopped_review_fixture(
+        session, project_id, tmp_path, monkeypatch
+    )
+    task_delivery.start_delivery(**arguments, replace_review=request)
+    repo = TrackerRepository(session)
+    current = deepcopy(
+        repo.brief(project_id=project_id, ticket_key="work").ticket.completion_evidence_json
+    )
+    old = before["automatic_delivery"]["sessions"]["review"]
+    call = service.ActiveInvocation(
+        invocation_id="retired-invocation",
+        host_key=old["host_key"],
+        model=None,
+        started_at="2026-11-15T00:00:00+00:00",
+        thread_id=old["thread_id"],
+        scope=service.AgentExecutionScope(
+            project_id=project_id,
+            task_key="replace",
+            ticket_key="work",
+            phase="review",
+            attempt=request["expected_attempt"],
+            agent=old["agent"],
+        ),
+    )
+    task_delivery._record_execution_transition(arguments["session_factory"], call, False)
+    with pytest.raises(ValidationError, match="ownership"):
+        task_delivery._record_native_session(
+            arguments["session_factory"],
+            call,
+            handoff_id="retired-handoff",
+            evidence=before["automatic_delivery"],
+            identity={
+                key: value
+                for key, value in old.items()
+                if key not in {"thread_id", "agent_snapshot"}
+            },
+            session_snapshot={"agent_snapshot": old["agent_snapshot"]},
+        )
+    session.expire_all()
+    after = repo.brief(project_id=project_id, ticket_key="work").ticket.completion_evidence_json
+    assert after == current
+    receipts = _receipt_items(after)
+    assert len(receipts) == 2
+    assert sum(phase == "delivery" for _, phase in receipts) == 1
+
+
 def test_announced_session_is_durable_before_exit_and_controller_loss_resumes_it(
     session, project_id, tmp_path, monkeypatch
 ):
@@ -2927,6 +3489,7 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
     def run_agent(host, directory, instructions, prompt, schema, *, sandbox, **selection):
         selection.pop("execution_scope")
         selection.pop("on_execution_change")
+        assert callable(selection.pop("on_session_attached"))
         assert selection.pop("launch_allowed")()
         calls.append((host, instructions, sandbox, selection))
         packet = json.loads(prompt)

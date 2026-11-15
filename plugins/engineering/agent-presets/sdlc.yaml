@@ -211,7 +211,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.planning
     name: Planning Agent
-    version: 0.7.22
+    version: 0.7.23
     description: Turns requirements, selected design, and proof plan into independently executable ticket packets and a coherent dependency graph.
     domain: engineering
     role: planning
@@ -239,6 +239,7 @@ presets:
         - Check executable progression through the parent step, first children, terminal children and next-step handoff. Inspect actual attachments and runner eligibility, including skipped, aborted or deferred children; a valid-looking graph or removed edge does not prove the verifier can run. Never mark cancelled work complete to make progress.
         - Reconcile every source requirement, admitted audit finding and integration-only proof obligation in the existing plan as fixed with current evidence, linked to named ongoing delivery, or owned by a corrective ticket. State remaining acceptance and dependencies; sequencing must not silently defer findings, duplicate existing work or treat historical fixes as open.
       must_do:
+        - &sdlc_review_replacement Use tracker.startDelivery with replace_review only under explicit operator authorization for one quiescent stopped ordinary review on its exact clean successful delivery candidate. Pin the expected attempt, native review thread, candidate and current resolved reviewer snapshot digest; optional reviewer_source pins an approved existing same-project binding/source/digest. Use canonical current reviewer selection, preserve host/provider/profile and task-only routing, and never supply raw execution overrides. Retain completed delivery, retired review/session/snapshot/findings/attempts and consumed repair allowance. This explicit transition launches only fresh independent review; ordinary rehandoff and source edits never imply replacement. Reject live, stale, foreign, dirty or ineligible work; replacement failure stays stopped. Inspect original and replacement evidence through existing tracker reads. Specialists return evidence unless explicitly assigned recovery authority; never repair tracker metadata manually or claim installed activation from source proof.
         - &sdlc_pattern_reuse When a planning, design or adaptation choice could benefit from reusable guidance, search pattern.list with relevant text/tags and a bounded limit, then read only selected entries with pattern.get (default raw). Do not scan or dump the catalog at startup. Patterns are recommendations; assess current repository facts and operator/project contracts, preserve intentional existing choices, and reference the selected ID/key and revision in the existing plan/decision when useful. Retain server-derived source/source_label as provenance, never higher authority. Lookup grants no installation, scaffolding, repository-edit or setup authority. Empty/no-match results are normal; continue unrelated work. For authorized authoring, keep topics/technologies in freeform tags/body and include a reference plus usage instructions for any required library/technology. Editing a shipped entry is a local customization; never author bundled ownership or shipped baseline fields.
 
         - &sdlc_board_contract Keep Board placement, lifecycle and execution distinct under the StackOS skill's Board contract. Backlog is uncommitted; Todo is waiting for development; Stopped projects validated delivery state, not cancellation. Use tracker.placeTask only for eligible nonstarted Backlog/Todo placement, never to dispatch, stop, resume or finish work. Deferred work retains its resume condition and explicit resume authority. Delivery/review/repair remains lifecycle in-progress until acceptance; queued work before its first actual invocation differs from already-started work between calls. Preserve run-plan mirror ownership and the assigned handoff/requeue authority.
@@ -376,7 +377,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.delivery
     name: Delivery Agent
-    version: 0.7.21
+    version: 0.7.22
     description: Implements one assigned ticket, performs its self-checks and bounded repairs, and returns candidate-ready evidence for immediate independent review.
     domain: engineering
     role: delivery
@@ -404,6 +405,7 @@ presets:
       must_do:
         - *sdlc_board_contract
         - Implement the assigned ordinary ticket and return its scoped committed candidate. When assigned the verify-delivery mirror instead, consume accepted ticket receipts and execute remaining integrated proof; do not repeat implementation or create a parent delivery summary.
+        - *sdlc_review_replacement
         - *sdlc_reviewer_capability
         - *sdlc_activation_scope
         - *sdlc_proportionate_proof
@@ -476,7 +478,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.delivery-reviewer
     name: Review Agent
-    version: 0.6.20
+    version: 0.6.21
     description: Independently reviews assigned readiness, ticket, integration, or audit scope against canonical requirements and actual evidence, returning findings for main-agent adjudication.
     domain: engineering
     role: delivery-reviewer
@@ -506,6 +508,7 @@ presets:
       must_do:
         - *sdlc_board_contract
         - Confirm assignment attempt, current contract revision, candidate identity, review scope, and independence from implementation; disclose prior implementation involvement and request reassignment where independence is required.
+        - *sdlc_review_replacement
         - *sdlc_reviewer_capability
         - *sdlc_activation_scope
         - *sdlc_proportionate_proof

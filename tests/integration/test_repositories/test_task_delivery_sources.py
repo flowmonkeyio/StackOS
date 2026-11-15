@@ -22,6 +22,7 @@ from tests.integration.test_repositories.test_task_delivery import (
     commit,
     generic_result,
     git,
+    stopped_review_fixture,
 )
 
 
@@ -49,6 +50,163 @@ def start(session, project_id, root, scheduler, **kwargs):
         project_dir=str(root),
         **kwargs,
     )
+
+
+@pytest.mark.parametrize(
+    "fault", [None, "foreign", "missing", "digest", "escape", "unregistered", "symlink"]
+)
+def test_review_replacement_bound_source_retains_clean_candidate(
+    session, project_id, tmp_path, monkeypatch, fault
+):
+    from hashlib import sha256
+
+    from stackos.repositories.projects import ProjectRepository
+
+    root = tmp_path / "candidate"
+    root.mkdir()
+    git(root, "init")
+    git(root, "config", "user.name", "Delivery Test")
+    git(root, "config", "user.email", "delivery@example.test")
+    writer = source(session, project_id, root, "writer")
+    reviewer = source(session, project_id, root, "reviewer", "Old immutable review instructions")
+    git(root, "add", ".codex")
+    git(root, "commit", "-m", "original sources")
+    arguments, request, before, calls = stopped_review_fixture(
+        session,
+        project_id,
+        root,
+        monkeypatch,
+        defaults={
+            "agents": {
+                "delivery_agent": {"source_ref": writer},
+                "review_agent": {"source_ref": reviewer},
+            }
+        },
+    )
+    execution = tmp_path / "approved-execution"
+    selected = source(
+        session, project_id, execution, "reviewer", "Current approved review instructions"
+    )
+    binding = next(
+        item
+        for item in WorkspaceRepository(session).list_bindings()
+        if item.last_known_root == str(execution)
+    )
+    new = task_delivery.resolve_delivery_settings(
+        session,
+        project_id=project_id,
+        project_dir=str(root),
+        role_keys={"review_agent"},
+        review_agent={"source_ref": selected},
+        _source_bindings={"review_agent": binding.id},
+    )["agents"]["review_agent"]
+    request["reviewer_source"] = {
+        "binding_id": binding.id,
+        "source_ref": selected,
+        "expected_digest": new["source_digest"],
+    }
+    request["expected_reviewer_snapshot_digest"] = sha256(
+        json.dumps(new, sort_keys=True).encode()
+    ).hexdigest()
+    if fault == "foreign":
+        other = (
+            ProjectRepository(session).create(name="Foreign", slug="foreign", domain="test").data
+        )
+        foreign = tmp_path / "foreign"
+        source(session, other.id, foreign, "reviewer")
+        request["reviewer_source"]["binding_id"] = next(
+            item.id
+            for item in WorkspaceRepository(session).list_bindings()
+            if item.project_id == other.id
+        )
+    elif fault == "missing":
+        request["reviewer_source"]["binding_id"] = 987654321
+    elif fault == "digest":
+        request["reviewer_source"]["expected_digest"] = "0" * 64
+    elif fault in {"escape", "unregistered"}:
+        request["reviewer_source"]["source_ref"] = {
+            **selected,
+            "source_path": "../reviewer.toml" if fault == "escape" else "reviewer.toml",
+        }
+        (execution / "reviewer.toml").write_text((execution / selected["source_path"]).read_text())
+    elif fault == "symlink":
+        path = execution / selected["source_path"]
+        outside = tmp_path / "outside.toml"
+        path.rename(outside)
+        path.symlink_to(outside)
+    repo = TrackerRepository(session)
+    original = repo.get(project_id=project_id, task_key="replace").model_dump(mode="json")
+    if fault:
+        with pytest.raises((ValidationError, ValueError)):
+            start(
+                session,
+                project_id,
+                root,
+                arguments["scheduler"],
+                task_key="replace",
+                replace_review=request,
+            )
+        assert (
+            repo.get(project_id=project_id, task_key="replace").model_dump(mode="json") == original
+        )
+        assert not arguments["scheduler"].jobs
+        return
+
+    def launch(directory, instructions, prompt, schema, **kwargs):
+        packet = json.loads(prompt)
+        calls.append((packet, kwargs))
+        assert Path(directory) == root
+        assert packet["phase"] == "review"
+        assert "Current approved review instructions" in instructions
+        assert kwargs.get("resume_thread_id") is None
+        kwargs["on_session"]("source-replacement")
+        with Session(session.get_bind()) as reader:
+            early = (
+                TrackerRepository(reader)
+                .brief(project_id=project_id, ticket_key="work")
+                .ticket.completion_evidence_json["automatic_delivery"]
+            )
+            assert early["sessions"]["review"]["thread_id"] == "source-replacement"
+            assert early["sessions"]["review"]["source_digest"] == new["source_digest"]
+            assert "result" not in early["review"]
+        return AgentRunResult(
+            0,
+            thread_id="source-replacement",
+            result=generic_result(outputs={"commit_sha": request["expected_candidate_commit_sha"]}),
+        )
+
+    from dataclasses import replace
+
+    definition = service._definition_by_key("codex")
+    assert definition is not None
+    lookup = service._definition_by_key
+    monkeypatch.setattr(
+        service,
+        "_definition_by_key",
+        lambda key: replace(definition, run_agent=launch) if key == "codex" else lookup(key),
+    )
+    monkeypatch.setattr(task_delivery, "run_agent", service.run_agent)
+    start(
+        session,
+        project_id,
+        root,
+        arguments["scheduler"],
+        task_key="replace",
+        replace_review=request,
+    )
+    arguments["scheduler"].run()
+    session.expire_all()
+    current = repo.brief(project_id=project_id, ticket_key="work").ticket.completion_evidence_json[
+        "automatic_delivery"
+    ]
+    assert current["candidate"] == before["automatic_delivery"]["candidate"]
+    assert current["review"].get("validated_outcome") == "success", repo.brief(
+        project_id=project_id, ticket_key="work"
+    ).ticket.outcome
+    assert current["sessions"]["review"]["source_digest"] == new["source_digest"]
+    assert current["review_replacements"][0]["source_origin"] == request["reviewer_source"]
+    assert not git(root, "status", "--porcelain")
+    assert len(calls) == 3
 
 
 def test_reviewer_readiness_rejects_source_narrowing_before_delivery(

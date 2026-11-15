@@ -321,7 +321,7 @@ def operation_specs() -> list[OperationSpec]:
         ),
         OperationSpec(
             name="tracker.startDelivery",
-            summary="Start background task delivery and review using project agents.",
+            summary="Start task delivery or explicitly replace one stopped independent reviewer.",
             input_model=TrackerStartDeliveryInput,
             output_model=WriteEnvelope[dict[str, Any]],
             handler=tracker_start_delivery,
@@ -332,7 +332,8 @@ def operation_specs() -> list[OperationSpec]:
                 default_mode="compact",
                 allowed_modes=("compact", "raw"),
                 compact_notes=(
-                    "Keep task, workflow scope, job, ticket, status and inspection guidance.",
+                    "Keep task, workflow scope, job, ticket, status, review_replacement refs "
+                    "and inspection guidance.",
                 ),
             ),
             purpose=(
@@ -345,6 +346,11 @@ def operation_specs() -> list[OperationSpec]:
                 "same-session scoped repairs. "
                 "Workflow mirrors execute their frozen contracts through the run-plan owner. "
                 "Explicit unsuccessful results or native failures stop the same task."
+                " Only explicit operator-authorized replace_review validates a quiescent stopped "
+                "ordinary review and clean exact delivered candidate, then launches review only. "
+                "It preserves delivery, retired review/session/attempts "
+                "and consumed repair allowance. "
+                "Ordinary rehandoff never implicitly replaces a reviewer."
             ),
             prerequisites=(
                 "Prepare self-contained tickets and dependencies in an existing working directory. "

@@ -116,7 +116,14 @@ def _receipt_items(
             if isinstance(receipt, dict) and (
                 not require_launch or isinstance(receipt.get("launch"), dict)
             ):
-                unique[attempt, phase] = receipt
+                # Review-only recovery retains the successful delivery receipt;
+                # it is still the original invocation, not another delivery.
+                receipt_attempt = (
+                    occurrence.get("delivery_reused_from_attempt", attempt)
+                    if phase == "delivery"
+                    else attempt
+                )
+                unique[receipt_attempt, phase] = receipt
     return unique
 
 

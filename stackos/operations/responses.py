@@ -808,6 +808,12 @@ def _compact_operation_summary(item: dict[str, Any]) -> dict[str, Any]:
 def _compact_data(operation_name: str, data: Any) -> dict[str, Any]:
     if not isinstance(data, dict):
         return {"value": data}
+    if operation_name == "tracker.startDelivery":
+        out = _compact_mapping(data)
+        if data.get("review_replacement"):
+            # The owner emits only bounded target/candidate/snapshot refs here.
+            out["review_replacement"] = copy.deepcopy(data["review_replacement"])
+        return out
     if operation_name == "workspace.startSession":
         out = _compact_mapping(data)
         out["agent_session_id"] = data.get("id")

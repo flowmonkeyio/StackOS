@@ -1101,6 +1101,20 @@ execution. Clear private search text and apply filters before analysis; read
 
 ## Automated delivery results and manual instruction adoption
 
+`tracker.startDelivery` also accepts explicit operator-authorized `replace_review`
+for one quiescent stopped ordinary reviewer. The existing MCP, REST and CLI
+operation adapters share its typed target, expected attempt/thread/candidate and
+resolved snapshot digest. Optional `reviewer_source` reads only an approved
+existing same-project binding/source with its expected digest. Raw execution
+overrides reject. This does not broaden browser-console permissions. Compact
+and raw receipts preserve `review_replacement` identity, candidate/snapshot
+digest and inspection refs; errors retain structured repair context.
+See [review-only replacement](task-tracker.md#explicit-review-only-replacement)
+for eligibility, source selection and truthful old/new inspection. It preserves
+completed delivery, retired review/session/attempts and consumed repair budget,
+launches only fresh independent review, and fences retired callbacks. Ordinary
+rehandoff never acquires this behavior implicitly.
+
 The generic `stackos.task_delivery` module owns task execution.
 Its host calls register actual agent/model/start lifetime at
 `stackos.host_mcp.service.run_agent`. Tracker task-index, ticket and detail reads

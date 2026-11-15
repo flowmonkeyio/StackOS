@@ -7,6 +7,44 @@ from stackos.repositories.base import NotFoundError
 from stackos.workflows import validate_workflow_template_obj
 
 
+def test_review_replacement_is_one_scoped_registered_contract():
+    from pydantic import ValidationError
+
+    spec = build_operation_registry().get("tracker.startDelivery")
+    request = {
+        "project_id": 1,
+        "task_key": "prepared",
+        "project_dir": "/candidate",
+        "replace_review": {
+            "ticket_key": "implementation",
+            "expected_attempt": 1,
+            "expected_review_thread_id": "exact-thread",
+            "expected_candidate_commit_sha": "a" * 40,
+            "expected_reviewer_snapshot_digest": "b" * 64,
+            "reason": "Operator authorized recovery",
+        },
+    }
+    assert spec.grant_policy == "direct-tracker-write"
+    assert spec.surfaces.mcp.enabled and spec.surfaces.rest.enabled and spec.surfaces.cli.enabled
+    assert not spec.surfaces.rest.browser_safe
+    assert spec.input_model.model_validate(request).replace_review.expected_attempt == 1
+    for extra in ("agents", "review_agent", "host_key", "agent_assignments"):
+        with pytest.raises(ValidationError):
+            spec.input_model.model_validate(
+                {**request, extra: "codex" if extra == "host_key" else {}}
+            )
+    for extra in ("instructions", "native_settings", "approval_policy", "project_dir"):
+        with pytest.raises(ValidationError):
+            spec.input_model.model_validate(
+                {**request, "replace_review": {**request["replace_review"], extra: "override"}}
+            )
+    for missing in request["replace_review"]:
+        incomplete = dict(request["replace_review"])
+        incomplete.pop(missing)
+        with pytest.raises(ValidationError):
+            spec.input_model.model_validate({**request, "replace_review": incomplete})
+
+
 def test_operation_registry_documents_core_operations() -> None:
     registry = build_operation_registry()
 
