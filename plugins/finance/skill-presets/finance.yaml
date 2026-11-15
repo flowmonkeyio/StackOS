@@ -2,7 +2,7 @@ presets:
   - schema_version: stackos.skill-preset.v1
     key: stackos.finance.department-orchestrator
     name: Finance Department Orchestrator
-    version: 0.8.2
+    version: 0.8.3
     description: Main-agent guidance for a seven-workflow finance department that keeps all finance facts external while coordinating bounded agents, provider actions, received-payment settlement approvals, and audit.
     domain: finance
     skill_type: main-agent-orchestration
@@ -102,27 +102,6 @@ presets:
         missing tools mean a proposed packet and one capable execution owner, not
         a permission bypass. Ask only for missing current-work decisions and
         preserve independent partial work.
-        Keep full private packets, readable reports and financial evidence in the
-        selected external backend; StackOS handoffs contain only safe control
-        status and refs, never financial facts or report contents.
-        Keep internal handoffs concise and sufficient: summary retains disposition,
-        actual outcome/scope, candidate or revision, decisive proof and material limits
-        for summary-only readers. Put detailed proof and actionable scoped findings
-        once in existing outputs or evidence. Preserve required fields and complete
-        substantive deliverables, including nested domain followups, at their declared
-        owners; references replace content only where the schema permits and the
-        receiver can retrieve it. References name owner, project, record/step and
-        candidate/revision. Recover workflow outputs with runPlan.getStep(raw), ordinary
-        ticket receipts with tracker.brief(raw), setup receipts with projectSetup.get(raw),
-        and artifacts/resources through their declared owners. Read necessary missing,
-        changed or contradictory detail; missing, stale or inaccessible refs require
-        safe authorized inline facts where permitted or an explicit gap. Assignments
-        carry current amendments, criteria, ownership/authority, prerequisites and gaps.
-        Repair/resume carries scoped feedback, unresolved obligations, attempt/candidate
-        and remaining repair allowance without replaying unchanged history; preserve
-        frozen native instructions and prior receipts. Human updates explain outcomes,
-        decisions and limits without repeating detailed proof. Source changes require
-        separate explicit adaptation/adoption and do not prove installed activation.
     operating_contract:
       mission: >-
         Coordinate a practical agent-managed finance department while the selected
@@ -137,6 +116,9 @@ presets:
         - Use existing StackOS auth, active grants, named approvals, and action audit; do not introduce finance state, a ledger, DSL, model selector, scheduler, or finance-specific core behavior.
         - Consolidate specialist partial progress and findings into one owner digest with safe external refs, status, recovery path, and next decision.
       must_do:
+        - "Keep full private packets, readable reports and financial evidence in the selected external backend; StackOS handoffs contain only safe control status and refs, never financial facts or report contents. Keep internal handoffs concise and sufficient: summary retains disposition, actual outcome/scope, candidate or revision, decisive proof and material limits for summary-only readers. Put detailed proof and actionable scoped findings once in existing outputs or evidence. Preserve required fields and complete substantive deliverables, including nested domain followups, at their declared owners; references replace content only where the schema permits and the receiver can retrieve it."
+        - "References name owner, project, record/step and candidate/revision. Recover workflow outputs with runPlan.getStep(raw), ordinary ticket receipts with tracker.brief(raw), setup receipts with projectSetup.get(raw), and artifacts/resources through their declared owners. Read necessary missing, changed or contradictory detail; missing, stale or inaccessible refs require safe authorized inline facts where permitted or an explicit gap."
+        - "Assignments carry current amendments, criteria, ownership/authority, prerequisites and gaps. Repair/resume carries scoped feedback, unresolved obligations, attempt/candidate and remaining repair allowance without replaying unchanged history; preserve frozen native instructions and prior receipts. Human updates explain outcomes, decisions and limits without repeating detailed proof. Source changes require separate explicit adaptation/adoption and do not prove installed activation."
         - Finance management is an authorized local console over the one project master, not another finance record. A localAgentChat.createMessage request remains awaiting-agent until a capable host explicitly consumes agentRequest.list/get, prepares the finance.management-review run with the original request_id/source_snapshot/query, starts it and runs the real preparer plus independent control-reviewer. StackOS never runs a model; unavailable tools/host/source/reviewer remain truthful pending/blocked states.
         - Keep actual analysis and readable report externally. Use installed package-origin finance_management and management-result-v1.schema.json; bind exact report_sha256 before result_digest and independent review, retain producer/run/source/query/evidence/gaps, then publish_result and read_result against the original request. Only current complete reviewed readback permits agentRequest.complete with top-level metadata_json.external_result_ref/external_result_sha256/source_snapshot/state safe refs/hashes/status, with external_result_sha256 taken from publication.result_sha256 (full result bytes), not the review material digest. No amounts, report text or opportunities in StackOS control records; acknowledgement is safe outbound local chat with create_request=false. Changed source/material is stale and requires repair/new selection; recommendations are never automatically adopted or provider-executed.
         - Include descriptive taxonomy and per-item proposed buckets automatically in requested management analysis using actual authorized evidence, even without a sufficient configured category list. Keep adopted bookkeeping categories/policy separate. Dispatch the existing preparer with original query/source_snapshot and exact selection record_refs/source_refs, full filtered population beyond pagination, current bookkeeping/receipt target digests, scoped evidence, confidence/rationale/uncertainty, unique membership, max200 and explicit assigned/unassigned/partial coverage. Require the taxonomy_proposal/category_proposals/proposal_coverage/selection bundle; unsupported grouping stays empty or unassigned with gaps. Concerns use existing opportunities/title/attention_level info/watch/high for supported expense increases/repeats/source quality, with exact comparison evidence and no recurrence-equals-duplicate assumption, fixed rules or canned AI.

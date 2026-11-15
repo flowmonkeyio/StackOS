@@ -19,15 +19,15 @@ PENDING_PRESET_ADOPTIONS = {
     "seo.workflow.keyword-research": ("0.2.1", "0.2.2"),
     "seo.workflow.content-refresh": ("0.2.1", "0.2.2"),
     "seo.workflow.website-analysis": ("0.5.1", "0.5.2"),
-    "stackos.finance.receipt-operator": ("0.4.5", "0.4.6"),
-    "stackos.finance.bookkeeping-preparer": ("0.5.6", "0.5.7"),
-    "stackos.finance.billing-collections-operator": ("0.6.7", "0.6.8"),
-    "stackos.finance.cashflow-preparer": ("0.4.5", "0.4.6"),
-    "stackos.finance.tax-preparer": ("0.4.5", "0.4.6"),
-    "stackos.finance.control-reviewer": ("0.6.7", "0.6.8"),
+    "stackos.finance.receipt-operator": ("0.4.5", "0.4.7"),
+    "stackos.finance.bookkeeping-preparer": ("0.5.6", "0.5.8"),
+    "stackos.finance.billing-collections-operator": ("0.6.7", "0.6.9"),
+    "stackos.finance.cashflow-preparer": ("0.4.5", "0.4.7"),
+    "stackos.finance.tax-preparer": ("0.4.5", "0.4.7"),
+    "stackos.finance.control-reviewer": ("0.6.7", "0.6.9"),
     "stackos.workflow-orchestrator": ("0.1.6", "0.1.7"),
     "branding.brand-orchestrator": ("0.6.3", "0.6.4"),
-    "stackos.finance.department-orchestrator": ("0.8.1", "0.8.2"),
+    "stackos.finance.department-orchestrator": ("0.8.1", "0.8.3"),
 }
 
 

@@ -468,7 +468,7 @@ def test_finance_orchestrator_keeps_financial_authority_external() -> None:
     ]
 
     assert loaded.summary.plugin_slug == "finance"
-    assert loaded.preset.version == "0.8.2"
+    assert loaded.preset.version == "0.8.3"
     assert loaded.preset.skill_type == "main-agent-orchestration"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
@@ -653,6 +653,12 @@ def test_domain_handoffs_resolve_complete_from_source_and_package(
         assert loaded.summary.plugin_slug == plugin
         assert Path(loaded.summary.origin_path).is_relative_to(bundled_root)
         action = loaded.preset.project_adaptation.required_agent_action
+        contract = (
+            loaded.preset.prompt_contract if kind == "agent" else loaded.preset.operating_contract
+        )
+        # Finance retains its existing compact adaptation action; the full method
+        # lives in authored role rules, with the same obligations in both origins.
+        handoff = " ".join([action, *contract.must_do]) if plugin == "finance" else action
         for requirement in (
             "summary retains disposition",
             "actual outcome/scope",
@@ -671,11 +677,11 @@ def test_domain_handoffs_resolve_complete_from_source_and_package(
             "frozen native instructions",
             "separate explicit adaptation/adoption",
         ):
-            assert requirement in action, (key, requirement)
+            assert requirement in handoff, (key, requirement)
         # The method travels in the effective contract, not a checkout-only link.
         assert "docs/agent-operating-model.md" not in action
         if plugin == "finance":
-            assert "never financial facts or report contents" in action
+            assert "never financial facts or report contents" in handoff
         if key == "communications.workflow.customer-feedback-intake":
             rules = " ".join(loaded.preset.prompt_contract.must_do)
             assert "intake outcome" in rules

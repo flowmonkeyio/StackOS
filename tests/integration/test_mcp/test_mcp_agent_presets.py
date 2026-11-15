@@ -652,11 +652,11 @@ def test_website_seo_analysis_presets_resolve_end_to_end(
         for agent in resolved["required_agents"]
         if agent["preset"]["summary"]["key"] == "seo.workflow.website-analysis"
     )
-    assert website_agent["preset"]["summary"]["version"] == "0.5.1"
+    assert website_agent["preset"]["summary"]["version"] == "0.5.2"
     assert resolved["required_skill_presets"][0]["preset"]["summary"]["key"] == (
         "stackos.workflow-orchestrator"
     )
-    assert resolved["required_skill_presets"][0]["preset"]["summary"]["version"] == "0.1.6"
+    assert resolved["required_skill_presets"][0]["preset"]["summary"]["version"] == "0.1.7"
     assert resolved["unresolved_requirements"] == []
     assert resolved["unresolved_skill_preset_requirements"] == []
 
@@ -687,7 +687,7 @@ def test_agency_setup_presets_resolve_without_specialists(
         assert raw["unresolved_skill_preset_requirements"] == []
         raw_summary = raw["required_skill_presets"][0]["preset"]["summary"]
         assert raw_summary["key"] == "stackos.workflow-orchestrator"
-        assert raw_summary["version"] == "0.1.6"
+        assert raw_summary["version"] == "0.1.7"
         assert raw_summary["generic_preset"] is True
         assert raw_summary["adaptation_required"] is True
         assert compact["required_agents"] == []
@@ -695,7 +695,7 @@ def test_agency_setup_presets_resolve_without_specialists(
         assert compact["required_skill_presets"][0]["preset"]["key"] == (
             "stackos.workflow-orchestrator"
         )
-        assert compact["required_skill_presets"][0]["preset"]["version"] == "0.1.6"
+        assert compact["required_skill_presets"][0]["preset"]["version"] == "0.1.7"
 
 
 def test_finance_workflow_presets_resolve_end_to_end(mcp_client: MCPClient) -> None:
@@ -785,8 +785,15 @@ def test_finance_operational_guidance_survives_compact_workflow_resolution(
         compact = compact.get("data", compact)
         raw_skill = raw["required_skill_presets"][0]
         compact_skill = compact["required_skill_presets"][0]
-        assert compact_skill["preset"]["version"] == "0.8.1"
+        assert compact_skill["preset"]["version"] == "0.8.3"
         assert compact_skill["project_adaptation"] == raw_skill["project_adaptation"]
+        raw_rules = raw_skill["preset"]["preset"]["operating_contract"]["must_do"]
+        compact_rules = compact_skill["preset"]["must_do"]
+        assert compact_rules[:3] == raw_rules[:3]
+        assert "summary retains disposition" in compact_rules[0]
+        assert "never financial facts or report contents" in compact_rules[0]
+        assert "runPlan.getStep(raw)" in compact_rules[1]
+        assert "remaining repair allowance" in compact_rules[2]
         assert any("capability preflight" in item for item in compact_skill["preset"]["must_do"])
         conditional = {
             item["ref"]: item
@@ -799,6 +806,9 @@ def test_finance_operational_guidance_survives_compact_workflow_resolution(
             for item in compact[group]:
                 source = expected[item["preset"]["key"]]
                 assert item["project_adaptation"] == source["project_adaptation"]
+                raw_rules = source["preset"]["preset"]["prompt_contract"]["must_do"]
+                assert item["preset"]["must_do"][:3] == raw_rules[:3]
+                assert raw_rules[:3] == compact_rules[:3]
                 assert item["preset"]["handoff_outputs"]
                 assert "capability preflight" in item["project_adaptation"]["required_agent_action"]
                 if item["preset"]["role_class"] == "review":
