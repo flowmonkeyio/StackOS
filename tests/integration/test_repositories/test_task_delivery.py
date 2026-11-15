@@ -3367,6 +3367,7 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
     def run_agent(host, directory, instructions, prompt, schema, *, sandbox, **selection):
         selection.pop("execution_scope")
         selection.pop("on_execution_change")
+        assert callable(selection.pop("on_session_attached"))
         assert selection.pop("launch_allowed")()
         calls.append((host, instructions, sandbox, selection))
         packet = json.loads(prompt)
