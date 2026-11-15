@@ -405,12 +405,17 @@ context and evidence, and reference them from schema-valid phase outputs.
 For a required cross-task input, planning names the producer task/ticket,
 independent acceptance evidence (or pending producer work), applicability, target
 integration owner, receiving source/artifact identity and affected checks. Main
-checks the actual receiving tree/environment before dependent dispatch or resume:
-unfinished producer work and accepted-but-absent source are distinct prerequisites.
-Reuse the existing owner handoff and main-owned admission/recheck; hold only the
-affected work. Already available accepted inputs need no extra wait or duplicate
-implementation ticket. Optional unrelated changes remain nonblocking followups;
-this grants no automatic merge or sibling-write authority.
+confirms admitted prerequisites during preparation or exceptional reconciliation.
+After automatic handoff, the assigned delivery or verification owner verifies
+actual presence and applicability in its receiving tree/environment before
+dependent work or lengthy proof, using accepted source or independently reviewed
+integration evidence. Distinguish unfinished producer work from accepted-but-absent
+source; tracker status alone is insufficient. StackOS sequences work; main retains
+explicit source admission/integration and affected recheck. Reuse the existing
+owner handoff and hold only affected work. Already available accepted inputs need
+no extra wait or duplicate implementation ticket. Optional unrelated changes
+remain nonblocking followups; this grants no automatic merge or sibling-write
+authority.
 
 Plans, listed paths, design and proof are fallible evidence, not exhaustive
 boundaries. Each agent owns its assigned outcome, investigates obstacles and
