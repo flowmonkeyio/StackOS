@@ -25,7 +25,7 @@ _SECRET_TEXT_RE = re.compile(
     r"(?i)(?P<prefix>(?<![\w-])(?P<key_quote>[\"']?)(?P<key>[\w-]*(?:"
     r"access[_-]?token|api[_-]?key|apikey|authorization|client[_-]?secret|"
     r"service[_-]?account[_-]?json|assertion|credential|password|private[_-]?key|"
-    r"refresh[_-]?token|secret|token))(?P=key_quote)\s*(?P<separator>[:=])\s*"
+    r"refresh[_-]?token|secret|token))(?P<key_end_quote>[\"']?)\s*(?P<separator>[:=])\s*"
     r"(?P<value_quote>[\"']?))(?!bearer\b)([^\"'\s,;}&]+)"
 )
 _AUTH_BEARER_TEXT_RE = re.compile(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,;}&]+")
@@ -79,7 +79,9 @@ def redact_secret_text(value: str) -> str:
         # Complete-key matching keeps prefixed secret names protected.
         if match["key"] == "SyncToken":
             return match[0]
-        if match["separator"] == ":" and not (match["key_quote"] or match["value_quote"]):
+        if match["separator"] == ":" and not (
+            match["key_quote"] or match["key_end_quote"] or match["value_quote"]
+        ):
             # Bare inline colons in sentences are ambiguous. Require a line/header
             # or explicit object/log delimiter; equals, quotes and bearer syntax
             # remain credential evidence anywhere, even for one-character values.

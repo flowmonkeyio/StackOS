@@ -123,6 +123,8 @@ def test_inline_unquoted_colon_prose_is_preserved(source):
         'log {"authorization":"x"}',
         "log {'authorization': 'x'}",
         'inline authorization: "x"',
+        "inline authorization': x",
+        "inline 'authorization\": x",
         "inline authorization=x",
         "Authorization: x",
         "request\n  authorization: x",
