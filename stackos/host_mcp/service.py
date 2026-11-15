@@ -241,6 +241,15 @@ def _sample_invocations(now: datetime | None = None) -> None:
                 samples = call.reader.read()
                 call.model_observation = deepcopy(getattr(call.reader, "model_observation", None))
             except (OSError, ValueError):
+                # Losing the exact-session reader loses evidence for the rest
+                # of the invocation, not counters or the requested selection.
+                # Retain explicit ambiguity rather than enabling selection fallback.
+                call.model_observation = {
+                    "status": "ambiguous",
+                    "model": None,
+                    "source": "codex.turn_context",
+                    "session_id": call.reader.session_id,
+                }
                 call.reader.close()
                 call.reader = None
                 continue
@@ -349,6 +358,9 @@ def _finish(
         call.finished = True
         if call.reader:
             call.reader.close()
+            call.model_observation = deepcopy(
+                getattr(call.reader, "model_observation", call.model_observation)
+            )
             call.reader = None
         # Keep only the bounded observation through the synchronous receipt
         # handoff. _unregister releases it even if notification fails.

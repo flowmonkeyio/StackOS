@@ -467,8 +467,12 @@ def operation_specs() -> list[OperationSpec]:
             grant_policy="direct-read",
             response_policy=_AGENT_STATS_RESPONSE_POLICY,
             purpose=(
-                "Read reset-aware deduplicated invocation facts. Group by agent, selected model "
-                "or agent_model. Optional inclusive dates (at most 366 days) and IANA timezone "
+                "Read reset-aware deduplicated invocation facts. Group by agent, model "
+                "or agent_model. Prefer exact unambiguous native model observation; use recorded "
+                "launch selection only when observation is absent. Ambiguous, malformed or "
+                "mismatched observations stay unknown. model_basis reports observed, selected "
+                "or mixed provenance; requested selection remains separate. "
+                "Optional inclusive dates (at most 366 days) and IANA timezone "
                 "scope totals/rows/daily identically; undated receipts are disclosed separately. "
                 "Cache read is included in Input; reasoning in Output. "
                 "Missing fields stay explicit. delivery_trends shares the scope/date range: "
@@ -501,7 +505,10 @@ def operation_specs() -> list[OperationSpec]:
             purpose=(
                 "Local-console read over the same reset-aware dated projection. Agent identity "
                 "stays project-scoped; explicit Model grouping combines visible projects. "
-                "Model means recorded launch selection, not measured actual model. "
+                "Prefer exact unambiguous native model observation; use recorded launch "
+                "selection only when observation is absent. Ambiguous, malformed or mismatched "
+                "observations stay unknown. model_basis reports observed, selected or mixed "
+                "provenance; requested selection remains separate. "
                 "No role/host splitting. Includes the same six shared delivery_trends."
             ),
             examples=(
@@ -513,7 +520,7 @@ def operation_specs() -> list[OperationSpec]:
                 ),
                 OperationExample(title="Read all project activity", arguments={"is_active": None}),
                 OperationExample(
-                    title="Compare selected models across visible projects",
+                    title="Compare recorded model attribution across visible projects",
                     arguments={
                         "is_active": True,
                         "group_by": "model",

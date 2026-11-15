@@ -2,6 +2,8 @@
 
 import json
 import sqlite3
+from copy import deepcopy
+from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import UUID
@@ -11,7 +13,12 @@ import pytest
 from stackos.host_mcp import service
 from stackos.host_mcp.progress import CodexCounterReader, CodexStreamError, run_codex_process
 from stackos.host_mcp.result import AgentRunResult, normalize_usage, usage_snapshot
-from stackos.repositories.tracker.agent_stats import provisional_receipt, summarize_receipts
+from stackos.repositories.tracker.agent_stats import (
+    _model_identity,
+    provisional_receipt,
+    summarize_receipts,
+)
+from stackos.repositories.tracker.receipt_projection import receipt_input
 
 
 @pytest.fixture(autouse=True)
@@ -742,6 +749,90 @@ def test_final_read_retains_observation_without_a_live_counter_poll(
     assert result.model_observation["model"] == "observed-native"
     assert handoffs[0]["model_observation"] == result.model_observation
     assert handoffs[0]["live_usage"]["usage"]["measured"]["total"] == 12
+    assert not service._active_invocations
+
+
+@pytest.mark.parametrize("loss", ["none", "malformed-context", "reader-error", "truncated-context"])
+def test_context_loss_stays_ambiguous_through_live_final_and_retained_attribution(
+    tmp_path, model_rollout, monkeypatch, loss
+):
+    sid, path, append = model_rollout
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    live, handoffs = [], []
+
+    def runner(*args, on_session, **kwargs):
+        on_session(sid)
+        append("model-a")
+        with path.open("a") as out:
+            out.write(
+                json.dumps(
+                    {
+                        "type": "event_msg",
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "payload": {
+                            "type": "token_count",
+                            "info": {"total_token_usage": {"input_tokens": 10, "output_tokens": 0}},
+                        },
+                    }
+                )
+                + "\n"
+            )
+        service._sample_invocations()
+        live.append(deepcopy(service.usage_executions(1)[0]))
+        if loss in {"malformed-context", "truncated-context"}:
+            with path.open("a") as out:
+                out.write('{"type":"turn_context","payload":{"model":"model-b"')
+                if loss == "malformed-context":
+                    out.write("\n")
+        elif loss == "reader-error":
+
+            def unreadable(self):
+                raise OSError("fixture reader became unavailable")
+
+            monkeypatch.setattr(CodexCounterReader, "read", unreadable)
+        service._sample_invocations()
+        live.append(deepcopy(service.usage_executions(1)[0]))
+        # A later valid context must not erase the gap.
+        if loss == "malformed-context":
+            append("model-a")
+            service._sample_invocations()
+        return AgentRunResult(
+            0, thread_id=sid, result={}, usage=usage_snapshot("codex.turn", "session", 30, 0)
+        )
+
+    def changed(invocation, active):
+        if not active:
+            handoffs.append(invocation.projection())
+
+    monkeypatch.setattr(service, "agent_selection_error", lambda *a, **kw: None)
+    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    result = service.run_agent(
+        "codex",
+        tmp_path,
+        "Instructions",
+        "Prompt",
+        {},
+        execution_scope=service.AgentExecutionScope(1, "task", "child", "worker", 1, "delivery"),
+        model="requested",
+        on_execution_change=changed,
+    )
+    assert result.ok and result.usage["snapshot"]["total"] == 30
+    assert live[0]["model_observation"]["model"] == "model-a"
+    assert live[1]["live_usage"]["usage"]["measured"]["total"] == 10
+    expected_status = "observed" if loss == "none" else "ambiguous"
+    assert live[1]["model_observation"]["status"] == (
+        "observed" if loss == "truncated-context" else expected_status
+    )  # An incomplete live line can still complete before native exit.
+    assert result.model_observation["status"] == expected_status
+    assert handoffs[0]["model_observation"] == result.model_observation
+    assert handoffs[0]["live_usage"]["usage"]["measured"]["total"] == 30
+    launch = {"host_key": "codex", "model": "requested"}
+    expected = ("model-a", "observed") if loss == "none" else (None, None)
+    assert _model_identity(receipt_input({"launch": launch, "execution": live[1]})) == (
+        ("model-a", "observed") if loss == "truncated-context" else expected
+    )
+    retained = receipt_input({**asdict(result), "launch": launch, "execution": handoffs[0]})
+    assert _model_identity(retained) == expected
     assert not service._active_invocations
 
 

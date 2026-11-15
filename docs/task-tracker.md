@@ -2409,9 +2409,10 @@ The same bounded reader also allowlists Codex `turn_context.payload.model`
 and checks its `cwd` against the owning directory. Optional `model_observation`
 in the native result and safe execution receipt carries `status`, nullable
 `model`, `source="codex.turn_context"` and exact `session_id`. A single consistent
-model is `observed`; conflicting models, invalid context, records exceeding the
-reader's 64 KiB bound, or known usage preceding the first model context make
-attribution `ambiguous` for the whole invocation.
+model is `observed`; conflicting models, invalid or unreadable context, loss of
+the reader, a record still incomplete at native exit, records exceeding its
+64 KiB bound, or known usage preceding the first model context make attribution
+`ambiguous` for the whole invocation.
 Without per-model counters, mixed totals cannot be allocated to one model.
 Resumes require new context after their cursor rather than inheriting model
 evidence from the old prefix. Other hosts supply no model observation through

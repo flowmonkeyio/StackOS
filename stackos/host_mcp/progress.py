@@ -157,6 +157,10 @@ class CodexCounterReader:
                     samples.sort(key=lambda point: datetime.fromisoformat(point[0]))
                     del samples[:-120]
             except (ValueError, TypeError, AttributeError):
+                if b'"turn_context"' in line:
+                    # A complete but unreadable context record can hide a
+                    # model change. Later valid contexts cannot fill that gap.
+                    self._observe_model({})
                 continue
         return samples
 
@@ -189,6 +193,10 @@ class CodexCounterReader:
         self.model_observation = observation
 
     def close(self) -> None:
+        if self.pending:
+            # Partial live records are allowed to finish. Once observation ends,
+            # an unfinished record is a permanent gap in the context evidence.
+            self._observe_model({})
         if self.file is not None:
             self.file.close()
         self.file = None
