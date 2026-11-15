@@ -20,9 +20,11 @@ from stackos.repositories.workspaces import WorkspaceRepository
 from tests.integration.test_repositories.test_task_delivery import (
     QueuedScheduler,
     commit,
+    disposition_workflow,
     generic_result,
     git,
     stopped_review_fixture,
+    use_codex_native,
 )
 
 
@@ -52,25 +54,17 @@ def start(session, project_id, root, scheduler, **kwargs):
     )
 
 
-@pytest.mark.parametrize("resume_fault", [None, "candidate", "session"])
-def test_review_replacement_controller_loss_resumes_announced_session(
-    session, project_id, tmp_path, monkeypatch, resume_fault
-):
-    from dataclasses import replace
-
-    class ControllerLost(BaseException):
-        pass
-
-    root = tmp_path / "candidate"
+def stopped_source_review(session, project_id, root, monkeypatch, reviewer_instructions=None):
+    """The same stopped-review scenario with committed project-native role sources."""
     root.mkdir()
     git(root, "init")
     git(root, "config", "user.name", "Delivery Test")
     git(root, "config", "user.email", "delivery@example.test")
     writer = source(session, project_id, root, "writer")
-    reviewer = source(session, project_id, root, "reviewer")
+    reviewer = source(session, project_id, root, "reviewer", reviewer_instructions)
     git(root, "add", ".codex")
     git(root, "commit", "-m", "fixture sources")
-    arguments, request, before, initial_calls = stopped_review_fixture(
+    return stopped_review_fixture(
         session,
         project_id,
         root,
@@ -81,6 +75,114 @@ def test_review_replacement_controller_loss_resumes_announced_session(
                 "review_agent": {"source_ref": reviewer},
             }
         },
+    )
+
+
+@pytest.mark.parametrize("status", ["skipped", "aborted", "deferred", "in-progress"])
+def test_reviewer_readiness_preserves_excluded_child_history(
+    session, project_id, tmp_path, monkeypatch, status
+):
+    repo, plans, task_key, _parent, scope, state = disposition_workflow(session, project_id)
+    task_delivery._select_work(repo, plans, project_id, task_key, state)
+    writer = source(session, project_id, tmp_path, "writer")
+    reviewer = source(
+        session, project_id, tmp_path, "reviewer", settings='sandbox_mode="workspace-write"\n'
+    )
+    excluded = status != "in-progress"
+    if status == "deferred":
+        scope.update(resume_owner_ref="team:main", resume_condition="Operator readmits scope")
+    historical = {
+        "automatic_delivery": {
+            "sessions": {
+                "review": {
+                    "thread_id": "obsolete-review-session",
+                    "agent_snapshot": {
+                        "source_ref": reviewer,
+                        "name": "reviewer",
+                        "host_key": "codex",
+                        "native_settings": {"sandbox_mode": "read-only"},
+                    },
+                }
+            }
+        }
+    }
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="optional",
+        patch_json={
+            "status": status,
+            "metadata_json": {"delivery_scope": scope} if excluded else None,
+            "completion_evidence_json": historical,
+        },
+    )
+    scheduler = QueuedScheduler()
+    calls = []
+
+    def launch(_host, _directory, _instructions, prompt, _schema, **kwargs):
+        packet = json.loads(prompt)
+        key, phase = packet["brief"]["ticket"]["key"], packet["phase"]
+        calls.append((key, phase))
+        return AgentRunResult(0, thread_id=f"{key}-{phase}", result=generic_result())
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    arguments = {
+        "task_key": task_key,
+        "run_plan_id": state["run_plan_id"],
+        "step_id": "verify",
+        "agents": {
+            "delivery_agent": {"source_ref": writer},
+            "review_agent": {
+                "source_ref": reviewer,
+                "execution_requirements": {"filesystem_write": True},
+            },
+        },
+    }
+    if not excluded:
+        before = repo.get(project_id=project_id, task_key=task_key).model_dump(mode="json")
+        with pytest.raises(ValidationError, match="filesystem_write") as rejected:
+            start(session, project_id, tmp_path, scheduler, **arguments)
+        assert rejected.value.data["execution_basis"] == "retained"
+        assert repo.get(project_id=project_id, task_key=task_key).model_dump(mode="json") == before
+        assert not scheduler.jobs and not calls
+        return
+
+    # Exclusion settles containment, never a real blocks edge.
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="required",
+        patch_json={"add_dependency_keys": ["optional"]},
+    )
+    start(session, project_id, tmp_path, scheduler, **arguments)
+    scheduler.run()
+    assert not calls
+    assert "optional" in repo.brief(project_id=project_id, ticket_key="required").ticket.blocked_by
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="required",
+        patch_json={"remove_dependency_keys": ["optional"]},
+    )
+    start(session, project_id, tmp_path, scheduler, **arguments)
+    scheduler.run()
+    session.expire_all()
+    optional = repo.brief(project_id=project_id, ticket_key="optional").ticket
+    assert optional.status == status
+    assert optional.metadata_json == {"delivery_scope": scope}
+    assert optional.completion_evidence_json == historical
+    assert calls[:2] == [("required", "delivery"), ("required", "review")]
+    assert all(key != "optional" for key, _ in calls)
+    assert plans.get(state["run_plan_id"], project_id=project_id).status == "completed"
+
+
+@pytest.mark.parametrize("resume_fault", [None, "candidate", "session"])
+def test_review_replacement_controller_loss_resumes_announced_session(
+    session, project_id, tmp_path, monkeypatch, resume_fault
+):
+    class ControllerLost(BaseException):
+        pass
+
+    root = tmp_path / "candidate"
+    arguments, request, before, initial_calls = stopped_source_review(
+        session, project_id, root, monkeypatch
     )
     repo = TrackerRepository(session)
     calls = []
@@ -100,15 +202,7 @@ def test_review_replacement_controller_loss_resumes_announced_session(
             result=generic_result(outputs={"commit_sha": request["expected_candidate_commit_sha"]}),
         )
 
-    lookup = service._definition_by_key
-    definition = lookup("codex")
-    assert definition is not None
-    monkeypatch.setattr(
-        service,
-        "_definition_by_key",
-        lambda key: replace(definition, run_agent=native) if key == "codex" else lookup(key),
-    )
-    monkeypatch.setattr(task_delivery, "run_agent", service.run_agent)
+    use_codex_native(monkeypatch, native)
     task_delivery.start_delivery(**arguments, replace_review=request)
     with pytest.raises(ControllerLost):
         arguments["scheduler"].run()
@@ -184,25 +278,12 @@ def test_review_replacement_bound_source_retains_clean_candidate(
     from stackos.repositories.projects import ProjectRepository
 
     root = tmp_path / "candidate"
-    root.mkdir()
-    git(root, "init")
-    git(root, "config", "user.name", "Delivery Test")
-    git(root, "config", "user.email", "delivery@example.test")
-    writer = source(session, project_id, root, "writer")
-    reviewer = source(session, project_id, root, "reviewer", "Old immutable review instructions")
-    git(root, "add", ".codex")
-    git(root, "commit", "-m", "original sources")
-    arguments, request, before, calls = stopped_review_fixture(
+    arguments, request, before, calls = stopped_source_review(
         session,
         project_id,
         root,
         monkeypatch,
-        defaults={
-            "agents": {
-                "delivery_agent": {"source_ref": writer},
-                "review_agent": {"source_ref": reviewer},
-            }
-        },
+        reviewer_instructions="Old immutable review instructions",
     )
     execution = tmp_path / "approved-execution"
     selected = source(
@@ -296,17 +377,7 @@ def test_review_replacement_bound_source_retains_clean_candidate(
             result=generic_result(outputs={"commit_sha": request["expected_candidate_commit_sha"]}),
         )
 
-    from dataclasses import replace
-
-    definition = service._definition_by_key("codex")
-    assert definition is not None
-    lookup = service._definition_by_key
-    monkeypatch.setattr(
-        service,
-        "_definition_by_key",
-        lambda key: replace(definition, run_agent=launch) if key == "codex" else lookup(key),
-    )
-    monkeypatch.setattr(task_delivery, "run_agent", service.run_agent)
+    use_codex_native(monkeypatch, launch)
     start(
         session,
         project_id,

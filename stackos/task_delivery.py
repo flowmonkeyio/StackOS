@@ -702,14 +702,13 @@ def _prepare_review_replacement(session, repo, project_id, task, previous, reque
         **recovery,
         "reason": redact_secret_text(request["reason"]),
         "created_at": datetime.now(UTC).isoformat(),
-        "review": deepcopy(review),
         "session": deepcopy(retired),
-        "candidate": deepcopy(candidate),
         "replacement_agent": deepcopy(reviewer),
         **({"source_origin": deepcopy(source)} if source else {}),
     }
     evidence.setdefault("review_replacements", []).append(history)
     delivery_attempt = evidence.get("delivery_reused_from_attempt", evidence["attempt"])
+    # history.target.expected_attempt identifies the archived review and candidate.
     _archive_attempt(evidence)
     evidence["delivery"] = delivery
     evidence["delivery_reused_from_attempt"] = delivery_attempt
@@ -1916,6 +1915,10 @@ def start_delivery(
     _workflow_scope(repo, project_id, task, run_plan_id, step_id, starting=True)
     _validate_start_placement(task, workflow=run_plan_id is not None)
     snapshot = repo.get(project_id=project_id, task_key=task_key, include_graph=False)
+    tickets_by_key = {ticket.key: ticket for ticket in snapshot.tickets}
+    excluded_keys = {
+        ticket.key for ticket in snapshot.tickets if _excluded_child(ticket, tickets_by_key)
+    }
     retained_agents = None
     saved_agents = previous.get("agents") or {
         role: previous[role] for role in ("delivery_agent", "review_agent") if previous.get(role)
@@ -1976,6 +1979,7 @@ def start_delivery(
         ticket
         for ticket in snapshot.tickets
         if ticket.key not in mirror_keys
+        and ticket.key not in excluded_keys
         and ticket.kind == TrackerTicketKind.TICKET
         and ticket.status != TrackerItemStatus.COMPLETE
     ]
@@ -2102,7 +2106,7 @@ def start_delivery(
     if any(key not in keys or role not in resolved for key, role in assignments.items()):
         raise ValidationError("agent_assignments must map task ticket keys to existing roles")
     for ticket in snapshot.tickets:
-        if ticket.status == TrackerItemStatus.COMPLETE:
+        if ticket.status == TrackerItemStatus.COMPLETE or ticket.key in excluded_keys:
             continue
         ticket_role = assignments.get(ticket.key)
         if ticket_role is not None:

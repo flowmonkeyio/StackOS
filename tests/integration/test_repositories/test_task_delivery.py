@@ -1747,6 +1747,24 @@ def prepared_task(session: Session, project_id: int) -> None:
     )
 
 
+def use_codex_native(monkeypatch, native):
+    """Keep the real host/controller boundary; replace only Codex's native edge."""
+    from dataclasses import replace
+
+    from stackos import task_delivery
+    from stackos.host_mcp import service
+
+    lookup = service._definition_by_key
+    definition = lookup("codex")
+    assert definition is not None
+    monkeypatch.setattr(
+        service,
+        "_definition_by_key",
+        lambda key: replace(definition, run_agent=native) if key == "codex" else lookup(key),
+    )
+    monkeypatch.setattr(task_delivery, "run_agent", service.run_agent)
+
+
 def stopped_review_fixture(
     session,
     project_id,
@@ -1987,7 +2005,14 @@ def test_review_replacement_runs_only_review_and_preserves_history(
         ticket.outcome
     )
     retired = current["review_replacements"][0]
-    assert retired["review"] == original["review"]
+    archived = next(
+        attempt
+        for attempt in current["attempts"]
+        if attempt["attempt"] == retired["target"]["expected_attempt"]
+    )
+    assert archived["review"] == original["review"]
+    assert archived["candidate"] == original["candidate"]
+    assert "review" not in retired and "candidate" not in retired
     assert retired["session"] == original["sessions"]["review"]
     assert current["attempts"][-1]["review"] == original["review"]
     assert current["review"]["validated_outcome"] == replacement_status
@@ -2120,7 +2145,14 @@ def test_review_replacement_real_rejection_uses_retained_repair_allowance(
         "review",
     ]
     assert current["repair_count"] == 3
-    assert current["review_replacements"][0]["review"] == before["automatic_delivery"]["review"]
+    retired = current["review_replacements"][0]
+    archived = next(
+        attempt
+        for attempt in current["attempts"]
+        if attempt["attempt"] == retired["target"]["expected_attempt"]
+    )
+    assert archived["review"] == before["automatic_delivery"]["review"]
+    assert archived["candidate"] == before["automatic_delivery"]["candidate"]
     assert current["candidate"]["commit_sha"] != request["expected_candidate_commit_sha"]
 
 
@@ -2313,7 +2345,6 @@ def test_announced_session_is_durable_before_exit_and_controller_loss_resumes_it
     session, project_id, tmp_path, monkeypatch
 ):
     import os
-    from types import SimpleNamespace
 
     from stackos import task_delivery
     from stackos.host_mcp import service
@@ -2367,12 +2398,7 @@ def test_announced_session_is_durable_before_exit_and_controller_loss_resumes_it
         scheduler = QueuedScheduler()
         cursor = ContextRepository(session).latest_tracker_status_event_id(project_id=project_id)
         submit(session, project_id, tmp_path, scheduler)
-        definition = service._definition_by_key("codex")
-        monkeypatch.setattr(
-            service,
-            "_definition_by_key",
-            lambda _: SimpleNamespace(**{**definition.__dict__, "run_agent": native}),
-        )
+        use_codex_native(monkeypatch, native)
         repo.update_ticket(
             project_id=project_id,
             ticket_key="first",
@@ -2459,8 +2485,6 @@ def test_announced_session_is_durable_before_exit_and_controller_loss_resumes_it
 def test_terminal_session_mismatch_preserves_announced_identity_for_recovery(
     session, project_id, tmp_path, monkeypatch, mismatched_phase
 ):
-    from types import SimpleNamespace
-
     from stackos.host_mcp import service
 
     prepared_task(session, project_id)
@@ -2472,7 +2496,6 @@ def test_terminal_session_mismatch_preserves_announced_identity_for_recovery(
         ticket_key="first",
         patch_json={"completion_evidence_json": {"automatic_delivery": {"repair_count": 2}}},
     )
-    definition = service._definition_by_key("codex")
     calls, announced_sessions = [], {}
     rejected = False
 
@@ -2501,11 +2524,7 @@ def test_terminal_session_mismatch_preserves_announced_identity_for_recovery(
             0, thread_id="foreign-terminal-id" if mismatch else announced, result=generic_result()
         )
 
-    monkeypatch.setattr(
-        service,
-        "_definition_by_key",
-        lambda _: SimpleNamespace(**{**definition.__dict__, "run_agent": native}),
-    )
+    use_codex_native(monkeypatch, native)
     try:
         scheduler.run()
         session.expire_all()
@@ -2546,14 +2565,12 @@ def test_competing_session_rejection_survives_terminal_handling_and_requeue(
     session, project_id, tmp_path, monkeypatch
 ):
     from datetime import UTC, datetime
-    from types import SimpleNamespace
 
     from stackos.host_mcp import service
 
     prepared_task(session, project_id)
     scheduler = QueuedScheduler()
     submit(session, project_id, tmp_path, scheduler)
-    definition = service._definition_by_key("codex")
     owner = service.ActiveInvocation(
         invocation_id="fixture-other-owner",
         scope=service.AgentExecutionScope(project_id, "unrelated", "other", "other-worker"),
@@ -2578,11 +2595,7 @@ def test_competing_session_rejection_survives_terminal_handling_and_requeue(
         assert "delivery" not in early["sessions"]
         return AgentRunResult(0, thread_id="already-owned", result=generic_result("blocked"))
 
-    monkeypatch.setattr(
-        service,
-        "_definition_by_key",
-        lambda _: SimpleNamespace(**{**definition.__dict__, "run_agent": native}),
-    )
+    use_codex_native(monkeypatch, native)
     try:
         scheduler.run()
         session.expire_all()

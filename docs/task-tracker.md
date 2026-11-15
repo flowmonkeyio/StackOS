@@ -721,10 +721,12 @@ context. Git HEAD must remain clean and equal to the exact delivered candidate.
 Editing tracked reviewer configuration changes that candidate; use separately
 admitted execution configuration or normally admit a new complete candidate.
 
-Admission archives the complete retired review/session/snapshot and reason in
-`completion_evidence_json.automatic_delivery.review_replacements`, retains the
-old attempt and successful delivery, and queues one explicit review-only
-transition. The replacement uses a distinct fresh native session, persisted as
+Admission retains the retired session/snapshot and reason in
+`completion_evidence_json.automatic_delivery.review_replacements`. Its
+`target.expected_attempt` references the complete retired review and candidate in
+`automatic_delivery.attempts`, without duplicating those payloads. It preserves
+the successful delivery and queues one explicit review-only transition.
+The replacement uses a distinct fresh native session, persisted as
 soon as announced. Delivery is not invoked again and consumed `repair_count`
 is unchanged, including at three. Replaying the same request returns the same
 recovery refs; changed intent against that retired target conflicts. Retired
