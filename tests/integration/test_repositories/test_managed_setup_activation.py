@@ -93,19 +93,20 @@ def proposal_for(managed, session, *, host="codex"):
     root = Path(ProjectRepository(session).get(project).project_dir)
     roles = {}
     for role, name in (("delivery_agent", "builder"), ("review_agent", "reviewer")):
+        instructions = f"Check setup as {name}"
         choice = dict(host_key=host, name=name, provenance_ref="fixture/reviewed-adaptation")
         if host == "codex":
             folder = root / ".codex" / "agents"
             folder.mkdir(parents=True, exist_ok=True)
             path = folder / f"{name}.toml"
             path.write_text(
-                f'name="{name}"\ndescription="Fixture"\ndeveloper_instructions="Check setup"\n'
+                f'name="{name}"\ndescription="Fixture"\ndeveloper_instructions="{instructions}"\n'
             )
             ref = dict(host_key=host, native_name=name, source_path=f".codex/agents/{name}.toml")
             source = ProjectAgentService(root).get(ref)
             choice.update(source_ref=ref, expected_digest=source.digest)
         else:
-            choice.update(instructions="Check setup", expected_digest=_digest("Check setup"))
+            choice.update(instructions=instructions, expected_digest=_digest(instructions))
         roles[role] = choice
     return dict(
         project_id=project,
@@ -181,7 +182,7 @@ def install_runner(
         if on_session:
             on_session("bounded-review-native" if is_role else "bounded-setup-native")
         assert context["requested_scope"] == "ready_to_use"
-        if context["predecessor_request_id"] and not is_role:
+        if not is_role and context["predecessor_request_id"]:
             assert resume_thread_id == "bounded-setup-native"
             with factory() as check:
                 predecessor = check.get(AgentRequest, context["predecessor_request_id"])
@@ -204,8 +205,11 @@ def install_runner(
                 else None
             )
             selected = context["role_check"]
-            assert instructions == selected["agent_snapshot"]["instructions"]
-            assert kw.get("native_settings") == selected["agent_snapshot"].get("native_settings")
+            with factory() as check:
+                row = check.get(AgentRequest, context["request_id"])
+                frozen = row.metadata_json["native_execution"]["snapshot"]["context"]["role_check"]
+            assert instructions == frozen["agent_snapshot"]["instructions"]
+            assert kw.get("native_settings") == frozen["agent_snapshot"].get("native_settings")
             request = selected["request"]
             if mutate:
                 mutate(context)
@@ -406,6 +410,15 @@ def test_managed_fresh_reviewer_native_proof_needs_no_preseeded_task(
     proposal = proposal_for(managed, session, host=host)
     proposal["roles"]["review_agent"]["execution_requirements"] = {"filesystem_write": True}
     calls = install_runner(managed, monkeypatch, proposal, seed_role=False, fresh_role=True)
+    native_calls = []
+    run_agent = service.run_agent
+
+    def capture(**kwargs):
+        if json.loads(kwargs["prompt"])["phase"] == "role_verification":
+            native_calls.append(kwargs)
+        return run_agent(**kwargs)
+
+    monkeypatch.setattr(service, "run_agent", capture)
     launch(managed, host_key="codex")
     for _ in range(4):
         scheduler.run()
@@ -423,6 +436,36 @@ def test_managed_fresh_reviewer_native_proof_needs_no_preseeded_task(
     assert state.workflows[0].activation_status == "verified"
     assert calls[-1]["completed_role_verifications"][0]["reference"]["kind"] == "native_request"
     assert calls[-1]["completed_role_verifications"][0]["execution"]["role"] == "review_agent"
+    assert len(native_calls) == 1
+    call = native_calls[0]
+    prompt = json.loads(call["prompt"])
+    retired = session.get(AgentRequest, prompt["request_id"])
+    snapshot = retired.metadata_json["native_execution"]["snapshot"]
+    frozen = snapshot["context"]
+    reviewer = frozen["role_check"]["agent_snapshot"]
+    delivery = frozen["adoption_readback"]["agents"]["delivery_agent"]
+    assert reviewer["instructions"] != delivery["instructions"]
+    assert call["instructions"] == snapshot["instructions"] == reviewer["instructions"]
+    assert reviewer["instructions"] not in call["prompt"]
+    assert delivery["instructions"] not in call["prompt"]
+    assert set(prompt) == {
+        "project_id",
+        "request_id",
+        "attempt_ref",
+        "requested_scope",
+        "phase",
+        "project_dir",
+        "role_check",
+        "assignment",
+    }
+    assert prompt["role_check"] == {
+        key: frozen["role_check"][key] for key in ("workflow_key", "request", "execution")
+    }
+    assert prompt["assignment"] == frozen["assignment"]
+    assert "Do not change" in prompt["assignment"] and "proof is blocked" in prompt["assignment"]
+    assert frozen == call["request_execution"].snapshot
+    assert frozen["completed_verification"] and frozen["adopted_delivery_digest"]
+    assert frozen["adoption_readback"]["agents"]["review_agent"] == reviewer
 
 
 @pytest.mark.parametrize("thread_projection_gap", [False, True])
@@ -564,7 +607,11 @@ def test_rejected_native_evidence_recovers_before_completion_promotion(
         "role_verification",
         "completion",
     ]
-    assert calls[2]["role_check"] == calls[3]["role_check"] == frozen
+    assert (
+        calls[2]["role_check"]
+        == calls[3]["role_check"]
+        == {key: value for key, value in frozen.items() if key != "agent_snapshot"}
+    )
     assert not session.exec(select(TrackerTask)).all()
 
 
@@ -1086,7 +1133,7 @@ def test_supported_inline_host_preserves_preferences_without_codex_fallback(
     session.expire_all()
     saved = tracker.delivery_defaults(project_id=project)
     assert saved["agents"]["delivery_agent"] == dict(
-        name="local", instructions="Check setup", model=None, provider=None
+        name="local", instructions="Check setup as builder", model=None, provider=None
     )
     assert all("host_key" not in choice for choice in saved["agents"].values())
     assert all("source_ref" not in choice for choice in saved["agents"].values())

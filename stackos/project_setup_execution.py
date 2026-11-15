@@ -982,6 +982,7 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
         role_check = attempt.managed.role_check
         settings = dict(attempt.managed.settings)
         instructions, schema, agent_name = INSTRUCTIONS, RESULT_SCHEMA, "project-setup"
+        prompt_context = {**context, "claim_token": claim_token}
         if role_check is not None:
             from stackos.task_delivery import (
                 RESULT_SCHEMA as ROLE_RESULT_SCHEMA,
@@ -1030,11 +1031,28 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
                 ROLE_RESULT_SCHEMA,
                 agent["name"],
             )
+            # Retain full frozen evidence in request_execution below; the specialist
+            # needs only its bounded assignment, not the coordinator's role snapshots.
+            prompt_context = {
+                **{
+                    key: context[key]
+                    for key in (
+                        "project_id",
+                        "request_id",
+                        "attempt_ref",
+                        "requested_scope",
+                        "phase",
+                        "project_dir",
+                    )
+                },
+                "role_check": role_check.model_dump(mode="json", exclude={"agent_snapshot"}),
+                "assignment": context["assignment"],
+            }
         native_entered = True
         result = service.run_agent(
             **settings,
             instructions=instructions,
-            prompt=json.dumps(context if role_check else {**context, "claim_token": claim_token}),
+            prompt=json.dumps(prompt_context),
             output_schema=schema,
             launch_allowed=allowed,
             execution_scope=service.AgentExecutionScope(
