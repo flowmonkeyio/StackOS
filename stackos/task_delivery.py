@@ -1054,6 +1054,7 @@ def resolve_delivery_settings(
         choice["host_key"] = _delivery_host(
             defaults, role_host=choice.get("host_key"), host_key=host_key
         )
+        explicit_effort = choice.get("model_reasoning_effort")
         if choice["host_key"] == "codex" and _retained_agents is None:
             if not choice.get("source_ref"):
                 raise ValidationError(
@@ -1088,6 +1089,10 @@ def resolve_delivery_settings(
             assert source.fields is not None
             native = deepcopy(source.native_settings)
             model = native.pop("model", choice.get("model"))
+            # Source syntax permits inherited/custom models. Only effective
+            # task/project choices need the shared explicit model/effort check.
+            if "model_reasoning_effort" in native:
+                explicit_effort = None
             effort = native.get("model_reasoning_effort", choice.get("model_reasoning_effort"))
             if effort is not None:
                 native["model_reasoning_effort"] = effort
@@ -1138,7 +1143,7 @@ def resolve_delivery_settings(
             agent["host_key"],
             sandbox=sandbox,
             model=agent.get("model"),
-            model_reasoning_effort=agent.get("model_reasoning_effort"),
+            model_reasoning_effort=explicit_effort,
             provider=agent.get("provider"),
             profile=agent.get("profile"),
         )

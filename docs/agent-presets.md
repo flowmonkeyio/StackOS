@@ -174,7 +174,11 @@ replaces the source draft, and a listed model does not establish account access.
 An unknown inherited effort stays inherited; the UI does not guess the host's
 effective value. A deliberate incompatible model change clears the affected
 effort visibly; compatible choices survive. Native Codex sources may retain
-supported effort with an inherited model. The editor keeps one region for
+supported effort with an inherited model. For inherited/custom models the editor
+uses `native_reasoning_efforts` from the typed project-agent responses, derived
+from the native definition enum; named model pairs still use host capabilities.
+These syntax choices do not establish the inherited model or account access.
+The editor keeps one region for
 pending, loaded and error states, including while switching sources; late or
 mismatched reads cannot change the accepted draft or the identity of a save error.
 The normal page omits the project-folder path; missing or mismatched setup

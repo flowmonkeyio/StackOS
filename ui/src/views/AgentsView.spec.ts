@@ -26,6 +26,28 @@ function setup(items = [row]) {
 }
 afterEach(() => { wrapper?.unmount(); vi.resetAllMocks() })
 describe('Agents list and native editor', () => {
+  it.each([null, 'native-custom-model'])('directly selects native effort with model %s and saves/reopens without pinning a model', async model => {
+    const saved = { ...row, native_reasoning_efforts: ['minimal', 'high'], fields: { ...row.fields, model } }
+    const w = setup([saved]); await flushPromises(); await w.get('.agent-row').trigger('click'); await flushPromises()
+    const region = w.get('.agent-editor').element
+    const field = (label: string) => w.findAllComponents(UiFormField).find(item => item.props('label') === label)!
+    expect(callOperation).not.toHaveBeenCalledWith('projectAgent.update', expect.anything())
+    await field('Reasoning effort').get('[role="combobox"]').trigger('click')
+    const high = field('Reasoning effort').findAll('[role="option"]').find(option => option.text() === 'high')
+    expect(high).toBeDefined()
+    await high!.trigger('click')
+    const readback = { ...saved, digest: 'b'.repeat(64), fields: { ...saved.fields, model_reasoning_effort: 'high' } }
+    vi.mocked(callOperation).mockResolvedValueOnce({ project_id: 1, data: readback })
+    await w.get('form').trigger('submit'); await flushPromises()
+    expect(callOperation).toHaveBeenCalledWith('projectAgent.update', expect.objectContaining({ patch: { model_reasoning_effort: 'high' } }))
+    expect(field('Model').getComponent(UiSelect).props('modelValue')).toBe(model ?? '')
+    expect(w.get('.agent-editor').element).toBe(region)
+    vi.mocked(callOperation).mockResolvedValueOnce(readback)
+    await w.get('.agent-row').trigger('click'); await flushPromises()
+    expect(field('Reasoning effort').getComponent(UiSelect).props('modelValue')).toBe('high')
+    expect(field('Model').getComponent(UiSelect).props('modelValue')).toBe(model ?? '')
+    expect(w.text()).toContain('No changes')
+  })
   it('reserves one editor slot for the first deferred read and keeps it through completion', async () => {
     const w = setup(); await flushPromises()
     let resolve!: (value: unknown) => void

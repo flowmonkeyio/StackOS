@@ -35,6 +35,7 @@ export function agentError(cause: unknown): string {
 export function useProjectAgents(projectId: Ref<number>, projectDir: Ref<string>, onDraftReplaced?: (fields: AgentFields | null) => void, folderReady?: Ref<boolean>) {
   const items = ref<AgentSummary[]>([])
   const diagnostics = ref<Record<string, unknown>[]>([])
+  const nativeReasoningEfforts = ref<string[]>([])
   const loading = ref(false)
   const reading = ref(false)
   const saving = ref(false)
@@ -62,7 +63,7 @@ export function useProjectAgents(projectId: Ref<number>, projectDir: Ref<string>
   }
   function resetScope(): boolean {
     if (disposed || (loadedScope.project_id === projectId.value && loadedScope.project_dir === projectDir.value)) return false
-    loadedScope = scope(); ++generation; close(); items.value = []; diagnostics.value = []; loaded.value = false; validated.value = false
+    loadedScope = scope(); ++generation; close(); items.value = []; diagnostics.value = []; nativeReasoningEfforts.value = []; loaded.value = false; validated.value = false
     return true
   }
   function ownsScope(input: ReturnType<typeof scope>): boolean {
@@ -100,6 +101,7 @@ export function useProjectAgents(projectId: Ref<number>, projectDir: Ref<string>
         throw new Error('Agent sources belong to a different project folder.')
       }
       items.value = result.items ?? []
+      nativeReasoningEfforts.value = result.native_reasoning_efforts ?? []
       diagnostics.value = result.diagnostics ?? []
       loaded.value = true; validated.value = true
     } catch (cause) { if (ownsScope(input) && request === generation) { rejectAuthority(cause); reportError(cause, 'list') } }
@@ -158,5 +160,5 @@ export function useProjectAgents(projectId: Ref<number>, projectDir: Ref<string>
   void refresh()
   onBeforeUpdate(() => { if (resetScope()) void refresh() })
   onBeforeUnmount(() => { disposed = true; ++generation; ++readGeneration })
-  return { items, diagnostics, loading, loaded, ready, reading, saving, error, errorContext, message, selected, requestedSource, draft, dirty, refresh, edit, add, close, save }
+  return { items, diagnostics, nativeReasoningEfforts, loading, loaded, ready, reading, saving, error, errorContext, message, selected, requestedSource, draft, dirty, refresh, edit, add, close, save }
 }

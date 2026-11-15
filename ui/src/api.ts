@@ -2577,6 +2577,8 @@ export interface components {
             fields: components["schemas"]["AgentFields"] | null;
             /** Inherited Fields */
             inherited_fields?: string[];
+            /** Native Reasoning Efforts */
+            native_reasoning_efforts?: string[];
             /** Native Settings */
             native_settings?: {
                 [key: string]: unknown;
@@ -2661,6 +2663,8 @@ export interface components {
             host_key: "codex";
             /** Items */
             items?: components["schemas"]["AgentDefinition"][];
+            /** Native Reasoning Efforts */
+            native_reasoning_efforts?: string[];
             /** Project Dir */
             project_dir: string;
             /**
