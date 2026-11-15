@@ -73,6 +73,13 @@ class TrackerTaskResultsInput(TrackerTaskActivityInput):
     source_kind: ResultSourceKind | None = None
 
 
+class AgentExecutionRequirements(BaseModel):
+    """Assignment needs, never native permission grants."""
+
+    model_config = ConfigDict(extra="forbid")
+    filesystem_write: bool = Field(default=False, strict=True)
+
+
 class TaskDeliveryAgentOverride(BaseModel):
     """Task choices may omit fields supplied by project defaults."""
 
@@ -85,6 +92,7 @@ class TaskDeliveryAgentOverride(BaseModel):
     profile: str | None = Field(default=None, min_length=1)
     source_ref: AgentSourceRef | None = None
     model_reasoning_effort: str | None = Field(default=None, min_length=1)
+    execution_requirements: AgentExecutionRequirements | None = None
 
     @model_validator(mode="after")
     def one_instruction_owner(self):

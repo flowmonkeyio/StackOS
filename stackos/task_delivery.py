@@ -40,6 +40,7 @@ from stackos.host_mcp.service import (
     agent_review_sandbox,
     agent_selection_error,
     cancel_task_invocations,
+    effective_agent_sandbox,
     run_agent,
 )
 from stackos.operations.tracker.schemas import TaskDeliveryAgent, TaskDeliveryAgentOverride
@@ -52,6 +53,7 @@ from stackos.repositories.tracker.schema import (
     TaskDeliveryStateOut,
     TrackerCorrectionIntent,
     TrackerDeliveryScopeExclusion,
+    TrackerTicketOut,
 )
 from stackos.repositories.tracker.setup import _delivery_host, _delivery_role_defaults
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
@@ -978,6 +980,80 @@ def _project_agent_source(session: Session, project_id: int, directory: Path, re
         raise ValidationError(f"Project agent {error.data['code']}", data=error.data) from None
 
 
+def _phase_agent(agent: dict[str, Any], native_session: dict[str, Any] | None):
+    if native_session and native_session.get("agent_snapshot"):
+        frozen = native_session["agent_snapshot"]
+        if agent.get("source_ref") != frozen.get("source_ref"):
+            raise ValidationError("Ticket source selection changed; cannot resume")
+        return frozen
+    return agent
+
+
+def _validate_execution_requirements(
+    role: str,
+    selected: dict[str, Any],
+    *,
+    phase: str,
+    native_session: dict[str, Any] | None = None,
+) -> AgentSandbox:
+    """Compare current obligations to actual selected/retained authority."""
+    actual = _phase_agent(selected, native_session)
+    # Legacy sessions have no agent_snapshot. Their recorded native identity
+    # still owns permissions; launch's identity guard continues to apply.
+    if native_session and not native_session.get("agent_snapshot"):
+        actual = {**actual, **native_session}
+    host_key = actual["host_key"]
+    sandbox = effective_agent_sandbox(
+        host_key,
+        agent_review_sandbox(host_key) if phase == "review" else "workspace-write",
+        actual.get("native_settings"),
+    )
+    requirements = selected.get("execution_requirements") or {}
+    if requirements.get("filesystem_write") and sandbox == "read-only":
+
+        def source_identity(agent):
+            return {
+                key: agent[key]
+                for key in ("name", "host_key", "source_ref", "source_digest", "native_settings")
+                if key in agent
+            }
+
+        basis = "retained" if native_session else "selected"
+        raise ValidationError(
+            f"{role} requires filesystem_write but {basis} {host_key} execution is {sandbox}",
+            data={
+                "code": "execution_requirement_mismatch",
+                "role": role,
+                "phase": phase,
+                "required": requirements,
+                "effective_sandbox": sandbox,
+                "execution_basis": basis,
+                "selected_source": source_identity(selected),
+                "effective_source": source_identity(actual),
+                "repair_owner": "task delivery admission",
+                "next_action": (
+                    "Select a compatible agent for fresh execution, or ask the task admission "
+                    "owner to reconcile the stopped retained session. Source edits "
+                    "do not refresh retained sessions; do not broaden permissions automatically."
+                ),
+            },
+        )
+    return sandbox
+
+
+def _validate_ticket_execution(agents, role, evidence, *, workflow=False):
+    sessions = evidence.get("sessions") or {}
+    phases = (
+        [("review" if role == "review_agent" else "delivery", role)]
+        if workflow
+        else [("delivery", role), ("review", "review_agent")]
+    )
+    for phase, selected_role in phases:
+        _validate_execution_requirements(
+            selected_role, agents[selected_role], phase=phase, native_session=sessions.get(phase)
+        )
+
+
 def resolve_delivery_settings(
     session: Session,
     *,
@@ -990,6 +1066,7 @@ def resolve_delivery_settings(
     mcp_config_ref: dict[str, str] | None = None,
     role_keys: set[str] | None = None,
     _retained_agents: Mapping[str, dict[str, Any]] | None = None,
+    _defer_requirements_to_tickets: bool = False,
 ) -> dict[str, Any]:
     """Read-only execution preflight for explicit task delivery.
 
@@ -1130,9 +1207,18 @@ def resolve_delivery_settings(
                 agent = TaskDeliveryAgent.model_validate(choice).model_dump(exclude_none=True)
             except SchemaValidationError as schema_error:
                 raise ValidationError(f"Resolved {role} is invalid: {schema_error}") from None
-        sandbox: AgentSandbox = (
-            agent_review_sandbox(agent["host_key"]) if role == "review_agent" else "workspace-write"
-        )
+        if _defer_requirements_to_tickets:
+            sandbox = effective_agent_sandbox(
+                agent["host_key"],
+                agent_review_sandbox(agent["host_key"])
+                if role == "review_agent"
+                else "workspace-write",
+                agent.get("native_settings"),
+            )
+        else:
+            sandbox = _validate_execution_requirements(
+                role, agent, phase="review" if role == "review_agent" else "delivery"
+            )
         error = agent_selection_error(
             agent["host_key"],
             sandbox=sandbox,
@@ -1586,7 +1672,10 @@ def start_delivery(
                 supplied.append((role, override))
         if any(
             role not in saved_agents
-            or any(saved_agents[role].get(key) != value for key, value in override.items())
+            or any(
+                key != "execution_requirements" and saved_agents[role].get(key) != value
+                for key, value in override.items()
+            )
             for role, override in supplied
         ) or any(
             (previous.get("agent_assignments") or {}).get(key) != role
@@ -1594,6 +1683,15 @@ def start_delivery(
         ):
             raise ValidationError("Task delivery must retain its admitted agent selection")
         retained_agents = deepcopy(saved_agents)
+        current_defaults = repo.delivery_defaults(project_id=project_id)
+        for role, agent in retained_agents.items():
+            current = _delivery_role_defaults(current_defaults, role)
+            for supplied_role, override in supplied:
+                if supplied_role == role:
+                    current = {**current, **override}
+            if "execution_requirements" in current:
+                # Current obligations do not refresh the admitted native selection.
+                agent["execution_requirements"] = current["execution_requirements"]
         host_key = previous["host_key"]
         agents = retained_agents
         delivery_agent = review_agent = None
@@ -1672,6 +1770,7 @@ def start_delivery(
             role_keys=selected_roles,
             mcp_config_ref=mcp_config_ref,
             _retained_agents=retained_agents,
+            _defer_requirements_to_tickets=True,
         )
     else:
         if _resolved_settings.get("project_id") != project_id or _resolved_settings.get(
@@ -1729,6 +1828,18 @@ def start_delivery(
     keys = {ticket.key for ticket in snapshot.tickets}
     if any(key not in keys or role not in resolved for key, role in assignments.items()):
         raise ValidationError("agent_assignments must map task ticket keys to existing roles")
+    for ticket in snapshot.tickets:
+        if ticket.status == TrackerItemStatus.COMPLETE:
+            continue
+        ticket_role = assignments.get(ticket.key)
+        if ticket_role is not None:
+            assert isinstance(ticket, TrackerTicketOut)
+            _validate_ticket_execution(
+                resolved,
+                ticket_role,
+                (ticket.completion_evidence_json or {}).get("automatic_delivery", {}),
+                workflow=ticket.key in mirror_keys,
+            )
     state, queued = _queue_delivery(
         session,
         repo,
@@ -1959,11 +2070,14 @@ def run_delivery(
                 evidence = deepcopy(
                     (selected.completion_evidence_json or {}).get("automatic_delivery", {})
                 )
+                role = state["agent_assignments"].get(ticket_key, "delivery_agent")
+                _validate_ticket_execution(
+                    state.get("agents", state), role, evidence, workflow=workflow_step is not None
+                )
                 if workflow_step is None:
                     evidence.setdefault("repair_count", int(bool(evidence.get("repair_pass_used"))))
                 _archive_attempt(evidence)
                 baseline_pending = True
-                role = state["agent_assignments"].get(ticket_key, "delivery_agent")
                 if workflow_step is None:
                     repo.update_ticket(
                         project_id=project_id,
@@ -1987,11 +2101,10 @@ def run_delivery(
                 agent = state.get("agents", state)[selected_role]
                 sessions = evidence.setdefault("sessions", {})
                 native_session = sessions.get(phase)
-                if native_session and native_session.get("agent_snapshot"):
-                    frozen = native_session["agent_snapshot"]
-                    if agent.get("source_ref") != frozen.get("source_ref"):
-                        raise ValidationError("Ticket source selection changed; cannot resume")
-                    agent = frozen
+                sandbox = _validate_execution_requirements(
+                    selected_role, agent, phase=phase, native_session=native_session
+                )
+                agent = _phase_agent(agent, native_session)
                 # New inline-host sessions need the same immutable contract as
                 # source-backed sessions when project defaults change on rehandoff.
                 # Preserve the identity shape of already admitted legacy sessions.
@@ -2001,13 +2114,6 @@ def run_delivery(
                     else {}
                 )
                 host_key = agent.get("host_key") or state["host_key"]
-                sandbox: AgentSandbox = (
-                    "workspace-write" if phase == "delivery" else agent_review_sandbox(host_key)
-                )
-                if host_key == "codex":
-                    from stackos.host_mcp.adapters.codex import native_agent_sandbox
-
-                    sandbox = native_agent_sandbox(sandbox, agent.get("native_settings") or {})
                 selection = {
                     key: agent[key]
                     for key in ("model", "model_reasoning_effort", "provider", "profile")
@@ -2596,6 +2702,10 @@ def run_delivery(
                     _save_evidence(repo, project_id, ticket_key, evidence)
                 return
             if ticket_key is not None:
+                if isinstance(error, ValidationError) and (error.data or {}).get("code") == (
+                    "execution_requirement_mismatch"
+                ):
+                    evidence["execution_requirement_mismatch"] = deepcopy(error.data)
                 plans = RunPlanRepository(session)
                 ticket = repo.brief(project_id=project_id, ticket_key=ticket_key).ticket
                 step = _workflow_step(plans, state, ticket)

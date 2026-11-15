@@ -2599,6 +2599,17 @@ export interface components {
             /** Unsupported Fields */
             unsupported_fields?: string[];
         };
+        /**
+         * AgentExecutionRequirements
+         * @description Assignment needs, never native permission grants.
+         */
+        AgentExecutionRequirements: {
+            /**
+             * Filesystem Write
+             * @default false
+             */
+            filesystem_write: boolean;
+        };
         /** AgentFields */
         AgentFields: {
             /** Description */
@@ -8863,6 +8874,8 @@ export interface components {
          * @description Task choices may omit fields supplied by project defaults.
          */
         TaskDeliveryAgentOverride: {
+            /** @default null */
+            execution_requirements: components["schemas"]["AgentExecutionRequirements"] | null;
             /**
              * Host Key
              * @default null
@@ -11596,6 +11609,7 @@ export type SchemaActiveTaskOut = components['schemas']['ActiveTaskOut'];
 export type SchemaActiveTaskProjectOut = components['schemas']['ActiveTaskProjectOut'];
 export type SchemaActiveTasksOut = components['schemas']['ActiveTasksOut'];
 export type SchemaAgentDefinition = components['schemas']['AgentDefinition'];
+export type SchemaAgentExecutionRequirements = components['schemas']['AgentExecutionRequirements'];
 export type SchemaAgentFields = components['schemas']['AgentFields'];
 export type SchemaAgentList = components['schemas']['AgentList'];
 export type SchemaAgentPatch = components['schemas']['AgentPatch'];

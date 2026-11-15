@@ -262,6 +262,7 @@ def test_source_sandbox_narrows_actual_native_command(
     assert len(commands) == 1
     command = commands[0]
     effective = "read-only" if "read-only" in (caller, source) else "workspace-write"
+    assert service.effective_agent_sandbox("codex", caller, settings) == effective
     if effective == "read-only":
         assert command[command.index("--sandbox") + 1] == "read-only"
         assert "--approve-for-me" not in command

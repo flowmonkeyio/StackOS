@@ -1,12 +1,16 @@
 """Source-backed admission uses disposable files and the existing delivery owner."""
 
 import json
+import subprocess
+from copy import deepcopy
+from pathlib import Path
 
 import pytest
 from sqlmodel import Session
 
 from stackos import task_delivery
-from stackos.host_mcp.adapters import claude_code, grok
+from stackos.host_mcp import service
+from stackos.host_mcp.adapters import claude_code, codex, grok
 from stackos.host_mcp.project_agents import ProjectAgentService
 from stackos.host_mcp.result import AgentRunResult
 from stackos.repositories.base import ValidationError
@@ -45,6 +49,280 @@ def start(session, project_id, root, scheduler, **kwargs):
         project_dir=str(root),
         **kwargs,
     )
+
+
+def test_reviewer_readiness_rejects_source_narrowing_before_delivery(
+    session, project_id, tmp_path, monkeypatch
+):
+    writer = source(session, project_id, tmp_path, "writer")
+    reviewer = source(
+        session, project_id, tmp_path, "reviewer", settings='sandbox_mode="read-only"\n'
+    )
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="readiness", title="Readiness")
+    repo.create_ticket(project_id=project_id, task_key="readiness", key="work", title="Work")
+    scheduler = QueuedScheduler()
+    calls = []
+    monkeypatch.setattr(task_delivery, "run_agent", lambda *a, **k: calls.append(k))
+    before = repo.get(project_id=project_id, task_key="readiness").model_dump(mode="json")
+    with pytest.raises(ValidationError, match="filesystem_write") as rejected:
+        start(
+            session,
+            project_id,
+            tmp_path,
+            scheduler,
+            task_key="readiness",
+            agents={
+                "delivery_agent": {"source_ref": writer},
+                "review_agent": {
+                    "source_ref": reviewer,
+                    "execution_requirements": {"filesystem_write": True},
+                },
+            },
+        )
+    assert rejected.value.data["code"] == "execution_requirement_mismatch"
+    assert rejected.value.data["role"] == "review_agent"
+    assert rejected.value.data["effective_sandbox"] == "read-only"
+    assert rejected.value.data["selected_source"]["source_ref"] == reviewer
+    assert rejected.value.data["execution_basis"] == "selected"
+    assert repo.get(project_id=project_id, task_key="readiness").model_dump(mode="json") == before
+    assert not scheduler.jobs and not calls
+
+
+@pytest.mark.parametrize("mode", ["workspace-write", "read-only"])
+def test_reviewer_readiness_resolver_matches_real_adapter_command(
+    session, project_id, tmp_path, monkeypatch, mode
+):
+    reviewer = source(
+        session, project_id, tmp_path, "reviewer", settings=f'sandbox_mode="{mode}"\n'
+    )
+    repo = TrackerRepository(session)
+    saved = {
+        "agents": {
+            "review_agent": {
+                "source_ref": reviewer,
+                "execution_requirements": {"filesystem_write": mode != "read-only"},
+            }
+        }
+    }
+    repo.configure_delivery(project_id=project_id, delivery=saved)
+    agent = task_delivery.resolve_delivery_settings(
+        session, project_id=project_id, project_dir=str(tmp_path), role_keys={"review_agent"}
+    )["agents"]["review_agent"]
+    commands = []
+
+    def execute(command, **kwargs):
+        commands.append(command)
+        Path(command[command.index("-o") + 1]).write_text('{"summary":"checked"}')
+        return subprocess.CompletedProcess(
+            command, 0, '{"type":"thread.started","thread_id":"review-thread"}', ""
+        )
+
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/native/codex")
+    monkeypatch.setattr(codex.subprocess, "run", execute)
+    result = service.run_agent(
+        "codex",
+        tmp_path,
+        agent["instructions"],
+        "Inspect",
+        {"type": "object", "properties": {"summary": {"type": "string"}}, "required": ["summary"]},
+        sandbox=service.agent_review_sandbox("codex"),
+        native_settings=agent["native_settings"],
+    )
+    assert result.ok, result.error
+    assert len(commands) == 1
+    if mode == "read-only":
+        assert commands[0][commands[0].index("--sandbox") + 1] == "read-only"
+        assert "--approve-for-me" not in commands[0]
+    else:
+        assert "--approve-for-me" in commands[0]
+        assert "--sandbox" not in commands[0]
+    assert (
+        agent["execution_requirements"] == saved["agents"]["review_agent"]["execution_requirements"]
+    )
+    assert repo.delivery_defaults(project_id=project_id) == saved
+
+
+@pytest.mark.parametrize("requirements", [{"network": True}, {"filesystem_write": "true"}])
+def test_reviewer_readiness_rejects_unknown_or_untyped_requirements(
+    session, project_id, tmp_path, requirements
+):
+    reviewer = source(session, project_id, tmp_path, "reviewer")
+    with pytest.raises(ValidationError, match="invalid"):
+        task_delivery.resolve_delivery_settings(
+            session,
+            project_id=project_id,
+            project_dir=str(tmp_path),
+            role_keys={"review_agent"},
+            review_agent={"source_ref": reviewer, "execution_requirements": requirements},
+        )
+
+
+@pytest.mark.parametrize(
+    "required,original_mode,legacy",
+    [
+        (None, "read-only", False),
+        (False, "read-only", False),
+        (True, "read-only", False),
+        (True, "read-only", True),
+        (True, "workspace-write", False),
+    ],
+)
+def test_reviewer_readiness_checks_retained_reviewer_before_delivery(
+    session, project_id, tmp_path, monkeypatch, required, original_mode, legacy
+):
+    writer = source(session, project_id, tmp_path, "writer")
+    reviewer = source(
+        session,
+        project_id,
+        tmp_path,
+        "reviewer",
+        instructions="Original review",
+        settings=f'sandbox_mode="{original_mode}"\n',
+    )
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="resume-review", title="Resume review")
+    repo.create_ticket(project_id=project_id, task_key="resume-review", key="work", title="Work")
+    git(tmp_path, "init")
+    commit(tmp_path, "Baseline")
+    calls = []
+
+    def launch(_host, _dir, instructions, prompt, _schema, **kwargs):
+        phase = json.loads(prompt)["phase"]
+        calls.append((phase, instructions.split("\n\n", 1)[0], kwargs))
+        return AgentRunResult(
+            0,
+            thread_id=f"thread-{phase}",
+            result=generic_result("blocked" if len(calls) == 2 else "success"),
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    scheduler = QueuedScheduler()
+    roles = {"delivery_agent": {"source_ref": writer}, "review_agent": {"source_ref": reviewer}}
+    start(session, project_id, tmp_path, scheduler, task_key="resume-review", agents=roles)
+    scheduler.run()
+    session.expire_all()
+    first = repo.brief(project_id=project_id, ticket_key="work").ticket.completion_evidence_json[
+        "automatic_delivery"
+    ]
+    assert "execution_requirements" not in first["sessions"]["review"]["agent_snapshot"]
+    if legacy:
+        first = deepcopy(first)
+        first["sessions"]["review"].pop("agent_snapshot")
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="work",
+            patch_json={
+                "completion_evidence_json": {"automatic_delivery": first},
+            },
+        )
+    future_mode = "workspace-write" if original_mode == "read-only" else "read-only"
+    source(
+        session,
+        project_id,
+        tmp_path,
+        "reviewer",
+        instructions="Future review",
+        settings=f'sandbox_mode="{future_mode}"\n',
+    )
+    commit(tmp_path, "Source edit for future sessions")
+    for status in ("in-progress", "not-started"):
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="work",
+            patch_json={"status": status, "blocker_reason": None},
+        )
+    if required is not None:
+        roles["review_agent"]["execution_requirements"] = {"filesystem_write": required}
+    before = repo.get(project_id=project_id, task_key="resume-review").model_dump(mode="json")
+    if required and original_mode == "read-only":
+        with pytest.raises(ValidationError, match="filesystem_write") as rejected:
+            start(session, project_id, tmp_path, scheduler, task_key="resume-review", agents=roles)
+        assert rejected.value.data["execution_basis"] == "retained"
+        assert (
+            rejected.value.data["effective_source"]["source_digest"]
+            == first["sessions"]["review"]["source_digest"]
+        )
+        assert (
+            rejected.value.data["selected_source"]["source_digest"]
+            != rejected.value.data["effective_source"]["source_digest"]
+        )
+        assert (
+            repo.get(project_id=project_id, task_key="resume-review").model_dump(mode="json")
+            == before
+        )
+        assert len(calls) == 2
+        return
+    start(session, project_id, tmp_path, scheduler, task_key="resume-review", agents=roles)
+    scheduler.run()
+    assert len(calls) == 4
+    assert calls[-1][0:2] == ("review", "Original review")
+    assert calls[-1][2]["resume_thread_id"] == "thread-review"
+    assert calls[-1][2]["sandbox"] == original_mode
+    session.expire_all()
+    final = repo.brief(project_id=project_id, ticket_key="work").ticket.completion_evidence_json[
+        "automatic_delivery"
+    ]
+    assert final["sessions"]["review"] == first["sessions"]["review"]
+    assert final["repair_count"] == first["repair_count"] == 0
+    assert (
+        final["review"]["occurrence"]["selected_source"]
+        != final["review"]["occurrence"]["launched_source"]
+    )
+
+
+def test_reviewer_readiness_queued_guard_preserves_retained_evidence(
+    session, project_id, tmp_path, monkeypatch
+):
+    repo, _prior, sessions = legacy_admission(session, project_id, tmp_path)
+    scheduler = QueuedScheduler()
+    start(session, project_id, tmp_path, scheduler, task_key="legacy")
+    # An older admission can already be queued when the runner is upgraded.
+    # Seed its declared obligation directly; execution must recheck actual authority.
+    state = repo.get(project_id=project_id, task_key="legacy").tasks[0].metadata_json
+    state = deepcopy(state)
+    state["delivery"]["agents"]["review_agent"]["execution_requirements"] = {
+        "filesystem_write": True
+    }
+    repo.update_task(project_id=project_id, task_key="legacy", patch_json={"metadata_json": state})
+    monkeypatch.setattr(task_delivery, "agent_review_sandbox", lambda _: "read-only")
+    calls = []
+    monkeypatch.setattr(task_delivery, "run_agent", lambda *a, **k: calls.append(k))
+    scheduler.run()
+    session.expire_all()
+    task = repo.get(project_id=project_id, task_key="legacy").tasks[0]
+    assert task.metadata_json["delivery"]["status"] == "stopped"
+    evidence = repo.brief(
+        project_id=project_id, ticket_key="existing"
+    ).ticket.completion_evidence_json["automatic_delivery"]
+    assert evidence["sessions"] == sessions
+    assert evidence["repair_count"] == 2
+    assert evidence["execution_requirement_mismatch"]["execution_basis"] == "retained"
+    assert evidence["execution_requirement_mismatch"]["role"] == "review_agent"
+    assert not calls
+
+
+@pytest.mark.parametrize("basis", ["default", "override"])
+def test_reviewer_readiness_current_requirements_survive_legacy_admission(
+    session, project_id, tmp_path, monkeypatch, basis
+):
+    repo, prior, _sessions = legacy_admission(session, project_id, tmp_path)
+    requirement = {"execution_requirements": {"filesystem_write": True}}
+    arguments = {"review_agent": requirement} if basis == "override" else {}
+    if basis == "default":
+        repo.configure_delivery(
+            project_id=project_id, delivery={"agents": {"review_agent": requirement}}
+        )
+    monkeypatch.setattr(task_delivery, "agent_review_sandbox", lambda _: "read-only")
+    scheduler = QueuedScheduler()
+    before = repo.get(project_id=project_id, task_key="legacy").model_dump(mode="json")
+    with pytest.raises(ValidationError, match="filesystem_write") as rejected:
+        start(session, project_id, tmp_path, scheduler, task_key="legacy", **arguments)
+    assert rejected.value.data["code"] == "execution_requirement_mismatch"
+    assert rejected.value.data["execution_basis"] == "retained"
+    assert rejected.value.data["effective_source"]["name"] == prior["review_agent"]["name"]
+    assert repo.get(project_id=project_id, task_key="legacy").model_dump(mode="json") == before
+    assert not scheduler.jobs
 
 
 @pytest.mark.parametrize("sandbox", ["read-only", "workspace-write", "danger-full-access"])

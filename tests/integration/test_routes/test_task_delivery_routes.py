@@ -73,6 +73,7 @@ def test_registered_saved_reasoning_reaches_distinct_native_role_commands(
             )
         },
     }
+    saved["agents"]["review_agent"]["execution_requirements"] = {"filesystem_write": True}
     operation("tracker.configureDelivery", delivery=saved)
     operation("tracker.createTask", key="reasoning", title="Reasoning")
     operation("tracker.createTicket", task_key="reasoning", key="work", title="Work")
@@ -100,18 +101,31 @@ def test_registered_saved_reasoning_reaches_distinct_native_role_commands(
         else {"model_reasoning_effort": "high" if choice == "set" else None}
     )
     arguments = (
-        {"delivery_agent": override}
+        {
+            "delivery_agent": override,
+            "review_agent": {"execution_requirements": {"filesystem_write": False}},
+        }
         if argument_form == "legacy"
-        else {"agents": {"delivery_agent": override}}
+        else {
+            "agents": {
+                "delivery_agent": override,
+                "review_agent": {"execution_requirements": {"filesystem_write": False}},
+            }
+        }
     )
     operation("tracker.startDelivery", task_key="reasoning", project_dir=str(tmp_path), **arguments)
     assert finished.wait(5), "Disposable native delivery did not retire"
     state = operation("tracker.get", task_key="reasoning", response_mode="raw")
     assert state["tasks"][0]["metadata_json"]["delivery"]["status"] == "complete", state
     assert state["tracker"]["config_json"]["delivery"] == saved
+    frozen = state["tasks"][0]["metadata_json"]["delivery"]
+    assert frozen["agents"]["review_agent"]["execution_requirements"] == {"filesystem_write": False}
     expected = {"inherit": "medium", "set": "high", "clear": None}[choice]
     assert [phase for phase, _ in commands] == ["delivery", "review"]
     sessions = state["tickets"][0]["completion_evidence_json"]["automatic_delivery"]["sessions"]
+    assert sessions["review"]["agent_snapshot"]["execution_requirements"] == {
+        "filesystem_write": False
+    }
     for (phase, command), effort in zip(commands, (expected, "low"), strict=True):
         assert command[command.index("--model") + 1] == "claude-sonnet-5-5"
         assert sessions[phase].get("model_reasoning_effort") == effort

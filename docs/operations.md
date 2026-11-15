@@ -1154,6 +1154,17 @@ ticket keys and selected arbitrary role keys in `agents`; frozen step
 extension `agent_assignment` supplies mirror defaults and explicit entries win.
 Otherwise admission uses the unique applicable selected declared workflow role;
 ambiguity rejects. Ordinary tickets retain a separate independent reviewer.
+
+Each role can declare `execution_requirements: {"filesystem_write": true}`.
+Requirements are typed assignment needs, separate from native authority. They
+survive saved/default/task round trips; false or omitted permits inspection-only
+review. Admission and launch use the host's effective sandbox resolution, including
+source restrictions and actual retained phase settings. An incompatible requirement
+rejects before scheduling delivery with structured `execution_requirement_mismatch`
+repair context containing role, phase, required/effective permissions and selected
+versus retained source identities. Native settings, session history and normal
+approval behavior remain unchanged; no command inference or automatic escalation follows.
+
 Fresh Codex admission reads exact project source refs through the bounded source
 owner and freezes instructions/digest/supported native options. Source model and
 effort override execution fallbacks; no source field grants permissions, provider

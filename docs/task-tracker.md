@@ -239,6 +239,26 @@ for example `{"host_key":"hermes","provider":"openrouter","model":"<provider mod
 Codex also supports its configured `model_provider` selector. Other hosts reject
 `provider`; their existing native authentication/configuration remains in control.
 
+Role choices also accept optional `execution_requirements: {"filesystem_write": true}`
+in saved defaults and task overrides. This declares that verification needs ordinary
+filesystem outputs; it grants no permission or approval. Unknown requirement keys
+and non-boolean values reject. Omission, null, or explicit `false` allows an
+inspection-only assignment. The object follows existing role-field inheritance;
+an explicit task object replaces the saved requirement object while preserving
+unrelated model, effort, provider and profile choices.
+
+Admission compares those current requirements with the effective mode used by
+native launch, including Codex source narrowing. On rehandoff it checks each
+pending ticket's retained phase snapshot before scheduling dependent delivery,
+even when that older snapshot has no requirements field. A compatible frozen
+session remains frozen after source edits. The runner repeats the check before
+delivery and each phase launch. A write requirement against actual read-only
+execution returns `execution_requirement_mismatch`, naming the role, phase,
+required capability, effective mode, selected source/settings and retained
+source/settings where applicable, with recovery context. It neither parses command
+prose nor broadens authority. A compatible mode still uses normal native approvals;
+an actual denial remains a boundary and source edits cannot refresh a retained session.
+
 For a workflow task, pass `run_plan_id` and `step_id` together with the
 matching `task_key` (`workflow-<run_plan_id>`). The plan must be started and
 the entry step running. `step_id` is entry context; automation traverses the
