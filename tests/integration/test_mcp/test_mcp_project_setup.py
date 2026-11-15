@@ -1,6 +1,7 @@
 """Setup reads use actual bound bridge scope, never caller-supplied portfolio authority."""
 
 import json
+from copy import deepcopy
 
 import pytest
 from sqlmodel import Session, select
@@ -21,6 +22,92 @@ from .test_mcp_bridge_agent_path import (
     _tool_call,
     _toolbox_call,
 )
+
+
+def test_reviewer_capability_report_rejects_foreign_proof_then_accepts_owner(
+    mcp_client, mcp_app, tmp_path
+):
+    from tests.integration.test_repositories.test_project_setup_activation import activation_result
+
+    own = mcp_client.call_tool_structured("workspace.bootstrap", {"cwd": str(tmp_path)})[
+        "project_id"
+    ]
+    foreign_root = tmp_path / "foreign"
+    foreign_root.mkdir()
+    foreign = _create_project(mcp_client, "foreign-reviewer-proof")
+    proxy, client = _scoped_bridge(mcp_client, cwd=str(tmp_path))
+    _initialize(proxy, client)
+    startup = _operation_data(_structured(_tool_call(proxy, client, "workspace.startSession")))
+    opened = _operation_data(
+        _structured(
+            _toolbox_call(
+                proxy,
+                client,
+                "projectSetup.start",
+                {
+                    "session_id": startup["agent_session_id"],
+                    "workflow_keys": ["engineering.tracked-delivery"],
+                },
+            )
+        )
+    )
+    with Session(mcp_app.state.engine) as session:
+        from stackos.repositories.projects import ProjectRepository
+        from stackos.repositories.workspaces import WorkspaceRepository
+
+        binding = WorkspaceRepository(session).connect(
+            project_id=foreign,
+            last_known_root=str(foreign_root),
+            repo_fingerprint="fixture:foreign-reviewer",
+        )
+        ProjectRepository(session).update(foreign, primary_workspace_binding_id=binding.data.id)
+        repo = ProjectSetupRepository(session)
+        result, _ = activation_result((own, startup["agent_session_id"], repo), session)
+        other, _ = activation_result((foreign, None, repo), session)
+        result.attempt_ref = opened["attempt"]["attempt_ref"]
+        report = dict(
+            status="success",
+            progress=dict(message="Role proof checked", evidence_ref="fixture/role"),
+            workflow_results=[
+                dict(
+                    workflow_key="engineering.tracked-delivery",
+                    expected_revision=0,
+                    result=result.model_dump(mode="json"),
+                )
+            ],
+        )
+        rejected_report = deepcopy(report)
+        rejected_report["workflow_results"][0]["result"]["verification"]["activation_proof"][
+            "checks"
+        ][1]["reference"] = other.verification.activation_proof.checks[1].reference.model_dump(
+            mode="json"
+        )
+        before_foreign = repo.get(foreign).model_dump(mode="json")
+    args = dict(
+        session_id=startup["agent_session_id"],
+        request_id=opened["attempt"]["request_id"],
+        claim_token=opened["claim_token"],
+        expected_revision=1,
+        response_mode="raw",
+    )
+    denied = _toolbox_call(
+        proxy, client, "projectSetup.report", {**args, "report": rejected_report}
+    )
+    assert denied["result"].get("isError"), denied
+    assert "completed task phase outcome" in json.dumps(denied)
+    with Session(mcp_app.state.engine) as session:
+        repo = ProjectSetupRepository(session)
+        assert repo.get(own).current_attempt.revision == 1
+        assert repo.get(own).configured_count == 0
+        assert repo.get(foreign).model_dump(mode="json") == before_foreign
+    accepted = _toolbox_call(proxy, client, "projectSetup.report", {**args, "report": report})
+    assert not accepted["result"].get("isError"), accepted
+    envelope = _structured(accepted)
+    assert envelope["project_id"] == own and {"data", "run_id", "project_id"} <= envelope.keys()
+    assert (
+        _operation_data(envelope)["outcomes"]["engineering.tracked-delivery"]["activation_status"]
+        == "verified"
+    )
 
 
 def test_setup_read_injected_project_and_foreign_rejection(mcp_client, tmp_path, monkeypatch):

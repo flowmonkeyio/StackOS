@@ -601,6 +601,58 @@ activation. Distinguish prepared files, saved readback, actual native consumptio
 reused evidence and newly executed checks in the existing receipt. Missing required
 proof leaves `ready_to_use` unfinished; `activation_pending` is not success.
 
+Engineering's effective `setup_activation_method.config_json.required_role_claims`
+declares `reviewer_verification` with `role: review_agent` and
+`when_execution_requirements: {filesystem_write: true}`. Applicability comes from
+canonical saved role requirements, never a task override or command parsing.
+Setup declares `execution_requirements.filesystem_write=true` for test/scratch-running
+reviewers through the canonical defaults owner. Managed role proposals carry this
+same typed requirement; adoption preserves omission and saves explicit values
+atomically with source adoption, rejecting incompatible execution before commit.
+Explicit false retains inspection-only behavior.
+When applicable, its reviewer executes a bounded,
+project-selected representative tool/scratch/isolated-fixture check using the
+selected native settings and normal approvals. A successful generic conversation
+or a setup coordinator's `verification_status` cannot establish that capability.
+Keep the observation in the existing setup receipt and native result; do not add a
+separate proof task, receipt store, full workflow canary or all-host launch matrix.
+An inspection-only project adaptation must explicitly select its applicable method
+and claim coverage; core never infers capability requirements from shell commands.
+
+`SetupActivationCheck.execution` binds role, agent, host, workspace binding, source
+ref/digest when source-backed, and the digest of resolved execution settings.
+The execution binding names the actual approved source/task tree, which may be a
+secondary same-project worktree; the setup basis retains the primary folder and
+canonical saved-default selection. A different or foreign binding cannot relabel
+the tree actually launched.
+Inline hosts use their actual frozen snapshot without invented source refs. A
+`task_phase` reference identifies `task_id`, `ticket_id`, `attempt`, `phase`,
+`invocation_id`, and the canonical native result's `outcome_digest`. It resolves
+current and retained historical `automatic_delivery` receipts at their existing
+ticket owner. Completion, actual native session/snapshot, role/settings, current
+saved selection and project/environment must match. Existing `native_request` and
+`workflow_step` references still cover their original claims; a generic coordinator
+or workflow result does not acquire reviewer identity by assertion.
+
+The reviewer records an observation in its JSON-encoded `outputs`:
+
+```json
+{"setup_activation_checks":[{"claims":["reviewer_verification"],"status":"passed","environment_ref":"<actual environment identity>","evidence_ref":"<command, exit status and observed results>"}]}
+```
+
+The setup check names the same environment and evidence ref. A generic success,
+missing observation, foreign project, failed/cancelled/simulated execution or
+mismatched snapshot cannot cover the role claim. Reuse completed matching evidence;
+when relevant source, settings, required capability or environment changes, retain
+the prior observation and execute only the affected missing checks. Refreshing
+saved readback cannot relabel an old native source as newly loaded. A denial stops
+that write and dependent proof; continue authorized alternatives and unaffected
+work while leaving unavailable required proof unfinished. Explicit review-only
+replacement (`replace_review`) belongs to the authorized recovery owner for a
+quiescent stopped review, preserving candidate, completed delivery, failed reviewer
+history and consumed repair allowance. Source preparation, saved defaults, native
+consumption and installed activation remain distinct.
+
 For other domains use their own safe method conditionally. Technical setup never
 authorizes unrelated finance transactions, publication, communications or trading.
 An unavailable safe method/capability remains explicit; genuine per-run business

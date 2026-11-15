@@ -80,6 +80,14 @@ native checks actually passed. Return a partial report retaining their observati
 overall setup success. The owner retires that request and supplies its exact completed result ref
 to one completion continuation. In completion reuse that evidence, do not execute the same checks
 again, and report success only after all current required workflow claims are covered.
+Consume the effective method's required_role_claims. A coordinator's verification_status or
+generic successful conversation cannot cover a specialist role. Reuse completed matching role
+evidence or have that selected specialist perform only the missing bounded check under normal
+approvals in the existing authorized setup/task. Record setup_activation_checks in its native
+outputs with claims, status, environment_ref and evidence_ref; retain command, exit and observed
+results at that reference. Bind the setup check to the actual role/source/settings and completed
+invocation. Missing required role capability remains unfinished; never invent a task or session
+replacement merely to produce proof.
 """
 
 
@@ -702,6 +710,26 @@ def _adopt_managed(session, project_id, request_id, claim_token):
     ):
         raise ConflictError("Adoption cannot change the intended native host")
     tracker.adopt_delivery_sources(**arguments, preview=False, _commit=False)
+    requirements = {
+        role: selection.execution_requirements.model_dump()
+        for role, selection in proposal.roles.items()
+        if selection.execution_requirements is not None
+    }
+    if requirements:
+        # The same authorized defaults owner saves declared needs atomically with
+        # source adoption. Omission preserves compatible existing requirements.
+        updated = tracker.delivery_defaults(project_id=project_id)
+        for role, needed in requirements.items():
+            updated["agents"][role]["execution_requirements"] = needed
+        tracker.configure_delivery(project_id=project_id, delivery=updated, _commit=False)
+        from stackos.task_delivery import resolve_delivery_settings
+
+        resolve_delivery_settings(
+            session,
+            project_id=project_id,
+            project_dir=proposal.project_dir,
+            role_keys=set(proposal.roles),
+        )
     current.managed.phase = "verification"
     current.managed.adopted_delivery_digest = _digest(
         tracker.delivery_defaults(project_id=project_id)
@@ -796,6 +824,11 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
                     role_keys=set(attempt.adoption_proposal.roles),
                 )
                 context["adopted_delivery_digest"] = attempt.managed.adopted_delivery_digest
+                repo = ProjectSetupRepository(session)
+                context["activation_role_bindings"] = {
+                    role: repo.execution_binding(project_id, role, agent).model_dump(mode="json")
+                    for role, agent in context["adoption_readback"]["agents"].items()
+                }
                 for role, selection in attempt.adoption_proposal.roles.items():
                     if selection.source_ref and (
                         context["adoption_readback"]["agents"][role]["source_digest"]

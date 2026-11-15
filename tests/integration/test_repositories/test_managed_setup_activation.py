@@ -119,13 +119,58 @@ def proposal_for(managed, session, *, host="codex"):
 
 
 def install_runner(
-    managed, monkeypatch, proposal, *, mutate=None, verification="passed", setup_host=None
+    managed,
+    monkeypatch,
+    proposal,
+    *,
+    mutate=None,
+    verification="passed",
+    setup_host=None,
+    seed_role=True,
 ):
     _execution, project, _, factory = managed
     definition = service._definition_by_key(
         setup_host or proposal["roles"]["delivery_agent"]["host_key"]
     )
     calls = []
+    # Seed completed reviewer evidence before setup. The injected coordinator
+    # cannot turn its own generic success into specialist capability proof.
+    from tests.integration.test_repositories.test_project_setup_activation import reviewer_check
+
+    with factory() as check:
+        repo = ProjectSetupRepository(check)
+        selection = proposal["roles"]["review_agent"]
+        selected_host = service._definition_by_key(selection["host_key"])
+        agent = (
+            task_delivery.resolve_delivery_settings(
+                check,
+                project_id=project,
+                project_dir=proposal["project_dir"],
+                agents={
+                    "review_agent": {
+                        key: selection[key]
+                        for key in (
+                            "name",
+                            "host_key",
+                            "source_ref",
+                            "instructions",
+                            "execution_requirements",
+                        )
+                        if key in selection
+                    }
+                },
+                role_keys={"review_agent"},
+            )["agents"]["review_agent"]
+            if seed_role and selected_host and selected_host.run_agent
+            else None
+        )
+        existing_role_check = (
+            reviewer_check(
+                (project, None, repo), check, verified_result(repo, project), agent=agent
+            )
+            if agent
+            else None
+        )
 
     def runner(root, instructions, prompt, schema, *, on_session=None, resume_thread_id=None, **kw):
         context = json.loads(prompt)
@@ -180,10 +225,19 @@ def install_runner(
                 assert context["phase"] == "completion"
                 result = verified_result(repo, project)
                 result.attempt_ref = context["attempt_ref"]
+                role_check = deepcopy(existing_role_check)
+                assert role_check is not None
+                role_check["basis"] = repo.activation_basis(
+                    project, result.verification, environment_ref="fixture/native"
+                )
                 result.verification.activation_proof = SetupActivationEvidence(
                     method_ref="fixture/method",
                     status="verified",
-                    required_claims=["saved_defaults", "native_consumption"],
+                    required_claims=[
+                        "saved_defaults",
+                        "native_consumption",
+                        "reviewer_verification",
+                    ],
                     checks=[
                         dict(
                             claims=["saved_defaults", "native_consumption"],
@@ -195,7 +249,8 @@ def install_runner(
                             ),
                             reference=context["completed_verification"]["reference"],
                             evidence_ref="fixture/deterministic-native-observation",
-                        )
+                        ),
+                        role_check,
                     ],
                 )
                 report.update(
@@ -220,6 +275,46 @@ def install_runner(
         service, "_definition_by_key", lambda key: replace(definition, run_agent=runner)
     )
     return calls
+
+
+def test_managed_setup_saves_required_reviewer_capability_atomically(managed, session, monkeypatch):
+    _, project, scheduler, _ = managed
+    proposal = proposal_for(managed, session)
+    proposal["roles"]["review_agent"]["execution_requirements"] = {"filesystem_write": True}
+    calls = install_runner(managed, monkeypatch, proposal)
+    launch(managed, host_key="codex")
+    for _ in range(3):
+        scheduler.run()
+    session.expire_all()
+    state = ProjectSetupRepository(session).get(project)
+    assert state.current_attempt.status == "success"
+    assert TrackerRepository(session).delivery_defaults(project_id=project)["agents"][
+        "review_agent"
+    ]["execution_requirements"] == {"filesystem_write": True}
+    assert [call["phase"] for call in calls] == ["preparation", "verification", "completion"]
+    assert calls[1]["activation_role_bindings"]["review_agent"]["role"] == "review_agent"
+
+
+def test_managed_incompatible_reviewer_requirement_rolls_back_adoption(
+    managed, session, monkeypatch
+):
+    _, project, scheduler, _ = managed
+    proposal = proposal_for(managed, session)
+    reviewer = proposal["roles"]["review_agent"]
+    path = Path(proposal["project_dir"]) / reviewer["source_ref"]["source_path"]
+    path.write_text(path.read_text() + 'sandbox_mode="read-only"\n')
+    reviewer["expected_digest"] = (
+        ProjectAgentService(Path(proposal["project_dir"])).get(reviewer["source_ref"]).digest
+    )
+    reviewer["execution_requirements"] = {"filesystem_write": True}
+    calls = install_runner(managed, monkeypatch, proposal, seed_role=False)
+    launch(managed, host_key="codex")
+    scheduler.run()
+    session.expire_all()
+    state = ProjectSetupRepository(session).get(project).current_attempt
+    assert state.status == "failed" and "filesystem_write" in state.managed.diagnostic
+    assert TrackerRepository(session).delivery_defaults(project_id=project) == {}
+    assert [call["phase"] for call in calls] == ["preparation"]
 
 
 @pytest.mark.parametrize("phase", ["preparation", "verification"])
@@ -470,7 +565,8 @@ def test_adopted_delivery_hosts_are_independent_of_setup_host(managed, session, 
     assert ProjectSetupRepository(session).get(project).current_attempt.status == "success"
     assert tracker.delivery_defaults(project_id=project) == saved
     assert calls[1]["adoption_readback"] == resolved
-    assert not session.exec(select(RunPlan)).all() and not session.exec(select(TrackerTask)).all()
+    assert not session.exec(select(RunPlan)).all()
+    assert [task.key for task in session.exec(select(TrackerTask)).all()] == ["setup-proof"]
 
 
 @pytest.mark.parametrize("role_host", ["omitted", "null"])
@@ -579,7 +675,7 @@ def test_managed_adopts_then_verifies_once_without_workflow_or_task(
     assert len(capacity) == 1 and capacity[0]["project_id"] == project
     assert capacity[0]["running_count"] == 0
     assert not session.exec(select(RunPlan)).all()
-    assert len(session.exec(select(TrackerTask)).all()) == 1
+    assert len(session.exec(select(TrackerTask)).all()) == 2  # existing task and reviewer proof
     assert session.get(TrackerTask, frozen.id).metadata_json == frozen_before
 
 
@@ -827,7 +923,7 @@ def test_managed_reuses_current_evidence_without_adoption_or_bounded_recheck(
     with factory() as check:
         assert check.get(AgentRequest, evidence.id).metadata_json == evidence.metadata_json
     assert not session.exec(select(RunPlan)).all()
-    assert not session.exec(select(TrackerTask)).all()
+    assert [task.key for task in session.exec(select(TrackerTask)).all()] == ["setup-proof"]
 
 
 def test_adoption_and_receipt_roll_back_together(managed, session, monkeypatch):

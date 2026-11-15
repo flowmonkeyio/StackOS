@@ -1,8 +1,8 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.23
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.24
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
-Workflow: `engineering.tracked-delivery` v0.8.6 source contract
+Workflow: `engineering.tracked-delivery` v0.8.7 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
 
 This is the StackOS repository adaptation, not a subagent. The main agent owns
@@ -521,6 +521,8 @@ outcomes require main reconciliation. Source edits do not activate this method o
 unsupported frozen/live jobs; manual reviewed adoption remains separate.
 
 ## Explicit Current-Project Source Adoption
+
+For engineering ready_to_use setup, consume the effective method's required_role_claims, including reviewer_verification bound to review_agent when review requires tools, scratch writes or isolated fixtures. Save execution_requirements.filesystem_write=true for test/scratch-running reviewers through the canonical defaults owner; preserve explicit false for inspection-only review. The selected reviewer itself executes one project-selected bounded representative check under its actual native snapshot and normal approvals. Generic native success or coordinator verification_status cannot prove reviewer capability. Record claims, status, environment_ref and evidence_ref in setup_activation_checks in the reviewer's native outputs; the evidence ref retains command, exit status and observed results. The existing setup receipt binds that completed task_phase reference (task_id, ticket_id, attempt, phase, invocation_id, outcome_digest) to current project/binding, role/host, source ref/digest when source-backed, resolved settings and environment. Inline hosts retain their actual snapshot without invented refs. Reuse valid completed coverage, including retained attempts; changed relevant source/settings/capability or environment invalidates only affected claims. Run only missing harmless checks in the existing authorized setup/task; no new receipt store, whole-workflow canary, separate proof task or all-host matrix. A denial stops that write and dependent proof; continue authorized alternatives and unrelated work, leaving required unavailable proof unfinished. Preserve infrastructure_only preparation and frozen sessions. Explicit replace_review recovery requires operator authorization and a quiescent stopped review, preserves candidate/delivery/failed reviewer history and consumed repair allowance, and never implies automatic retry, global trust changes or installed activation.
 
 For ordinary `ready_to_use` Setup/Update or explicit automatic-delivery activation,
 apply the effective `engineering.tracked-delivery` `setup_activation_method` policy.

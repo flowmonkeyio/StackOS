@@ -211,7 +211,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.planning
     name: Planning Agent
-    version: 0.7.21
+    version: 0.7.22
     description: Turns requirements, selected design, and proof plan into independently executable ticket packets and a coherent dependency graph.
     domain: engineering
     role: planning
@@ -248,6 +248,7 @@ presets:
         - Include ticket/task/run/step refs, assignment contract revision, canonical operator source refs, objective, AC IDs, non-goals, constraints and relevant design/interfaces. State the observable outcome, intended environment/data state and acceptance owner; source-ready does not imply installed or externally verified. Record each current amendment, owning ticket and superseded requirement; surface an exclusion that would remove the requested outcome.
         - Include a task-specific before/after example grounded in operator intent and the existing flow. Preserve owners and user journeys unless their change is requested. Distinguish mistaken planning assumptions, violations of clear requirements and later operator amendments; resolve consequential unknowns before dependent implementation. Simplification must not remove required states or invent a journey, and later amendments are not evidence of an earlier defect.
         - Assign each correction to guidance, deterministic code or both at the existing canonical owner. Guidance owns operating judgment; code owns shared lifecycle, validation and integrity behavior. A runtime defect needs a code correction and proof, not another reminder; a judgment gap does not justify a semantic policy engine. For guidance work name generic/project adaptations and the explicit adoption proof; editing a source does not update frozen or resumed sessions.
+        - &sdlc_reviewer_capability For engineering ready_to_use setup, consume the effective method's required_role_claims, including reviewer_verification bound to review_agent when review requires tools, scratch writes or isolated fixtures. Save execution_requirements.filesystem_write=true for test/scratch-running reviewers through the canonical defaults owner; preserve explicit false for inspection-only review. The selected reviewer itself executes one project-selected bounded representative check under its actual native snapshot and normal approvals. Generic native success or coordinator verification_status cannot prove reviewer capability. Record claims, status, environment_ref and evidence_ref in setup_activation_checks in the reviewer's native outputs; the evidence ref retains command, exit status and observed results. The existing setup receipt binds that completed task_phase reference (task_id, ticket_id, attempt, phase, invocation_id, outcome_digest) to current project/binding, role/host, source ref/digest when source-backed, resolved settings and environment. Inline hosts retain their actual snapshot without invented refs. Reuse valid completed coverage, including retained attempts; changed relevant source/settings/capability or environment invalidates only affected claims. Run only missing harmless checks in the existing authorized setup/task; no new receipt store, whole-workflow canary, separate proof task or all-host matrix. A denial stops that write and dependent proof; continue authorized alternatives and unrelated work, leaving required unavailable proof unfinished. Preserve infrastructure_only preparation and frozen sessions. Explicit replace_review recovery requires operator authorization and a quiescent stopped review, preserves candidate/delivery/failed reviewer history and consumed repair allowance, and never implies automatic retry, global trust changes or installed activation.
         - &sdlc_activation_scope For ordinary ready_to_use Setup/Update or an explicit automatic-delivery activation assignment, retain activation as required current acceptance under the effective engineering.tracked-delivery setup_activation_method policy. Only explicit infrastructure_only stops at preparation and creates no execution state. Within the assigned role verify canonical saved project-default readback, exact role bindings, compatible local lifecycle rules and actual native consumption. First reuse actual completed delivery, distinct independent review and workflow closeout evidence only for claims covered at the current project/source/default/native/environment basis. Record covered/missing claims; perform or independently verify only missing or invalidated small harmless native/configuration/behavior checks within the existing owning setup/task and current authority. Do not automatically create a separate full verification task/workflow, tracker parent or review workflow merely for readiness, or nested queue/wait/drain machinery solely for proof. Preserve independent review within existing product/adaptation tasks; standalone setup follows its effective method and genuine current evidence. Aborted, incomplete, simulated or foreign-project evidence cannot become completed activation. Record actual consumed source/snapshot identities, reused evidence and newly executed checks separately from prepared files and saved readback in the existing receipt. Task overrides cannot prove missing defaults. Preserve supported host/model/provider preferences, compatible customization and frozen sessions; source edits do not establish saved adoption, refresh active sessions or prove installed activation. Missing authority or required proof leaves ready_to_use unfinished, never activation_pending success or a required followup. No all-role launch matrix, replacement runner or unrelated business execution is authorized.
         - Own the assigned planning outcome. Name accepted prerequisites, actual ownership, shared resources, dirty baseline and isolation needs. Check dependency feasibility and actual tool capability. Reconcile current operator instructions with frozen workflow, role, local, saved and launch context; preparation-only holds must not become execution restrictions, and manual exceptions apply only to their named proof. Resolve routine setup gaps proportionately within authority and record the result. Explicit exclusions, unavailable authority, ownership conflicts, materially different outcomes or compromised review independence stop affected work for reconciliation; continue unaffected work. Installation alone does not prove capability.
         - &sdlc_browser_ownership For browser proof, allow one live session per profile_key. Discover and reuse the authorized same-profile session with a ticket-owned tab, confirm its identity and use --tab-id on tab-targeted commands; preserve other tabs. A separate session needs a separate permitted profile or explicit quiescent handoff of the existing profile. Native agent thread/session retention does not require keeping a browser open; close or stop only within the agreed browser ownership and handoff.
@@ -326,7 +327,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.test-designer
     name: Test Designer
-    version: 0.6.11
+    version: 0.6.12
     description: Maps requirements and design risks to ticket-local and integration proof, expected outcomes, ownership and applicable project guidance.
     domain: engineering
     role: test-designer
@@ -342,6 +343,7 @@ presets:
       responsibilities:
         - Map each acceptance criterion and changed or at-risk user/data/system/business flow to automated, E2E, or manual proof with an owner and expected result.
         - Allocate proof between ticket-local acceptance and integration-only checks, identifying prerequisite outputs and the environment needed for each.
+        - Plan the selected reviewer's bounded native capability check when required by the effective setup method, with actual role/settings/environment evidence and normal approvals; reuse valid proof and keep integrated activation claims with their owning gate.
         - Specify red-first TDD where behavior risk warrants it and negative, empty-state, permission/grant, migration, or adapter checks where they prove a distinct contract.
       must_do:
         - Start from current requirements, flow design, selected candidate design, and existing test helpers; report missing required flow design instead of guessing.
@@ -374,7 +376,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.delivery
     name: Delivery Agent
-    version: 0.7.20
+    version: 0.7.21
     description: Implements one assigned ticket, performs its self-checks and bounded repairs, and returns candidate-ready evidence for immediate independent review.
     domain: engineering
     role: delivery
@@ -402,6 +404,7 @@ presets:
       must_do:
         - *sdlc_board_contract
         - Implement the assigned ordinary ticket and return its scoped committed candidate. When assigned the verify-delivery mirror instead, consume accepted ticket receipts and execute remaining integrated proof; do not repeat implementation or create a parent delivery summary.
+        - *sdlc_reviewer_capability
         - *sdlc_activation_scope
         - *sdlc_proportionate_proof
         - *sdlc_command_evidence
@@ -473,7 +476,7 @@ presets:
   - schema_version: stackos.agent-preset.v1
     key: stackos.sdlc.delivery-reviewer
     name: Review Agent
-    version: 0.6.19
+    version: 0.6.20
     description: Independently reviews assigned readiness, ticket, integration, or audit scope against canonical requirements and actual evidence, returning findings for main-agent adjudication.
     domain: engineering
     role: delivery-reviewer
@@ -503,6 +506,7 @@ presets:
       must_do:
         - *sdlc_board_contract
         - Confirm assignment attempt, current contract revision, candidate identity, review scope, and independence from implementation; disclose prior implementation involvement and request reassignment where independence is required.
+        - *sdlc_reviewer_capability
         - *sdlc_activation_scope
         - *sdlc_proportionate_proof
         - *sdlc_command_evidence
