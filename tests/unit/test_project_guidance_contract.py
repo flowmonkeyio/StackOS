@@ -107,11 +107,9 @@ def test_proportionate_proof_rules_reach_each_execution_and_planning_consumer() 
     rules = [
         rule
         for rule in planning.prompt_contract.must_do
-        if rule.startswith(
-            ("Prove the requested end-to-end flow", "Base each pass claim", "Establish uncertain")
-        )
+        if rule.startswith(("Prove the requested end-to-end flow", "Base each pass claim"))
     ]
-    assert len(rules) == 3
+    assert len(rules) == 2
     skill = SkillPresetLoader().describe_preset(key="stackos.sdlc.delivery-orchestrator").preset
     main_rules = skill.operating_contract.responsibilities + skill.operating_contract.must_do
     orchestrator = (ROOT / ".codex/orchestrator/sdlc-delivery-orchestrator.md").read_text()
@@ -123,6 +121,49 @@ def test_proportionate_proof_rules_reach_each_execution_and_planning_consumer() 
             local = tomllib.loads((ROOT / f".codex/agents/sdlc-{role}.toml").read_text())
             assert rule in source.prompt_contract.must_do, role
             assert rule in local["developer_instructions"], role
+
+    main_capability = next(rule for rule in main_rules if rule.startswith("Establish uncertain"))
+    specialist_capability = next(
+        rule for rule in planning.prompt_contract.must_do if rule.startswith("Establish uncertain")
+    )
+    assert main_capability in orchestrator
+    # Every shared approval/safety obligation remains in the specialist contract;
+    # its exceptional handoff is role-specific, not a main-to-main instruction.
+    for obligation in main_capability.split(". "):
+        assert obligation in specialist_capability
+    assert "return an exceptional handoff to main" not in main_capability
+    for required in (
+        "When required authority is unavailable",
+        "return an exceptional handoff to main",
+        "exact action/target",
+        "current ownership/source basis",
+        "prepared patch or payload if available",
+        "concrete policy/denial result ref",
+        "unaffected work, outstanding proof",
+        "safe resume condition and next owner/action",
+        "Do not change policy or replace the native session",
+        "this handoff adds no routine main relay",
+    ):
+        assert required in specialist_capability
+    for role in ("planning", "test-designer", "delivery", "delivery-reviewer"):
+        source = agents.describe_preset(key=f"stackos.sdlc.{role}").preset
+        local = tomllib.loads((ROOT / f".codex/agents/sdlc-{role}.toml").read_text())
+        assert specialist_capability in source.prompt_contract.must_do, role
+        assert specialist_capability in local["developer_instructions"], role
+
+    main_handoff = next(
+        rule for rule in main_rules if rule.startswith("For a required cross-owner finding,")
+    )
+    for contract in (main_handoff, " ".join(orchestrator.split())):
+        for required in (
+            "source and target task/ticket/owner",
+            "exact inspected candidates",
+            "failed criterion/check and evidence",
+            "required correction",
+            "affected recheck",
+            "next actor/action",
+        ):
+            assert required in contract
 
 
 def test_board_placement_contract_survives_combined_guidance_resolution() -> None:
@@ -240,13 +281,23 @@ def test_cross_task_inputs_reach_planning_and_dispatch_consumers(owner: str) -> 
             "target integration owner",
             "receiving source/artifact identity",
             "affected checks",
-            "before dependent dispatch or resume",
+            "main confirms admitted prerequisites during preparation or exceptional reconciliation",
+            "after automatic handoff, the assigned delivery or verification owner",
+            "verifies actual presence and applicability in its receiving tree/environment",
+            "before dependent work or lengthy proof",
+            "using accepted source or independently reviewed integration evidence",
+            "stackos sequences work",
             "unfinished producer",
             "accepted-but-absent",
             "already available",
             "optional unrelated",
         ):
             assert required in text, (owner, required)
+        if owner == "orchestrator":
+            assert "before dependent dispatch or resume" in text
+            assert "main owns explicit source admission/integration and affected recheck" in text
+        else:
+            assert "acceptance grants no merge authority" in text
 
 
 def _assert_bounded_correction_method(text: str) -> None:
