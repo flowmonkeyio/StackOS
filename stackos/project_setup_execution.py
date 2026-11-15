@@ -153,14 +153,17 @@ def resolve_preferences(
     return selected
 
 
-def _save(session, row, attempt):
+def _save(session, row, attempt, *, _commit=True):
     row.metadata_json = {
         **(row.metadata_json or {}),
         "project_setup": attempt.model_dump(mode="json"),
     }
     row.updated_at = datetime.now(UTC).replace(tzinfo=None)
     session.add(row)
-    session.commit()
+    if _commit:
+        session.commit()
+    else:
+        session.flush()
 
 
 def _load(session, project_id, request_id):
@@ -1134,7 +1137,10 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
                 current.managed.role_check = None
                 current.managed.phase = "completion"
                 row.status = AgentRequestStatus.RESOLVED
-                _save(session, row, current)
+                # Canonical validators read the prospective completed identity in
+                # this transaction. Rejection rolls it back to the pending frozen
+                # specialist before the outer handler records the failed attempt.
+                _save(session, row, current, _commit=False)
                 native = row.metadata_json["native_execution"]
                 repo = ProjectSetupRepository(session)
                 receipt = repo._row(project_id, role_check.workflow_key)
@@ -1158,6 +1164,7 @@ def run_setup(*, project_id, request_id, claim_token, session_factory, scheduler
                 )
                 repo._validate_activation_reference(project_id, check)
                 repo._validate_role_check(project_id, check, {role_check.request.role})
+                session.commit()
                 continue_verification = True
     except Exception as exc:
         with managed_launch_lock, session_factory() as session:

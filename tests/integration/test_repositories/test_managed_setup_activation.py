@@ -482,6 +482,92 @@ def test_failed_native_role_check_explicitly_resumes_same_reviewer_and_coordinat
     ]
 
 
+@pytest.mark.parametrize(
+    "rejection", ["missing-observation", "wrong-environment", "wrong-settings"]
+)
+def test_rejected_native_evidence_recovers_before_completion_promotion(
+    managed, session, monkeypatch, rejection
+):
+    from stackos.project_setup_execution import continue_managed
+
+    _, project, scheduler, factory = managed
+    proposal = proposal_for(managed, session)
+    proposal["roles"]["review_agent"]["execution_requirements"] = {"filesystem_write": True}
+    calls = install_runner(managed, monkeypatch, proposal, seed_role=False, fresh_role=True)
+    definition = service._definition_by_key("codex")
+    reject = {"value": True}
+
+    def runner(*args, **kwargs):
+        result = definition.run_agent(*args, **kwargs)
+        context = json.loads(args[2])
+        if context["phase"] == "role_verification" and reject["value"]:
+            if rejection == "missing-observation":
+                result.result["outputs"] = "{}"
+            elif rejection == "wrong-environment":
+                outputs = json.loads(result.result["outputs"])
+                outputs["setup_activation_checks"][0]["environment_ref"] = "fixture/foreign-env"
+                result.result["outputs"] = json.dumps(outputs)
+            else:
+                with factory() as check:
+                    row = check.get(AgentRequest, context["request_id"])
+                    metadata = deepcopy(row.metadata_json)
+                    metadata["native_execution"]["snapshot"]["model"] = "foreign-model"
+                    row.metadata_json = metadata
+                    check.add(row)
+                    check.commit()
+        return result
+
+    monkeypatch.setattr(
+        service, "_definition_by_key", lambda _: replace(definition, run_agent=runner)
+    )
+    launch(managed, host_key="codex")
+    for _ in range(3):
+        scheduler.run()
+    session.expire_all()
+    failed = ProjectSetupRepository(session).get(project).current_attempt
+    assert failed.status == "failed" and not scheduler.jobs
+    assert failed.managed.phase == "role_verification"
+    assert failed.managed.role_check is not None
+    assert failed.request_id not in failed.managed.role_verification_request_ids
+    assert failed.thread_id == "bounded-review-native"
+    frozen = failed.managed.role_check.model_dump(mode="json")
+    reject["value"] = False
+    continued = continue_managed(
+        project,
+        failed.request_id,
+        expected_revision=failed.revision,
+        session_factory=factory,
+        scheduler=scheduler,
+    )
+    assert continued.attempt.managed.role_check.model_dump(mode="json") == frozen
+    assert continued.attempt.managed.resume_thread_id == failed.thread_id
+    scheduler.run()
+    session.expire_all()
+    retried = ProjectSetupRepository(session).get(project).current_attempt
+    assert scheduler.jobs, retried.managed.diagnostic
+    assert len(retried.reports) == len(failed.reports) + 1
+    assert retried.reports[-1].report_digest == failed.reports[-1].report_digest
+    scheduler.run()
+    session.expire_all()
+    current = ProjectSetupRepository(session).get(project).current_attempt
+    assert current.status == "success", current.managed.diagnostic
+    assert current.thread_id == "bounded-setup-native"
+    assert failed.request_id not in current.managed.role_verification_request_ids
+    assert current.managed.role_verification_request_ids == [continued.attempt.request_id]
+    retained = session.get(AgentRequest, failed.request_id)
+    assert retained.metadata_json["project_setup"]["status"] == "failed"
+    assert retained.metadata_json["native_execution"]["result"]["status"] == "success"
+    assert [call["phase"] for call in calls] == [
+        "preparation",
+        "verification",
+        "role_verification",
+        "role_verification",
+        "completion",
+    ]
+    assert calls[2]["role_check"] == calls[3]["role_check"] == frozen
+    assert not session.exec(select(TrackerTask)).all()
+
+
 def test_cancelled_never_started_role_check_recovers_only_its_first_admission(
     managed, session, monkeypatch
 ):

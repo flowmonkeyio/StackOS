@@ -1119,6 +1119,9 @@ class ProjectSetupRepository:
                 and _managed
                 and not _session_report
                 and current.reports
+                # Continuations retain prior reports. Matching content alone
+                # cannot make that history a report applied by this invocation.
+                and current.status == report.status
                 and current.reports[-1].report_digest == report_digest
             )
             final_confirmation = (
