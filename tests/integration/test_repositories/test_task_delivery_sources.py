@@ -52,6 +52,127 @@ def start(session, project_id, root, scheduler, **kwargs):
     )
 
 
+@pytest.mark.parametrize("resume_fault", [None, "candidate", "session"])
+def test_review_replacement_controller_loss_resumes_announced_session(
+    session, project_id, tmp_path, monkeypatch, resume_fault
+):
+    from dataclasses import replace
+
+    class ControllerLost(BaseException):
+        pass
+
+    root = tmp_path / "candidate"
+    root.mkdir()
+    git(root, "init")
+    git(root, "config", "user.name", "Delivery Test")
+    git(root, "config", "user.email", "delivery@example.test")
+    writer = source(session, project_id, root, "writer")
+    reviewer = source(session, project_id, root, "reviewer")
+    git(root, "add", ".codex")
+    git(root, "commit", "-m", "fixture sources")
+    arguments, request, before, initial_calls = stopped_review_fixture(
+        session,
+        project_id,
+        root,
+        monkeypatch,
+        defaults={
+            "agents": {
+                "delivery_agent": {"source_ref": writer},
+                "review_agent": {"source_ref": reviewer},
+            }
+        },
+    )
+    repo = TrackerRepository(session)
+    calls = []
+
+    def native(_directory, _instructions, prompt, _schema, *, on_session, **kwargs):
+        packet = json.loads(prompt)
+        calls.append((packet["phase"], kwargs.get("resume_thread_id")))
+        assert packet["phase"] == "review"
+        on_session("replacement-reviewer")
+        if len(calls) == 1:
+            raise ControllerLost()
+        assert packet["candidate"] == before["automatic_delivery"]["candidate"]
+        assert packet["occurrence"]["repair_count"] == 3
+        return AgentRunResult(
+            0,
+            thread_id="replacement-reviewer",
+            result=generic_result(outputs={"commit_sha": request["expected_candidate_commit_sha"]}),
+        )
+
+    lookup = service._definition_by_key
+    definition = lookup("codex")
+    assert definition is not None
+    monkeypatch.setattr(
+        service,
+        "_definition_by_key",
+        lambda key: replace(definition, run_agent=native) if key == "codex" else lookup(key),
+    )
+    monkeypatch.setattr(task_delivery, "run_agent", service.run_agent)
+    task_delivery.start_delivery(**arguments, replace_review=request)
+    with pytest.raises(ControllerLost):
+        arguments["scheduler"].run()
+    session.expire_all()
+    interrupted = deepcopy(
+        repo.brief(project_id=project_id, ticket_key="work").ticket.completion_evidence_json
+    )
+    automatic = interrupted["automatic_delivery"]
+    assert (
+        automatic["review_replacement_active"]
+        == automatic["review_replacements"][-1]["replacement_id"]
+    )
+    retained = automatic["sessions"]["review"]
+    assert retained["thread_id"] == "replacement-reviewer"
+    assert "result" not in automatic["review"]
+    # Fixture-owned explicit controller recovery; replay grants no retry.
+    task_delivery._update_delivery(
+        repo, project_id, "replace", status="stopped", reason="Fixture controller loss"
+    )
+    replay = task_delivery.start_delivery(**arguments, replace_review=request)
+    assert replay["status"] == "stopped" and not arguments["scheduler"].jobs
+    if resume_fault == "candidate":
+        commit(root, "different-candidate")
+    elif resume_fault == "session":
+        automatic["sessions"].pop("review")
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="work",
+            patch_json={"completion_evidence_json": interrupted},
+        )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="work",
+        patch_json={"status": "not-started", "blocker_reason": None},
+    )
+    task_delivery.start_delivery(**arguments)
+    arguments["scheduler"].run()
+    session.expire_all()
+    ticket = repo.brief(project_id=project_id, ticket_key="work").ticket
+    final = ticket.completion_evidence_json["automatic_delivery"]
+    assert len(initial_calls) == 2
+    assert final["candidate"] == before["automatic_delivery"]["candidate"]
+    assert final["delivery"] == before["automatic_delivery"]["delivery"]
+    assert final["sessions"]["delivery"] == before["automatic_delivery"]["sessions"]["delivery"]
+    assert final["repair_count"] == 3
+    assert "review_replacement_active" not in final
+    assert final["review_replacements"] == automatic["review_replacements"]
+    if resume_fault:
+        assert calls == [("review", None)]
+        assert ticket.status == "failed"
+        assert (
+            repo.get(project_id=project_id, task_key="replace")
+            .tasks[0]
+            .metadata_json["delivery"]["status"]
+            == "stopped"
+        )
+    else:
+        assert calls == [("review", None), ("review", "replacement-reviewer")]
+        assert ticket.status == "complete", ticket.outcome
+        assert final["sessions"]["review"] == retained
+        assert final["attempts"][-1]["review"] == automatic["review"]
+        assert final["attempt"] == automatic["attempt"] + 1
+
+
 @pytest.mark.parametrize(
     "fault", [None, "foreign", "missing", "digest", "escape", "unregistered", "symlink"]
 )

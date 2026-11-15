@@ -730,7 +730,15 @@ is unchanged, including at three. Replaying the same request returns the same
 recovery refs; changed intent against that retired target conflicts. Retired
 callbacks/results cannot overwrite or advance the new handoff. Replacement
 failure stays stopped with its evidence; a real repair rejection still obeys the
-retained repair limit. `tracker.get`/`tracker.brief` raw inspection shows both
+retained repair limit. If the controller is interrupted before a terminal review
+result is saved, the admitted review-only continuation remains recorded. After
+explicit stopped-work resolution, ticket requeue and rehandoff, it resumes the
+announced replacement session directly on the same clean candidate. It retains
+the interrupted receipt in attempt history and never invokes delivery or consumes
+another repair pass. Missing session identity or a changed candidate stops the
+continuation; request replay alone does not schedule it. A terminal review result
+ends this continuation and retains normal rejection/repair rules.
+`tracker.get`/`tracker.brief` raw inspection shows both
 retired and current review truth; statistics count the retained delivery once.
 This source behavior does not establish installed or live recovery proof.
 

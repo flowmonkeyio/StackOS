@@ -2362,11 +2362,13 @@ def run_delivery(
                 if workflow_step is None:
                     evidence.setdefault("repair_count", int(bool(evidence.get("repair_pass_used"))))
                 replacement = evidence.get("review_replacement_pending")
-                if replacement:
+                continuation = evidence.get("review_replacement_active")
+                review_only = replacement or continuation
+                if review_only:
                     recovery = state.get("review_replacement", {})
                     if (
                         workflow_step is not None
-                        or recovery.get("replacement_id") != replacement
+                        or recovery.get("replacement_id") != review_only
                         or recovery.get("target", {}).get("ticket_key") != ticket_key
                         or recovery.get("reviewer_snapshot_digest")
                         != sha256(
@@ -2378,6 +2380,22 @@ def run_delivery(
                         raise _replacement_error(
                             "transition", "Review replacement transition lost ownership"
                         )
+                    if continuation:
+                        receipt = evidence.get("review", {})
+                        if not evidence.get("sessions", {}).get("review") or any(
+                            key in receipt for key in ("exit_code", "result", "validation_error")
+                        ):
+                            raise _replacement_error(
+                                "continuation",
+                                "Interrupted replacement requires its saved review session",
+                            )
+                        # Preserve the interrupted invocation in attempt history,
+                        # while retaining the same delivered candidate and writer.
+                        delivered = evidence["delivery"]
+                        delivery_attempt = evidence["delivery_reused_from_attempt"]
+                        _archive_attempt(evidence)
+                        evidence["delivery"] = delivered
+                        evidence["delivery_reused_from_attempt"] = delivery_attempt
                 else:
                     _archive_attempt(evidence)
                 baseline_pending = True
@@ -2397,7 +2415,7 @@ def run_delivery(
 
             phase = (
                 "review"
-                if replacement or (workflow_step is not None and role == "review_agent")
+                if review_only or (workflow_step is not None and role == "review_agent")
                 else "delivery"
             )
             while True:
@@ -2475,7 +2493,7 @@ def run_delivery(
                             )
                         )
                     )
-                    if replacement:
+                    if review_only:
                         _candidate_commit(
                             state["project_dir"],
                             evidence["candidate"]["commit_sha"],
@@ -2527,10 +2545,12 @@ def run_delivery(
                     )
                     if replacement:
                         evidence.pop("review_replacement_pending")
+                        evidence["review_replacement_active"] = replacement
                         evidence["review_replacements"][-1]["replacement_attempt"] = evidence[
                             "attempt"
                         ]
                         replacement = None
+                    review_only = None
                     _save_evidence(repo, project_id, ticket_key, evidence)
                     brief = repo.brief(project_id=project_id, ticket_key=ticket_key).model_dump(
                         mode="json"
@@ -2857,6 +2877,10 @@ def run_delivery(
 
                 if workflow_step is None and valid:
                     evidence[phase]["validated_outcome"] = decision
+                if phase == "review":
+                    # Terminal results end this continuation even when blocked,
+                    # invalid or rejected. Only controller loss retains it.
+                    evidence.pop("review_replacement_active", None)
 
                 repair = (
                     valid
@@ -3025,6 +3049,7 @@ def run_delivery(
                     break
             ticket_key = None
     except Exception as error:
+        evidence.pop("review_replacement_active", None)
         with managed_launch_lock, session_factory() as session:
             repo = TrackerRepository(session)
             task = _task(repo, project_id, task_key)
