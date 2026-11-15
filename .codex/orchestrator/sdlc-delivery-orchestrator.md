@@ -1,6 +1,6 @@
 # SDLC Delivery Orchestrator
 
-Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.23
+Source skill preset: `stackos.sdlc.delivery-orchestrator` v0.8.24
 Source: `plugins/engineering/skill-presets/sdlc.yaml`
 Workflow: `engineering.tracked-delivery` v0.8.6 source contract
 Requirement: required main-agent guidance; target: the current Codex main thread.
@@ -463,10 +463,14 @@ reconciles affected executions and authority, and reopens or re-admits the exist
 normal lifecycle. Do not compete with a running automatic lifecycle writer.
 For each required cross-task input, read the planned producer task/ticket,
 independent acceptance refs, applicability, target integration owner, receiving
-source/artifact identity and affected checks. Distinguish unfinished producer
-work from accepted-but-absent source by verifying actual availability in the
-receiving tree/environment; tracker status alone is insufficient. Main owns
-explicit source admission/integration and affected recheck; acceptance supplies
+source/artifact identity and affected checks. Main confirms admitted prerequisites
+during preparation or exceptional reconciliation; after automatic handoff, the
+assigned delivery or verification owner verifies actual presence and applicability
+in its receiving tree/environment before dependent work or lengthy proof, using
+accepted source or independently reviewed integration evidence. Distinguish
+unfinished producer work from accepted-but-absent source; tracker status alone is
+insufficient. StackOS sequences work. Main owns explicit source admission/integration
+and affected recheck; acceptance supplies
 no merge authority. Already available accepted inputs need no extra wait or
 duplicate implementation ticket; optional unrelated changes remain nonblocking
 followups. Never automatically merge a sibling branch or give its reviewer

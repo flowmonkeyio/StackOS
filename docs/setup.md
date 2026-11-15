@@ -240,6 +240,14 @@ The host connection model has one brain:
 4. Doctor, CLI, desktop IPC, and Vue present that result without rebuilding
    host-specific policy.
 
+Registration checks compare the effective bridge context: omitted host, port,
+data and state settings agree with explicitly written canonical defaults.
+Equivalent registrations need no rewrite when Doctor and the daemon inherit
+different default environment variables. Launcher paths, runtime labels,
+workspace roots and custom settings must still match; foreign entries retain
+their existing ownership checks. Pending Claude Desktop restart markers use
+the same comparison, so equivalent defaults do not dismiss a required restart.
+
 The canonical states are:
 
 | State | Meaning |

@@ -538,6 +538,15 @@ without that persisted progress, blocked/failed, malformed output and native
 failure stop the same task.
 No ready work with unfinished tickets is stopped, never reported complete.
 
+For Codex, `thread.started` commits the exact native ID and frozen role identity
+into `automatic_delivery.sessions[phase]` before native exit. The write requires
+the current handoff, ticket, attempt, phase and invocation receipt; stale or
+terminal receipts cannot be replaced. Persistence runs outside the invocation
+registry lock and emits no extra start event. A failed identity commit stops the
+native process and remains failed proof. Explicit recovery reuses this session;
+it does not automatically restart work. Hosts without an early identity event
+retain their existing terminal session handling.
+
 After native, session, schema and applicable candidate validation, an ordinary
 delivery or review `blocked` result keeps the ticket `in-progress`, with a safe
 summary (or a phase-specific reason for a blank summary) in `blocker_reason`
@@ -918,9 +927,17 @@ Agent and Agent+model preserve project identity globally. Explicit Model groups
 combine the visible projects and expose `project_ids`; singular project fields
 are null for a multi-project group. `group_key` is an opaque stable series key.
 Role and host do not split groups. They remain metadata when uniform, otherwise
-null. Agent/model labels come from recorded launch selections, never current
-defaults or name-inferred roles. `model` is the **selected model**, not a claim
-about a measured actual model; missing identity stays null/unrecorded.
+null. Agent labels come from recorded launches. Model attribution prefers an
+unambiguous native `model_observation` for that exact invocation/session, then
+falls back to the recorded `launch.model` selection only when observation is
+absent. Requested `launch.model` and execution `model` remain unchanged and
+separately traceable. Row `model_basis` is `observed`, `selected`, or `mixed`
+when a group combines those bases; it is null for unknown identity. A selected
+model is intent, without a claim of native observation. Conflicting, malformed
+or mismatched observation leaves attribution unknown even with a selection.
+No current defaults, role names, neighboring runs or transcript prose supply
+identity. Missing historical identity stays null/unrecorded; historical receipts
+are not backfilled or rewritten, and their known selections remain intact.
 
 Statistics exclude exactly `usage.status="unavailable"`,
 `usage.reason="operator_reset"`, and an explicitly present `usage.measured=null`
@@ -1383,6 +1400,16 @@ and completion refs. A completed status without a successful final step and
 nonempty result does not manufacture a success summary; a skipped final step
 does not promote an earlier result to closeout evidence. Structured results
 remain intact even when they have no top-level summary.
+
+At that accepted completion write, the mirror also reconciles a valid current
+delivery handoff after its controller has retired: current status becomes
+`complete`, reason and ticket are cleared, and no slot remains reserved. Frozen
+settings, identities, sessions and prior stop/rejection evidence remain intact
+in their existing fields and tracker revisions. A reserved callback or active
+native invocation retains ownership; canonical completion does not release its
+capacity or replace its state. Missing or skipped final results, failure and
+abort do not manufacture delivery success. This is write-time reconciliation,
+not a read-side override or a sweep of historical records.
 
 Abort, reopen, recovery, and completion update only mirror-owned current outcome
 fields. Earlier summaries and abort reasons remain in append-only tracker
@@ -2378,6 +2405,21 @@ the reader waits for that exact path, without searching historical sessions.
 Resumes skip the pre-invocation file prefix and use the unchanged previous
 invocation baseline and native ID.
 
+The same bounded reader also allowlists Codex `turn_context.payload.model`
+and checks its `cwd` against the owning directory. Optional `model_observation`
+in the native result and safe execution receipt carries `status`, nullable
+`model`, `source="codex.turn_context"` and exact `session_id`. A single consistent
+model is `observed`; conflicting models, invalid or unreadable context, loss of
+the reader, a record still incomplete at native exit, records exceeding its
+64 KiB bound, or known usage preceding the first model context make attribution
+`ambiguous` for the whole invocation.
+Without per-model counters, mixed totals cannot be allocated to one model.
+Resumes require new context after their cursor rather than inheriting model
+evidence from the old prefix. Other hosts supply no model observation through
+this reader. Final handoff, retained receipt indexing and index rebuild preserve
+this evidence without changing counter normalization or deduplication. This
+adds no native-session scan, poller, ledger or historical repair.
+
 The newest source instant owns provisional totals independently of retained
 history. Previously unseen in-window checkpoints arriving later are retained in
 source-time order without rolling those totals backward. Identical timestamp
@@ -2478,11 +2520,15 @@ read late in one collector poll. Longer gaps and final-only changes are `batched
 counter decreases are `reset`. Optional field gaps are not bridged. A final save
 does not move an existing native observation to receipt-save time.
 
-Bars show source checkpoint increments, not per-token consumption times.
-Baselines, batches and resets retain accessible amounts and available interval
-bounds, without observation overlays or fabricated usage bars. Legacy
-counter-only frames preserve the first baseline and retain differences spanning
-more than a minute as batched observations, never spread across missing minutes.
+Bars show source checkpoint increments and interval averages for known sparse
+deltas, not per-token consumption times. A sparse delta contributes to each
+one-minute bucket in proportion to its overlap with the measured interval;
+clipped windows receive only their overlap, without an endpoint spike. Legacy
+counter-only frames preserve the first baseline and use the same projection for
+valid differences spanning more than a minute. Existing hover/accessible text
+identifies interval averages and retains exact observation amounts and bounds.
+Baselines, resets, conflicting timestamps and missing counters cannot supply
+activity. Unknown bounds remain observations without bars or overlays.
 `DEFAULT_USAGE_BAR_COUNT` sets the shared
 default of 20 intervals; `UsageTrace.barCount` supports 5–60. Bars stay at most
 2 CSS pixels wide as the chart uses the available metric-column width.

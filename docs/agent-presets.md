@@ -174,7 +174,11 @@ replaces the source draft, and a listed model does not establish account access.
 An unknown inherited effort stays inherited; the UI does not guess the host's
 effective value. A deliberate incompatible model change clears the affected
 effort visibly; compatible choices survive. Native Codex sources may retain
-supported effort with an inherited model. The editor keeps one region for
+supported effort with an inherited model. For inherited/custom models the editor
+uses `native_reasoning_efforts` from the typed project-agent responses, derived
+from the native definition enum; named model pairs still use host capabilities.
+These syntax choices do not establish the inherited model or account access.
+The editor keeps one region for
 pending, loaded and error states, including while switching sources; late or
 mismatched reads cannot change the accepted draft or the identity of a save error.
 The normal page omits the project-folder path; missing or mismatched setup
@@ -405,12 +409,17 @@ context and evidence, and reference them from schema-valid phase outputs.
 For a required cross-task input, planning names the producer task/ticket,
 independent acceptance evidence (or pending producer work), applicability, target
 integration owner, receiving source/artifact identity and affected checks. Main
-checks the actual receiving tree/environment before dependent dispatch or resume:
-unfinished producer work and accepted-but-absent source are distinct prerequisites.
-Reuse the existing owner handoff and main-owned admission/recheck; hold only the
-affected work. Already available accepted inputs need no extra wait or duplicate
-implementation ticket. Optional unrelated changes remain nonblocking followups;
-this grants no automatic merge or sibling-write authority.
+confirms admitted prerequisites during preparation or exceptional reconciliation.
+After automatic handoff, the assigned delivery or verification owner verifies
+actual presence and applicability in its receiving tree/environment before
+dependent work or lengthy proof, using accepted source or independently reviewed
+integration evidence. Distinguish unfinished producer work from accepted-but-absent
+source; tracker status alone is insufficient. StackOS sequences work; main retains
+explicit source admission/integration and affected recheck. Reuse the existing
+owner handoff and hold only affected work. Already available accepted inputs need
+no extra wait or duplicate implementation ticket. Optional unrelated changes
+remain nonblocking followups; this grants no automatic merge or sibling-write
+authority.
 
 Plans, listed paths, design and proof are fallible evidence, not exhaustive
 boundaries. Each agent owns its assigned outcome, investigates obstacles and

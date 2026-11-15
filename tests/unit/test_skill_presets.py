@@ -71,7 +71,7 @@ def test_skill_preset_describe_includes_project_adaptation_contract() -> None:
     contract = loaded.preset.operating_contract
     action = loaded.preset.project_adaptation.required_agent_action.lower()
 
-    assert loaded.preset.version == "0.8.23"
+    assert loaded.preset.version == "0.8.24"
     assert loaded.preset.project_adaptation.required is True
     assert loaded.preset.project_adaptation.do_not_use_verbatim is True
     assert "canonical owner" in action
@@ -262,6 +262,11 @@ def test_sdlc_orchestrator_manual_adoption_and_bounded_repair() -> None:
             "affected consumers",
             "actual ownership conflicts",
             "unrelated naming",
+            "Main confirms admitted prerequisites during preparation or exceptional reconciliation",
+            "after automatic handoff, the assigned delivery or verification owner",
+            "before dependent work or lengthy proof",
+            "accepted source or independently reviewed integration evidence",
+            "StackOS sequences work",
         ):
             assert requirement.lower() in text.lower(), requirement
         for requirement in (

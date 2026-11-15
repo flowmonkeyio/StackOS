@@ -43,8 +43,8 @@ export function usageTraces(prepared: PreparedUsageSamples, endAt?: number, barC
 
 // The producer pairs each invocation before combining lifetime counters. First
 // retained totals and gaps cannot become bars when another invocation joins.
-// Source checkpoint increments use their source minute; other observations
-// retain their amount/bounds as data, never a height or an invented distribution.
+// Checkpoints use their source minute. Known sparse intervals contribute their
+// duration-weighted average, never the whole delta at the reporting endpoint.
 export function usageTrace(samples: SchemaUsageSampleOut[], metric: LiveMetric, endAt?: number, barCount = DEFAULT_USAGE_BAR_COUNT): UsageTraceGeometry {
   return preparedUsageTrace(prepareUsageSamples(samples), metric, endAt, barCount)
 }
@@ -55,32 +55,45 @@ export function preparedUsageTrace({ ordered, latestAt }: PreparedUsageSamples, 
   const windowEnd = Number.isFinite(anchor) ? (Math.floor(anchor / MINUTE) + 1) * MINUTE : null
   const windowStart = windowEnd == null ? null : windowEnd - count * MINUTE
   const buckets: UsageTraceGeometry['buckets'] = Array.from({ length: count }, (_, index) => ({ at: (windowStart ?? 0) + index * MINUTE, value: null, observations: [] }))
+  // An uncertain endpoint may invalidate its checkpoint minute, but not a
+  // separately measured interval's known overlap before or after that endpoint.
+  const intervalValues: (number | null)[] = Array(count).fill(null)
   const gaps = new Set<number>()
   let previous: { at: number; value: number } | null = null
   let baselineAt: number | null = null
 
-  let lastSample: SchemaUsageSampleOut | null = null
-  let lastAt: number | null = null
-  for (const { sample, at, starts } of ordered) {
+  const projectInterval = (startAt: number | null, at: number, change: number | null) => {
+    if (startAt == null || !Number.isFinite(startAt) || startAt >= at || change == null || !Number.isFinite(change) || change < 0) return
+    buckets.forEach((bucket, index) => {
+      const overlap = Math.min(at, bucket.at + MINUTE) - Math.max(startAt, bucket.at)
+      if (overlap > 0) intervalValues[index] = (intervalValues[index] ?? 0) + change * (overlap / (at - startAt))
+    })
+  }
+  for (let cursor = 0; cursor < ordered.length; cursor++) {
+    const { sample, at, starts } = ordered[cursor]!
     if (Number.isFinite(at) && at > anchor) continue
     const value = sampleValue(sample, metric)
     const index = windowStart == null ? -1 : Math.floor((at - windowStart) / MINUTE)
     const bucket = buckets[index]
     const valid = Number.isFinite(at) && value != null && Number.isFinite(value) && value >= 0
-    if (lastSample && at === lastAt) {
-      const priorIntervals = lastSample.intervals ?? []
-      const sameIntervals = (sample.intervals ?? []).length === priorIntervals.length
-        && (sample.intervals ?? []).every((interval, i) => {
-          const prior = priorIntervals[i]!
+    // Inspect equal timestamps before projecting: a conflicting late batch must
+    // not leave contributions behind in earlier minutes. Exact repeats count once.
+    let conflict = false
+    while (ordered[cursor + 1]?.at === at) {
+      const duplicate = ordered[++cursor]!.sample
+      const intervals = sample.intervals ?? []
+      const sameIntervals = (duplicate.intervals ?? []).length === intervals.length
+        && (duplicate.intervals ?? []).every((interval, i) => {
+          const prior = intervals[i]!
           return interval.kind === prior.kind && interval.start_at === prior.start_at && sampleValue(interval, metric) === sampleValue(prior, metric)
         })
-      if (value === sampleValue(lastSample, metric) && sameIntervals) continue
+      if (value !== sampleValue(duplicate, metric) || !sameIntervals) conflict = true
+    }
+    if (conflict) {
       if (bucket) { bucket.value = null; gaps.add(index) }
       previous = null
       continue
     }
-    lastSample = sample
-    lastAt = at
     if (!valid) {
       if (bucket) { bucket.value = null; gaps.add(index) }
       previous = null
@@ -91,18 +104,23 @@ export function preparedUsageTrace({ ordered, latestAt }: PreparedUsageSamples, 
       for (const [intervalIndex, interval] of sample.intervals.entries()) {
         const change = sampleValue(interval, metric)
         if (interval.kind === 'checkpoint') {
-          if (bucket && change != null && change >= 0 && !gaps.has(index)) bucket.value = (bucket.value ?? 0) + change
-        } else if (bucket) {
-          bucket.observations.push({ kind: interval.kind, at, startAt: starts[intervalIndex] ?? null, value: change })
-          if (interval.kind === 'reset') { bucket.value = null; gaps.add(index) }
+          if (bucket && change != null && Number.isFinite(change) && change >= 0 && !gaps.has(index)) bucket.value = (bucket.value ?? 0) + change
+        } else {
+          const startAt = starts[intervalIndex] ?? null
+          if (interval.kind === 'batched') projectInterval(startAt, at, change)
+          if (bucket) {
+            bucket.observations.push({ kind: interval.kind, at, startAt, value: change })
+            if (interval.kind === 'reset') { bucket.value = null; gaps.add(index) }
+          }
         }
       }
     } else if (previous) {
       const difference = value - previous.value
       if (at <= previous.at || difference < 0) {
         if (bucket) { bucket.value = null; gaps.add(index) }
-      } else if (bucket && at - previous.at > MINUTE) {
-        bucket.observations.push({ kind: 'batched', at, startAt: previous.at, value: difference })
+      } else if (at - previous.at > MINUTE) {
+        projectInterval(previous.at, at, difference)
+        bucket?.observations.push({ kind: 'batched', at, startAt: previous.at, value: difference })
       } else if (bucket && !gaps.has(index)) {
         bucket.value = (bucket.value ?? 0) + difference
       }
@@ -113,6 +131,10 @@ export function preparedUsageTrace({ ordered, latestAt }: PreparedUsageSamples, 
     baselineAt = bucket ? at : null
   }
 
+  buckets.forEach((bucket, index) => {
+    const value = intervalValues[index]
+    if (value != null) bucket.value = (bucket.value ?? 0) + value
+  })
   const measured = buckets.some(bucket => bucket.value != null)
   return {
     state: measured ? 'bars' : buckets.some(bucket => bucket.observations.some(o => o.kind === 'batched')) ? 'batched' : buckets.some(bucket => bucket.observations.some(o => o.kind === 'baseline')) ? 'point' : 'empty',
@@ -126,7 +148,7 @@ export function preparedUsageTrace({ ordered, latestAt }: PreparedUsageSamples, 
 
 export function usageTraceDescription(geometry: UsageTraceGeometry, metric: LiveMetric): string {
   const label = metric === 'cache_read' ? 'Cache' : metric === 'input' ? 'Input' : 'Output'
-  const introduction = `${label}: source checkpoint increments in ${geometry.buckets.length} one-minute intervals. Each chart uses its own zero-based scale. Only measured changes are drawn as bars.`
+  const introduction = `${label}: measured changes in ${geometry.buckets.length} one-minute intervals. Sparse deltas use an interval average weighted by overlap, not exact consumption times. Each chart uses its own zero-based scale. Only measured changes are drawn as bars.`
   if (geometry.state === 'empty' && geometry.buckets.every(bucket => !bucket.observations.length)) return `${introduction} No measured changes in this window.`
   const baseline = geometry.state === 'point' ? ' First reading establishes a baseline; no increase inferred.' : ''
   const time = (at: number) => new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })

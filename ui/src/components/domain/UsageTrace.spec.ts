@@ -138,15 +138,21 @@ describe('reported activity mini-canvas', () => {
     expect(context.clearRect).toHaveBeenCalledTimes(count)
   })
 
-  it('keeps a late batch available as exact text without drawing usage or an observation tick', async () => {
+  it.each(['input', 'cache_read', 'output'] as const)('draws a sparse %s interval in one color without an endpoint spike or observation tick', async metric => {
     const context = drawing()
-    const wrapper = mount(UsageTrace, { props: { metric: 'input', samples: [{
-      ...sample(2), intervals: [{ kind: UsageIntervalOutKind.batched, start_at: '2026-11-08T00:00:00Z', input: 1000000, remaining_input: 1000000, output: null, total: null, cache_read: null, cache_write: null, reasoning: null }],
+    const colors: string[] = []
+    context.fillRect.mockImplementation(() => { colors.push(context.fillStyle) })
+    const wrapper = mount(UsageTrace, { props: { metric, samples: [{
+      ...sample(2), at: '2026-11-08T01:03:00Z', intervals: [{ kind: UsageIntervalOutKind.batched, start_at: '2026-11-08T01:00:00Z', input: 600, remaining_input: 300, output: 300, total: 900, cache_read: 300, cache_write: null, reasoning: null }],
     }] } })
     await frame()
-    expect(wrapper.attributes('data-state')).toBe('batched')
-    expect(context.fillRect).not.toHaveBeenCalled()
-    expect(wrapper.attributes('aria-label')).toContain('1,000,000 tokens; consumption time unavailable')
+    expect(wrapper.attributes('data-state')).toBe('bars')
+    expect(context.fillRect).toHaveBeenCalledTimes(3)
+    expect(context.fillRect.mock.calls.map(call => call[3])).toEqual([12, 12, 12])
+    expect(new Set(colors).size).toBe(1)
+    expect(wrapper.attributes('aria-label')).toContain('300 tokens; consumption time unavailable')
+    expect(wrapper.attributes('aria-label')).toContain('interval average')
+    expect(wrapper.attributes('title')).toBe(wrapper.attributes('aria-label'))
     expect(wrapper.attributes('aria-label')).not.toContain('Neutral ticks')
     wrapper.unmount()
   })
@@ -163,5 +169,20 @@ describe('reported activity mini-canvas', () => {
     expect(context.fillRect.mock.calls.map(call => call[3])).toEqual([1, 12])
     expect(wrapper.attributes('aria-label')).toContain('1,000,000 tokens; consumption time unavailable')
     expect(geometry).toEqual(before)
+  })
+  it.each(['input', 'cache_read', 'output'] as const)('paints a known final-only %s batch after reset in the same minute', async metric => {
+    const context = drawing()
+    const measured = { input: 600, remaining_input: 300, cache_read: 300, output: 300, total: 900, cache_write: null, reasoning: null }
+    const wrapper = mount(UsageTrace, { props: { metric, samples: [
+      { ...sample(0), at: '2026-11-08T01:00:30Z', intervals: [{ kind: UsageIntervalOutKind.reset, start_at: '2026-11-08T01:00:00Z', input: null, remaining_input: null, cache_read: null, output: null, total: null, cache_write: null, reasoning: null }] },
+      { ...sample(0), ...measured, at: '2026-11-08T01:00:50Z', intervals: [{ kind: UsageIntervalOutKind.batched, start_at: '2026-11-08T01:00:30Z', ...measured }] },
+    ] } })
+    await frame()
+    expect(wrapper.attributes('data-state')).toBe('bars')
+    expect(context.fillRect).toHaveBeenCalledOnce()
+    expect(context.fillRect.mock.lastCall![3]).toBe(12)
+    expect(wrapper.attributes('aria-label')).toContain('counter reset')
+    expect(wrapper.attributes('aria-label')).toContain('300 tokens')
+    expect(wrapper.attributes('aria-label')).toContain('interval average')
   })
 })

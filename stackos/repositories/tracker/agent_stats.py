@@ -21,7 +21,7 @@ from stackos.db.models import (
     TrackerTicket,
 )
 from stackos.host_mcp import service as host_service
-from stackos.host_mcp.result import usage_snapshot
+from stackos.host_mcp.result import normalize_model_observation, usage_snapshot
 from stackos.host_mcp.service import ProvisionalUsage, active_execution, provisional_usage
 from stackos.repositories.tracker.receipt_projection import decode_receipt, receipt_input
 from stackos.repositories.tracker.schema import (
@@ -1081,6 +1081,38 @@ class GroupMetrics:
     roles: set[str | None] = field(default_factory=set)
     hosts: set[str | None] = field(default_factory=set)
     models: set[str | None] = field(default_factory=set)
+    model_bases: set[Literal["observed", "selected"] | None] = field(default_factory=set)
+
+
+def _model_identity(
+    receipt: dict[str, Any],
+) -> tuple[str | None, Literal["observed", "selected"] | None]:
+    """Prefer exact native evidence; ambiguity forbids selection fallback."""
+    launch = receipt.get("launch") or {}
+    execution = receipt.get("execution") or {}
+    observations = [
+        (owner["model_observation"], owner.get("thread_id"), owner.get("host_key"))
+        for owner in (receipt, execution)
+        if owner.get("model_observation") is not None
+    ]
+    if not observations:
+        selected = _text(launch.get("model"))
+        return selected, "selected" if selected else None
+    if launch.get("host_key") != "codex":
+        return None, None
+    normalized = [
+        normalize_model_observation(value, session_id=sid, host_key=host or launch.get("host_key"))
+        for value, sid, host in observations
+    ]
+    observed = normalized[0]
+    if (
+        observed is None
+        or observed["status"] != "observed"
+        or any(other != observed for other in normalized)
+        or (receipt.get("thread_id") is not None and receipt["thread_id"] != observed["session_id"])
+    ):
+        return None, None
+    return observed["model"], "observed"
 
 
 def _add_group(
@@ -1094,7 +1126,7 @@ def _add_group(
     receipt = fact.receipt
     launch = receipt["launch"]
     agent = _text(launch.get("agent")) or _text(receipt.get("agent"))
-    model = _text(launch.get("model"))
+    model, model_basis = _model_identity(receipt)
     identity: tuple[Any, ...] = (model,) if group_by == "model" else (pid, agent)
     if group_by == "agent_model":
         identity += (model,)
@@ -1107,6 +1139,7 @@ def _add_group(
     group.roles.add(role if isinstance(role, str) else None)
     group.hosts.add(_text(launch.get("host_key")))
     group.models.add(model)
+    group.model_bases.add(model_basis)
 
 
 def _group_rows(
@@ -1130,6 +1163,9 @@ def _group_rows(
                 selected_role=next(iter(group.roles)) if len(group.roles) == 1 else None,
                 host_key=next(iter(group.hosts)) if len(group.hosts) == 1 else None,
                 model=next(iter(group.models)) if len(group.models) == 1 else None,
+                model_basis=(
+                    next(iter(group.model_bases)) if len(group.model_bases) == 1 else "mixed"
+                ),
                 **group.metrics.output().model_dump(),
             )
         )

@@ -278,6 +278,59 @@ def test_overlong_registered_path_returns_diagnostic_and_preserves_healthy_get_u
     assert saved.json()["data"]["fields"]["description"] == "Healthy edit"
 
 
+def test_native_effort_options_and_effort_only_write_through_registered_response(
+    api, project_id, tmp_path
+):
+    from stackos.host_mcp.adapters.codex_definition import NATIVE_REASONING_EFFORTS
+
+    scope = bind(api, project_id, tmp_path / "bound")
+    listing = call(api, "list", scope)
+    assert listing.status_code == 200, listing.text
+    assert listing.json()["data"]["native_reasoning_efforts"] == list(NATIVE_REASONING_EFFORTS)
+    created = call(
+        api,
+        "create",
+        {
+            **scope,
+            "fields": {
+                "name": "research",
+                "description": "Research",
+                "developer_instructions": "Full",
+            },
+        },
+    )
+    assert created.status_code == 200, created.text
+    row = created.json()["data"]
+    saved = call(
+        api,
+        "update",
+        {
+            **scope,
+            "source_ref": row["source_ref"],
+            "expected_digest": row["digest"],
+            "patch": {"model_reasoning_effort": "high"},
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["data"]["fields"]["model"] is None
+    for mode in ("raw", "compact"):
+        response = call(
+            api, "get", {**scope, "source_ref": row["source_ref"], "response_mode": mode}
+        )
+        assert response.status_code == 200, response.text
+        readback = response.json() if mode == "raw" else response.json()["data"]
+        assert readback["native_reasoning_efforts"] == list(NATIVE_REASONING_EFFORTS)
+        assert readback["fields"]["model"] is None
+        assert readback["native_settings"] == {"model_reasoning_effort": "high"}
+    registry = build_operation_registry()
+    schema = registry.get("projectAgent.get").output_model.model_json_schema()
+    assert schema["properties"]["native_reasoning_efforts"]["items"] == {"type": "string"}
+    assert (
+        "native_reasoning_efforts"
+        in registry.get("projectAgent.list").output_model.model_json_schema()["properties"]
+    )
+
+
 def test_permissions_surfaces_and_project_scope(api, project_id, tmp_path):
     scope = bind(api, project_id, tmp_path / "bound")
     for name in ("list", "get", "create", "update"):

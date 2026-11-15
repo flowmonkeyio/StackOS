@@ -10,6 +10,7 @@ from contextlib import suppress
 from copy import deepcopy
 from dataclasses import asdict
 from datetime import UTC, datetime
+from functools import partial
 from hashlib import sha256
 from pathlib import Path
 from threading import Event
@@ -43,7 +44,7 @@ from stackos.host_mcp.service import (
 )
 from stackos.operations.tracker.schemas import TaskDeliveryAgent, TaskDeliveryAgentOverride
 from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
-from stackos.repositories.run_plans import RunPlanRepository
+from stackos.repositories.run_plans import RunPlanRepository, RunPlanSecretValidationError
 from stackos.repositories.tracker import TrackerRepository
 from stackos.repositories.tracker.board import task_column
 from stackos.repositories.tracker.events import record_execution_change
@@ -54,6 +55,7 @@ from stackos.repositories.tracker.schema import (
 )
 from stackos.repositories.tracker.setup import _delivery_host, _delivery_role_defaults
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
+from stackos.workflows.run_plan_schema import find_run_plan_secret_paths
 
 LAUNCH_AUTHORITY_BOUNDARY = (
     "Use only explicitly assigned operations, subject to normal native approval. "
@@ -1052,6 +1054,7 @@ def resolve_delivery_settings(
         choice["host_key"] = _delivery_host(
             defaults, role_host=choice.get("host_key"), host_key=host_key
         )
+        explicit_effort = choice.get("model_reasoning_effort")
         if choice["host_key"] == "codex" and _retained_agents is None:
             if not choice.get("source_ref"):
                 raise ValidationError(
@@ -1086,6 +1089,10 @@ def resolve_delivery_settings(
             assert source.fields is not None
             native = deepcopy(source.native_settings)
             model = native.pop("model", choice.get("model"))
+            # Source syntax permits inherited/custom models. Only effective
+            # task/project choices need the shared explicit model/effort check.
+            if "model_reasoning_effort" in native:
+                explicit_effort = None
             effort = native.get("model_reasoning_effort", choice.get("model_reasoning_effort"))
             if effort is not None:
                 native["model_reasoning_effort"] = effort
@@ -1136,7 +1143,7 @@ def resolve_delivery_settings(
             agent["host_key"],
             sandbox=sandbox,
             model=agent.get("model"),
-            model_reasoning_effort=agent.get("model_reasoning_effort"),
+            model_reasoning_effort=explicit_effort,
             provider=agent.get("provider"),
             profile=agent.get("profile"),
         )
@@ -1774,6 +1781,61 @@ def start_delivery(
     return _receipt(task_key, state)
 
 
+def _record_native_session(
+    session_factory: Callable[[], Session],
+    call: ActiveInvocation,
+    *,
+    handoff_id: str,
+    evidence: dict[str, Any],
+    identity: dict[str, Any],
+    session_snapshot: dict[str, Any],
+) -> None:
+    """Commit the announced identity only into this still-owned phase receipt."""
+    phase = call.scope.phase
+    task_key, ticket_key = call.scope.task_key, call.scope.ticket_key
+    if task_key is None or ticket_key is None or phase is None:
+        raise ValidationError("Native session persistence requires a task phase")
+    with managed_launch_lock, session_factory() as session:
+        repo = TrackerRepository(session)
+        task = _task(repo, call.scope.project_id, task_key)
+        ticket = repo.brief(project_id=call.scope.project_id, ticket_key=ticket_key).ticket
+        automatic = deepcopy((ticket.completion_evidence_json or {}).get("automatic_delivery", {}))
+        receipt = automatic.get(phase)
+        expected = evidence.get(phase, {})
+        if (
+            call.finished
+            or call.cancelled.is_set()
+            or not call.thread_id
+            or not _delivery_active(task, handoff_id)
+            or (task.metadata_json or {}).get("delivery", {}).get("ticket_key") != ticket.key
+            or ticket.task_key != call.scope.task_key
+            or ticket.status != TrackerItemStatus.IN_PROGRESS
+            or phase not in {"delivery", "review"}
+            or automatic.get("attempt") != call.scope.attempt
+            or call.scope.agent != identity["agent"]
+            or call.host_key != identity["host_key"]
+            or not isinstance(receipt, dict)
+            or any(key in receipt for key in ("exit_code", "result", "finished_at"))
+            or receipt.get("execution", {}).get("invocation_id") != call.invocation_id
+            or receipt.get("launch") != expected.get("launch")
+            or receipt.get("occurrence") != expected.get("occurrence")
+        ):
+            raise ValidationError("Native session persistence lost current phase ownership")
+        retained = {**identity, "thread_id": call.thread_id, **session_snapshot}
+        sessions = automatic.setdefault("sessions", {})
+        previous = sessions.get(phase)
+        other = sessions.get("review" if phase == "delivery" else "delivery")
+        if (previous is not None and previous != retained) or (
+            other and other["host_key"] == call.host_key and other["thread_id"] == call.thread_id
+        ):
+            raise ValidationError("Native session persistence identity mismatch")
+        sessions[phase] = retained
+        _save_evidence(repo, call.scope.project_id, ticket.key, automatic)
+        # Keep the controller's eventual terminal write consistent with the
+        # independent committed receipt, including its exception path.
+        evidence.setdefault("sessions", {})[phase] = deepcopy(retained)
+
+
 def _record_execution_transition(
     session_factory: Callable[[], Session], call: ActiveInvocation, active: bool
 ) -> None:
@@ -2166,6 +2228,14 @@ def run_delivery(
                         phase=phase,
                     ),
                     on_execution_change=execution_changed,
+                    on_session_attached=partial(
+                        _record_native_session,
+                        session_factory,
+                        handoff_id=handoff_id,
+                        evidence=evidence,
+                        identity=deepcopy(identity),
+                        session_snapshot=deepcopy(session_snapshot),
+                    ),
                     launch_allowed=launch_allowed,
                     **(
                         {"mcp_config_ref": state["mcp_config_ref"]}
@@ -2195,12 +2265,29 @@ def run_delivery(
                     and observed.get("usage", {}).get("status") == "measured"
                 ):
                     final_usage = observed["usage"]
+                result_evidence = asdict(result)
+                if result.result is not None:
+                    # Every lifetime path below can persist this observation,
+                    # including cancellation/reopen and nonzero native exits.
+                    # Inspect decoded output with the shared guard before any
+                    # receipt write; redacting its encoded text can leave raw
+                    # dictionary keys behind. Keep the original for canonical
+                    # validation, and retain safe results without rewriting them.
+                    try:
+                        receipt_outputs = json.loads(result.result["outputs"])
+                    except (KeyError, TypeError, ValueError):
+                        result_evidence["result"] = None
+                        result_evidence["result_omitted"] = "unparseable_outputs"
+                    else:
+                        if find_run_plan_secret_paths(receipt_outputs):
+                            result_evidence["result"] = None
+                            result_evidence["result_omitted"] = "raw_secret"
                 evidence[phase] = {
                     "agent": agent["name"],
                     "selected_role": selected_role,
                     "launch": launch,
                     "occurrence": occurrence,
-                    **asdict(result),
+                    **result_evidence,
                     **(
                         {"finished_at": observed["finished_at"]}
                         if "finished_at" in observed
@@ -2321,7 +2408,7 @@ def run_delivery(
                         evidence[phase]["validation_error"] = validation_error
                         valid = False
                 # Error receipts can still identify the exact native session for explicit requeue.
-                elif native_session is None and result.thread_id:
+                elif sessions.get(phase) is None and result.thread_id:
                     sessions[phase] = {
                         **identity,
                         "thread_id": result.thread_id,
@@ -2477,7 +2564,11 @@ def run_delivery(
                             )
                             return
                         # Only the run-plan owner can validate outputs and advance mirrors.
-                        _save_evidence(repo, project_id, ticket_key, evidence)
+                        # Preserve invocation identity before canonical validation,
+                        # without persisting an as-yet-unvalidated native payload.
+                        pending_evidence = deepcopy(evidence)
+                        pending_evidence[phase].pop("result", None)
+                        _save_evidence(repo, project_id, ticket_key, pending_evidence)
                         status = (
                             RunPlanStepStatus.SUCCESS
                             if accepted
@@ -2485,20 +2576,34 @@ def run_delivery(
                             if decision in {"repair", "blocked"}
                             else RunPlanStepStatus.FAILED
                         )
-                        plans.record_step(
-                            run_plan_id=state["run_plan_id"],
-                            run_id=state["controller_run_id"],
-                            project_id=project_id,
-                            step_id=workflow_step.step_id,
-                            status=status,
-                            result_json=outputs,
-                            error=None
-                            if accepted
-                            else (validation_error or result.error or value.get("summary")),
-                        )
+                        try:
+                            plans.record_step(
+                                run_plan_id=state["run_plan_id"],
+                                run_id=state["controller_run_id"],
+                                project_id=project_id,
+                                step_id=workflow_step.step_id,
+                                status=status,
+                                result_json=outputs,
+                                error=None
+                                if accepted
+                                else (validation_error or result.error or value.get("summary")),
+                            )
+                        except RunPlanSecretValidationError as error:
+                            # Only this producer's bounded contract is safe to retain;
+                            # never forward arbitrary exception.data or rejected JSON.
+                            evidence[phase].pop("result", None)
+                            evidence[phase]["validated_outcome"] = None
+                            evidence[phase]["validation_error"] = str(error)
+                            evidence[phase]["validation_context"] = {
+                                "rule": "raw_secret",
+                                "paths": error.data["paths"],
+                                "operation": "runPlan.recordStep",
+                                "phase": phase,
+                            }
+                            raise
                         if valid:
                             evidence[phase]["validated_outcome"] = decision
-                            _save_evidence(repo, project_id, ticket_key, evidence)
+                        _save_evidence(repo, project_id, ticket_key, evidence)
                     else:
                         _save_evidence(repo, project_id, ticket_key, evidence, **patch)
                     if not accepted and not repair:

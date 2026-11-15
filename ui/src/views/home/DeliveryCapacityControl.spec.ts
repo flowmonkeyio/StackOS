@@ -15,7 +15,10 @@ const state = (...projects: SchemaProjectDeliveryCapacityOut[]): SchemaDeliveryC
   scope: 'project', projects, supported_min: 1, supported_max: 32,
 })
 let wrapper: ReturnType<typeof mount>
-afterEach(() => { wrapper?.unmount(); document.body.innerHTML = ''; vi.resetAllMocks() })
+afterEach(() => {
+  wrapper?.unmount(); document.body.innerHTML = ''
+  vi.useRealTimers(); vi.restoreAllMocks(); vi.resetAllMocks()
+})
 
 async function setup(projectId?: number) {
   vi.mocked(callOperation).mockResolvedValue(state(...(projectId ? [project(projectId)] : [project(), project(2, 2, 1)])))
@@ -28,6 +31,81 @@ const input = (id = 1) => wrapper.get(`input[aria-label="Run at once for Project
 const refresh = () => (wrapper.vm as unknown as { refresh: () => Promise<void> }).refresh()
 
 describe('DeliveryCapacityControl', () => {
+  it('reads only while open through mount, parent refresh, timer and visibility triggers', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    await setup()
+    expect(callOperation).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(60_000); await refresh()
+    hidden.mockReturnValue(true); document.dispatchEvent(new Event('visibilitychange'))
+    hidden.mockReturnValue(false); document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+    expect(callOperation).not.toHaveBeenCalled()
+    await open()
+    expect(vi.mocked(callOperation).mock.calls).toEqual([['tracker.deliveryCapacity', {}]])
+    await vi.advanceTimersByTimeAsync(40_000); await flushPromises()
+    expect(callOperation).toHaveBeenCalledTimes(3)
+    await wrapper.get('[data-popover-trigger]').trigger('click')
+    await refresh(); await vi.advanceTimersByTimeAsync(60_000)
+    hidden.mockReturnValue(true); document.dispatchEvent(new Event('visibilitychange'))
+    hidden.mockReturnValue(false); document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+    expect(callOperation).toHaveBeenCalledTimes(3)
+    await open()
+    expect(callOperation).toHaveBeenCalledTimes(4)
+    hidden.mockReturnValue(true); document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(40_000)
+    expect(callOperation).toHaveBeenCalledTimes(4)
+    hidden.mockReturnValue(false); document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+    expect(callOperation).toHaveBeenCalledTimes(5)
+  })
+
+  it('does not read on closed scope changes and opens only the latest scope', async () => {
+    await setup(1)
+    await wrapper.setProps({ projectId: 2 }); await refresh()
+    await wrapper.setProps({ projectId: undefined }); await refresh()
+    expect(callOperation).not.toHaveBeenCalled()
+    await open()
+    expect(vi.mocked(callOperation).mock.calls).toEqual([['tracker.deliveryCapacity', {}]])
+    await wrapper.setProps({ projectId: 2 }); await flushPromises()
+    expect(callOperation).toHaveBeenCalledTimes(1)
+    vi.mocked(callOperation).mockResolvedValue(state(project(2, 5)))
+    await open()
+    expect(callOperation).toHaveBeenLastCalledWith('tracker.deliveryCapacity', { project_id: 2 })
+    expect((input(2).element as HTMLInputElement).value).toBe('5')
+    expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+  })
+
+  it.each(['close', 'scope'])('opens fresh before an old read settles after %s and fences its late result', async transition => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    await setup(1); await open()
+    let finishOld!: (value: SchemaDeliveryCapacityOut) => void
+    vi.mocked(callOperation).mockImplementationOnce(() => new Promise(resolve => { finishOld = resolve }))
+    const oldRead = refresh(); await flushPromises()
+    if (transition === 'scope') await wrapper.setProps({ projectId: 2 })
+    else await wrapper.get('[data-popover-trigger]').trigger('click')
+    const id = transition === 'scope' ? 2 : 1
+    let finishNew!: (value: SchemaDeliveryCapacityOut) => void
+    vi.mocked(callOperation).mockImplementationOnce(() => new Promise(resolve => { finishNew = resolve }))
+    await open()
+    expect(callOperation).toHaveBeenCalledTimes(3)
+    expect(callOperation).toHaveBeenLastCalledWith('tracker.deliveryCapacity', { project_id: id })
+    await refresh(); await vi.advanceTimersByTimeAsync(20_000)
+    expect(callOperation).toHaveBeenCalledTimes(3)
+    finishNew(state(project(id, 5))); await flushPromises()
+    await input(id).setValue(8)
+    vi.mocked(callOperation).mockResolvedValueOnce({ data: state(project(id, 8)) })
+    await save()
+    finishOld(state(project(1, 2))); await oldRead; await flushPromises()
+    // Keep the next fresh read pending to inspect the retained authoritative save.
+    vi.mocked(callOperation).mockImplementationOnce(() => new Promise(() => {}))
+    await open()
+    expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+    expect((input(id).element as HTMLInputElement).value).toBe('8')
+    expect(input(id).attributes('title')).toContain('Saved: 8.')
+  })
+
   it('renders all project queues and atomically saves changed rows using server readback', async () => {
     await setup(); await open()
     expect(wrapper.get('[data-popover-trigger]').text()).toBe('Task queues')
@@ -101,6 +179,30 @@ describe('DeliveryCapacityControl', () => {
     expect(wrapper.get('[data-count="running"]').text()).toBe('—')
     expect(wrapper.get('[data-count="waiting"]').text()).toBe('—')
     expect((input().element as HTMLInputElement).value).toBe('8')
+  })
+
+  it('suppresses refreshes during a save and recovers the retained draft after failure', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+    await setup(1); await open(); await input().setValue(8)
+    let fail!: (cause: Error) => void
+    vi.mocked(callOperation).mockImplementationOnce(() => new Promise((_, reject) => { fail = reject }))
+    await wrapper.get('form').trigger('submit')
+    await refresh(); await vi.advanceTimersByTimeAsync(40_000)
+    document.dispatchEvent(new Event('visibilitychange')); await flushPromises()
+    expect(callOperation).toHaveBeenCalledTimes(2)
+    fail(new Error('Storage unavailable')); await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('Your draft is still here.')
+    vi.mocked(callOperation).mockResolvedValueOnce(state(project(1, 4)))
+    await refresh(); await flushPromises()
+    expect((input().element as HTMLInputElement).value).toBe('8')
+    expect(input().attributes('title')).toContain('Saved: 4.')
+    vi.mocked(callOperation).mockResolvedValueOnce({ data: state(project(1, 8)) })
+    await save()
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    expect(vi.mocked(callOperation).mock.calls.filter(([name]) => name === 'tracker.setDeliveryCapacity')).toEqual([
+      ['tracker.setDeliveryCapacity', { updates: [{ project_id: 1, max_concurrent_tasks: 8 }] }],
+      ['tracker.setDeliveryCapacity', { updates: [{ project_id: 1, max_concurrent_tasks: 8 }] }],
+    ])
   })
 
   it('discards edits on cancel, Escape and outside dismissal without writes', async () => {

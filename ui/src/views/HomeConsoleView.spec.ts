@@ -104,6 +104,7 @@ describe('project Home active work', () => {
   it('saves only the current queue without refreshing Usage, work or setup', async () => {
     const { wrapper } = await mountProject()
     try {
+      expect(vi.mocked(callOperation).mock.calls.some(([name]) => name === 'tracker.deliveryCapacity')).toBe(false)
       const before = vi.mocked(callOperation).mock.calls.length
       await wrapper.get('[data-popover-trigger]').trigger('click'); await flushPromises()
       await wrapper.get('input[type="number"]').setValue(5)

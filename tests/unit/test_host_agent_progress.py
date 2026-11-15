@@ -2,6 +2,8 @@
 
 import json
 import sqlite3
+from copy import deepcopy
+from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import UUID
@@ -11,7 +13,12 @@ import pytest
 from stackos.host_mcp import service
 from stackos.host_mcp.progress import CodexCounterReader, CodexStreamError, run_codex_process
 from stackos.host_mcp.result import AgentRunResult, normalize_usage, usage_snapshot
-from stackos.repositories.tracker.agent_stats import provisional_receipt, summarize_receipts
+from stackos.repositories.tracker.agent_stats import (
+    _model_identity,
+    provisional_receipt,
+    summarize_receipts,
+)
+from stackos.repositories.tracker.receipt_projection import receipt_input
 
 
 @pytest.fixture(autouse=True)
@@ -504,6 +511,331 @@ def test_exact_rollout_cursor_partial_lines_and_counter_only_parsing(tmp_path):
     assert mismatch.file is None
 
 
+@pytest.fixture
+def model_rollout(tmp_path):
+    """Redacted native turn_context shape; only structured metadata is observed."""
+    sid = "01a1b94c-eb2a-7280-b3c5-d55cd290801b"
+    path = tmp_path / "rollout.jsonl"
+    with sqlite3.connect(tmp_path / "state_5.sqlite") as db:
+        db.execute("CREATE TABLE threads(id TEXT PRIMARY KEY, rollout_path TEXT)")
+        db.execute("INSERT INTO threads VALUES (?, ?)", (sid, str(path)))
+    path.write_text(
+        json.dumps({"type": "session_meta", "payload": {"id": sid, "cwd": str(tmp_path)}}) + "\n"
+    )
+
+    def append(model="observed-native", cwd=None):
+        with path.open("a") as out:
+            out.write(
+                json.dumps(
+                    {
+                        "type": "turn_context",
+                        "payload": {"cwd": str(cwd or tmp_path), "model": model, "turn_id": "turn"},
+                    }
+                )
+                + "\n"
+            )
+
+    return sid, path, append
+
+
+def test_exact_native_model_observation_is_structured_and_conflicts_are_sticky(
+    tmp_path, model_rollout
+):
+    sid, path, append = model_rollout
+    reader = CodexCounterReader(sid, tmp_path, home=tmp_path)
+    try:
+        with path.open("a") as out:
+            out.write(
+                json.dumps({"type": "response_item", "payload": {"model": "prose-guess"}}) + "\n"
+            )
+        assert reader.read() == []
+        assert reader.model_observation is None
+        append()
+        reader.read()
+        assert reader.model_observation == {
+            "status": "observed",
+            "model": "observed-native",
+            "source": "codex.turn_context",
+            "session_id": sid,
+        }
+        append()
+        reader.read()
+        assert reader.model_observation["status"] == "observed"
+        append("different-native")
+        reader.read()
+        append()
+        reader.read()
+        assert reader.model_observation == {
+            "status": "ambiguous",
+            "model": None,
+            "source": "codex.turn_context",
+            "session_id": sid,
+        }
+    finally:
+        reader.close()
+
+
+@pytest.mark.parametrize(
+    "invalid", ["cwd", "session", "metadata-session", "metadata-cwd", "missing", "unsafe"]
+)
+def test_native_model_requires_exact_identity_and_valid_structured_context(
+    tmp_path, model_rollout, invalid
+):
+    sid, path, append = model_rollout
+    if invalid.startswith("metadata"):
+        path.write_text(
+            json.dumps(
+                {
+                    "type": "session_meta",
+                    "payload": {
+                        "id": "foreign-session" if invalid == "metadata-session" else sid,
+                        "cwd": str(tmp_path / "foreign" if invalid == "metadata-cwd" else tmp_path),
+                    },
+                }
+            )
+            + "\n"
+        )
+    append(
+        None
+        if invalid == "missing"
+        else "unsafe model"
+        if invalid == "unsafe"
+        else "observed-native",
+        tmp_path / "foreign" if invalid == "cwd" else None,
+    )
+    reader = CodexCounterReader(
+        "01a1b94c-eb2a-7280-b3c5-d55cd290801c" if invalid == "session" else sid,
+        tmp_path,
+        home=tmp_path,
+    )
+    try:
+        reader.read()
+        if invalid in {"session", "metadata-session", "metadata-cwd"}:
+            assert reader.model_observation is None
+        else:
+            assert reader.model_observation["status"] == "ambiguous"
+    finally:
+        reader.close()
+
+
+def test_resumed_model_observation_never_uses_previous_invocation_prefix(tmp_path, model_rollout):
+    sid, _, append = model_rollout
+    append("old-native")
+    reader = CodexCounterReader(sid, tmp_path, home=tmp_path, resumed=True)
+    try:
+        reader.read()
+        assert reader.model_observation is None
+        append("new-native")
+        reader.read()
+        assert reader.model_observation["model"] == "new-native"
+    finally:
+        reader.close()
+
+
+def test_model_context_cannot_attribute_earlier_unknown_usage(tmp_path, model_rollout):
+    sid, path, append = model_rollout
+    reader = CodexCounterReader(sid, tmp_path, home=tmp_path)
+    try:
+        with path.open("a") as out:
+            out.write(
+                json.dumps(
+                    {
+                        "type": "event_msg",
+                        "timestamp": "2026-11-08T01:00:10Z",
+                        "payload": {
+                            "type": "token_count",
+                            "info": {"total_token_usage": {"input_tokens": 10, "output_tokens": 0}},
+                        },
+                    }
+                )
+                + "\n"
+            )
+        assert reader.read()[0][1]["snapshot"]["total"] == 10
+        assert reader.model_observation is None
+        append()
+        reader.read()
+        assert reader.model_observation["status"] == "ambiguous"
+    finally:
+        reader.close()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"model": "native", "cwd": 42},
+        None,
+        {"cwd": "/foreign"},
+        {"model": "native", "cwd": "\u0000"},
+    ],
+)
+def test_invalid_later_context_cannot_keep_an_earlier_observed_model(
+    tmp_path, model_rollout, payload
+):
+    sid, path, append = model_rollout
+    reader = CodexCounterReader(sid, tmp_path, home=tmp_path)
+    try:
+        append()
+        reader.read()
+        assert reader.model_observation["status"] == "observed"
+        with path.open("a") as out:
+            out.write(json.dumps({"type": "turn_context", "payload": payload}) + "\n")
+        reader.read()
+        assert reader.model_observation["status"] == "ambiguous"
+    finally:
+        reader.close()
+
+
+def test_unreadable_bounded_context_prevents_whole_invocation_attribution(tmp_path, model_rollout):
+    sid, path, append = model_rollout
+    reader = CodexCounterReader(sid, tmp_path, home=tmp_path)
+    try:
+        append()
+        reader.read()
+        assert reader.model_observation["status"] == "observed"
+        with path.open("a") as out:
+            out.write(
+                json.dumps(
+                    {
+                        "type": "turn_context",
+                        "payload": {
+                            "padding": "x" * (64 * 1024),
+                            "model": "different",
+                            "cwd": str(tmp_path),
+                        },
+                    }
+                )
+                + "\n"
+            )
+        reader.read()
+        reader.read()
+        assert reader.model_observation["status"] == "ambiguous"
+    finally:
+        reader.close()
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_final_read_retains_observation_without_a_live_counter_poll(
+    tmp_path, model_rollout, monkeypatch, failed
+):
+    sid, _, append = model_rollout
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    handoffs = []
+
+    def runner(*args, on_session, **kwargs):
+        on_session(sid)
+        append()
+        return AgentRunResult(
+            1 if failed else 0,
+            thread_id=sid,
+            result=None if failed else {},
+            usage=usage_snapshot("codex.turn", "session", 10, 2),
+        )
+
+    def changed(invocation, active):
+        if not active:
+            handoffs.append(invocation.projection())
+
+    monkeypatch.setattr(service, "agent_selection_error", lambda *a, **kw: None)
+    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    result = service.run_agent(
+        "codex",
+        tmp_path,
+        "Instructions",
+        "Prompt",
+        {},
+        execution_scope=service.AgentExecutionScope(1, "task", "child", "worker", 1, "delivery"),
+        on_execution_change=changed,
+    )
+    assert result.model_observation["model"] == "observed-native"
+    assert handoffs[0]["model_observation"] == result.model_observation
+    assert handoffs[0]["live_usage"]["usage"]["measured"]["total"] == 12
+    assert not service._active_invocations
+
+
+@pytest.mark.parametrize("loss", ["none", "malformed-context", "reader-error", "truncated-context"])
+def test_context_loss_stays_ambiguous_through_live_final_and_retained_attribution(
+    tmp_path, model_rollout, monkeypatch, loss
+):
+    sid, path, append = model_rollout
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path))
+    live, handoffs = [], []
+
+    def runner(*args, on_session, **kwargs):
+        on_session(sid)
+        append("model-a")
+        with path.open("a") as out:
+            out.write(
+                json.dumps(
+                    {
+                        "type": "event_msg",
+                        "timestamp": datetime.now(UTC).isoformat(),
+                        "payload": {
+                            "type": "token_count",
+                            "info": {"total_token_usage": {"input_tokens": 10, "output_tokens": 0}},
+                        },
+                    }
+                )
+                + "\n"
+            )
+        service._sample_invocations()
+        live.append(deepcopy(service.usage_executions(1)[0]))
+        if loss in {"malformed-context", "truncated-context"}:
+            with path.open("a") as out:
+                out.write('{"type":"turn_context","payload":{"model":"model-b"')
+                if loss == "malformed-context":
+                    out.write("\n")
+        elif loss == "reader-error":
+
+            def unreadable(self):
+                raise OSError("fixture reader became unavailable")
+
+            monkeypatch.setattr(CodexCounterReader, "read", unreadable)
+        service._sample_invocations()
+        live.append(deepcopy(service.usage_executions(1)[0]))
+        # A later valid context must not erase the gap.
+        if loss == "malformed-context":
+            append("model-a")
+            service._sample_invocations()
+        return AgentRunResult(
+            0, thread_id=sid, result={}, usage=usage_snapshot("codex.turn", "session", 30, 0)
+        )
+
+    def changed(invocation, active):
+        if not active:
+            handoffs.append(invocation.projection())
+
+    monkeypatch.setattr(service, "agent_selection_error", lambda *a, **kw: None)
+    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    result = service.run_agent(
+        "codex",
+        tmp_path,
+        "Instructions",
+        "Prompt",
+        {},
+        execution_scope=service.AgentExecutionScope(1, "task", "child", "worker", 1, "delivery"),
+        model="requested",
+        on_execution_change=changed,
+    )
+    assert result.ok and result.usage["snapshot"]["total"] == 30
+    assert live[0]["model_observation"]["model"] == "model-a"
+    assert live[1]["live_usage"]["usage"]["measured"]["total"] == 10
+    expected_status = "observed" if loss == "none" else "ambiguous"
+    assert live[1]["model_observation"]["status"] == (
+        "observed" if loss == "truncated-context" else expected_status
+    )  # An incomplete live line can still complete before native exit.
+    assert result.model_observation["status"] == expected_status
+    assert handoffs[0]["model_observation"] == result.model_observation
+    assert handoffs[0]["live_usage"]["usage"]["measured"]["total"] == 30
+    launch = {"host_key": "codex", "model": "requested"}
+    expected = ("model-a", "observed") if loss == "none" else (None, None)
+    assert _model_identity(receipt_input({"launch": launch, "execution": live[1]})) == (
+        ("model-a", "observed") if loss == "truncated-context" else expected
+    )
+    retained = receipt_input({**asdict(result), "launch": launch, "execution": handoffs[0]})
+    assert _model_identity(retained) == expected
+    assert not service._active_invocations
+
+
 def test_process_exposes_identity_before_exit_preserves_output_and_error(tmp_path):
     import os
     import sys
@@ -542,3 +874,105 @@ def test_stream_decoding_failure_is_not_a_successful_partial_native_result(tmp_p
     assert isinstance(caught.value.__cause__, UnicodeDecodeError)
     assert "UnicodeDecodeError" in str(caught.value)
     assert isinstance(caught.value.process.returncode, int)
+
+
+def test_session_persistence_failure_stops_native_process(tmp_path):
+    import os
+    import sys
+
+    def persist(_):
+        raise RuntimeError("identity commit failed")
+
+    with pytest.raises(CodexStreamError, match="identity commit failed") as caught:
+        run_codex_process(
+            [
+                sys.executable,
+                "-c",
+                "import json,time; "
+                "print(json.dumps({'type':'thread.started','thread_id':'native'}),flush=True); "
+                "time.sleep(.2)",
+            ],
+            input="",
+            cwd=tmp_path,
+            env=dict(os.environ),
+            on_session=persist,
+        )
+    assert caught.value.process.returncode != 0
+    assert '"thread_id": "native"' in caught.value.process.stdout
+
+
+@pytest.mark.parametrize("fence", ["resume", "cancelled", "finished", "retired", "competing"])
+def test_session_attachment_does_not_notify_rejected_identity(tmp_path, fence):
+    invocation = call()
+    invocation.session_id = None
+    service._active_invocations[invocation.invocation_id] = invocation
+    if fence == "cancelled":
+        invocation.cancelled.set()
+    elif fence == "finished":
+        invocation.finished = True
+    elif fence == "retired":
+        service._unregister(invocation)
+    elif fence == "competing":
+        owner = call(2)
+        service._active_invocations[owner.invocation_id] = owner
+    observed = []
+    service._attach_session(
+        invocation, "native", tmp_path, "expected" if fence == "resume" else None, observed.append
+    )
+    assert observed == [] and invocation.session_id is None
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_required_session_callback_is_once_and_failure_is_not_observability(
+    tmp_path, monkeypatch, failure
+):
+    reader = Reader()
+    observed = []
+
+    def attached(invocation):
+        # SQL owners can take the registry lock from another thread: the host
+        # must have released it before calling required persistence.
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(1) as pool:
+            assert pool.submit(service.active_execution, 1, "task").result(timeout=2)
+        observed.append(invocation.thread_id)
+        if failure:
+            raise RuntimeError("commit failed")
+
+    def runner(*args, on_session, **kwargs):
+        on_session("native")
+        on_session("native")
+        return AgentRunResult(0, thread_id="different-result", result={})
+
+    monkeypatch.setattr(service, "agent_selection_error", lambda *a, **kw: None)
+    monkeypatch.setattr(service, "_definition_by_key", lambda _: SimpleNamespace(run_agent=runner))
+    monkeypatch.setattr(service, "CodexCounterReader", lambda *a, **kw: reader)
+    original_stop = service.ManagedProcessControl.stop
+
+    def stop(control):
+        from concurrent.futures import ThreadPoolExecutor
+
+        def lock_available():
+            acquired = service.managed_launch_lock.acquire(timeout=1)
+            if acquired:
+                service.managed_launch_lock.release()
+            return acquired
+
+        with ThreadPoolExecutor(1) as pool:
+            assert pool.submit(lock_available).result(timeout=2), "cleanup held launch lock"
+        return original_stop(control)
+
+    monkeypatch.setattr(service.ManagedProcessControl, "stop", stop)
+    kwargs = dict(
+        execution_scope=service.AgentExecutionScope(1, "task", "child", "worker", 2, "delivery"),
+        on_session_attached=attached,
+    )
+    if failure:
+        with pytest.raises(RuntimeError, match="commit failed"):
+            service.run_agent("codex", tmp_path, "instructions", "prompt", {}, **kwargs)
+    else:
+        result = service.run_agent("codex", tmp_path, "instructions", "prompt", {}, **kwargs)
+        assert not result.ok and result.error == "Native session identity mismatch"
+    assert observed == ["native"] and reader.closed
+    assert not service._active_invocations and not service.provisional_usage(1)

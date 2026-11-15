@@ -309,6 +309,73 @@ def test_selected_source_preserves_role_fallbacks_across_argument_forms(
     assert repo.delivery_defaults(project_id=project_id) == saved
 
 
+@pytest.mark.parametrize("origin", ["task", "project"])
+@pytest.mark.parametrize("argument_form", ["legacy", "map"])
+@pytest.mark.parametrize("effort", ["minimal", "high"])
+def test_source_explicit_reasoning_is_validated_before_native_launch(
+    session, project_id, tmp_path, monkeypatch, origin, argument_form, effort
+):
+    import subprocess
+    from pathlib import Path
+
+    from stackos.host_mcp import progress
+    from stackos.host_mcp.adapters import codex
+
+    ref = source(session, project_id, tmp_path, "builder")
+    reviewer = source(session, project_id, tmp_path, "reviewer")
+    pair = {"model": "gpt-6-astra", "model_reasoning_effort": effort}
+    roles = {"delivery_agent": {"source_ref": ref}, "review_agent": {"source_ref": reviewer}}
+    if origin == "project":
+        roles["delivery_agent"].update(pair)
+    repo = TrackerRepository(session)
+    repo.configure_delivery(project_id=project_id, delivery={"agents": roles})
+    repo.create_task(project_id=project_id, key="reasoning", title="Reasoning")
+    repo.create_ticket(project_id=project_id, task_key="reasoning", key="work", title="Work")
+    git(tmp_path, "init")
+    commit(tmp_path, "Baseline")
+    calls = []
+
+    def execute(command, **options):
+        calls.append(command)
+        assert command[command.index("--model") + 1] == "gpt-6-astra"
+        assert 'model_reasoning_effort="high"' in command
+        packet = json.loads(options["input"])
+        assert packet["delivery_result"]["launch"]["native_settings"] == {
+            "model_reasoning_effort": "high"
+        }
+        Path(command[command.index("-o") + 1]).write_text(json.dumps(generic_result("blocked")))
+        return subprocess.CompletedProcess(
+            command, 0, '{"type":"thread.started","thread_id":"native-builder"}', ""
+        )
+
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fixture/codex")
+    monkeypatch.setattr(codex, "subprocess_env_for_cli", lambda _: {})
+    monkeypatch.setattr(progress, "run_codex_process", execute)
+    selection = pair if origin == "task" else {}
+    arguments = (
+        {"delivery_agent": selection}
+        if argument_form == "legacy"
+        else {"agents": {"delivery_agent": selection}}
+    )
+    scheduler = QueuedScheduler()
+    if effort == "minimal":
+        with pytest.raises(ValidationError, match="does not support reasoning effort"):
+            start(session, project_id, tmp_path, scheduler, task_key="reasoning", **arguments)
+        assert not scheduler.jobs and not calls
+        assert repo.get(project_id=project_id, task_key="reasoning").tasks[0].metadata_json is None
+    else:
+        start(session, project_id, tmp_path, scheduler, task_key="reasoning", **arguments)
+        saved = (
+            repo.get(project_id=project_id, task_key="reasoning")
+            .tasks[0]
+            .metadata_json["delivery"]["agents"]["delivery_agent"]
+        )
+        assert saved["setting_sources"] == {"model": origin, "model_reasoning_effort": origin}
+        scheduler.run()
+        assert len(calls) == 1
+    assert repo.delivery_defaults(project_id=project_id)["agents"] == roles
+
+
 def test_ordinary_assignments_select_each_delivery_role_and_reviewer_only(
     session, project_id, tmp_path, monkeypatch
 ):

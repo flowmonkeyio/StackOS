@@ -1,4 +1,4 @@
-"""Counter-only native observation. Invocation lifetime belongs to the host service."""
+"""Structured native observation. Invocation lifetime belongs to the host service."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from typing import Any, BinaryIO
 from uuid import UUID
 
 from stackos.host_mcp.agent_execution import ManagedProcessControl
-from stackos.host_mcp.result import usage_snapshot
+from stackos.host_mcp.result import ModelObservation, normalize_model_observation, usage_snapshot
 
 
 class CodexCounterReader:
@@ -38,6 +38,8 @@ class CodexCounterReader:
         self.cursor = 0
         self.discard_line = False
         self.pending = b""
+        self.model_observation: ModelObservation | None = None
+        self.unattributed_usage = False
         try:
             identity = UUID(session_id)
             if identity.version != 7:
@@ -101,7 +103,8 @@ class CodexCounterReader:
         # keeps a baseline, never moves the collapsed prefix into the last point.
         samples: list[tuple[str, dict[str, Any]]] = []
         # Bounded working memory even when a native transcript line is huge.
-        # Only counter event lines are decoded; all other bytes are discarded.
+        # Only counter/context metadata events are decoded; transcript payloads
+        # never supply counters or model identity.
         while chunk := self.file.readline(64 * 1024):
             self.cursor = self.file.tell()
             if self.discard_line:
@@ -113,13 +116,19 @@ class CodexCounterReader:
                 if len(line) < 64 * 1024:
                     self.pending = line
                 else:
+                    # A skipped record could hide a context change. Its prose
+                    # supplies no identity; whole-invocation attribution is unknown.
+                    self._observe_model({})
                     self.discard_line = True
                 break
-            if b'"token_count"' not in line:
+            if b'"token_count"' not in line and b'"turn_context"' not in line:
                 continue
             try:
                 event = json.loads(line)
                 payload = event.get("payload", {})
+                if event.get("type") == "turn_context":
+                    self._observe_model(payload)
+                    continue
                 if event.get("type") != "event_msg" or payload.get("type") != "token_count":
                     continue
                 counters = payload.get("info", {}).get("total_token_usage", {})
@@ -137,6 +146,8 @@ class CodexCounterReader:
                     reasoning=counters.get("reasoning_output_tokens"),
                 )
                 if usage:
+                    if self.model_observation is None and usage["snapshot"]["total"] > 0:
+                        self.unattributed_usage = True
                     if any(
                         datetime.fromisoformat(at) == measured_at and previous == usage
                         for at, previous in samples
@@ -146,10 +157,46 @@ class CodexCounterReader:
                     samples.sort(key=lambda point: datetime.fromisoformat(point[0]))
                     del samples[:-120]
             except (ValueError, TypeError, AttributeError):
+                if b'"turn_context"' in line:
+                    # A complete but unreadable context record can hide a
+                    # model change. Later valid contexts cannot fill that gap.
+                    self._observe_model({})
                 continue
         return samples
 
+    def _observe_model(self, payload: Any) -> None:
+        payload = payload if isinstance(payload, dict) else {}
+        observation: ModelObservation = {
+            "status": "observed",
+            "model": payload.get("model"),
+            "source": "codex.turn_context",
+            "session_id": self.session_id,
+        }
+        valid = normalize_model_observation(
+            observation, session_id=self.session_id, host_key="codex"
+        )
+        cwd = payload.get("cwd")
+        try:
+            same_directory = (
+                isinstance(cwd, str) and bool(cwd) and Path(cwd).resolve() == self.project_dir
+            )
+        except (OSError, ValueError, RuntimeError):
+            same_directory = False
+        if (
+            valid is None
+            or not same_directory
+            or self.unattributed_usage
+            or (self.model_observation is not None and self.model_observation != observation)
+        ):
+            observation["status"] = "ambiguous"
+            observation["model"] = None
+        self.model_observation = observation
+
     def close(self) -> None:
+        if self.pending:
+            # Partial live records are allowed to finish. Once observation ends,
+            # an unfinished record is a permanent gap in the context evidence.
+            self._observe_model({})
         if self.file is not None:
             self.file.close()
         self.file = None
@@ -196,13 +243,16 @@ def run_codex_process(
             if '"thread.started"' in line:
                 try:
                     event = json.loads(line)
-                    if event.get("type") == "thread.started" and isinstance(
-                        event.get("thread_id"), str
-                    ):
-                        on_session(event["thread_id"])
-                except Exception:
-                    # Optional telemetry cannot affect execution or final handling.
-                    pass
+                except ValueError:
+                    continue
+                if (
+                    isinstance(event, dict)
+                    and event.get("type") == "thread.started"
+                    and isinstance(event.get("thread_id"), str)
+                ):
+                    # Session attachment can commit required recovery identity.
+                    # Its failures must reach read_safely and stop the process.
+                    on_session(event["thread_id"])
 
     def read_errors() -> None:
         assert process.stderr is not None

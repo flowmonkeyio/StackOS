@@ -29,7 +29,7 @@ function resetEditorOptions(fields: AgentFields | null) {
     void loadHostStatuses()
   }
 }
-const { items, diagnostics, loading, loaded, ready, reading, saving, error, errorContext, message, selected, requestedSource, draft, dirty, refresh, edit, add, close, save } = useProjectAgents(toRef(props, 'projectId'), projectDir, resetEditorOptions, folderReady)
+const { items, diagnostics, nativeReasoningEfforts, loading, loaded, ready, reading, saving, error, errorContext, message, selected, requestedSource, draft, dirty, refresh, edit, add, close, save } = useProjectAgents(toRef(props, 'projectId'), projectDir, resetEditorOptions, folderReady)
 reloadAgents = () => { void refresh() }
 const visible = computed(() => items.value.filter(item => `${item.source_ref.native_name} ${item.fields?.description ?? ''} ${item.source_ref.source_path}`.toLowerCase().includes(search.value.toLowerCase())))
 const title = (name: string) => name.replace(/[_-]/g, ' ').replace(/^./, value => value.toUpperCase()).replace(/\bseo\b/gi, 'SEO')
@@ -66,9 +66,13 @@ function changeModel(value: string | number | null) {
   const model = String(value ?? '') || null
   if (!draft.value || model === draft.value.model) return
   draft.value.model = model
-  draft.value.model_reasoning_effort = reconcileReasoning(modelCatalog.value, model, draft.value.model_reasoning_effort, true)
+  draft.value.model_reasoning_effort = reconcileReasoning(modelCatalog.value, model, draft.value.model_reasoning_effort, true, nativeEfforts.value)
 }
-const effortOptions = computed(() => reasoningOptions(modelCatalog.value, draft.value?.model ?? null, draft.value?.model_reasoning_effort ?? null, 'Default (inherited)'))
+const nativeEfforts = computed(() => selected.value?.native_reasoning_efforts ?? nativeReasoningEfforts.value)
+const effortOptions = computed(() => reasoningOptions(modelCatalog.value, draft.value?.model ?? null, draft.value?.model_reasoning_effort ?? null, 'Default (inherited)', nativeEfforts.value))
+const effortHelp = computed(() => modelCatalog.value?.reasoning_efforts?.[draft.value?.model ?? '']
+  ? "Choices come from this model's capabilities. An unverified retained value is preserved until you change it."
+  : 'Native syntax choices do not verify the inherited or custom model. An unverified retained value is preserved until you change it.')
 async function submit() {
   if (!draft.value) return
   optionsError.value = ''
@@ -423,7 +427,7 @@ function select(row: AgentSummary) { guarded(() => { void edit(row).then(accepte
               <div class="mt-4 space-y-4">
                 <UiFormField
                   label="Reasoning effort"
-                  help="Choices come from this model's capabilities. An unverified retained value is preserved until you change it."
+                  :help="effortHelp"
                 >
                   <UiSelect
                     :model-value="draft.model_reasoning_effort ?? ''"

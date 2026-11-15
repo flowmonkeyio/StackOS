@@ -29,6 +29,8 @@ from stackos.host_mcp.result import (
     HostMcpConnectionState,
     HostMcpResult,
     HostMcpSetupPolicy,
+    ModelObservation,
+    normalize_model_observation,
     normalize_usage,
 )
 
@@ -81,6 +83,7 @@ class ActiveInvocation:
     request_execution: AgentRequestExecution | None = None
     reader: CodexCounterReader | None = None
     usage: dict[str, Any] | None = None
+    model_observation: ModelObservation | None = None
     samples: deque = field(default_factory=lambda: deque(maxlen=120))
     measured_at: str | None = None
     finished: bool = False
@@ -89,6 +92,8 @@ class ActiveInvocation:
     # Explicit invocation cancellation is separate from native I/O cleanup stops.
     cancelled: Event = field(default_factory=Event)
     retired: Event = field(default_factory=Event)
+    # An early ownership rejection must also fence the terminal identity.
+    session_error: str | None = None
 
     def projection(self, *, include_usage: bool = True) -> dict[str, Any]:
         return {
@@ -96,6 +101,8 @@ class ActiveInvocation:
             "agent": self.scope.agent,
             "host_key": self.host_key,
             "model": self.model,
+            "thread_id": self.thread_id,
+            "model_observation": deepcopy(self.model_observation),
             "started_at": self.started_at,
             "ticket_key": self.scope.ticket_key,
             **(
@@ -232,7 +239,17 @@ def _sample_invocations(now: datetime | None = None) -> None:
                 continue
             try:
                 samples = call.reader.read()
+                call.model_observation = deepcopy(getattr(call.reader, "model_observation", None))
             except (OSError, ValueError):
+                # Losing the exact-session reader loses evidence for the rest
+                # of the invocation, not counters or the requested selection.
+                # Retain explicit ambiguity rather than enabling selection fallback.
+                call.model_observation = {
+                    "status": "ambiguous",
+                    "model": None,
+                    "source": "codex.turn_context",
+                    "session_id": call.reader.session_id,
+                }
                 call.reader.close()
                 call.reader = None
                 continue
@@ -298,6 +315,7 @@ def _unregister(call: ActiveInvocation) -> None:
             call.reader = None
         call.samples.clear()
         call.usage = None
+        call.model_observation = None
         call.previous_usage = None
         call.request_execution = None
         call.session_id = None
@@ -340,6 +358,9 @@ def _finish(
         call.finished = True
         if call.reader:
             call.reader.close()
+            call.model_observation = deepcopy(
+                getattr(call.reader, "model_observation", call.model_observation)
+            )
             call.reader = None
         # Keep only the bounded observation through the synchronous receipt
         # handoff. _unregister releases it even if notification fails.
@@ -544,6 +565,7 @@ def run_agent(
     resume_thread_id: str | None = None,
     execution_scope: AgentExecutionScope | None = None,
     on_execution_change: Callable[[ActiveInvocation, bool], None] | None = None,
+    on_session_attached: Callable[[ActiveInvocation], None] | None = None,
     previous_usage: Any = None,
     mcp_config_ref: dict[str, str] | None = None,
     native_settings: dict[str, Any] | None = None,
@@ -621,7 +643,7 @@ def run_agent(
     request_admitted = False
     if call is not None and host_key == "codex":
         progress_kwargs["on_session"] = lambda session_id: _attach_session(
-            call, session_id, Path(project_dir), resume_thread_id
+            call, session_id, Path(project_dir), resume_thread_id, on_session_attached
         )
     if call is not None:
         progress_kwargs["process_control"] = call.process_control
@@ -672,19 +694,35 @@ def run_agent(
                 if value is not None
             },
         )
-        if (
-            request_id is not None
-            and call is not None
-            and call.thread_id is not None
-            and (result.thread_id != call.thread_id)
+        if call is not None and call.session_error is not None:
+            # Keep rejected native IDs out of terminal-only recovery fallback.
+            # Hosts with no early-ID event never set this rejection.
+            result = replace(result, thread_id=None, error=call.session_error, usage=None)
+        elif (
+            call is not None and call.thread_id is not None and (result.thread_id != call.thread_id)
         ):
-            result = replace(result, error="Native request session identity mismatch", usage=None)
+            result = replace(
+                result,
+                error="Native request session identity mismatch"
+                if request_id is not None
+                else "Native session identity mismatch",
+                usage=None,
+            )
     finally:
         if call is not None and registered:
             finished_at = datetime.now(UTC).isoformat()
             try:
                 _sample_invocations()
                 _finish(call, result, resume_thread_id, finished_at=finished_at)
+                if result is not None:
+                    result = replace(
+                        result,
+                        model_observation=normalize_model_observation(
+                            call.model_observation,
+                            session_id=result.thread_id,
+                            host_key=host_key,
+                        ),
+                    )
                 if request_execution is not None and request_admitted:
                     request_execution.finish(call, result)
                 # The caller may persist usage after native exit. During that
@@ -710,37 +748,52 @@ def run_agent(
 
 
 def _attach_session(
-    call: ActiveInvocation, session_id: str, project_dir: Path, resume_thread_id: str | None
+    call: ActiveInvocation,
+    session_id: str,
+    project_dir: Path,
+    resume_thread_id: str | None,
+    on_session_attached: Callable[[ActiveInvocation], None] | None = None,
 ) -> None:
-    with _active_invocations_lock:
-        if (
-            call.invocation_id not in _active_invocations
-            or call.finished
-            or call.cancelled.is_set()
-            or call.session_id is not None
-        ):
-            return
-        if resume_thread_id is not None and session_id != resume_thread_id:
-            return
-        if any(
-            other.session_id == session_id and other.reader is not None
-            for other in _active_invocations.values()
-            if other is not call
-        ):
-            return
-        call.session_id = session_id
-        call.thread_id = session_id
-        call.reader = CodexCounterReader(session_id, project_dir, resumed=call.resumed)
-    # Retain native identity as soon as the host announces it, including if the
-    # daemon later crashes before terminal handoff. Never perform SQL under the
-    # registry lock.
-    if call.request_execution is not None:
-        try:
-            call.request_execution.renew(call)
-        except Exception:
-            call.cancelled.set()
-            call.process_control.stop()
-            raise
+    # Serialize identity persistence with cancellation/rehandoff, but never do
+    # SQL under the invocation registry lock used by telemetry readers.
+    try:
+        with managed_launch_lock:
+            with _active_invocations_lock:
+                if (
+                    _active_invocations.get(call.invocation_id) is not call
+                    or call.finished
+                    or call.cancelled.is_set()
+                    or call.session_id is not None
+                    or call.session_error is not None
+                    or not session_id.strip()
+                ):
+                    return
+                if resume_thread_id is not None and session_id != resume_thread_id:
+                    call.session_error = "Native session resume identity mismatch"
+                    return
+                if any(
+                    other.session_id == session_id and not other.finished
+                    for other in _active_invocations.values()
+                    if other is not call
+                ):
+                    call.session_error = "Native session ownership conflict"
+                    return
+                call.session_id = session_id
+                call.thread_id = session_id
+                call.reader = CodexCounterReader(session_id, project_dir, resumed=call.resumed)
+            if call.request_execution is not None:
+                try:
+                    call.request_execution.renew(call)
+                except Exception:
+                    call.cancelled.set()
+                    raise
+            if on_session_attached is not None:
+                on_session_attached(call)
+    except Exception:
+        # Durability failures propagate. Native cleanup must release the launch
+        # lock first: stop() owns its process lock before taking the launch lock.
+        call.process_control.stop()
+        raise
 
 
 def agent_review_sandbox(host_key: str) -> AgentSandbox:

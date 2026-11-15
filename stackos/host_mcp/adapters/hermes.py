@@ -20,6 +20,7 @@ from stackos.host_mcp.agent_execution import (
 )
 from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
+    command_matches,
     daemon_preflight,
     is_stackos_bridge_command,
     resolve_bridge_command,
@@ -229,7 +230,7 @@ def register(
     if current.selected and not current.managed:
         return current
 
-    mcp_is_current = current.command == command
+    mcp_is_current = command_matches(command, current.command)
     if (
         current.status == "registered_stale"
         and not mcp_is_current
@@ -461,7 +462,7 @@ def _inspect_profile_with_bin(
             selected=True,
             managed=False,
         )
-    if actual_command == command:
+    if actual_command is not None and command_matches(command, actual_command):
         if not _profile_skill_ready(home, profile):
             return HostMcpResult(
                 host_key=HOST_KEY,

@@ -2577,6 +2577,8 @@ export interface components {
             fields: components["schemas"]["AgentFields"] | null;
             /** Inherited Fields */
             inherited_fields?: string[];
+            /** Native Reasoning Efforts */
+            native_reasoning_efforts?: string[];
             /** Native Settings */
             native_settings?: {
                 [key: string]: unknown;
@@ -2661,6 +2663,8 @@ export interface components {
             host_key: "codex";
             /** Items */
             items?: components["schemas"]["AgentDefinition"][];
+            /** Native Reasoning Efforts */
+            native_reasoning_efforts?: string[];
             /** Project Dir */
             project_dir: string;
             /**
@@ -2918,6 +2922,11 @@ export interface components {
             launch_attempts: number;
             /** Model */
             model: string | null;
+            /**
+             * Model Basis
+             * @default null
+             */
+            model_basis: AgentStatsRowOutModel_basisAnyOf0 | null;
             /** Project Id */
             project_id: number | null;
             /** Project Ids */
@@ -15134,6 +15143,11 @@ export enum AgentStatsFieldCoverageOutStatus {
     complete = "complete",
     partial = "partial",
     unavailable = "unavailable"
+}
+export enum AgentStatsRowOutModel_basisAnyOf0 {
+    observed = "observed",
+    selected = "selected",
+    mixed = "mixed"
 }
 export enum ApprovalRequestStatus {
     pending = "pending",

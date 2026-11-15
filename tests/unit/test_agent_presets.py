@@ -909,11 +909,11 @@ def test_sdlc_delegation_contracts_cover_handoffs_and_independent_acceptance() -
     expected_versions = {
         "requirements-flow-definer": "0.6.7",
         "codebase-explorer": "0.6.7",
-        "planning": "0.7.21",
+        "planning": "0.7.22",
         "architecture": "0.6.8",
-        "test-designer": "0.6.11",
-        "delivery": "0.7.20",
-        "delivery-reviewer": "0.6.19",
+        "test-designer": "0.6.12",
+        "delivery": "0.7.21",
+        "delivery-reviewer": "0.6.20",
     }
     presets = {
         key: loader.describe_preset(key=f"stackos.sdlc.{key}").preset for key in expected_versions
@@ -1102,10 +1102,43 @@ def test_sdlc_source_and_local_verification_repair_contracts() -> None:
     assert "text objects, empty when none" in text
 
 
+def test_sdlc_source_and_local_bounded_safeguards() -> None:
+    # Assembly/meaning checks complement the separate native behavior rehearsal.
+    loader = AgentPresetLoader()
+    for role in ("planning", "test-designer", "delivery", "delivery-reviewer"):
+        preset = loader.describe_preset(key=f"stackos.sdlc.{role}").preset
+        local = tomllib.loads((REPO_ROOT / f".codex/agents/sdlc-{role}.toml").read_text())
+        for text in (" ".join(preset.prompt_contract.must_do), local["developer_instructions"]):
+            for obligation in (
+                "concrete policy/denial result ref",
+                "prepared patch or payload if available",
+                "safe resume condition and next owner/action",
+                "Never bypass the denial or repeat the denied action through another tool",
+                "continue unaffected checks",
+            ):
+                assert obligation in text, (role, obligation)
+            if role in ("delivery", "delivery-reviewer"):
+                assert "named resolution evidence once before returning" in text
+                assert "any unresolved denial as current" in text
+                assert "durable write alone does not prove native consumption" in text
+            if role in ("test-designer", "delivery"):
+                assert "before lengthy broad verification" in text
+                assert "actual emitted contract/result" in text
+                assert "mandatory final signoff after final edits" in text
+            if role in ("planning", "delivery"):
+                assert "before dependent work or lengthy proof" in text
+                assert "receiving tree/environment" in text
+                assert "accepted source or independently reviewed integration evidence" in text
+
+
 def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
     # Availability/assembly only; the assigned bounded use exercise owns behavior proof.
     loader = AgentPresetLoader()
     prefixes = {
+        "planning": (
+            "For each required cross-task input,",
+            "Establish uncertain required proof capabilities early,",
+        ),
         "delivery": (
             "An explicitly assigned automated planning/materialization contract",
             "After final edits,",
@@ -1115,6 +1148,8 @@ def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
             "Prove the changed boundary through the real caller,",
             "Complete necessary omitted",
             "For browser work,",
+            "Classify the cause before returning blocked.",
+            "Establish uncertain required proof capabilities early,",
         ),
         "delivery-reviewer": (
             "Own the assigned review outcome.",
@@ -1126,11 +1161,14 @@ def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
             "Use a concise rule-by-rule",
             "Order findings by severity",
             "For browser work,",
+            "Classify the cause before returning blocked.",
+            "Establish uncertain required proof capabilities early,",
         ),
         "test-designer": (
             "Trace each material claim",
             "For asynchronous changes",
             "For browser work,",
+            "Establish uncertain required proof capabilities early,",
         ),
     }
     texts = {}
@@ -1141,6 +1179,8 @@ def test_sdlc_source_and_local_final_proof_contracts_stay_aligned() -> None:
             rule = next(item for item in preset.prompt_contract.must_do if item.startswith(prefix))
             assert rule in local["developer_instructions"], (role, prefix)
         texts[role] = " ".join(preset.prompt_contract.must_do)
+        if role == "planning":
+            continue
         # Incident-specific checks belong in this project, not the reusable preset.
         assert "Ruff" not in texts[role]
         assert "task-filtered SSE" not in texts[role]

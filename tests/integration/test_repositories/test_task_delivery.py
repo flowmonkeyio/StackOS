@@ -18,6 +18,7 @@ import pytest
 from pydantic import ValidationError as SchemaValidationError
 from sqlmodel import Session, select
 
+from stackos.context import ContextRepository
 from stackos.db.connection import make_engine
 from stackos.db.models import RunPlanStepStatus, TrackerRevision
 from stackos.host_mcp.result import AgentRunResult, usage_snapshot
@@ -1027,6 +1028,255 @@ def test_mirror_unsuccessful_or_malformed_result_stops_through_plan_owner(
     )
 
 
+@pytest.mark.parametrize("phase", ["delivery", "review"])
+@pytest.mark.parametrize("denial", ["raw_secret", "other_validation"])
+def test_secret_record_validation_preserves_only_safe_bounded_context(
+    session, project_id, tmp_path, monkeypatch, caplog, phase, denial
+):
+    from stackos import task_delivery
+    from stackos.db.models import ProjectEvent, TrackerTicket
+
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "key": "secret-denial",
+            "title": "Secret denial",
+            "steps": [
+                {
+                    "id": "observe",
+                    "title": "Observe",
+                    "metadata_json": {"agent_assignment": f"{phase}_agent"},
+                }
+            ],
+        },
+    ).data
+    started = plans.start(plan.id, project_id=project_id)
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="observe")
+    key_sentinel, value_sentinel = "KEY_SENTINEL_7f9d", "VALUE_SENTINEL_1c2e"
+    outputs = {
+        "result_json": {
+            "api_key": value_sentinel,
+            key_sentinel: {"password": value_sentinel},
+            key_sentinel * 1000: {"password": value_sentinel},
+            "nested": [{"token": value_sentinel} for _ in range(20)],
+        }
+    }
+    if denial == "other_validation":
+        outputs = {}
+        original_record = RunPlanRepository.record_step
+
+        def reject_other_validation(owner, **kwargs):
+            if kwargs.get("result_json") is not None:
+                raise ValidationError(
+                    "Safe generic validation failure",
+                    data={"rule": "raw_secret", "paths": [key_sentinel], "raw": value_sentinel},
+                )
+            return original_record(owner, **kwargs)
+
+        monkeypatch.setattr(RunPlanRepository, "record_step", reject_other_validation)
+    calls = []
+
+    def launch(*args, **kwargs):
+        calls.append(json.loads(args[3])["phase"])
+        return AgentRunResult(
+            0, thread_id="secret-denial-session", result=generic_result(outputs=outputs)
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    # Inspect every receipt write, including evidence saved before record_step.
+    writes = []
+    original_update = TrackerRepository.update_ticket
+
+    def capture_write(repo, **kwargs):
+        writes.append(deepcopy(kwargs["patch_json"]))
+        return original_update(repo, **kwargs)
+
+    monkeypatch.setattr(TrackerRepository, "update_ticket", capture_write)
+    scheduler = QueuedScheduler()
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=f"workflow-{plan.id}",
+        run_plan_id=plan.id,
+        step_id="observe",
+    )
+    scheduler.run()
+    session.expire_all()
+    repo = TrackerRepository(session)
+    snapshot = repo.get(project_id=project_id, task_key=f"workflow-{plan.id}")
+    ticket = repo.brief(project_id=project_id, ticket_key=f"workflow-{plan.id}-observe").ticket
+    receipt = ticket.completion_evidence_json["automatic_delivery"][phase]
+    if denial == "raw_secret":
+        context = receipt["validation_context"]
+        assert context["rule"] == "raw_secret"
+        assert context["operation"] == "runPlan.recordStep"
+        assert context["phase"] == phase
+        assert "$.result_json.api_key" in context["paths"]
+        assert len(context["paths"]) <= 8
+        assert len(json.dumps(context)) <= 2300
+        assert "must not contain secrets" in receipt["validation_error"]
+    else:
+        # Even spoofed path/rule fields on another error are never forwarded.
+        assert "validation_context" not in receipt
+    assert calls == [phase]
+    assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "stopped"
+    assert plans.get_step(plan.id, "observe").status == RunPlanStepStatus.BLOCKED
+    assert plans.get_step(plan.id, "observe").result_json is None
+    assert receipt["validated_outcome"] is None
+    assert receipt["thread_id"] == "secret-denial-session"
+    public = json.dumps(
+        {
+            "writes": writes,
+            "snapshot": snapshot.model_dump(mode="json"),
+            "brief": ticket.model_dump(mode="json"),
+            "stored": [row.model_dump(mode="json") for row in session.exec(select(TrackerTicket))],
+            "events": [row.model_dump(mode="json") for row in session.exec(select(ProjectEvent))],
+            "logs": caplog.text,
+        }
+    )
+    assert key_sentinel not in public
+    assert value_sentinel not in public
+
+
+@pytest.mark.parametrize("transition", ["reopened", "cancelled", "native_error"])
+@pytest.mark.parametrize("secret_output", [True, False])
+def test_unvalidated_result_receipt_privacy_preserves_lifetime_evidence(
+    session, project_id, tmp_path, monkeypatch, caplog, transition, secret_output
+):
+    from stackos import task_delivery
+    from stackos.db.models import ProjectEvent, TrackerTicket
+    from stackos.repositories.base import ConflictError
+
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "key": "result-receipt-lifetime",
+            "title": "Receipt lifetime",
+            "steps": [{"id": "observe", "title": "Observe"}],
+        },
+    ).data
+    started = plans.start(plan.id, project_id=project_id)
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="observe")
+    repo = TrackerRepository(session)
+    ticket_key = f"workflow-{plan.id}-observe"
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key=ticket_key,
+        patch_json={"completion_evidence_json": {"prior": {"note": "Retained history"}}},
+    )
+    key_sentinel, value_sentinel = "PRIVATE_KEY_CONTENT_7a56", "PRIVATE_VALUE_5d42"
+    outputs = (
+        {key_sentinel: {"api_key": value_sentinel}}
+        if secret_output
+        else {"note": "After separate authorization: verify the approved environment."}
+    )
+    final = generic_result(outputs=outputs)
+    scheduler = QueuedScheduler()
+    calls, writes = [], []
+    original_update = TrackerRepository.update_ticket
+
+    def capture_write(owner, **kwargs):
+        writes.append(deepcopy(kwargs["patch_json"]))
+        return original_update(owner, **kwargs)
+
+    def launch(*args, **kwargs):
+        calls.append(json.loads(args[3])["phase"])
+        assert calls == ["delivery"]
+        with Session(session.get_bind()) as active:
+            if transition == "reopened":
+                RunPlanRepository(active).reopen(
+                    run_plan_id=plan.id,
+                    project_id=project_id,
+                    step_id="observe",
+                    reason="Disposable fixture recovery",
+                )
+            elif transition == "cancelled":
+                with pytest.raises(ConflictError, match="could not be confirmed"):
+                    task_delivery.abort_run_plan(
+                        active,
+                        run_plan_id=plan.id,
+                        project_id=project_id,
+                        reason="Disposable fixture cancellation",
+                        scheduler=scheduler,
+                    )
+        return AgentRunResult(
+            1 if transition == "native_error" else 0,
+            thread_id="lifetime-session",
+            result=final,
+            error="Synthetic native failure" if transition == "native_error" else None,
+        )
+
+    monkeypatch.setattr(TrackerRepository, "update_ticket", capture_write)
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=f"workflow-{plan.id}",
+        run_plan_id=plan.id,
+        step_id="observe",
+    )
+    scheduler.run()
+    session.expire_all()
+    ticket = repo.brief(project_id=project_id, ticket_key=ticket_key).ticket
+    evidence = ticket.completion_evidence_json["automatic_delivery"]
+    receipt = evidence["delivery"]
+    assert ticket.completion_evidence_json["prior"] == {"note": "Retained history"}
+    assert (
+        receipt["thread_id"] == evidence["sessions"]["delivery"]["thread_id"] == "lifetime-session"
+    )
+    assert receipt["validated_outcome"] is None
+    assert evidence.get("repair_count", 0) == 0 and evidence["attempts"] == []
+    assert calls == ["delivery"]
+    step = plans.get_step(plan.id, "observe")
+    assert step.result_json == (
+        {
+            "summary": "Run plan aborted while this step was running.",
+            "reason": "Disposable fixture cancellation",
+        }
+        if transition == "cancelled"
+        else {}
+        if transition == "native_error"
+        else None
+    )
+    assert (
+        step.status
+        == {
+            "reopened": RunPlanStepStatus.PENDING,
+            "cancelled": RunPlanStepStatus.SKIPPED,
+            "native_error": RunPlanStepStatus.FAILED,
+        }[transition]
+    )
+    if transition == "reopened":
+        assert receipt["superseded"] is True
+    elif transition == "cancelled":
+        assert receipt["cancelled"] is True
+    else:
+        assert receipt["exit_code"] == 1 and receipt["error"] == "Synthetic native failure"
+    if secret_output:
+        assert receipt.get("result") is None
+    else:
+        assert receipt["result"] == final
+    surfaces = json.dumps(
+        {
+            "writes": writes,
+            "brief": ticket.model_dump(mode="json"),
+            "list": repo.get(project_id=project_id, task_key=f"workflow-{plan.id}").model_dump(
+                mode="json"
+            ),
+            "stored": [row.model_dump(mode="json") for row in session.exec(select(TrackerTicket))],
+            "events": [row.model_dump(mode="json") for row in session.exec(select(ProjectEvent))],
+            "logs": caplog.text,
+        }
+    )
+    assert key_sentinel not in surfaces and value_sentinel not in surfaces
+
+
 def test_explicit_rehandoff_refreshes_current_snapshot_preserving_frozen_and_ticket_history(
     session, project_id, tmp_path
 ):
@@ -1497,6 +1747,311 @@ def prepared_task(session: Session, project_id: int) -> None:
     )
 
 
+def test_announced_session_is_durable_before_exit_and_controller_loss_resumes_it(
+    session, project_id, tmp_path, monkeypatch
+):
+    import os
+    from types import SimpleNamespace
+
+    from stackos import task_delivery
+    from stackos.host_mcp import service
+    from stackos.host_mcp.progress import run_codex_process
+
+    class ControllerLost(BaseException):
+        pass
+
+    engine = make_engine(tmp_path.with_suffix(".db"))
+    restore_database_snapshot(engine, capture_database_snapshot(session.get_bind()))
+    with Session(engine) as session:
+        prepared_task(session, project_id)
+        repo = TrackerRepository(session)
+        accepted = {"accepted": {"commit": "unchanged", "review": "independent"}}
+        announced = Event()
+        release = tmp_path.with_suffix(".exit")
+        calls = []
+
+        def native(_dir, _instructions, prompt, _schema, *, on_session, **kwargs):
+            packet = json.loads(prompt)
+            phase = packet["phase"]
+            calls.append((phase, kwargs.get("resume_thread_id")))
+            if len(calls) == 1:
+
+                def attached(identity):
+                    on_session(identity)
+                    announced.set()
+
+                process = run_codex_process(
+                    [
+                        sys.executable,
+                        "-c",
+                        "import json,pathlib,sys,time; "
+                        "print(json.dumps({'type':'thread.started','thread_id':'second-delivery'}),"
+                        "flush=True); "
+                        "gate=pathlib.Path(sys.argv[1]); "
+                        "exec('while not gate.exists(): time.sleep(.01)')",
+                        str(release),
+                    ],
+                    input="",
+                    cwd=tmp_path,
+                    env=dict(os.environ),
+                    on_session=attached,
+                    process_control=kwargs["process_control"],
+                )
+                assert process.returncode == 0
+                raise ControllerLost()
+            on_session(f"second-{phase}")
+            return AgentRunResult(0, thread_id=f"second-{phase}", result=generic_result())
+
+        scheduler = QueuedScheduler()
+        cursor = ContextRepository(session).latest_tracker_status_event_id(project_id=project_id)
+        submit(session, project_id, tmp_path, scheduler)
+        definition = service._definition_by_key("codex")
+        monkeypatch.setattr(
+            service,
+            "_definition_by_key",
+            lambda _: SimpleNamespace(**{**definition.__dict__, "run_agent": native}),
+        )
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="first",
+            patch_json={"status": "complete", "completion_evidence_json": accepted},
+        )
+        repo.update_ticket(
+            project_id=project_id,
+            ticket_key="second",
+            patch_json={"completion_evidence_json": {"automatic_delivery": {"repair_count": 2}}},
+        )
+        try:
+            with ThreadPoolExecutor(1) as executor:
+                work = executor.submit(scheduler.run)
+                try:
+                    assert announced.wait(5)
+                    with Session(engine) as reader:
+                        evidence = (
+                            TrackerRepository(reader)
+                            .brief(project_id=project_id, ticket_key="second")
+                            .ticket.completion_evidence_json["automatic_delivery"]
+                        )
+                    retained = evidence["sessions"]["delivery"]
+                    assert retained["thread_id"] == "second-delivery"
+                    assert retained["agent_snapshot"]["name"] == "project-builder"
+                    assert (
+                        retained["source_digest"] == evidence["delivery"]["launch"]["source_digest"]
+                    )
+                    assert evidence["repair_count"] == 2
+                    assert "exit_code" not in evidence["delivery"]
+                    assert not work.done()
+                finally:
+                    release.touch()
+                with pytest.raises(ControllerLost):
+                    work.result(timeout=5)
+            # Disposable fixture: explicit operator recovery/rehandoff through
+            # the existing owner, without manufacturing a native result.
+            task_delivery._update_delivery(
+                repo, project_id, "deliver", status="stopped", reason="Controller lost"
+            )
+            repo.update_ticket(
+                project_id=project_id,
+                ticket_key="second",
+                patch_json={"status": "not-started"},
+            )
+            submit(session, project_id, tmp_path, scheduler)
+            scheduler.run()
+            session.expire_all()
+            first = repo.brief(project_id=project_id, ticket_key="first").ticket
+            second = repo.brief(project_id=project_id, ticket_key="second").ticket
+            final = second.completion_evidence_json["automatic_delivery"]
+            assert first.completion_evidence_json == accepted and first.status == "complete"
+            assert second.status == "complete", (
+                repo.get(project_id=project_id, task_key="deliver")
+                .tasks[0]
+                .metadata_json["delivery"]
+                .get("reason"),
+                calls,
+                second.outcome,
+            )
+            assert calls == [("delivery", None), ("delivery", "second-delivery"), ("review", None)]
+            assert final["sessions"]["delivery"] == retained
+            assert final["repair_count"] == 2 and final["attempt"] == 2
+            assert final["attempts"][0]["attempt"] == 1
+            assert "exit_code" not in final["attempts"][0]["delivery"]
+            events = (
+                ContextRepository(session)
+                .tracker_status_timeline(
+                    project_id=project_id, task_key="deliver", after_id=cursor, limit=50
+                )
+                .items
+            )
+            assert [
+                event.metadata_json["active"]
+                for event in events
+                if event.event_type == "tracker.execution.changed"
+            ] == [True, False] * 3
+            assert not service._active_invocations and not service.provisional_usage(project_id)
+        finally:
+            service.shutdown_usage()
+    engine.dispose()
+
+
+@pytest.mark.parametrize("mismatched_phase", ["delivery", "review"])
+def test_terminal_session_mismatch_preserves_announced_identity_for_recovery(
+    session, project_id, tmp_path, monkeypatch, mismatched_phase
+):
+    from types import SimpleNamespace
+
+    from stackos.host_mcp import service
+
+    prepared_task(session, project_id)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    repo = TrackerRepository(session)
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="first",
+        patch_json={"completion_evidence_json": {"automatic_delivery": {"repair_count": 2}}},
+    )
+    definition = service._definition_by_key("codex")
+    calls, announced_sessions = [], {}
+    rejected = False
+
+    def native(_dir, _instructions, prompt, _schema, *, on_session, **kwargs):
+        nonlocal rejected
+        packet = json.loads(prompt)
+        key, phase = packet["brief"]["ticket"]["key"], packet["phase"]
+        announced = f"{key}-{phase}-announced"
+        previous = (key, phase) in announced_sessions
+        assert kwargs.get("resume_thread_id") == (announced if previous else None)
+        calls.append((key, phase, kwargs.get("resume_thread_id")))
+        on_session(announced)
+        with Session(session.get_bind()) as reader:
+            early = (
+                TrackerRepository(reader)
+                .brief(project_id=project_id, ticket_key=key)
+                .ticket.completion_evidence_json["automatic_delivery"]["sessions"][phase]
+            )
+        assert early["thread_id"] == announced
+        if previous:
+            assert early == announced_sessions[key, phase]
+        announced_sessions[key, phase] = early
+        mismatch = key == "first" and phase == mismatched_phase and not rejected
+        rejected = rejected or mismatch
+        return AgentRunResult(
+            0, thread_id="foreign-terminal-id" if mismatch else announced, result=generic_result()
+        )
+
+    monkeypatch.setattr(
+        service,
+        "_definition_by_key",
+        lambda _: SimpleNamespace(**{**definition.__dict__, "run_agent": native}),
+    )
+    try:
+        scheduler.run()
+        session.expire_all()
+        failed = repo.brief(project_id=project_id, ticket_key="first").ticket
+        evidence = failed.completion_evidence_json["automatic_delivery"]
+        retained = announced_sessions["first", mismatched_phase]
+        assert failed.status == "failed"
+        assert evidence[mismatched_phase]["error"] == "Native session identity mismatch"
+        assert evidence[mismatched_phase]["thread_id"] == "foreign-terminal-id"
+        assert evidence["sessions"][mismatched_phase] == retained
+        assert evidence["repair_count"] == 2
+        assert (
+            repo.get(project_id=project_id, task_key="deliver")
+            .tasks[0]
+            .metadata_json["delivery"]["status"]
+            == "stopped"
+        )
+        for status in ("in-progress", "not-started"):
+            repo.update_ticket(
+                project_id=project_id, ticket_key="first", patch_json={"status": status}
+            )
+        submit(session, project_id, tmp_path, scheduler)
+        scheduler.run()
+        session.expire_all()
+        recovered = repo.brief(project_id=project_id, ticket_key="first").ticket
+        final = recovered.completion_evidence_json["automatic_delivery"]
+        assert recovered.status == "complete"
+        assert final["sessions"][mismatched_phase] == retained
+        assert ("first", mismatched_phase, retained["thread_id"]) in calls
+        assert final["attempt"] == 2 and final["repair_count"] == 2
+        assert final["attempts"][0][mismatched_phase]["thread_id"] == "foreign-terminal-id"
+        assert final["attempts"][0][mismatched_phase]["error"] == "Native session identity mismatch"
+    finally:
+        service.shutdown_usage()
+
+
+def test_competing_session_rejection_survives_terminal_handling_and_requeue(
+    session, project_id, tmp_path, monkeypatch
+):
+    from datetime import UTC, datetime
+    from types import SimpleNamespace
+
+    from stackos.host_mcp import service
+
+    prepared_task(session, project_id)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    definition = service._definition_by_key("codex")
+    owner = service.ActiveInvocation(
+        invocation_id="fixture-other-owner",
+        scope=service.AgentExecutionScope(project_id, "unrelated", "other", "other-worker"),
+        host_key="codex",
+        model=None,
+        started_at=datetime.now(UTC).isoformat(),
+        session_id="already-owned",
+        thread_id="already-owned",
+    )
+    service._active_invocations[owner.invocation_id] = owner
+    calls = []
+
+    def native(_dir, _instructions, _prompt, _schema, *, on_session, **kwargs):
+        calls.append(kwargs.get("resume_thread_id"))
+        on_session("already-owned")
+        with Session(session.get_bind()) as reader:
+            early = (
+                TrackerRepository(reader)
+                .brief(project_id=project_id, ticket_key="first")
+                .ticket.completion_evidence_json["automatic_delivery"]
+            )
+        assert "delivery" not in early["sessions"]
+        return AgentRunResult(0, thread_id="already-owned", result=generic_result("blocked"))
+
+    monkeypatch.setattr(
+        service,
+        "_definition_by_key",
+        lambda _: SimpleNamespace(**{**definition.__dict__, "run_agent": native}),
+    )
+    try:
+        scheduler.run()
+        session.expire_all()
+        repo = TrackerRepository(session)
+        failed = repo.brief(project_id=project_id, ticket_key="first").ticket
+        evidence = failed.completion_evidence_json["automatic_delivery"]
+        assert failed.status == "failed"
+        assert "delivery" not in evidence["sessions"]
+        assert evidence["delivery"]["error"] == "Native session ownership conflict"
+        assert evidence["delivery"]["validated_outcome"] is None
+        assert service._active_invocations[owner.invocation_id] is owner
+        assert owner.thread_id == "already-owned" and not owner.finished
+        # An unowned ID cannot authorize exact-session recovery, even after the
+        # other owner retires. The existing missing-session stop still applies.
+        service._unregister(owner)
+        for status in ("in-progress", "not-started"):
+            repo.update_ticket(
+                project_id=project_id, ticket_key="first", patch_json={"status": status}
+            )
+        submit(session, project_id, tmp_path, scheduler)
+        scheduler.run()
+        session.expire_all()
+        stopped = repo.brief(project_id=project_id, ticket_key="first").ticket
+        assert "missing native session ID" in stopped.outcome
+        assert "delivery" not in stopped.completion_evidence_json["automatic_delivery"]["sessions"]
+        assert calls == [None]
+    finally:
+        service._unregister(owner)
+        service.shutdown_usage()
+
+
 def test_task_mcp_route_frozen_through_rehandoff_and_role_resume(
     session, project_id, tmp_path, monkeypatch
 ):
@@ -1689,6 +2244,18 @@ def test_delivery_directory_is_retained_on_rehandoff(session, project_id, tmp_pa
     assert state["project_dir"] == str(tmp_path.resolve())
     assert state["job_ref"] == first["job_ref"]
     assert len(scheduler.jobs) == 1
+
+
+@pytest.fixture
+def native_task_session(session, project_id, tmp_path_factory):
+    """The real stdout callback commits on a separate thread/connection."""
+    engine = make_engine(tmp_path_factory.mktemp("native-task-state") / "state.sqlite")
+    restore_database_snapshot(engine, capture_database_snapshot(session.get_bind()))
+    try:
+        with Session(engine) as reader:
+            yield reader
+    finally:
+        engine.dispose()
 
 
 @pytest.fixture
@@ -2441,6 +3008,197 @@ def test_operator_adopts_legacy_dirty_work_without_replacing_original_baseline(t
             task_delivery._launch_baseline(str(tmp_path), key, evidence, phase, native)
 
 
+def test_observed_model_native_to_live_final_resume_and_rebuilt_statistics(
+    session, project_id, tmp_path, tmp_path_factory, monkeypatch
+):
+    """Real adapter/service/controller/receipts; only the native process is substituted."""
+    import sqlite3
+    from datetime import UTC, datetime
+
+    from sqlalchemy import delete
+
+    from stackos.db.models import TrackerReceiptProjection, TrackerTicket
+    from stackos.host_mcp import progress, service
+    from stackos.host_mcp.adapters import codex
+    from stackos.repositories.tracker.receipt_projection import sync_receipt_projection
+
+    repo = TrackerRepository(session)
+    repo.create_task(project_id=project_id, key="deliver", title="Deliver")
+    repo.create_ticket(project_id=project_id, task_key="deliver", key="first", title="First")
+    repo.create_task(project_id=project_id, key="historical", title="Historical")
+    historical = {}
+    for key, model, count in (("unknown", None, 11), ("known", "known-selection", 7)):
+        repo.create_ticket(project_id=project_id, task_key="historical", key=key, title=key)
+        old = {
+            "launch": {"agent": "legacy", "host_key": "codex", "model": model},
+            "usage": {
+                "unit": "tokens",
+                "status": "measured",
+                "measured": {"input": count, "output": 0, "total": count},
+            },
+        }
+        data = {"automatic_delivery": {"attempt": 1, "delivery": old}}
+        repo.update_ticket(
+            project_id=project_id, ticket_key=key, patch_json={"completion_evidence_json": data}
+        )
+        historical[key] = deepcopy(data)
+
+    home = tmp_path_factory.mktemp("native-model-home")
+    monkeypatch.setenv("CODEX_HOME", str(home))
+    monkeypatch.setattr(codex, "_select_codex_bin", lambda: "/fake/codex")
+    ids = {
+        "delivery": "01a1b94c-eb2a-7280-b3c5-d55cd290801b",
+        "review": "01a1b94c-eb2a-7280-b3c5-d55cd290801c",
+    }
+    with sqlite3.connect(home / "state_5.sqlite") as db:
+        db.execute("CREATE TABLE threads(id TEXT PRIMARY KEY, rollout_path TEXT)")
+        for sid in ids.values():
+            path = home / f"{sid}.jsonl"
+            path.write_text(
+                json.dumps({"type": "session_meta", "payload": {"id": sid, "cwd": str(tmp_path)}})
+                + "\n"
+            )
+            db.execute("INSERT INTO threads VALUES (?, ?)", (sid, str(path)))
+    calls = []
+
+    def stream(command, *, input, on_session, **kwargs):
+        packet = json.loads(input)
+        phase = packet["phase"]
+        resumed = "resume" in command
+        sid = ids[phase]
+        model = "observed-new" if resumed else "observed-native"
+        count = 150 if resumed else 100
+        on_session(sid)
+        at = datetime.now(UTC).isoformat()
+        with (home / f"{sid}.jsonl").open("a") as out:
+            for event in (
+                {
+                    "type": "turn_context",
+                    "payload": {"cwd": str(tmp_path), "model": model, "turn_id": "redacted-turn"},
+                },
+                {
+                    "type": "event_msg",
+                    "timestamp": at,
+                    "payload": {
+                        "type": "token_count",
+                        "info": {
+                            "total_token_usage": {
+                                "input_tokens": count,
+                                "output_tokens": 0,
+                                "total_tokens": count,
+                            }
+                        },
+                    },
+                },
+            ):
+                out.write(json.dumps(event) + "\n")
+        service._sample_invocations()
+        # The real live statistics owner must use the observed inherited model
+        # before the native result or final receipt exists.
+        for stats in (
+            repo.agent_stats(project_id=project_id, group_by="model"),
+            repo.agent_stats_all(group_by="model"),
+        ):
+            row = next(row for row in stats.rows if row.model == model)
+            assert row.model_basis == "observed"
+            assert row.reported_usage.total == (
+                50 if resumed else 200 if phase == "review" else 100
+            )
+        calls.append((phase, resumed))
+        value = generic_result("blocked" if len(calls) == 1 else "success")
+        Path(command[command.index("-o") + 1]).write_text(json.dumps(value))
+        return subprocess.CompletedProcess(
+            command,
+            0,
+            "\n".join(
+                map(
+                    json.dumps,
+                    (
+                        {"type": "thread.started", "thread_id": sid},
+                        {
+                            "type": "turn.completed",
+                            "usage": {"input_tokens": count, "output_tokens": 0},
+                        },
+                    ),
+                )
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(progress, "run_codex_process", stream)
+    scheduler = QueuedScheduler()
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    first = repo.brief(project_id=project_id, ticket_key="first").ticket
+    initial = deepcopy(first.completion_evidence_json["automatic_delivery"]["delivery"])
+    assert "model_observation" in initial, json.dumps(initial)
+    assert initial["model_observation"]["model"] == "observed-native"
+    assert initial["execution"]["model_observation"] == initial["model_observation"]
+    assert initial["launch"].get("model") is None
+    repo.update_ticket(
+        project_id=project_id, ticket_key="first", patch_json={"status": "in-progress"}
+    )
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key="first",
+        patch_json={"status": "not-started", "blocker_reason": None},
+    )
+    submit(session, project_id, tmp_path, scheduler)
+    scheduler.run()
+    session.expire_all()
+    first = repo.brief(project_id=project_id, ticket_key="first").ticket
+    assert first.status == "complete", (calls, first.blocker_reason, first.completion_evidence_json)
+    assert calls == [("delivery", False), ("delivery", True), ("review", False)]
+    automatic = first.completion_evidence_json["automatic_delivery"]
+    assert automatic["attempts"][0]["delivery"] == initial
+    assert automatic["delivery"]["model_observation"]["model"] == "observed-new"
+    assert automatic["delivery"]["usage"]["measured"]["total"] == 50
+    assert first.agent_stats.reported_usage.total == 250
+    assert automatic["review"]["model_observation"]["model"] == "observed-native"
+
+    def check_groups():
+        for group_by in ("model", "agent_model"):
+            for stats in (
+                repo.agent_stats(project_id=project_id, group_by=group_by),
+                repo.agent_stats_all(group_by=group_by),
+            ):
+                assert stats.totals.reported_usage.total == 268
+                assert stats.totals.launch_attempts == 5
+                amounts = {}
+                for row in stats.rows:
+                    amounts[row.model] = amounts.get(row.model, 0) + row.reported_usage.total
+                assert amounts == {
+                    None: 11,
+                    "known-selection": 7,
+                    "observed-native": 200,
+                    "observed-new": 50,
+                }
+                assert all(
+                    row.model_basis
+                    == (
+                        "observed"
+                        if row.model and row.model.startswith("observed")
+                        else "selected"
+                        if row.model
+                        else None
+                    )
+                    for row in stats.rows
+                )
+
+    check_groups()
+    # Rebuild only this disposable fixture index from canonical receipts.
+    session.execute(delete(TrackerReceiptProjection))
+    for ticket in session.exec(select(TrackerTicket)).all():
+        sync_receipt_projection(session.connection(), ticket.id, ticket.completion_evidence_json)
+    session.commit()
+    check_groups()
+    for key, old in historical.items():
+        assert (
+            repo.brief(project_id=project_id, ticket_key=key).ticket.completion_evidence_json == old
+        )
+
+
 def test_role_host_model_provider_reach_launch_and_receipt(
     session: Session, project_id: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -2463,6 +3221,7 @@ def test_role_host_model_provider_reach_launch_and_receipt(
         assert "named disposable, isolated test fixtures" in packet["lifecycle"]
         assert "no control over the current task, production state" in packet["lifecycle"]
         assert callable(selection.pop("on_execution_change"))
+        assert callable(selection.pop("on_session_attached"))
         assert selection.pop("launch_allowed")()
         calls.append((host, selection))
         key = packet["brief"]["ticket"]["key"]
@@ -2608,6 +3367,7 @@ def test_project_defaults_merge_by_role_and_freeze_before_launch(
     def run_agent(host, directory, instructions, prompt, schema, *, sandbox, **selection):
         selection.pop("execution_scope")
         selection.pop("on_execution_change")
+        assert callable(selection.pop("on_session_attached"))
         assert selection.pop("launch_allowed")()
         calls.append((host, instructions, sandbox, selection))
         packet = json.loads(prompt)
@@ -5792,12 +6552,13 @@ def test_native_collector_failure_persists_session_and_available_usage(
 @pytest.mark.parametrize("fault", ["read", "decode"])
 @pytest.mark.parametrize("final_status", [None, "blocked", "success"])
 def test_native_stream_exception_persists_primary_final_without_replay(
-    session, project_id, tmp_path, tmp_path_factory, monkeypatch, fault, final_status
+    native_task_session, project_id, tmp_path, tmp_path_factory, monkeypatch, fault, final_status
 ):
     """The real stream decoder and an injected read failure reach the same receipt gate."""
     from stackos.host_mcp import progress
     from stackos.host_mcp.adapters import codex
 
+    session = native_task_session
     prepared_task(session, project_id)
     final = (
         generic_result(final_status, summary="Available structured final")

@@ -16,6 +16,7 @@ from stackos.host_mcp.bridge import (
     MCP_SERVER_NAME,
     command_from_output_row,
     command_line_mentions,
+    command_matches,
     is_stackos_bridge_command,
     output_row_matches_server,
     resolve_bridge_command,
@@ -761,7 +762,8 @@ def _json_details_result(
     if (
         payload.get("enabled") is True
         and transport.get("type") == "stdio"
-        and actual_command == list(command)
+        and actual_command is not None
+        and command_matches(command, actual_command)
     ):
         return HostMcpResult(
             host_key=HOST_KEY,

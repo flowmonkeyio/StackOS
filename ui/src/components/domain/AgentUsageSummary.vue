@@ -20,7 +20,7 @@ const fields = computed(() => usageFields.map(field => ({
 const samples = computed(() => props.metrics?.samples ?? [])
 const prepared = computed(() => visible.value && props.compact ? prepareUsageSamples(samples.value) : null)
 const traces = computed(() => prepared.value ? usageTraces(prepared.value, endAt.value) : null)
-const scopeTitle = 'Numbers are task or ticket totals, including delivery and review. Bars show newly reported tokens in one-minute intervals, with a separate zero-based scale for each metric. Missing history stays empty.'
+const scopeTitle = 'Numbers are task or ticket totals, including delivery and review. Bars show newly reported tokens in one-minute intervals; sparse deltas use an interval average weighted by overlap, not exact consumption times. Each metric has a separate zero-based scale. Missing history stays empty.'
 </script>
 
 <template>

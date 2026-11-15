@@ -99,13 +99,17 @@ def _jsonable(value: Any) -> Any:
     return jsonable(value)
 
 
+class RunPlanSecretValidationError(ValidationError):
+    """Shared scanner rejection with value-free, bounded diagnostic paths."""
+
+
 def _ensure_no_secrets(value: Any, *, label: str, workflow_metadata: bool = False) -> None:
     paths = find_run_plan_secret_paths(value, workflow_metadata=workflow_metadata)
     if paths:
-        raise ValidationError(
+        raise RunPlanSecretValidationError(
             f"{label} must not contain secrets as raw values; use credential_ref for provider "
             "auth or secret.set with an exact $secret_ref marker for action payload values",
-            data={"paths": paths[:8]},
+            data={"rule": "raw_secret", "paths": paths},
         )
 
 

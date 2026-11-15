@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from tomlkit.exceptions import TOMLKitError
 
 from stackos.host_mcp.adapters.codex_definition import (
+    NATIVE_REASONING_EFFORTS,
     OPTIONAL_SETTINGS,
     AgentFields,
     AgentPatch,
@@ -48,6 +49,9 @@ class AgentDefinition(BaseModel):
     digest: str | None = None
     fields: AgentFields | None = None
     native_settings: dict[str, Any] = Field(default_factory=dict)
+    native_reasoning_efforts: list[str] = Field(
+        default_factory=lambda: list(NATIVE_REASONING_EFFORTS)
+    )
     inherited_fields: list[str] = Field(default_factory=list)
     unsupported_fields: list[str] = Field(default_factory=list)
     registration_keys: list[str] = Field(default_factory=list)
@@ -61,6 +65,9 @@ class AgentList(BaseModel):
     project_dir: str
     host_key: Literal["codex"] = "codex"
     items: list[AgentDefinition] = Field(default_factory=list)
+    native_reasoning_efforts: list[str] = Field(
+        default_factory=lambda: list(NATIVE_REASONING_EFFORTS)
+    )
     registration_digest: str | None = None
     diagnostics: list[dict[str, Any]] = Field(default_factory=list)
 
