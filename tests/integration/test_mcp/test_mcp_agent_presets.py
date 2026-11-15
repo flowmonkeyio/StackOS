@@ -304,13 +304,13 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     assert (
         raw_recommended["stackos.sdlc.test-designer"]["preset"]["summary"]["version"]
         == compact_recommended["stackos.sdlc.test-designer"]["preset"]["version"]
-        == "0.6.12"
+        == "0.6.13"
     )
     expected_versions = {
-        "stackos.sdlc.requirements-flow-definer": "0.6.7",
-        "stackos.sdlc.planning": "0.7.25",
-        "stackos.sdlc.delivery": "0.7.24",
-        "stackos.sdlc.delivery-reviewer": "0.6.23",
+        "stackos.sdlc.requirements-flow-definer": "0.6.8",
+        "stackos.sdlc.planning": "0.7.27",
+        "stackos.sdlc.delivery": "0.7.25",
+        "stackos.sdlc.delivery-reviewer": "0.6.26",
     }
     assert set(actual) == set(expected) == set(expected_versions)
     for key, item in actual.items():
@@ -405,7 +405,7 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
         "three automatic repair passes per ticket",
         "repair_count",
         "rejection after the third repair",
-        "completeness and proportionality",
+        "completeness, ticket sizing and proportionality",
         "omitted checks",
     ):
         assert requirement in " ".join(full_reviewer["must_do"]), requirement
@@ -421,7 +421,7 @@ def test_engineering_compact_resolution_routes_to_current_delegation_contracts(
     compact_skill_binding = compact["required_skill_presets"][0]
     compact_skill = compact_skill_binding["preset"]
     full_skill = raw["required_skill_presets"][0]["preset"]
-    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.27"
+    assert compact_skill["version"] == full_skill["summary"]["version"] == "0.8.29"
     full_instructions = full_skill["preset"]["operating_contract"]["must_do"]
     # Skill lists are bounded navigation; raw retains the full contract.
     assert len(compact_skill["must_do"]) == 25
