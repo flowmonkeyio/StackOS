@@ -1028,6 +1028,119 @@ def test_mirror_unsuccessful_or_malformed_result_stops_through_plan_owner(
     )
 
 
+@pytest.mark.parametrize("phase", ["delivery", "review"])
+@pytest.mark.parametrize("denial", ["raw_secret", "other_validation"])
+def test_secret_record_validation_preserves_only_safe_bounded_context(
+    session, project_id, tmp_path, monkeypatch, caplog, phase, denial
+):
+    from stackos import task_delivery
+    from stackos.db.models import ProjectEvent, TrackerTicket
+
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "key": "secret-denial",
+            "title": "Secret denial",
+            "steps": [
+                {
+                    "id": "observe",
+                    "title": "Observe",
+                    "metadata_json": {"agent_assignment": f"{phase}_agent"},
+                }
+            ],
+        },
+    ).data
+    started = plans.start(plan.id, project_id=project_id)
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="observe")
+    key_sentinel, value_sentinel = "KEY_SENTINEL_7f9d", "VALUE_SENTINEL_1c2e"
+    outputs = {
+        "result_json": {
+            "api_key": value_sentinel,
+            key_sentinel: {"password": value_sentinel},
+            key_sentinel * 1000: {"password": value_sentinel},
+            "nested": [{"token": value_sentinel} for _ in range(20)],
+        }
+    }
+    if denial == "other_validation":
+        outputs = {}
+        original_record = RunPlanRepository.record_step
+
+        def reject_other_validation(owner, **kwargs):
+            if kwargs.get("result_json") is not None:
+                raise ValidationError(
+                    "Safe generic validation failure",
+                    data={"rule": "raw_secret", "paths": [key_sentinel], "raw": value_sentinel},
+                )
+            return original_record(owner, **kwargs)
+
+        monkeypatch.setattr(RunPlanRepository, "record_step", reject_other_validation)
+    calls = []
+
+    def launch(*args, **kwargs):
+        calls.append(json.loads(args[3])["phase"])
+        return AgentRunResult(
+            0, thread_id="secret-denial-session", result=generic_result(outputs=outputs)
+        )
+
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    # Inspect every receipt write, including evidence saved before record_step.
+    writes = []
+    original_update = TrackerRepository.update_ticket
+
+    def capture_write(repo, **kwargs):
+        writes.append(deepcopy(kwargs["patch_json"]))
+        return original_update(repo, **kwargs)
+
+    monkeypatch.setattr(TrackerRepository, "update_ticket", capture_write)
+    scheduler = QueuedScheduler()
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=f"workflow-{plan.id}",
+        run_plan_id=plan.id,
+        step_id="observe",
+    )
+    scheduler.run()
+    session.expire_all()
+    repo = TrackerRepository(session)
+    snapshot = repo.get(project_id=project_id, task_key=f"workflow-{plan.id}")
+    ticket = repo.brief(project_id=project_id, ticket_key=f"workflow-{plan.id}-observe").ticket
+    receipt = ticket.completion_evidence_json["automatic_delivery"][phase]
+    if denial == "raw_secret":
+        context = receipt["validation_context"]
+        assert context["rule"] == "raw_secret"
+        assert context["operation"] == "runPlan.recordStep"
+        assert context["phase"] == phase
+        assert "$.result_json.api_key" in context["paths"]
+        assert len(context["paths"]) <= 8
+        assert len(json.dumps(context)) <= 2300
+        assert "must not contain secrets" in receipt["validation_error"]
+    else:
+        # Even spoofed path/rule fields on another error are never forwarded.
+        assert "validation_context" not in receipt
+    assert calls == [phase]
+    assert snapshot.tasks[0].metadata_json["delivery"]["status"] == "stopped"
+    assert plans.get_step(plan.id, "observe").status == RunPlanStepStatus.BLOCKED
+    assert plans.get_step(plan.id, "observe").result_json is None
+    assert receipt["validated_outcome"] is None
+    assert receipt["thread_id"] == "secret-denial-session"
+    public = json.dumps(
+        {
+            "writes": writes,
+            "snapshot": snapshot.model_dump(mode="json"),
+            "brief": ticket.model_dump(mode="json"),
+            "stored": [row.model_dump(mode="json") for row in session.exec(select(TrackerTicket))],
+            "events": [row.model_dump(mode="json") for row in session.exec(select(ProjectEvent))],
+            "logs": caplog.text,
+        }
+    )
+    assert key_sentinel not in public
+    assert value_sentinel not in public
+
+
 def test_explicit_rehandoff_refreshes_current_snapshot_preserving_frozen_and_ticket_history(
     session, project_id, tmp_path
 ):

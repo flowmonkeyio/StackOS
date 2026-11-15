@@ -258,6 +258,23 @@ before persistence. Secret-like keys such as `api_key`, `access_token`,
 `refresh_token`, `authorization`, and nested equivalents are stored as
 `[redacted]`.
 
+Text scanning recognizes quoted credentials, equals assignments, line headers,
+explicit object/log delimiters, bearer credentials, private keys and signed URLs.
+Bare unquoted inline colons after sentence text are ambiguous and treated as
+prose, for example `After separate authorization: verify the environment.` This
+syntax boundary does not exempt structured secret fields or impose a minimum
+credential length.
+
+Run-plan secret rejections expose the stable `raw_secret` rule and at most eight
+paths of 256 characters each. Paths preserve a fixed vocabulary of known fields;
+key segments over 48 characters or outside that vocabulary become `[field]`,
+and long paths end with `...`. This changes diagnostics only: original keys and
+values still undergo secret checks.
+Automatic delivery retains these paths with `runPlan.recordStep` and the phase
+in its validation context. It withholds unvalidated native results from receipt
+storage and omits rejected secret-bearing results, preserving session identity
+and a concise stop reason without forwarding arbitrary exception data.
+
 Workflow validation distinguishes the exact `operator_authorization` instruction
 field in supported metadata from authentication material. Both template and
 run-plan validators still inspect that field's contents and nested keys; it is

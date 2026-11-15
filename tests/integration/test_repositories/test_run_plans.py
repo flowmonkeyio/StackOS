@@ -2365,6 +2365,13 @@ def test_run_plan_late_writes_reject_secrets(
     assert "must not contain secrets" in str(meta_exc.value)
     assert "must not contain secrets" in str(decision_exc.value)
     assert "must not contain secrets" in str(result_exc.value)
+    envelope = result_exc.value.to_dict()
+    assert envelope["code"] == -32602
+    assert envelope["data"] == {
+        "rule": "raw_secret",
+        "paths": ["$.metadata.operator_authorization"] if workflow_shaped else ["$.refresh_token"],
+    }
+    assert repo.get_step(plan.id, "create-campaign").status == RunPlanStepStatus.RUNNING
 
 
 @pytest.mark.parametrize(
@@ -2452,10 +2459,10 @@ def test_approval_accounting_rejection_is_atomic(
     [
         ({"access_token": 7}, "$.access_token"),
         ({"api_key": "fixture-credential-value"}, "$.api_key"),
-        ({"prior-tokens": 7}, "$.prior-tokens"),
-        ({"PRIOR_TOKENS": 7}, "$.PRIOR_TOKENS"),
-        ({"prefix_prior_tokens": 7}, "$.prefix_prior_tokens"),
-        ({"prior_tokens_extra": 7}, "$.prior_tokens_extra"),
+        ({"prior-tokens": 7}, "$.[field]"),
+        ({"PRIOR_TOKENS": 7}, "$.[field]"),
+        ({"prefix_prior_tokens": 7}, "$.[field]"),
+        ({"prior_tokens_extra": 7}, "$.[field]"),
         ({"nested": {"prior_tokens": 7}}, "$.nested.prior_tokens"),
         (
             {"nested": [{"cumulative_planning_exposure_tokens": 7}]},

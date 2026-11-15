@@ -92,6 +92,65 @@ def test_approval_accounting_names_remain_secrets_in_generic_run_plan_input(fiel
     assert field in result.errors[0].message
 
 
+def test_secret_paths_mask_untrusted_keys_and_bound_diagnostics():
+    sentinel = "KEY_SENTINEL_7f9d"
+    payload = {
+        "result_json": {
+            "api_key": "VALUE_SENTINEL_1c2e",
+            sentinel: {"password": "x"},
+            "authorization: " + sentinel: "x",
+            sentinel * 1000: {"token": "x"},
+            "nested": [{"password": "x"} for _ in range(20)],
+        }
+    }
+    paths = find_run_plan_secret_paths(payload)
+    assert "$.result_json.api_key" in paths
+    assert sentinel not in str(paths)
+    assert 1 <= len(paths) <= 8
+    assert all(len(path) <= 256 for path in paths)
+    assert sum(map(len, paths)) <= 2048
+
+
+def test_deep_secret_paths_remain_bounded_without_missing_denials():
+    payload = {"api_key": "x"}
+    for _ in range(60):
+        payload = {"metadata": payload}
+    paths = find_run_plan_secret_paths(payload)
+    assert paths and all(len(path) <= 256 for path in paths)
+
+
+def test_masked_path_cannot_create_operator_metadata_exemption():
+    payload = {"steps[0]": {"metadata": {"operator_authorization": "x"}}}
+    assert find_run_plan_secret_paths(payload, workflow_metadata=True)
+
+
+def test_run_plan_preserves_generic_authorization_prose():
+    data = _plan_dict()
+    data["goal"] = "After operator authorization: inspect the approved environment."
+    assert validate_run_plan_obj(data).valid
+    assert find_run_plan_secret_paths({"note": data["goal"]}) == []
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"password": "x"},
+        {"note": 'inline authorization: "x"'},
+        {"note": "inline authorization=x"},
+        {"note": "[INFO] authorization: x"},
+        {"note": "Authorization: x"},
+        {"note": "Bearer x"},
+        {"note": "-----BEGIN PRIVATE KEY-----x-----END PRIVATE KEY-----"},
+        {"note": "https://example.test/file?sig=x"},
+    ],
+)
+def test_real_credential_syntax_still_rejects_through_run_plan_validator(payload):
+    data = _plan_dict()
+    data["inputs"] = payload
+    assert not validate_run_plan_obj(data).valid
+    assert find_run_plan_secret_paths(payload)
+
+
 @pytest.mark.parametrize("tool_name", ["account.start", "connection.attach", "connection.detach"])
 def test_run_plan_schema_rejects_admin_tool_grant(tool_name: str) -> None:
     data = _plan_dict()

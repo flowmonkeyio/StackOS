@@ -102,3 +102,39 @@ def test_redact_secret_text_redacts_short_signature_query_params() -> None:
     assert redact_secret_text("https://example.test/file.mp4?sig=abc123") == (
         "https://example.test/file.mp4?sig=[redacted]"
     )
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "Not executed. After separate authorization: verify deployed SHA/health.",
+        "Wait for operator authorization: inspect the approved environment.",
+        "After approval of the token: continue with the documented procedure.",
+    ],
+)
+def test_inline_unquoted_colon_prose_is_preserved(source):
+    assert redact_secret_text(source) == source
+    assert redact_secrets({"note": [source]}) == {"note": [source]}
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        'log {"authorization":"x"}',
+        "log {'authorization': 'x'}",
+        'inline authorization: "x"',
+        "inline authorization=x",
+        "Authorization: x",
+        "request\n  authorization: x",
+        "headers={authorization: x}",
+        "[INFO] authorization: x",
+        "request; authorization: x",
+        "inline authorization: Bearer x",
+        "inline Bearer x",
+        "password=x",
+        "-----BEGIN PRIVATE KEY-----x-----END PRIVATE KEY-----",
+        "https://example.test/file?sig=x",
+    ],
+)
+def test_explicit_credential_syntax_still_redacts_short_values(source):
+    assert redact_secret_text(source) != source

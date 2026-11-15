@@ -44,7 +44,7 @@ from stackos.host_mcp.service import (
 )
 from stackos.operations.tracker.schemas import TaskDeliveryAgent, TaskDeliveryAgentOverride
 from stackos.repositories.base import ConflictError, NotFoundError, ValidationError
-from stackos.repositories.run_plans import RunPlanRepository
+from stackos.repositories.run_plans import RunPlanRepository, RunPlanSecretValidationError
 from stackos.repositories.tracker import TrackerRepository
 from stackos.repositories.tracker.board import task_column
 from stackos.repositories.tracker.events import record_execution_change
@@ -2541,7 +2541,11 @@ def run_delivery(
                             )
                             return
                         # Only the run-plan owner can validate outputs and advance mirrors.
-                        _save_evidence(repo, project_id, ticket_key, evidence)
+                        # Preserve invocation identity before canonical validation,
+                        # without persisting an as-yet-unvalidated native payload.
+                        pending_evidence = deepcopy(evidence)
+                        pending_evidence[phase].pop("result", None)
+                        _save_evidence(repo, project_id, ticket_key, pending_evidence)
                         status = (
                             RunPlanStepStatus.SUCCESS
                             if accepted
@@ -2549,20 +2553,34 @@ def run_delivery(
                             if decision in {"repair", "blocked"}
                             else RunPlanStepStatus.FAILED
                         )
-                        plans.record_step(
-                            run_plan_id=state["run_plan_id"],
-                            run_id=state["controller_run_id"],
-                            project_id=project_id,
-                            step_id=workflow_step.step_id,
-                            status=status,
-                            result_json=outputs,
-                            error=None
-                            if accepted
-                            else (validation_error or result.error or value.get("summary")),
-                        )
+                        try:
+                            plans.record_step(
+                                run_plan_id=state["run_plan_id"],
+                                run_id=state["controller_run_id"],
+                                project_id=project_id,
+                                step_id=workflow_step.step_id,
+                                status=status,
+                                result_json=outputs,
+                                error=None
+                                if accepted
+                                else (validation_error or result.error or value.get("summary")),
+                            )
+                        except RunPlanSecretValidationError as error:
+                            # Only this producer's bounded contract is safe to retain;
+                            # never forward arbitrary exception.data or rejected JSON.
+                            evidence[phase].pop("result", None)
+                            evidence[phase]["validated_outcome"] = None
+                            evidence[phase]["validation_error"] = str(error)
+                            evidence[phase]["validation_context"] = {
+                                "rule": "raw_secret",
+                                "paths": error.data["paths"],
+                                "operation": "runPlan.recordStep",
+                                "phase": phase,
+                            }
+                            raise
                         if valid:
                             evidence[phase]["validated_outcome"] = decision
-                            _save_evidence(repo, project_id, ticket_key, evidence)
+                        _save_evidence(repo, project_id, ticket_key, evidence)
                     else:
                         _save_evidence(repo, project_id, ticket_key, evidence, **patch)
                     if not accepted and not repair:
