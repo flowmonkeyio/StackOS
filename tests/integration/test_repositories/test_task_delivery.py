@@ -1141,6 +1141,142 @@ def test_secret_record_validation_preserves_only_safe_bounded_context(
     assert value_sentinel not in public
 
 
+@pytest.mark.parametrize("transition", ["reopened", "cancelled", "native_error"])
+@pytest.mark.parametrize("secret_output", [True, False])
+def test_unvalidated_result_receipt_privacy_preserves_lifetime_evidence(
+    session, project_id, tmp_path, monkeypatch, caplog, transition, secret_output
+):
+    from stackos import task_delivery
+    from stackos.db.models import ProjectEvent, TrackerTicket
+    from stackos.repositories.base import ConflictError
+
+    plans = RunPlanRepository(session)
+    plan = plans.create(
+        project_id=project_id,
+        run_plan_json={
+            "key": "result-receipt-lifetime",
+            "title": "Receipt lifetime",
+            "steps": [{"id": "observe", "title": "Observe"}],
+        },
+    ).data
+    started = plans.start(plan.id, project_id=project_id)
+    plans.claim_step(run_plan_id=plan.id, run_id=started.run_id, step_id="observe")
+    repo = TrackerRepository(session)
+    ticket_key = f"workflow-{plan.id}-observe"
+    repo.update_ticket(
+        project_id=project_id,
+        ticket_key=ticket_key,
+        patch_json={"completion_evidence_json": {"prior": {"note": "Retained history"}}},
+    )
+    key_sentinel, value_sentinel = "PRIVATE_KEY_CONTENT_7a56", "PRIVATE_VALUE_5d42"
+    outputs = (
+        {key_sentinel: {"api_key": value_sentinel}}
+        if secret_output
+        else {"note": "After separate authorization: verify the approved environment."}
+    )
+    final = generic_result(outputs=outputs)
+    scheduler = QueuedScheduler()
+    calls, writes = [], []
+    original_update = TrackerRepository.update_ticket
+
+    def capture_write(owner, **kwargs):
+        writes.append(deepcopy(kwargs["patch_json"]))
+        return original_update(owner, **kwargs)
+
+    def launch(*args, **kwargs):
+        calls.append(json.loads(args[3])["phase"])
+        assert calls == ["delivery"]
+        with Session(session.get_bind()) as active:
+            if transition == "reopened":
+                RunPlanRepository(active).reopen(
+                    run_plan_id=plan.id,
+                    project_id=project_id,
+                    step_id="observe",
+                    reason="Disposable fixture recovery",
+                )
+            elif transition == "cancelled":
+                with pytest.raises(ConflictError, match="could not be confirmed"):
+                    task_delivery.abort_run_plan(
+                        active,
+                        run_plan_id=plan.id,
+                        project_id=project_id,
+                        reason="Disposable fixture cancellation",
+                        scheduler=scheduler,
+                    )
+        return AgentRunResult(
+            1 if transition == "native_error" else 0,
+            thread_id="lifetime-session",
+            result=final,
+            error="Synthetic native failure" if transition == "native_error" else None,
+        )
+
+    monkeypatch.setattr(TrackerRepository, "update_ticket", capture_write)
+    monkeypatch.setattr(task_delivery, "run_agent", launch)
+    submit(
+        session,
+        project_id,
+        tmp_path,
+        scheduler,
+        task_key=f"workflow-{plan.id}",
+        run_plan_id=plan.id,
+        step_id="observe",
+    )
+    scheduler.run()
+    session.expire_all()
+    ticket = repo.brief(project_id=project_id, ticket_key=ticket_key).ticket
+    evidence = ticket.completion_evidence_json["automatic_delivery"]
+    receipt = evidence["delivery"]
+    assert ticket.completion_evidence_json["prior"] == {"note": "Retained history"}
+    assert (
+        receipt["thread_id"] == evidence["sessions"]["delivery"]["thread_id"] == "lifetime-session"
+    )
+    assert receipt["validated_outcome"] is None
+    assert evidence.get("repair_count", 0) == 0 and evidence["attempts"] == []
+    assert calls == ["delivery"]
+    step = plans.get_step(plan.id, "observe")
+    assert step.result_json == (
+        {
+            "summary": "Run plan aborted while this step was running.",
+            "reason": "Disposable fixture cancellation",
+        }
+        if transition == "cancelled"
+        else {}
+        if transition == "native_error"
+        else None
+    )
+    assert (
+        step.status
+        == {
+            "reopened": RunPlanStepStatus.PENDING,
+            "cancelled": RunPlanStepStatus.SKIPPED,
+            "native_error": RunPlanStepStatus.FAILED,
+        }[transition]
+    )
+    if transition == "reopened":
+        assert receipt["superseded"] is True
+    elif transition == "cancelled":
+        assert receipt["cancelled"] is True
+    else:
+        assert receipt["exit_code"] == 1 and receipt["error"] == "Synthetic native failure"
+    if secret_output:
+        assert receipt.get("result") is None
+    else:
+        assert receipt["result"] == final
+    surfaces = json.dumps(
+        {
+            "writes": writes,
+            "brief": ticket.model_dump(mode="json"),
+            "list": repo.get(project_id=project_id, task_key=f"workflow-{plan.id}").model_dump(
+                mode="json"
+            ),
+            "stored": [row.model_dump(mode="json") for row in session.exec(select(TrackerTicket))],
+            "events": [row.model_dump(mode="json") for row in session.exec(select(ProjectEvent))],
+            "logs": caplog.text,
+        }
+    )
+    assert key_sentinel not in surfaces and value_sentinel not in surfaces
+
+
 def test_explicit_rehandoff_refreshes_current_snapshot_preserving_frozen_and_ticket_history(
     session, project_id, tmp_path
 ):

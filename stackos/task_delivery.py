@@ -55,6 +55,7 @@ from stackos.repositories.tracker.schema import (
 )
 from stackos.repositories.tracker.setup import _delivery_host, _delivery_role_defaults
 from stackos.repositories.tracker.workflow import workflow_step_ticket_key
+from stackos.workflows.run_plan_schema import find_run_plan_secret_paths
 
 LAUNCH_AUTHORITY_BOUNDARY = (
     "Use only explicitly assigned operations, subject to normal native approval. "
@@ -2259,12 +2260,29 @@ def run_delivery(
                     and observed.get("usage", {}).get("status") == "measured"
                 ):
                     final_usage = observed["usage"]
+                result_evidence = asdict(result)
+                if result.result is not None:
+                    # Every lifetime path below can persist this observation,
+                    # including cancellation/reopen and nonzero native exits.
+                    # Inspect decoded output with the shared guard before any
+                    # receipt write; redacting its encoded text can leave raw
+                    # dictionary keys behind. Keep the original for canonical
+                    # validation, and retain safe results without rewriting them.
+                    try:
+                        receipt_outputs = json.loads(result.result["outputs"])
+                    except (KeyError, TypeError, ValueError):
+                        result_evidence["result"] = None
+                        result_evidence["result_omitted"] = "unparseable_outputs"
+                    else:
+                        if find_run_plan_secret_paths(receipt_outputs):
+                            result_evidence["result"] = None
+                            result_evidence["result_omitted"] = "raw_secret"
                 evidence[phase] = {
                     "agent": agent["name"],
                     "selected_role": selected_role,
                     "launch": launch,
                     "occurrence": occurrence,
-                    **asdict(result),
+                    **result_evidence,
                     **(
                         {"finished_at": observed["finished_at"]}
                         if "finished_at" in observed

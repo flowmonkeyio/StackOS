@@ -271,9 +271,12 @@ key segments over 48 characters or outside that vocabulary become `[field]`,
 and long paths end with `...`. This changes diagnostics only: original keys and
 values still undergo secret checks.
 Automatic delivery retains these paths with `runPlan.recordStep` and the phase
-in its validation context. It withholds unvalidated native results from receipt
-storage and omits rejected secret-bearing results, preserving session identity
-and a concise stop reason without forwarding arbitrary exception data.
+in its validation context. Before any receipt write, it checks decoded native
+output with the shared guard, including cancelled, superseded and native-error
+returns. Secret-bearing or unparseable output is omitted from the result receipt;
+safe output evidence, session identity, history and lifecycle observations remain.
+Canonical output validation still owns acceptance. Diagnostics preserve a concise
+stop reason without forwarding arbitrary exception data.
 
 Workflow validation distinguishes the exact `operator_authorization` instruction
 field in supported metadata from authentication material. Both template and
